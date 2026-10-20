@@ -4,113 +4,69 @@ import { useEffect, useState, type JSX } from "react";
 
 import { clockTime, isoTime, timeAgo } from "./format_time";
 import { followStream, type StreamConnection } from "./live_stream";
+import type {
+  GitHubSubject,
+  SandboxNotificationStatus,
+  Source,
+  SourceObservation,
+  SubscriptionStatus,
+} from "./notification_types";
 
-type Source = {
-  provider: string;
-  request_id?: string;
-  repository?: string;
-  subject?: { kind: string; number?: number; name?: string; sha?: string };
-};
-type GitHubRefresh = {
-  last_success_at: string | null;
-  error_kind: string | null;
-  error: string | null;
-  error_since: string | null;
-  error_observed_at: string | null;
-  retry_at: string | null;
-  refreshing_until: string | null;
-};
-type GitHubStatus = {
-  access: (GitHubRefresh & {
-    app_id: number;
-    installation_id: number;
-    repository_id: number;
-    checked_at: string | null;
-    valid_until: string | null;
-    currently_valid: boolean;
-  })[];
-  subject: GitHubRefresh & { repository_id: number; kind: string; subject_key: string };
-};
-type Subscription = {
-  github: GitHubStatus | null;
-  id: string;
-  source: Source;
-  cancelled: boolean;
-  expires_at: string;
-  last_success_at: string | null;
-  error_kind: "rate_limited" | "unavailable" | "access_denied" | "source_changed" | "processing_error" | null;
-  error_since: string | null;
-  error_observed_at: string | null;
-  error: string | null;
-  next_source_check_at: string | null;
-};
-function SharedRefresh({ label, state }: { label: string; state: GitHubRefresh }): JSX.Element {
-  return (
-    <Text size="xs" c={state.error ? "red" : "dimmed"}>
-      {label}:{" "}
-      {state.error ?? (state.last_success_at ? `last success ${timestamp(state.last_success_at)}` : "not yet observed")}
-      {state.error_since ? ` · since ${timestamp(state.error_since)}` : ""}
-      {state.error_observed_at ? ` · last observed ${timestamp(state.error_observed_at)}` : ""}
-      {state.retry_at ? ` · retry ${timestamp(state.retry_at)}` : ""}
-      {state.refreshing_until ? ` · refresh lease until ${timestamp(state.refreshing_until)}` : ""}
-    </Text>
-  );
-}
-type Inbox = {
-  inbox: {
-    id: string;
-    session_id: string;
-    last_cursor: number;
-    acknowledged: number;
-    covered: number;
-    expired_through: number;
-    retired: boolean;
-    delivery_error: string | null;
-  };
-  subscriptions: Subscription[];
-  notice: {
-    through_cursor: number;
-    attempted: boolean;
-    admitted: boolean;
-    confirmed: boolean;
-    error: string | null;
-  } | null;
-  unannounced_count: number;
-  pending_acknowledgement_count: number;
-  pending_entries: { cursor: number; created_at: string; provider: string; summary: string }[];
-  pending_entries_more: boolean;
-  notice_due_at: string | null;
-  quiet_until: string | null;
-  max_wait_at: string | null;
-  notice_wait_reason: string | null;
-  next_work_at: string | null;
-};
-type Status = { observed_at: string; inboxes: Inbox[] };
 type SubscriptionState = "active" | "expired" | "cancelled";
 type SubscriptionFilter = "not-cancelled" | SubscriptionState | "all";
 
-function subscriptionState(sub: Subscription, observedAt?: string): SubscriptionState {
-  if (sub.cancelled) return "cancelled";
-  return new Date(sub.expires_at).getTime() <= new Date(observedAt ?? sub.expires_at).getTime() ? "expired" : "active";
+const SOURCE_FAILURE_KIND = "SOURCE_FAILURE_KIND_";
+const NOTICE_WAIT_REASON = "NOTICE_WAIT_REASON_";
+
+/** An enum value's name without its prefix, as lowercase words: `NOTICE_WAIT_REASON_DEBOUNCING` is "debouncing". */
+function enumWords(name: string, prefix: string): string {
+  return name.slice(prefix.length).toLowerCase().replaceAll("_", " ");
 }
 
-function subscriptionLabel(sub: Subscription, observedAt?: string): string {
+/** int64 arrives as a string, which would compare as text. */
+function isAfter(cursor: string, other: string): boolean {
+  return BigInt(cursor) > BigInt(other);
+}
+
+function SharedRefresh({ label, state }: { label: string; state: SourceObservation }): JSX.Element {
+  return (
+    <Text size="xs" c={state.error ? "red" : "dimmed"}>
+      {label}:{" "}
+      {state.error ?? (state.lastSuccessAt ? `last success ${timestamp(state.lastSuccessAt)}` : "not yet observed")}
+      {state.errorSince ? ` · since ${timestamp(state.errorSince)}` : ""}
+      {state.errorObservedAt ? ` · last observed ${timestamp(state.errorObservedAt)}` : ""}
+      {state.retryAt ? ` · retry ${timestamp(state.retryAt)}` : ""}
+      {state.refreshingUntil ? ` · refresh lease until ${timestamp(state.refreshingUntil)}` : ""}
+    </Text>
+  );
+}
+
+function subscriptionState(sub: SubscriptionStatus, observedAt?: string): SubscriptionState {
+  if (sub.cancelled) return "cancelled";
+  return new Date(sub.expiresAt).getTime() <= new Date(observedAt ?? sub.expiresAt).getTime() ? "expired" : "active";
+}
+
+function subscriptionLabel(sub: SubscriptionStatus, observedAt?: string): string {
   const state = subscriptionState(sub, observedAt);
   if (state !== "active") return state;
   const errorKind =
-    sub.error_kind ??
-    sub.github?.access.find((access) => access.error_kind)?.error_kind ??
-    sub.github?.subject.error_kind;
-  if (errorKind) return errorKind.replaceAll("_", " ");
-  if (sub.github?.access.some((access) => !access.currently_valid)) return "GitHub access not validated";
+    sub.errorKind ?? sub.github?.access.find((access) => access.errorKind)?.errorKind ?? sub.github?.subject.errorKind;
+  if (errorKind) return enumWords(errorKind, SOURCE_FAILURE_KIND);
+  if (sub.github?.access.some((access) => !access.currentlyValid)) return "GitHub access not validated";
   return "no current source error";
 }
 
+function subjectLabel(subject: GitHubSubject | undefined): string {
+  if (subject === undefined) return "event";
+  if ("pullRequest" in subject) return `pull request ${subject.pullRequest.number}`;
+  if ("issue" in subject) return `issue ${subject.issue.number}`;
+  if ("branch" in subject) return `branch ${subject.branch.name}`;
+  return `commit ${subject.commit.sha}`;
+}
+
 function sourceLabel(source: Source): string {
-  if (source.provider === "actions") return `Action ${source.request_id}`;
-  if (source.provider === "github")
-    return `${source.repository ?? "GitHub"} · ${source.subject?.kind ?? "event"} ${source.subject?.number ?? source.subject?.name ?? source.subject?.sha ?? ""}`;
-  return source.provider;
+  if ("actions" in source) return `Action ${source.actions.requestId}`;
+  return `${source.github.repository} · ${subjectLabel(source.github.subject)}`;
 }
 
 /** Plain text for the strings built from it; the ISO time stands where a tooltip cannot. */
@@ -129,7 +85,7 @@ export function NotificationStatus({
   opened: boolean;
   onClose: () => void;
 }): JSX.Element {
-  const [data, setData] = useState<Status | null>(null);
+  const [data, setData] = useState<SandboxNotificationStatus | null>(null);
   const [subscriptionFilter, setSubscriptionFilter] = useState<SubscriptionFilter>("not-cancelled");
   const [error, setError] = useState<string | null>(null);
   const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
@@ -141,7 +97,7 @@ export function NotificationStatus({
       events: {
         snapshot: (message) => {
           try {
-            setData(JSON.parse(message.data) as Status);
+            setData(JSON.parse(message.data) as SandboxNotificationStatus);
             setError(null);
           } catch {
             setError("Invalid notification status snapshot");
@@ -151,10 +107,10 @@ export function NotificationStatus({
       onConnection: setConnection,
     });
   }, [opened, sandbox]);
-  const observedAt = data?.observed_at;
+  const observedAt = data?.observedAt;
   const inboxes =
     data?.inboxes
-      .filter(({ inbox }) => !sessionId || inbox.session_id === sessionId)
+      .filter(({ inbox }) => !sessionId || inbox.sessionId === sessionId)
       .map((status) => ({
         ...status,
         subscriptions: status.subscriptions.filter((sub) => {
@@ -175,7 +131,7 @@ export function NotificationStatus({
             </Text>
             {data && (
               <Text size="xs" c="dimmed">
-                Snapshot: {timestamp(data.observed_at)}
+                Snapshot: {timestamp(data.observedAt)}
                 {connection.phase !== "live" ? " · disconnected; showing last snapshot" : ""}
               </Text>
             )}
@@ -221,20 +177,20 @@ export function NotificationStatus({
                 inbox,
                 subscriptions,
                 notice,
-                unannounced_count,
-                pending_acknowledgement_count,
-                pending_entries,
-                pending_entries_more,
-                notice_due_at,
-                quiet_until,
-                max_wait_at,
-                notice_wait_reason,
-                next_work_at,
+                unannouncedCount,
+                pendingAcknowledgementCount,
+                pendingEntries,
+                pendingEntriesMore,
+                noticeDueAt,
+                quietUntil,
+                maxWaitAt,
+                noticeWaitReason,
+                nextWorkAt,
               }) => (
                 <Paper key={inbox.id} withBorder p="md">
                   <Stack gap="xs">
                     <Group justify="space-between">
-                      <Text fw={600}>Session {inbox.session_id}</Text>
+                      <Text fw={600}>Session {inbox.sessionId}</Text>
                       {inbox.retired && (
                         <Text size="xs" c="dimmed">
                           Retired
@@ -243,7 +199,7 @@ export function NotificationStatus({
                     </Group>
                     {notice && (
                       <Text size="sm">
-                        Latest notice through {notice.through_cursor}:{" "}
+                        Latest notice through {notice.throughCursor}:{" "}
                         {notice.error
                           ? `error: ${notice.error}`
                           : notice.confirmed
@@ -255,33 +211,33 @@ export function NotificationStatus({
                                 : "prepared"}
                       </Text>
                     )}
-                    {inbox.delivery_error && (
+                    {inbox.deliveryError && (
                       <Text c="red" size="sm">
-                        Delivery: {inbox.delivery_error}
+                        Delivery: {inbox.deliveryError}
                       </Text>
                     )}
-                    {notice_wait_reason && (
+                    {noticeWaitReason && (
                       <Text size="sm">
-                        Notice: {notice_wait_reason.replaceAll("_", " ")}
-                        {notice_due_at ? ` · eligible ${timestamp(notice_due_at)}` : ""}
+                        Notice: {enumWords(noticeWaitReason, NOTICE_WAIT_REASON)}
+                        {noticeDueAt ? ` · eligible ${timestamp(noticeDueAt)}` : ""}
                       </Text>
                     )}
                     <Divider
-                      label={`Entries after acknowledgement · ${pending_acknowledgement_count} not acknowledged`}
+                      label={`Entries after acknowledgement · ${pendingAcknowledgementCount} not acknowledged`}
                     />
-                    {pending_entries.length === 0 && (
+                    {pendingEntries.length === 0 && (
                       <Text size="sm" c="dimmed">
                         No retained unacknowledged entries
                       </Text>
                     )}
-                    {pending_entries.length > 0 && (
+                    {pendingEntries.length > 0 && (
                       <Stack gap={4}>
-                        {pending_entries.map((entry, index) => (
+                        {pendingEntries.map((entry, index) => (
                           <Stack key={entry.cursor} gap={4}>
-                            {entry.cursor > inbox.covered &&
-                              (index === 0 || (pending_entries[index - 1]?.cursor ?? 0) <= inbox.covered) && (
+                            {isAfter(entry.cursor, inbox.covered) &&
+                              (index === 0 || !isAfter(pendingEntries[index - 1]?.cursor ?? "0", inbox.covered)) && (
                                 <Divider
-                                  label={`Notice covered through #${inbox.covered} · ${unannounced_count} awaiting notice below`}
+                                  label={`Notice covered through #${inbox.covered} · ${unannouncedCount} awaiting notice below`}
                                 />
                               )}
                             <Group gap="xs" wrap="nowrap" align="flex-start" py={4}>
@@ -292,19 +248,19 @@ export function NotificationStatus({
                                 {entry.summary}
                               </Text>
                               <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-                                {clockTime(entry.created_at)}
+                                {clockTime(entry.createdAt)}
                               </Text>
                             </Group>
                           </Stack>
                         ))}
-                        {!pending_entries_more && (pending_entries.at(-1)?.cursor ?? 0) <= inbox.covered && (
+                        {!pendingEntriesMore && !isAfter(pendingEntries.at(-1)?.cursor ?? "0", inbox.covered) && (
                           <Divider
-                            label={`Notice covered through #${inbox.covered} · ${unannounced_count} awaiting notice`}
+                            label={`Notice covered through #${inbox.covered} · ${unannouncedCount} awaiting notice`}
                           />
                         )}
                       </Stack>
                     )}
-                    {pending_entries_more && (
+                    {pendingEntriesMore && (
                       <Text size="xs" c="dimmed">
                         Showing the first 100 retained entries after acknowledgement; more entries remain.
                       </Text>
@@ -321,33 +277,33 @@ export function NotificationStatus({
                           {sourceLabel(sub.source)} · {subscriptionLabel(sub, observedAt)}
                         </Text>
                         <Text size="xs" c="dimmed">
-                          Expires {timestamp(sub.expires_at)}
-                          {sub.next_source_check_at
-                            ? ` · ${sub.error ? "retry" : "next source check"} ${timestamp(sub.next_source_check_at)}`
+                          Expires {timestamp(sub.expiresAt)}
+                          {sub.nextSourceCheckAt
+                            ? ` · ${sub.error ? "retry" : "next source check"} ${timestamp(sub.nextSourceCheckAt)}`
                             : ""}
                         </Text>
                         <Text size="xs" c="dimmed">
-                          {sub.last_success_at
-                            ? `Last successful processing: ${timestamp(sub.last_success_at)}`
+                          {sub.lastSuccessAt
+                            ? `Last successful processing: ${timestamp(sub.lastSuccessAt)}`
                             : "No successful processing recorded"}
                         </Text>
                         {sub.github && (
                           <Stack gap={2}>
                             {sub.github.access.map((access) => (
-                              <Stack gap={0} key={`${access.app_id}/${access.installation_id}/${access.repository_id}`}>
+                              <Stack gap={0} key={`${access.appId}/${access.installationId}/${access.repositoryId}`}>
                                 <SharedRefresh
-                                  label={`Shared GitHub access · repository ${access.repository_id} · installation ${access.installation_id}`}
+                                  label={`Shared GitHub access · repository ${access.repositoryId} · installation ${access.installationId}`}
                                   state={access}
                                 />
                                 <Text size="xs" c="dimmed">
-                                  {access.currently_valid
-                                    ? `Validated until ${timestamp(access.valid_until!)}`
+                                  {access.currentlyValid
+                                    ? `Validated until ${timestamp(access.validUntil!)}`
                                     : "Access not currently validated"}
                                 </Text>
                               </Stack>
                             ))}
                             <SharedRefresh
-                              label={`Shared GitHub subject · ${sub.github.subject.kind} ${sub.github.subject.subject_key}`}
+                              label={`Shared GitHub subject · ${subjectLabel(sub.github.subject.subject)}`}
                               state={sub.github.subject}
                             />
                           </Stack>
@@ -355,8 +311,8 @@ export function NotificationStatus({
                         {sub.error && (
                           <Text c="red" size="xs">
                             Source: {sub.error}
-                            {sub.error_since ? ` · since ${timestamp(sub.error_since)}` : ""}
-                            {sub.error_observed_at ? ` · last observed ${timestamp(sub.error_observed_at)}` : ""}
+                            {sub.errorSince ? ` · since ${timestamp(sub.errorSince)}` : ""}
+                            {sub.errorObservedAt ? ` · last observed ${timestamp(sub.errorObservedAt)}` : ""}
                           </Text>
                         )}
                       </Stack>
@@ -370,17 +326,17 @@ export function NotificationStatus({
                               Inbox {inbox.id}
                             </Text>
                             <Text size="sm">
-                              Cursors: latest {inbox.last_cursor} · notice-covered {inbox.covered} · acknowledged{" "}
-                              {inbox.acknowledged} · expired through {inbox.expired_through}
+                              Cursors: latest {inbox.lastCursor} · notice-covered {inbox.covered} · acknowledged{" "}
+                              {inbox.acknowledged} · expired through {inbox.expiredThrough}
                             </Text>
-                            {notice_due_at && (
+                            {noticeDueAt && (
                               <Text size="xs" c="dimmed">
-                                Quiet until {timestamp(quiet_until!)} · maximum wait {timestamp(max_wait_at!)}
+                                Quiet until {timestamp(quietUntil!)} · maximum wait {timestamp(maxWaitAt!)}
                               </Text>
                             )}
-                            {next_work_at && (
+                            {nextWorkAt && (
                               <Text size="xs" c="dimmed">
-                                Next scheduled inbox work: {timestamp(next_work_at)} (may be source polling or delivery
+                                Next scheduled inbox work: {timestamp(nextWorkAt)} (may be source polling or delivery
                                 retry)
                               </Text>
                             )}

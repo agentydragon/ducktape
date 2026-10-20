@@ -10,16 +10,9 @@ import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
 import { Sidebar } from "./sidebar";
 import { scrollCapture } from "./threads/scroll_diagnostics";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
-import type { InboxNoticeState } from "./thread_notices";
+import type { InboxNoticeState, SessionNoticeStates } from "./notification_types";
 
-const NO_NOTICES: Omit<InboxNoticeState, "inbox_id" | "session_id"> = {
-  queued: 0,
-  unacknowledged: 0,
-  notice: null,
-  notice_wait_reason: null,
-  eligible_at: null,
-  error: null,
-};
+const NO_NOTICES: Omit<InboxNoticeState, "inboxId" | "sessionId"> = { queued: 0, unacknowledged: 0 };
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -151,15 +144,12 @@ async function render(
             .filter((session) => session in (options.notices ?? {}))
             .map((session) => ({
               ...NO_NOTICES,
-              inbox_id: session,
-              session_id: session,
+              inboxId: session,
+              sessionId: session,
               ...options.notices?.[session],
             }));
-          queueMicrotask(() =>
-            this.dispatchEvent(
-              new MessageEvent("snapshot", { data: JSON.stringify({ observed_at: "2026-01-01T00:00:00Z", inboxes }) })
-            )
-          );
+          const states: SessionNoticeStates = { observedAt: "2026-01-01T00:00:00Z", inboxes };
+          queueMicrotask(() => this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(states) })));
           return;
         }
         expect(pathname).toBe("/live/threads");
@@ -817,12 +807,16 @@ it("counts each listed thread's unprocessed notifications and flags failed deliv
       "00000000-0000-4000-8000-000000000001": {
         queued: 2,
         unacknowledged: 1,
-        notice_wait_reason: "debouncing",
-        eligible_at: "2026-01-01T00:05:00Z",
+        noticeWaitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
+        eligibleAt: "2026-01-01T00:05:00Z",
       },
-      "00000000-0000-4000-8000-000000000002": { unacknowledged: 1, notice: "confirmed" },
-      "00000000-0000-4000-8000-000000000003": { queued: 1, notice: "attempted", error: "runner unreachable" },
-      "00000000-0000-4000-8000-000000000004": { notice: "confirmed" },
+      "00000000-0000-4000-8000-000000000002": { unacknowledged: 1, notice: "NOTICE_PROGRESS_CONFIRMED" },
+      "00000000-0000-4000-8000-000000000003": {
+        queued: 1,
+        notice: "NOTICE_PROGRESS_ATTEMPTED",
+        error: "runner unreachable",
+      },
+      "00000000-0000-4000-8000-000000000004": { notice: "NOTICE_PROGRESS_CONFIRMED" },
     },
   });
   await act(async () => {});

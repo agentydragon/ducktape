@@ -10,20 +10,7 @@ import type { JSX } from "react";
 
 import { clockTime } from "./format_time";
 import { useSnapshotStream } from "./live_stream";
-
-/** `notification_service.models.InboxNoticeState`. */
-export type InboxNoticeState = {
-  inbox_id: string;
-  session_id: string;
-  queued: number;
-  unacknowledged: number;
-  notice: "prepared" | "attempted" | "admitted" | "confirmed" | null;
-  notice_wait_reason: string | null;
-  eligible_at: string | null;
-  error: string | null;
-};
-
-type Snapshot = { observed_at: string; inboxes: InboxNoticeState[] };
+import type { InboxNoticeState, SessionNoticeStates } from "./notification_types";
 
 /** The route's own bound, as many threads as one listing page carries. */
 const MAX_THREADS = 200;
@@ -45,11 +32,11 @@ export function threadNoticesUrl(threadIds: readonly string[]): string {
  * go without. */
 export function useThreadNotices(threadIds: readonly string[]): ThreadNotices {
   const url = threadIds.length === 0 ? null : threadNoticesUrl(threadIds);
-  const { snapshot, connection } = useSnapshotStream<Snapshot>(url);
+  const { snapshot, connection } = useSnapshotStream<SessionNoticeStates>(url);
   if (url === null || snapshot === null) return { bySession: null, live: false };
   const bySession = new Map<string, InboxNoticeState[]>();
   for (const inbox of snapshot.inboxes)
-    bySession.set(inbox.session_id, [...(bySession.get(inbox.session_id) ?? []), inbox]);
+    bySession.set(inbox.sessionId, [...(bySession.get(inbox.sessionId) ?? []), inbox]);
   return { bySession, live: connection.phase === "live" };
 }
 
@@ -69,15 +56,15 @@ export function ThreadNoticeBadge({
 }): JSX.Element | null {
   const queued = inboxes.reduce((sum, inbox) => sum + inbox.queued, 0);
   const unacknowledged = inboxes.reduce((sum, inbox) => sum + inbox.unacknowledged, 0);
-  const error = inboxes.find((inbox) => inbox.error !== null)?.error ?? null;
-  if (error === null && queued === 0 && unacknowledged === 0) return null;
-  const sending = inboxes.some((inbox) => inbox.unacknowledged > 0 && inbox.notice !== "confirmed");
+  const error = inboxes.find((inbox) => inbox.error !== undefined)?.error;
+  if (error === undefined && queued === 0 && unacknowledged === 0) return null;
+  const sending = inboxes.some((inbox) => inbox.unacknowledged > 0 && inbox.notice !== "NOTICE_PROGRESS_CONFIRMED");
   const eligible = inboxes
-    .map((inbox) => inbox.eligible_at)
-    .filter((at): at is string => at !== null)
+    .map((inbox) => inbox.eligibleAt)
+    .filter((at): at is string => at !== undefined)
     .sort()[0];
   const lines = [
-    error === null ? null : `Delivery failed: ${error}`,
+    error === undefined ? null : `Delivery failed: ${error}`,
     unacknowledged === 0
       ? null
       : sending
@@ -94,10 +81,10 @@ export function ThreadNoticeBadge({
     <Tooltip label={lines.join("\n")} multiline style={{ whiteSpace: "pre-line" }} withArrow>
       <Badge
         className="agentplane-sidebar-row-notices"
-        data-state={error === null ? "pending" : "error"}
+        data-state={error === undefined ? "pending" : "error"}
         variant="filled"
         // Muted: the count is the agent's backlog, not a call on the operator's attention.
-        color={error === null ? "gray.5" : "red.4"}
+        color={error === undefined ? "gray.5" : "red.4"}
         aria-label={lines.join(". ")}
         style={live ? undefined : { opacity: 0.5 }}
       >

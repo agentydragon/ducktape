@@ -815,6 +815,7 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":live",
+        ":notification_types",
         ":sidebar",
         ":stream_status",
         ":thread_groups",
@@ -929,12 +930,19 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "notification_types",
+    srcs = ["notification_types.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "notification_status",
     srcs = ["notification_status.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":format_time",
         ":live_stream",
+        ":notification_types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -948,6 +956,7 @@ ts_library(
     deps = [
         ":format_time",
         ":live_stream",
+        ":notification_types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -1359,11 +1368,11 @@ ts_library(
         ":connections_fixture",
         ":disclosure",
         ":live",
+        ":notification_types",
         ":stream_status",
         ":test_model_catalog",
         ":text_block",
         ":theme",
-        ":thread_notices",
         ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
