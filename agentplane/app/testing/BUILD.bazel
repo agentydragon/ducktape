@@ -271,5 +271,6 @@ py_library(
         "//agentplane/notification_service:notifications_operator_pb2",
         "//agentplane/notification_service:notifications_operator_pb2_grpc",
         "@pypi//grpcio",
+        "@pypi//protobuf",
     ],
 )
