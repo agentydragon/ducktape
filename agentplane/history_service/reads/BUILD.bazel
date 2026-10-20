@@ -5,6 +5,7 @@ package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 go_library(
     name = "reads",
     srcs = [
+        "events.go",
         "evidence.go",
         "reader.go",
         "summaries.go",
