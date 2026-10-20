@@ -73,8 +73,7 @@ asserts the Go values against them, before any Go code writes to a shared databa
 
 ## Stages
 
-A, B and C start together; each later stage is a small PR or a few, in dependency order. The service keeps serving
-from Python until the cutover.
+Each stage is a small PR or a few, in dependency order. The service keeps serving from Python until the cutover.
 
 | Stage | Change                                                                                                                                                                                                                                                                                                                 |
 | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
