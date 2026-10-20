@@ -5804,10 +5804,9 @@ spec:
           imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /healthz
+            grpc:
               port: 8080
-              scheme: HTTP
+              service: livez
             initialDelaySeconds: 20
             periodSeconds: 30
           name: notifications
@@ -5817,10 +5816,8 @@ spec:
               protocol: TCP
           readinessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /readyz
+            grpc:
               port: 8080
-              scheme: HTTP
             initialDelaySeconds: 3
             periodSeconds: 10
           resources:
