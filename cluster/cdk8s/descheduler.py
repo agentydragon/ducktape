@@ -30,6 +30,11 @@ def _values() -> dict[str, object]:
         "deschedulerPolicyAPIVersion": "descheduler/v1alpha2",
         "deschedulerPolicy": {
             "metricsProviders": [{"source": "KubernetesMetrics"}],
+            # One run's evictions land together on the nodes with room, and a node whose
+            # containerd is slow can't start them all at once. Per-run caps turn a rebalance
+            # burst into a rate; the 15-minute schedule keeps rebalancing going.
+            "maxNoOfPodsToEvictPerNode": 5,
+            "maxNoOfPodsToEvictTotal": 10,
             "profiles": [
                 {
                     "name": "default",

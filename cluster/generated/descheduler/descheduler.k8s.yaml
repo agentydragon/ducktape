@@ -27,6 +27,8 @@ spec:
   interval: 30m
   values:
     deschedulerPolicy:
+      maxNoOfPodsToEvictPerNode: 5
+      maxNoOfPodsToEvictTotal: 10
       metricsProviders:
         - source: KubernetesMetrics
       profiles:
