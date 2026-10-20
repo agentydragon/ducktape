@@ -187,7 +187,7 @@ Each is a browser, provider or Kubernetes protocol, not an RPC.
 The steps are the [transport tracks](task_dag.md#service-api-transport-tracks) in the task DAG. Each
 lands as separate, independently landable changes with no shim: a service's change deletes its
 hand-written routes, client methods and app relays, and updates the agent guides and the
-[agent CLI](agent_cli.md) plan with it. Manifests follow the pinned image.
+[agent CLI](../docs/agent_cli.md) with it. Manifests follow the pinned image.
 
 Not yet on the DAG: the Dispatcher's commands have generated routes, but the browser keeps reaching them
 through the app's typed routes until the app's Thread checks have a home that is not a hand-written

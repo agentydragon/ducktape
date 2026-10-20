@@ -264,16 +264,15 @@ Use its newline-delimited JSON server streams for watches and waits, including t
 envelopes; this is not SSE framing. Keep full-duplex connections on native gRPC. Resume cursors,
 reconnection and retention remain application contracts, not guarantees supplied by the facade.
 
-The exact generation path, first service, API-specific contract, rollout sequence and CLI command
-syntax remain open. Resolve those through a bounded integration spike and reviewed service plans. Keep authentication and authorization, stable errors,
+The exact generation path, first service, API-specific contract and rollout sequence remain open. Resolve those through a bounded integration spike and reviewed service plans. Keep authentication and authorization, stable errors,
 streaming and reconnect, wait deadlines and cancellation behavior consistent across the generated
 facade and CLI; a transport conversion must not weaken a service's existing permission checks.
 
 Agent tooling should support both concise commands and composable JSON for listing Action groups and
 Actions, inspecting an Action schema, reading the authenticated caller's own Action status/results,
-waiting for completion, and subscribing to or cancelling GitHub PR notifications. The detailed CLI
-contract is separate work. No runtime API or CLI implementation is authorized by this
-direction alone.
+waiting for completion, and subscribing to or cancelling GitHub PR notifications. The
+[`agentplane` CLI](agent_cli.md) does this over the services' HTTP routes. No runtime
+API implementation is authorized by this direction alone.
 
 ## Harness process, store and Session identity
 

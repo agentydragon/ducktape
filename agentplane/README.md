@@ -156,6 +156,8 @@ Status, open work and design gates: [`plans/`](plans/README.md).
 - [Action Service spec](action_service/SPEC.md) and [README](action_service/README.md): catalog,
   Decisions, events, bounded waits, cancellation, generic MCP, configured Identities, Connection
   grants, OAuth/consent.
+- [Agent CLI](docs/agent_cli.md): the `agentplane` command ([`cli/`](cli/)) over the Action,
+  Notification and Egress rules APIs; output, errors, exit codes, submitting and waiting.
 - [App README](app/README.md): consent and Action-review presentation.
 - [Sandbox Actions](action_service/sandbox/README.md): exec targets for agents hosted outside the
   cluster (sandboxes running as the calling ServiceAccount; Kubernetes reach from inside one).
