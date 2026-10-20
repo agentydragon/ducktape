@@ -6602,7 +6602,18 @@ spec:
       containers:
         - args:
             - --policy-namespace=agentplane-staging
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
             - --subject-namespaces=agentplane-staging
+          env:
+            - name: AGENTPLANE_POLICY_CONTROLLER_POLICY_NAMESPACE
+              value: agentplane-staging
+            - name: AGENTPLANE_POLICY_CONTROLLER_METRICS_BIND_ADDRESS
+              value: :8080
+            - name: AGENTPLANE_POLICY_CONTROLLER_HEALTH_PROBE_BIND_ADDRESS
+              value: :8081
+            - name: AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES
+              value: agentplane-staging
           image: git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:

@@ -2,10 +2,8 @@
 package main
 
 import (
-	"flag"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -24,20 +22,19 @@ import (
 )
 
 func main() {
-	policyNamespace := flag.String("policy-namespace", "", "where the PolicySets and PolicyBindings live")
-	subjectNamespaces := flag.String("subject-namespaces", "", "comma-separated namespaces whose ServiceAccounts may be bound")
-	metricsAddress := flag.String("metrics-bind-address", ":8080", "where Prometheus metrics are served")
-	probeAddress := flag.String("health-probe-bind-address", ":8081", "where /healthz and /readyz are served")
-	flag.Parse()
 	ctrl.SetLogger(logr.FromSlogHandler(slog.NewJSONHandler(os.Stderr, nil)))
 	log := ctrl.Log.WithName("policy-controller")
-	if err := run(*policyNamespace, strings.Split(*subjectNamespaces, ","), *metricsAddress, *probeAddress); err != nil {
+	c, err := loadConfig()
+	if err == nil {
+		err = run(c)
+	}
+	if err != nil {
 		log.Error(err, "controller failed")
 		os.Exit(1)
 	}
 }
 
-func run(policyNamespace string, subjectNamespaces []string, metricsAddress, probeAddress string) error {
+func run(c config) error {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return err
@@ -47,7 +44,7 @@ func run(policyNamespace string, subjectNamespaces []string, metricsAddress, pro
 	}
 	ours := labels.SelectorFromSet(labels.Set{
 		policycontroller.ManagedByLabel:     policycontroller.FieldManager,
-		policycontroller.PolicyNamespaceLbl: policyNamespace,
+		policycontroller.PolicyNamespaceLbl: c.PolicyNamespace,
 	})
 	only := func(namespaces ...string) map[string]cache.Config {
 		out := map[string]cache.Config{}
@@ -60,16 +57,16 @@ func run(policyNamespace string, subjectNamespaces []string, metricsAddress, pro
 	// subject namespaces' accounts, and the native bindings carrying its label.
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: metricsAddress},
-		HealthProbeBindAddress: probeAddress,
+		Metrics:                metricsserver.Options{BindAddress: c.MetricsBindAddress},
+		HealthProbeBindAddress: c.HealthProbeBindAddress,
 		// Replicas take turns: only the Lease holder reconciles.
 		LeaderElection:          true,
 		LeaderElectionID:        "agentplane-policy-controller",
-		LeaderElectionNamespace: policyNamespace,
+		LeaderElectionNamespace: c.PolicyNamespace,
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&policyapi.PolicySet{}:       {Namespaces: only(policyNamespace)},
-			&policyapi.PolicyBinding{}:   {Namespaces: only(policyNamespace)},
-			&corev1.ServiceAccount{}:     {Namespaces: only(subjectNamespaces...)},
+			&policyapi.PolicySet{}:       {Namespaces: only(c.PolicyNamespace)},
+			&policyapi.PolicyBinding{}:   {Namespaces: only(c.PolicyNamespace)},
+			&corev1.ServiceAccount{}:     {Namespaces: only(c.SubjectNamespaces...)},
 			&rbacv1.RoleBinding{}:        {Label: ours},
 			&rbacv1.ClusterRoleBinding{}: {Label: ours},
 		}},
@@ -80,8 +77,8 @@ func run(policyNamespace string, subjectNamespaces []string, metricsAddress, pro
 	reconciler := &policycontroller.Reconciler{
 		Client:            mgr.GetClient(),
 		APIReader:         mgr.GetAPIReader(),
-		PolicyNamespace:   policyNamespace,
-		SubjectNamespaces: subjectNamespaces,
+		PolicyNamespace:   c.PolicyNamespace,
+		SubjectNamespaces: c.SubjectNamespaces,
 	}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err

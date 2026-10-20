@@ -12,6 +12,7 @@ from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, Memor
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from agentplane.policy_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -20,6 +21,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Ne
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from util.settings_contract import checked_value, env_name
 
 NAME = "policy-controller"
 _LABELS = {"app.kubernetes.io/name": NAME}
@@ -58,14 +60,31 @@ class PolicyController(Construct):
         self.env = env
         namespace = env.namespace
         endpoint = metrics(namespace)
+        scalars = {
+            field: checked_value(Settings, field, value)
+            for field, value in {
+                "policy_namespace": namespace,
+                "metrics_bind_address": f":{endpoint.port.number}",
+                "health_probe_bind_address": f":{_HEALTH_PORT}",
+            }.items()
+        }
+        subject_namespaces = checked_value(Settings, "subject_namespaces", frozenset({namespace}))
+        text = {**scalars, "subject_namespaces": ",".join(sorted(subject_namespaces))}
+        # CLEANUP(added 2026-10-20): Remove `args` once the pinned `agentplane-policy-controller` image is
+        #   built from a tree whose `agentplane/policy_controller/cmd/config.go` reads the settings above.
+        #   The image before it takes only these flags and fails without them; the one after ignores them.
+        legacy_args = [f"--{field.replace('_', '-')}={value}" for field, value in text.items()]
         workload = add_service_workload(
             self,
             env,
             serves=[endpoint],
             container="policy-controller",
             image=f"{_IMAGE}:unset",
-            args=[f"--policy-namespace={namespace}", f"--subject-namespaces={namespace}"],
-            env_variables=dict(container_env or {}),
+            args=legacy_args,
+            env_variables={
+                **{env_name(Settings, field): EnvValue.from_value(value) for field, value in text.items()},
+                **(container_env or {}),
+            },
             extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
             readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),

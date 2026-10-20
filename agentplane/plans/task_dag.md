@@ -1683,15 +1683,15 @@ external Connections call, so renaming them is a wire change.
 
 **Unscheduled; the operator chose one service per change, each after the previous lands
 (2026-10-19, from the operator's 2026-10-18 direction that Go services read settings the same way, from a
-file and the environment, with no flags).** LLM ingress, the egress proxy, the Runner Gateway and the
-Sandbox Controller already read their settings through Viper used directly in the service
+file and the environment, with no flags).** LLM ingress, the egress proxy, the Runner Gateway, the Sandbox
+Controller and the Policy Controller already read their settings through Viper used directly in the service
 ([#10989](https://github.com/agentydragon/ducktape/pull/10989),
-[#11080](https://github.com/agentydragon/ducktape/pull/11080)). Move the Policy Controller and the egress
-sidecar from flag parsing to the same. Setting names and values stay; only how they are read changes. A
-manifest sends the settings next to the flags in the change that reads them, and drops the flags only after
-the image that reads the settings is pinned (image before config); the Gateway's and the Sandbox
-Controller's flags are still sent (tombstones in `runner_gateway_workload.py` and `sandbox_controller.py`).
-New settings in the meantime follow how the service reads settings today.
+[#11080](https://github.com/agentydragon/ducktape/pull/11080)). Move the egress sidecar from flag parsing to
+the same. Setting names and values stay; only how they are read changes. A manifest sends the settings next
+to the flags in the change that reads them, and drops the flags only after the image that reads the settings
+is pinned (image before config); the Gateway's and both controllers' flags are still sent (tombstones in
+`runner_gateway_workload.py`, `sandbox_controller.py` and `policy_controller.py`). New settings in the
+meantime follow how the service reads settings today.
 
 ## 9. Legacy burn-down
 

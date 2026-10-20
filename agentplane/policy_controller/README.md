@@ -21,11 +21,13 @@ Staging and `agentplane-testing` run it from
 [`cluster/cdk8s/agentplane/policy_controller.py`](../../cluster/cdk8s/agentplane/policy_controller.py),
 which also renders staging's Flux-owned PolicySets from the grant catalog in
 [`agent_access_profiles.py`](../../cluster/cdk8s/agent_access_profiles.py) and alerts when a
-`PolicyBinding` outlives its `expiresAt`. Locally:
+`PolicyBinding` outlives its `expiresAt`. Its settings are `AGENTPLANE_POLICY_CONTROLLER_*`
+environment variables, named by the fields of [`settings.py`](settings.py). Locally:
 
 ```bash
-bb run //agentplane/policy_controller/cmd:policy-controller -- \
-  --policy-namespace=agentplane-staging --subject-namespaces=agentplane-staging
+AGENTPLANE_POLICY_CONTROLLER_POLICY_NAMESPACE=agentplane-staging \
+  AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES=agentplane-staging \
+  bb run //agentplane/policy_controller/cmd:policy-controller
 ```
 
 It uses the in-cluster config or `KUBECONFIG`. Its ServiceAccount needs to list and watch
