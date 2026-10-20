@@ -25,15 +25,15 @@ a history-free notice outcome, any schema change, and the Action Service port.
 
 ## What the Go service calls
 
-| Dependency                                        | Go side                                                                                                         |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Own PostgreSQL database, `NOTIFY` wakeups         | `lib/pq`, Goose. The LISTEN hub is `history_service/wakeups` today; it moves to a shared package first.         |
-| Caller identity (TokenReview)                     | `workload_auth/go/auth`                                                                                         |
-| Sandbox by name: UID and owning ServiceAccount    | The Runner Gateway's UID-fenced reader (`runner_gateway/gateway/sandboxes.go`) is private; extract, don't copy. |
-| The Sandbox runner's Sessions                     | `sandboxes/runnerclient`, dialing `{sandbox}-control.{namespace}.svc:8080` per call as the Python client does   |
-| History Service reads, Dispatcher `SubmitInput`   | Generated Go stubs of the two protos                                                                            |
-| Action Service: request and its events, two reads | A small HTTP client. Transitional: `ACTION_SERVICE_GO_PORT` replaces it with its gRPC client.                   |
-| GitHub REST (App JWT, installation tokens)        | New. `third_party/go.mod` carries no GitHub or JWT library; see [Decision](#decision-github-client).            |
+| Dependency                                        | Go side                                                                                                                                        |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Own PostgreSQL database, `NOTIFY` wakeups         | `lib/pq`, Goose. The LISTEN hub is `history_service/wakeups` today; it moves to a shared package first.                                        |
+| Caller identity (TokenReview)                     | `workload_auth/go/auth`                                                                                                                        |
+| Sandbox by name: UID and owning ServiceAccount    | The Runner Gateway's UID-fenced reader (`runner_gateway/gateway/sandboxes.go`) is private; extract, don't copy.                                |
+| The Sandbox runner's Sessions                     | `sandboxes/runnerclient`, dialing `{sandbox}-control.{namespace}.svc:8080` per call as the Python client does                                  |
+| History Service reads, Dispatcher `SubmitInput`   | Generated Go stubs of the two protos                                                                                                           |
+| Action Service: request and its events, two reads | A small HTTP client. Transitional: `ACTION_SERVICE_GO_PORT` replaces it with its gRPC client.                                                  |
+| GitHub REST (App JWT, installation tokens)        | `google/go-github` and `bradleyfalzon/ghinstallation` (operator, 2026-10-20 PDT). `third_party/go.mod` carries no GitHub or JWT library today. |
 
 ## Contract
 
@@ -102,7 +102,7 @@ from Python until the cutover.
 | D     | `store`: inboxes, subscriptions, quotas, cursors, read, acknowledge, retire, cleanup, with the golden vectors and the tests of `test_store.py` and `test_wakeups.py`.                                                                                                                                                  |
 | E     | `worker`: claim, fenced release, debounce, the notice state machine (persist, checkpoint, attempt, `SubmitInput`, receipts from History), two-lookup stale retirement. Ported in the order of `Service.step` and with `test_service.py`.                                                                               |
 | F     | Actions source: the HTTP client, the owner check, event paging, `record`.                                                                                                                                                                                                                                              |
-| G     | GitHub source in three PRs: G1 client and settings; G2 shared refresh state, webhook ingest and correlation; G3 subscription context and reconcile. `sources/github/test_source.py` (1577 lines) is the specification.                                                                                                 |
+| G     | GitHub source in three PRs: G1 client, settings and the GitHub row in `STYLE.md`'s Go library table; G2 shared refresh state, webhook ingest and correlation; G3 subscription context and reconcile. `sources/github/test_source.py` (1577 lines) is the specification.                                                |
 | H     | Servicers, the facade, the webhook handler (body cap `413`, concurrency slots `503`, ten-second bound, HMAC, `202`), `main.go`, `config.go`, health, the image target, `docs/agents/`, `/openapi.json`. Acceptance tests move here.                                                                                    |
 | I     | Callers, prepared against the proto and merged with the cutover: the CLI's `notifications` group decodes into the generated Go messages; the app's two stream routes and `_notifications_proxy`; the frontend's two stream consumers; app tests and `test_visual_notifications.py`, which import the service's models. |
 | J     | Testing cutover: repoint `devinfra/ci/image_targets.json`, soak the migrator, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                                                                                                                        |
@@ -136,7 +136,7 @@ not checked that it carries gRPC; the generated messages still replace its hand-
   before relying on it; the fallback is the payload as a JSON string field.
 - **Library fit.** The GitHub client must keep three behaviors: the suspended installation, the rate-limit retry
   seconds from `Retry-After` and the reset header, and typed errors the worker classifies. G1 shows each against
-  the chosen library before G2 starts.
+  the libraries before G2 starts; a gap there is reported before a hand-written fallback is written.
 - **Probes.** The app probes the service's `/healthz`; `readyz` also requires live workers, the LISTEN connection
   and a query. The gRPC health service carries both, and the app's probe moves to it in stage I.
 
@@ -149,10 +149,3 @@ Change any of these by saying so; none holds a stage.
 - New Notification features (peer sends) land in Go, after the cutover.
 - The browser keeps typed routes for the two streams, since the app resolves the Sandbox UID and maps Threads to
   Sessions before it calls the service. The generic upstream proxy does not fit them.
-
-## Decision: GitHub client
-
-Adopt `google/go-github` with `bradleyfalzon/ghinstallation` (two new libraries, one row each in the Go
-library table), or port the 250-line client on `net/http` with one JWT library. The default is the libraries:
-the operator prefers libraries to hand-written code, and the hand-written client is the one piece of the port
-with no Go counterpart to reuse.
