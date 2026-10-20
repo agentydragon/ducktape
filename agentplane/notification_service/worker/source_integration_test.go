@@ -161,6 +161,76 @@ func TestShuttingDownGivesTheInboxBackWithoutShowingTheInterruption(t *testing.T
 	}
 }
 
+func TestAStopWhileTheInboxIsBeingGivenBackDoesNotKeepTheLease(t *testing.T) {
+	h := newHarness(t, debounce(0, 300))
+	subscription := h.subscribe(t, "first")
+	h.postponeSources(t)
+	h.addEvents(t, subscription, 1, 1)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	submitting, rowHeld := make(chan struct{}), make(chan struct{})
+	h.dispatcher.respond = func(ctx context.Context, _ *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
+		close(submitting)
+		select {
+		case <-rowHeld:
+		case <-ctx.Done():
+		}
+		return dispatched(dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER, nil), nil
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = h.worker.step(ctx)
+	}()
+	<-submitting
+	// With the row held, the step has finished its work and waits in its release, where the stop arrives.
+	holder, err := h.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Rollback()
+	if _, err := holder.ExecContext(t.Context(), `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, subscription.InboxID); err != nil {
+		t.Fatal(err)
+	}
+	close(rowHeld)
+	h.awaitQueryWaitingForARow(t)
+	cancel()
+	if err := holder.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+
+	next, err := h.store.NextWorkAt(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireWithin(t, "next work", next, time.Time{}, time.Now().Add(5*time.Second))
+}
+
+// awaitQueryWaitingForARow returns once a query waits for a row lock another transaction holds.
+func (h *harness) awaitQueryWaitingForARow(t *testing.T) {
+	t.Helper()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	expired := time.After(awaitBound)
+	for {
+		var waiting bool
+		if err := h.db.QueryRowContext(t.Context(), `
+			SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock')`).
+			Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-expired:
+			t.Fatal("no query waited for the inbox row")
+		}
+	}
+}
+
 // insertGitHubSubscription adds a GitHub subscription to the inbox, as the GitHub stage's store will, with the
 // rows it follows.
 func (h *harness) insertGitHubSubscription(t *testing.T, inboxID uuid.UUID) uuid.UUID {

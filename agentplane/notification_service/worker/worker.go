@@ -27,7 +27,7 @@ const (
 	cleanupInterval = time.Minute
 	// storageRetry is the wait after the database fails.
 	storageRetry = 5 * time.Second
-	// releaseGrace bounds giving a claim back after the worker was told to stop.
+	// releaseGrace bounds giving a claim back, which a stop does not interrupt.
 	releaseGrace = 5 * time.Second
 )
 
@@ -133,15 +133,17 @@ func (w *Worker) step(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	outcome, failure := w.attend(ctx, *claim)
+	// A stop that lands while the claim is being given back must not fail the release: Run does not try again
+	// once stopped, and the lease would hold the inbox for thirty seconds.
+	grace, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseGrace)
+	defer cancel()
 	if shutdown := ctx.Err(); shutdown != nil {
 		// What interrupted the work is not an outcome. The claim is given back all the same, so another replica
 		// need not wait out the lease.
-		grace, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseGrace)
-		defer cancel()
 		return true, errors.Join(shutdown, w.release(grace, *claim, carriedError(*claim)))
 	}
 	if !outcome.released {
-		failure = errors.Join(failure, w.release(ctx, *claim, outcome.deliveryError))
+		failure = errors.Join(failure, w.release(grace, *claim, outcome.deliveryError))
 	}
 	return true, failure
 }
