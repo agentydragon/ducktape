@@ -1929,7 +1929,7 @@ flowchart LR
     HISTORY_GO_STAGING_CUTOVER[Candidate: cut staging over to the Go History Service]
     HISTORY_PYTHON_RETIREMENT[Blocked: retire the Python History Service]
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
-    NOTIFICATION_SERVICE_GO_PORT[Candidate: port the Notification Service to Go]
+    NOTIFICATION_SERVICE_GO_PORT[In flight: port the Notification Service to Go]
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
@@ -1944,7 +1944,7 @@ flowchart LR
 **Candidate.** The app's, Electric's and browser tests read History through an
 in-process Python backend (`history_service/testing/backend.py`, `history.py`) that runs the Python store,
 fold, servicers and ingress. Start the Go binary on a test Postgres in its place, so those tests keep
-covering the service that ships and the Python code can go. **Deliverable:** those tests pass against the Go
+covering the service that ships and the Python code can go. The harness that starts the built Go service exists (`history_service/testing/go_service.py`); no consumer test uses it yet. **Deliverable:** those tests pass against the Go
 binary with no import of the Python History service other than its client.
 
 ### `HISTORY_GO_STAGING_CUTOVER` — cut staging over to the Go History Service
@@ -1972,7 +1972,7 @@ check on `thread_observations` (404 for a Session no Thread links) is kept or dr
 
 ### `NOTIFICATION_SERVICE_GO_PORT` — port the Notification Service to Go
 
-**Candidate; operator, 2026-10-19 PDT: the possible `NOTIFICATION_SERVICE_SPLIT` does not hold the port.**
+**In flight; operator, 2026-10-19 PDT: the possible `NOTIFICATION_SERVICE_SPLIT` does not hold the port.** Landed: the protos, Goose migrator, store, GitHub App client and settings, the worker and notice state machine, operator status reads, GitHub shared state with webhook ingest, subscription binding at subscribe, and the Actions source; stages remaining are in the plan.
 Port the service as it is; a later split moves responsibilities between Go services as it would between
 Python ones. Proto and generated facade for subscriptions, inboxes and the operator streams, replacing the
 app's Notification proxy and the hand-written `docs/agents/http_api.md`. The signed GitHub webhook stays
