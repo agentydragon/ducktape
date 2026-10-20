@@ -30,13 +30,18 @@ type SandboxLaunch struct {
 	PlatformInstructions string          `json:"-"`
 }
 
-func (l SandboxLaunch) Instructions(sessionID, task string) string {
+// Destination is the JSON notification destination of one Session: the Sandbox and the Session ID.
+func (l SandboxLaunch) Destination(sessionID string) string {
 	destination, _ := json.Marshal(struct {
 		Destination SandboxIdentity `json:"destination_ref"`
 		SessionID   string          `json:"session_id"`
 	}{l.Sandbox, sessionID})
+	return string(destination)
+}
+
+func (l SandboxLaunch) Instructions(sessionID, task string) string {
 	parts := []string{}
-	for _, part := range []string{l.PlatformInstructions, "Your explicit notification destination is:\n" + string(destination) + "\nUse these identifiers when addressing this session; they are not credentials.", task} {
+	for _, part := range []string{l.PlatformInstructions, "Your explicit notification destination is:\n" + l.Destination(sessionID) + "\nUse these identifiers when addressing this session; they are not credentials.", task} {
 		if part = strings.TrimSpace(part); part != "" {
 			parts = append(parts, part)
 		}

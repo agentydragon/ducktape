@@ -62,6 +62,36 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestSessionHarnessEnvironmentCarriesItsOwnDestination(t *testing.T) {
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config.HarnessEnvironment = map[string]string{"TZ": "UTC"}
+	r := newLifecycleRunner(t, config)
+	want := map[string]string{
+		"session-1": `{"destination_ref":{"namespace":"test","name":"sandbox","uid":"sandbox-uid"},"session_id":"session-1"}`,
+		"session-2": `{"destination_ref":{"namespace":"test","name":"sandbox","uid":"sandbox-uid"},"session_id":"session-2"}`,
+	}
+	for id := range want {
+		if _, err := r.OpenSession(context.Background(), openLifecycleSession(id, filepath.Join(workspace, "project"))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id, destination := range want {
+		session, err := r.load(context.Background(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		environment := session.Session().HarnessEnvironment
+		if environment["AGENTPLANE_DESTINATION"] != destination || environment["TZ"] != "UTC" {
+			t.Fatalf("%s harness environment = %v, want its destination %s and the runner's TZ", id, environment, destination)
+		}
+	}
+	if _, shared := r.config.HarnessEnvironment["AGENTPLANE_DESTINATION"]; shared {
+		t.Fatal("a Session's destination leaked into the runner-wide harness environment")
+	}
+}
+
 func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 
@@ -103,7 +104,18 @@ func (s *Session) Session() harness.SessionSnapshot {
 	if s.record.NativeSessionID != nil {
 		native = *s.record.NativeSessionID
 	}
-	return harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.CWD, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: s.record.TotalContextBudgetTokens, Resuming: s.resuming, ActiveTurnID: s.activeTurn, HarnessEnvironment: s.runner.config.HarnessEnvironment}
+	return harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.CWD, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: s.record.TotalContextBudgetTokens, Resuming: s.resuming, ActiveTurnID: s.activeTurn, HarnessEnvironment: s.harnessEnvironment()}
+}
+
+// harnessEnvironment is the runner's harness environment plus this Session's notification destination,
+// which the `agentplane` command reads as AGENTPLANE_DESTINATION.
+func (s *Session) harnessEnvironment() map[string]string {
+	environment := maps.Clone(s.runner.config.HarnessEnvironment)
+	if environment == nil {
+		environment = map[string]string{}
+	}
+	environment["AGENTPLANE_DESTINATION"] = s.runner.config.Launch.Destination(s.id)
+	return environment
 }
 func (s *Session) Journal() harness.AdapterJournal { return s.journal }
 
