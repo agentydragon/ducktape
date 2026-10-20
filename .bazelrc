@@ -53,11 +53,9 @@ build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-
 build --nobuild_runfile_links
 build --nolegacy_external_runfiles
 
-# Disable MODULE.bazel.lock to avoid churn between environments.
-# The `ape` module (Actually Portable Executable, transitive dep via aspect_rules_lint)
-# has platform-specific resolution that causes the lockfile to differ between local
-# dev machines and CI/cloud environments. Since we pin versions explicitly in
-# MODULE.bazel and don't use version ranges, the lockfile provides minimal benefit.
+# No MODULE.bazel.lock: a ~14 MB file, mostly the rules_distroless `apt` resolution, that every
+# MODULE.bazel change would regenerate, for about 16 s off a cold sweep. Trade-off and when to
+# revisit: devinfra/debug/bazel_module_lockfile.md.
 common --lockfile_mode=off
 
 # Bazel cancels in-flight Skyframe computations when the heap is under pressure
