@@ -53,8 +53,6 @@ type deliveryVectors struct {
 	} `json:"rejected_deliveries"`
 }
 
-const testAppID = 1234567
-
 func loadVectors(t *testing.T) deliveryVectors {
 	t.Helper()
 	path, err := runfiles.Rlocation("_main/agentplane/notification_service/store/golden.json")

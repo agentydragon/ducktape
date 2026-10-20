@@ -299,8 +299,9 @@ func TestMatchingPagesAndLongRevisionHistoryAreNotCapped(t *testing.T) {
 	if err := g.reconcile(t, claim, sub); err != nil {
 		t.Fatal(err)
 	}
-	if got := len(g.read(t, g.inbox, 0).Entries); got != GitHubDeliveryPageSize+2 {
-		t.Errorf("%d entries, want %d", got, GitHubDeliveryPageSize+2)
+	// A read is a page too: the rest of the matches are the entries after the first page's.
+	if got := len(g.read(t, g.inbox, GitHubDeliveryPageSize).Entries); got != 2 {
+		t.Errorf("%d entries after the first page, want 2", got)
 	}
 	// Nothing left to match: the next look is the scheduled repair, not another immediate one.
 	if next := g.subscriptionState(t, sub.ID).nextAttempt; !next.Valid || !next.Time.After(now()) {
