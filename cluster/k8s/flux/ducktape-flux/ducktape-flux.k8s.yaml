@@ -160,7 +160,7 @@ metadata:
   name: ducktape
   namespace: ducktape-flux
 spec:
-  interval: 1m
+  interval: 30m
   ref:
     branch: devel
   sparseCheckout:

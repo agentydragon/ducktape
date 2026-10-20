@@ -6,7 +6,10 @@ metadata:
   name: flux-system
   namespace: flux-system
 spec:
-  interval: 1m0s
+  # 30m: the `github` Receiver (cluster/generated/flux-webhook) reconciles this source within seconds of
+  # every push, so polling is only the net for a lost delivery. `ducktape-flux/ducktape` carries the
+  # same interval; keep the two in step.
+  interval: 30m
   ref:
     branch: devel
   sparseCheckout:

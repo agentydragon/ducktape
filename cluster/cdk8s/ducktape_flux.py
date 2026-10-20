@@ -130,7 +130,10 @@ def chart(app: App) -> Chart:
         chart,
         "source",
         metadata=ApiObjectMetadata(name=SOURCE_NAME, namespace=NAMESPACE),
-        interval="1m",
+        # The `github` Receiver (cluster/generated/flux-webhook) reconciles this source within seconds of
+        # every push, so polling is only the net for a lost delivery. flux-system's source carries the
+        # same interval (cluster/k8s/flux/flux-system/gotk-sync.yaml); keep the two in step.
+        interval="30m",
         # `CLONE_TIMEOUT`, because a clone of this repository does not fit in the 60s that
         # `GitRepository.spec.timeout` defaults to.
         #
@@ -149,9 +152,8 @@ def chart(app: App) -> Chart:
         # alone are ~130 MB. Slimming that is the durable fix; this line is what makes the clone
         # fit until someone does.
         #
-        # 5m is an order of magnitude over the measurement while still bounding one attempt --
-        # `interval` stays 1m, so this only lengthens the ceiling, not the polling. Nothing set a
-        # clone timeout before this one; the 2m-30m timeouts elsewhere in the tree are
+        # 5m is an order of magnitude over the measurement while still bounding one attempt.
+        # Nothing set a clone timeout before this one; the 2m-30m timeouts elsewhere in the tree are
         # `Kustomization.spec.timeout`, how long an apply may take, which is a different knob
         # answering a different question.
         timeout=CLONE_TIMEOUT,

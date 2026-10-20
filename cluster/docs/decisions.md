@@ -260,7 +260,9 @@ directly — no port-forward. From non-workers, fall back to `kubectl port-forwa
 ## GitHub Webhook Reconciliation
 
 Flux `Receiver` at `flux-webhook.allegedly.works`. GitHub webhook registered by
-`flux-webhook-token` Terraform (`github_repository_webhook.flux_receiver`).
+`flux-webhook-token` Terraform (`github_repository_webhook.flux_receiver`). The receiver
+annotates the `flux-system` and `ducktape` sources on every push (any branch), so the
+sources themselves poll every 30m, only as the net for a lost delivery.
 
 ## InvenTree API Token Provisioning
 
