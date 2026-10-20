@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
@@ -33,6 +34,11 @@ class GuestConfig(BaseModel):
     console_autologin: bool = Field(
         default=False,
         description="Whether the serial console is a root shell without a login (vm.nix reads this field).",
+    )
+    harness_env: Mapping[str, str] | None = Field(
+        default=None,
+        description="Environment added to every harness process. The runner refuses a name the guest owns "
+        "(PATH, HOME, the proxy and CA variables).",
     )
 
     @field_validator("llm_base_url", "proxy_url")

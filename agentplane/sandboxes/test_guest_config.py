@@ -34,7 +34,16 @@ def test_guest_seed_serializes_origin_urls_without_trailing_slashes() -> None:
         "proxy_url": "http://proxy.example:3128",
         "platform_instructions": "Test platform guidance.",
         "console_autologin": False,
+        "harness_env": None,
     }
+
+
+def test_harness_env_reaches_the_guest_seed_only_when_set() -> None:
+    assert "harness_env" not in json.loads(_config().model_dump_json(exclude_defaults=True))
+
+    seeded = json.loads(_config(harness_env={"EXAMPLE_NAME": "value"}).model_dump_json(exclude_defaults=True))
+
+    assert seeded["harness_env"] == {"EXAMPLE_NAME": "value"}
 
 
 @pytest.mark.parametrize(

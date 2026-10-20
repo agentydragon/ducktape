@@ -12,6 +12,7 @@ launcher.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
@@ -62,6 +63,7 @@ class RunnerVmTemplate(Construct):
         state_volume: dict[str, Any],
         workspace_volume: dict[str, Any],
         platform_instructions: str,
+        harness_env: Mapping[str, str],
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
@@ -79,6 +81,7 @@ class RunnerVmTemplate(Construct):
             proxy_url=AnyHttpUrl(f"http://{_guest_address(sandbox_pod.SIDECAR_LISTEN_PORT)}"),
             platform_instructions=platform_instructions,
             console_autologin=env.vm_console_autologin,
+            harness_env=harness_env,
         )
         config_map_data = {
             # Defaults are omitted: an image that predates a field rejects it, so only an environment

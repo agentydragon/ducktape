@@ -93,17 +93,17 @@ def platform_instructions(env: Environment, *, egress_api_service: ServiceRef | 
     )
 
 
-def agent_cli_env(urls: ServiceUrls) -> list[k8s.EnvVar]:
+def agent_cli_environment(urls: ServiceUrls) -> dict[str, str]:
     """What the `agentplane` command reads (agentplane/docs/agent_cli.md): each group's base URL and
     the placeholder bearer the egress proxy swaps for the real credential."""
-    return [
-        k8s.EnvVar(name="AGENTPLANE_ACTIONS_URL", value=urls.actions),
-        k8s.EnvVar(name="AGENTPLANE_ACTIONS_CREDENTIAL", value=_WORKLOAD_PLACEHOLDER),
-        k8s.EnvVar(name="AGENTPLANE_NOTIFICATIONS_URL", value=urls.notifications),
-        k8s.EnvVar(name="AGENTPLANE_NOTIFICATIONS_CREDENTIAL", value=_NOTIFICATIONS_PLACEHOLDER),
-        k8s.EnvVar(name="AGENTPLANE_EGRESS_URL", value=urls.egress),
-        k8s.EnvVar(name="AGENTPLANE_EGRESS_CREDENTIAL", value=_WORKLOAD_PLACEHOLDER),
-    ]
+    return {
+        "AGENTPLANE_ACTIONS_URL": urls.actions,
+        "AGENTPLANE_ACTIONS_CREDENTIAL": _WORKLOAD_PLACEHOLDER,
+        "AGENTPLANE_NOTIFICATIONS_URL": urls.notifications,
+        "AGENTPLANE_NOTIFICATIONS_CREDENTIAL": _NOTIFICATIONS_PLACEHOLDER,
+        "AGENTPLANE_EGRESS_URL": urls.egress,
+        "AGENTPLANE_EGRESS_CREDENTIAL": _WORKLOAD_PLACEHOLDER,
+    }
 
 
 def pods(namespace: str) -> Pods:
@@ -191,6 +191,7 @@ class RunnerSandbox(Construct):
                     template.spec["stateVolume"], layout_type="RawDiskImage", filesystem="ext4"
                 ),
                 platform_instructions=platform_instructions(env, egress_api_service=egress_api_service),
+                harness_env=template.agent_cli_env,
             )
 
     def add_platform_resources(self) -> None:
@@ -240,7 +241,7 @@ class RunnerTemplate(Construct):
         self.image_pull_secret_name = image_pull_secret_name
         self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
         self.control_service = control_service
-        self.agent_cli_env = agent_cli_env(service_urls(env, egress_api_service=egress_api_service))
+        self.agent_cli_env = agent_cli_environment(service_urls(env, egress_api_service=egress_api_service))
         # The SandboxTemplate's spec: its `pod`, and the `stateVolume` the VM template shares.
         self.spec = self._add_sandbox_template(name=name, image=image)
 
@@ -260,7 +261,7 @@ class RunnerTemplate(Construct):
                     "PATH",
                     *self.env.sandbox_workload_env,
                     *(var.name for var in sandbox_pod.egress_env()),
-                    *(var.name for var in self.agent_cli_env),
+                    *self.agent_cli_env,
                     *self.extra_harness_env,
                 ]
             )
@@ -307,7 +308,7 @@ class RunnerTemplate(Construct):
                     ),
                     # On the container and not just on the harness children the runner spawns.
                     *sandbox_pod.egress_env(),
-                    *self.agent_cli_env,
+                    *(k8s.EnvVar(name=name, value=value) for name, value in self.agent_cli_env.items()),
                     # Neither a workload token nor a LiteLLM key: the placeholder the
                     # agentplane-workload EgressCredential derives from its name. Central
                     # substitutes the sidecar-only projected token; the ingress replaces
