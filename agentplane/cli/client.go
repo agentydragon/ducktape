@@ -12,6 +12,9 @@ import (
 	"net/url"
 	"strings"
 	"sync/atomic"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 // httpClient uses the default transport, so HTTPS_PROXY, HTTP_PROXY, NO_PROXY and SSL_CERT_FILE
@@ -63,7 +66,13 @@ func (a *app) connect(group string) (*service, error) {
 func (s *service) do(ctx context.Context, r request) ([]byte, error) {
 	var body io.Reader
 	if r.body != nil {
-		encoded, err := json.Marshal(r.body)
+		var encoded []byte
+		var err error
+		if message, ok := r.body.(proto.Message); ok {
+			encoded, err = protojson.Marshal(message)
+		} else {
+			encoded, err = json.Marshal(r.body)
+		}
 		if err != nil {
 			return nil, clientFailure(exitUsage, "INVALID_ARGUMENT", "request body: %v", err)
 		}

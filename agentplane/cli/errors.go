@@ -148,6 +148,13 @@ func httpFailure(status int, header http.Header, body []byte, conflict string) *
 	default:
 		f.Code, f.exit = "UNKNOWN", exitRefused
 	}
+	// A gRPC-Gateway facade names the gRPC code itself, and a rate limit's delay in RetryInfo.
+	if gateway, ok := parseGatewayError(body); ok && f.Source == sourceService {
+		f.Code, f.exit = gateway.code, gateway.exit
+		if gateway.retryAfter != nil {
+			f.RetryAfterSeconds = gateway.retryAfter
+		}
+	}
 	return f
 }
 

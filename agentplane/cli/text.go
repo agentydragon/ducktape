@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"maps"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -186,51 +184,6 @@ func cancellationLine(raw json.RawMessage) (string, error) {
 	return fields(cancellation.Outcome, request), err
 }
 
-func subscriptionLine(raw json.RawMessage) (string, error) {
-	subscription, err := decode[struct {
-		ID        string          `json:"id"`
-		Source    json.RawMessage `json:"source"`
-		Version   int             `json:"version"`
-		Cancelled bool            `json:"cancelled"`
-		ExpiresAt string          `json:"expires_at"`
-		ErrorKind *string         `json:"error_kind"`
-		Error     *string         `json:"error"`
-	}](raw)
-	if err != nil {
-		return "", err
-	}
-	source, err := decode[struct {
-		Provider   string `json:"provider"`
-		Repository string `json:"repository"`
-		RequestID  string `json:"request_id"`
-		Subject    struct {
-			Kind   string `json:"kind"`
-			Number int    `json:"number"`
-			Name   string `json:"name"`
-			SHA    string `json:"sha"`
-		} `json:"subject"`
-	}](subscription.Source)
-	if err != nil {
-		return "", err
-	}
-	label := source.Provider + " " + source.RequestID
-	if source.Provider == "github" {
-		subject := source.Subject.Name + source.Subject.SHA
-		if source.Subject.Number > 0 {
-			subject = strconv.Itoa(source.Subject.Number)
-		}
-		label = fmt.Sprintf("github %s %s:%s", source.Repository, source.Subject.Kind, subject)
-	}
-	line := fields(subscription.ID, label, "v"+strconv.Itoa(subscription.Version), "expires "+subscription.ExpiresAt)
-	if subscription.Cancelled {
-		line += "  cancelled"
-	}
-	if subscription.ErrorKind != nil {
-		line += "  error " + *subscription.ErrorKind
-	}
-	return line, nil
-}
-
 func rulesText(raw json.RawMessage) (string, error) {
 	type list struct {
 		Values []string `json:"values"`
@@ -307,18 +260,4 @@ func (t credentialTarget) presenting(placeholder string) string {
 	default:
 		return fmt.Sprintf("%s %s (see --json)", t.Method, placeholder)
 	}
-}
-
-func sourcesText(raw json.RawMessage) (string, error) {
-	sources, err := decode[map[string]struct {
-		Content string `json:"content"`
-	}](raw)
-	if err != nil {
-		return "", err
-	}
-	lines := []string{}
-	for _, provider := range slices.Sorted(maps.Keys(sources)) {
-		lines = append(lines, fields(provider, sources[provider].Content))
-	}
-	return strings.Join(lines, "\n"), nil
 }

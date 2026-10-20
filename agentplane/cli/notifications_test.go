@@ -1,85 +1,220 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
+
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 )
 
 const subscriptionID = "00000000-0000-0000-0000-0000000000b1"
 
-func subscriptionJSON(version int, cancelled bool) string {
-	return fmt.Sprintf(`{"github":null,"id":%q,"inbox_id":"00000000-0000-0000-0000-0000000000b2",`+
-		`"source":{"provider":"github","repository":"owner/repo","subject":{"kind":"pull_request","number":7},"events":null},`+
-		`"idempotency_key":"k","version":%d,"cancelled":%t,"expires_at":"2026-01-08T00:00:00Z","last_success_at":null,`+
-		`"error_kind":null,"error_since":null,"error_observed_at":null,"error":null,"retry_at":null}`, subscriptionID, version, cancelled)
+// notificationsServer is the Notification Service's gRPC API with canned answers. Every CLI call reaches it
+// through the real gRPC-Gateway facade, so the routes, JSON and error bodies are the service's own.
+type notificationsServer struct {
+	notificationspb.UnimplementedNotificationsServer
+
+	create func(*notificationspb.CreateSubscriptionRequest) (*notificationspb.Subscription, error)
+	list   func(*notificationspb.ListSubscriptionsRequest) ([]*notificationspb.Subscription, error)
+	get    func(*notificationspb.GetSubscriptionRequest) (*notificationspb.Subscription, error)
+	renew  func(*notificationspb.RenewSubscriptionRequest) (*notificationspb.Subscription, error)
+	cancel func(*notificationspb.CancelSubscriptionRequest) (*notificationspb.Subscription, error)
+
+	mu            sync.Mutex
+	calls         []proto.Message
+	authorization []string
 }
 
-type sentSubscription struct {
-	DestinationRef map[string]string `json:"destination_ref"`
-	SessionID      string            `json:"session_id"`
-	IdempotencyKey string            `json:"idempotency_key"`
-	Source         struct {
-		Provider   string `json:"provider"`
-		Repository string `json:"repository"`
-		Subject    struct {
-			Kind   string `json:"kind"`
-			Number int    `json:"number"`
-		} `json:"subject"`
-		Events []eventFilter `json:"events"`
-	} `json:"source"`
-	LifetimeDays *int `json:"lifetime_days"`
+func (s *notificationsServer) record(ctx context.Context, request proto.Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, request)
+	s.authorization = append(s.authorization, metadata.ValueFromIncomingContext(ctx, "authorization")...)
 }
 
-func subscribed(t *testing.T, f *fake) []sentSubscription {
-	t.Helper()
-	var sent []sentSubscription
-	for _, s := range f.requests("POST") {
-		var body sentSubscription
-		if err := json.Unmarshal(s.body, &body); err != nil {
-			t.Fatal(err)
+// received are the recorded requests of type T, oldest first.
+func received[T proto.Message](s *notificationsServer) []T {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var matching []T
+	for _, call := range s.calls {
+		if request, ok := call.(T); ok {
+			matching = append(matching, request)
 		}
-		sent = append(sent, body)
 	}
-	return sent
+	return matching
+}
+
+func (s *notificationsServer) CreateSubscription(ctx context.Context, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
+	s.record(ctx, request)
+	subscription, err := s.create(request)
+	return &notificationspb.CreateSubscriptionResponse{Subscription: subscription}, err
+}
+
+func (s *notificationsServer) ListSubscriptions(ctx context.Context, request *notificationspb.ListSubscriptionsRequest) (*notificationspb.ListSubscriptionsResponse, error) {
+	s.record(ctx, request)
+	subscriptions, err := s.list(request)
+	return &notificationspb.ListSubscriptionsResponse{Subscriptions: subscriptions}, err
+}
+
+func (s *notificationsServer) GetSubscription(ctx context.Context, request *notificationspb.GetSubscriptionRequest) (*notificationspb.GetSubscriptionResponse, error) {
+	s.record(ctx, request)
+	subscription, err := s.get(request)
+	return &notificationspb.GetSubscriptionResponse{Subscription: subscription}, err
+}
+
+func (s *notificationsServer) RenewSubscription(ctx context.Context, request *notificationspb.RenewSubscriptionRequest) (*notificationspb.RenewSubscriptionResponse, error) {
+	s.record(ctx, request)
+	subscription, err := s.renew(request)
+	return &notificationspb.RenewSubscriptionResponse{Subscription: subscription}, err
+}
+
+func (s *notificationsServer) CancelSubscription(ctx context.Context, request *notificationspb.CancelSubscriptionRequest) (*notificationspb.CancelSubscriptionResponse, error) {
+	s.record(ctx, request)
+	subscription, err := s.cancel(request)
+	return &notificationspb.CancelSubscriptionResponse{Subscription: subscription}, err
+}
+
+// serveNotifications runs the servicer behind the gateway and returns the facade's base URL.
+func serveNotifications(t *testing.T, servicer *notificationsServer) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	notificationspb.RegisterNotificationsServer(server, servicer)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	handler, err := facade.NewHandler(ctx, listener.Addr().String(), notificationspb.RegisterNotificationsHandlerFromEndpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	facadeServer := httptest.NewServer(handler)
+	t.Cleanup(facadeServer.Close)
+	return facadeServer.URL
+}
+
+func pullRequestSubscription(version int64, cancelled bool) *notificationspb.Subscription {
+	return &notificationspb.Subscription{
+		Id: subscriptionID, InboxId: "00000000-0000-0000-0000-0000000000b2", IdempotencyKey: "k", Version: version,
+		Cancelled: cancelled, ExpiresAt: timestamppb.New(time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)),
+		Source: &notificationspb.Source{Provider: &notificationspb.Source_Github{Github: &notificationspb.GitHubSource{
+			Repository: "owner/repo",
+			Subject: &notificationspb.GitHubSubject{Subject: &notificationspb.GitHubSubject_PullRequest{
+				PullRequest: &notificationspb.PullRequestSubject{Number: 7},
+			}},
+		}}},
+	}
+}
+
+// answering is a servicer whose every subscription RPC answers with subscription.
+func answering(subscription *notificationspb.Subscription) *notificationsServer {
+	return &notificationsServer{
+		create: func(*notificationspb.CreateSubscriptionRequest) (*notificationspb.Subscription, error) {
+			return subscription, nil
+		},
+		get: func(*notificationspb.GetSubscriptionRequest) (*notificationspb.Subscription, error) {
+			return subscription, nil
+		},
+		renew: func(*notificationspb.RenewSubscriptionRequest) (*notificationspb.Subscription, error) {
+			return subscription, nil
+		},
+		cancel: func(*notificationspb.CancelSubscriptionRequest) (*notificationspb.Subscription, error) {
+			return subscription, nil
+		},
+		list: func(*notificationspb.ListSubscriptionsRequest) ([]*notificationspb.Subscription, error) {
+			return []*notificationspb.Subscription{subscription}, nil
+		},
+	}
+}
+
+// failing is a servicer whose every subscription RPC fails with err.
+func failing(err error) *notificationsServer {
+	return &notificationsServer{
+		create: func(*notificationspb.CreateSubscriptionRequest) (*notificationspb.Subscription, error) {
+			return nil, err
+		},
+		get: func(*notificationspb.GetSubscriptionRequest) (*notificationspb.Subscription, error) { return nil, err },
+		renew: func(*notificationspb.RenewSubscriptionRequest) (*notificationspb.Subscription, error) {
+			return nil, err
+		},
+		cancel: func(*notificationspb.CancelSubscriptionRequest) (*notificationspb.Subscription, error) {
+			return nil, err
+		},
+		list: func(*notificationspb.ListSubscriptionsRequest) ([]*notificationspb.Subscription, error) {
+			return nil, err
+		},
+	}
+}
+
+func subscribeArgs(extra ...string) []string {
+	return append([]string{"notifications", "subscribe", "github", "pr", "owner/repo#7"}, extra...)
 }
 
 func TestSubscribeToAPullRequest(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, subscriptionJSON(1, false)) })
-	code, stdout, stderr := invoke(notificationsEnv(f.URL), "notifications", "subscribe", "github", "pr", "owner/repo#7", "--json")
-	sent := subscribed(t, f)
+	servicer := answering(pullRequestSubscription(1, false))
+	code, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, servicer)), append(subscribeArgs(), "--json")...)
+	sent := received[*notificationspb.CreateSubscriptionRequest](servicer)
 	if code != 0 || len(sent) != 1 || decodeObject(t, stdout)["id"] != subscriptionID {
-		t.Fatalf("exit %d, %d POSTs, stdout %q, stderr %q", code, len(sent), stdout, stderr)
+		t.Fatalf("exit %d, %d creations, stdout %q, stderr %q", code, len(sent), stdout, stderr)
 	}
 	got := sent[0]
-	if got.DestinationRef["namespace"] != "test-ns" || got.DestinationRef["name"] != "test-sandbox" || got.DestinationRef["uid"] != "test-uid" || got.SessionID != "test-session" {
-		t.Errorf("destination = %+v %q, want the environment's", got.DestinationRef, got.SessionID)
+	if ref := got.GetDestinationRef(); ref.GetNamespace() != "test-ns" || ref.GetName() != "test-sandbox" || ref.GetUid() != "test-uid" || got.GetSessionId() != "test-session" {
+		t.Errorf("destination = %v %q, want the environment's", ref, got.GetSessionId())
 	}
-	if got.Source.Provider != "github" || got.Source.Repository != "owner/repo" || got.Source.Subject.Kind != "pull_request" || got.Source.Subject.Number != 7 {
-		t.Errorf("source = %+v", got.Source)
+	github := got.GetSource().GetGithub()
+	if github.GetRepository() != "owner/repo" || github.GetSubject().GetPullRequest().GetNumber() != 7 {
+		t.Errorf("source = %v", got.GetSource())
 	}
-	if got.Source.Events != nil || got.LifetimeDays != nil || got.IdempotencyKey == "" {
-		t.Errorf("events %v, lifetime %v, key %q; want default events and lifetime and a derived key", got.Source.Events, got.LifetimeDays, got.IdempotencyKey)
+	if len(github.GetEvents()) != 0 || got.LifetimeDays != nil || got.GetIdempotencyKey() == "" {
+		t.Errorf("events %v, lifetime %v, key %q; want default events and lifetime and a derived key", github.GetEvents(), got.LifetimeDays, got.GetIdempotencyKey())
+	}
+	if !slices.Equal(servicer.authorization, []string{"Bearer " + testCredential}) {
+		t.Errorf("authorization = %v, want the configured placeholder as a bearer", servicer.authorization)
 	}
 }
 
 func TestSubscribeDerivesItsKeyFromTheSource(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, subscriptionJSON(1, false)) })
-	run := func(args ...string) {
-		invoke(notificationsEnv(f.URL), append([]string{"notifications", "subscribe", "github", "pr"}, args...)...)
+	servicer := answering(pullRequestSubscription(1, false))
+	env := notificationsEnv(serveNotifications(t, servicer))
+	for _, args := range [][]string{
+		subscribeArgs(),
+		subscribeArgs("--lifetime-days", "30"),
+		subscribeArgs("--event", "issue_comment:created", "--event", "check_run:requested,completed"),
+		subscribeArgs("--event", "check_run:completed,requested", "--event", "issue_comment:created"),
+		{"notifications", "subscribe", "github", "pr", "owner/repo#8"},
+		subscribeArgs("--key", "explicit"),
+	} {
+		invoke(env, args...)
 	}
-	run("owner/repo#7")
-	run("owner/repo#7", "--lifetime-days", "30")
-	run("owner/repo#7", "--event", "issue_comment:created", "--event", "check_run:requested,completed")
-	run("owner/repo#7", "--event", "check_run:completed,requested", "--event", "issue_comment:created")
-	run("owner/repo#8")
-	run("owner/repo#7", "--key", "explicit")
-	keys := []string{}
-	for _, sent := range subscribed(t, f) {
-		keys = append(keys, sent.IdempotencyKey)
+	var keys []string
+	for _, sent := range received[*notificationspb.CreateSubscriptionRequest](servicer) {
+		keys = append(keys, sent.GetIdempotencyKey())
+	}
+	if len(keys) != 6 {
+		t.Fatalf("keys = %v, want 6", keys)
 	}
 	same := func(i, j int) bool { return keys[i] == keys[j] }
 	if !same(0, 1) || !same(2, 3) || same(0, 2) || same(0, 4) || keys[5] != "explicit" {
@@ -88,116 +223,156 @@ func TestSubscribeDerivesItsKeyFromTheSource(t *testing.T) {
 }
 
 func TestSubscribeEventsReplaceTheDefaults(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, subscriptionJSON(1, false)) })
-	invoke(notificationsEnv(f.URL), "notifications", "subscribe", "github", "pr", "owner/repo#7",
-		"--event", "pull_request_review", "--event", "check_run:completed,requested", "--lifetime-days", "14")
-	got := subscribed(t, f)[0]
-	events := fmt.Sprintf("%+v", got.Source.Events)
-	if events != "[{Event:check_run Actions:[completed requested]} {Event:pull_request_review Actions:[]}]" || got.LifetimeDays == nil || *got.LifetimeDays != 14 {
-		t.Errorf("events %s, lifetime %v", events, got.LifetimeDays)
+	servicer := answering(pullRequestSubscription(1, false))
+	invoke(notificationsEnv(serveNotifications(t, servicer)), subscribeArgs(
+		"--event", "pull_request_review", "--event", "check_run:completed,requested", "--event", "pull_request_review", "--lifetime-days", "14",
+	)...)
+	sent := received[*notificationspb.CreateSubscriptionRequest](servicer)
+	if len(sent) != 1 {
+		t.Fatalf("%d creations, want 1", len(sent))
+	}
+	want := []*notificationspb.GitHubEventFilter{
+		{Event: notificationspb.GitHubEventName_GITHUB_EVENT_NAME_PULL_REQUEST_REVIEW},
+		{Event: notificationspb.GitHubEventName_GITHUB_EVENT_NAME_CHECK_RUN, Actions: []string{"completed", "requested"}},
+	}
+	events := sent[0].GetSource().GetGithub().GetEvents()
+	if len(events) != len(want) || !proto.Equal(events[0], want[0]) || !proto.Equal(events[1], want[1]) || sent[0].GetLifetimeDays() != 14 {
+		t.Errorf("events %v, lifetime %v; want %v and 14", events, sent[0].LifetimeDays, want)
 	}
 }
 
 func TestSubscribeDestinationFlagWinsOverTheEnvironment(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, subscriptionJSON(1, false)) })
+	servicer := answering(pullRequestSubscription(1, false))
+	env := notificationsEnv(serveNotifications(t, servicer))
 	flag := `{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"from-flag"}`
-	invoke(notificationsEnv(f.URL), "notifications", "subscribe", "github", "pr", "owner/repo#7", "--destination", flag)
-	env := notificationsEnv(f.URL)
+	invoke(env, subscribeArgs("--destination", flag)...)
 	delete(env, "AGENTPLANE_DESTINATION")
-	invoke(env, "notifications", "subscribe", "github", "pr", "owner/repo#7", "--destination", flag)
-	code, _, _ := invoke(env, "notifications", "subscribe", "github", "pr", "owner/repo#7")
-	sent := subscribed(t, f)
-	if len(sent) != 2 || sent[0].SessionID != "from-flag" || sent[1].SessionID != "from-flag" || code != 2 {
-		t.Errorf("%d POSTs; want the flag used with or without the variable, and exit 2 without either (got %d)", len(sent), code)
+	invoke(env, subscribeArgs("--destination", flag)...)
+	code, _, _ := invoke(env, subscribeArgs()...)
+	sent := received[*notificationspb.CreateSubscriptionRequest](servicer)
+	if len(sent) != 2 || sent[0].GetSessionId() != "from-flag" || sent[1].GetSessionId() != "from-flag" || code != 2 {
+		t.Errorf("%d creations; want the flag used with or without the variable, and exit 2 without either (got %d)", len(sent), code)
 	}
 }
 
 func TestSubscribeToACancelledKeyExitsConflict(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, subscriptionJSON(3, true)) })
-	code, stdout, stderr := invoke(notificationsEnv(f.URL), "notifications", "subscribe", "github", "pr", "owner/repo#7", "--json")
+	code, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, answering(pullRequestSubscription(3, true)))), append(subscribeArgs(), "--json")...)
 	if got := errorOf(t, stderr); code != 4 || stdout != "" || got.Code != "ALREADY_EXISTS" || got.Source != sourceClient {
 		t.Errorf("exit %d, stdout %q, envelope %+v; want exit 4 and empty stdout", code, stdout, got)
 	}
 }
 
 func TestSubscribeWithAChangedLifetimeExitsConflict(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
-		reply(w, 409, `{"detail":"idempotency key reused with different parameters"}`)
-	})
-	code, stdout, stderr := invoke(notificationsEnv(f.URL), "notifications", "subscribe", "github", "pr", "owner/repo#7", "--json")
-	if got := errorOf(t, stderr); code != 4 || stdout != "" || got.Code != "ALREADY_EXISTS" {
-		t.Errorf("exit %d, stdout %q, envelope %+v; want exit 4 ALREADY_EXISTS", code, stdout, got)
+	servicer := failing(status.Error(codes.AlreadyExists, "idempotency key reused with different arguments"))
+	code, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, servicer)), append(subscribeArgs(), "--json")...)
+	if got := errorOf(t, stderr); code != 4 || stdout != "" || got.Code != "ALREADY_EXISTS" || got.Source != sourceService {
+		t.Errorf("exit %d, stdout %q, envelope %+v; want exit 4 ALREADY_EXISTS from the service", code, stdout, got)
+	}
+}
+
+func TestSubscribeToARetiredInboxExitsRefusedNamingTheCode(t *testing.T) {
+	servicer := failing(status.Error(codes.FailedPrecondition, "inbox is retired"))
+	code, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, servicer)), append(subscribeArgs(), "--json")...)
+	got := errorOf(t, stderr)
+	if code != 1 || stdout != "" || got.Code != "FAILED_PRECONDITION" || got.HTTPStatus == nil || *got.HTTPStatus != http.StatusBadRequest || got.Message != "inbox is retired" {
+		t.Errorf("exit %d, stdout %q, envelope %+v; want exit 1 naming FAILED_PRECONDITION, not the 400 it arrives as", code, stdout, got)
+	}
+}
+
+func TestAGitHubRateLimitCarriesItsRetryDelay(t *testing.T) {
+	limited, err := status.New(codes.Unavailable, "GitHub rate limit").WithDetails(&errdetails.RetryInfo{RetryDelay: durationpb.New(30 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := notificationsEnv(serveNotifications(t, failing(limited.Err())))
+	code, stdout, stderr := invoke(env, append(subscribeArgs(), "--json")...)
+	got := errorOf(t, stderr)
+	if code != 3 || stdout != "" || got.Code != "UNAVAILABLE" || got.RetryAfterSeconds == nil || *got.RetryAfterSeconds != 30 {
+		t.Errorf("exit %d, stdout %q, envelope %+v; want exit 3 UNAVAILABLE retrying after 30 seconds", code, stdout, got)
+	}
+	if _, _, text := invoke(env, subscribeArgs()...); !strings.Contains(text, "retry after 30s") {
+		t.Errorf("text stderr %q does not say when to retry", text)
 	}
 }
 
 func TestRenewPatchesWithTheVersionJustRead(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ seen) {
-		if r.Method == http.MethodGet {
-			reply(w, 200, subscriptionJSON(4, false))
-			return
-		}
-		reply(w, 200, subscriptionJSON(5, false))
-	})
-	code, stdout, _ := invoke(notificationsEnv(f.URL), "notifications", "renew", subscriptionID, "--lifetime-days", "30", "--json")
-	patches := f.requests("PATCH")
-	if code != 0 || len(patches) != 1 || len(f.requests("GET")) != 1 || decodeObject(t, stdout)["version"] != float64(5) {
-		t.Fatalf("exit %d, %d PATCHes, stdout %q", code, len(patches), stdout)
+	servicer := answering(pullRequestSubscription(4, false))
+	servicer.renew = func(*notificationspb.RenewSubscriptionRequest) (*notificationspb.Subscription, error) {
+		return pullRequestSubscription(5, false), nil
 	}
-	if body := decodeObject(t, string(patches[0].body)); body["version"] != float64(4) || body["lifetime_days"] != float64(30) || patches[0].path != "/v1/subscriptions/"+subscriptionID {
-		t.Errorf("PATCH %s %s", patches[0].path, patches[0].body)
+	code, stdout, _ := invoke(notificationsEnv(serveNotifications(t, servicer)), "notifications", "renew", subscriptionID, "--lifetime-days", "30", "--json")
+	renewals := received[*notificationspb.RenewSubscriptionRequest](servicer)
+	if code != 0 || len(renewals) != 1 || len(received[*notificationspb.GetSubscriptionRequest](servicer)) != 1 {
+		t.Fatalf("exit %d, %d renewals, stdout %q", code, len(renewals), stdout)
+	}
+	if got := renewals[0]; got.GetSubscriptionId() != subscriptionID || got.GetVersion() != 4 || got.GetLifetimeDays() != 30 {
+		t.Errorf("renewal = %v, want %s at version 4 for 30 days", got, subscriptionID)
+	}
+	if got := decodeObject(t, stdout); got["version"] != "5" {
+		t.Errorf("stdout %v, want the renewed subscription at version 5 (int64 is a string in JSON)", got)
 	}
 }
 
 func TestRenewOfAStaleVersionExitsConflict(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ seen) {
-		if r.Method == http.MethodGet {
-			reply(w, 200, subscriptionJSON(4, false))
-			return
-		}
-		reply(w, 409, `{"detail":"version changed"}`)
-	})
-	code, stdout, stderr := invoke(notificationsEnv(f.URL), "notifications", "renew", subscriptionID, "--json")
+	servicer := answering(pullRequestSubscription(4, false))
+	servicer.renew = func(*notificationspb.RenewSubscriptionRequest) (*notificationspb.Subscription, error) {
+		return nil, status.Error(codes.Aborted, "version changed")
+	}
+	code, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, servicer)), "notifications", "renew", subscriptionID, "--json")
 	if got := errorOf(t, stderr); code != 4 || stdout != "" || got.Code != "ABORTED" {
 		t.Errorf("exit %d, stdout %q, envelope %+v; want exit 4 ABORTED", code, stdout, got)
 	}
 }
 
 func TestCancelSubscriptionDeletesIt(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, subscriptionJSON(2, true)) })
-	code, stdout, _ := invoke(notificationsEnv(f.URL), "notifications", "cancel", subscriptionID, "--json")
-	deletes := f.requests("DELETE")
-	if code != 0 || len(deletes) != 1 || deletes[0].path != "/v1/subscriptions/"+subscriptionID || decodeObject(t, stdout)["cancelled"] != true {
-		t.Errorf("exit %d, DELETEs %+v, stdout %q", code, deletes, stdout)
+	servicer := answering(pullRequestSubscription(2, true))
+	code, stdout, _ := invoke(notificationsEnv(serveNotifications(t, servicer)), "notifications", "cancel", subscriptionID, "--json")
+	cancelled := received[*notificationspb.CancelSubscriptionRequest](servicer)
+	if code != 0 || len(cancelled) != 1 || cancelled[0].GetSubscriptionId() != subscriptionID || decodeObject(t, stdout)["cancelled"] != true {
+		t.Errorf("exit %d, cancellations %v, stdout %q", code, cancelled, stdout)
 	}
 }
 
 func TestSubscriptionOfAnotherAccountExitsNotFound(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
-		reply(w, 404, `{"detail":"resource not found or not owned by this account"}`)
-	})
-	if code, stdout, _ := invoke(notificationsEnv(f.URL), "notifications", "subscription", subscriptionID); code != 5 || stdout != "" {
+	servicer := failing(status.Error(codes.NotFound, "subscription not found"))
+	if code, stdout, _ := invoke(notificationsEnv(serveNotifications(t, servicer)), "notifications", "subscription", subscriptionID); code != 5 || stdout != "" {
 		t.Errorf("exit %d, stdout %q; want exit 5", code, stdout)
 	}
 }
 
-func TestSourcesNamesEachProviderAndJSONIsTheServicesOwn(t *testing.T) {
-	const sources = `{"github":{"subscription_schema":{"title":"Subscribe"},"content":"Full GitHub webhook JSON; identity in event"},` +
-		`"actions":{"subscription_schema":{"title":"Subscribe"},"content":"ActionEventView: sequence, state, at, actor"}}`
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, sources) })
-
-	code, stdout, _ := invoke(notificationsEnv(f.URL), "notifications", "sources")
-	want := "actions  ActionEventView: sequence, state, at, actor\ngithub  Full GitHub webhook JSON; identity in event"
-	if code != 0 || strings.TrimSpace(stdout) != want {
-		t.Errorf("exit %d, stdout %q; want exit 0 and %q", code, stdout, want)
+func TestSubscriptionTextNamesItsSource(t *testing.T) {
+	subscription := func(source *notificationspb.Source) *notificationspb.Subscription {
+		shown := pullRequestSubscription(3, true)
+		shown.Source = source
+		return shown
 	}
-	code, stdout, _ = invoke(notificationsEnv(f.URL), "notifications", "sources", "--json")
-	if code != 0 || strings.TrimSpace(stdout) != compact(t, sources) {
-		t.Errorf("--json: exit %d, stdout %q; want exit 0 and the service's document", code, stdout)
+	github := func(subject *notificationspb.GitHubSubject) *notificationspb.Source {
+		return &notificationspb.Source{Provider: &notificationspb.Source_Github{Github: &notificationspb.GitHubSource{Repository: "owner/repo", Subject: subject}}}
 	}
-	for _, s := range f.all() {
-		if s.method != http.MethodGet || s.path != "/v1/sources" {
-			t.Errorf("request %s %s, want GET /v1/sources", s.method, s.path)
-		}
+	rateLimited := subscription(github(&notificationspb.GitHubSubject{Subject: &notificationspb.GitHubSubject_Issue{Issue: &notificationspb.IssueSubject{Number: 12}}}))
+	rateLimited.ErrorKind = notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_RATE_LIMITED.Enum()
+	for _, tc := range []struct {
+		name         string
+		subscription *notificationspb.Subscription
+		want         []string
+	}{
+		{"pull request", pullRequestSubscription(3, false), []string{subscriptionID, "github owner/repo pull_request:7", "v3", "expires 2026-01-08T00:00:00Z"}},
+		{"issue with a failure, cancelled", rateLimited, []string{"github owner/repo issue:12", "cancelled", "error rate_limited"}},
+		{"branch", subscription(github(&notificationspb.GitHubSubject{Subject: &notificationspb.GitHubSubject_Branch{Branch: &notificationspb.BranchSubject{Name: "feature/x"}}})), []string{"branch:feature/x"}},
+		{"commit", subscription(github(&notificationspb.GitHubSubject{Subject: &notificationspb.GitHubSubject_Commit{Commit: &notificationspb.CommitSubject{Sha: strings.Repeat("a", 40)}}})), []string{"commit:" + strings.Repeat("a", 40)}},
+		{"action request", subscription(&notificationspb.Source{Provider: &notificationspb.Source_Actions{Actions: &notificationspb.ActionsSource{RequestId: "request-a"}}}), []string{"actions request-a"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, answering(tc.subscription))), "notifications", "subscription", subscriptionID)
+			if code != 0 {
+				t.Fatalf("exit %d, stderr %q", code, stderr)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("stdout %q does not contain %q", stdout, want)
+				}
+			}
+		})
 	}
 }
 
@@ -207,27 +382,48 @@ func TestSubscriptionsFollowPagesOf128(t *testing.T) {
 	for i := range ids {
 		ids[i] = fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1)
 	}
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, s seen) {
+	servicer := &notificationsServer{list: func(request *notificationspb.ListSubscriptionsRequest) ([]*notificationspb.Subscription, error) {
 		start := 0
 		for i, id := range ids {
-			if id == s.query.Get("after_id") {
+			if id == request.GetAfterId() {
 				start = i + 1
 			}
 		}
-		page := []string{}
+		var page []*notificationspb.Subscription
 		for _, id := range ids[start:min(start+128, total)] {
-			page = append(page, strings.Replace(subscriptionJSON(1, false), subscriptionID, id, 1))
+			subscription := pullRequestSubscription(1, false)
+			subscription.Id = id
+			page = append(page, subscription)
 		}
-		reply(w, 200, "["+strings.Join(page, ",")+"]")
-	})
+		return page, nil
+	}}
+	env := notificationsEnv(serveNotifications(t, servicer))
 	for _, tc := range []struct {
 		args []string
 		want int
 	}{{[]string{"--limit", "0"}, total}, {nil, 50}, {[]string{"--limit", "130"}, 130}, {[]string{"--after", ids[99], "--limit", "0"}, total - 100}} {
-		code, stdout, _ := invoke(notificationsEnv(f.URL), append([]string{"notifications", "subscriptions", "--json"}, tc.args...)...)
-		if got := jsonLines(t, stdout); code != 0 || len(got) != tc.want {
+		code, stdout, _ := invoke(env, append([]string{"notifications", "subscriptions", "--json"}, tc.args...)...)
+		if got := jsonLines(t, stdout); code != 0 || len(got) != tc.want || got[0]["inboxId"] == nil {
 			t.Errorf("%v: exit %d with %d subscriptions, want %d", tc.args, code, len(got), tc.want)
 		}
+	}
+}
+
+func TestDestinationIsStrictAboutItsFields(t *testing.T) {
+	servicer := answering(pullRequestSubscription(1, false))
+	env := notificationsEnv(serveNotifications(t, servicer))
+	for _, destination := range []string{
+		`{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"x","source":{}}`,
+		`{"destination_ref":{"namespace":"n","name":"s"},"session_id":"x"}`,
+		`{"destination_ref":{"namespace":"n","name":"s","uid":"u"}}`,
+		`not json`,
+	} {
+		if code, stdout, _ := invoke(env, subscribeArgs("--destination", destination)...); code != 2 || stdout != "" {
+			t.Errorf("destination %s: exit %d, stdout %q; want exit 2", destination, code, stdout)
+		}
+	}
+	if sent := received[*notificationspb.CreateSubscriptionRequest](servicer); len(sent) != 0 {
+		t.Errorf("%d creations after bad destinations, want none", len(sent))
 	}
 }
 

@@ -41,6 +41,18 @@ func TestHTTPFailuresMapToExitCodes(t *testing.T) {
 		{"gateway timeout", 504, nil, "", 3, "DEADLINE_EXCEEDED", sourceService, ""},
 		{"server error", 500, nil, `{"detail":"boom"}`, 1, "INTERNAL", sourceService, ""},
 		{"gRPC status body", 401, nil, `{"code":16,"message":"unauthenticated","details":[]}`, 1, "UNAUTHENTICATED", sourceService, ""},
+		// A gateway's HTTP status only approximates its gRPC code, which the body names.
+		{"failed precondition", 400, nil, `{"code":9,"message":"cancelled","details":[]}`, 1, "FAILED_PRECONDITION", sourceService, ""},
+		{"out of range", 400, nil, `{"code":11,"message":"past the end","details":[]}`, 1, "OUT_OF_RANGE", sourceService, ""},
+		{"already exists", 409, nil, `{"code":6,"message":"exists","details":[]}`, 4, "ALREADY_EXISTS", sourceService, ""},
+		{"aborted", 409, nil, `{"code":10,"message":"stale","details":[]}`, 4, "ABORTED", sourceService, ""},
+		{
+			"retry info beats the header", 429,
+			map[string]string{"Retry-After": "9"},
+			`{"code":8,"message":"slow down","details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"7s"}]}`,
+			3, "RESOURCE_EXHAUSTED", sourceService, "",
+		},
+		{"proxy refusal with a status body", 403, egress("no-rule"), `{"code":5,"message":"gone","details":[]}`, 1, "PERMISSION_DENIED", sourceEgress, "no-rule"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -122,6 +134,10 @@ func TestEachGroupNeedsOnlyItsOwnConfiguration(t *testing.T) {
 			reply(w, 200, `{"subject":{"namespace":"test-ns","name":"test-sa"},"policies":[]}`)
 			return
 		}
+		if r.URL.Path == "/v1/subscriptions" {
+			reply(w, 200, `{"subscriptions":[]}`)
+			return
+		}
 		reply(w, 200, `[]`)
 	})
 	groups := []struct {
@@ -170,6 +186,7 @@ func TestUsageErrorsExitBeforeAnyRequest(t *testing.T) {
 		{"actions", "groups", "--timeout", "soon"},
 		{"notifications", "subscribe", "github", "pr", "not-a-pull-request"},
 		{"notifications", "subscribe", "github", "pr", "o/r#1", "--event", ":created"},
+		{"notifications", "subscribe", "github", "pr", "o/r#1", "--event", "no_such_event"},
 		{"actions"},
 		{},
 	}
