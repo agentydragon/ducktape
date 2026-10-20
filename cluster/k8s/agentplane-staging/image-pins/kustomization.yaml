@@ -35,10 +35,8 @@ images:
     newTag: devel-20261020025346-62d1b96 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
     newTag: devel-20261019082046-97c624c # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
-  # CLEANUP(added 2026-10-20): Restore this pin's Flux image-policy marker (policy `agentplane-history-migrate`, field
-  #   `tag`) when HISTORY_GO_STAGING_CUTOVER lands; until then staging keeps the Python migrator.
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
-    newTag: devel-20261019001843-8a68df2
+    newTag: devel-20261020033733-e077352 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
     newTag: devel-20261020060625-7c22e7f # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
