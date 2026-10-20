@@ -58,6 +58,7 @@ class NotificationsOperatorClient:
                 handshake = None
                 if message is grpc.aio.EOF:
                     raise ConnectionError("Notification Service ended the watch without planned renewal")
+                assert isinstance(message, (pb.WatchSandboxNotificationsResponse, pb.WatchSessionNoticesResponse))
                 if message.HasField("reconnect_required"):
                     return
                 yield frame("snapshot", MessageToDict(message.snapshot, always_print_fields_with_no_presence=True))
