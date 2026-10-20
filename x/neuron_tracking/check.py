@@ -39,7 +39,7 @@ class SampleChecks(Record):
 
     @model_validator(mode="after")
     def validate_regions(self) -> Self:
-        names = [check.name for check in (*self.regions, *self.distinct)]
+        names = [check.name for check in self.regions] + [check.name for check in self.distinct]
         if len(set(names)) != len(names):
             raise ValueError("Check names must be unique")
         for region in self.regions:
@@ -94,7 +94,7 @@ class Report:
 
     @property
     def passed(self) -> bool:
-        return all(result.passed for result in (*self.regions, *self.distinct))
+        return all(result.passed for result in self.regions) and all(result.passed for result in self.distinct)
 
 
 def matches_body(body: Mask, check: RegionCheck) -> bool:
