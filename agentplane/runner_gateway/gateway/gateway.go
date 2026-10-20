@@ -71,7 +71,7 @@ type Gateway struct {
 	callerAuth  *auth.Resolver
 	runnerAuth  *auth.Resolver
 	callers     map[auth.Account]struct{}
-	sandboxes   *sandboxReader
+	sandboxes   *sandboxResolver
 	connections *connections
 	records     *connectionRecords
 	controller  *auth.Account
@@ -96,7 +96,7 @@ func New(
 	if err := validateControlTiming(config.ControlTiming); err != nil {
 		return nil, err
 	}
-	sandboxes, err := newSandboxReader(config.Namespace, objects, core)
+	sandboxes, err := newSandboxResolver(config.Namespace, objects, core)
 	if err != nil {
 		return nil, err
 	}

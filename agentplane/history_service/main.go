@@ -21,7 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
-	"github.com/agentydragon/ducktape/agentplane/history_service/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
 	runneringresspb "github.com/agentydragon/ducktape/agentplane/proto/runner_ingress"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"

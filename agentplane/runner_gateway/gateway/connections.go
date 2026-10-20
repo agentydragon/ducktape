@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -13,7 +14,7 @@ const connectionHeldByAnotherReplica = "another replica holds this Sandbox's run
 var errSupersededConnection = status.Error(codes.Aborted, "superseded by a newer connection")
 
 type runnerConnection struct {
-	identity SandboxIdentity
+	identity sandboxreader.Identity
 	podUID   string
 	epoch    uint64
 	bootID   string
@@ -24,7 +25,7 @@ type runnerConnection struct {
 	endErr   error
 }
 
-func newRunnerConnection(identity SandboxIdentity, podUID, bootID string, epoch uint64, send sendServiceFrame) *runnerConnection {
+func newRunnerConnection(identity sandboxreader.Identity, podUID, bootID string, epoch uint64, send sendServiceFrame) *runnerConnection {
 	tunnel := newTunnel(send)
 	return &runnerConnection{
 		identity: identity, podUID: podUID, epoch: epoch, bootID: bootID,

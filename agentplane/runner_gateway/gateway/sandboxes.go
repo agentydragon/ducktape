@@ -6,6 +6,7 @@ import (
 
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -30,49 +31,40 @@ const (
 	phaseTearDown    = "TearingDown"
 )
 
-// SandboxIdentity is the exact Sandbox incarnation named by an authenticated runner or proxy
-// request. Namespace/name alone are not sufficient because Kubernetes permits name reuse.
-type SandboxIdentity struct {
-	Namespace string
-	Name      string
-	UID       string
-}
-
 type sandboxView struct {
-	identity    SandboxIdentity
+	identity    sandboxreader.Identity
 	phase       string
 	incarnation *sandboxapi.Incarnation
 }
 
-type sandboxReader struct {
+// sandboxResolver names the Sandbox and runner Pod a request is for, and admits it only while the Pod serves it.
+type sandboxResolver struct {
 	namespace string
-	objects   client.Reader
+	sandboxes *sandboxreader.Reader
 	core      coreclient.CoreV1Interface
 }
 
-func newSandboxReader(namespace string, objects client.Reader, core coreclient.CoreV1Interface) (*sandboxReader, error) {
-	if namespace == "" || objects == nil || core == nil {
-		return nil, fmt.Errorf("Sandbox namespace and Kubernetes clients are required")
+func newSandboxResolver(namespace string, objects client.Reader, core coreclient.CoreV1Interface) (*sandboxResolver, error) {
+	if core == nil {
+		return nil, fmt.Errorf("Kubernetes core client is required")
 	}
-	return &sandboxReader{namespace: namespace, objects: objects, core: core}, nil
+	sandboxes, err := sandboxreader.New(namespace, objects)
+	if err != nil {
+		return nil, err
+	}
+	return &sandboxResolver{namespace: namespace, sandboxes: sandboxes, core: core}, nil
 }
 
-func (r *sandboxReader) get(ctx context.Context, name string) (sandboxView, error) {
-	var resource sandboxapi.Sandbox
-	err := r.objects.Get(ctx, types.NamespacedName{Namespace: r.namespace, Name: name}, &resource)
-	if apierrors.IsNotFound(err) {
-		return sandboxView{}, status.Error(codes.NotFound, "sandbox not found")
-	}
+func (r *sandboxResolver) get(ctx context.Context, name string) (sandboxView, error) {
+	view, err := r.sandboxes.Get(ctx, name)
 	if err != nil {
-		return sandboxView{}, fmt.Errorf("read Sandbox: %w", err)
+		return sandboxView{}, err
 	}
-	if resource.UID == "" || resource.Name == "" || resource.Namespace != r.namespace {
-		return sandboxView{}, status.Error(codes.Unavailable, "Sandbox identity is incomplete")
-	}
-	return sandboxView{
-		identity: SandboxIdentity{Namespace: resource.Namespace, Name: resource.Name, UID: string(resource.UID)},
-		phase:    sandboxPhase(&resource), incarnation: resource.Status.Incarnation,
-	}, nil
+	return routingView(view), nil
+}
+
+func routingView(view sandboxreader.View) sandboxView {
+	return sandboxView{identity: view.Identity, phase: sandboxPhase(view.Resource), incarnation: view.Resource.Status.Incarnation}
 }
 
 func unavailable(err error) error {
@@ -122,21 +114,12 @@ func sandboxPhase(resource *sandboxapi.Sandbox) string {
 	return phaseSuspend
 }
 
-func (r *sandboxReader) destination(ctx context.Context, destination *sandboxespb.SandboxDestination, writes bool) (sandboxView, error) {
-	if destination == nil || destination.Sandbox == "" || destination.SandboxUid == "" || destination.Owner == nil ||
-		destination.Owner.Namespace == "" || destination.Owner.Name == "" {
-		return sandboxView{}, status.Error(codes.InvalidArgument, "Sandbox name, UID, and owner are required")
-	}
-	if destination.Owner.Namespace != r.namespace || destination.Owner.Name != destination.Sandbox {
-		return sandboxView{}, status.Error(codes.NotFound, "sandbox incarnation not found")
-	}
-	view, err := r.get(ctx, destination.Sandbox)
+func (r *sandboxResolver) destination(ctx context.Context, destination *sandboxespb.SandboxDestination, writes bool) (sandboxView, error) {
+	incarnation, err := r.sandboxes.Incarnation(ctx, destination)
 	if err != nil {
 		return sandboxView{}, err
 	}
-	if view.identity.UID != destination.SandboxUid {
-		return sandboxView{}, status.Error(codes.NotFound, "sandbox incarnation not found")
-	}
+	view := routingView(incarnation)
 	if writes && (view.phase == phaseQuiescing || view.phase == phaseTearDown) {
 		return sandboxView{}, status.Error(codes.FailedPrecondition, "runner or sandbox state refused the request")
 	}
@@ -184,48 +167,48 @@ func podIsReadyForSandbox(pod *corev1.Pod, sandbox sandboxView) bool {
 		pod.Labels[sandboxapi.SandboxLabel] == sandbox.identity.Name
 }
 
-func (r *sandboxReader) runnerPeer(ctx context.Context, principal auth.Principal) (SandboxIdentity, string, error) {
+func (r *sandboxResolver) runnerPeer(ctx context.Context, principal auth.Principal) (sandboxreader.Identity, string, error) {
 	if principal.Account.Namespace != r.namespace || principal.PodName == "" || principal.PodUID == "" {
-		return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
+		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 	}
 	pod, err := r.core.Pods(r.namespace).Get(ctx, principal.PodName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		return SandboxIdentity{}, "", status.Error(codes.Unauthenticated, "invalid workload bearer")
+		return sandboxreader.Identity{}, "", status.Error(codes.Unauthenticated, "invalid workload bearer")
 	}
 	if err != nil {
-		return SandboxIdentity{}, "", fmt.Errorf("read runner Pod: %w", err)
+		return sandboxreader.Identity{}, "", fmt.Errorf("read runner Pod: %w", err)
 	}
 	if string(pod.UID) != principal.PodUID || pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() {
-		return SandboxIdentity{}, "", status.Error(codes.Unauthenticated, "invalid workload bearer")
+		return sandboxreader.Identity{}, "", status.Error(codes.Unauthenticated, "invalid workload bearer")
 	}
 	owner := metav1.GetControllerOf(pod)
 	if owner == nil {
-		return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
+		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 	}
 	sandboxName := owner.Name
 	if owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind {
 		sandboxName = pod.Labels[sandboxapi.SandboxLabel]
 		if sandboxName == "" {
-			return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
+			return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 		}
 	} else if owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxapi.SandboxKind {
-		return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
+		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 	}
 	view, err := r.get(ctx, sandboxName)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
-			return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
+			return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 		}
-		return SandboxIdentity{}, "", err
+		return sandboxreader.Identity{}, "", err
 	}
 	if principal.Account.Name != view.identity.Name {
-		return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
+		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 	}
 	if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.UID != types.UID(view.identity.UID) {
-		return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
+		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 	}
 	if owner.APIVersion == sandboxVMIAPIVer && (view.incarnation == nil || view.incarnation.UID != string(pod.UID)) {
-		return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
+		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 	}
 	return view.identity, string(pod.UID), nil
 }

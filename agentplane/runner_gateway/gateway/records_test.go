@@ -8,6 +8,7 @@ import (
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,7 +17,7 @@ import (
 )
 
 func TestConnectionRecordsRejectForeignObjects(t *testing.T) {
-	sandbox := SandboxIdentity{Name: testSandbox, UID: testSandboxUID}
+	sandbox := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
 	owner := sandboxOwnerReference(sandbox)
 	cases := []struct {
 		name   string

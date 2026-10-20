@@ -438,7 +438,7 @@ go_library(
         "//agentplane/history_service/projection",
         "//agentplane/history_service/reads",
         "//agentplane/history_service/storage",
-        "//agentplane/history_service/wakeups",
+        "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:history_service_go_proto",
         "//agentplane/proto:runner_ingress_go_proto",
         "//agentplane/workload_auth/go/auth",

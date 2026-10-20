@@ -8,6 +8,7 @@ import (
 
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -182,7 +183,7 @@ func (s *runnerControlServer) Connect(stream grpc.BidiStreamingServer[runnercont
 			touchCtx, touchCancel := context.WithTimeout(ctx, timing.LivenessTimeout)
 			err := g.records.renew(touchCtx, identity, epoch, lastFrameAt, facts)
 			if err == nil {
-				var current SandboxIdentity
+				var current sandboxreader.Identity
 				current, currentPodUID, resolveErr := g.sandboxes.runnerPeer(touchCtx, principal)
 				if resolveErr != nil || current != identity || currentPodUID != podUID {
 					err = status.Error(codes.PermissionDenied, "the Sandbox routing changed")

@@ -13,7 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
-	"github.com/agentydragon/ducktape/agentplane/history_service/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"

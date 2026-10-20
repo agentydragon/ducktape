@@ -9,6 +9,7 @@ import (
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -53,7 +54,7 @@ func newConnectionRecords(
 	return &connectionRecords{coordination: coordination, discovery: discovery, namespace: namespace, holder: holder}, nil
 }
 
-func (r *connectionRecords) accept(ctx context.Context, sandbox SandboxIdentity, podUID, bootID string) (uint64, error) {
+func (r *connectionRecords) accept(ctx context.Context, sandbox sandboxreader.Identity, podUID, bootID string) (uint64, error) {
 	leaseName := sandbox.Name + sandboxlease.RunnerLeaseSuffix
 	var epoch uint64
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -115,7 +116,7 @@ func (r *connectionRecords) accept(ctx context.Context, sandbox SandboxIdentity,
 
 func (r *connectionRecords) renew(
 	ctx context.Context,
-	sandbox SandboxIdentity,
+	sandbox sandboxreader.Identity,
 	epoch uint64,
 	seenAt time.Time,
 	facts *sandboxlease.RunnerFacts,
@@ -159,7 +160,7 @@ func (r *connectionRecords) renew(
 	return nil
 }
 
-func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox SandboxIdentity, epoch uint64) error {
+func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox sandboxreader.Identity, epoch uint64) error {
 	name := sandbox.Name + sandboxapi.ControlServiceSuffix
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		current, err := r.discovery.EndpointSlices(r.namespace).Get(ctx, name, metav1.GetOptions{})
@@ -208,7 +209,7 @@ func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox S
 	})
 }
 
-func sandboxOwnerReference(sandbox SandboxIdentity) metav1.OwnerReference {
+func sandboxOwnerReference(sandbox sandboxreader.Identity) metav1.OwnerReference {
 	controller, blockOwnerDeletion := false, false
 	return metav1.OwnerReference{
 		APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandbox.Name, UID: types.UID(sandbox.UID),
@@ -216,7 +217,7 @@ func sandboxOwnerReference(sandbox SandboxIdentity) metav1.OwnerReference {
 	}
 }
 
-func ownsSandbox(references []metav1.OwnerReference, sandbox SandboxIdentity) bool {
+func ownsSandbox(references []metav1.OwnerReference, sandbox sandboxreader.Identity) bool {
 	return len(references) == 1 && references[0].APIVersion == sandboxapi.GroupVersion.String() &&
 		references[0].Kind == sandboxapi.SandboxKind && references[0].Name == sandbox.Name &&
 		string(references[0].UID) == sandbox.UID

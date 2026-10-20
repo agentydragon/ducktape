@@ -17,6 +17,7 @@ import (
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -708,7 +709,7 @@ func TestControlFrameSenderRejectsWritesAfterTimeout(t *testing.T) {
 
 func TestGeneratedRunnerClientPreservesTunnelStatusTrailersAndCancellation(t *testing.T) {
 	frames := make(chan *runnercontrolpb.ServiceFrame, 2)
-	connection := newRunnerConnection(SandboxIdentity{}, "pod-uid", "boot-id", 1, func(frame *runnercontrolpb.ServiceFrame) error {
+	connection := newRunnerConnection(sandboxreader.Identity{}, "pod-uid", "boot-id", 1, func(frame *runnercontrolpb.ServiceFrame) error {
 		frames <- frame
 		return nil
 	})

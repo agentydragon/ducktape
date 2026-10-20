@@ -1,11 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//agentplane/history_service:__subpackages__"])
+package(default_visibility = ["//agentplane:__subpackages__"])
 
 go_library(
     name = "wakeups",
     srcs = ["hub.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/wakeups",
+    importpath = "github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups",
     deps = ["@com_github_lib_pq//:pq"],
 )
 
