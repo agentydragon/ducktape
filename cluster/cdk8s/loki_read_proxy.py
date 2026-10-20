@@ -66,6 +66,7 @@ NAMESPACE_ALLOWLIST = (
     "local-path-storage",
     "loki",
     "monitoring",
+    "nix-cache",
     "node-feature-discovery",
     "nvidia-device-plugin",
     "oci-cache",
