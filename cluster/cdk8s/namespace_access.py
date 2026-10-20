@@ -41,7 +41,7 @@ NAMESPACE_DIAGNOSTICS = {
     "local-path-storage": AgentReadable.LOGS,
     "loki": AgentReadable.LOGS,
     "monitoring": AgentReadable.LOGS,
-    "nix-cache": AgentReadable.METADATA,
+    "nix-cache": AgentReadable.LOGS,
     "node-feature-discovery": AgentReadable.LOGS,
     "nvidia-device-plugin": AgentReadable.LOGS,
     "oci-cache": AgentReadable.LOGS,
