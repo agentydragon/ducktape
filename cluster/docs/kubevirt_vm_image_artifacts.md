@@ -12,6 +12,11 @@ CPAP gateway and Agentplane runner images:
 - KubeVirt definitions: <../cdk8s/cpap_sync/app.py> and the Agentplane staging
   SandboxTemplate in <../cdk8s/agentplane/staging.py>.
 
+The Agentplane runner VM attaches two: the guest root and a small read-only erofs disk with the
+runner and the `agentplane` command (<../../agentplane/runner/runner-disk.nix>, published by
+<../../.github/workflows/agentplane-runner-disk-image.yml>), so a runner release does not
+republish the guest.
+
 Use `containerDisk` for disposable roots. Put state that must survive VM restarts
 on a PVC or another durable store. Updating an OCI tag does not replace the disk
 of an already running VMI by itself; use the VM's rollout/restart path and verify

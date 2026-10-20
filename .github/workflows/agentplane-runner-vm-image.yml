@@ -1,7 +1,8 @@
 # Build the NixOS Agentplane runner guest and publish its qcow2 containerDisk.
 name: Agentplane Runner VM Image
 
-# The runner executable enters this image through the agentplane-runner artifact pin.
+# The runner and `agentplane` command are not in this image: they ship on the runner disk
+# (agentplane-runner-disk-image.yml), so their artifact pins do not trigger this build.
 # Keep automatic triggers on Nix/image inputs.
 on:
   push:
@@ -11,15 +12,12 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
-      - "agentplane/cli/package.nix"
       - "agentplane/runner/container-disk.nix"
-      - "agentplane/runner/package.nix"
       - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "devinfra/secrets/ci_env.sh"
       - "flake.lock"
       - "flake.nix"
-      - "nix/artifact-pins.json"
       - "nix/attic-pubkeys.json"
       - "nix/flake/packages.nix"
       - "nix/nixos/modules/base.nix"
@@ -33,15 +31,12 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
-      - "agentplane/cli/package.nix"
       - "agentplane/runner/container-disk.nix"
-      - "agentplane/runner/package.nix"
       - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "devinfra/secrets/ci_env.sh"
       - "flake.lock"
       - "flake.nix"
-      - "nix/artifact-pins.json"
       - "nix/attic-pubkeys.json"
       - "nix/flake/packages.nix"
       - "nix/nixos/modules/base.nix"
@@ -57,15 +52,12 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
-      - "agentplane/cli/package.nix"
       - "agentplane/runner/container-disk.nix"
-      - "agentplane/runner/package.nix"
       - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "devinfra/secrets/ci_env.sh"
       - "flake.lock"
       - "flake.nix"
-      - "nix/artifact-pins.json"
       - "nix/attic-pubkeys.json"
       - "nix/flake/packages.nix"
       - "nix/nixos/modules/base.nix"

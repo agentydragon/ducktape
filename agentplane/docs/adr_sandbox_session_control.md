@@ -257,7 +257,7 @@ Rollout, reader before writer:
 1. `QuiesceResponse` gains a `stage` field, and the controller reads both shapes (landed).
 2. The gateway's deletion seal is retired, so the controller is the only reader (landed).
 3. Only then does the runner's `Quiesce` stop blocking. The runner is the writer: the runner image and the VM
-   guest's runner wheel (`nix/artifact-pins.json`, pinned separately) move only after the controller is pinned.
+   guest's runner disk (built from `nix/artifact-pins.json`, pinned separately) move only after the controller is pinned.
 
 The legacy shape carries a removal node.
 

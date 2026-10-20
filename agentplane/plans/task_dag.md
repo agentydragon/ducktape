@@ -1324,7 +1324,7 @@ changing the guest and Pod UIDs. A Pod filesystem mount and a VM disk are not in
 because the provisioner supports block storage. Specify supported attachments and reject
 incompatible kind changes; conversion is deferred, not a prerequisite for fresh provisioning.
 Use an explicit incompatible cutoff for existing Sandboxes, in a separate data-drop PR; the
-operator accepted dropping them rather than requiring migration. Gate guest behavior on the VM image and its embedded runner wheel, then activate templates.
+operator accepted dropping them rather than requiring migration. Gate guest behavior on the VM image and the runner disk it mounts, then activate templates.
 
 ### `NODE_LOCAL_BLOCK_STORAGE` — node-local block volumes on every node
 
@@ -1415,11 +1415,12 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `RUNNER_IMAGE_LAYERING_DESIGN` — what carries the runner, the harnesses and the tools
 
-**Decision; operator, 2026-10-13 and 2026-10-15 PDT.** The 2026-10-15 framing names the property wanted: independent updates and RAM headroom. Today one artifact carries everything,
-so bumping the runner or a template's installed tools rebuilds and republishes the whole VM:
-`agentplane/runner/container-disk.nix` bakes the runner and both harnesses into the NixOS qcow2 that
-KubeVirt boots, and `agentplane/runner/image.nix` does the same for the Pod from a wheel pinned in
-`nix/artifact-pins.json`. Separate the concerns so a platform user supplies an image or definition with
+**Decision; operator, 2026-10-13 and 2026-10-15 PDT.** The 2026-10-15 framing names the property wanted: independent updates and RAM headroom. Today one artifact still carries the harnesses and tools:
+`agentplane/runner/container-disk.nix` bakes both harnesses and the tools into the NixOS qcow2 that
+KubeVirt boots, and `agentplane/runner/image.nix` also bakes the runner into the Pod image from a binary
+pinned in `nix/artifact-pins.json`. The VM's runner and `agentplane` command are already split out onto
+the read-only disk `agentplane/runner/runner-disk.nix`, so a runner bump no longer republishes the
+guest; bumping a harness or a template's installed tools still rebuilds the whole artifact. Separate the concerns so a platform user supplies an image or definition with
 no runner and no harnesses and the runner side layers them in, and nobody bumps build versions to move a
 runner. State which of these the design must satisfy, in order:
 

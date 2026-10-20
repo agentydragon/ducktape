@@ -114,7 +114,7 @@ ducktapePkgs
     inherit pkgs;
     agentplaneCli = self.packages.${system}.agentplane-cli;
   };
-  # The released static `agentplane` command that every image above and the runner VM carry.
+  # The released static `agentplane` command that every image above and the runner disk carry.
   agentplane-cli = import ../../agentplane/cli/package.nix {
     inherit pkgs;
     binary = artifacts.agentplane-cli;

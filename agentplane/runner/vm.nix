@@ -11,18 +11,23 @@
 #
 # The runner's configuration, launch file and CA bundle arrive on three read-only KubeVirt ConfigMap
 # disks, mounted under /run/agentplane and linked to the paths the runner reads.
+#
+# The runner and the `agentplane` command are not in this closure. They arrive on the read-only
+# runner disk (runner-disk.nix), a second containerDisk mounted at /run/agentplane/runner, so a new
+# runner release republishes that small disk and not this guest. The harnesses and tools stay here.
 {
   lib,
   pkgs,
   pkgsUnstable,
-  agentplaneRunner,
-  agentplaneCli,
   ...
 }:
 let
   workspaceDevice = "/dev/disk/by-id/virtio-workspace";
   workspaceDir = "/state/workspaces";
   runtimeDir = "/run/agentplane";
+  # The runner disk's mount point. The Go runner puts its bin directory on the harness PATH
+  # (guest.go), and agentplane-runner-disk-image.yml builds the disk.
+  runnerDir = "${runtimeDir}/runner";
   # The Go runner reads these files from runtimeDir. Each lives on
   # the KubeVirt ConfigMap disk of serial `agentplane-<disk>`, mounted at `${runtimeDir}/<disk>`.
   seedDiskOf = {
@@ -195,6 +200,20 @@ in
       autoFormat = true;
       autoResize = false;
     };
+    # The runner disk is an erofs image on the containerDisk of serial `agentplane-runner`. Unlike
+    # the seed disks below it is executable. `nofail` leaves a missing disk to the runner, which
+    # requires its mount.
+    ${runnerDir} = {
+      device = "/dev/disk/by-id/virtio-agentplane-runner";
+      fsType = "erofs";
+      noCheck = true;
+      options = [
+        "ro"
+        "nosuid"
+        "nodev"
+        "nofail"
+      ];
+    };
   }
   # KubeVirt builds a ConfigMap disk as an ISO 9660 image with Rock Ridge names. `nofail` leaves a
   # missing disk to the runner, which requires its mount, rather than to local-fs.target.
@@ -258,10 +277,10 @@ in
     unitConfig.RequiresMountsFor = [
       "/state"
       workspaceDir
+      runnerDir
     ]
     ++ map (disk: "${runtimeDir}/${disk}") seedDisks;
     path = [
-      agentplaneRunner
       pkgs.coreutils
       pkgs.systemd
     ];
@@ -271,7 +290,7 @@ in
     };
     serviceConfig = {
       Type = "simple";
-      ExecStart = "${agentplaneRunner}/bin/agentplane-runner-vm";
+      ExecStart = "${runnerDir}/bin/agentplane-runner-vm";
       UMask = "0007";
       Restart = "on-failure";
       RestartSec = "2s";
@@ -337,7 +356,6 @@ in
     util-linux
     which
     xz
-    agentplaneCli
     pkgsUnstable.claude-code
     codexWithoutVoice
   ];

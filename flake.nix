@@ -176,18 +176,6 @@
         config.allowUnfree = true;
       };
 
-      # One released static Go binary package is shared by the OCI runner image and VM guest.
-      agentplaneRunner = import ./agentplane/runner/package.nix {
-        inherit pkgs;
-        binary = artifacts.agentplane-runner;
-      };
-
-      # The released static `agentplane` command, carried by the runner's NixOS guest.
-      agentplaneCli = import ./agentplane/cli/package.nix {
-        inherit pkgs;
-        binary = artifacts.agentplane-cli;
-      };
-
       pkgsMaster = import nixpkgs-master {
         inherit system;
         config.allowUnfree = true;
@@ -311,11 +299,7 @@
               username
               homeManagerHost
               ;
-            inherit
-              agentplaneCli
-              agentplaneRunner
-              pkgsUnstable
-              ;
+            inherit pkgsUnstable;
             # These project packages are passed only to hosts that opt into them.
             # Lazy: hosts that do not consume a package never force its build/fetch.
             inherit (ducktapePkgs)

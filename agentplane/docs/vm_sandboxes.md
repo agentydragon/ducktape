@@ -56,6 +56,11 @@ lost.
   `/run/agentplane/<disk>`, and `systemd-tmpfiles` links the files the runner reads into
   `/run/agentplane`. A file keeps its ConfigMap's mode, which must stay world-readable: harnesses
   run as uid 107 and read the CA bundle and kubeconfig.
+- The runner and the `agentplane` command are not in the guest image. They arrive on the runner disk,
+  a read-only erofs on a second `containerDisk` ([`runner/runner-disk.nix`](../runner/runner-disk.nix)),
+  mounted at `/run/agentplane/runner`, and the harness `PATH` lists its `bin` after the system
+  profile. A runner or CLI release republishes only that small disk. The harnesses and tools are
+  still in the guest image.
 - The deployed `runner-vm` template declares a Sandbox-owned `RawDiskImage` workspace with ext4.
   Its claim survives stop/start and replacement of the VM object. The Pod runner uses a
   Sandbox-owned `DirectoryTree` workspace. Custom VM templates may still declare generic
