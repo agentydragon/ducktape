@@ -413,7 +413,6 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
                     "/llms.txt",
                     "/docs/agents/**",
                     "/openapi.json",
-                    "/v1/sources",
                     "/v1/subscriptions",
                     "/v1/subscriptions/**",
                     "/v1/inboxes",
