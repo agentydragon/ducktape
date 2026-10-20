@@ -98,12 +98,13 @@ The cluster override selection is only Qwen IQ4_XS 128K/256K, both wires: 131072
 or 372000 merely because a wrapper or OpenClaw uses those values.
 
 - Claude adapter sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS` when an override exists.
-- Codex adapter passes `model_context_window` in its startup configuration. Our
-  launch helper leaves auto-compaction at Codex's derived default; its comment
-  records 90%. Codex also has its own effective-window and metadata rules: do not
-  treat that comment as an end-to-end validated threshold for every current binary.
-- Changing a model to one with a different configured window, including an absent
-  versus present override, requires a new thread. The runner rejects that live switch.
+- Codex gets its windows from the [model catalog](../agentplane/llm_ingress/README.md#codex-model-catalog)
+  the runner points its provider at, not from the runner's `ModelConfig` lookup. Auto-compaction
+  stays at Codex's derived default. Codex also has its own effective-window and metadata rules: do not
+  treat 90% as an end-to-end validated threshold for every current binary.
+- Changing a Claude model to one with a different configured window, including an absent
+  versus present override, requires a new thread. The runner rejects that live switch. A Codex
+  switch is allowed: each turn uses the entry for its model.
 - Harness telemetry is another output: Codex reports
   `thread/tokenUsage/updated.tokenUsage.modelContextWindow`; Claude result frames
   report `modelUsage[*].contextWindow`. Acceptance probes record these as harness
@@ -283,17 +284,13 @@ the entry's window, clamped to its `max_context_window`; a startup
   blindly clone a bundled entry or assume omitted optional fields are neutral.
   Pin the schema/entry construction to the launched Codex version.
 
-**Runner TODO:** consider generating this startup file from the ingress model-config
-snapshot plus deliberate Codex capability defaults, in place of the single
-process-wide `model_context_window` override. It could represent each exposed route's
-budget directly and avoid context-only alias workarounds, without any LiteLLM metadata
-reader or change to the chosen proxy/logger. The existing override must not accidentally
-flatten all per-model windows.
-
-Before implementing, test native tools/reasoning, reported effective windows,
-compaction, unknown/prefix-matching routes, and process restart/thread resume. Revisit
-Agentplane's persisted session budget and **different-window model-switch rejection**
-together; a static per-model catalogue does not automatically make that guard obsolete.
+**Done for Codex:** cdk8s generates the catalog and LLM ingress serves it
+([Codex model catalog](../agentplane/llm_ingress/README.md#codex-model-catalog)), replacing the
+process-wide `model_context_window` override, so each exposed route has its own window and a
+switch between windows is no longer rejected. Checked so far: reported effective windows, a
+switch between routes, a catalog edit under a running Codex, and unknown routes
+(fallback metadata). Not yet checked against a served upstream entry: native tools and reasoning,
+compaction after a switch to a smaller window, process restart and thread resume.
 Keep current behavior until those tests justify a change. No new budgets, model
 switching behavior, gateway configuration, or live probes are introduced by this note.
 

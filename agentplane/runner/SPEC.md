@@ -55,14 +55,17 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   caller's task, in that order; callers supply only the task. They are fixed because a `spec` supplied on reopening must equal the stored one.
   Platform guidance supplies deployment service addresses and essential constraints; detailed
   workflows are discoverable through the independent services' `/llms.txt` indexes.
-- The runner asks the workload-authenticated LLM ingress for `ModelConfig` when a
+- For a Claude Session the runner asks the workload-authenticated LLM ingress for `ModelConfig` when a
   session or model selection is made. Its `total_context_budget_tokens` is a client
   budget shared by input and output, not a provider maximum or an output request cap.
-  The runner consumes this field to set Claude's
-  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` or Codex's `model_context_window`; routes without an override use
+  The runner sets Claude's `CLAUDE_CODE_MAX_CONTEXT_TOKENS` from it; routes without an override use
   the harness's normal metadata. The resolved value is retained in the runner's session record so a
-  resume uses the same compaction window. Model changes across different resolved windows require a
-  new session.
+  resume uses the same compaction window. Claude model changes across different resolved windows
+  require a new session.
+- Codex takes no budget from the runner: its provider names the ingress model catalog
+  (`/agentplane/codex/models` on the model endpoint's origin), and each turn uses the entry for the
+  turn's model slug, so a model change across windows is allowed and an edited catalog reaches a
+  running Codex before its next turn. A route without an entry gets Codex's metadata for an unknown model.
 - A session survives the runner process. A runner that starts on a state directory loads every
   session in it; what the previous runner had running is reported as lost (below).
 - `ListSessions` returns every session in the state directory with its spec, harness state,
@@ -196,7 +199,7 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   `turn/start` response proves that selected model was used; a superseded pending request is a
   `CommandNoop`. Neither harness's behavior is represented as a public "now" or "at boundary"
   choice.
-- A model change is rejected with a new-session diagnostic when the current and requested routes
+- A Claude model change is rejected with a new-session diagnostic when the current and requested routes
   have different configured context windows, including a transition between a configured and
   unlisted route. Same-window changes and changes between unlisted models keep their existing
   behavior. This keeps the per-process context and compaction limit aligned with the route for the

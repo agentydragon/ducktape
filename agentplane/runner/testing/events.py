@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Sequence
 
 from agentplane.proto import event_log_pb2, event_pb2
@@ -32,6 +33,20 @@ def items(entries: Sequence[event_log_pb2.EventEntry], item_kind: int) -> list[s
         entry.event.item_started.item_id
         for entry in of_kind(entries, "item_started")
         if entry.event.item_started.kind == item_kind
+    ]
+
+
+def codex_context_windows(entries: Sequence[event_log_pb2.EventEntry]) -> list[int]:
+    """The window Codex reported after each model reply, in order."""
+    frames = [
+        json.loads(entry.event.native.line)
+        for entry in of_kind(entries, "native")
+        if entry.event.native.direction == event_pb2.DIRECTION_FROM_HARNESS
+    ]
+    return [
+        frame["params"]["tokenUsage"]["modelContextWindow"]
+        for frame in frames
+        if frame.get("method") == "thread/tokenUsage/updated"
     ]
 
 

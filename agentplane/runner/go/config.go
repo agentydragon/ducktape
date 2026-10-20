@@ -66,6 +66,8 @@ type Config struct {
 	HTTPClient                       *http.Client
 }
 
+// ResolveModelConfig returns the context budget the LLM ingress configures for `model`, or nil for none.
+// Codex has no budget here: it reads its context window from the model catalog its provider names.
 func (c Config) ResolveModelConfig(ctx context.Context, harness runnerpb.Harness, model string) (*int, error) {
 	launch := c.Claude
 	if harness == runnerpb.Harness_HARNESS_CODEX {
@@ -74,11 +76,13 @@ func (c Config) ResolveModelConfig(ctx context.Context, harness runnerpb.Harness
 	if launch == nil {
 		return nil, errors.New("the selected harness is not configured on this runner")
 	}
-	u, err := url.Parse(launch.BaseURL)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, errors.New("model endpoint must be an absolute HTTP(S) URL")
+	if harness == runnerpb.Harness_HARNESS_CODEX {
+		return nil, nil
 	}
-	u.Path, u.RawPath, u.Fragment = "/agentplane/model-config", "", ""
+	u, err := launch.PlatformURL("/agentplane/model-config")
+	if err != nil {
+		return nil, err
+	}
 	q := url.Values{}
 	q.Set("model", model)
 	u.RawQuery = q.Encode()

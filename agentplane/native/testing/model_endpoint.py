@@ -8,6 +8,7 @@ objects and sockets stay inside this module.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, Protocol, Self, cast
@@ -79,8 +80,9 @@ class ModelRequestParseError(ValueError):
 
 
 class _HttpExchange:
-    def __init__(self, request: web.Request):
+    def __init__(self, request: web.Request, headers: Mapping[str, str]):
         self._request = request
+        self._headers = headers
         self._actions: asyncio.Queue[_Action] = asyncio.Queue()
         self._closed = asyncio.Event()
         self._action_waiters: set[asyncio.Future[None]] = set()
@@ -114,6 +116,7 @@ class _HttpExchange:
                         body=action.response.content,
                         status=action.response.status,
                         content_type=action.response.content_type,
+                        headers=self._headers,
                     )
                     action.complete.set_result(None)
                     return response
@@ -127,7 +130,7 @@ class _HttpExchange:
                         transport.close()
                     raise ConnectionError("scripted model endpoint closed the request mid-response")
                 if stream is None:
-                    stream = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+                    stream = web.StreamResponse(headers={**self._headers, "Content-Type": "text/event-stream"})
                     # The former test endpoint used connection-delimited SSE, including for a
                     # truncated stream.  Keep that wire shape: HTTP/1.1 chunking turns the same
                     # close into a different failure that Claude does not retry.
@@ -228,7 +231,7 @@ class ModelEndpoint[RequestT: StreamableRequest]:
 
     async def start(self) -> None:
         app = web.Application()
-        app.router.add_get("/agentplane/model-config", self._no_model_config)
+        self._add_routes(app)
         app.router.add_post("/{tail:.*}", self._post)
         self._runner = web.AppRunner(app, handler_cancellation=True)
         await self._runner.setup()
@@ -236,6 +239,14 @@ class ModelEndpoint[RequestT: StreamableRequest]:
         await site.start()
         address = cast(tuple[str, int], self._runner.addresses[0])
         self._origin = f"http://{address[0]}:{address[1]}"
+
+    def _add_routes(self, app: web.Application) -> None:
+        """Platform routes beside the model API, which LLM ingress serves to the harness's runner."""
+        app.router.add_get("/agentplane/model-config", self._no_model_config)
+
+    def _response_headers(self) -> Mapping[str, str]:
+        """Added to every model reply."""
+        return {}
 
     async def stop(self) -> None:
         try:
@@ -260,7 +271,9 @@ class ModelEndpoint[RequestT: StreamableRequest]:
 
     async def _post(self, request: web.Request) -> web.StreamResponse:
         try:
-            exchange = ModelExchange(self._parse_request(await request.json()), _HttpExchange(request))
+            exchange = ModelExchange(
+                self._parse_request(await request.json()), _HttpExchange(request, self._response_headers())
+            )
         except Exception as error:
             parse_error = ModelRequestParseError(f"typed model fixture rejected a native request: {error}")
             await self._pending.put(parse_error)

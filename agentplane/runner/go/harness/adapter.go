@@ -3,6 +3,8 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/url"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -31,6 +33,17 @@ type LaunchConfig struct {
 	Binary  string
 	BaseURL string
 	Token   string
+}
+
+// PlatformURL is `path` on the origin of BaseURL: a route the LLM ingress serves beside the model API,
+// which BaseURL may sit under (Codex's `/v1`).
+func (c LaunchConfig) PlatformURL(path string) (*url.URL, error) {
+	u, err := url.Parse(c.BaseURL)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return nil, errors.New("model endpoint must be an absolute HTTP(S) URL")
+	}
+	u.Path, u.RawPath, u.RawQuery, u.Fragment = path, "", "", ""
+	return u, nil
 }
 
 // NativeReceipt is a raw frame already committed to the Session journal.

@@ -22,6 +22,8 @@ import (
 const (
 	codexMaxRetries = 2
 	codexClientName = "agentplane"
+	// The LLM ingress route serving Codex's model catalog. It is not under the provider's `/v1`.
+	codexCatalogPath = "/agentplane/codex/models"
 )
 
 var codexOutcomeFields = map[string]bool{
@@ -68,7 +70,10 @@ func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.Adapter 
 }
 
 func (a *codexAdapter) Command() ([]string, error) {
-	session := a.host.Session()
+	catalogURL, err := a.launch.PlatformURL(codexCatalogPath)
+	if err != nil {
+		return nil, err
+	}
 	args := []string{a.launch.Binary}
 	appendOverride := func(key string, value any) error {
 		encoded, err := json.Marshal(value)
@@ -87,6 +92,7 @@ func (a *codexAdapter) Command() ([]string, error) {
 		{"model_providers.agentplane.base_url", a.launch.BaseURL},
 		{"model_providers.agentplane.env_key", "OPENAI_API_KEY"},
 		{"model_providers.agentplane.wire_api", "responses"},
+		{"model_providers.agentplane.model_catalog_url", catalogURL.String()},
 		{"model_providers.agentplane.request_max_retries", 0},
 		{"model_providers.agentplane.stream_max_retries", codexMaxRetries},
 		{"approval_policy", "never"},
@@ -101,17 +107,12 @@ func (a *codexAdapter) Command() ([]string, error) {
 		{"features.multi_agent", true},
 		{"features.view_image", false},
 		{"features.unbounded_connection_retries", false},
+		// CLEANUP(added 2026-10-20): Remove once the pinned `agentplane_codex_cli_linux_x64` is >= 0.162,
+		//   where the feature is on by default. 0.157.0 never fetches a custom provider's catalog without it.
+		{"features.api_key_model_discovery", true},
 	}
 	for _, override := range overrides {
 		if err := appendOverride(override.key, override.value); err != nil {
-			return nil, err
-		}
-	}
-	if session.TotalContextBudgetTokens != nil {
-		if *session.TotalContextBudgetTokens <= 0 {
-			return nil, fmt.Errorf("model_context_window must be positive")
-		}
-		if err := appendOverride("model_context_window", *session.TotalContextBudgetTokens); err != nil {
 			return nil, err
 		}
 	}
