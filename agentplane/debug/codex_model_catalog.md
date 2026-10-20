@@ -50,6 +50,10 @@ Windows are Codex's usable window, 95% of the entry's `context_window`, read fro
 | Same switch with `-c model_context_window=120000` (what the runner does)      | 114000 on both routes; catalog edits and the header do not move it.                                                                                                                                                            |
 | `thread/start.config = {model_context_window: 120000}` beside a plain thread  | The pinned thread stays 114000 after v2; the plain thread goes to 142500.                                                                                                                                                      |
 
+`runner/test_codex_catalog.py` repeats the edit, the route switch and the failing refetch through the real runner
+on 0.157.0 (the runner sets `model_catalog_url`): each turn's window follows its served entry, an edit reaches
+the running Codex within two turns, and a 500 on refetch fails no turn.
+
 Not tested: real tool or reasoning use against a served entry, compaction after a switch to a smaller
 window, `X-Models-Etag` passing through the egress sidecar and proxy, a catalog `ETag` that differs from
 the reply header over many turns.

@@ -76,8 +76,7 @@ and is not forwarded.
 Every `/v1/responses` reply then carries the same value as `X-Models-Etag`. A running Codex that sees
 a value different from the `ETag` it holds refetches the catalog before its next turn, so an edited
 catalog (a new file, a restarted ingress) reaches running Sessions without restarting their
-harnesses. A harness has to be configured to use the endpoint (its provider's `model_catalog_url`);
-the runner does not set it yet. cdk8s generates the file for each environment
+harnesses. The runner sets the Codex provider's `model_catalog_url` to this endpoint and passes no context window of its own. cdk8s generates the file for each environment
 (`cluster/cdk8s/agentplane/codex_models.py`): a ChatGPT route takes the pinned Codex's upstream entry, another
 route an entry only where a context window is configured. Codex behavior behind this endpoint, with source citations and test
 results: [`debug/codex_model_catalog.md`](../debug/codex_model_catalog.md).
