@@ -1,7 +1,9 @@
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
@@ -559,5 +561,111 @@ py_test(
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
+    ],
+)
+
+go_library(
+    name = "main_lib",
+    srcs = [
+        "config.go",
+        "main.go",
+        "workers.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service",
+    deps = [
+        ":notifications_go_proto",
+        ":notifications_operator_go_proto",
+        "//agentplane/grpc/bearer",
+        "//agentplane/grpc/facade",
+        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/notification_service/actions",
+        "//agentplane/notification_service/api",
+        "//agentplane/notification_service/github",
+        "//agentplane/notification_service/store",
+        "//agentplane/notification_service/webhook",
+        "//agentplane/notification_service/worker",
+        "//agentplane/postgres/go/wakeups",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/sandboxreader",
+        "//agentplane/workload_auth/go/auth",
+        "@com_github_lib_pq//:pq",
+        "@com_github_spf13_viper//:viper",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_binary(
+    name = "notification-service",
+    embed = [":main_lib"],
+    pure = "on",
+)
+
+pkg_tar(
+    name = "service_binary_layer",
+    srcs = [":notification-service"],
+    package_dir = "/usr/local/bin",
+)
+
+oci_image(
+    name = "service_image",
+    base = "@distroless_static_debian13_linux_amd64",
+    entrypoint = ["/usr/local/bin/notification-service"],
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":service_binary_layer"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+    workdir = "/",
+)
+
+go_test(
+    name = "unit_test",
+    srcs = [
+        "config_test.go",
+        "workers_test.go",
+    ],
+    embed = [":main_lib"],
+)
+
+go_test(
+    name = "integration_test",
+    size = "medium",
+    srcs = [
+        "integration_testmain_test.go",
+        "main_test.go",
+    ],
+    embed = [":main_lib"],
+    tags = ["requires_docker"],
+    deps = [
+        ":notifications_go_proto",
+        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/notification_service/actions",
+        "//agentplane/notification_service/migrations",
+        "//agentplane/notification_service/store",
+        "//agentplane/postgres/go/wakeups",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "//agentplane/sandboxes/api",
+        "//agentplane/testing/postgres",
+        "//agentplane/workload_auth/go/authtest",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
     ],
 )

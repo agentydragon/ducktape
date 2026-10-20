@@ -39,6 +39,25 @@ and preserve existing staging data. `/healthz` reports process liveness; `/ready
 PostgreSQL and the LISTEN connection. Verify an Action subscription through a newly opened harness after rollout. Existing
 sessions retain their original prompt.
 
+## Go image
+
+`:service_image` (binary `:notification-service`) is the Go service: nothing deploys it yet, and the Python
+service above serves until the cutover. It reads the settings file and environment variables of
+[Configuration](#configuration), with these differences:
+
+- It takes no flags, and no `log_levels`; logs are JSON on stderr.
+- `request_timeout_s` (default 15) bounds a call's backend work, and `watch_lease_s` (default 300) is how long a
+  watch lasts before it ends with `reconnect_required`.
+- GitHub is on when any `github.*` setting is set, so a Secret without `github.app_id`, or the reverse, fails
+  startup instead of leaving the source off.
+- A setting that fails validation stops startup without printing its value.
+
+One listener (`host`, `port`) serves gRPC (`Notifications`, `NotificationsOperator` and `grpc.health.v1`) and, when
+GitHub is on, `POST /v1/webhooks/github`. Health checks take no bearer: service `""` is readiness (the LISTEN
+connection is up and a query succeeds; it fails once the service is told to stop) and `livez` is liveness (the
+process answers). Four workers claim inboxes, and one that returns or fails ends the process, logging the types of
+its error and never its message.
+
 ## Configuration
 
 Set `AGENTPLANE_NOTIFICATIONS_CONFIG_FILE` to a Pydantic-validated YAML file; explicit missing files and

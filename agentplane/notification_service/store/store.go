@@ -17,14 +17,15 @@ import (
 // WorkChannel is the NOTIFY channel that tells workers inbox work was committed.
 const WorkChannel = "agentplane_notification_work"
 
-// Quotas bound what one owner, inbox or subscription set may hold.
+// Quotas bound what one owner, inbox or subscription set may hold. The service's config holds them under its
+// `quotas` key, named by the mapstructure tags.
 type Quotas struct {
 	// InboxesPerAccount is the most inboxes one owning ServiceAccount retains.
-	InboxesPerAccount int
+	InboxesPerAccount int `mapstructure:"inboxes_per_account"`
 	// ActiveSubscriptionsPerInbox is the most subscriptions of an inbox that are neither cancelled nor expired.
-	ActiveSubscriptionsPerInbox int
+	ActiveSubscriptionsPerInbox int `mapstructure:"active_subscriptions_per_inbox"`
 	// EntriesPerInbox is the most distinct source-event identities over an inbox's lifetime.
-	EntriesPerInbox int
+	EntriesPerInbox int `mapstructure:"entries_per_inbox"`
 }
 
 // ServiceAccount is the owner of inboxes and subscriptions: the account a caller's workloads run as.

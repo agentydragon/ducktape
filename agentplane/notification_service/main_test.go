@@ -1,0 +1,369 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/actions"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/authtest"
+	"github.com/google/uuid"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+)
+
+const (
+	testAudience  = "test-notification-service"
+	testNamespace = "test-namespace"
+	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
+	callDeadline = 30 * time.Second
+
+	sandboxName  = "test-sandbox"
+	sandboxUID   = "test-sandbox-uid"
+	sandboxToken = "test-token-sandbox"
+	testSession  = "test-session"
+	webhookKey   = "test-webhook-secret-of-sixteen-or-more"
+)
+
+// Bearer -> ServiceAccount. Test literals, not real credentials. A Sandbox runs as the ServiceAccount of its own
+// name.
+var testAccounts = map[string]authtest.Account{
+	sandboxToken: {Namespace: testNamespace, Name: sandboxName, UID: "test-sandbox-account-uid"},
+}
+
+// serveGRPC serves a fake peer on a loopback port and returns its address.
+func serveGRPC(t *testing.T, register func(*grpc.Server)) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	register(server)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	return listener.Addr().String()
+}
+
+// listingRunner is a Sandbox's runner, as the control Service reaches it.
+type listingRunner struct {
+	runnerservicepb.UnimplementedRunnerServer
+}
+
+func (listingRunner) ListSessions(context.Context, *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
+	return &runnerpb.ListSessionsResponse{Sessions: []*runnerpb.SessionSummary{{SessionId: testSession}}}, nil
+}
+
+// serveActionService answers the two reads of the Action Service: every request was submitted by the test
+// Sandbox, and none has events.
+func serveActionService(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/events") {
+		_, _ = w.Write([]byte(`[]`))
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"caller": map[string]string{"namespace": testNamespace, "name": sandboxName}})
+}
+
+// running is a served Notification Service over the shared database, emptied of earlier tests' inboxes.
+type running struct {
+	notifications notificationspb.NotificationsClient
+	health        healthpb.HealthClient
+	// url is the base URL of the service's HTTP routes.
+	url string
+	db  *sql.DB
+	// actionsToken is the Action Service token file.
+	actionsToken string
+	// wait returns what serve returned, once it has; stop asks it to stop first.
+	wait, stop func() error
+}
+
+func testDatabase(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("postgres", integrationDatabase.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+// start serves with settings for the test database and fake peers; tune adjusts the rest.
+func start(t *testing.T, tune func(*config)) running {
+	t.Helper()
+	db := testDatabase(t)
+	if _, err := db.ExecContext(t.Context(), `TRUNCATE inbox CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	actionsServer := httptest.NewServer(http.HandlerFunc(serveActionService))
+	t.Cleanup(actionsServer.Close)
+	tokens := t.TempDir()
+	tokenFile := func(name string) string {
+		path := filepath.Join(tokens, name)
+		if err := os.WriteFile(path, []byte("test-peer-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	runnerAddress := serveGRPC(t, func(s *grpc.Server) { runnerservicepb.RegisterRunnerServer(s, listingRunner{}) })
+	historyAddress := serveGRPC(t, func(s *grpc.Server) {
+		historypb.RegisterHistoryServiceServer(s, historypb.UnimplementedHistoryServiceServer{})
+	})
+	dispatcherAddress := serveGRPC(t, func(s *grpc.Server) {
+		dispatcherpb.RegisterSessionDispatcherServer(s, dispatcherpb.UnimplementedSessionDispatcherServer{})
+	})
+
+	c := defaultConfig()
+	c.DatabaseURL = integrationDatabase.URL
+	c.Namespace, c.TokenAudience = testNamespace, testAudience
+	c.Actions = actions.Settings{URL: actionsServer.URL, TokenFile: tokenFile("actions"), RequestTimeoutSeconds: 5}
+	c.RunnerGateway = runnerGateway{ControlTarget: runnerAddress, TokenFile: tokenFile("gateway"), RequestTimeoutSeconds: 5}
+	c.HistoryService = peer{Target: historyAddress, TokenFile: tokenFile("history"), RequestTimeoutSeconds: 5}
+	c.SessionDispatcher = peer{Target: dispatcherAddress, TokenFile: tokenFile("dispatcher"), RequestTimeoutSeconds: 5}
+	if tune != nil {
+		tune(&c)
+	}
+	scheme := runtime.NewScheme()
+	if err := sandboxapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	deps := kubeDeps{
+		Reviews: authtest.Reviews{Audience: testAudience, Accounts: testAccounts},
+		Sandboxes: clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			&sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID}},
+		).Build(),
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	served := make(chan error, 1)
+	go func() { served <- serve(ctx, c, deps, listener) }()
+	var result error
+	var received sync.Once
+	wait := func() error {
+		received.Do(func() {
+			select {
+			case result = <-served:
+			case <-time.After(callDeadline):
+				result = errors.New("the service did not stop")
+			}
+		})
+		return result
+	}
+	stop := func() error {
+		cancel()
+		return wait()
+	}
+	t.Cleanup(func() { _ = stop() })
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { connection.Close() })
+	return running{
+		notifications: notificationspb.NewNotificationsClient(connection), health: healthpb.NewHealthClient(connection),
+		url: "http://" + listener.Addr().String(), db: db, actionsToken: c.Actions.TokenFile, wait: wait, stop: stop,
+	}
+}
+
+func bearing(t *testing.T, token string) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	t.Cleanup(cancel)
+	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+}
+
+func checkHealth(t *testing.T, client healthpb.HealthClient, service string) (healthpb.HealthCheckResponse_ServingStatus, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+	response, err := client.Check(ctx, &healthpb.HealthCheckRequest{Service: service})
+	return response.GetStatus(), err
+}
+
+func TestTheServiceAnswersHealthChecksAndCallsAndStopsWhenTold(t *testing.T) {
+	service := start(t, nil)
+	for _, check := range []struct {
+		service string
+		want    healthpb.HealthCheckResponse_ServingStatus
+	}{{"", healthpb.HealthCheckResponse_SERVING}, {livenessService, healthpb.HealthCheckResponse_SERVING}} {
+		if got, err := checkHealth(t, service.health, check.service); err != nil || got != check.want {
+			t.Errorf("health of %q = %v, %v; want %v", check.service, got, err, check.want)
+		}
+	}
+	if _, err := checkHealth(t, service.health, "test-unknown-service"); status.Code(err) != codes.NotFound {
+		t.Errorf("health of an unknown service: %v", err)
+	}
+	// A call is admitted by its bearer and served from the database.
+	if _, err := service.notifications.ListSubscriptions(bearing(t, sandboxToken), &notificationspb.ListSubscriptionsRequest{}); err != nil {
+		t.Errorf("list subscriptions: %v", err)
+	}
+	_, err := service.notifications.ListSubscriptions(bearing(t, "test-token-unknown"), &notificationspb.ListSubscriptionsRequest{})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("list subscriptions with an unknown bearer: %v", err)
+	}
+	if err := service.stop(); !errors.Is(err, context.Canceled) {
+		t.Errorf("serve returned %v, want the cancellation that stopped it", err)
+	}
+	if _, err := checkHealth(t, service.health, ""); err == nil {
+		t.Error("the service answered after it stopped")
+	}
+}
+
+func TestAWorkerThatStopsEndsTheServiceWithoutSayingWhy(t *testing.T) {
+	service := start(t, nil)
+	_, err := service.notifications.CreateSubscription(bearing(t, sandboxToken), &notificationspb.CreateSubscriptionRequest{
+		DestinationRef: &notificationspb.DestinationRef{Namespace: testNamespace, Name: sandboxName, Uid: sandboxUID},
+		SessionId:      testSession, IdempotencyKey: "test-key",
+		Source: &notificationspb.Source{Provider: &notificationspb.Source_Actions{
+			Actions: &notificationspb.ActionsSource{RequestId: uuid.NewString()},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A token the Action Service cannot be read with is no failure of the source to show on the subscription: it
+	// stops the worker, as it stopped the Python service's.
+	if err := os.Remove(service.actionsToken); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{`UPDATE inbox SET next_attempt = now()`, `UPDATE subscription SET next_attempt = now()`} {
+		if _, err := service.db.ExecContext(t.Context(), query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := service.db.ExecContext(t.Context(), `SELECT pg_notify('agentplane_notification_work', '')`); err != nil {
+		t.Fatal(err)
+	}
+	var stopped workerStopped
+	err = service.wait()
+	if !errors.As(err, &stopped) {
+		t.Fatalf("serve returned %v, want a worker that stopped", err)
+	}
+	if strings.Contains(err.Error(), service.actionsToken) || !strings.Contains(err.Error(), "*worker.UnclassifiedProviderError") {
+		t.Errorf("the failure names the token path or not the source failure's type: %v", err)
+	}
+	if _, err := checkHealth(t, service.health, ""); err == nil {
+		t.Error("the service answered after a worker stopped")
+	}
+}
+
+func TestReadinessNeedsTheWakeupsTheDatabaseAndAServiceThatIsNotStopping(t *testing.T) {
+	for name, spoil := range map[string]func(p *probes){
+		"stopping":    func(p *probes) { p.draining.Store(true) },
+		"no wakeups":  func(p *probes) { p.hub.Close() },
+		"no database": func(p *probes) { p.db.Close() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, store.WorkChannel)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { hub.Close() })
+			p := &probes{db: testDatabase(t), hub: hub}
+			request := &healthpb.HealthCheckRequest{}
+			if response, err := p.Check(t.Context(), request); err != nil || response.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+				t.Fatalf("a healthy service is %v, %v", response.GetStatus(), err)
+			}
+			spoil(p)
+			if response, err := p.Check(t.Context(), request); err != nil || response.GetStatus() != healthpb.HealthCheckResponse_NOT_SERVING {
+				t.Errorf("readiness = %v, %v; want NOT_SERVING", response.GetStatus(), err)
+			}
+			// Liveness never follows the dependencies, so that waiting out their outage restarts nothing.
+			response, err := p.Check(t.Context(), &healthpb.HealthCheckRequest{Service: livenessService})
+			if err != nil || response.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+				t.Errorf("liveness = %v, %v; want SERVING", response.GetStatus(), err)
+			}
+		})
+	}
+}
+
+// webhookServer starts the service with GitHub configured by an App whose key is generated for the test.
+func webhookServer(t *testing.T) running {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return start(t, func(c *config) {
+		c.GitHub.AppID, c.GitHub.WebhookSecret = 42, webhookKey
+		c.GitHub.PrivateKey = string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	})
+}
+
+func postWebhook(t *testing.T, service running, signature string) int {
+	t.Helper()
+	body := []byte(`{}`)
+	if signature == "" {
+		mac := hmac.New(sha256.New, []byte(webhookKey))
+		mac.Write(body)
+		signature = "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	}
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, service.url+"/v1/webhooks/github", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("X-GitHub-Event", "ping")
+	request.Header.Set("X-GitHub-Delivery", uuid.NewString())
+	request.Header.Set("X-Hub-Signature-256", signature)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	return response.StatusCode
+}
+
+func TestTheWebhookIsServedBesideGRPCOnlyWhenGitHubIsConfigured(t *testing.T) {
+	service := webhookServer(t)
+	if got := postWebhook(t, service, ""); got != http.StatusAccepted {
+		t.Errorf("a signed ping = %d, want 202", got)
+	}
+	if got := postWebhook(t, service, "sha256="+strings.Repeat("0", 64)); got != http.StatusUnauthorized {
+		t.Errorf("a ping with another signature = %d, want 401", got)
+	}
+	if got, err := checkHealth(t, service.health, ""); err != nil || got != healthpb.HealthCheckResponse_SERVING {
+		t.Errorf("gRPC beside the webhook: %v, %v", got, err)
+	}
+	if got := postWebhook(t, start(t, nil), ""); got != http.StatusNotFound {
+		t.Errorf("a ping without GitHub configured = %d, want 404", got)
+	}
+}
