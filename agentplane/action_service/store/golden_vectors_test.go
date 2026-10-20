@@ -70,6 +70,15 @@ type golden struct {
 			ID        string `json:"id"`
 		} `json:"decoded"`
 	} `json:"history_cursors"`
+	TerminalStates []struct {
+		ExecutionState string `json:"execution_state"`
+		ActionState    string `json:"action_state"`
+	} `json:"terminal_states"`
+	UnknownOutcomes []struct {
+		Reason string          `json:"reason"`
+		Error  json.RawMessage `json:"error"`
+	} `json:"unknown_outcomes"`
+	GrantNotAuthorizedError json.RawMessage `json:"grant_not_authorized_error"`
 }
 
 // requestInput is the submission a vector holds.

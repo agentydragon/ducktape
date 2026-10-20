@@ -53,9 +53,8 @@ func (s *Store) Cancel(ctx context.Context, id uuid.UUID, principal Principal) (
 
 // cancelPendingDispatch ends the Execution an allowed request awaits dispatch of, so nothing claims it.
 func cancelPendingDispatch(ctx context.Context, tx *sql.Tx, id uuid.UUID, at time.Time) error {
-	var state string
-	err := tx.QueryRowContext(ctx, `SELECT state FROM action_execution WHERE request_id = $1 FOR UPDATE`, id).Scan(&state)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && ExecutionState(state) != ExecutionPendingDispatch {
+	execution, err := lockExecution(ctx, tx, id)
+	if errors.Is(err, ErrNotFound) || err == nil && execution.State != ExecutionPendingDispatch {
 		return &ConflictError{Reason: ConflictNoPendingDispatch, Message: "allowed request has no pending dispatch"}
 	}
 	if err != nil {

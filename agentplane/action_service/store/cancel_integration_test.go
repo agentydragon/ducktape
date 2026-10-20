@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -61,8 +62,18 @@ func TestAnAllowedCancellationKeepsItsDecisionAndStopsDispatch(t *testing.T) {
 		execution.CompletedAt == nil || !execution.CompletedAt.Equal(result.Request.UpdatedAt) {
 		t.Errorf("result %+v, execution %+v", result, execution)
 	}
-	if f.count(t, `SELECT count(*) FROM action_execution WHERE state = 'pending_dispatch'`) != 0 {
+	if len(f.pendingDispatches(t)) != 0 {
 		t.Error("the cancelled request still awaits dispatch")
+	}
+	if claim, err := f.ClaimExecution(t.Context(), allowed.ID, testExecutor, leaseWindow, anywhere); claim != nil || err != nil {
+		t.Errorf("a queued worker claimed the cancelled request: %+v, %v", claim, err)
+	}
+	if _, err := f.MarkRunning(t.Context(), allowed.ID); conflictReason(err) != ConflictNotStartable {
+		t.Errorf("starting the cancelled request: %v", err)
+	}
+	unclaimed := Lease{ExecutorID: "test-unclaimed-executor", Token: uuid.New()}
+	if err := f.FinishExecution(t.Context(), allowed.ID, unclaimed, ExecutionOutcome{State: ExecutionSucceeded}); conflictReason(err) != ConflictLeaseNotOwned {
+		t.Errorf("finishing the cancelled request: %v", err)
 	}
 
 	replay, dispatch, err := f.Decide(t.Context(), allowed.ID, decision(pending, VerdictAllow, "decision-allowed"), operator)
@@ -95,22 +106,32 @@ func TestOnlyTheOwnerCanCancel(t *testing.T) {
 
 func TestCancellationOutcomeFollowsTheRequestsState(t *testing.T) {
 	for _, test := range []struct {
-		state     ActionState
-		execution ExecutionState
-		want      CancellationOutcome
+		state ActionState
+		reach func(f fixture, t *testing.T, id uuid.UUID)
+		want  CancellationOutcome
 	}{
-		{StateDispatching, ExecutionDispatching, OutcomeTooLate},
-		{StateRunning, ExecutionRunning, OutcomeTooLate},
-		{StateExecutionUnknown, ExecutionUnknown, OutcomeTooLate},
-		{StateSucceeded, ExecutionSucceeded, OutcomeAlreadyFinished},
-		{StateFailed, ExecutionFailed, OutcomeAlreadyFinished},
+		{StateDispatching, func(f fixture, t *testing.T, id uuid.UUID) { f.claim(t, id) }, OutcomeTooLate},
+		{StateRunning, func(f fixture, t *testing.T, id uuid.UUID) { f.claim(t, id); f.markRunning(t, id) }, OutcomeTooLate},
+		{StateExecutionUnknown, func(f fixture, t *testing.T, id uuid.UUID) {
+			f.claimFor(t, id, -time.Second)
+			f.markRunning(t, id)
+			f.expire(t)
+		}, OutcomeTooLate},
+		{StateSucceeded, func(f fixture, t *testing.T, id uuid.UUID) {
+			f.finish(t, id, f.claim(t, id).Lease, ExecutionSucceeded)
+		}, OutcomeAlreadyFinished},
+		{StateFailed, func(f fixture, t *testing.T, id uuid.UUID) {
+			f.finish(t, id, f.claim(t, id).Lease, ExecutionFailed)
+		}, OutcomeAlreadyFinished},
 	} {
 		t.Run(string(test.state), func(t *testing.T) {
 			f := newFixture(t)
 			allowed := f.allowed(t, caller, "claimed")
-			f.exec(t, `UPDATE action_request SET state = $2 WHERE id = $1`, allowed.ID, test.state)
-			f.exec(t, `UPDATE action_execution SET state = $2 WHERE request_id = $1`, allowed.ID, test.execution)
+			test.reach(f, t, allowed.ID)
 			before, events := f.get(t, allowed.ID), f.events(t, allowed.ID)
+			if before.State != test.state {
+				t.Fatalf("the request is %s, want %s", before.State, test.state)
+			}
 
 			result := f.cancel(t, allowed.ID)
 			if result.Outcome != test.want || !reflect.DeepEqual(result.Request, before) || !reflect.DeepEqual(f.events(t, allowed.ID), events) {

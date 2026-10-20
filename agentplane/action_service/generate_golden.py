@@ -1,7 +1,8 @@
 """Golden vectors that pin the Go store (`agentplane/action_service/store`) to the stored forms of this service.
 
 Stored rows hold values this service computed or serialized: an ActionRequest's `action`, `arguments` and
-`external_grant`, an event's `actor`, a Decision's `policy_evidence` and the cursor a history page ends at. Each
+`external_grant`, an event's `actor`, a Decision's `policy_evidence`, the `error` of an Execution the store ends,
+the ActionState an Execution's terminal state gives its request and the cursor a history page ends at. Each
 vector is produced by the Python code that writes the column, and the Go store must reproduce it and read it back.
 An input the Python models refuse is a vector too, because the Go store validates the same bounds.
 
@@ -29,13 +30,17 @@ from agentplane.action_service.models import (
     PolicySource,
     ProviderOutcome,
     ProviderVerdict,
+    UnknownOutcomeReason,
     Verdict,
 )
 from agentplane.action_service.store import (
+    GRANT_NOT_AUTHORIZED_ERROR,
+    TERMINAL_ACTION_STATE,
     actor_document,
     actor_from_document,
     decode_history_cursor,
     encode_history_cursor,
+    unknown_outcome_error,
 )
 from util.sqlalchemy_types import PydanticColumn
 
@@ -431,6 +436,7 @@ def build() -> Json:
             "provider_verdict": [member.value for member in ProviderVerdict],
             "policy_kind": [member.value for member in PolicyKind],
             "policy_source": [member.value for member in PolicySource],
+            "unknown_outcome_reason": [member.value for member in UnknownOutcomeReason],
         },
         "requests": request_vectors,
         "decision_inputs": [
@@ -442,6 +448,16 @@ def build() -> Json:
         "policy_evidence": evidence_vectors,
         "actors": actor_vectors,
         "history_cursors": history_cursors(),
+        "terminal_states": [
+            {"execution_state": execution.value, "action_state": action.value}
+            for execution, action in TERMINAL_ACTION_STATE.items()
+        ],
+        # The reasons the lease sweep writes; the others reach `action_execution.error` through a finished attempt.
+        "unknown_outcomes": [
+            {"reason": reason.value, "error": unknown_outcome_error(reason)}
+            for reason in (UnknownOutcomeReason.EXECUTOR_LOST, UnknownOutcomeReason.LEASE_EXPIRED)
+        ],
+        "grant_not_authorized_error": GRANT_NOT_AUTHORIZED_ERROR,
     }
 
 

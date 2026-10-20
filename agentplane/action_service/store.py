@@ -66,12 +66,21 @@ class ExternalGrantNotAuthorizedError(Exception):
     pass
 
 
-_TERMINAL_ACTION_STATE = {
+TERMINAL_ACTION_STATE = {
     ExecutionState.SUCCEEDED: ActionState.SUCCEEDED,
     ExecutionState.FAILED: ActionState.FAILED,
     ExecutionState.CANCELLED: ActionState.CANCELLED,
     ExecutionState.EXECUTION_UNKNOWN: ActionState.EXECUTION_UNKNOWN,
 }
+
+# `action_execution.error` of a request whose Connection grant no longer authorized it at claim time.
+GRANT_NOT_AUTHORIZED_ERROR: dict[str, JsonValue] = {"code": "external_grant_not_authorized"}
+
+
+def unknown_outcome_error(reason: UnknownOutcomeReason) -> dict[str, JsonValue]:
+    """`action_execution.error` of an Execution whose outcome could not be observed."""
+    return {"kind": reason, "message": "dispatch outcome unknown; not replayed"}
+
 
 _SECRET_KEYS = {
     # keep-sorted start
@@ -367,7 +376,7 @@ class ActionStore:
             if row.external_grant is not None and not await self._grant_authorized(session, row.external_grant):
                 # Preserve the historical Decision; the original grant no longer permits dispatch.
                 execution.state = ExecutionState.FAILED
-                execution.error = {"code": "external_grant_not_authorized"}
+                execution.error = GRANT_NOT_AUTHORIZED_ERROR
                 execution.completed_at = now
                 row.state = ActionState.FAILED
                 row.version += 1
@@ -449,7 +458,7 @@ class ActionStore:
         is accepted as a reconciliation, still gated on presenting the same lease — it
         never starts a second effect, only records the truth about the one attempt made.
         """
-        if result.state not in _TERMINAL_ACTION_STATE:
+        if result.state not in TERMINAL_ACTION_STATE:
             raise ValueError(f"executor returned non-terminal state {result.state}")
         async with self._sessions.begin() as session:
             row = await session.scalar(
@@ -472,7 +481,7 @@ class ActionStore:
             execution.state = result.state
             execution.result = result.result
             execution.error = result.error
-            row.state = _TERMINAL_ACTION_STATE[result.state]
+            row.state = TERMINAL_ACTION_STATE[result.state]
             row.version += 1
             row.updated_at = now
             _record_event(session, row, now)
@@ -511,7 +520,7 @@ class ActionStore:
                     else UnknownOutcomeReason.LEASE_EXPIRED
                 )
                 execution.state = ExecutionState.EXECUTION_UNKNOWN
-                execution.error = {"kind": reason, "message": "dispatch outcome unknown; not replayed"}
+                execution.error = unknown_outcome_error(reason)
                 execution.completed_at = now
                 row.state = ActionState.EXECUTION_UNKNOWN
                 row.version += 1

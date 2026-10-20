@@ -288,6 +288,68 @@ type CancellationResult struct {
 	Request ActionRequest
 }
 
+// Lease is the bearer that proves which dispatch attempt owns an Execution: the executor and the token granted
+// at claim time.
+type Lease struct {
+	ExecutorID string
+	Token      uuid.UUID
+}
+
+// ExecutionClaim is the dispatch attempt ClaimExecution reserved: the only one the Execution gets.
+type ExecutionClaim struct {
+	RequestID uuid.UUID
+	Lease
+	// ExpiresAt is when the lease lapses unless HeartbeatExecution renews it.
+	ExpiresAt time.Time
+}
+
+// ExecutionRequest is the payload handed to the one executor dispatch, as stored.
+type ExecutionRequest struct {
+	RequestID uuid.UUID
+	Action    ActionIdentity
+	// Arguments is a JSON object.
+	Arguments     json.RawMessage
+	Caller        ServiceAccount
+	ExternalGrant *ExternalGrant
+}
+
+// ExecutionOutcome is the terminal outcome an executor delivers.
+type ExecutionOutcome struct {
+	// State is succeeded, failed, cancelled or execution_unknown.
+	State ExecutionState
+	// Result is any JSON value; nil or JSON null for none.
+	Result json.RawMessage
+	// Error is a JSON object; nil or JSON null for none.
+	Error json.RawMessage
+}
+
+// UnknownOutcomeReason is why the lease sweep ended an Execution without an outcome.
+type UnknownOutcomeReason string
+
+const (
+	// UnknownExecutorLost is a lapsed lease whose executor's own heartbeat has also stopped.
+	UnknownExecutorLost UnknownOutcomeReason = "executor_lost"
+	// UnknownLeaseExpired is a lapsed lease whose executor is otherwise healthy.
+	UnknownLeaseExpired UnknownOutcomeReason = "lease_expired"
+)
+
+// terminalActionStates is the state of a request whose Execution ended in the key.
+var terminalActionStates = map[ExecutionState]ActionState{
+	ExecutionSucceeded: StateSucceeded,
+	ExecutionFailed:    StateFailed,
+	ExecutionCancelled: StateCancelled,
+	ExecutionUnknown:   StateExecutionUnknown,
+}
+
+// grantNotAuthorizedError is the `action_execution.error` of a request whose Connection grant no longer
+// authorized it at claim time.
+const grantNotAuthorizedError = `{"code": "external_grant_not_authorized"}`
+
+// unknownOutcomeError is the `action_execution.error` of an Execution whose outcome could not be observed.
+func unknownOutcomeError(reason UnknownOutcomeReason) string {
+	return `{"kind": "` + string(reason) + `", "message": "dispatch outcome unknown; not replayed"}`
+}
+
 var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 // invalid is ErrInvalid with the bound or pattern a value breaks.
@@ -394,6 +456,19 @@ func (i DecisionInput) Validate() error {
 	}
 	if i.DecisionNote != nil {
 		return bounded("decision_note", *i.DecisionNote, 0, 2000)
+	}
+	return nil
+}
+
+func (o ExecutionOutcome) Validate() error {
+	if _, terminal := terminalActionStates[o.State]; !terminal {
+		return invalid("an executor returns a terminal state, not %q", o.State)
+	}
+	if o.Result != nil && !json.Valid(o.Result) {
+		return invalid("result must be a JSON value")
+	}
+	if o.Error != nil && string(o.Error) != "null" && !isObject(o.Error) {
+		return invalid("error must be a JSON object")
 	}
 	return nil
 }

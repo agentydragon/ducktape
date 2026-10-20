@@ -13,14 +13,6 @@ import (
 // store to reading them, and to writing the same documents back: the store takes over a database that Python
 // filled.
 
-// jsonParam is a JSONB column's parameter: NULL when there is no document.
-func jsonParam(document json.RawMessage) any {
-	if document == nil {
-		return nil
-	}
-	return string(document)
-}
-
 // insertRequest writes a pending request and the Event Python's insert listener records for it.
 func (f fixture) insertRequest(t *testing.T, id uuid.UUID, owner ServiceAccount, key string, stored storedRequest, grant json.RawMessage) {
 	t.Helper()
@@ -223,6 +215,69 @@ func TestAJSONNullIsAnAbsentValue(t *testing.T) {
 	}
 	if actors := f.events(t, allowed.ID); actors[0].Actor != nil || actors[1].Actor != nil {
 		t.Errorf("events %+v", actors)
+	}
+}
+
+// insertAllowedAsPython writes a request an operator allowed, the way Python writes it: its Decision, its Events and
+// the Execution that awaits dispatch.
+func (f fixture) insertAllowedAsPython(t *testing.T, key string) uuid.UUID {
+	t.Helper()
+	id := f.insertMinimalRequest(t, caller.Account, key)
+	f.exec(t, `
+		INSERT INTO action_decision (id, request_id, verdict, provider, operator_issuer, operator_subject, idempotency_key, decided_at)
+		VALUES ($1, $2, 'allow', 'human_operator', $3, $4, $5, now())`,
+		uuid.New(), id, operator.Issuer, operator.Subject, "python-decision-"+key)
+	f.exec(t, `UPDATE action_request SET state = 'allowed', version = 2, updated_at = now(), history_at = now() WHERE id = $1`, id)
+	f.exec(t, `INSERT INTO action_event (request_id, sequence, state, at) VALUES ($1, 2, 'allowed', now())`, id)
+	f.exec(t, `INSERT INTO action_execution (id, request_id, state, created_at) VALUES ($1, $2, 'pending_dispatch', now())`, uuid.New(), id)
+	return id
+}
+
+// insertInFlightAsPython writes an allowed request Python then took through the states, with a lapsed lease.
+func (f fixture) insertInFlightAsPython(t *testing.T, key string, states []ActionState, lease Lease, failure json.RawMessage) uuid.UUID {
+	t.Helper()
+	id := f.insertAllowedAsPython(t, key)
+	for i, state := range states {
+		f.exec(t, `INSERT INTO action_event (request_id, sequence, state, at) VALUES ($1, $2, $3, now())`, id, 3+i, state)
+	}
+	last := states[len(states)-1]
+	f.exec(t, `UPDATE action_request SET state = $2, version = $3, updated_at = now() WHERE id = $1`, id, last, 2+len(states))
+	f.exec(t, `
+		UPDATE action_execution
+		SET state = $2, executor_id = $3, lease_token = $4, lease_expires_at = now() - interval '1 minute',
+			heartbeat_at = now() - interval '2 minutes', error = $5::jsonb
+		WHERE request_id = $1`,
+		id, ExecutionState(last), lease.ExecutorID, lease.Token, jsonParam(failure))
+	return id
+}
+
+func TestExecutionsPythonLeftAreDispatchedSweptAndReconciled(t *testing.T) {
+	f := newFixture(t)
+	queued := f.insertAllowedAsPython(t, "python-queued")
+	lostLease := Lease{ExecutorID: "test-python-executor", Token: uuid.New()}
+	lost := f.insertInFlightAsPython(t, "python-lost", []ActionState{StateDispatching, StateRunning}, lostLease, nil)
+	sweptLease := Lease{ExecutorID: "test-python-executor", Token: uuid.New()}
+	pythonError := loadGolden(t).UnknownOutcomes[0].Error
+	swept := f.insertInFlightAsPython(t, "python-swept", []ActionState{StateDispatching, StateRunning, StateExecutionUnknown}, sweptLease, pythonError)
+
+	if got := f.pendingDispatches(t); !slices.Equal(got, []uuid.UUID{queued}) {
+		t.Fatalf("pending dispatches %v, want only %v", got, queued)
+	}
+	f.claim(t, queued)
+	f.markRunning(t, queued)
+	if expired := f.expire(t); !slices.Equal(expired, []uuid.UUID{lost}) {
+		t.Errorf("the sweep ended %v, want only the attempt Python left in flight, %v", expired, lost)
+	}
+	sameJSON(t, f.get(t, swept).Execution.Error, pythonError)
+
+	for name, finished := range map[string]struct {
+		id    uuid.UUID
+		lease Lease
+	}{"swept by Python": {swept, sweptLease}, "swept by Go": {lost, lostLease}} {
+		f.finish(t, finished.id, finished.lease, ExecutionSucceeded)
+		if got := f.get(t, finished.id); got.State != StateSucceeded || got.Execution.ReconciledAt == nil {
+			t.Errorf("%s: request %s, execution %+v", name, got.State, got.Execution)
+		}
 	}
 }
 

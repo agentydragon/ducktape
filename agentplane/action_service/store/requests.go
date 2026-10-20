@@ -40,6 +40,14 @@ func jsonValue(column []byte) json.RawMessage {
 	return column
 }
 
+// jsonParam is a JSONB column's parameter: NULL when there is no document.
+func jsonParam(document json.RawMessage) any {
+	if document == nil {
+		return nil
+	}
+	return string(document)
+}
+
 func utc(t *time.Time) *time.Time {
 	if t == nil {
 		return nil

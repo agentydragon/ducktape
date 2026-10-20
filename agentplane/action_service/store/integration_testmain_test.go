@@ -92,13 +92,19 @@ type fakeGrants struct {
 	authorized map[uuid.UUID]bool
 	err        error
 	calls      []ExternalGrant
+	// during runs while a check is in progress, inside the store's transaction.
+	during func()
 }
 
 func (g *fakeGrants) AuthorizeAction(_ context.Context, _ *sql.Tx, grant ExternalGrant) (bool, error) {
 	g.mu.Lock()
-	defer g.mu.Unlock()
 	g.calls = append(g.calls, grant)
-	return g.authorized[grant.GrantID], g.err
+	authorized, err, during := g.authorized[grant.GrantID], g.err, g.during
+	g.mu.Unlock()
+	if during != nil {
+		during()
+	}
+	return authorized, err
 }
 
 func (g *fakeGrants) set(grant ExternalGrant, authorized bool) {
