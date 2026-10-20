@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 
@@ -156,5 +156,40 @@ py_library(
         "//agentplane/proto:event_pb2",
         "@pypi//protobuf",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_binary(
+    name = "generate_golden_bin",
+    main_module = "agentplane.history_service.fold.generate_golden",
+    deps = [":generate_golden"],
+)
+
+py_test(
+    name = "test_golden",
+    srcs = ["test_golden.py"],
+    # Pure synchronous test; no conftest fixture is needed.
+    args = ["--noconftest"],
+    data = ["//agentplane/history_service/threadfold:golden.json"],
+    deps = [
+        ":generate_golden",
+        "//:conftest",
+        "//agentplane/history_service:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "generate_golden",
+    srcs = ["generate_golden.py"],
+    deps = [
+        ":fold",
+        ":rows",
+        ":views",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "@pypi//protobuf",
     ],
 )

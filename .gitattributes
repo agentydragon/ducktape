@@ -156,3 +156,6 @@ tana/export/references/** rules-lint-ignored=true
 cluster/docs/inference/model_comparison/** rules-lint-ignored=true
 
 cluster/k8s/activitywatch/kustomization.yaml linguist-generated=true
+
+# Golden vectors the Python thread fold generates; test_golden checks the exact output.
+agentplane/history_service/threadfold/golden.json linguist-generated=true

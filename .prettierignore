@@ -33,6 +33,9 @@ cluster/generated/**
 cluster/k8s/ssh-mcp/flux-kustomization.yaml
 cluster/k8s/ssh-mcp/kustomization.yaml
 
+# The Python thread fold generates these golden vectors; test_golden checks exact output.
+agentplane/history_service/threadfold/golden.json
+
 # controller-gen owns these Agentplane CRD snapshots; test_generate checks exact output.
 agentplane/crds/manifests/crd-sandboxes.yaml
 agentplane/crds/manifests/crd-sandboxtemplates.yaml

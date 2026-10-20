@@ -1,0 +1,48 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/history_service:__subpackages__"])
+
+go_library(
+    name = "threadfold",
+    srcs = [
+        "fold.go",
+        "rows.go",
+        "types.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/threadfold",
+    deps = [
+        "//agentplane/history_service/settledcursors",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:history_service_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+    ],
+)
+
+go_test(
+    name = "fold_test",
+    srcs = [
+        "fold_test.go",
+        "golden_test.go",
+    ],
+    embed = [":threadfold"],
+    embedsrcs = ["golden.json"],
+    deps = [
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:history_service_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+exports_files(
+    ["golden.json"],
+    visibility = ["//agentplane/history_service:__subpackages__"],
+)
