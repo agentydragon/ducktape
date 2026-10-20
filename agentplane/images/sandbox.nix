@@ -1,9 +1,8 @@
 # agentplane's sandbox image: the command-line tools of a box that runs commands (<tools.nix>, which
 # the VM guest shares) on the nix-ld substrate FHS binaries need (<../../nix/lib/nix-ld-image.nix>).
 # Its user is uid 1000 `runner`, home /home/runner. The runner image (<../runner/image.nix>) is this
-# definition plus the runner and both harnesses, and the build image (<build.nix>) this definition
-# plus Bazel and what a build compiles with, so a tool added to <tools.nix> reaches all three and the
-# VM guest.
+# definition plus both harnesses, and the build image (<build.nix>) this definition plus Bazel and
+# what a build compiles with, so a tool added to <tools.nix> reaches all three and the VM guest.
 #
 # The egress proxy's CA comes from the pod, not from this image: nothing here sets SSL_CERT_FILE
 # or GIT_SSL_CAINFO. Pointing them at the public cacert bundle breaks TLS in-cluster, since the
@@ -14,12 +13,14 @@
 # Load:   docker load < result
 {
   pkgs,
-  # The released `agentplane` command (<../cli/package.nix>).
-  agentplaneCli,
+  # The released `agentplane` command (<../cli/package.nix>), for an image that carries its own.
+  # The runner image takes it from the runner disk instead (<../runner/runner-disk.nix>).
+  agentplaneCli ? null,
   name ? "agentplane-sandbox",
-  # What an image built on this one adds: packages linked into /bin beside the tools, and image
-  # config such as an entrypoint.
+  # What an image built on this one adds: packages linked into /bin beside the tools, directories
+  # appended to PATH, and image config such as an entrypoint.
   extraPaths ? [ ],
+  extraPathEntries ? [ ],
   extraConfig ? { },
 }:
 let
@@ -32,9 +33,10 @@ let
 
       pkgs.bashInteractiveFHS # the substrate's /bin/bash; the default build has no PATH fallback
       pkgs.cacert
-      agentplaneCli # the Action, Notification and egress-rules APIs (<../docs/agent_cli.md>)
     ]
     ++ import ./tools.nix pkgs
+    # The Action, Notification and egress-rules APIs (<../docs/agent_cli.md>).
+    ++ pkgs.lib.optional (agentplaneCli != null) agentplaneCli
     ++ extraPaths;
     pathsToLink = [
       "/bin"
@@ -42,6 +44,11 @@ let
       "/lib"
     ];
   };
+  pathEntries = [
+    "/bin"
+    "${sandboxEnv}/bin"
+  ]
+  ++ extraPathEntries;
 in
 pkgs.dockerTools.buildLayeredImage {
   inherit name;
@@ -82,7 +89,7 @@ pkgs.dockerTools.buildLayeredImage {
     User = "1000:1000";
     WorkingDir = "/home/runner";
     Env = [
-      "PATH=/bin:${sandboxEnv}/bin"
+      "PATH=${pkgs.lib.concatStringsSep ":" pathEntries}"
       "HOME=/home/runner"
       "USER=runner"
       # nixpkgs' glibc looks for zones under its own store path, which holds none; without this,

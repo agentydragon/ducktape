@@ -9,10 +9,9 @@ on:
       - "agentplane/runner/image.nix"
       - "agentplane/images/sandbox.nix"
       - "agentplane/images/tools.nix"
-      - "agentplane/cli/package.nix"
       - "nix/lib/nix-ld-image.nix"
-      # The runner arrives as a released executable, so a runner change reaches the image when its
-      # pin moves.
+      # The runner-ducktape tools include released executables (bb, bbr, gazelle, ...). The runner
+      # and `agentplane` are not in either image: they come from the runner disk image.
       - "nix/artifact-pins.json"
       - "flake.lock"
       - "nix/flake/packages.nix"
@@ -34,7 +33,6 @@ on:
       - ".github/workflows/agentplane-runner-image.yml"
       - ".github/workflows/nix-image.yml"
       - ".pre-commit-config.yaml"
-      - "agentplane/cli/package.nix"
       - "agentplane/images/sandbox.nix"
       - "agentplane/images/tools.nix"
       - "agentplane/runner/ducktape_image_smoke.sh"
@@ -69,7 +67,7 @@ jobs:
       image: git.allegedly.works/ducktape-ci/${{ matrix.variant }}
       registry: forgejo
       attic: true
-      # Starts each executable the runner SandboxTemplate names, once, as the image's own user.
+      # Starts each harness the runner SandboxTemplate names, once, as the image's own user.
       # Nothing here runs a turn: that is //agentplane/acceptance, run by hand after a bump.
       smoke: bash agentplane/runner/ducktape_image_smoke.sh "${{ matrix.variant }}"
     secrets:

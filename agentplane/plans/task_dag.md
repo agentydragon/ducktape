@@ -1373,10 +1373,10 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 **Decision; operator, 2026-10-13 and 2026-10-15 PDT.** The 2026-10-15 framing names the property wanted: independent updates and RAM headroom. Today one artifact still carries the harnesses and tools:
 `agentplane/runner/container-disk.nix` bakes both harnesses and the tools into the NixOS qcow2 that
-KubeVirt boots, and `agentplane/runner/image.nix` also bakes the runner into the Pod image from a binary
-pinned in `nix/artifact-pins.json`. The VM's runner and `agentplane` command are already split out onto
-the read-only disk `agentplane/runner/runner-disk.nix`, so a runner bump no longer republishes the
-guest; bumping a harness or a template's installed tools still rebuilds the whole artifact. Separate the concerns so a platform user supplies an image or definition with
+KubeVirt boots, and `agentplane/runner/image.nix` bakes them into the Pod image. The runner and
+`agentplane` command are already split out onto `agentplane/runner/runner-disk.nix`, a read-only disk
+the VM attaches and an image the Pod mounts, so a runner bump no longer republishes either; bumping a
+harness or a template's installed tools still rebuilds the whole artifact. Separate the concerns so a platform user supplies an image or definition with
 no runner and no harnesses and the runner side layers them in, and nobody bumps build versions to move a
 runner. State which of these the design must satisfy, in order:
 
@@ -1464,13 +1464,13 @@ package, kernel pin, and child fence; do not leave the experiment as an implicit
 **In flight; operator, 2026-10-20 PDT: the tools image should not change just for a runner bump. Pursuable independently of the VM half.**
 The runner and the `agentplane` command are published as plain files under `bin/` in the runner-disk
 image (`runner/runner-disk.nix`), beside the erofs the VM attaches. The runner Pod mounts that image
-as a read-only `image` volume at `/run/agentplane/runner`, starts the runner from it and appends
-`bin/` to `PATH`, and the tools image carries neither. Order: the template mounts the volume with
-nothing using it yet, and a Sandbox on `agentplane-testing` runs the binary from the mount; then the
-command flips and the tools image drops the runner and CLI. If the mount cannot be executed from,
-an init container copies the files into an `emptyDir` instead. Harnesses stay in the tools image;
-moving them is the open question in `RUNNER_IMAGE_LAYERING_DESIGN`. Exit evidence: bumping the
-runner pin publishes one image, and a Sandbox on the unchanged tools image starts on it.
+as a read-only `image` volume at `/run/agentplane/runner` and starts the runner from it; the tools image
+carries neither and ends `PATH` with the mount's `bin/`. Landed: the image, the mount and the start
+command, and the slimmer tools image; a Pod on `agentplane-testing` executes both binaries from the
+mount. Remaining: once the slimmer image is pinned, a Sandbox on testing starts on it, and a runner pin
+bump publishes only the runner-disk image (the tools-image workflows still re-push an unchanged tag,
+since their path filter covers all of `nix/artifact-pins.json`).
+Harnesses stay in the tools image; moving them is the open question in `RUNNER_IMAGE_LAYERING_DESIGN`.
 
 This does **not** deliver the RAM-headroom property by itself — a Pod still lives inside the node's
 allocatable. If the decision makes that property the priority, this node is convenience only and the VM
@@ -1486,10 +1486,9 @@ squashfs-disk and split-`containerDisk` shapes in the decision node beside it. K
 Firecracker stays open; what must not change is that the state volume and its ownership rules survive
 (`STATE_VOLUME_BLOCK`, and the `107:107` virtiofs constraint). Halted containerDisk replacement already
 works, so the update path exists. Landed: the runner and CLI are published as their own `containerDisk`
-(`runner/runner-disk.nix`) and the `runner-vm` template attaches it as a second read-only disk. Remaining:
-the guest mounts it at `/run/agentplane/runner` and runs the runner from it, the runner and CLI leave the
-guest closure and the full-guest pin triggers, and a raw erofs `containerDisk` is booted for the first time.
-The tools disk is not split yet.
+(`runner/runner-disk.nix`), the `runner-vm` template attaches it as a second read-only disk, and the guest
+mounts it at `/run/agentplane/runner`, runs the runner from it and no longer carries the runner or CLI
+(a Sandbox on `agentplane-testing` booted this way). Remaining: the tools disk is not split yet.
 The in-guest budgets (`VM_GUEST_BUDGET_DERIVE`) are the other half of the same story — stage 1 owns the
 reserve, stage 2 gets the rest.
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from

@@ -6,7 +6,6 @@ loaded="$(docker load -i "$(readlink -f result)")"
 printf '%s\n' "$loaded"
 image="$(printf '%s\n' "$loaded" | sed -n -e 's/^Loaded image: //p' -e 's/^Loaded image ID: //p' | tail -n 1)"
 test -n "$image"
-docker run --rm "$image" --help
 docker run --rm --entrypoint /bin/claude "$image" --version
 docker run --rm --entrypoint /bin/codex "$image" --version
 if [[ "$variant" == runner-ducktape ]]; then

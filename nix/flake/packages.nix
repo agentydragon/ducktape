@@ -114,23 +114,22 @@ ducktapePkgs
     inherit pkgs;
     agentplaneCli = self.packages.${system}.agentplane-cli;
   };
-  # The released static `agentplane` command that every image above and the runner disk carry.
+  # The released static `agentplane` command that the sandbox and build images and the runner disk
+  # carry.
   agentplane-cli = import ../../agentplane/cli/package.nix {
     inherit pkgs;
     binary = artifacts.agentplane-cli;
   };
-  # agentplane's runner image: the sandbox image plus the released static runner binary and nixpkgs'
-  # Claude Code and Codex (agentplane/runner/image.nix).
-  # Build: nix build .#runner-image
-  # Load:  docker load < result
   agentplane-runner = import ../../agentplane/runner/package.nix {
     inherit pkgs;
     binary = artifacts.agentplane-runner;
   };
+  # agentplane's runner image: the sandbox image plus nixpkgs' Claude Code and Codex
+  # (agentplane/runner/image.nix). The runner and CLI come from the runner disk image.
+  # Build: nix build .#runner-image
+  # Load:  docker load < result
   runner-image = import ../../agentplane/runner/image.nix {
     inherit pkgs pkgsUnstable;
-    runner = self.packages.${system}.agentplane-runner;
-    agentplaneCli = self.packages.${system}.agentplane-cli;
   };
   # Shared by the image and its Nix check, so validation cannot drift to another tool list.
   # Size reference: runner-ducktape:devel-20261008225612-c58bc67 measured 5.93 GiB
@@ -143,11 +142,9 @@ ducktapePkgs
     paths = preCommitPackages;
     pathsToLink = [ "/bin" ];
   };
-  # Same runner and harnesses, with the shared repository hook/build clients preinstalled.
+  # Same harnesses, with the shared repository hook/build clients preinstalled.
   runner-ducktape-image = import ../../agentplane/runner/image.nix {
     inherit pkgs pkgsUnstable;
-    runner = self.packages.${system}.agentplane-runner;
-    agentplaneCli = self.packages.${system}.agentplane-cli;
     name = "runner-ducktape";
     extraPaths = [ self.packages.${system}.runner-ducktape-tools ];
   };
