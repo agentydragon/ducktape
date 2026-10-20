@@ -6,7 +6,7 @@ import type { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
 import { CodeBlock } from "../../../code_block";
-import { CommandCallView, OutputBlock } from "../../../command_view";
+import { CommandCallView, CommandSummary, OutputBlock } from "../../../command_view";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "../entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
 import { zSshExecArguments, zSshExecResult } from "../../schemas/ssh/exec";
@@ -37,12 +37,20 @@ function ExecLabel({ args }: PreviewProps<SshExecArguments>): JSX.Element {
 
 function ExecCollapsed({ args }: PreviewProps<SshExecArguments>): JSX.Element {
   return (
-    <Text size="xs" lineClamp={1}>
-      <Code>
-        {args.user}@{args.host}
-      </Code>{" "}
-      · <Code>$ {args.command}</Code>
-    </Text>
+    <CommandSummary
+      text={args.command}
+      lead={
+        <>
+          <Code>
+            {args.user}@{args.host}
+          </Code>
+          {" · "}
+          <Text span ff="monospace">
+            {"$ "}
+          </Text>
+        </>
+      }
+    />
   );
 }
 

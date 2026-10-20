@@ -497,6 +497,84 @@ async def test_compact_action_summaries(
     await view.capture(target=section)
 
 
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
+@pytest.mark.parametrize(
+    ("group", "name", "arguments", "token"),
+    [
+        pytest.param(
+            "ssh",
+            "exec",
+            {
+                "host": "archive.example.com",
+                "user": "backup",
+                "command": "for target in mirror-a mirror-b mirror-c; do rsync --archive --delete --compress "
+                "--exclude='*.tmp' --exclude='.cache' /srv/backups/ backup@$target.example.com:/srv/mirror/ "
+                '&& echo "synced $target" || echo "failed $target" >&2; done; '
+                "tar --create --zstd --file /srv/archive/backups-$(date +%F).tar.zst /srv/backups",
+            },
+            "keyword",
+            id="ssh-exec",
+        ),
+        pytest.param(
+            "kubernetes_admin",
+            "pods_exec",
+            {
+                "name": "web-0",
+                "namespace": "apps",
+                "command": [
+                    "sh",
+                    "-c",
+                    'for log in /var/log/app/*.log; do gzip --keep --force "$log" && echo "compressed $log"; done; '
+                    "find /var/log/app -name '*.gz' -mtime +14 -print -delete; df --human-readable /var/log/app",
+                ],
+            },
+            "string",
+            id="pod-exec",
+        ),
+    ],
+)
+async def test_compact_exec_long_command(
+    view: VisualPage,
+    app: AgentplaneFixture,
+    capture_name: str,
+    group: str,
+    name: str,
+    arguments: dict[str, object],
+    token: str,
+    expanded: bool,
+) -> None:
+    await app.show_action_preview(group, name, arguments)
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    await _open_phone_navigation(page)
+    section = page.locator(".agentplane-actions-sidebar")
+    title = f"review {name.replace('_', ' ')}"
+    if expanded:
+        await section.get_by_role("button", name=f"Expand {title}").click()
+        await expect(section.locator(".agentplane-actions-sidebar-preview")).to_be_visible()
+        await expect(section.locator(".agentplane-code-block-placeholder")).to_have_count(0)
+    else:
+        summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
+        await expect(summary.locator(f".agentplane-tok-{token}").first).to_be_visible()
+        # However narrow the card, a command takes three lines and the rest is cut off. A chip makes
+        # its own line a little taller, so a whole fourth line is what this must not reach.
+        measured = await summary.evaluate(
+            """row => {
+                const text = row.firstElementChild;
+                return {
+                    height: text.getBoundingClientRect().height,
+                    lineHeight: parseFloat(getComputedStyle(text).lineHeight),
+                    clipped: text.scrollHeight > text.clientHeight,
+                };
+            }"""
+        )
+        assert measured["clipped"]
+        assert measured["height"] < 4 * measured["lineHeight"]
+    await wait_for_stable(page)
+    await view.capture(target=section)
+
+
 @pytest.mark.parametrize(
     ("group", "name"),
     [("ssh", "list_targets"), ("uncatalogued", "unknown_action"), ("kubernetes_admin", "resources_get")],

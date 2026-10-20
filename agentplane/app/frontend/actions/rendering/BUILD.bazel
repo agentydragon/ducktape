@@ -107,7 +107,6 @@ ts_library(
         "//:node_modules/yaml",
         "//:node_modules/zod",
         "//agentplane/app/frontend:clamped_block",
-        "//agentplane/app/frontend:code_block",
         "//agentplane/app/frontend:command_view",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend/actions:kubernetes_pod_list_schema",

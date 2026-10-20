@@ -2,15 +2,18 @@
 // harness's own shell tool calls: the command as highlighted shell, and its output as text, each
 // capped in height with the rest one click away.
 import { Button, Stack, Text } from "@mantine/core";
-import { type JSX, useState } from "react";
+import { type JSX, type ReactNode, useState } from "react";
 
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "./clamped_block";
-import { CodeBlock, type CodeBlockSurface } from "./code_block";
+import { CodeBlock, type CodeBlockSurface, InlineCode } from "./code_block";
 import { Disclosure, DisclosureBody } from "./disclosure";
 import { HighlightedText } from "./json_view";
 import { OperationSection } from "./operation_section";
 
 export const COMMAND_MAX_HEIGHT_REM = 10;
+
+/** How many lines of a command a compact card's collapsed row shows before cutting it off. */
+export const COMMAND_SUMMARY_MAX_LINES = 3;
 
 type Expansion = readonly [boolean, (expanded: boolean) => void];
 
@@ -23,6 +26,18 @@ function shellQuote(argument: string): string {
 /** A shell-safe display of argv that preserves each argument boundary without implying shell execution. */
 export function argvText(argv: readonly string[]): string {
   return argv.map(shellQuote).join(" ");
+}
+
+/** A command on a compact card's collapsed row: highlighted shell, its line breaks read as spaces, cut
+ * off after `COMMAND_SUMMARY_MAX_LINES` lines. The opened preview and the full card hold all of it.
+ * `lead` is what comes before the command on the first line, such as where it runs. */
+export function CommandSummary({ text, lead }: { text: string; lead?: ReactNode }): JSX.Element {
+  return (
+    <Text size="xs" lineClamp={COMMAND_SUMMARY_MAX_LINES} style={{ overflowWrap: "anywhere" }}>
+      {lead}
+      <InlineCode text={text} language="bash" />
+    </Text>
+  );
 }
 
 /** The call as the reader judges it: what the model said it is for, where it runs, the exact
@@ -61,12 +76,7 @@ export function CommandCallView(
         label={commandLabel}
         expansion={expansion}
       >
-        <CodeBlock
-          text={commandText}
-          language={command === undefined ? undefined : "bash"}
-          surface="plain"
-          releaseWhenFar={releaseWhenFar}
-        />
+        <CodeBlock text={commandText} language="bash" surface="plain" releaseWhenFar={releaseWhenFar} />
       </ClampedBlock>
       {notes.length > 0 && (
         <DisclosureBody>

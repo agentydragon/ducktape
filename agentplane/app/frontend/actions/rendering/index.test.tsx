@@ -885,7 +885,7 @@ describe("sandbox rendering", () => {
     expect(node.textContent).toContain("error");
   });
 
-  it("renders pod argv with safe argument quoting and without implying shell execution", async () => {
+  it("renders pod argv with safe argument quoting, highlighted as the shell words it is displayed as", async () => {
     const node = await mount(
       renderPaneCollapsed(
         { group: "kubernetes_admin", name: "pods_exec" },
@@ -893,7 +893,7 @@ describe("sandbox rendering", () => {
       )
     );
     expect(node.querySelector(".agentplane-code-inline")?.textContent).toBe("printf '%s' '$HOME' 'a'\\''b' ''");
-    expect(node.querySelector(".agentplane-tok-string")).toBeNull();
+    expect(node.querySelector(".agentplane-tok-string")?.textContent).toBe("'%s'");
 
     const opened = await mount(
       renderPaneOpened(
@@ -904,6 +904,5 @@ describe("sandbox rendering", () => {
     expect(opened.textContent).not.toContain("Pod apps/pod");
     expect(opened.textContent).toContain("Container worker");
     expect(opened.querySelector(".agentplane-code-block .cm-line")?.textContent).toBe("printf '%s' '$HOME'");
-    expect(opened.querySelector(".agentplane-tok-string")).toBeNull();
   });
 });

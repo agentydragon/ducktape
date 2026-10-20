@@ -8,5 +8,8 @@
   accessible names must not reintroduce identifiers like `pods_list_in_namespace`.
 - The whole collapsed action row (content and background) is the disclosure control; the separate
   right-arrow details link is the row's only navigation target.
+- A command is always highlighted shell: `CommandSummary` on the compact card's collapsed row, cut
+  off after three lines; `CommandCallView` in the opened preview and the full card, which hold all
+  of it. Never a bare `<Code>` of a command.
 - Never render a lone Approve or Deny: use the shared `ActionDecisionButtons` (green/check Approve,
   red/cross Deny).

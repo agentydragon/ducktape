@@ -3,8 +3,7 @@ import type { JSX } from "react";
 import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
-import { InlineCode } from "../../../code_block";
-import { argvText, CommandCallView, OutputBlock } from "../../../command_view";
+import { argvText, CommandCallView, CommandSummary, OutputBlock } from "../../../command_view";
 
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
@@ -19,16 +18,8 @@ const podsExecArguments = z.strictObject({
 
 type PodsExecArguments = z.infer<typeof podsExecArguments>;
 
-function CommandLine({ args }: { args: PodsExecArguments }): JSX.Element {
-  return (
-    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      <InlineCode text={argvText(args.command)} />
-    </Text>
-  );
-}
-
 function Collapsed({ args }: { args: PodsExecArguments }): JSX.Element {
-  return <CommandLine args={args} />;
+  return <CommandSummary text={argvText(args.command)} />;
 }
 
 function PodsExecLabel({ args }: { args: PodsExecArguments }): JSX.Element {

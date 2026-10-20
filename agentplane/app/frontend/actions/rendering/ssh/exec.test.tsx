@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mount } from "../../testing";
 import { renderPreview } from "../entry";
 import { renderResultPreview } from "../result_entry";
-import { execArgumentsPreview, execResultPreview } from "./exec";
+import { execArgumentsPreview, execCollapsedPreview, execResultPreview } from "./exec";
 
 const ARGUMENTS = { host: "test-host.example", user: "test-user", command: "echo test-output" };
 const VALUE = {
@@ -52,6 +52,17 @@ describe("ssh exec arguments", () => {
   it("takes no call it could not show whole", () => {
     expect(renderPreview(execArgumentsPreview, { ...ARGUMENTS, test_extra: "test-value" })).toBeUndefined();
     expect(renderPreview(execArgumentsPreview, { host: ARGUMENTS.host, user: ARGUMENTS.user })).toBeUndefined();
+  });
+});
+
+describe("ssh exec summary", () => {
+  it("shows where the command runs, then the command as highlighted shell", async () => {
+    const command = "if true; then echo test-output; fi";
+    const container = await drawn(renderPreview(execCollapsedPreview, { ...ARGUMENTS, command }));
+    expect(container.textContent).toContain(`test-user@test-host.example · $ ${command}`);
+    expect([...container.querySelectorAll(".agentplane-tok-keyword")].map((node) => node.textContent)).toEqual(
+      expect.arrayContaining(["if", "then", "fi"])
+    );
   });
 });
 
