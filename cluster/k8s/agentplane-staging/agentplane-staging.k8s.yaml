@@ -3863,6 +3863,8 @@ spec:
             - AGENTPLANE_EGRESS_CREDENTIAL
             - --harness-inherit-env
             - TZDIR
+          command:
+            - /run/agentplane/runner/bin/agentplane-runner
           env:
             - name: LITELLM_URL
               value: http://llm-ingress.agentplane-staging.svc.cluster.local:8080
@@ -6193,6 +6195,8 @@ spec:
             - BBR_BUILDBUDDY_API_KEY_FILE
             - --harness-inherit-env
             - TZDIR
+          command:
+            - /run/agentplane/runner/bin/agentplane-runner
           env:
             - name: LITELLM_URL
               value: http://llm-ingress.agentplane-staging.svc.cluster.local:8080

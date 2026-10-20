@@ -48,7 +48,8 @@ _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
 # SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 # The runner disk image's `bin/` (agentplane/runner/runner-disk.nix): the runner and the `agentplane`
-# command, mounted read-only the way the VM guest mounts the same image's erofs.
+# command, mounted read-only the way the VM guest mounts the same image's erofs. The container's
+# command is the runner here, not the tools image's entrypoint.
 _RUNNER_VOLUME_NAME = "runner"
 _RUNNER_DIR = "/run/agentplane/runner"
 _STATE_DIR = "/state"
@@ -296,6 +297,7 @@ class RunnerTemplate(Construct):
         return k8s.Container(
             name="runner",
             image=f"{image}:{_PLACEHOLDER_TAG}",
+            command=[f"{_RUNNER_DIR}/bin/agentplane-runner"],
             args=args,
             # The runner works in absolute paths. This is for a command exec'd in: the sandbox
             # Actions' `runner` boxes start there unless the caller names a directory.

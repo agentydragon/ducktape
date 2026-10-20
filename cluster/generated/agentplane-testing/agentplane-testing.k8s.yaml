@@ -3201,6 +3201,8 @@ spec:
             - AGENTPLANE_EGRESS_CREDENTIAL
             - --harness-inherit-env
             - TZDIR
+          command:
+            - /run/agentplane/runner/bin/agentplane-runner
           env:
             - name: LITELLM_URL
               value: http://llm-ingress.agentplane-testing.svc.cluster.local:8080
