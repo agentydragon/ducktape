@@ -39,8 +39,11 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
     newTag: devel-20261020033733-e077352 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
   # Bootstrap only: CI publishes the first images after merge; Flux must select real tags before rollout.
+  # CLEANUP(added 2026-10-20): Restore this pin's Flux image-policy marker (policy `agentplane-notification-service`,
+  #   field `tag`) in the testing service flip of NOTIFICATION_SERVICE_GO_PORT, which sets the Go tag with the `grpc`
+  #   probes in one change; until then testing keeps the Python service while the roster publishes the Go image.
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261020090057-42dc841 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261020090057-42dc841
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261017094830-fd684b6 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.

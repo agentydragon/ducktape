@@ -285,13 +285,13 @@
       "registry": "forgejo"
     },
     "agentplane-notification-service": {
-      "target": "//agentplane/notification_service:image",
+      "target": "//agentplane/notification_service:service_image",
       "test": "//agentplane/notification_service/...",
       "registry": "forgejo"
     },
     "agentplane-notification-service-migrate": {
-      "target": "//agentplane/notification_service:migration_image",
-      "test": "//agentplane/notification_service/...",
+      "target": "//agentplane/notification_service/migrations:image",
+      "test": "//agentplane/notification_service/migrations/...",
       "registry": "forgejo"
     },
     "tf-runner": {
