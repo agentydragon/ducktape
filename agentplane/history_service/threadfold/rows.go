@@ -354,6 +354,27 @@ func ParseReference(data []byte) (Reference, error) {
 	return reference, reference.validate()
 }
 
+// ReferenceColumns are an entity row's reference columns as stored: JSON, or nil when absent.
+type ReferenceColumns struct{ Text, Arguments, Output, Input []byte }
+
+// SetReferences parses the stored reference columns into the row.
+func (r *EntityRow) SetReferences(columns ReferenceColumns) error {
+	for _, column := range []struct {
+		stored []byte
+		parsed **Reference
+	}{{columns.Text, &r.TextRef}, {columns.Arguments, &r.ArgumentsRef}, {columns.Output, &r.OutputRef}, {columns.Input, &r.InputRef}} {
+		if column.stored == nil {
+			continue
+		}
+		reference, err := ParseReference(column.stored)
+		if err != nil {
+			return fmt.Errorf("%s row %s: %w", r.EntityKind, r.EntityID, err)
+		}
+		*column.parsed = &reference
+	}
+	return nil
+}
+
 func (r *Reference) ref() (*PayloadRef, error) {
 	if r == nil {
 		return nil, nil
@@ -405,6 +426,32 @@ func (r EntityRow) Item() (Item, error) {
 		return Item{}, fmt.Errorf("item row %s: invalid item completion", r.EntityID)
 	}
 	return item, nil
+}
+
+// Validate reports whether the row is a published view of its kind: its state has the kind's shape.
+func (r EntityRow) Validate() error {
+	switch r.EntityKind {
+	case KindViewState:
+		_, err := ReadViewState(r.State)
+		return err
+	case KindItem:
+		_, err := r.Item()
+		return err
+	case KindConfirmedInput:
+		if err := decodeStrict(r.State, &StoredConfirmedInputState{}); err != nil {
+			return fmt.Errorf("confirmed-input row %s: %w", r.EntityID, err)
+		}
+		return nil
+	case KindLifecycle:
+		if err := decodeStrict(r.State, &StoredLifecycleState{}); err != nil {
+			return fmt.Errorf("lifecycle row %s: %w", r.EntityID, err)
+		}
+		return nil
+	case KindCommand:
+		_, err := r.CommandSummary()
+		return err
+	}
+	return fmt.Errorf("unknown entity kind %q", r.EntityKind)
 }
 
 // CommandSummary parses the row of a command the fold reads back as prior state.

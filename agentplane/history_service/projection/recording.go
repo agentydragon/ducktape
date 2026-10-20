@@ -348,21 +348,14 @@ func priorEntities(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, stored *
 	for rows.Next() {
 		row := threadfold.EntityRow{ThreadID: threadID, ProjectionEpoch: stored.projectionEpoch}
 		var state []byte
-		references := make([][]byte, 4)
+		var references threadfold.ReferenceColumns
 		if err := rows.Scan(&row.EntityKind, &row.EntityID, &row.Cursor, &row.RevisionCursor, &row.Pending, &row.TurnID,
-			&state, &references[0], &references[1], &references[2], &references[3]); err != nil {
+			&state, &references.Text, &references.Arguments, &references.Output, &references.Input); err != nil {
 			return prior, err
 		}
 		row.State = state
-		for position, held := range []**threadfold.Reference{&row.TextRef, &row.ArgumentsRef, &row.OutputRef, &row.InputRef} {
-			if references[position] == nil {
-				continue
-			}
-			reference, err := threadfold.ParseReference(references[position])
-			if err != nil {
-				return prior, fmt.Errorf("%s row %s: %w", row.EntityKind, row.EntityID, err)
-			}
-			*held = &reference
+		if err := row.SetReferences(references); err != nil {
+			return prior, err
 		}
 		switch row.EntityKind {
 		case threadfold.KindItem:
