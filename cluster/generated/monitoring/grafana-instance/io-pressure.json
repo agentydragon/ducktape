@@ -25,7 +25,7 @@
       "type": "text",
       "options": {
         "mode": "markdown",
-        "content": "IO pressure is Linux PSI: the share of wall time in which tasks were stalled waiting for block IO. **Some** means at least one task was stalled; **full** means every non-idle task was stalled at once, so the workload made no progress. Node PSI comes from node-exporter (`node_pressure_io_*`); pod PSI comes from cAdvisor's pod-level cgroup (`container_pressure_io_*{container=\"\"}`). Pod values are not additive: two pods stalled at the same instant each show 100%.\n\nThe node list is the nodes whose node-exporter reports PSI; the disk rows at the bottom repeat once per selected node. Disk panels come from node-exporter `node_disk_*`, mapped to the Kubernetes node via the node-exporter pod. `hdd`/`ssd` is the kernel's per-device rotational flag from `node_disk_info`; virtual disks (`vd*`) usually report rotational regardless of what backs them. Device-mapper, loop and optical devices are left out. Latency is the mean service time per completed request over 5 minutes, empty when nothing completed; utilization is the fraction of time the device had IO in flight, which saturates at 100% on a spinning disk but not reliably on SSDs with deep queues."
+        "content": "IO pressure is Linux PSI: the share of wall time in which tasks were stalled waiting for block IO. **Some** means at least one task was stalled; **full** means every non-idle task was stalled at once, so the workload made no progress; **full** is never above **some**. The **IO stall** picker switches the node and pod graphs between the two; the pod table shows both. Node PSI comes from node-exporter (`node_pressure_io_*`); pod PSI comes from cAdvisor's pod-level cgroup (`container_pressure_io_*{container=\"\"}`). Pod values are not additive: two pods stalled at the same instant each show 100%.\n\nThe node list is the nodes whose node-exporter reports PSI; the disk rows at the bottom repeat once per selected node. Disk panels come from node-exporter `node_disk_*`, mapped to the Kubernetes node via the node-exporter pod. `hdd`/`ssd` is the kernel's per-device rotational flag from `node_disk_info`; virtual disks (`vd*`) usually report rotational regardless of what backs them. Device-mapper, loop and optical devices are left out. Latency is the mean service time per completed request over 5 minutes, empty when nothing completed; utilization is the fraction of time the device had IO in flight, which saturates at 100% on a spinning disk but not reliably on SSDs with deep queues."
       },
       "id": 1,
       "gridPos": {
@@ -49,8 +49,8 @@
       }
     },
     {
-      "title": "Node IO stall: some",
-      "description": "Share of time at least one task on the node waited on IO (node_pressure_io_waiting_seconds_total).",
+      "title": "Node IO stall: ${stall:text}",
+      "description": "Share of time tasks on the node waited on IO; the IO stall picker at the top switches between some and full.",
       "type": "timeseries",
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -79,7 +79,7 @@
       },
       "targets": [
         {
-          "expr": "max by (node) (rate(node_pressure_io_waiting_seconds_total[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node) (rate(node_pressure_io_${stall}_seconds_total[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "legendFormat": "{{node}}",
           "refId": "A"
         }
@@ -87,52 +87,8 @@
       "id": 3,
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
-        "y": 7
-      }
-    },
-    {
-      "title": "Node IO stall: full",
-      "description": "Share of time every non-idle task on the node waited on IO (node_pressure_io_stalled_seconds_total).",
-      "type": "timeseries",
-      "datasource": "${DS_MIMIR}",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "min": 0,
-          "custom": {
-            "fillOpacity": 10
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "sortBy": "Max",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "expr": "max by (node) (rate(node_pressure_io_stalled_seconds_total[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
-          "legendFormat": "{{node}}",
-          "refId": "A"
-        }
-      ],
-      "id": 4,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
         "y": 7
       }
     },
@@ -141,7 +97,7 @@
       "type": "row",
       "collapsed": false,
       "panels": [],
-      "id": 5,
+      "id": 4,
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -150,7 +106,7 @@
       }
     },
     {
-      "title": "Top pods by IO stall: some",
+      "title": "Top pods by IO stall: ${stall:text}",
       "description": "Pod cgroup PSI from cAdvisor; the ${topk} pods with the highest current value.",
       "type": "timeseries",
       "datasource": "${DS_MIMIR}",
@@ -180,60 +136,16 @@
       },
       "targets": [
         {
-          "expr": "topk(${topk}, max by (namespace, pod, node) (rate(container_pressure_io_waiting_seconds_total{container=\"\", pod!=\"\", node=~\"$node\"}[5m])))",
+          "expr": "topk(${topk}, max by (namespace, pod, node) (rate(container_pressure_io_${stall}_seconds_total{container=\"\", pod!=\"\", node=~\"$node\"}[5m])))",
           "legendFormat": "{{namespace}}/{{pod}} ({{node}})",
           "refId": "A"
         }
       ],
-      "id": 6,
+      "id": 5,
       "gridPos": {
         "h": 9,
-        "w": 12,
+        "w": 24,
         "x": 0,
-        "y": 16
-      }
-    },
-    {
-      "title": "Top pods by IO stall: full",
-      "description": "Pod cgroup PSI from cAdvisor; the ${topk} pods with the highest current value.",
-      "type": "timeseries",
-      "datasource": "${DS_MIMIR}",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "min": 0,
-          "custom": {
-            "fillOpacity": 10
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "sortBy": "Max",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "expr": "topk(${topk}, max by (namespace, pod, node) (rate(container_pressure_io_stalled_seconds_total{container=\"\", pod!=\"\", node=~\"$node\"}[5m])))",
-          "legendFormat": "{{namespace}}/{{pod}} ({{node}})",
-          "refId": "A"
-        }
-      ],
-      "id": 7,
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
         "y": 16
       }
     },
@@ -309,7 +221,7 @@
           }
         }
       ],
-      "id": 8,
+      "id": 6,
       "gridPos": {
         "h": 9,
         "w": 24,
@@ -322,7 +234,7 @@
       "type": "row",
       "collapsed": false,
       "panels": [],
-      "id": 9,
+      "id": 7,
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -454,7 +366,7 @@
           }
         }
       ],
-      "id": 10,
+      "id": 8,
       "gridPos": {
         "h": 10,
         "w": 24,
@@ -468,7 +380,7 @@
       "collapsed": false,
       "panels": [],
       "repeat": "node",
-      "id": 11,
+      "id": 9,
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -526,7 +438,7 @@
           "refId": "A"
         }
       ],
-      "id": 12,
+      "id": 10,
       "gridPos": {
         "h": 9,
         "w": 8,
@@ -571,7 +483,7 @@
           "refId": "A"
         }
       ],
-      "id": 13,
+      "id": 11,
       "gridPos": {
         "h": 9,
         "w": 16,
@@ -615,7 +527,7 @@
           "refId": "A"
         }
       ],
-      "id": 14,
+      "id": 12,
       "gridPos": {
         "h": 9,
         "w": 12,
@@ -659,7 +571,7 @@
           "refId": "A"
         }
       ],
-      "id": 15,
+      "id": 13,
       "gridPos": {
         "h": 9,
         "w": 12,
@@ -703,7 +615,7 @@
           "refId": "A"
         }
       ],
-      "id": 16,
+      "id": 14,
       "gridPos": {
         "h": 9,
         "w": 8,
@@ -747,7 +659,7 @@
           "refId": "A"
         }
       ],
-      "id": 17,
+      "id": 15,
       "gridPos": {
         "h": 9,
         "w": 8,
@@ -791,7 +703,7 @@
           "refId": "A"
         }
       ],
-      "id": 18,
+      "id": 16,
       "gridPos": {
         "h": 9,
         "w": 8,
@@ -825,6 +737,28 @@
         "regex": "/node=\"([^\"]+)\"/",
         "sort": 1,
         "type": "query"
+      },
+      {
+        "current": {
+          "text": "some",
+          "value": "waiting"
+        },
+        "label": "IO stall",
+        "name": "stall",
+        "options": [
+          {
+            "selected": true,
+            "text": "some",
+            "value": "waiting"
+          },
+          {
+            "selected": false,
+            "text": "full",
+            "value": "stalled"
+          }
+        ],
+        "query": "some : waiting,full : stalled",
+        "type": "custom"
       },
       {
         "current": {
