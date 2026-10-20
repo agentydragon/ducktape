@@ -42,16 +42,13 @@ a history-free notice outcome, any schema change, and the Action Service port.
 so that the OpenAPI document `proto_openapi` renders from the first, one proto source per document, describes
 only what an agent may call. What the servicers and callers still owe it:
 
-- The rendered document is served at `/openapi.json`, linked from `/llms.txt`, and replaces
-  `docs/agents/http_api.md` (stage H).
 - The GitHub webhook stays hand-written HTTP on the facade's listener, unchanged: signed body, bounded, `202`.
-  `/healthz` and `/readyz` become `grpc.health.v1` and the probes native `grpc` probes (H); the app's probe moves
-  in I.
+  The manifests' probes become native `grpc` probes at the cutover; the app's probe moves in I.
 - A GitHub rate limit carries `google.rpc.RetryInfo`. The CLI reads `retry_after_seconds` from the `Retry-After`
   header today, and the stock gateway sets none, so it reads the error body's details instead (I).
 - Both watches send a `snapshot` when its state changes and read again at the next debounce or expiry deadline,
   and end with `reconnect_required` after a lease, as History's watch does. The app still ends a relayed stream
-  when the operator session does (H, I).
+  when the operator session does (I).
 
 ## Stored data the port must read and write exactly
 
@@ -105,8 +102,8 @@ not checked that it carries gRPC; the generated messages still replace its hand-
   real Session subscribed and notified on testing before staging.
 - **Struct numbers.** `Struct` holds numbers as doubles. The largest integer in the realistic webhook fixtures
   (`store/golden.json`) is 31_000_000_123, below 2^53 = 9007199254740992; those are synthetic, and retained staging
-  payloads are not checked. The store keeps the payload as raw JSON in `jsonb`, so only stage H, which puts it in a
-  `Struct`, is exposed. Check the largest integer in retained staging payloads there before relying on it; the
+  payloads are not checked. The store keeps the payload as raw JSON in `jsonb`, so only the servicers, which put it
+  in a `Struct`, are exposed. Check the largest integer in retained staging payloads before the cutover; the
   fallback is the payload as a JSON string field.
 - **Probes.** The app probes the service's `/healthz`; `readyz` also requires live workers, the LISTEN connection
   and a query. The gRPC health service carries both, and the app's probe moves to it in stage I.
