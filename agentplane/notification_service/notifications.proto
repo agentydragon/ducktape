@@ -45,14 +45,16 @@ service Notifications {
   }
 
   // Extends a subscription to `lifetime_days` from now, up to 30. `version` must be the one last read, else
-  // `ABORTED`, which is also the answer for a cancelled subscription. Renewing an expired subscription takes an
-  // active slot and is subject to the same quota as creating one.
+  // `ABORTED`, which is also the answer for a cancelled subscription; a retired inbox fails
+  // `FAILED_PRECONDITION`. Renewing an expired subscription takes an active slot and is subject to the same quota
+  // as creating one.
   rpc RenewSubscription(RenewSubscriptionRequest) returns (RenewSubscriptionResponse) {
     option (google.api.http) = {patch: "/v1/subscriptions/{subscription_id}" body: "*"};
   }
 
-  // Cancels a subscription. Idempotent. Entries it already delivered stay in the inbox, and cancelling never
-  // cancels an Action request.
+  // Cancels a subscription; cancelling a cancelled one answers with it. A retired inbox fails
+  // `FAILED_PRECONDITION`. Entries it already delivered stay in the inbox, and cancelling never cancels an Action
+  // request.
   rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse) {
     option (google.api.http) = {delete: "/v1/subscriptions/{subscription_id}"};
   }
