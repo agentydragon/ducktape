@@ -1931,12 +1931,14 @@ flowchart LR
     NOTIFICATION_SERVICE_GO_PORT[Candidate: port the Notification Service to Go]
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
     ACTION_API_MERGE[Decision, unscheduled: merge parts of the operator and agent-facing Action APIs]
+    WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_PYTHON_RETIREMENT
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_READS_FACADE
     NOTIFICATION_SERVICE_GO_PORT -. related .-> NOTIFICATION_SERVICE_SPLIT
     ACTION_SERVICE_GO_PORT -. related .-> ACTION_API_MERGE
+    ACTION_SERVICE_GO_PORT -. related .-> WEB_PUSH_SERVICE
 ```
 
 ### `HISTORY_GO_STAGING_CUTOVER` — cut staging over to the Go History Service
@@ -1997,6 +1999,17 @@ principal, keeping the operator-only RPCs (decisions, Connections, enrollments, 
 `OperatorActionService`. Deciding before the servicers of `ACTION_SERVICE_GO_PORT` are written lets them be
 implemented once. The contract is `action_service.proto` and `operator_action_service.proto` in
 `agentplane/action_service/`.
+
+### `WEB_PUSH_SERVICE` — Web Push as its own sender
+
+**Decision, unscheduled (operator, 2026-10-20 07:41 UTC: "eventually we might want to think about moving it out. It
+just so happens that right now agentplane only sends web push notifications about actions that need approval. But I
+can foresee wanting to send other web pushes").** Web Push delivery (operator subscriptions, VAPID settings, the sender)
+lives in the Action Service because an Action awaiting approval is the only message today. It does not belong to the
+Notification Service, which serves agent Session inboxes, a different system. If other messages come, a Web Push
+sender of its own would own the subscriptions and take messages from their producers. The Python `push.py` touches
+only its own tables and the request event stream, so the move is clean. Not immediate: `ACTION_SERVICE_GO_PORT` keeps
+Web Push in the Action Service.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 
