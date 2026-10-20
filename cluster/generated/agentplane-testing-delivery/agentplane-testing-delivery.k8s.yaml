@@ -52,23 +52,7 @@ spec:
     spec:
       automountServiceAccountToken: true
       containers:
-        - args:
-            - --sandbox-namespace=agentplane-testing
-            - --listen-address=0.0.0.0:8080
-            - --http-listen-address=0.0.0.0:8081
-            - --runner-token-file=/var/run/secrets/agentplane-runner-gateway/token
-            - --dispatcher-audience=session-dispatcher
-            - --gateway-audience=agentplane-runner-gateway
-            - --runner-audience=agentplane-runner-control
-            - --sandbox-controller-account=agentplane-testing/sandbox-controller
-            - --dispatcher-caller=agentplane-testing/app
-            - --dispatcher-caller=agentplane-testing/notifications
-            - --gateway-caller=agentplane-testing/app
-            - --gateway-caller=agentplane-testing/notifications
-            - --gateway-caller=agentplane-testing/runner-gateway
-            - --wake-caller=agentplane-testing/app
-            - --wake-caller=agentplane-testing/notifications
-          env:
+        - env:
             - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE
               value: agentplane-testing
             - name: AGENTPLANE_RUNNER_GATEWAY_LISTEN_ADDRESS

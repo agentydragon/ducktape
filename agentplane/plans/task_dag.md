@@ -1641,7 +1641,6 @@ flowchart TD
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     RUNNER_RENAME[Decision, unscheduled: a better name than runner]
-    GO_SERVICES_DROP_SETTINGS_FLAGS[Unscheduled: drop the settings flags the Gateway and controllers still receive]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: how Agentplane services are configured]
 ```
 
@@ -1681,23 +1680,6 @@ sandbox, so it no longer reads as a Session Sandbox: the `sandbox__*` Actions,
 `action_service/sandbox/`, the `agentplane-sandbox` templates and labels, and
 `cluster/cdk8s/agentplane/command_sandbox.py`. The `sandbox__*` tool names are what agents and
 external Connections call, so renaming them is a wire change.
-
-### `GO_SERVICES_DROP_SETTINGS_FLAGS` — drop the settings flags the Gateway and controllers still receive
-
-**Unscheduled (2026-10-20, from the operator's 2026-10-18 direction that Go services read settings the same
-way, from the environment and a file where a list needs one, with no flags).** LLM ingress, the egress proxy,
-the Runner Gateway, the Sandbox Controller and the Policy Controller read their settings through Viper used
-directly in the service
-([#10989](https://github.com/agentydragon/ducktape/pull/10989),
-[#11080](https://github.com/agentydragon/ducktape/pull/11080),
-[#11174](https://github.com/agentydragon/ducktape/pull/11174),
-[#11184](https://github.com/agentydragon/ducktape/pull/11184),
-[#11186](https://github.com/agentydragon/ducktape/pull/11186)). The Gateway's and both controllers'
-manifests still send their old flags next to the settings (tombstones in `runner_gateway_workload.py`,
-`sandbox_controller.py` and `policy_controller.py`). Drop the flags, the tombstones and the generated
-`args` in one change once each service's pinned image reads its settings and is Ready on staging and
-testing (image before config). The egress sidecar stays on strict `yaml.v3`:
-[Sidecar settings](../egress/docs/design.md#sidecar-settings-strict-yamlv3-not-viper).
 
 ### `SERVICE_SETTINGS_RETHINK` — how Agentplane services are configured
 

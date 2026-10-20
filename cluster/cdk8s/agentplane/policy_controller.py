@@ -70,17 +70,12 @@ class PolicyController(Construct):
         }
         subject_namespaces = checked_value(Settings, "subject_namespaces", frozenset({namespace}))
         text = {**scalars, "subject_namespaces": ",".join(sorted(subject_namespaces))}
-        # CLEANUP(added 2026-10-20): Remove `args` once the pinned `agentplane-policy-controller` image is
-        #   built from a tree whose `agentplane/policy_controller/cmd/config.go` reads the settings above.
-        #   The image before it takes only these flags and fails without them; the one after ignores them.
-        legacy_args = [f"--{field.replace('_', '-')}={value}" for field, value in text.items()]
         workload = add_service_workload(
             self,
             env,
             serves=[endpoint],
             container="policy-controller",
             image=f"{_IMAGE}:unset",
-            args=legacy_args,
             env_variables={
                 **{env_name(Settings, field): EnvValue.from_value(value) for field, value in text.items()},
                 **(container_env or {}),

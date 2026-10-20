@@ -214,15 +214,6 @@ class RunnerGateway(Construct):
             },
             path="/etc/agentplane-runner-gateway/settings/settings.yaml",
         )
-        # CLEANUP(added 2026-10-19): Remove `args` once the pinned `agentplane-runner-gateway` image is built
-        #   from a tree whose `agentplane/runner_gateway/config.go` reads the settings above. The image
-        #   before it takes only these flags and fails without them; the one after ignores them.
-        legacy_args = [
-            *(f"--{field.replace('_', '-')}={value}" for field, value in scalars.items()),
-            *(f"--dispatcher-caller={account}" for account in dispatcher_accounts),
-            *(f"--gateway-caller={account}" for account in gateway_accounts),
-            *(f"--wake-caller={account}" for account in wake_accounts),
-        ]
         workload = add_service_workload(
             self,
             env,
@@ -230,7 +221,6 @@ class RunnerGateway(Construct):
             extra_ports=[dispatcher_http.container_port()],
             container="runner-gateway",
             image=image,
-            args=legacy_args,
             env_variables={
                 **{env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()},
                 env_name(Settings, "dispatcher_database_url"): database_url,

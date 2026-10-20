@@ -87,17 +87,12 @@ class SandboxController(Construct):
                 "runner_gateway_token_file": f"{_GATEWAY_TOKEN_DIR}/token",
             }.items()
         }
-        # CLEANUP(added 2026-10-20): Remove `args` once the pinned `agentplane-sandbox-controller` image is
-        #   built from a tree whose `agentplane/sandbox_controller/cmd/config.go` reads the settings above.
-        #   The image before it takes only these flags and fails without them; the one after ignores them.
-        legacy_args = [f"--{field.replace('_', '-')}={value}" for field, value in scalars.items()]
         workload = add_service_workload(
             self,
             env,
             serves=[endpoint],
             container="sandbox-controller",
             image=f"{_IMAGE}:unset",
-            args=legacy_args,
             env_variables={
                 **{env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()},
                 **(container_env or {}),

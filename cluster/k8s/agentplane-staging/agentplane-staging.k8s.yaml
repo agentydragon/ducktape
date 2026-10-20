@@ -4147,13 +4147,7 @@ spec:
     spec:
       automountServiceAccountToken: true
       containers:
-        - args:
-            - --namespace=agentplane-staging
-            - --metrics-bind-address=:8080
-            - --health-probe-bind-address=:8081
-            - --runner-gateway-target={sandbox}-control.{namespace}.svc:8080
-            - --runner-gateway-token-file=/var/run/secrets/agentplane-runner-gateway/token
-          env:
+        - env:
             - name: AGENTPLANE_SANDBOX_CONTROLLER_NAMESPACE
               value: agentplane-staging
             - name: AGENTPLANE_SANDBOX_CONTROLLER_METRICS_BIND_ADDRESS
@@ -6648,12 +6642,7 @@ spec:
     spec:
       automountServiceAccountToken: true
       containers:
-        - args:
-            - --policy-namespace=agentplane-staging
-            - --metrics-bind-address=:8080
-            - --health-probe-bind-address=:8081
-            - --subject-namespaces=agentplane-staging
-          env:
+        - env:
             - name: AGENTPLANE_POLICY_CONTROLLER_POLICY_NAMESPACE
               value: agentplane-staging
             - name: AGENTPLANE_POLICY_CONTROLLER_METRICS_BIND_ADDRESS

@@ -52,23 +52,7 @@ spec:
     spec:
       automountServiceAccountToken: true
       containers:
-        - args:
-            - --sandbox-namespace=agentplane-staging
-            - --listen-address=0.0.0.0:8080
-            - --http-listen-address=0.0.0.0:8081
-            - --runner-token-file=/var/run/secrets/agentplane-runner-gateway/token
-            - --dispatcher-audience=session-dispatcher
-            - --gateway-audience=agentplane-runner-gateway
-            - --runner-audience=agentplane-runner-control
-            - --sandbox-controller-account=agentplane-staging/sandbox-controller
-            - --dispatcher-caller=agentplane-staging/app
-            - --dispatcher-caller=agentplane-staging/notifications
-            - --gateway-caller=agentplane-staging/app
-            - --gateway-caller=agentplane-staging/notifications
-            - --gateway-caller=agentplane-staging/runner-gateway
-            - --wake-caller=agentplane-staging/app
-            - --wake-caller=agentplane-staging/notifications
-          env:
+        - env:
             - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE
               value: agentplane-staging
             - name: AGENTPLANE_RUNNER_GATEWAY_LISTEN_ADDRESS
