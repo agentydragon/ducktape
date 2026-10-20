@@ -257,7 +257,7 @@ retired Kyverno policy, dedicated background-controller ClusterRole, and old bin
 names in rendered manifests, and checks binding scope against namespace classification
 labels (including the rendered Flux bootstrap overlay).
 It checks static/managed parity, finance's exact Coinbase addition, and
-explicit denials for staging operator/login, devbox restart, and public node proxy.
+explicit denials for staging operator/login, devbox restart, and node proxy (every profile).
 The separate legacy accounts have their own contracts; their permissions are not
 unioned with Haku's to mask missing access on a particular path.
 
@@ -268,7 +268,7 @@ RBAC contract, **not** proof of live deployment or complete agent capability par
 built-in authorization, external identity group membership, admission constraints,
 egress, Actions policies, and authority reachable through exec/node proxy need
 separate verification. The broad Haku diagnostics Role is deliberately unchanged;
-narrowing its node-proxy/Flux capabilities is a follow-up policy decision.
+narrowing its Flux capabilities is a follow-up policy decision.
 
 ### Namespace reader migration: Kyverno to GitOps
 
@@ -358,9 +358,9 @@ Preset changes affect **new Sandboxes only**. After deployment, launch a new San
 (or explicitly migrate through the operator workflow), then check its effective
 access with `kubectl auth can-i` and exercise the intended reads. In particular,
 verify Ducktape Flux access, approved logs, and testing operator/login access. Verify
-that staging operator login and staging Sandbox lifecycle/exec remain denied; public coder and finance
-must also remain denied node proxy access and Secrets/exec outside their explicit
-permissions. Namespace diagnostic reads in staging are distinct from operator access. Do not treat
+that staging operator login and staging Sandbox lifecycle/exec remain denied; every profile
+must also remain denied node proxy access, and public coder and finance Secrets/exec outside
+their explicit permissions. Namespace diagnostic reads in staging are distinct from operator access. Do not treat
 a configured catalog or preset as proof that existing Sandboxes received bindings.
 
 ### Managed Haku additional authority

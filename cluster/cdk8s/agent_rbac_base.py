@@ -195,10 +195,10 @@ def _add_cluster_roles(chart: Chart) -> None:
         _read(_RBAC_GROUP, "roles", "rolebindings", "clusterroles", "clusterrolebindings"),
         # SubjectAccessReview / LocalSubjectAccessReview answer "could <subject> do <action>?"
         # directly from the apiserver's authorizer -- the authoritative complement to reading the
-        # Role/binding graph above (e.g. "why is this ServiceAccount's pods/exec denied?"). Unlike
-        # create on nodes/proxy below, this "create" grants nothing: a review persists no object and
-        # changes no state -- it is a read-only authorization probe. It reveals only what the RBAC
-        # objects readable above already imply, so it stays secret-free and adds no ability to act.
+        # Role/binding graph above (e.g. "why is this ServiceAccount's pods/exec denied?"). This
+        # "create" grants nothing: a review persists no object and changes no state -- it is a
+        # read-only authorization probe. It reveals only what the RBAC objects readable above
+        # already imply, so it stays secret-free and adds no ability to act.
         k8s.PolicyRule(
             api_groups=["authorization.k8s.io"],
             resources=["subjectaccessreviews", "localsubjectaccessreviews"],
@@ -211,11 +211,9 @@ def _add_cluster_roles(chart: Chart) -> None:
         # reconciliation, without granting arbitrary Kustomization patches.
         _read("kustomize.toolkit.fluxcd.io", "kustomizations"),
         _read("metrics.k8s.io", "pods", "nodes"),
-        # nodes/proxy allows GET requests proxied through the apiserver to the kubelet HTTP API.
-        # Enables: /stats/summary (resource usage), /metrics, /pods, /logs/<filename> (node system
-        # logs). get-only: dangerous kubelet operations (exec, run, attach, portforward) use POST ->
-        # require the "create" verb, which is intentionally not granted here.
-        k8s.PolicyRule(api_groups=[""], resources=["nodes/proxy"], verbs=["get"]),
+        # No nodes/proxy, even get-only: the kubelet authorizes a WebSocket /exec handshake as
+        # `get` on nodes/proxy, so the grant is command execution in any pod on the node.
+        # Kubelet stats and metrics are scraped by Prometheus.
         _read(
             "monitoring.coreos.com",
             "prometheuses",

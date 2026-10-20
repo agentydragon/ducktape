@@ -658,6 +658,8 @@ def test_agent_permission_denials(
         Permission("agentplane-staging", "", "secrets", verb)
         for verb in ("get", "list", "watch", "create", "update", "patch", "delete")
     }
+    # The kubelet authorizes WebSocket exec as `get` on nodes/proxy.
+    denied.add(Permission(None, "", "nodes/proxy", "get"))
     for name, permissions in profiles.items():
         assert bool(uncovered({coinbase}, permissions)) == (name == "public-coder"), name
         assert uncovered(denied, permissions) == denied, name
@@ -669,9 +671,6 @@ def test_agent_permission_denials(
                 for verb in ("create", "update", "patch", "delete")
             }
             assert uncovered(sandbox_writes, permissions) == sandbox_writes
-        if name in {"public-coder", "finance-agent"}:
-            node_proxy = Permission(None, "", "nodes/proxy", "get")
-            assert uncovered({node_proxy}, permissions), name
 
 
 if __name__ == "__main__":

@@ -805,7 +805,7 @@ def _rbac(scope: Construct) -> None:
     # Haku already receives these resources through cluster-diagnostics-reader, and is repeated
     # here to make the Haku-superset invariant explicit. Keep public-coder on this smaller
     # surface rather than binding it to that broad role, which also exposes all Pods, PVs, RBAC,
-    # webhooks, and node proxy endpoints.
+    # and webhooks.
     metadata_reader = "public-coder-agent-cluster-metadata-reader"
     k8s.KubeClusterRole(
         scope,

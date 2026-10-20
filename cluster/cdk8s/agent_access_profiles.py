@@ -98,7 +98,7 @@ def catalog() -> dict[str, KubernetesGrant]:
     """Fresh existing grant models; consumers must not mutate another profile's catalog."""
     return {
         # Reuse public-coder's narrow cluster inventory, not Haku's broader
-        # cluster-diagnostics-reader (which includes node proxy access).
+        # cluster-diagnostics-reader.
         "public-coder-node-read": ClusterRoleBindingGrant(
             kind="ClusterRoleBinding",
             role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-node-reader"),
