@@ -43,7 +43,7 @@ sessions retain their original prompt.
 ## Go image
 
 `:service_image` (binary `:notification-service`) is the Go service: nothing deploys it yet, and the Python
-service above serves until the cutover. It reads the settings file and environment variables of
+service above serves until the [cutover](docs/cutover.md). It reads the settings file and environment variables of
 [Configuration](#configuration), with these differences:
 
 - It takes no flags, and no `log_levels`; logs are JSON on stderr.

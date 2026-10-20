@@ -73,9 +73,9 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 | Stage | Change                                                                                                                                                                                                                                                                                                                 |
 | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | I     | Callers, prepared against the proto and merged with the cutover: the CLI's `notifications` group decodes into the generated Go messages; the app's two stream routes and `_notifications_proxy`; the frontend's two stream consumers; app tests and `test_visual_notifications.py`, which import the service's models. |
-| J     | Testing cutover: repoint `devinfra/ci/image_targets.json`, soak the migrator, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                                                                                                                        |
-| K     | Staging cutover, below.                                                                                                                                                                                                                                                                                                |
-| L     | Python retirement: delete the Python service, tests, Alembic directory, migration image and CI roster entries. `settings.py` stays as the manifests' contract until `SERVICE_SETTINGS_RETHINK`, as History's does.                                                                                                     |
+| J     | Testing cutover, steps 1 to 4 of the [cutover runbook](../notification_service/docs/cutover.md): the migrator flip, the Go service image published with its pins held, the service flip with its callers, probes, README system overview and `docs/system_overview.md`, then acceptance.                               |
+| K     | Staging cutover, steps 5 to 8 of the runbook.                                                                                                                                                                                                                                                                          |
+| L     | Python retirement: delete the Python service, tests, Alembic directory, migration image, CI roster entries and the runbook. `settings.py` stays as the manifests' contract until `SERVICE_SETTINGS_RETHINK`, as History's does.                                                                                        |
 
 The CLI keeps the HTTP facade as its transport, since agents reach services through the egress proxy and I have
 not checked that it carries gRPC; the generated messages still replace its hand-written structs.
@@ -86,8 +86,8 @@ not checked that it carries gRPC; the generated messages still replace its hand-
 - **Backup and restore first** ([staging data preservation](../docs/staging_data_preservation.md)). On the restored
   copy, the Go service's list and read answers for every inbox and subscription equal the Python service's, field
   for field. No staging database is dropped or recreated.
-- **Image before config.** The Go image accepts the current manifests' settings; the probe and port changes follow
-  the pin.
+- **Image before config.** The Go image accepts the current manifests' settings. It is published with the pins held,
+  and the probe change ships in the change that pins it.
 - **No overlap of Python and Go workers.** The roll uses `Recreate`. GitHub does not retry a failed delivery, so
   the gap can lose webhooks; the redelivery procedure in the [API doc](../notification_service/docs/api.md) covers
   it, and staging is the only environment with the webhook route.
