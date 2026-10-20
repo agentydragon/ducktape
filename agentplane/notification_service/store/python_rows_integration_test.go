@@ -133,6 +133,18 @@ func TestSubscriptionsPythonCreatedAreReadAndFoundByTheirKey(t *testing.T) {
 				!sourcesEqual(read.Source, sent.Source) {
 				t.Errorf("read %+v, want a subscription following %+v", read, sent.Source)
 			}
+			// The shared state Python wrote for a GitHub subscription is what its status reports: the one grant it is
+			// bound through, not yet validated, and the subject.
+			if _, github := sent.Source.(GitHubSource); github {
+				status := read.GitHub
+				if status == nil || len(status.Access) != 1 || status.Access[0].CurrentlyValid ||
+					status.Access[0].Key.AppID != 1 || status.Access[0].Key.InstallationID != 2 ||
+					status.Subject.Key.RepositoryID != status.Access[0].Key.RepositoryID {
+					t.Errorf("GitHub status = %+v, want the one grant of the binding and its subject", status)
+				}
+			} else if read.GitHub != nil {
+				t.Errorf("GitHub status = %+v, want none", read.GitHub)
+			}
 			listed, err := f.ListSubscriptions(t.Context(), f.owner, nil)
 			if err != nil {
 				t.Fatal(err)

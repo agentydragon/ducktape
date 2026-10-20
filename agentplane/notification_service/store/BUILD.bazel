@@ -6,6 +6,10 @@ go_library(
     name = "store",
     srcs = [
         "claims.go",
+        "github_deliveries.go",
+        "github_ingest.go",
+        "github_state.go",
+        "github_status.go",
         "inboxes.go",
         "models.go",
         "notices.go",
@@ -41,6 +45,11 @@ go_test(
     size = "medium",
     srcs = [
         "claims_integration_test.go",
+        "github_ingest_integration_test.go",
+        "github_integration_test.go",
+        "github_matching_integration_test.go",
+        "github_record_integration_test.go",
+        "github_state_integration_test.go",
         "golden_vectors_test.go",
         "inboxes_integration_test.go",
         "integration_testmain_test.go",
@@ -67,5 +76,5 @@ go_test(
 
 exports_files(
     ["golden.json"],
-    visibility = ["//agentplane/notification_service:__pkg__"],
+    visibility = ["//agentplane/notification_service:__subpackages__"],
 )

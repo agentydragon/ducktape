@@ -145,3 +145,21 @@ func TestEventsAreReadAndWrittenAsPythonDoes(t *testing.T) {
 		})
 	}
 }
+
+func TestSubjectKeysAreThosePythonIndexes(t *testing.T) {
+	for _, vector := range loadGolden(t).SubjectKeys {
+		t.Run(vector.Kind, func(t *testing.T) {
+			subject, err := decodeSubject(vector.Subject)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key, err := NewGitHubSubjectKey(7, subject)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := (GitHubSubjectKey{RepositoryID: 7, Kind: vector.Kind, Key: vector.Key}); key != want {
+				t.Errorf("key = %+v, want %+v", key, want)
+			}
+		})
+	}
+}

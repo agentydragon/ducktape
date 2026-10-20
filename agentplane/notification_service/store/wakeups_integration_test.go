@@ -11,8 +11,9 @@ import (
 // awaitBound only fails a test whose wakeup never comes.
 const awaitBound = 30 * time.Second
 
-func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
-	f := newFixture(t, defaultQuotas())
+// observeWakeups returns a check of whether a step wakes workers.
+func observeWakeups(t *testing.T, f fixture) func(name string, want bool, step func()) {
+	t.Helper()
 	const sentinel = "notification_store_test_sentinel"
 	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, WorkChannel, sentinel)
 	if err != nil {
@@ -23,12 +24,12 @@ func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stopWork()
+	t.Cleanup(stopWork)
 	settled, stopSettled, err := hub.Subscribe(sentinel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stopSettled()
+	t.Cleanup(stopSettled)
 
 	// The hub applies notifications in the order PostgreSQL delivers them, so once the sentinel's has arrived,
 	// every notification the step committed before it has too.
@@ -48,12 +49,17 @@ func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
 			return false
 		}
 	}
-	check := func(name string, want bool, step func()) {
+	return func(name string, want bool, step func()) {
 		t.Helper()
 		if got := wakes(step); got != want {
 			t.Errorf("%s woke workers = %v, want %v", name, got, want)
 		}
 	}
+}
+
+func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	check := observeWakeups(t, f)
 
 	creation := body("first")
 	var subscription Subscription

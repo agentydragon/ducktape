@@ -64,8 +64,6 @@ Go service must reproduce or read back:
   schema's check constraints read inside them (`creation ? 'source'`, `creation #>> '{source,provider}'`).
   Idempotent creation compares them, with event and action filters as canonical sets. The store keeps its own
   structs for the stored form; they are not the proto messages.
-- `github_delivery.digest` is `sha256(event NUL raw body)` and `payload` the parsed body; the subject and
-  revision keys (`subject_key`) index the matching.
 - `notice.runner_entry` is a serialized `EventEntry`.
 
 The first Go stage therefore generates golden vectors from the Python code (the History port's method) and
@@ -79,7 +77,7 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | E     | Operator reads in the store, over the `worker` package: `SandboxStatus` and `SessionNoticeStates`, with the notice wait reason, notice progress and pending entry summaries. Ported with `test_store.py`'s cases.                                                                                                      |
 | F     | Actions source: the HTTP client, the owner check, event paging, `record`.                                                                                                                                                                                                                                              |
-| G     | GitHub source in two PRs on the client in `notification_service/github`: G2 shared refresh state, webhook ingest and correlation; G3 subscription context and reconcile. `sources/github/test_source.py` (1577 lines) is the specification.                                                                            |
+| G     | GitHub source on the client in `notification_service/github`: G3 subscription context and reconcile. `sources/github/test_source.py` (1577 lines) is the specification.                                                                                                                                                |
 | H     | Servicers, the facade, the webhook handler (body cap `413`, concurrency slots `503`, ten-second bound, HMAC, `202`), `main.go`, `config.go`, health, the image target, `docs/agents/`, `/openapi.json`. Acceptance tests move here.                                                                                    |
 | I     | Callers, prepared against the proto and merged with the cutover: the CLI's `notifications` group decodes into the generated Go messages; the app's two stream routes and `_notifications_proxy`; the frontend's two stream consumers; app tests and `test_visual_notifications.py`, which import the service's models. |
 | J     | Testing cutover: repoint `devinfra/ci/image_targets.json`, soak the migrator, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                                                                                                                        |
@@ -109,8 +107,11 @@ not checked that it carries gRPC; the generated messages still replace its hand-
 - **Delivery equivalence.** The notice state machine decides when a command is sent and never skipped. Nothing
   diffs two implementations of it, so the evidence is the ported tests, ordering that follows `Service.step`, and a
   real Session subscribed and notified on testing before staging.
-- **Struct numbers.** `Struct` holds numbers as doubles. Check the largest integer in retained staging payloads
-  before relying on it; the fallback is the payload as a JSON string field.
+- **Struct numbers.** `Struct` holds numbers as doubles. The largest integer in the realistic webhook fixtures
+  (`store/golden.json`) is 31_000_000_123, below 2^53 = 9007199254740992; those are synthetic, and retained staging
+  payloads are not checked. The store keeps the payload as raw JSON in `jsonb`, so only stage H, which puts it in a
+  `Struct`, is exposed. Check the largest integer in retained staging payloads there before relying on it; the
+  fallback is the payload as a JSON string field.
 - **Probes.** The app probes the service's `/healthz`; `readyz` also requires live workers, the LISTEN connection
   and a query. The gRPC health service carries both, and the app's probe moves to it in stage I.
 

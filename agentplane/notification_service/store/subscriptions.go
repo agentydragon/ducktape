@@ -55,6 +55,8 @@ type Subscription struct {
 	Failure       *SourceFailure
 	// RetryAt is when the service will retry the current failure of an active subscription.
 	RetryAt *time.Time
+	// GitHub is the shared state behind a GitHub subscription, nil for any other.
+	GitHub *GitHubStatus
 }
 
 const subscriptionColumns = `s.id, s.inbox_id, s.creation, s.idempotency_key, s.version, s.cancelled, s.expires_at,
@@ -104,8 +106,12 @@ func utc(t time.Time) *time.Time {
 }
 
 func getSubscription(ctx context.Context, tx *sql.Tx, id uuid.UUID, viewedAt time.Time) (Subscription, error) {
-	return scanSubscription(tx.QueryRowContext(ctx,
+	subscription, err := scanSubscription(tx.QueryRowContext(ctx,
 		`SELECT `+subscriptionColumns+` FROM subscription s WHERE s.id = $1`, id), viewedAt)
+	if err != nil {
+		return Subscription{}, err
+	}
+	return subscription, loadGitHubStatus(ctx, tx, &subscription)
 }
 
 func expiry(from time.Time, lifetimeDays int64) time.Time {
@@ -229,7 +235,15 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner ServiceAccount, aft
 		}
 		subscriptions = append(subscriptions, subscription)
 	}
-	return subscriptions, rows.Err()
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return nil, err
+	}
+	for i := range subscriptions {
+		if err := loadGitHubStatus(ctx, s.db, &subscriptions[i]); err != nil {
+			return nil, err
+		}
+	}
+	return subscriptions, nil
 }
 
 // GetSubscription returns one of the owner's subscriptions.
@@ -241,7 +255,10 @@ func (s *Store) GetSubscription(ctx context.Context, owner ServiceAccount, id uu
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subscription{}, ErrNotFound
 	}
-	return subscription, err
+	if err != nil {
+		return Subscription{}, err
+	}
+	return subscription, loadGitHubStatus(ctx, s.db, &subscription)
 }
 
 // lockSubscription is the owner's subscription read once its inbox is locked for update, so that nothing else
