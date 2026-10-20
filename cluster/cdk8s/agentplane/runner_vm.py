@@ -41,7 +41,7 @@ from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
 
 NAME = "runner-vm"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset"  # image-pins/ sets the tag
-_RUNNER_DISK_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"  # image-pins/ sets the tag
+RUNNER_DISK_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"  # image-pins/ sets the tag
 _CONFIG_MAP_NAME = "runner-vm-config"
 _WORKSPACE = "workspace"
 # The guest listens on nothing; a listed port keeps masquerade from forwarding every other port,
@@ -118,7 +118,7 @@ class RunnerVmTemplate(Construct):
                 "agentplane-runner": VirtualMachineSpecTemplateSpecVolumes(
                     name="runner",
                     container_disk=VirtualMachineSpecTemplateSpecVolumesContainerDisk(
-                        image=_RUNNER_DISK_IMAGE, image_pull_policy="IfNotPresent"
+                        image=RUNNER_DISK_IMAGE, image_pull_policy="IfNotPresent"
                     ),
                 ),
             },

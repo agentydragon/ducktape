@@ -47,6 +47,10 @@ _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
 # SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
+# The runner disk image's `bin/` (agentplane/runner/runner-disk.nix): the runner and the `agentplane`
+# command, mounted read-only the way the VM guest mounts the same image's erofs.
+_RUNNER_VOLUME_NAME = "runner"
+_RUNNER_DIR = "/run/agentplane/runner"
 _STATE_DIR = "/state"
 _WORKSPACE_VOLUME_NAME = "workspace"
 _WORKSPACE_DIR = f"{_STATE_DIR}/workspaces"
@@ -331,6 +335,7 @@ class RunnerTemplate(Construct):
                 k8s.VolumeMount(
                     name=_PLATFORM_INSTRUCTIONS_VOLUME, mount_path=_PLATFORM_INSTRUCTIONS_DIR, read_only=True
                 ),
+                k8s.VolumeMount(name=_RUNNER_VOLUME_NAME, mount_path=_RUNNER_DIR, read_only=True),
                 *self.trust_mounts,
                 *(
                     [k8s.VolumeMount(name=_BUILDBUDDY_SECRET, mount_path=_BUILDBUDDY_MOUNT, read_only=True)]
@@ -364,6 +369,10 @@ class RunnerTemplate(Construct):
                 service_account_name=NAME,
                 sidecar_settings=sidecar_settings,
                 workload_volumes=[
+                    k8s.Volume(
+                        name=_RUNNER_VOLUME_NAME,
+                        image=k8s.ImageVolumeSource(reference=runner_vm.RUNNER_DISK_IMAGE, pull_policy="IfNotPresent"),
+                    ),
                     k8s.Volume(
                         name=_PLATFORM_INSTRUCTIONS_VOLUME,
                         config_map=k8s.ConfigMapVolumeSource(name=_PLATFORM_INSTRUCTIONS_CONFIG_MAP),

@@ -3930,6 +3930,9 @@ spec:
             - mountPath: /etc/agentplane/platform-instructions
               name: platform-instructions
               readOnly: true
+            - mountPath: /run/agentplane/runner
+              name: runner
+              readOnly: true
             - mountPath: /etc/ssl/certs/ca-certificates.crt
               name: egress-ca
               readOnly: true
@@ -4020,6 +4023,10 @@ spec:
         - configMap:
             name: runner-egress-sidecar
           name: egress-sidecar-settings
+        - image:
+            pullPolicy: IfNotPresent
+            reference: git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset
+          name: runner
         - configMap:
             name: runner-platform-instructions
           name: platform-instructions
@@ -6255,6 +6262,9 @@ spec:
             - mountPath: /etc/agentplane/platform-instructions
               name: platform-instructions
               readOnly: true
+            - mountPath: /run/agentplane/runner
+              name: runner
+              readOnly: true
             - mountPath: /etc/ssl/certs/ca-certificates.crt
               name: egress-ca
               readOnly: true
@@ -6348,6 +6358,10 @@ spec:
         - configMap:
             name: runner-ducktape-egress-sidecar
           name: egress-sidecar-settings
+        - image:
+            pullPolicy: IfNotPresent
+            reference: git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset
+          name: runner
         - configMap:
             name: runner-platform-instructions
           name: platform-instructions
