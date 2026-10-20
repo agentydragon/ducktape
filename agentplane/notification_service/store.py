@@ -99,6 +99,11 @@ class ClaimLostError(Exception):
     pass
 
 
+def destination_key(destination_ref: DestinationRef, session_id: str) -> str:
+    """The inbox's identity under its owner: stored in `inbox.destination_key`, unique per owner."""
+    return hashlib.sha256(json.dumps([destination_ref.model_dump(), session_id], sort_keys=True).encode()).hexdigest()
+
+
 def refresh_status(row: RefreshRow) -> GitHubRefreshStatus:
     return GitHubRefreshStatus(
         last_success_at=row.last_success_at,
@@ -211,9 +216,7 @@ class Store:
     ) -> Inbox:
         """The owner's inbox for a destination Session, created if absent and returned locked for update."""
         now = datetime.now(UTC)
-        key = hashlib.sha256(
-            json.dumps([destination_ref.model_dump(), session_id], sort_keys=True).encode()
-        ).hexdigest()
+        key = destination_key(destination_ref, session_id)
         # Serialize only creation for an owner, to enforce the total destination quota.
         await session.execute(
             select(func.pg_advisory_xact_lock(func.hashtextextended(f"{owner.namespace}/{owner.name}", 0)))

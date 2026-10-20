@@ -1,0 +1,87 @@
+package store
+
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+)
+
+// awaitBound only fails a test whose wakeup never comes.
+const awaitBound = 30 * time.Second
+
+func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	const sentinel = "notification_store_test_sentinel"
+	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, WorkChannel, sentinel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { hub.Close() })
+	work, stopWork, err := hub.Subscribe(WorkChannel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopWork()
+	settled, stopSettled, err := hub.Subscribe(sentinel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopSettled()
+
+	// The hub applies notifications in the order PostgreSQL delivers them, so once the sentinel's has arrived,
+	// every notification the step committed before it has too.
+	wakes := func(step func()) bool {
+		t.Helper()
+		step()
+		f.exec(t, "SELECT pg_notify($1, '')", sentinel)
+		select {
+		case <-settled:
+		case <-time.After(awaitBound):
+			t.Fatal("no wakeup from the sentinel")
+		}
+		select {
+		case <-work:
+			return true
+		default:
+			return false
+		}
+	}
+	check := func(name string, want bool, step func()) {
+		t.Helper()
+		if got := wakes(step); got != want {
+			t.Errorf("%s woke workers = %v, want %v", name, got, want)
+		}
+	}
+
+	creation := body("first")
+	var subscription Subscription
+	check("creating a subscription", true, func() { subscription = f.subscribe(t, creation) })
+	check("replaying a creation", false, func() { f.subscribe(t, creation) })
+	github := body("github")
+	github.Source = GitHubSource{Repository: "owner/repository", Subject: PullRequestSubject{Number: 1}}
+	check("a refused creation", false, func() {
+		if _, err := f.Subscribe(t.Context(), f.owner, github); !errors.Is(err, ErrUnsupportedSource) {
+			t.Error(err)
+		}
+	})
+	check("reading", false, func() { f.read(t, subscription.InboxID, 0) })
+	check("appending an event", false, func() {
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, ActionsEvent{RequestID: creation.Source.(ActionsSource).RequestID, Sequence: 1}, `{}`)
+	})
+	check("acknowledging", true, func() { f.acknowledge(t, subscription.InboxID, 1) })
+	check("renewing", true, func() { f.renew(t, subscription.ID, 1, 7) })
+	check("cancelling", true, func() { f.cancel(t, subscription.ID) })
+	check("cancelling a cancelled subscription", false, func() { f.cancel(t, subscription.ID) })
+	check("retiring", true, func() {
+		if err := f.Retire(t.Context(), f.owner, subscription.InboxID); err != nil {
+			t.Error(err)
+		}
+	})
+	check("retiring a retired inbox", false, func() {
+		if err := f.Retire(t.Context(), f.owner, subscription.InboxID); err != nil {
+			t.Error(err)
+		}
+	})
+}

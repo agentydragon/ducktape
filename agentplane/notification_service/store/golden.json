@@ -1,0 +1,3259 @@
+{
+ "comparisons": [
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "identical Action request",
+   "same": true
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "after_sequence": 0,
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "explicit defaults equal omitted ones",
+   "same": true
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "6c0a2b3f-4d5e-4f60-9b7c-8d9e0f1a2b3c"
+    }
+   },
+   "name": "another request",
+   "same": false
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "after_sequence": 1,
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "another after_sequence",
+   "same": false
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 30,
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "another lifetime",
+   "same": false
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "other-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "another session",
+   "same": false
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "other"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "another destination uid",
+   "same": false
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "Action request against GitHub",
+   "same": false
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "completed",
+        "created"
+       ],
+       "event": "check_run"
+      },
+      {
+       "event": "status"
+      },
+      {
+       "event": "issue_comment"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "event": "issue_comment"
+      },
+      {
+       "event": "status"
+      },
+      {
+       "actions": [
+        "created",
+        "completed"
+       ],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "events in another order",
+   "same": true
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "completed",
+        "created"
+       ],
+       "event": "check_run"
+      },
+      {
+       "event": "status"
+      },
+      {
+       "event": "issue_comment"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "completed",
+        "created"
+       ],
+       "event": "check_run"
+      },
+      {
+       "event": "status"
+      },
+      {
+       "event": "issue_comment"
+      },
+      {
+       "event": "status"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "repeated filters",
+   "same": true
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "completed"
+       ],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "completed",
+        "completed"
+       ],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "repeated actions",
+   "same": true
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": null,
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "omitted events against null",
+   "same": true
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "event": "status"
+      },
+      {
+       "actions": [
+        "completed"
+       ],
+       "event": "check_run"
+      },
+      {
+       "event": "pull_request"
+      },
+      {
+       "event": "issue_comment"
+      },
+      {
+       "event": "pull_request_review"
+      },
+      {
+       "event": "pull_request_review_comment"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "omitted events against the default filters",
+   "same": false
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "completed"
+       ],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "any action against a listed one",
+   "same": false
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 124
+     }
+    }
+   },
+   "name": "another pull request",
+   "same": false
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 7
+     }
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "issue",
+      "number": 7
+     }
+    }
+   },
+   "name": "pull request against issue of the same number",
+   "same": false
+  },
+  {
+   "a": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "b": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/other",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "another repository",
+   "same": false
+  }
+ ],
+ "destination_keys": [
+  {
+   "destination_ref": {
+    "name": "test-sandbox",
+    "namespace": "test-namespace",
+    "uid": "test-uid"
+   },
+   "key": "078297ca4b766c091874430e507eecc920c4ab7dafaf56fe1db5b65c79595733",
+   "name": "plain ASCII",
+   "session_id": "test-session"
+  },
+  {
+   "destination_ref": {
+    "name": "sandb\u00f8x-\u00e9",
+    "namespace": "test-namespace",
+    "uid": "test-uid"
+   },
+   "key": "280d947d42a90e51cb52f5accdfe7ec5f2b2d15e5434a5083d56ad188c158862",
+   "name": "accented letters",
+   "session_id": "s\u00e9ssion"
+  },
+  {
+   "destination_ref": {
+    "name": "\u30b5\u30f3\u30c9\u30dc\u30c3\u30af\u30b9",
+    "namespace": "\u540d\u524d\u7a7a\u9593",
+    "uid": "test-uid"
+   },
+   "key": "7643054d4d4851fde760dec4d71829be7d23b15c15600e4093bb58a611ff9609",
+   "name": "CJK",
+   "session_id": "\u30bb\u30c3\u30b7\u30e7\u30f3"
+  },
+  {
+   "destination_ref": {
+    "name": "test-sandbox",
+    "namespace": "test-namespace",
+    "uid": "test-uid"
+   },
+   "key": "d2d19bad7c628dc3848a4a1dbad3726b8201ac7c93b2592b8100a14d325546ab",
+   "name": "astral characters become surrogate pairs",
+   "session_id": "session-\ud83d\ude80-\ud834\udd1e"
+  },
+  {
+   "destination_ref": {
+    "name": "test-sandbox",
+    "namespace": "test-namespace",
+    "uid": "test-uid"
+   },
+   "key": "f27029702d2e2e521c8996b46f743aad5b477ed4eb3459c2aba284cb759fce90",
+   "name": "quote and backslash",
+   "session_id": "session \"quoted\" \\ back"
+  },
+  {
+   "destination_ref": {
+    "name": "test-sandbox",
+    "namespace": "test-namespace",
+    "uid": "test-uid"
+   },
+   "key": "2c9b95f55c539f849fd41934e8ccc9d7a0921ecfc348796af3f5280775665974",
+   "name": "short escapes",
+   "session_id": "line\nreturn\rtab\tback\bform\f"
+  },
+  {
+   "destination_ref": {
+    "name": "test-sandbox",
+    "namespace": "test-namespace",
+    "uid": "test-uid"
+   },
+   "key": "4fe4e67e63748c8004178bd1e592bee91f8b0d40fc110d66ac31ff814e53a7b6",
+   "name": "other control characters",
+   "session_id": "nul\u0000 soh\u0001 unit-separator\u001f"
+  },
+  {
+   "destination_ref": {
+    "name": "test-sandbox",
+    "namespace": "test-namespace",
+    "uid": "test-uid"
+   },
+   "key": "0760fca4af7d4ddf017c70de9cae8cdc55ae5e83d381a35dfacd4aedd5db9bb8",
+   "name": "DEL is escaped",
+   "session_id": "del\u007f"
+  },
+  {
+   "destination_ref": {
+    "name": "test-sandbox",
+    "namespace": "test-namespace",
+    "uid": "test-uid"
+   },
+   "key": "ef6185d495ca8892b218ae9dd631f701dc2564f9f571e05b4eb0b62b1fb458bd",
+   "name": "line and paragraph separators",
+   "session_id": "ls\u2028ps\u2029"
+  },
+  {
+   "destination_ref": {
+    "name": "test-sandbox",
+    "namespace": "test-namespace",
+    "uid": "test-uid"
+   },
+   "key": "fb5e0cd4e03d06256655a72f88766a6545733c5953e033ce86166813319f5678",
+   "name": "characters JSON libraries escape",
+   "session_id": "a/b <tag> & 'q'"
+  },
+  {
+   "destination_ref": {
+    "name": "test-sandbox",
+    "namespace": "test-namespace",
+    "uid": "test-uid"
+   },
+   "key": "85250b3ba85b929a3224d4e79eaf986c3361e53271440434bb33689e591ffdfe",
+   "name": "longest session id",
+   "session_id": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+  },
+  {
+   "destination_ref": {
+    "name": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+    "namespace": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+    "uid": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+   },
+   "key": "04aea8efee866f71fa20d74ebd8bb9fbcbc3d32bdccfeacc8d218e2e31e4ed8a",
+   "name": "longest destination",
+   "session_id": "test-session"
+  },
+  {
+   "destination_ref": {
+    "name": "\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d",
+    "namespace": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+    "uid": "\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80"
+   },
+   "key": "2b3095f54d153205baa2fb8a130dc3218d88b2d4cc01ce74124ba1873d14b3c3",
+   "name": "multibyte at the length limit",
+   "session_id": "x"
+  }
+ ],
+ "events": [
+  {
+   "event": {
+    "provider": "actions",
+    "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b",
+    "sequence": 1
+   },
+   "name": "Action event"
+  },
+  {
+   "event": {
+    "provider": "actions",
+    "request_id": "6c0a2b3f-4d5e-4f60-9b7c-8d9e0f1a2b3c",
+    "sequence": 2147483647
+   },
+   "name": "Action event, high sequence"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "pull_request",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub pull_request"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "issue_comment",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub issue_comment"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "pull_request_review",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub pull_request_review"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "pull_request_review_comment",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub pull_request_review_comment"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "check_run",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub check_run"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "check_suite",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub check_suite"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "status",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub status"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "push",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub push"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "create",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub create"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "delete",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub delete"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "workflow_run",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub workflow_run"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "workflow_job",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub workflow_job"
+  },
+  {
+   "event": {
+    "action": null,
+    "app_id": 1234567,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "issues",
+    "provider": "github",
+    "repository_id": 555000111
+   },
+   "name": "GitHub issues"
+  },
+  {
+   "event": {
+    "action": "completed",
+    "app_id": 1,
+    "delivery_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f",
+    "event": "check_run",
+    "provider": "github",
+    "repository_id": 1099511627776
+   },
+   "name": "GitHub event with an action"
+  }
+ ],
+ "invalid_subscriptions": [
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 0,
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "lifetime below 1"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 31,
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "lifetime above 30"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "empty session id"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "session id above 200 characters"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "empty idempotency key"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "idempotency key above 200 characters"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "empty namespace"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "namespace above 63 characters"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "multibyte name above 63 characters"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "uid above 128 characters"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "extra": 1,
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "extra top-level field"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "extra": 1,
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "extra source field"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session"
+   },
+   "name": "missing source"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "unknown"
+    }
+   },
+   "name": "unknown provider"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "not-a-uuid"
+    }
+   },
+   "name": "request id is not a UUID"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "after_sequence": -1,
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "negative after_sequence"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "after_sequence": 2147483648,
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "after_sequence above 2**31 - 1"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "repository without owner"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "owner/re po",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "repository with a space"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "owner/repo\n",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "repository ending in a newline"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "repository above 200 characters"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "tag",
+      "name": "v1"
+     }
+    }
+   },
+   "name": "unknown subject kind"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 0
+     }
+    }
+   },
+   "name": "pull request number 0"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "issue",
+      "number": -1
+     }
+    }
+   },
+   "name": "issue number below 0"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "branch",
+      "name": ""
+     }
+    }
+   },
+   "name": "empty branch name"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "branch",
+      "name": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     }
+    }
+   },
+   "name": "branch name above 255 characters"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "commit",
+      "sha": "0123456789ABCDEF0123456789abcdef01234567"
+     }
+    }
+   },
+   "name": "uppercase commit SHA"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "commit",
+      "sha": "0123456"
+     }
+    }
+   },
+   "name": "short commit SHA"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "empty events"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "a"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "commit",
+      "sha": "0123456789abcdef0123456789abcdef01234567"
+     }
+    }
+   },
+   "name": "33 filters"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "event": "fork"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "unknown event"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "issue",
+      "number": 7
+     }
+    }
+   },
+   "name": "check_run on an issue"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "event": "issues"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "issues on a pull request"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "event": "push"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "push on a pull request"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "event": "pull_request"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "branch",
+      "name": "feature/test-branch"
+     }
+    }
+   },
+   "name": "pull_request on a branch"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "created"
+       ],
+       "event": "push"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "branch",
+      "name": "feature/test-branch"
+     }
+    }
+   },
+   "name": "actions on push"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "created"
+       ],
+       "event": "status"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "branch",
+      "name": "feature/test-branch"
+     }
+    }
+   },
+   "name": "actions on status"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "empty actions"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "Completed"
+       ],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "uppercase action"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "step1"
+       ],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "action with a digit"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "action above 64 characters"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "a",
+        "aa",
+        "aaa",
+        "aaaa",
+        "aaaaa",
+        "aaaaaa",
+        "aaaaaaa",
+        "aaaaaaaa",
+        "aaaaaaaaa",
+        "aaaaaaaaaa",
+        "aaaaaaaaaaa",
+        "aaaaaaaaaaaa",
+        "aaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "33 actions"
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "event": "status",
+       "extra": 1
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "extra filter field"
+  }
+ ],
+ "subscriptions": [
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "Action request with every default",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "after_sequence": 0,
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 30,
+    "session_id": "test-session",
+    "source": {
+     "after_sequence": 5,
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "Action request, explicit values",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 30,
+    "session_id": "test-session",
+    "source": {
+     "after_sequence": 5,
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 1,
+    "session_id": "test-session",
+    "source": {
+     "after_sequence": 2147483647,
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "Action request, highest after_sequence",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 1,
+    "session_id": "test-session",
+    "source": {
+     "after_sequence": 2147483647,
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "\u30b5\u30f3\u30c9\u30dc\u30c3\u30af\u30b9-\u00e9",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "\ud83d\ude80",
+    "source": {
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   },
+   "name": "unicode destination",
+   "stored": {
+    "destination_ref": {
+     "name": "\u30b5\u30f3\u30c9\u30dc\u30c3\u30af\u30b9-\u00e9",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "\ud83d\ude80",
+    "source": {
+     "after_sequence": 0,
+     "provider": "actions",
+     "request_id": "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "pull request with default events",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "events": null,
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": null,
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "pull request with explicit null events",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "events": null,
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "issue",
+      "number": 7
+     }
+    }
+   },
+   "name": "issue with default events",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "events": null,
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "issue",
+      "number": 7
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "branch",
+      "name": "feature/test-branch"
+     }
+    }
+   },
+   "name": "branch with default events",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "events": null,
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "branch",
+      "name": "feature/test-branch"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "commit",
+      "sha": "0123456789abcdef0123456789abcdef01234567"
+     }
+    }
+   },
+   "name": "commit with default events",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "events": null,
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "commit",
+      "sha": "0123456789abcdef0123456789abcdef01234567"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 14,
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "submitted",
+        "edited",
+        "dismissed"
+       ],
+       "event": "pull_request_review"
+      },
+      {
+       "actions": [
+        "completed"
+       ],
+       "event": "check_run"
+      },
+      {
+       "event": "issue_comment"
+      },
+      {
+       "actions": [
+        "completed"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "dismissed",
+        "edited",
+        "submitted",
+        "edited"
+       ],
+       "event": "pull_request_review"
+      },
+      {
+       "event": "check_run"
+      },
+      {
+       "event": "status"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "events out of order, repeated and with unordered actions",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 14,
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": null,
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "completed"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": null,
+       "event": "issue_comment"
+      },
+      {
+       "actions": [
+        "dismissed",
+        "edited",
+        "submitted"
+       ],
+       "event": "pull_request_review"
+      },
+      {
+       "actions": null,
+       "event": "status"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "opened",
+        "closed"
+       ],
+       "event": "issues"
+      },
+      {
+       "event": "issue_comment"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "issue",
+      "number": 7
+     }
+    }
+   },
+   "name": "issue events",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": null,
+       "event": "issue_comment"
+      },
+      {
+       "actions": [
+        "closed",
+        "opened"
+       ],
+       "event": "issues"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "issue",
+      "number": 7
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "event": "push"
+      },
+      {
+       "event": "delete"
+      },
+      {
+       "event": "create"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "branch",
+      "name": "feature/test-branch"
+     }
+    }
+   },
+   "name": "branch ref events",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": null,
+       "event": "create"
+      },
+      {
+       "actions": null,
+       "event": "delete"
+      },
+      {
+       "actions": null,
+       "event": "push"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "branch",
+      "name": "feature/test-branch"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "completed"
+       ],
+       "event": "workflow_run"
+      },
+      {
+       "event": "workflow_job"
+      },
+      {
+       "event": "check_suite"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "commit",
+      "sha": "0123456789abcdef0123456789abcdef01234567"
+     }
+    }
+   },
+   "name": "commit CI events",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": null,
+       "event": "check_suite"
+      },
+      {
+       "actions": null,
+       "event": "workflow_job"
+      },
+      {
+       "actions": [
+        "completed"
+       ],
+       "event": "workflow_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "commit",
+      "sha": "0123456789abcdef0123456789abcdef01234567"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "branch",
+      "name": "feature/\u00fc-\ud83d\ude80"
+     }
+    }
+   },
+   "name": "unicode branch",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "events": null,
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "branch",
+      "name": "feature/\u00fc-\ud83d\ude80"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "provider": "github",
+     "repository": "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   },
+   "name": "longest repository",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "events": null,
+     "provider": "github",
+     "repository": "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+     "subject": {
+      "kind": "pull_request",
+      "number": 123
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "a"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "commit",
+      "sha": "0123456789abcdef0123456789abcdef01234567"
+     }
+    }
+   },
+   "name": "32 filters",
+   "stored": {
+    "destination_ref": {
+     "name": "test-sandbox",
+     "namespace": "test-namespace",
+     "uid": "test-uid"
+    },
+    "idempotency_key": "test-key",
+    "lifetime_days": 7,
+    "session_id": "test-session",
+    "source": {
+     "events": [
+      {
+       "actions": [
+        "a"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      },
+      {
+       "actions": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       ],
+       "event": "check_run"
+      }
+     ],
+     "provider": "github",
+     "repository": "test-owner/test-repo",
+     "subject": {
+      "kind": "commit",
+      "sha": "0123456789abcdef0123456789abcdef01234567"
+     }
+    }
+   }
+  }
+ ]
+}

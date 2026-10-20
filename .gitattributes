@@ -159,3 +159,6 @@ cluster/k8s/activitywatch/kustomization.yaml linguist-generated=true
 
 # Golden vectors the Python thread fold generates; test_golden checks the exact output.
 agentplane/history_service/threadfold/golden.json linguist-generated=true
+
+# Golden vectors the Python Notification Service generates; test_golden checks the exact output.
+agentplane/notification_service/store/golden.json linguist-generated=true
