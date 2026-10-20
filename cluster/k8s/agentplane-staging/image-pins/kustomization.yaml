@@ -25,10 +25,13 @@ images:
     newTag: devel-20261020054019-b8f2621 # {"$imagepolicy": "flux-system:runner:tag"}
   - name: git.allegedly.works/ducktape-ci/runner-ducktape
     newTag: devel-20261020092708-1bab9a4 # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
+  # CLEANUP(added 2026-10-20): Restore the Flux image-policy markers (policies `agentplane-sandbox`,
+  #   `agentplane-sandbox-build`, field `tag`) when stage K of the Notification Service Go port lands: until then
+  #   staging's Notification Service is the Python image, which the CLI in later images cannot talk to.
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
-    newTag: devel-20261020092037-1bab9a4 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
+    newTag: devel-20261020052603-8957e98
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
-    newTag: devel-20261020092044-1bab9a4 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
+    newTag: devel-20261020052607-8957e98
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20261019172302-17e2ab0 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
@@ -48,7 +51,10 @@ images:
     newTag: devel-20261020040746-de0e178 # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
   # The runner and `agentplane` command: a disk beside the VM guest, and an image volume in the
   # runner Pod, both reached through kustomizeconfig.
+  # CLEANUP(added 2026-10-20): Restore this pin's Flux image-policy marker (policy `agentplane-runner-disk`, field
+  #   `tag`) when stage K of the Notification Service Go port lands: until then staging's Notification Service is the
+  #   Python image, which the CLI in later disks cannot talk to.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261020092018-1bab9a4 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261020051808-9d70a22
 configurations:
   - kustomizeconfig
