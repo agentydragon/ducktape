@@ -5,6 +5,7 @@ package(default_visibility = ["//agentplane/notification_service:__subpackages__
 go_library(
     name = "store",
     srcs = [
+        "actions.go",
         "claims.go",
         "github_deliveries.go",
         "github_ingest.go",
@@ -45,6 +46,7 @@ go_test(
     name = "store_integration_test",
     size = "medium",
     srcs = [
+        "actions_integration_test.go",
         "claims_integration_test.go",
         "github_ingest_integration_test.go",
         "github_integration_test.go",

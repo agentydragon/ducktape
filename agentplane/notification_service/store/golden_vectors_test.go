@@ -50,6 +50,17 @@ type golden struct {
 		Name  string          `json:"name"`
 		Event json.RawMessage `json:"event"`
 	} `json:"events"`
+	// ActionEvents are Action events as the Action Service sends them, with the payload Python stores for each.
+	ActionEvents []struct {
+		Name    string          `json:"name"`
+		Wire    json.RawMessage `json:"wire"`
+		Payload json.RawMessage `json:"payload"`
+	} `json:"action_events"`
+	// InvalidActionEvents are events Python refuses to read.
+	InvalidActionEvents []struct {
+		Name string          `json:"name"`
+		Wire json.RawMessage `json:"wire"`
+	} `json:"invalid_action_events"`
 	// Notices are the command texts Python prepares for the cursors an inbox has at preparation.
 	Notices []struct {
 		Name         string    `json:"name"`

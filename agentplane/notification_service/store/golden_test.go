@@ -88,6 +88,33 @@ func TestCreationsAreTheSameWhereThePythonCheckSaysSo(t *testing.T) {
 	}
 }
 
+func TestActionEventsAreStoredAsPythonStoresThem(t *testing.T) {
+	for _, vector := range loadGolden(t).ActionEvents {
+		t.Run(vector.Name, func(t *testing.T) {
+			var event ActionEvent
+			if err := decode(vector.Wire, &event); err != nil {
+				t.Fatal(err)
+			}
+			payload, err := json.Marshal(event)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sameJSON(t, payload, vector.Payload)
+		})
+	}
+}
+
+func TestActionEventsPythonRefusesAreRefused(t *testing.T) {
+	for _, vector := range loadGolden(t).InvalidActionEvents {
+		t.Run(vector.Name, func(t *testing.T) {
+			var event ActionEvent
+			if err := decode(vector.Wire, &event); err == nil {
+				t.Errorf("accepted %s", vector.Wire)
+			}
+		})
+	}
+}
+
 func TestNoticeTextsAreThosePythonPrepares(t *testing.T) {
 	for _, vector := range loadGolden(t).Notices {
 		t.Run(vector.Name, func(t *testing.T) {

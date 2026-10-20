@@ -1,8 +1,9 @@
 """Golden vectors that pin the Go store (`agentplane/notification_service/store`) to the stored forms of this one.
 
 Stored rows hold values this service computed or serialized: the inbox's `destination_key`, a subscription's
-`creation` JSON, an entry's `event` JSON, a notice's `text`, the `EventEntry` bytes of `notice.runner_entry`, and
-what a GitHub webhook delivery is recorded as (its digest, action, head SHA, subject keys and head revisions).
+`creation` JSON, an entry's `event` JSON, an Action entry's `payload`, a notice's `text`, the `EventEntry` bytes of
+`notice.runner_entry`, and what a GitHub webhook delivery is recorded as (its digest, action, head SHA, subject keys
+and head revisions).
 Each vector is produced by the Python code that writes the column, and the Go store must reproduce it and read
 it back. A `creation` the Python model rejects is a vector too, as is whether two `creation` values name the
 same subscription, and a delivery the Python ingest refuses.
@@ -26,6 +27,7 @@ from google.protobuf import json_format
 from google.protobuf.timestamp_pb2 import Timestamp
 from pydantic import JsonValue, SecretStr, ValidationError
 
+from agentplane.action_service.models import ActionEventView, ActionState
 from agentplane.notification_service.db import Subscription
 from agentplane.notification_service.models import ActionsEvent, DestinationRef, Subscribe
 from agentplane.notification_service.settings import GitHubSettings
@@ -307,6 +309,55 @@ def events() -> dict[str, Json]:
             event=EventName.CHECK_RUN,
             action="completed",
         ).model_dump(mode="json"),
+    }
+
+
+def action_event_wires() -> dict[str, Json]:
+    """Events as the Action Service's events endpoint sends them; `Store.record` stores each as the payload of
+    an entry, dumped from the `ActionEventView` it is parsed into."""
+
+    def wire(**fields: object) -> Json:
+        return {"sequence": 1, "state": "decision_pending", "at": "2026-10-20T03:56:03Z", "actor": None} | fields
+
+    return {
+        **{f"state {state.value}": wire(state=state.value) for state in ActionState},
+        "actor key omitted": {k: v for k, v in wire().items() if k != "actor"},
+        "high sequence": wire(sequence=2**31 - 1),
+        "microseconds": wire(at="2026-10-20T03:56:03.123456Z"),
+        "microseconds ending in zeros": wire(at="2026-10-20T03:56:03.120000Z"),
+        "milliseconds": wire(at="2026-10-20T03:56:03.120Z"),
+        "single microsecond": wire(at="2026-10-20T03:56:03.000001Z"),
+        "nanoseconds": wire(at="2026-10-20T03:56:03.123456789Z"),
+        "zero offset written +00:00": wire(at="2026-10-20T03:56:03+00:00"),
+        "positive offset": wire(at="2026-10-20T05:56:03.5+02:00"),
+        "negative offset": wire(at="2026-10-19T20:56:03-07:00"),
+        "offset with minutes": wire(at="2026-10-20T09:26:03+05:30"),
+        "caller actor": wire(
+            state="cancelled", actor={"account": {"namespace": "test-namespace", "name": "test-sandbox"}}
+        ),
+        "operator actor": wire(state="denied", actor={"issuer": "https://issuer.test", "subject": "test-operator"}),
+    }
+
+
+def invalid_action_event_wires() -> dict[str, Json]:
+    valid = action_event_wires()["state allowed"]
+    return {
+        "extra field": valid | {"extra": 1},
+        "unknown state": valid | {"state": "paused"},
+        "missing sequence": {k: v for k, v in valid.items() if k != "sequence"},
+        "missing state": {k: v for k, v in valid.items() if k != "state"},
+        "missing time": {k: v for k, v in valid.items() if k != "at"},
+        "null sequence": valid | {"sequence": None},
+        "time that is not a time": valid | {"at": "yesterday"},
+        "actor of neither kind": valid | {"actor": {"kind": "robot"}},
+        "caller actor with an extra field": valid | {"actor": {"account": {"namespace": "n", "name": "m"}, "x": 1}},
+        "caller actor with an empty name": valid | {"actor": {"account": {"namespace": "n", "name": ""}}},
+        "caller actor with an extra account field": valid
+        | {"actor": {"account": {"namespace": "n", "name": "m", "uid": "u"}}},
+        "operator actor without a subject": valid | {"actor": {"issuer": "https://issuer.test"}},
+        "operator actor with an empty issuer": valid | {"actor": {"issuer": "", "subject": "s"}},
+        "actor of both kinds": valid
+        | {"actor": {"account": {"namespace": "n", "name": "m"}, "issuer": "i", "subject": "s"}},
     }
 
 
@@ -993,6 +1044,14 @@ async def build() -> Json:
         else:
             raise AssertionError(f"{name} is valid")
     deliveries, rejected_deliveries = await webhook_vectors()
+    invalid_action_events = []
+    for name, wire in invalid_action_event_wires().items():
+        try:
+            ActionEventView.model_validate_json(json.dumps(wire))
+        except ValidationError:
+            invalid_action_events.append({"name": name, "wire": wire})
+        else:
+            raise AssertionError(f"{name} is valid")
     return {
         "destination_keys": destination_keys(),
         "subscriptions": [
@@ -1011,6 +1070,15 @@ async def build() -> Json:
             for name, (a, b) in comparisons().items()
         ],
         "events": [{"name": name, "event": event} for name, event in events().items()],
+        "action_events": [
+            {
+                "name": name,
+                "wire": wire,
+                "payload": ActionEventView.model_validate_json(json.dumps(wire)).model_dump(mode="json"),
+            }
+            for name, wire in action_event_wires().items()
+        ],
+        "invalid_action_events": invalid_action_events,
         "notices": notices(),
         "command_id": {"input": COMMAND, "written": str(UUID(COMMAND))},
         "runner_entries": runner_entries(),

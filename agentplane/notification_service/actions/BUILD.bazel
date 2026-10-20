@@ -1,0 +1,44 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+go_library(
+    name = "actions",
+    srcs = [
+        "client.go",
+        "settings.go",
+        "source.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/actions",
+    deps = [
+        "//agentplane/notification_service/store",
+        "//agentplane/notification_service/worker",
+        "@com_github_google_uuid//:uuid",
+    ],
+)
+
+go_test(
+    name = "settings_test",
+    srcs = ["settings_test.go"],
+    embed = [":actions"],
+    deps = ["@com_github_spf13_viper//:viper"],
+)
+
+go_test(
+    name = "integration_test",
+    size = "medium",
+    srcs = [
+        "integration_testmain_test.go",
+        "source_integration_test.go",
+    ],
+    embed = [":actions"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/notification_service/migrations",
+        "//agentplane/notification_service/store",
+        "//agentplane/notification_service/worker",
+        "//agentplane/testing/postgres",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+    ],
+)

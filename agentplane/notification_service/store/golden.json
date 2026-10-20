@@ -1,4 +1,351 @@
 {
+ "action_events": [
+  {
+   "name": "state decision_pending",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "state allowed",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "allowed"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "state denied",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "denied"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "denied"
+   }
+  },
+  {
+   "name": "state dispatching",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "dispatching"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "dispatching"
+   }
+  },
+  {
+   "name": "state running",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "running"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "running"
+   }
+  },
+  {
+   "name": "state succeeded",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "succeeded"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "succeeded"
+   }
+  },
+  {
+   "name": "state failed",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "failed"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "failed"
+   }
+  },
+  {
+   "name": "state cancelled",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "cancelled"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "cancelled"
+   }
+  },
+  {
+   "name": "state execution_unknown",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "execution_unknown"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "execution_unknown"
+   }
+  },
+  {
+   "name": "actor key omitted",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "high sequence",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 2147483647,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 2147483647,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "microseconds",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03.123456Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03.123456Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "microseconds ending in zeros",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03.120000Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03.120000Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "milliseconds",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03.120000Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03.120Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "single microsecond",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03.000001Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03.000001Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "nanoseconds",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03.123456Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03.123456789Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "zero offset written +00:00",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03+00:00",
+    "sequence": 1,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "positive offset",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T05:56:03.500000+02:00",
+    "sequence": 1,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T05:56:03.5+02:00",
+    "sequence": 1,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "negative offset",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-19T20:56:03-07:00",
+    "sequence": 1,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-19T20:56:03-07:00",
+    "sequence": 1,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "offset with minutes",
+   "payload": {
+    "actor": null,
+    "at": "2026-10-20T09:26:03+05:30",
+    "sequence": 1,
+    "state": "decision_pending"
+   },
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T09:26:03+05:30",
+    "sequence": 1,
+    "state": "decision_pending"
+   }
+  },
+  {
+   "name": "caller actor",
+   "payload": {
+    "actor": {
+     "account": {
+      "name": "test-sandbox",
+      "namespace": "test-namespace"
+     }
+    },
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "cancelled"
+   },
+   "wire": {
+    "actor": {
+     "account": {
+      "name": "test-sandbox",
+      "namespace": "test-namespace"
+     }
+    },
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "cancelled"
+   }
+  },
+  {
+   "name": "operator actor",
+   "payload": {
+    "actor": {
+     "issuer": "https://issuer.test",
+     "subject": "test-operator"
+    },
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "denied"
+   },
+   "wire": {
+    "actor": {
+     "issuer": "https://issuer.test",
+     "subject": "test-operator"
+    },
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "denied"
+   }
+  }
+ ],
  "command_id": {
   "input": "7D1E2F3A-4B5C-4D6E-8F70-91A2B3C4D5E6",
   "written": "7d1e2f3a-4b5c-4d6e-8f70-91a2b3c4d5e6"
@@ -5062,6 +5409,163 @@
     "repository_id": 1099511627776
    },
    "name": "GitHub event with an action"
+  }
+ ],
+ "invalid_action_events": [
+  {
+   "name": "extra field",
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "extra": 1,
+    "sequence": 1,
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "unknown state",
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "paused"
+   }
+  },
+  {
+   "name": "missing sequence",
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "missing state",
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1
+   }
+  },
+  {
+   "name": "missing time",
+   "wire": {
+    "actor": null,
+    "sequence": 1,
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "null sequence",
+   "wire": {
+    "actor": null,
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": null,
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "time that is not a time",
+   "wire": {
+    "actor": null,
+    "at": "yesterday",
+    "sequence": 1,
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "actor of neither kind",
+   "wire": {
+    "actor": {
+     "kind": "robot"
+    },
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "caller actor with an extra field",
+   "wire": {
+    "actor": {
+     "account": {
+      "name": "m",
+      "namespace": "n"
+     },
+     "x": 1
+    },
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "caller actor with an empty name",
+   "wire": {
+    "actor": {
+     "account": {
+      "name": "",
+      "namespace": "n"
+     }
+    },
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "caller actor with an extra account field",
+   "wire": {
+    "actor": {
+     "account": {
+      "name": "m",
+      "namespace": "n",
+      "uid": "u"
+     }
+    },
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "operator actor without a subject",
+   "wire": {
+    "actor": {
+     "issuer": "https://issuer.test"
+    },
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "operator actor with an empty issuer",
+   "wire": {
+    "actor": {
+     "issuer": "",
+     "subject": "s"
+    },
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "allowed"
+   }
+  },
+  {
+   "name": "actor of both kinds",
+   "wire": {
+    "actor": {
+     "account": {
+      "name": "m",
+      "namespace": "n"
+     },
+     "issuer": "i",
+     "subject": "s"
+    },
+    "at": "2026-10-20T03:56:03Z",
+    "sequence": 1,
+    "state": "allowed"
+   }
   }
  ],
  "invalid_subscriptions": [
