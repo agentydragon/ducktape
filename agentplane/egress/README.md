@@ -177,7 +177,7 @@ Service port `80` targets the separate HTTP API listener on `8082`; port `8888` 
 proxy. Central resolves and dials the API like any other destination admitted by an egress policy.
 The endpoint validates ordinary `Authorization` through the same `workload_auth` resolver,
 reviewing the bearer itself rather than inheriting the tunnel's verdict: one proxied read is two
-TokenReviews, deliberately. The API sees central's
+reviews, deliberately, each reused for 30 s. The API sees central's
 source address, not the caller's Pod address; proxy-hop identity and caller metadata are not API
 identity authorities. Missing or forged destination auth fails closed.
 
@@ -207,7 +207,8 @@ server as a handler (`grpc.Server.ServeHTTP`), so the HTTP server's `Shutdown` i
 ending the open watches.
 
 Every `EgressAdmin` call admits only the ServiceAccounts in `admin_grpc_callers`, each proving itself by
-a bearer of audience `admin_grpc_audience` that is reviewed on every call, before anything is read
+a bearer of audience `admin_grpc_audience` that is reviewed for every call (an acceptance is reused
+for 30 s), before anything is read
 (<../docs/grpc_services.md>). A watch is admitted once, so it ends after ten minutes and when the proxy
 drains; the caller subscribes again and is admitted afresh.
 

@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -38,9 +40,7 @@ func incoming(values ...string) context.Context {
 }
 
 func TestResolveAndAuthorize(t *testing.T) {
-	calls := 0
 	reviews := reviewFunc(func(_ context.Context, review *authenticationv1.TokenReview) (*authenticationv1.TokenReview, error) {
-		calls++
 		if review.Spec.Token != "token" || len(review.Spec.Audiences) != 1 || review.Spec.Audiences[0] != "dispatcher" {
 			t.Errorf("TokenReview lost token or audience: %+v", review.Spec)
 		}
@@ -61,9 +61,6 @@ func TestResolveAndAuthorize(t *testing.T) {
 	_, err = resolver.RequireAccount(incoming("Bearer token"), map[Account]struct{}{{Namespace: "agentplane-staging", Name: "notifications"}: {}})
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("wrong account: %v", err)
-	}
-	if calls != 2 {
-		t.Fatalf("TokenReview must run on each call, got %d", calls)
 	}
 }
 
@@ -148,5 +145,142 @@ func TestAResolverNeedsAReviewerAnAudienceAndANamespace(t *testing.T) {
 	}
 	if _, err := NewResolver(nil, "dispatcher", []string{"agentplane-staging"}); err == nil {
 		t.Fatal("a resolver with no reviewer was built")
+	}
+}
+
+func TestAnAcceptanceIsReusedUntilItsTTLLapses(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	var calls atomic.Int32
+	revoked := false
+	reviews := reviewFunc(func(context.Context, *authenticationv1.TokenReview) (*authenticationv1.TokenReview, error) {
+		calls.Add(1)
+		if revoked {
+			return &authenticationv1.TokenReview{}, nil
+		}
+		return accepted(), nil
+	})
+	resolver, err := NewResolver(reviews, "dispatcher", []string{"agentplane-staging"},
+		WithVerdictTTL(time.Minute), WithClock(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if _, err := resolver.ResolveToken(context.Background(), "token"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := resolver.ResolveToken(context.Background(), "other-token"); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("each bearer is reviewed once while its acceptance is fresh, got %d reviews", got)
+	}
+
+	revoked = true
+	now = now.Add(30 * time.Second)
+	if _, err := resolver.ResolveToken(context.Background(), "token"); err != nil {
+		t.Fatalf("a revocation is not seen before the TTL lapses: %v", err)
+	}
+	now = now.Add(31 * time.Second)
+	if _, err := resolver.ResolveToken(context.Background(), "token"); !errors.Is(err, ErrInvalidBearer) {
+		t.Fatalf("a revocation is seen once the TTL lapses: %v", err)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Fatalf("got %d reviews", got)
+	}
+}
+
+func TestAZeroTTLReviewsEveryCall(t *testing.T) {
+	var calls atomic.Int32
+	reviews := reviewFunc(func(context.Context, *authenticationv1.TokenReview) (*authenticationv1.TokenReview, error) {
+		calls.Add(1)
+		return accepted(), nil
+	})
+	resolver, err := NewResolver(reviews, "dispatcher", []string{"agentplane-staging"}, WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := resolver.ResolveToken(context.Background(), "token"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("got %d reviews", got)
+	}
+}
+
+func TestARejectionOrAFailedReviewIsNotReused(t *testing.T) {
+	for name, outcome := range map[string]struct {
+		review func() (*authenticationv1.TokenReview, error)
+		want   error
+	}{
+		"rejection":     {func() (*authenticationv1.TokenReview, error) { return &authenticationv1.TokenReview{}, nil }, ErrInvalidBearer},
+		"failed review": {func() (*authenticationv1.TokenReview, error) { return nil, errors.New("api unavailable") }, ErrUnavailable},
+	} {
+		t.Run(name, func(t *testing.T) {
+			answer := outcome.review
+			calls := 0
+			reviews := reviewFunc(func(context.Context, *authenticationv1.TokenReview) (*authenticationv1.TokenReview, error) {
+				calls++
+				return answer()
+			})
+			resolver, err := NewResolver(reviews, "dispatcher", []string{"agentplane-staging"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if _, err := resolver.ResolveToken(context.Background(), "token"); !errors.Is(err, outcome.want) {
+					t.Fatalf("got %v, want %v", err, outcome.want)
+				}
+			}
+			answer = func() (*authenticationv1.TokenReview, error) { return accepted(), nil }
+			if _, err := resolver.ResolveToken(context.Background(), "token"); err != nil {
+				t.Fatalf("the next call asks again: %v", err)
+			}
+			if calls != 3 {
+				t.Fatalf("got %d reviews", calls)
+			}
+		})
+	}
+}
+
+func TestACallerThatGivesUpDoesNotFailTheReviewItStarted(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	reviews := reviewFunc(func(ctx context.Context, _ *authenticationv1.TokenReview) (*authenticationv1.TokenReview, error) {
+		if calls.Add(1) == 1 {
+			close(started)
+		}
+		select {
+		case <-release:
+			return accepted(), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	})
+	resolver, err := NewResolver(reviews, "dispatcher", []string{"agentplane-staging"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	giveUp, cancel := context.WithCancel(context.Background())
+	gaveUp := make(chan error)
+	go func() {
+		_, err := resolver.ResolveToken(giveUp, "token")
+		gaveUp <- err
+	}()
+	<-started
+	cancel()
+	if err := <-gaveUp; !errors.Is(err, ErrUnavailable) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("a caller that gives up is told so: %v", err)
+	}
+
+	close(release)
+	if _, err := resolver.ResolveToken(context.Background(), "token"); err != nil {
+		t.Fatalf("the next caller gets the review the first one started: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("got %d reviews", got)
 	}
 }

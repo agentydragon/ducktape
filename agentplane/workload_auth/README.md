@@ -24,11 +24,22 @@ header, body field, source address, operator identity, role, permission, Agent, 
 participates, and resolution does not read the Pod object. The Runner Gateway's `resolve_peer` reads
 it afterwards, to follow a runner control stream's Pod to its controlling Sandbox.
 
-Every call reviews the bearer, at every door, with nothing memoized. A TokenReview writes nothing
--- it is a signature check plus an existence check on the object the token is bound to -- so the
-round trip buys a verdict that is true now, and a revoked bearer stops working here at the moment it
-stops working anywhere. A cache would buy a little latency for a revocation window, and the trade is
-not worth making on an authentication path.
+**Verdict reuse (Go).** The Go `Resolver` (`go/auth`) keeps the API server's acceptance of a bearer
+for `DefaultVerdictTTL` (30 s): a revoked token, or one whose Pod is gone, still resolves here for
+at most that long. The key is the bearer's hash, calls for one bearer that arrive while its
+TokenReview is in flight share it, and a caller that gives up does not fail the others. Only
+acceptances are kept: a rejection or a failed review is asked again by the next call, so an API
+server blip is never extended. The namespace allowlist and claim checks run on every call against
+the kept answer. Reviewing every request would make each one wait on the API server and spend its
+client's rate limit, and Sandbox Pod tokens live 600 s, so the window is small beside the token's
+own life.
+
+**Deviation:** the Python resolver (`principal.py`) reviews every call.
+
+Rejected: verifying the projected token locally against the cluster's issuer keys. A signature
+and expiry check cannot see a deleted or replaced Pod, which is the property the TokenReview
+supplies, so it would bound revocation by the token's lifetime, not by the TTL, unless every
+service also watched Pods.
 
 Kubernetes API failures log only the fixed operation (`create_token_review`) and numeric status,
 never exception reason, body, headers or traceback. The original API exception still propagates.

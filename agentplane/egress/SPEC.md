@@ -12,7 +12,8 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   retains its bearer only after successful verification; malformed or rejected replacement headers
   clear earlier connection context rather than falling back to it.
 - The token is proven by TokenReview against that audience, which names the Pod the API server
-  bound it to; a deleted or replaced Pod fails there. The subject is the ServiceAccount the Pod runs
+  bound it to; a deleted or replaced Pod fails there once the proxy's reuse of an acceptance (30 s,
+  <../workload_auth/README.md>) lapses. The subject is the ServiceAccount the Pod runs
   as, whatever else owns the Pod. Authenticating a workload is not admitting it: a subject no
   binding names reaches no rule.
 - The connection's source address is not checked. A token copied out of its Pod and presented from
@@ -197,7 +198,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   another subject sends nothing. It fails `UNAVAILABLE` when the proxy loses its database connection.
 - The `EgressAdmin` gRPC service, when enabled, serves `ListDecisions`, `WatchDecisions` and
   `GetHealth`. Every call is admitted only for an allowed ServiceAccount proved by a bearer reviewed
-  on that call, and a watch ends after a bounded lease so a revoked caller stops reading. The
+  for that call (an acceptance is reused for 30 s), and a watch ends after a bounded lease so a revoked caller stops reading. The
   standard gRPC health service beside it reports readiness (the empty service) and liveness
   (`livez`) to any caller.
 - Responses contain at most 200 recent records by default, ordered by decision time then event
