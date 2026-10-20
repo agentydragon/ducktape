@@ -1641,7 +1641,7 @@ flowchart TD
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     RUNNER_RENAME[Decision, unscheduled: a better name than runner]
-    GO_SERVICES_SETTINGS_LOADER[Unscheduled: Go services read settings with Viper, file and environment]
+    GO_SERVICES_DROP_SETTINGS_FLAGS[Unscheduled: drop the settings flags the Gateway and controllers still receive]
 ```
 
 ### `RUNNER_RENAME` — a better name than "runner"
@@ -1681,19 +1681,22 @@ sandbox, so it no longer reads as a Session Sandbox: the `sandbox__*` Actions,
 `cluster/cdk8s/agentplane/command_sandbox.py`. The `sandbox__*` tool names are what agents and
 external Connections call, so renaming them is a wire change.
 
-### `GO_SERVICES_SETTINGS_LOADER` — Go services read settings with Viper
+### `GO_SERVICES_DROP_SETTINGS_FLAGS` — drop the settings flags the Gateway and controllers still receive
 
-**Unscheduled; the operator chose one service per change, each after the previous lands
-(2026-10-19, from the operator's 2026-10-18 direction that Go services read settings the same way, from a
-file and the environment, with no flags).** LLM ingress, the egress proxy, the Runner Gateway, the Sandbox
-Controller and the Policy Controller already read their settings through Viper used directly in the service
+**Unscheduled (2026-10-20, from the operator's 2026-10-18 direction that Go services read settings the same
+way, from the environment and a file where a list needs one, with no flags).** LLM ingress, the egress proxy,
+the Runner Gateway, the Sandbox Controller and the Policy Controller read their settings through Viper used
+directly in the service
 ([#10989](https://github.com/agentydragon/ducktape/pull/10989),
-[#11080](https://github.com/agentydragon/ducktape/pull/11080)). Move the egress sidecar from flag parsing to
-the same. Setting names and values stay; only how they are read changes. A manifest sends the settings next
-to the flags in the change that reads them, and drops the flags only after the image that reads the settings
-is pinned (image before config); the Gateway's and both controllers' flags are still sent (tombstones in
-`runner_gateway_workload.py`, `sandbox_controller.py` and `policy_controller.py`). New settings in the
-meantime follow how the service reads settings today.
+[#11080](https://github.com/agentydragon/ducktape/pull/11080),
+[#11174](https://github.com/agentydragon/ducktape/pull/11174),
+[#11184](https://github.com/agentydragon/ducktape/pull/11184),
+[#11186](https://github.com/agentydragon/ducktape/pull/11186)). The Gateway's and both controllers'
+manifests still send their old flags next to the settings (tombstones in `runner_gateway_workload.py`,
+`sandbox_controller.py` and `policy_controller.py`). Drop the flags, the tombstones and the generated
+`args` in one change once each service's pinned image reads its settings and is Ready on staging and
+testing (image before config). The egress sidecar stays on strict `yaml.v3`:
+[Sidecar settings](../egress/docs/design.md#sidecar-settings-strict-yamlv3-not-viper).
 
 ## 9. Legacy burn-down
 

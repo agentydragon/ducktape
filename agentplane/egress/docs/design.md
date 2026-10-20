@@ -22,6 +22,15 @@ single-use per admitted request (`DisableKeepAlives`, which covers HTTP/2 too), 
 coalesced connection can never carry a request to an address other than the one the admission
 pinned.
 
+## Sidecar settings: strict `yaml.v3`, not Viper
+
+The proxy and the other Go services read their settings through Viper. The sidecar does not, because
+its file keys maps by data: `audience_token_files` by audience and `platform_routes` by route name.
+Viper lowercases every key, map keys included. With v1.21.0 (`ExperimentalBindStruct`,
+`UnmarshalExact`) two audiences that differ only in case merge into one entry and a route name loses
+its case, so a Pod could offer one audience the other's token. `config_test.go` keeps both spellings
+apart. A move to Viper first needs those maps to become lists of records.
+
 ## Test tiers
 
 A real kube-apiserver and etcd (envtest) check CRD validation and list/watch/delete semantics.
