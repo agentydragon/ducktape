@@ -37,6 +37,7 @@ go_test(
     size = "medium",
     srcs = [
         "integration_testmain_test.go",
+        "large_history_integration_test.go",
         "lease_integration_test.go",
         "projector_integration_test.go",
         "recording_integration_test.go",
@@ -47,6 +48,7 @@ go_test(
     deps = [
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/history_service/migrations",
+        "//agentplane/history_service/reads",
         "//agentplane/history_service/storage",
         "//agentplane/history_service/testing/spans",
         "//agentplane/history_service/threadfold",
