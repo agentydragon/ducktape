@@ -5,9 +5,11 @@ shared LiteLLM deployment.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import PurePosixPath
 
 from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
+    ConfigMap,
     ContainerResources,
     ContainerSecurityContextProps,
     Cpu,
@@ -20,12 +22,14 @@ from cdk8s_plus_34 import (
     Secret,
     Service,
     ServiceAccount,
+    Volume,
 )
 from constructs import Construct
 
 from agentplane.llm_ingress.settings import Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s.agentplane.codex_models import codex_catalog
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -39,6 +43,8 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "llm-ingress"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/agentplane-llm-ingress"
 _LABELS = {"app.kubernetes.io/name": _NAME}
+# The Codex catalog is its own ConfigMap, so a catalog edit does not change the settings file.
+_CODEX_CATALOG_PATH = PurePosixPath("/etc/agentplane-llm-ingress-codex/codex_models.json")
 
 
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
@@ -103,6 +109,17 @@ class LlmIngress(Construct):
             service_account_name=_NAME,
             namespace=env.namespace,
         )
+        catalog = codex_catalog(env.llm_ingress.codex_routes)
+        catalog_map = (
+            None
+            if catalog is None
+            else ConfigMap(
+                self,
+                "codex-models",
+                metadata=ApiObjectMetadata(name=f"{_NAME}-codex-models", namespace=env.namespace),
+                data={_CODEX_CATALOG_PATH.name: catalog},
+            )
+        )
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
         settings = SettingsFile(
             self,
@@ -113,17 +130,20 @@ class LlmIngress(Construct):
                 "allowed_service_account_namespaces": [env.namespace],
                 "log_llm_requests": env.llm_ingress.log_llm_requests,
                 "models": [item.model_dump(mode="json") for item in env.llm_ingress.models],
+                **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
             },
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
-        deployment = self._add_deployment(service_account, settings)
+        deployment = self._add_deployment(service_account, settings, catalog_map)
         self._add_service(deployment)
 
     def add_platform_resources(self) -> None:
         """Add fleet Cilium network admission."""
         self._add_network_policy()
 
-    def _add_deployment(self, service_account: ServiceAccount, settings: SettingsFile) -> Deployment:
+    def _add_deployment(
+        self, service_account: ServiceAccount, settings: SettingsFile, catalog_map: ConfigMap | None
+    ) -> Deployment:
         deployment = Deployment(
             self,
             "deployment",
@@ -132,7 +152,9 @@ class LlmIngress(Construct):
                 namespace=self.env.namespace,
                 labels=_LABELS,
                 annotations={
-                    "configmap.reloader.stakater.com/reload": settings.config_map.name,
+                    "configmap.reloader.stakater.com/reload": ",".join(
+                        config_map.name for config_map in (settings.config_map, catalog_map) if config_map is not None
+                    ),
                     "secret.reloader.stakater.com/reload": self.env.llm_ingress.litellm_key_secret_name,
                 },
             ),
@@ -184,6 +206,12 @@ class LlmIngress(Construct):
         )
 
         settings.mount_into(deployment.containers[0], env=Settings.config_file_env)
+        if catalog_map is not None:
+            deployment.containers[0].mount(
+                str(_CODEX_CATALOG_PATH.parent),
+                Volume.from_config_map(self, "codex-models-volume", catalog_map),
+                read_only=True,
+            )
 
         if self.placement is not None:
             pod_policy.place(deployment, self.placement, tolerate_control_plane=True)

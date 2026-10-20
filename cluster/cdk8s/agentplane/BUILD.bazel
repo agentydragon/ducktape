@@ -235,10 +235,50 @@ py_library(
     ],
 )
 
+# The catalog Codex ships with, for the pinned Codex (the Bazel test pin, not the runner image's nixpkgs
+# `codex`); `codex_models` takes the entries of ChatGPT routes from it.
+genrule(
+    name = "codex_upstream_models",
+    outs = ["codex_upstream_models.json"],
+    cmd = 'CODEX_HOME="$$(mktemp -d)" $(location @agentplane_codex_cli_linux_x64//:codex_binary) debug models --bundled > "$@"',
+    tools = ["@agentplane_codex_cli_linux_x64//:codex_binary"],
+)
+
+py_library(
+    name = "codex_models",
+    srcs = ["codex_models.py"],
+    data = [
+        "codex_base_instructions.txt",
+        ":codex_upstream_models",
+    ],
+    deps = [
+        "//cluster/cdk8s:model_selections",
+        "//model_catalog:catalog",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_test(
+    name = "test_codex_models",
+    srcs = ["test_codex_models.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:codex_binary"],
+    env = {"CODEX_BINARY": "$(rlocationpath @agentplane_codex_cli_linux_x64//:codex_binary)"},
+    deps = [
+        ":codex_models",
+        "//:conftest",
+        "//cluster/cdk8s:model_selections",
+        "//model_catalog:catalog",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "llm_ingress",
     srcs = ["llm_ingress.py"],
     deps = [
+        ":codex_models",
         ":environment",
         "//agentplane/llm_ingress:settings",
         "//agentplane/workload_auth:audience",
@@ -581,6 +621,7 @@ py_library(
         "//agentplane/app:settings",
         "//agentplane/llm_ingress:models",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
+        "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

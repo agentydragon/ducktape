@@ -179,7 +179,11 @@ ENV = Environment(
     ),
     settle_deltas=True,
     db=DbProps(instances=1, wal_archive=False),
-    llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(TESTING_APP_MODELS)),
+    llm_ingress=LlmIngressProps(
+        litellm_key_secret_name=_LITELLM_KEY_SECRET,
+        models=model_configs(TESTING_APP_MODELS),
+        codex_routes=TESTING_APP_MODELS.codex,
+    ),
     egress=EgressProps(
         ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_CREDENTIALS_NAMESPACE
     ),

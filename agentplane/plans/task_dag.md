@@ -1066,7 +1066,7 @@ No new artifact service or runtime-download implementation is selected by this n
 
 ### `CODEX_MODEL_CATALOG` — LLM ingress serves Codex a model catalog that follows the model config
 
-**Candidate; operator, 2026-10-20 PDT: go, in the three steps below.** Today the runner passes Codex one
+**Candidate; operator, 2026-10-20 PDT: go; step 3 remains.** Today the runner passes Codex one
 process-wide `-c model_context_window` from the route's `ModelConfig`. It pins every thread to one window, is
 why a model change across different windows is rejected, and cannot be shared by one app-server hosting several
 Sessions. [Evidence](../debug/codex_model_catalog.md): Codex fetches a provider's `model_catalog_url` and
@@ -1076,22 +1076,24 @@ Direction: LLM ingress serves a generated catalog file from memory
 ([README](../llm_ingress/README.md#codex-model-catalog)), authenticated like inference and never forwarded to
 LiteLLM, with an `ETag` equal to the `X-Models-Etag` it adds to every `/v1/responses` reply. The app neither
 derives nor reads the catalog and its picker list does not change; the only shared input is the route selection
-`HarnessRoutes.codex`. cdk8s generates the file and mounts it as a ConfigMap, one entry per selected route with
-the route id as slug, and fails when a route has no entry. A ChatGPT route's entry comes from the upstream
-catalog (`codex debug models --bundled`); every other route has a JSON file we own. Entries start
-fallback-shaped (what Codex does for an unknown slug today, with the route's window) and a ChatGPT route moves
-to its upstream entry only after a LiteLLM/CLIProxyAPI pass-through check of the request Codex then sends. The
-runner's provider block gains `model_catalog_url` (the ingress origin plus `/agentplane/codex/models`, not under
-`/v1`) and drops `-c model_context_window` for Codex; Claude keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. Entries are
-full `ModelInfo` records ([budget audit](../../model_catalog/client_budgets.md#codex-local-model-catalogue-2026-10-10)).
+`HarnessRoutes.codex`. cdk8s generates the file per environment (`codex_models.py`) and mounts it as a ConfigMap,
+with the route id as each entry's slug. A ChatGPT route's entry is the upstream one (`codex debug models
+--bundled` on the Bazel-pinned Codex); any other route has an entry only where `RUNNER_CONTEXT_OVERRIDES` sets
+its window, which replaces the runner's `-c model_context_window`; a route with neither keeps the fallback
+metadata Codex uses for an unknown slug. The runner's provider block gains `model_catalog_url` (the ingress
+origin plus `/agentplane/codex/models`, not under `/v1`) and drops `-c model_context_window` for Codex; Claude
+keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. Codex refuses a catalog whose entry has no instruction text, so an
+entry that is not upstream carries Codex's default prompt, copied into the repository.
 
 The runner image runs nixpkgs' `codex` (`runner/image.nix`), not the Bazel test pin
 (`agentplane_codex_cli_linux_x64`, 0.157.0, where `features.api_key_model_discovery=true` is needed). The Codex
 that generates upstream entries must not be older than the runner's; the default is the Bazel-pinned binary,
 bumped together with the runner's, and `RUNNER_HARNESS_DELIVERY_DESIGN` owns keeping the two in step.
 
-Steps, image before config: (1) ingress serves the endpoint and header; (2) cdk8s entries, generator and mount,
-after the ingress pin; (3) the runner change, after that pin.
+Steps, image before config: (1) and (2) have landed: ingress serves the endpoint and header, and cdk8s generates
+and mounts the catalog. (3) the runner change, after the ingress pin; it also decides whether staging serves
+the upstream ChatGPT entries from the start, because a recognized-model entry makes Codex send a different
+request than the fallback does, and that request has not been run through LiteLLM and CLIProxyAPI.
 
 Open inside this node, with a default: Sessions on an edited route follow the edit. The
 [ingress README](../llm_ingress/README.md#per-model-client-configuration) tells operators to use a new route
@@ -1099,7 +1101,7 @@ ID instead so retained Sessions keep their budget; a Session can still be pinned
 `thread/start.config`. The different-window model-change rejection then applies to Claude only.
 
 **Exit:** ingress tests cover authentication, the `ETag` equal to the header, answering from the file and no
-LiteLLM forward (step 1). A native Codex test against the pin shows a catalog edit reaching a running
+LiteLLM forward (landed). A native Codex test against the pin shows a catalog edit reaching a running
 app-server without restart, a switch between routes of different windows, and a failing refetch (0.163.0
 falls back to default metadata until a refetch succeeds). Then remove the runner's `-c model_context_window`
 for Codex and update `runner/SPEC.md` and the ingress README. Untested so far: real tool or reasoning use

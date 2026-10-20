@@ -322,7 +322,10 @@ ENV = Environment(
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
     db=DbProps(instances=2, wal_archive=True),
     llm_ingress=LlmIngressProps(
-        litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(STAGING_APP_MODELS), log_llm_requests=True
+        litellm_key_secret_name=_LITELLM_KEY_SECRET,
+        models=model_configs(STAGING_APP_MODELS),
+        codex_routes=STAGING_APP_MODELS.codex,
+        log_llm_requests=True,
     ),
     egress=EgressProps(
         ca_secret_name=public_coder_egress.CA_BUNDLE_NAME,

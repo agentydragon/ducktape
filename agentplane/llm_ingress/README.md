@@ -68,7 +68,8 @@ this TODO does not enable aliases or infer budgets/capabilities from a model nam
 When `codex_model_catalog_file` is set, the authenticated `GET /agentplane/codex/models` endpoint
 serves that JSON file with an `ETag` that is a hash of its bytes. The file is `{"models": [...]}`
 with entries in Codex's `ModelInfo` form; the ingress refuses to start on what Codex would refuse (unique
-non-empty slugs, at most 1 MiB). It reads the file once at startup and answers from memory, never from
+non-empty slugs, at most 1 MiB); Codex also needs instruction text in every entry, which the cdk8s test checks
+by parsing the generated file with the pinned Codex. It reads the file once at startup and answers from memory, never from
 LiteLLM, so a LiteLLM outage cannot make a Codex refetch fail. Without the setting the endpoint answers 404
 and is not forwarded.
 
@@ -76,7 +77,9 @@ Every `/v1/responses` reply then carries the same value as `X-Models-Etag`. A ru
 a value different from the `ETag` it holds refetches the catalog before its next turn, so an edited
 catalog (a new file, a restarted ingress) reaches running Sessions without restarting their
 harnesses. A harness has to be configured to use the endpoint (its provider's `model_catalog_url`);
-the runner does not set it yet. Codex behavior behind this endpoint, with source citations and test
+the runner does not set it yet. cdk8s generates the file for each environment
+(`cluster/cdk8s/agentplane/codex_models.py`): a ChatGPT route takes the pinned Codex's upstream entry, another
+route an entry only where a context window is configured. Codex behavior behind this endpoint, with source citations and test
 results: [`debug/codex_model_catalog.md`](../debug/codex_model_catalog.md).
 
 For targeted debugging, set `log_llm_requests: true` in the ingress settings (or
