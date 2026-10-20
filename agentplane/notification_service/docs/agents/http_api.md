@@ -7,7 +7,7 @@ through the configured egress proxy. `agentplane notifications` wraps the subscr
 
 | Route                                        | Command                             | Use                                                                   |
 | -------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------- |
-| `GET /v1/sources`                            | none                                | Enabled providers and their subscription schemas                      |
+| `GET /v1/sources`                            | `notifications sources`             | Enabled providers and their subscription schemas                      |
 | `POST /v1/subscriptions`                     | `notifications subscribe github pr` | Create a subscription                                                 |
 | `GET /v1/subscriptions`                      | `notifications subscriptions`       | List yours                                                            |
 | `GET /v1/subscriptions/{id}`                 | `notifications subscription ID`     | Source failures and expiry                                            |

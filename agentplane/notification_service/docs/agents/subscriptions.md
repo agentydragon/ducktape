@@ -1,8 +1,8 @@
 # Subscribe, wait, and clean up
 
 Commands are `agentplane notifications …`; routes and request bodies are in the
-[HTTP reference](http_api.md). Check `GET /v1/sources` there for enabled providers and their
-creation schemas.
+[HTTP reference](http_api.md). `agentplane notifications sources` lists enabled providers; its
+`--json` form has their creation schemas.
 
 ## Follow an Action
 

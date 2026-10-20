@@ -1,7 +1,7 @@
 # Follow GitHub activity
 
-Check `GET /v1/sources` on Notifications first ([HTTP reference](http_api.md)). Use GitHub only when
-advertised. The App's repository access and webhook installation coverage determine what can arrive,
+Run `agentplane notifications sources` first ([HTTP reference](http_api.md)). Use GitHub only when
+listed. The App's repository access and webhook installation coverage determine what can arrive,
 including on forks. An access/installation or source error means monitoring is not reliable. Any
 authenticated workload can follow repositories accessible to the App, including private repositories.
 
