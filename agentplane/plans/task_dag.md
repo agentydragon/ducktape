@@ -277,7 +277,6 @@ flowchart TD
     HISTORY_ACCESS_AFTER_DELETION -. may change collection membership storage only .-> SESSION_ACCESS_RULES
     SESSION_ACCESS_RULES --> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN --> HISTORY_SANDBOX_UID
-    HISTORY_GO_SERVICE[In flight: the Go History Service, section 13] -. operational hold: the UID is recorded in the Go service .-> HISTORY_SANDBOX_UID
     HISTORY_SESSION_KEY_DESIGN -. read API shape .-> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN -. only if re-keyed .-> APP_THREAD_SANDBOX_UID
     HISTORY_SANDBOX_UID --> THREAD_READ_POLICY
@@ -476,8 +475,8 @@ re-keyed, drop the rows whose Sandbox is already deleted?
 
 ### `HISTORY_SANDBOX_UID` — History records and checks the Sandbox UID
 
-**Blocked on `HISTORY_SESSION_KEY_DESIGN` and, as an operational hold, on `HISTORY_GO_SERVICE`, which
-it lands in; the first History change to dispatch under either alternative.** In order:
+**Blocked on `HISTORY_SESSION_KEY_DESIGN`; it lands in the Go History Service, and is the first History
+change to dispatch under either alternative.** In order:
 the namespaced `get serviceaccounts` Role for the History Service lands first, then the code. Add the
 nullable `sandbox_uid` and `SandboxRef.uid`; resolve and cache the pusher's Sandbox UID at bind, fill
 a NULL value from a matching writer and compare a recorded one, refusing a mismatch. A ServiceAccount no
@@ -1965,9 +1964,8 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 
 ```mermaid
 flowchart LR
-    HISTORY_GO_SERVICE[In flight: the Go History Service]
-    HISTORY_TEST_BACKEND_ON_GO[Blocked: app and Electric tests run against the Go History]
-    HISTORY_GO_TESTING_CUTOVER[Blocked: cut agentplane-testing over to the Go History Service]
+    HISTORY_TEST_BACKEND_ON_GO[Candidate: app and Electric tests run against the Go History]
+    HISTORY_GO_TESTING_CUTOVER[Candidate: cut agentplane-testing over to the Go History Service]
     HISTORY_GO_STAGING_CUTOVER[Blocked: cut staging over to the Go History Service]
     HISTORY_PYTHON_RETIREMENT[Blocked: retire the Python History Service]
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
@@ -1975,31 +1973,16 @@ flowchart LR
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
-    HISTORY_GO_SERVICE --> HISTORY_TEST_BACKEND_ON_GO
-    HISTORY_GO_SERVICE --> HISTORY_GO_TESTING_CUTOVER
     HISTORY_GO_TESTING_CUTOVER --> HISTORY_GO_STAGING_CUTOVER
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_PYTHON_RETIREMENT
     HISTORY_TEST_BACKEND_ON_GO --> HISTORY_PYTHON_RETIREMENT
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_READS_FACADE
     NOTIFICATION_SERVICE_SPLIT --> NOTIFICATION_SERVICE_GO_PORT
-    HISTORY_GO_SERVICE -. operational hold: the UID is recorded in the Go service .-> HISTORY_SANDBOX_UID
 ```
-
-### `HISTORY_GO_SERVICE` — the Go History Service
-
-**In flight; the operator chose the History Service as the next port (2026-10-19).**
-Keep the schema and the gRPC contract unchanged so Electric and the existing callers keep working; the
-ported Python tests and the golden vectors the Python fold produced pin the port. `HISTORY_SANDBOX_UID` and the
-History changes after it wait for this service and land in it, so no History change is written in Python and
-ported afterwards. Landed: the Goose migrator (a baseline over Alembic head `0022`), the store with delta
-settlement, the fold with its recording, projection leases and the per-Session fold runner, the readers,
-cross-replica reader wakeups, and runner ingress. Remaining: the gRPC servicers for the read RPCs;
-settings, `main`, health and the image. **Deliverable:** the Go binary passes the ported Python tests
-against Postgres and serves every History RPC; nothing deploys it yet.
 
 ### `HISTORY_TEST_BACKEND_ON_GO` — app and Electric tests run against the Go History
 
-**Blocked on `HISTORY_GO_SERVICE`.** The app's, Electric's and browser tests read History through an
+**Candidate.** The app's, Electric's and browser tests read History through an
 in-process Python backend (`history_service/testing/backend.py`, `history.py`) that runs the Python store,
 fold, servicers and ingress. Start the Go binary on a test Postgres in its place, so those tests keep
 covering the service that ships and the Python code can go. **Deliverable:** those tests pass against the Go
@@ -2007,11 +1990,17 @@ binary with no import of the Python History service other than its client.
 
 ### `HISTORY_GO_TESTING_CUTOVER` — cut `agentplane-testing` over to the Go History Service
 
-**Blocked on `HISTORY_GO_SERVICE`.** Image before config: build and pin the service and migrator images,
-then switch the manifests, the README system overview and the docs. The Go projector continues each
-Session's fold from its stored checkpoint in the current epoch, so no Session refolds and Electric sees no
-scope reset. **Deliverable:** a Session on `agentplane-testing` runs through ingress, the fold, the
-reads and Electric on the Go service.
+**Candidate.** Image before config, in two merges with the migrator first, since new migration code soaks
+before code that uses it. Point `agentplane-history-migrate` in `devinfra/ci/image_targets.json` at
+`//agentplane/history_service/migrations:image`; the Goose baseline records itself in
+`history_service_goose_version` and changes nothing else on the Alembic-built database. Then point
+`agentplane-history-service` at `//agentplane/history_service:service_image`; the Go binary accepts the
+current manifests' settings. Testing and staging follow one Flux image policy per name, so the first merge
+also holds staging on its current tags (it drops the `$imagepolicy` markers from staging's `image-pins`)
+until `HISTORY_GO_STAGING_CUTOVER`. Then switch the README system overview and the docs. The Go projector
+continues each Session's fold from its stored checkpoint in the current epoch, so no Session refolds and
+Electric sees no scope reset. **Deliverable:** a Session on `agentplane-testing` runs through ingress, the
+fold, the reads and Electric on the Go service.
 
 ### `HISTORY_GO_STAGING_CUTOVER` — cut staging over to the Go History Service
 

@@ -13,8 +13,9 @@ import (
 type Account struct{ Namespace, Name, UID string }
 
 // Reviews is an auth.TokenReviews that authenticates exactly the tokens in Accounts, as a Pod's projected
-// ServiceAccount token for Audience. Any other token is not authenticated.
+// ServiceAccount token. Any other token is not authenticated.
 type Reviews struct {
+	// Audience is the one audience every token proves; empty proves whichever audiences a review asks for.
 	Audience string
 	// Accounts maps a bearer token to the account it proves.
 	Accounts map[string]Account
@@ -22,8 +23,12 @@ type Reviews struct {
 
 func (r Reviews) Create(_ context.Context, review *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
 	account, known := r.Accounts[review.Spec.Token]
+	audiences := review.Spec.Audiences
+	if r.Audience != "" {
+		audiences = []string{r.Audience}
+	}
 	reviewed := &authenticationv1.TokenReview{Spec: review.Spec, Status: authenticationv1.TokenReviewStatus{
-		Authenticated: known, Audiences: []string{r.Audience},
+		Authenticated: known, Audiences: audiences,
 	}}
 	if known {
 		reviewed.Status.User = authenticationv1.UserInfo{
