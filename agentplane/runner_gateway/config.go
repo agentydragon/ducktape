@@ -15,9 +15,9 @@ import (
 const settingPrefix = "AGENTPLANE_RUNNER_GATEWAY_"
 
 // config is the Gateway's deployment contract: each setting is a YAML key of the file named by
-// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE, with AGENTPLANE_RUNNER_GATEWAY_* environment overrides for
-// scalar settings. Lists are file-only. Viper loads the settings. Callers and the controller account
-// are written `namespace/name`.
+// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE, and each field's key also names an AGENTPLANE_RUNNER_GATEWAY_*
+// environment variable that overrides it. A list takes one element that way, so lists belong in the
+// file. Callers and the controller account are written `namespace/name`.
 //
 // The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
 // values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
@@ -54,29 +54,10 @@ func defaultConfig() config {
 
 func loadConfig() (config, error) {
 	c := defaultConfig()
-	settings := viper.New()
+	// Without ExperimentalBindStruct, Unmarshal reads an environment variable only for a bound key.
+	settings := viper.NewWithOptions(viper.ExperimentalBindStruct())
 	settings.SetEnvPrefix("AGENTPLANE_RUNNER_GATEWAY")
-	for _, key := range []string{
-		"sandbox_namespace",
-		"dispatcher_database_url",
-		"pod_name",
-		"pod_ip",
-		"runner_token_file",
-		"kubeconfig",
-		"listen_address",
-		"http_listen_address",
-		"proxy_port",
-		"runner_control_target_template",
-		"dispatcher_audience",
-		"gateway_audience",
-		"runner_audience",
-		"sandbox_controller_account",
-		"max_queued_per_session",
-		"dispatcher_watch_lease_seconds",
-		"runner_request_timeout_seconds",
-	} {
-		settings.MustBindEnv(key)
-	}
+	settings.AutomaticEnv()
 	if path := os.Getenv(settingPrefix + "CONFIG_FILE"); path != "" {
 		settings.SetConfigFile(path)
 		settings.SetConfigType("yaml")

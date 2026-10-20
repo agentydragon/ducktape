@@ -18,8 +18,8 @@ type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]
 
 
 class Settings(YamlFileSettings):
-    """Fields are YAML keys; scalar fields also accept `AGENTPLANE_RUNNER_GATEWAY_*` environment overrides.
-    The caller lists are file-only."""
+    """Fields are YAML keys; each also accepts an `AGENTPLANE_RUNNER_GATEWAY_*` environment override.
+    Deployments write the caller lists to the file."""
 
     config_file_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_RUNNER_GATEWAY_")
