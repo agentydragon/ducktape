@@ -187,7 +187,11 @@ Each is a browser, provider or Kubernetes protocol, not an RPC.
 The steps are the [transport tracks](task_dag.md#service-api-transport-tracks) in the task DAG. Each
 lands as separate, independently landable changes with no shim: a service's change deletes its
 hand-written routes, client methods and app relays, and updates the agent guides and the
-[agent CLI](../docs/agent_cli.md) with it. Manifests follow the pinned image.
+[agent CLI](../docs/agent_cli.md) with it. The service's `docs/agents/http_api.md` goes too: the
+facade serves an OpenAPI 3 document generated from the proto comments in its place, so a route's
+description is written once, in the proto. The CLI's group for that service may then speak gRPC
+through generated stubs or stay on the HTTP facade; either is fine, and the stubs are preferred for
+their type safety. Manifests follow the pinned image.
 
 Not yet on the DAG: the Dispatcher's commands have generated routes, but the browser keeps reaching them
 through the app's typed routes until the app's Thread checks have a home that is not a hand-written
