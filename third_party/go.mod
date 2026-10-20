@@ -62,6 +62,12 @@ require (
 	github.com/invopop/jsonschema v0.14.0
 )
 
+// Direct dependencies for agentplane/notification_service/github
+require (
+	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
+	github.com/google/go-github/v88 v88.0.0
+)
+
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
@@ -130,6 +136,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.8.0 // indirect
 	github.com/go-git/go-git/v5 v5.17.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/goretk/gore v0.13.27 // indirect
 	github.com/goretk/redress v1.2.64 // indirect
@@ -214,6 +221,7 @@ require (
 	github.com/go-openapi/swag/yamlutils v0.27.1 // indirect
 	github.com/gobuffalo/flect v1.0.3 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
+	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/lib/pq v1.10.9
 	github.com/mailru/easyjson v0.9.0 // indirect

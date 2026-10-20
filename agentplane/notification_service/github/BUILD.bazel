@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "github",
+    srcs = [
+        "client.go",
+        "errors.go",
+        "ratelimit.go",
+        "settings.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/github",
+    visibility = ["//agentplane/notification_service:__subpackages__"],
+    deps = [
+        "@com_github_bradleyfalzon_ghinstallation_v2//:ghinstallation",
+        "@com_github_google_go_github_v88//github",
+    ],
+)
+
+go_test(
+    name = "github_test",
+    srcs = [
+        "client_test.go",
+        "fake_test.go",
+        "ratelimit_test.go",
+        "settings_test.go",
+    ],
+    embed = [":github"],
+    deps = ["@com_github_spf13_viper//:viper"],
+)

@@ -1,0 +1,463 @@
+package github
+
+import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+const installationID = 11
+
+func TestRequestsUseTheConfiguredEndpointAndVersion(t *testing.T) {
+	fake := newFake(t)
+	fake.prefix = "/api/v3"
+	fake.apiVersion = "2026-01-01"
+	client := newTestClient(t, fake, func(s *Settings) { s.APIVersion = "2026-01-01" })
+
+	// The fake fails the test unless every request, including the token request, carries the version and
+	// credentials, so each kind of request has to be made.
+	if _, err := client.Installation(t.Context(), "owner/repo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Repository(t.Context(), "owner/repo", installationID); err != nil {
+		t.Fatal(err)
+	}
+	if fake.count(tokenPath) != 1 || fake.count("/repos/owner/repo/installation") != 1 {
+		t.Errorf("token requests %d, installation requests %d", fake.count(tokenPath), fake.count("/repos/owner/repo/installation"))
+	}
+}
+
+func TestReadsReturnTheirResources(t *testing.T) {
+	client := newTestClient(t, newFake(t))
+	ctx := t.Context()
+
+	id, err := client.Installation(ctx, "owner/repo")
+	if err != nil || id != installationID {
+		t.Errorf("Installation = %d, %v", id, err)
+	}
+	for name, read := range map[string]func() (Repository, error){
+		"by name": func() (Repository, error) { return client.Repository(ctx, "owner/repo", installationID) },
+		"by ID":   func() (Repository, error) { return client.RepositoryByID(ctx, 100, installationID) },
+	} {
+		if repository, err := read(); err != nil || repository != (Repository{ID: 100, FullName: "owner/repo"}) {
+			t.Errorf("repository %s = %+v, %v", name, repository, err)
+		}
+	}
+	head, err := client.PullRequestHead(ctx, "owner/repo", 7, installationID)
+	if err != nil || head.SHA != testSHA || head.Repository == nil || *head.Repository != (Repository{ID: 200, FullName: "fork/repo"}) {
+		t.Errorf("PullRequestHead = %+v, %v", head, err)
+	}
+	if err := client.CheckIssue(ctx, "owner/repo", 8, installationID); err != nil {
+		t.Errorf("CheckIssue: %v", err)
+	}
+	if err := client.CheckCommit(ctx, "owner/repo", testSHA, installationID); err != nil {
+		t.Errorf("CheckCommit: %v", err)
+	}
+}
+
+func TestPullRequestHeadWithoutItsRepositoryIsStillAHead(t *testing.T) {
+	fake := newFake(t)
+	fake.respond("/repos/owner/repo/pulls/7", 200, nil, `{"number": 7, "head": {"sha": "`+testSHA+`", "repo": null}}`)
+	head, err := newTestClient(t, fake).PullRequestHead(t.Context(), "owner/repo", 7, installationID)
+	if err != nil || head != (Revision{SHA: testSHA}) {
+		t.Errorf("PullRequestHead = %+v, %v", head, err)
+	}
+}
+
+func TestBranchesAreFoundByNameAndMissingOnesAreNotAnError(t *testing.T) {
+	fake := newFake(t)
+	client := newTestClient(t, fake)
+	for _, branch := range []string{"devel", "feature/x"} {
+		if sha, found, err := client.Branch(t.Context(), "owner/repo", branch, installationID); sha != testSHA || !found || err != nil {
+			t.Errorf("Branch %q = %q, %v, %v", branch, sha, found, err)
+		}
+	}
+	if sha, found, err := client.Branch(t.Context(), "owner/repo", "gone", installationID); sha != "" || found || err != nil {
+		t.Errorf("missing branch = %q, %v, %v", sha, found, err)
+	}
+}
+
+func TestATokenRequestAnsweringNotFoundIsLostAccessNotAMissingBranch(t *testing.T) {
+	fake := newFake(t)
+	fake.respond(tokenPath, 404, nil, "")
+	_, _, err := newTestClient(t, fake).Branch(t.Context(), "owner/repo", "devel", installationID)
+	if access := asError[*AccessError](t, err); access.StatusCode != 404 {
+		t.Errorf("access error %+v", access)
+	}
+}
+
+func TestAnIssueMustBeThatIssueAndNotAPullRequest(t *testing.T) {
+	for name, body := range map[string]string{
+		"a pull request": `{"number": 8, "pull_request": {}}`,
+		"another number": `{"number": 9}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond("/repos/owner/repo/issues/8", 200, nil, body)
+			err := newTestClient(t, fake).CheckIssue(t.Context(), "owner/repo", 8, installationID)
+			asError[*SourceChangedError](t, err)
+		})
+	}
+	t.Run("a missing issue", func(t *testing.T) {
+		fake := newFake(t)
+		fake.respond("/repos/owner/repo/issues/8", 404, nil, "")
+		err := newTestClient(t, fake).CheckIssue(t.Context(), "owner/repo", 8, installationID)
+		if access := asError[*AccessError](t, err); access.StatusCode != 404 {
+			t.Errorf("access error %+v", access)
+		}
+	})
+}
+
+func TestACommitMustBeThatCommit(t *testing.T) {
+	fake := newFake(t)
+	fake.respond("/repos/owner/repo/commits/"+testSHA, 200, nil, `{"sha": "`+strings.Repeat("b", 40)+`"}`)
+	err := newTestClient(t, fake).CheckCommit(t.Context(), "owner/repo", testSHA, installationID)
+	asError[*SourceChangedError](t, err)
+}
+
+func TestTheInstallationLookupTellsAbsenceSuspensionAndDenialApart(t *testing.T) {
+	const path = "/repos/owner/repo/installation"
+	fake := newFake(t)
+	client := newTestClient(t, fake)
+	var absent *NotInstalledError
+	var suspended *SuspendedError
+
+	fake.respond(path, 404, nil, "")
+	_, err := client.Installation(t.Context(), "owner/repo")
+	if notInstalled := asError[*NotInstalledError](t, err); notInstalled.StatusCode != 404 {
+		t.Errorf("absent installation %+v", notInstalled)
+	}
+	asError[*AccessError](t, err)
+	if errors.As(err, &suspended) {
+		t.Error("an absent installation is not a suspended one")
+	}
+
+	fake.respond(path, 200, nil, `{"id": 22, "suspended_at": "2026-01-02T03:04:05Z"}`)
+	_, err = client.Installation(t.Context(), "owner/repo")
+	asError[*SuspendedError](t, err)
+	asError[*AccessError](t, err)
+	if errors.As(err, &absent) {
+		t.Error("a suspended installation is not an absent one")
+	}
+
+	for _, status := range []int{401, 403} {
+		fake.respond(path, status, nil, "")
+		_, err = client.Installation(t.Context(), "owner/repo")
+		if denied := asError[*AccessError](t, err); denied.StatusCode != status {
+			t.Errorf("denied installation %+v", denied)
+		}
+		if errors.As(err, &absent) || errors.As(err, &suspended) {
+			t.Errorf("HTTP %d is neither absent nor suspended", status)
+		}
+	}
+}
+
+func TestAccessLostToTheInstallationOrRepositoryIsAnAccessError(t *testing.T) {
+	for _, denial := range []struct {
+		path   string
+		status int
+	}{
+		{tokenPath, 401},
+		{tokenPath, 403},
+		{tokenPath, 404},
+		{"/repos/owner/repo", 401},
+		{"/repos/owner/repo", 403},
+		{"/repos/owner/repo", 404},
+	} {
+		t.Run(denial.path+" "+strconv.Itoa(denial.status), func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond(denial.path, denial.status, nil, `{"message": "private upstream body"}`)
+			_, err := newTestClient(t, fake).Repository(t.Context(), "owner/repo", installationID)
+			access := asError[*AccessError](t, err)
+			if access.StatusCode != denial.status || !strings.Contains(err.Error(), "HTTP "+strconv.Itoa(denial.status)) ||
+				strings.Contains(err.Error(), "private upstream body") {
+				t.Errorf("error %v", err)
+			}
+		})
+	}
+}
+
+func TestInstallationTokensAreSharedAndDroppedWhenRejected(t *testing.T) {
+	fake := newFake(t)
+	client := newTestClient(t, fake)
+	ctx := t.Context()
+
+	reads := []func() error{
+		func() error { _, err := client.Repository(ctx, "owner/repo", installationID); return err },
+		func() error { _, err := client.PullRequestHead(ctx, "owner/repo", 7, installationID); return err },
+		func() error { return client.CheckIssue(ctx, "owner/repo", 8, installationID) },
+		func() error { _, _, err := client.Branch(ctx, "owner/repo", "devel", installationID); return err },
+		func() error { return client.CheckCommit(ctx, "owner/repo", testSHA, installationID) },
+	}
+	var wg sync.WaitGroup
+	for _, read := range reads {
+		wg.Go(func() {
+			if err := read(); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if n := fake.count(tokenPath); n != 1 {
+		t.Errorf("concurrent reads minted %d tokens, want 1", n)
+	}
+
+	fake.respond("/repos/owner/repo", 401, nil, "")
+	_, err := client.Repository(ctx, "owner/repo", installationID)
+	asError[*AccessError](t, err)
+	fake.restore("/repos/owner/repo")
+	if _, err := client.Repository(ctx, "owner/repo", installationID); err != nil {
+		t.Fatal(err)
+	}
+	if n := fake.count(tokenPath); n != 2 {
+		t.Errorf("tokens minted after a 401 = %d, want 2", n)
+	}
+}
+
+func TestRedirectsAreNeverFollowed(t *testing.T) {
+	var captured atomic.Int32
+	capture := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { captured.Add(1) }))
+	t.Cleanup(capture.Close)
+	redirect := map[string]string{"Location": capture.URL + "/capture"}
+
+	fake := newFake(t)
+	fake.respond("/repos/owner/repo/installation", 302, redirect, "")
+	fake.respond("/repos/owner/repo", 302, redirect, "")
+	fake.respond("/app/installations/12/access_tokens", 302, redirect, "")
+	client := newTestClient(t, fake)
+
+	_, appErr := client.Installation(t.Context(), "owner/repo")
+	_, installationErr := client.Repository(t.Context(), "owner/repo", installationID)
+	_, tokenErr := client.Repository(t.Context(), "owner/repo", 12)
+	for name, err := range map[string]error{"App": appErr, "installation": installationErr, "token": tokenErr} {
+		if status := asError[*StatusError](t, err); status.StatusCode != 302 {
+			t.Errorf("%s request: %+v", name, status)
+		}
+	}
+	if captured.Load() != 0 {
+		t.Error("a redirect was followed with the client's credentials")
+	}
+}
+
+func TestRateLimitsReachTheCallerWithTheirRetryDelay(t *testing.T) {
+	const body = "private upstream body"
+	for name, limit := range map[string]struct {
+		status      int
+		header      map[string]string
+		wantSeconds int
+	}{
+		"secondary limit with the primary exhausted": {403, map[string]string{"X-RateLimit-Remaining": "0", "Retry-After": "120"}, 120},
+		"primary limit as a 403":                     {403, map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "3600"}, 2600},
+		"primary limit as a 429":                     {429, map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "3600"}, 2600},
+		"secondary limit with only Retry-After":      {403, map[string]string{"Retry-After": "90"}, 90},
+		"429 without any hint":                       {429, nil, 60},
+		"Retry-After as an HTTP date":                {429, map[string]string{"Retry-After": "Thu, 01 Jan 1970 01:00:00 GMT"}, 2600},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond("/repos/owner/repo/installation", limit.status, limit.header, body)
+			client := newTestClient(t, fake)
+			client.now = func() time.Time { return time.Unix(1000, 250_000_000) }
+
+			_, err := client.Installation(t.Context(), "owner/repo")
+			limited := asError[*RateLimitedError](t, err)
+			if limited.StatusCode != limit.status || limited.RetrySeconds != limit.wantSeconds {
+				t.Errorf("%+v, want HTTP %d and %ds", limited, limit.status, limit.wantSeconds)
+			}
+			if strings.Contains(err.Error(), body) {
+				t.Errorf("the upstream body reached the error: %v", err)
+			}
+		})
+	}
+}
+
+func TestARateLimitedTokenRequestIsARateLimit(t *testing.T) {
+	fake := newFake(t)
+	fake.respond(tokenPath, 429, map[string]string{"Retry-After": "90"}, "")
+	_, err := newTestClient(t, fake).Repository(t.Context(), "owner/repo", installationID)
+	if limited := asError[*RateLimitedError](t, err); limited.StatusCode != 429 || limited.RetrySeconds != 90 {
+		t.Errorf("limited %+v", limited)
+	}
+}
+
+func TestAForbiddenResponseWithoutARateLimitIsAccessLost(t *testing.T) {
+	fake := newFake(t)
+	fake.respond("/repos/owner/repo/installation", 403, map[string]string{"X-RateLimit-Remaining": "1", "X-RateLimit-Reset": "3600"}, "")
+	_, err := newTestClient(t, fake).Installation(t.Context(), "owner/repo")
+	if access := asError[*AccessError](t, err); access.StatusCode != 403 {
+		t.Errorf("access error %+v", access)
+	}
+}
+
+func TestTheClientKeepsNoRateLimitStateOfItsOwn(t *testing.T) {
+	const path = "/repos/owner/repo/installation"
+	fake := newFake(t)
+	reset := strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10)
+	fake.respond(path, 403, map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": reset}, "")
+	client := newTestClient(t, fake)
+	for range 2 {
+		_, err := client.Installation(t.Context(), "owner/repo")
+		asError[*RateLimitedError](t, err)
+	}
+	if n := fake.count(path); n != 2 {
+		t.Errorf("GitHub was asked %d times, want 2: a limit GitHub reported must not answer for it later", n)
+	}
+}
+
+func TestOtherStatusesKeepTheirCode(t *testing.T) {
+	for _, status := range []int{400, 410, 422, 500, 502} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond("/repos/owner/repo", status, nil, "")
+			_, err := newTestClient(t, fake).Repository(t.Context(), "owner/repo", installationID)
+			if failure := asError[*StatusError](t, err); failure.StatusCode != status {
+				t.Errorf("failure %+v", failure)
+			}
+		})
+	}
+}
+
+func TestResponsesTheClientCannotUseAreInvalid(t *testing.T) {
+	for name, body := range map[string]string{
+		"not JSON":              "<html>",
+		"empty":                 "",
+		"null":                  "null",
+		"wrong field type":      `{"id": "100", "full_name": "owner/repo"}`,
+		"no id":                 `{"full_name": "owner/repo"}`,
+		"non-positive id":       `{"id": 0, "full_name": "owner/repo"}`,
+		"no name":               `{"id": 100}`,
+		"malformed name":        `{"id": 100, "full_name": "owner"}`,
+		"name with a path":      `{"id": 100, "full_name": "owner/repo/../x"}`,
+		"name that is too long": `{"id": 100, "full_name": "owner/` + strings.Repeat("r", 200) + `"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond("/repos/owner/repo", 200, nil, body)
+			_, err := newTestClient(t, fake).Repository(t.Context(), "owner/repo", installationID)
+			asError[*invalidResponseError](t, err)
+		})
+	}
+	t.Run("installation without an id", func(t *testing.T) {
+		fake := newFake(t)
+		fake.respond("/repos/owner/repo/installation", 200, nil, `{"id": 0}`)
+		_, err := newTestClient(t, fake).Installation(t.Context(), "owner/repo")
+		asError[*invalidResponseError](t, err)
+	})
+	t.Run("issue without a number", func(t *testing.T) {
+		fake := newFake(t)
+		fake.respond("/repos/owner/repo/issues/8", 200, nil, `{}`)
+		err := newTestClient(t, fake).CheckIssue(t.Context(), "owner/repo", 8, installationID)
+		asError[*invalidResponseError](t, err)
+	})
+}
+
+func TestATokenResponseTheClientCannotUseIsInvalid(t *testing.T) {
+	for name, body := range map[string]string{"not JSON": "<html>", "empty": "", "without a token": `{"expires_at": "2099-01-01T00:00:00Z"}`} {
+		t.Run(name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond(tokenPath, 201, nil, body)
+			_, err := newTestClient(t, fake).Repository(t.Context(), "owner/repo", installationID)
+			asError[*invalidResponseError](t, err)
+		})
+	}
+}
+
+func TestAnUnreachableGitHubIsATransportError(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	server.Close()
+	client, err := New(testSettings(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Installation(t.Context(), "owner/repo")
+	asError[*TransportError](t, err)
+}
+
+func TestAStalledRequestIsATransportErrorAtTheRequestTimeout(t *testing.T) {
+	for name, stalled := range map[string]string{
+		"App request":   "/repos/owner/repo/installation",
+		"token request": tokenPath,
+		"API request":   "/repos/owner/repo",
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.stall = stalled
+			client := newTestClient(t, fake, func(s *Settings) { s.RequestTimeoutSeconds = 0.2 })
+			var err error
+			if stalled == "/repos/owner/repo/installation" {
+				_, err = client.Installation(t.Context(), "owner/repo")
+			} else {
+				_, err = client.Repository(t.Context(), "owner/repo", installationID)
+			}
+			if transport := asError[*TransportError](t, err); !errors.Is(transport, context.DeadlineExceeded) {
+				t.Errorf("error %v", err)
+			}
+		})
+	}
+}
+
+func TestACallerThatGivesUpGetsItsOwnError(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := newTestClient(t, newFake(t)).Repository(ctx, "owner/repo", installationID)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v", err)
+	}
+}
+
+func TestMalformedCallsNeverReachGitHub(t *testing.T) {
+	fake := newFake(t)
+	client := newTestClient(t, fake)
+	for _, repository := range []string{"", "owner", "owner/repo/extra", "owner/../repo", "own er/repo", "owner/repo?x=1", "/repo", "owner/"} {
+		if _, err := client.Installation(t.Context(), repository); err == nil {
+			t.Errorf("repository %q was accepted", repository)
+		}
+	}
+	for _, id := range []int64{0, -1} {
+		if _, err := client.Repository(t.Context(), "owner/repo", id); err == nil {
+			t.Errorf("installation %d was accepted", id)
+		}
+	}
+	if n := fake.total(); n != 0 {
+		t.Errorf("%d requests were made", n)
+	}
+}
+
+func TestNewRejectsAnUnusablePrivateKeyWithoutEchoingIt(t *testing.T) {
+	ec, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(ec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, key := range map[string]string{
+		"not PEM":    "never-print-this-key-material",
+		"truncated":  testKeyPEM()[:300],
+		"not an RSA": string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})),
+	} {
+		t.Run(name, func(t *testing.T) {
+			settings := testSettings("https://github.test")
+			settings.PrivateKey = key
+			_, err := New(settings)
+			// The second line of a PEM is key material; a one-line key is itself the material.
+			material := strings.Split(key, "\n")[len(strings.Split(key, "\n"))/2]
+			if err == nil || strings.Contains(err.Error(), material) {
+				t.Errorf("error %v", err)
+			}
+		})
+	}
+}
