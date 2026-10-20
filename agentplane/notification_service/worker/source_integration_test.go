@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/status"
 )
 
 func TestProviderFailuresAreShownOnTheSubscriptionAndRetried(t *testing.T) {
@@ -102,36 +104,61 @@ func TestAProviderWhoseClaimWasLostLeavesTheInboxToItsNewOwner(t *testing.T) {
 	h.requireNoneDue(t)
 }
 
-func TestShuttingDownLeavesTheLeaseToRunOut(t *testing.T) {
-	h := newHarness(t, debounce(3600, 3600))
-	subscription := h.subscribe(t, "first")
-	started := make(chan struct{})
-	h.actions.on(func(ctx context.Context, _ store.Claim, _ store.DueSubscription) error {
-		close(started)
-		<-ctx.Done()
-		return ctx.Err()
-	})
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	begun := time.Now()
-	done := make(chan error, 1)
-	go func() {
-		_, err := h.worker.step(ctx)
-		done <- err
-	}()
-	<-started
-	cancel()
+func TestShuttingDownGivesTheInboxBackWithoutShowingTheInterruption(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		// notice is whether an entry awaits a notice, with the source read postponed.
+		notice bool
+		// block makes the call the worker is in block on its context, as a call to another service does.
+		block func(h *harness, started chan<- struct{})
+	}{
+		{"reading a source", false, func(h *harness, started chan<- struct{}) {
+			h.actions.on(func(ctx context.Context, _ store.Claim, _ store.DueSubscription) error {
+				close(started)
+				<-ctx.Done()
+				return ctx.Err()
+			})
+		}},
+		{"submitting the notice", true, func(h *harness, started chan<- struct{}) {
+			h.dispatcher.respond = func(ctx context.Context, _ *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
+				close(started)
+				<-ctx.Done()
+				return nil, status.FromContextError(ctx.Err()).Err()
+			}
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t, debounce(0, 300))
+			subscription := h.subscribe(t, "first")
+			if c.notice {
+				h.postponeSources(t)
+				h.addEvents(t, subscription, 1, 1)
+			}
+			started := make(chan struct{})
+			c.block(h, started)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				_, err := h.worker.step(ctx)
+				done <- err
+			}()
+			<-started
+			cancel()
 
-	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("step = %v, want context.Canceled", err)
+			if err := <-done; !errors.Is(err, context.Canceled) {
+				t.Fatalf("step = %v, want context.Canceled", err)
+			}
+			// The lease would hold the inbox for thirty seconds; its release schedules the next work soon.
+			next, err := h.store.NextWorkAt(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			requireWithin(t, "next work", next, time.Time{}, time.Now().Add(5*time.Second))
+			requireEqual(t, h.row(t, subscription.InboxID).deliveryError, (*string)(nil))
+			requireEqual(t, h.subscription(t, subscription.ID).Failure, (*store.SourceFailure)(nil))
+		})
 	}
-	h.requireNoneDue(t)
-	next, err := h.store.NextWorkAt(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	requireWithin(t, "next work", next, begun.Add(store.LeaseDuration), time.Now().Add(store.LeaseDuration))
-	requireEqual(t, h.subscription(t, subscription.ID).Failure, (*store.SourceFailure)(nil))
 }
 
 // insertGitHubSubscription adds a GitHub subscription to the inbox, as the GitHub stage's store will, with the

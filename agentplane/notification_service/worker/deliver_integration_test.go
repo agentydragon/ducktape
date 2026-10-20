@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -112,7 +113,7 @@ func TestDispatcherOutcomesAreEitherTerminalOrWaitedFor(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			h := newHarness(t, debounce(3600, 3600))
 			claim, subscription, notice := h.prepared(t, 1)
-			h.dispatcher.respond = func(*dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
+			h.dispatcher.respond = func(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
 				return dispatched(c.state, c.reason), nil
 			}
 
@@ -131,7 +132,7 @@ func TestADispatcherFailureIsRetriedAndShownAsAServiceError(t *testing.T) {
 	subscription := h.subscribe(t, "first")
 	h.postponeSources(t)
 	h.addEvents(t, subscription, 1, 1)
-	h.dispatcher.respond = func(*dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
+	h.dispatcher.respond = func(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
 		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
 	}
 

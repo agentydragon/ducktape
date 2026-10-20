@@ -148,15 +148,15 @@ func (h *fakeHistory) readRequests() []*historypb.ReadSessionEventsRequest {
 type fakeDispatcher struct {
 	mu       sync.Mutex
 	requests []*dispatcherpb.SubmitInputRequest
-	respond  func(*dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error)
+	respond  func(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error)
 }
 
-func (d *fakeDispatcher) SubmitInput(_ context.Context, in *dispatcherpb.SubmitInputRequest, _ ...grpc.CallOption) (*dispatcherpb.SubmitInputResponse, error) {
+func (d *fakeDispatcher) SubmitInput(ctx context.Context, in *dispatcherpb.SubmitInputRequest, _ ...grpc.CallOption) (*dispatcherpb.SubmitInputResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.requests = append(d.requests, proto.Clone(in).(*dispatcherpb.SubmitInputRequest))
 	if d.respond != nil {
-		return d.respond(in)
+		return d.respond(ctx, in)
 	}
 	return dispatched(dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER, nil), nil
 }

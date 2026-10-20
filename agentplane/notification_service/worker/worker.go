@@ -27,6 +27,8 @@ const (
 	cleanupInterval = time.Minute
 	// storageRetry is the wait after the database fails.
 	storageRetry = 5 * time.Second
+	// releaseGrace bounds giving a claim back after the worker was told to stop.
+	releaseGrace = 5 * time.Second
 )
 
 // Worker claims inboxes and works them.
@@ -131,30 +133,46 @@ func (w *Worker) step(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	outcome, failure := w.attend(ctx, *claim)
-	if ctx.Err() != nil {
-		// Shutting down: the lease runs out by itself.
-		return true, ctx.Err()
+	if shutdown := ctx.Err(); shutdown != nil {
+		// What interrupted the work is not an outcome. The claim is given back all the same, so another replica
+		// need not wait out the lease.
+		grace, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseGrace)
+		defer cancel()
+		return true, errors.Join(shutdown, w.release(grace, *claim, carriedError(*claim)))
 	}
 	if !outcome.released {
-		due, err := w.noticeDueAt(ctx, *claim)
-		if err == nil {
-			err = w.Store.Release(ctx, *claim, outcome.deliveryError, due)
-		}
-		if !errors.Is(err, store.ErrClaimLost) {
-			failure = errors.Join(failure, err)
-		}
+		failure = errors.Join(failure, w.release(ctx, *claim, outcome.deliveryError))
 	}
 	return true, failure
+}
+
+// release gives the claim back with the next deadline computed from the rows. A claim that was lost has nothing
+// to give back.
+func (w *Worker) release(ctx context.Context, claim store.Claim, deliveryError *string) error {
+	due, err := w.noticeDueAt(ctx, claim)
+	if err == nil {
+		err = w.Store.Release(ctx, claim, deliveryError, due)
+	}
+	if errors.Is(err, store.ErrClaimLost) {
+		return nil
+	}
+	return err
+}
+
+// carriedError is the delivery error a claim keeps through a step whatever the step does: history that cannot
+// be followed stays so.
+func carriedError(claim store.Claim) *string {
+	if claim.DeliveryError != nil && strings.HasPrefix(*claim.DeliveryError, store.InvalidHistoryPrefix) {
+		return claim.DeliveryError
+	}
+	return nil
 }
 
 // attend works a claimed inbox within the step budget, and classifies how it ended. The error it returns is
 // the one the step must not hide: the database failing, or a Provider breaking its contract.
 func (w *Worker) attend(ctx context.Context, claim store.Claim) (attended, error) {
-	var outcome attended
-	if claim.DeliveryError != nil && strings.HasPrefix(*claim.DeliveryError, store.InvalidHistoryPrefix) {
-		// History that cannot be followed stays so: notices are prepared but never delivered.
-		outcome.deliveryError = claim.DeliveryError
-	}
+	// While the history cannot be followed, notices are prepared but never delivered.
+	outcome := attended{deliveryError: carriedError(claim)}
 	budget, cancel := context.WithTimeout(ctx, stepBudget)
 	defer cancel()
 	err := w.work(budget, claim, outcome.deliveryError == nil)
