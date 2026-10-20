@@ -255,8 +255,8 @@
       "registry": "forgejo"
     },
     "agentplane-history-migrate": {
-      "target": "//agentplane/history_service/storage:migration_image",
-      "test": "//agentplane/history_service/storage/...",
+      "target": "//agentplane/history_service/migrations:image",
+      "test": "//agentplane/history_service/migrations/...",
       "registry": "forgejo"
     },
     "agentplane-history-service": {

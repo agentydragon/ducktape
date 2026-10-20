@@ -1990,17 +1990,16 @@ binary with no import of the Python History service other than its client.
 
 ### `HISTORY_GO_TESTING_CUTOVER` — cut `agentplane-testing` over to the Go History Service
 
-**Candidate.** Image before config, in two merges with the migrator first, since new migration code soaks
-before code that uses it. Point `agentplane-history-migrate` in `devinfra/ci/image_targets.json` at
-`//agentplane/history_service/migrations:image`; the Goose baseline records itself in
-`history_service_goose_version` and changes nothing else on the Alembic-built database. Then point
-`agentplane-history-service` at `//agentplane/history_service:service_image`; the Go binary accepts the
-current manifests' settings. Testing and staging follow one Flux image policy per name, so the first merge
-also holds staging on its current tags (it drops the `$imagepolicy` markers from staging's `image-pins`)
-until `HISTORY_GO_STAGING_CUTOVER`. Then switch the README system overview and the docs. The Go projector
-continues each Session's fold from its stored checkpoint in the current epoch, so no Session refolds and
-Electric sees no scope reset. **Deliverable:** a Session on `agentplane-testing` runs through ingress, the
-fold, the reads and Electric on the Go service.
+**Candidate.** The Go migrator is on `agentplane-testing`: the Goose baseline records itself in
+`history_service_goose_version` and changes nothing else on the Alembic-built database. Staging keeps the
+Python migrator, because testing and staging follow one Flux image policy per name and staging's `image-pins`
+dropped the `$imagepolicy` marker on that pin. After the migrator has soaked on testing, point
+`agentplane-history-service` in `devinfra/ci/image_targets.json` at `//agentplane/history_service:service_image`
+(the Go binary accepts the current manifests' settings), holding staging's pin of it the same way until
+`HISTORY_GO_STAGING_CUTOVER`. Then switch the README system overview and the docs. The Go projector continues
+each Session's fold from its stored checkpoint in the current epoch, so no Session refolds and Electric sees no
+scope reset. **Deliverable:** a Session on `agentplane-testing` runs through ingress, the fold, the reads and
+Electric on the Go service.
 
 ### `HISTORY_GO_STAGING_CUTOVER` — cut staging over to the Go History Service
 
