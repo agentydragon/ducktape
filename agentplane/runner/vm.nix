@@ -168,6 +168,10 @@ in
   # satisfy host defaults.
   users.allowNoPasswordLogin = true;
 
+  # base.nix enables zsh for hosts a person logs into. The guest's shells are bash, as in the Pod
+  # sandbox image.
+  programs.zsh.enable = lib.mkForce false;
+
   fileSystems = {
     # The KubeVirt filesystem named `state` is the virtiofs tag.
     "/state" = {
