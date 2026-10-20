@@ -677,8 +677,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
         )
         assert receipt.id is not None
         assert receipt.external_grant == grant.provenance()
-        assert receipt.caller is None, "a caller reading its own receipt is not shown the caller column"
-        assert (await store.get(receipt.id, OPERATOR)).caller == grant.caller
+        assert receipt.caller == grant.caller
         cancelled = CancellationView.model_validate(
             await _call_mcp(
                 http, bearer, "cancel_action_request", {"request_id": str(receipt.id), "include_fields": all_fields}

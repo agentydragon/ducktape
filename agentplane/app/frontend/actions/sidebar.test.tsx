@@ -145,7 +145,7 @@ it("expands a compact action preview and only offers a decision on the compact c
   expect(denyButton).not.toBeNull();
   expect(approveButton?.querySelector("svg")).not.toBeNull();
   expect(denyButton?.querySelector("svg")).not.toBeNull();
-  expect(container.textContent).not.toContain("Exact arguments (unredacted)");
+  expect(container.textContent).not.toContain("Exact arguments");
 
   const sshDisclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ssh.title}"]`);
   if (!sshDisclosure) throw new Error("missing SSH action disclosure");

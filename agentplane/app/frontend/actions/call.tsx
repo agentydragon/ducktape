@@ -177,7 +177,7 @@ export function ActionCall({
           {!(prettyArguments === null && !raw) && (
             <>
               <Text size="sm" fw={600} mb={4}>
-                Exact arguments (unredacted)
+                Exact arguments
               </Text>
               {prettyArguments === undefined || raw ? <JsonBlock value={request.arguments} /> : prettyArguments}
             </>

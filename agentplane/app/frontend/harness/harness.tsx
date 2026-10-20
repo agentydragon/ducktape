@@ -776,7 +776,7 @@ const ACTIONS: ActionRequestView[] = [
   {
     id: "70000000-0000-4000-8000-000000000001",
     action: { group: "everything", name: "echo" },
-    arguments: { repository: "test-owner/test-repository", token: "[redacted]" },
+    arguments: { repository: "test-owner/test-repository", token: "test-token" },
     title: "echo the test repository handle back",
     description: "Confirms the fixture connection still reaches the echo Action before the demo run.",
     idempotency_key: "visual-pending",

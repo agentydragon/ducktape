@@ -92,7 +92,7 @@ it("opens cached stream details without a reload and Back returns to the origina
 
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(`/actions/${ROW.id}`);
   expect(fetched(sent)).toBe(false);
-  expect(container.textContent).toContain("Exact arguments (unredacted)");
+  expect(container.textContent).toContain("Exact arguments");
   expect(container.textContent).toContain("exact-command");
 
   const back = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === "Back");
@@ -170,7 +170,7 @@ it("stays on action details when a decision fails", async () => {
   });
 
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(`/actions/${ROW.id}`);
-  expect(container.textContent).toContain("Exact arguments (unredacted)");
+  expect(container.textContent).toContain("Exact arguments");
 });
 
 it("keeps a direct action link on its terminal receipt after a successful decision", async () => {
@@ -197,7 +197,7 @@ it("loads uncached deep links and falls back to the Actions page on Back", async
   const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
   await send([]);
   await vi.waitFor(() => expect(fetched(sent)).toBe(true));
-  await vi.waitFor(() => expect(container.textContent).toContain("Exact arguments (unredacted)"));
+  await vi.waitFor(() => expect(container.textContent).toContain("Exact arguments"));
 
   const back = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === "Back");
   if (!back) throw new Error("missing action detail Back button");

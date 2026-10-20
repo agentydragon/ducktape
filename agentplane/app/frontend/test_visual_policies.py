@@ -1137,7 +1137,7 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
     await expect(block).to_have_attribute("data-expanded", "false")
     if kind == "email":
         await _open_raw_switches(page)
-        await expect(page.get_by_text("Exact arguments (unredacted)", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
         await expect(page.locator('[data-clamped="true"]').first).to_be_visible()
         await view.capture(f"{capture_name}-raw")
 
@@ -1240,12 +1240,12 @@ async def test_kubernetes_pods_delete_success_receipt(
     await expect(page.get_by_text("Delete Pod apps/web-0", exact=True)).to_be_visible()
     await expect(page.get_by_text("Deletion accepted", exact=True)).to_be_visible()
     await expect(page.get_by_text("Result", exact=True)).to_have_count(0)
-    await expect(page.get_by_text("Exact arguments (unredacted)", exact=True)).to_have_count(0)
+    await expect(page.get_by_text("Exact arguments", exact=True)).to_have_count(0)
     await view.check(context="successful pod deletion shown as an accepted request")
     await view.capture(target=page.locator("#app"), name=f"pods_delete_pretty_{viewport.width}")
 
     await _open_raw_switches(page)
-    await expect(page.get_by_text("Exact arguments (unredacted)", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
     await expect(page.get_by_text('"name": "web-0"', exact=False)).to_be_visible()
     await expect(page.get_by_text('"Pod deleted successfully"', exact=False)).to_be_visible()
     await view.capture(target=page.locator("#app"), name=f"pods_delete_raw_{viewport.width}")

@@ -171,7 +171,7 @@ describe("ActionHistory", () => {
 
   it("retains the exact arguments inside the receipt disclosure", async () => {
     const container = await renderHistory([request("succeeded", 1)]);
-    expect(container.textContent).toContain("Exact arguments (unredacted)");
+    expect(container.textContent).toContain("Exact arguments");
     const block = [...container.querySelectorAll(".agentplane-code-block")].find((node) =>
       node.textContent?.includes("test-exact-token")
     );
@@ -390,7 +390,7 @@ describe("ActionHistory", () => {
     expect(container.textContent).toContain("Release notes saved");
     expect(container.textContent).toContain("reader@example.com");
     expect(container.textContent).toContain("The release is ready.");
-    expect(container.textContent).not.toContain("Exact arguments (unredacted)");
+    expect(container.textContent).not.toContain("Exact arguments");
     expect(container.querySelector('[data-testid="action-execution-outcome"]')?.textContent).not.toContain("Result");
     expect(
       container.querySelector('a[href="https://mail.google.com/mail/u/0/#drafts?compose=draft-123"]')
@@ -399,7 +399,7 @@ describe("ActionHistory", () => {
     const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
     expect(raw).not.toBeNull();
     await act(async () => raw!.click());
-    expect(container.textContent).toContain("Exact arguments (unredacted)");
+    expect(container.textContent).toContain("Exact arguments");
     expect(container.textContent).toContain('"subject": "Release notes"');
     expect(container.textContent).toContain('"id": "draft-123"');
     expect(container.querySelector('[data-testid="action-execution-outcome"]')?.textContent).toContain("Result");
