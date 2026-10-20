@@ -1,8 +1,9 @@
-# agentplane's sandbox image: the command-line tools of a box that runs commands, as one list,
-# on the nix-ld substrate FHS binaries need (<../../nix/lib/nix-ld-image.nix>). Its user is uid
-# 1000 `runner`, home /home/runner. The runner image (<../runner/image.nix>) is this definition
-# plus the runner and both harnesses, and the build image (<build.nix>) this definition plus Bazel
-# and what a build compiles with, so a tool added here reaches all three.
+# agentplane's sandbox image: the command-line tools of a box that runs commands (<tools.nix>, which
+# the VM guest shares) on the nix-ld substrate FHS binaries need (<../../nix/lib/nix-ld-image.nix>).
+# Its user is uid 1000 `runner`, home /home/runner. The runner image (<../runner/image.nix>) is this
+# definition plus the runner and both harnesses, and the build image (<build.nix>) this definition
+# plus Bazel and what a build compiles with, so a tool added to <tools.nix> reaches all three and the
+# VM guest.
 #
 # The egress proxy's CA comes from the pod, not from this image: nothing here sets SSL_CERT_FILE
 # or GIT_SSL_CAINFO. Pointing them at the public cacert bundle breaks TLS in-cluster, since the
@@ -30,36 +31,10 @@ let
       substrate.nixLdLibraries
 
       pkgs.bashInteractiveFHS # the substrate's /bin/bash; the default build has no PATH fallback
-      pkgs.coreutils
-      pkgs.findutils
-      pkgs.gnugrep
-      pkgs.gnused
-      pkgs.gawk
-      pkgs.diffutils
-      pkgs.gnupatch
-      pkgs.file
-      pkgs.less
-      pkgs.procps
-      pkgs.which
-      pkgs.gnutar
-      pkgs.gzip
-      pkgs.xz
-      pkgs.unzip
-
-      pkgs.curl
-      pkgs.git
-      pkgs.ripgrep
-      pkgs.jq
-      pkgs.openssl
       pkgs.cacert
-      pkgs.kubectl # the sandbox's own Kubernetes identity, through the egress proxy
       agentplaneCli # the Action, Notification and egress-rules APIs (<../docs/agent_cli.md>)
-
-      # FULL python3, never `python3Minimal`, whose missing `json`/`shutil` broke the Haku image's
-      # scripts. nixpkgs marks it EXTERNALLY-MANAGED, so a run installs packages into a
-      # `python3 -m venv`, whose ensurepip brings its own pip.
-      pkgs.python3
     ]
+    ++ import ./tools.nix pkgs
     ++ extraPaths;
     pathsToLink = [
       "/bin"

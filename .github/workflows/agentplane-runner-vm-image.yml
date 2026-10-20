@@ -12,6 +12,7 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
+      - "agentplane/images/tools.nix"
       - "agentplane/runner/container-disk.nix"
       - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
@@ -20,6 +21,7 @@ on:
       - "flake.nix"
       - "nix/attic-pubkeys.json"
       - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
       - "nix/nixos/modules/base.nix"
       - "nix/nixos/modules/vm-hardware.nix"
   # Same-repository PRs can use pull_request directly. Fork PRs are skipped here
@@ -31,6 +33,7 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
+      - "agentplane/images/tools.nix"
       - "agentplane/runner/container-disk.nix"
       - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
@@ -39,6 +42,7 @@ on:
       - "flake.nix"
       - "nix/attic-pubkeys.json"
       - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
       - "nix/nixos/modules/base.nix"
       - "nix/nixos/modules/vm-hardware.nix"
       # keep-sorted end
@@ -52,6 +56,7 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
+      - "agentplane/images/tools.nix"
       - "agentplane/runner/container-disk.nix"
       - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
@@ -60,6 +65,7 @@ on:
       - "flake.nix"
       - "nix/attic-pubkeys.json"
       - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
       - "nix/nixos/modules/base.nix"
       - "nix/nixos/modules/vm-hardware.nix"
       # keep-sorted end

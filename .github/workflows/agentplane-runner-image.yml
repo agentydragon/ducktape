@@ -8,6 +8,7 @@ on:
     paths:
       - "agentplane/runner/image.nix"
       - "agentplane/images/sandbox.nix"
+      - "agentplane/images/tools.nix"
       - "agentplane/cli/package.nix"
       - "nix/lib/nix-ld-image.nix"
       # The runner arrives as a released executable, so a runner change reaches the image when its
@@ -35,6 +36,7 @@ on:
       - ".pre-commit-config.yaml"
       - "agentplane/cli/package.nix"
       - "agentplane/images/sandbox.nix"
+      - "agentplane/images/tools.nix"
       - "agentplane/runner/ducktape_image_smoke.sh"
       - "agentplane/runner/ducktape_tools_check.nix"
       - "agentplane/runner/image.nix"

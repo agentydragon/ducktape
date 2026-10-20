@@ -327,43 +327,21 @@ in
     };
   };
 
-  environment.systemPackages = with pkgs; [
-    bashInteractive
-    coreutils
-    curl
-    diffutils
-    e2fsprogs
-    file
-    findutils
-    gawk
-    git
-    gnugrep
-    gnupatch
-    gnused
-    gnutar
-    gzip
-    jq
-    kubectl
-    less
-    openssl
-    procps
-    python3
-    ripgrep
-    unzip
-    util-linux
-    which
-    xz
-    pkgsUnstable.claude-code
-    codexWithoutVoice
-  ];
+  # The guest's package set: the tools every Sandbox kind shares (<../images/tools.nix>), what the
+  # guest needs of its own, and the harnesses.
+  environment.systemPackages =
+    import ../images/tools.nix pkgs
+    ++ (with pkgs; [
+      bashInteractive
+      e2fsprogs
+      util-linux
+      pkgsUnstable.claude-code
+      codexWithoutVoice
+    ]);
 
   programs.nix-ld.enable = true;
-  programs.nix-ld.libraries = with pkgs; [
-    stdenv.cc.cc.lib
-    zlib
-    glibc
-    openssl.out
-  ];
+  programs.nix-ld.libraries =
+    (import ../../nix/lib/nix-ld-image.nix { inherit pkgs; }).runtimeLibPkgs;
 
   system.stateVersion = "25.11";
 }

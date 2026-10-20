@@ -22,6 +22,9 @@ let
   runtimeLibs = pkgs.lib.makeLibraryPath runtimeLibPkgs;
 in
 {
+  # The same libraries for a NixOS guest, as its `programs.nix-ld.libraries`.
+  inherit runtimeLibPkgs;
+
   # nix-ld's ENV-INDEPENDENT FALLBACK. This is the load-bearing piece, and the thing an
   # earlier revision of the Haku image missed while copying the NixOS module's env vars.
   #
