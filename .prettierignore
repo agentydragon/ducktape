@@ -39,6 +39,9 @@ agentplane/history_service/threadfold/golden.json
 # The retired Python Notification Service generated these golden vectors; the Go store tests hold the store to them.
 agentplane/notification_service/store/golden.json
 
+# The Python Action Service generates these golden vectors; test_golden checks exact output.
+agentplane/action_service/store/golden.json
+
 # controller-gen owns these Agentplane CRD snapshots; test_generate checks exact output.
 agentplane/crds/manifests/crd-sandboxes.yaml
 agentplane/crds/manifests/crd-sandboxtemplates.yaml

@@ -1,0 +1,519 @@
+package store
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"slices"
+	"time"
+	"unicode/utf8"
+
+	"github.com/google/uuid"
+)
+
+// ServiceAccount is a Kubernetes ServiceAccount: the identity that owns an ActionRequest.
+type ServiceAccount struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
+// ActionIdentity names an Action by its group and name. It is stored as `action_request.action`.
+type ActionIdentity struct {
+	Group string `json:"group"`
+	Name  string `json:"name"`
+}
+
+// ExternalGrant is the authenticated evidence that a Connection's grant submitted a request. It is stored as
+// `action_request.external_grant` and never changes.
+type ExternalGrant struct {
+	Caller         ServiceAccount `json:"caller"`
+	Issuer         string         `json:"issuer"`
+	ClientID       string         `json:"client_id"`
+	ConnectionID   uuid.UUID      `json:"connection_id"`
+	GrantID        uuid.UUID      `json:"grant_id"`
+	Revision       int64          `json:"revision"`
+	BindingVersion int64          `json:"binding_version"`
+}
+
+// Principal returns the caller the grant acts as.
+func (g ExternalGrant) Principal() CallerPrincipal { return CallerPrincipal{Account: g.Caller} }
+
+// ReadPrincipal is who reads requests: a CallerPrincipal reads its own, an OperatorPrincipal and a
+// ServiceReaderPrincipal read every owner's.
+type ReadPrincipal interface{ isReadPrincipal() }
+
+// Principal is who authors Events: a CallerPrincipal or an OperatorPrincipal. It is stored as `action_event.actor`.
+type Principal interface {
+	ReadPrincipal
+	isPrincipal()
+}
+
+// CallerPrincipal is a workload or Connection that proved one ServiceAccount.
+type CallerPrincipal struct {
+	Account ServiceAccount `json:"account"`
+}
+
+// OperatorPrincipal is the human behind the operator surface, as its issuer verified them.
+type OperatorPrincipal struct {
+	Issuer  string `json:"issuer"`
+	Subject string `json:"subject"`
+}
+
+// ServiceReaderPrincipal is an allowlisted workload that reads every owner's requests and changes none.
+type ServiceReaderPrincipal struct {
+	Account ServiceAccount
+}
+
+func (CallerPrincipal) isReadPrincipal()        {}
+func (OperatorPrincipal) isReadPrincipal()      {}
+func (ServiceReaderPrincipal) isReadPrincipal() {}
+func (CallerPrincipal) isPrincipal()            {}
+func (OperatorPrincipal) isPrincipal()          {}
+
+// ActionState is where a request is. It is stored as text.
+type ActionState string
+
+const (
+	StateDecisionPending  ActionState = "decision_pending"
+	StateAllowed          ActionState = "allowed"
+	StateDenied           ActionState = "denied"
+	StateDispatching      ActionState = "dispatching"
+	StateRunning          ActionState = "running"
+	StateSucceeded        ActionState = "succeeded"
+	StateFailed           ActionState = "failed"
+	StateCancelled        ActionState = "cancelled"
+	StateExecutionUnknown ActionState = "execution_unknown"
+)
+
+var actionStates = []ActionState{
+	StateDecisionPending, StateAllowed, StateDenied, StateDispatching, StateRunning, StateSucceeded, StateFailed,
+	StateCancelled, StateExecutionUnknown,
+}
+
+// ExecutionState is where an Execution is. It is stored as text.
+type ExecutionState string
+
+const (
+	ExecutionPendingDispatch ExecutionState = "pending_dispatch"
+	ExecutionDispatching     ExecutionState = "dispatching"
+	ExecutionRunning         ExecutionState = "running"
+	ExecutionSucceeded       ExecutionState = "succeeded"
+	ExecutionFailed          ExecutionState = "failed"
+	ExecutionCancelled       ExecutionState = "cancelled"
+	ExecutionUnknown         ExecutionState = "execution_unknown"
+)
+
+var executionStates = []ExecutionState{
+	ExecutionPendingDispatch, ExecutionDispatching, ExecutionRunning, ExecutionSucceeded, ExecutionFailed,
+	ExecutionCancelled, ExecutionUnknown,
+}
+
+// Verdict is what a Decision says. It is stored as text.
+type Verdict string
+
+const (
+	VerdictAllow Verdict = "allow"
+	VerdictDeny  Verdict = "deny"
+)
+
+// PolicyKind is the type of a policy a Decision matched.
+type PolicyKind string
+
+const (
+	PolicyExactActions               PolicyKind = "exact_actions"
+	PolicyArgumentSchema             PolicyKind = "argument_schema"
+	PolicyGitHubRepository           PolicyKind = "github_repository"
+	PolicyGitHubPublicRepository     PolicyKind = "github_public_repository"
+	PolicyHomeAssistantEntityControl PolicyKind = "home_assistant_entity_control"
+)
+
+var policyKinds = []PolicyKind{
+	PolicyExactActions, PolicyArgumentSchema, PolicyGitHubRepository, PolicyGitHubPublicRepository,
+	PolicyHomeAssistantEntityControl,
+}
+
+// PolicySourceRules is the only list of a PolicySet a matched policy sits in.
+const PolicySourceRules = "rules"
+
+// PolicyEvidence is what a policy-set Decision evaluated, as the objects stood at admission. It is stored as
+// `action_decision.policy_evidence`.
+type PolicyEvidence struct {
+	Bindings   []BindingEvidence   `json:"bindings"`
+	PolicySets []PolicySetEvidence `json:"policy_sets"`
+	Matched    MatchedPolicy       `json:"matched"`
+}
+
+type BindingEvidence struct {
+	Namespace       string `json:"namespace"`
+	Name            string `json:"name"`
+	ResourceVersion string `json:"resource_version"`
+}
+
+type PolicySetEvidence struct {
+	Namespace  string `json:"namespace"`
+	Name       string `json:"name"`
+	Generation int64  `json:"generation"`
+}
+
+// MatchedPolicy is the leaf policy that produced the Decision.
+type MatchedPolicy struct {
+	Namespace string     `json:"namespace"`
+	PolicySet string     `json:"policy_set"`
+	Source    string     `json:"source"`
+	Index     int64      `json:"index"`
+	Type      PolicyKind `json:"type"`
+	// Repository is set by the GitHub policy kinds.
+	Repository *MatchedRepository `json:"repository"`
+}
+
+type MatchedRepository struct {
+	Owner      string `json:"owner"`
+	Repository string `json:"repository"`
+	// ConfirmedPublic is whether an unauthenticated GitHub lookup confirmed the repository public at admission.
+	ConfirmedPublic bool `json:"confirmed_public"`
+}
+
+// ActionRequestInput is the envelope a caller submits.
+type ActionRequestInput struct {
+	IdempotencyKey string
+	Action         ActionIdentity
+	// Arguments is a JSON object.
+	Arguments   json.RawMessage
+	Title       string
+	Description *string
+}
+
+// ProviderVote is the decisive outcome of admission's provider evaluation and the provider that cast it.
+type ProviderVote struct {
+	Provider          string
+	Verdict           Verdict
+	ReasonCode        string
+	ReasonDescription *string
+	// Evidence is set when the provider decided from policy objects.
+	Evidence *PolicyEvidence
+}
+
+// Admission is what admission settled about a submission before the store sees it.
+type Admission struct {
+	// RequestID is the ID the request is stored under.
+	RequestID uuid.UUID
+	// Vote commits a Decision with the insert, so the request is never visible as pending. Nil leaves the
+	// Decision to a human.
+	Vote *ProviderVote
+	// ExternalGrant is set when a Connection's grant submitted the request.
+	ExternalGrant *ExternalGrant
+}
+
+// DecisionInput is a human Decision on a pending request.
+type DecisionInput struct {
+	Verdict Verdict
+	// ExpectedVersion is the version of the request the operator decided on.
+	ExpectedVersion int64
+	IdempotencyKey  string
+	DecisionNote    *string
+}
+
+// ActionRequest is a request as it is read back. Every reader sees the same one.
+type ActionRequest struct {
+	ID             uuid.UUID
+	IdempotencyKey string
+	Action         ActionIdentity
+	// Arguments is a JSON object, as submitted.
+	Arguments   json.RawMessage
+	Title       string
+	Description *string
+	// Caller is the ServiceAccount that submitted the request.
+	Caller        ServiceAccount
+	ExternalGrant *ExternalGrant
+	State         ActionState
+	// Version counts the request's transitions from 1; an Event's sequence is the version it records.
+	Version   int64
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Decision  *Decision
+	Execution *Execution
+}
+
+// Decision is the one verdict on a request.
+type Decision struct {
+	ID       uuid.UUID
+	Verdict  Verdict
+	Provider string
+	// Operator is the human who decided; nil when a DecisionProvider did.
+	Operator          *OperatorPrincipal
+	DecisionNote      *string
+	ReasonCode        *string
+	ReasonDescription *string
+	PolicyEvidence    *PolicyEvidence
+	IdempotencyKey    string
+	DecidedAt         time.Time
+}
+
+// Execution is the one attempt to run an allowed request.
+type Execution struct {
+	ID    uuid.UUID
+	State ExecutionState
+	// Result is any JSON value; nil when there is none.
+	Result json.RawMessage
+	// Error is a JSON object; nil when there is none.
+	Error        json.RawMessage
+	CreatedAt    time.Time
+	StartedAt    *time.Time
+	CompletedAt  *time.Time
+	ReconciledAt *time.Time
+}
+
+// Event is one transition of a request.
+type Event struct {
+	Sequence int64
+	State    ActionState
+	At       time.Time
+	// Actor authenticated a cancellation; nil for every other transition.
+	Actor Principal
+}
+
+// CancellationOutcome is what cancelling a request did.
+type CancellationOutcome string
+
+const (
+	OutcomeCancelled        CancellationOutcome = "cancelled"
+	OutcomeAlreadyCancelled CancellationOutcome = "already_cancelled"
+	OutcomeAlreadyFinished  CancellationOutcome = "already_finished"
+	OutcomeTooLate          CancellationOutcome = "too_late"
+)
+
+type CancellationResult struct {
+	Outcome CancellationOutcome
+	Request ActionRequest
+}
+
+var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+
+// invalid is ErrInvalid with the bound or pattern a value breaks.
+func invalid(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
+}
+
+// bounded checks a string's length in characters, as Pydantic counts them.
+func bounded(field, value string, minLength, maxLength int) error {
+	if length := utf8.RuneCountInString(value); length < minLength || length > maxLength {
+		return invalid("%s must be %d to %d characters, not %d", field, minLength, maxLength, length)
+	}
+	return nil
+}
+
+func (a ServiceAccount) validate() error {
+	if a.Namespace == "" || a.Name == "" {
+		return invalid("a ServiceAccount needs a namespace and a name")
+	}
+	return nil
+}
+
+func (a ActionIdentity) validate() error {
+	if err := validateKey("group", a.Group); err != nil {
+		return err
+	}
+	return validateKey("name", a.Name)
+}
+
+func validateKey(field, value string) error {
+	if err := bounded(field, value, 1, 200); err != nil {
+		return err
+	}
+	if !keyPattern.MatchString(value) {
+		return invalid("%s must match %s", field, keyPattern)
+	}
+	return nil
+}
+
+func (g ExternalGrant) validate() error {
+	if g.Revision < 1 || g.BindingVersion < 0 {
+		return invalid("grant revision must be at least 1 and binding version at least 0")
+	}
+	return g.Caller.validate()
+}
+
+func (p OperatorPrincipal) validate() error {
+	if p.Issuer == "" || p.Subject == "" {
+		return invalid("an operator needs an issuer and a subject")
+	}
+	return nil
+}
+
+func (e PolicyEvidence) validate() error {
+	if e.Matched.Source != PolicySourceRules {
+		return invalid("policy source must be %q", PolicySourceRules)
+	}
+	if !slices.Contains(policyKinds, e.Matched.Type) {
+		return invalid("unknown policy kind %q", e.Matched.Type)
+	}
+	if e.Matched.Index < 0 {
+		return invalid("policy index must not be negative")
+	}
+	return nil
+}
+
+func (s ActionState) valid() bool    { return slices.Contains(actionStates, s) }
+func (s ExecutionState) valid() bool { return slices.Contains(executionStates, s) }
+func (v Verdict) valid() bool        { return v == VerdictAllow || v == VerdictDeny }
+
+// isObject reports whether data is a JSON object.
+func isObject(data json.RawMessage) bool {
+	var object map[string]json.RawMessage
+	return json.Unmarshal(data, &object) == nil && object != nil
+}
+
+func (i ActionRequestInput) Validate() error {
+	if err := bounded("idempotency_key", i.IdempotencyKey, 1, 200); err != nil {
+		return err
+	}
+	if err := bounded("title", i.Title, 1, 60); err != nil {
+		return err
+	}
+	if i.Description != nil {
+		if err := bounded("description", *i.Description, 0, 250); err != nil {
+			return err
+		}
+	}
+	if !isObject(i.Arguments) {
+		return invalid("arguments must be a JSON object")
+	}
+	return i.Action.validate()
+}
+
+func (i DecisionInput) Validate() error {
+	if !i.Verdict.valid() {
+		return invalid("unknown verdict %q", i.Verdict)
+	}
+	if i.ExpectedVersion < 1 {
+		return invalid("expected_version must be at least 1")
+	}
+	if err := bounded("idempotency_key", i.IdempotencyKey, 1, 200); err != nil {
+		return err
+	}
+	if i.DecisionNote != nil {
+		return bounded("decision_note", *i.DecisionNote, 0, 2000)
+	}
+	return nil
+}
+
+func (v ProviderVote) Validate() error {
+	if !v.Verdict.valid() {
+		return invalid("a vote that decides is allow or deny, not %q", v.Verdict)
+	}
+	if err := bounded("reason_code", v.ReasonCode, 1, 64); err != nil {
+		return err
+	}
+	if v.ReasonDescription != nil {
+		if err := bounded("reason_description", *v.ReasonDescription, 0, 500); err != nil {
+			return err
+		}
+	}
+	if v.Evidence != nil {
+		return v.Evidence.validate()
+	}
+	return nil
+}
+
+// decodeFields reads one JSON object into v, refusing fields v does not name and, as the stored models do, a
+// missing or null field named in required.
+func decodeFields(data []byte, v any, required ...string) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for _, name := range required {
+		if value, present := fields[name]; !present || string(value) == "null" {
+			return fmt.Errorf("%s is required", name)
+		}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(v)
+}
+
+func (a *ServiceAccount) UnmarshalJSON(data []byte) error {
+	type plain ServiceAccount
+	if err := decodeFields(data, (*plain)(a), "namespace", "name"); err != nil {
+		return err
+	}
+	return a.validate()
+}
+
+func (a *ActionIdentity) UnmarshalJSON(data []byte) error {
+	type plain ActionIdentity
+	if err := decodeFields(data, (*plain)(a), "group", "name"); err != nil {
+		return err
+	}
+	return a.validate()
+}
+
+func (g *ExternalGrant) UnmarshalJSON(data []byte) error {
+	type plain ExternalGrant
+	if err := decodeFields(data, (*plain)(g), "caller", "issuer", "client_id", "connection_id", "grant_id", "revision"); err != nil {
+		return err
+	}
+	return g.validate()
+}
+
+func (e *PolicyEvidence) UnmarshalJSON(data []byte) error {
+	type plain PolicyEvidence
+	if err := decodeFields(data, (*plain)(e), "bindings", "policy_sets", "matched"); err != nil {
+		return err
+	}
+	return e.validate()
+}
+
+func (b *BindingEvidence) UnmarshalJSON(data []byte) error {
+	type plain BindingEvidence
+	return decodeFields(data, (*plain)(b), "namespace", "name", "resource_version")
+}
+
+func (s *PolicySetEvidence) UnmarshalJSON(data []byte) error {
+	type plain PolicySetEvidence
+	return decodeFields(data, (*plain)(s), "namespace", "name", "generation")
+}
+
+func (m *MatchedPolicy) UnmarshalJSON(data []byte) error {
+	type plain MatchedPolicy
+	return decodeFields(data, (*plain)(m), "namespace", "policy_set", "source", "index", "type")
+}
+
+func (r *MatchedRepository) UnmarshalJSON(data []byte) error {
+	type plain MatchedRepository
+	return decodeFields(data, (*plain)(r), "owner", "repository", "confirmed_public")
+}
+
+// MarshalJSON writes the empty lists a nil slice stands for, which the stored model requires.
+func (e PolicyEvidence) MarshalJSON() ([]byte, error) {
+	type plain PolicyEvidence
+	if e.Bindings == nil {
+		e.Bindings = []BindingEvidence{}
+	}
+	if e.PolicySets == nil {
+		e.PolicySets = []PolicySetEvidence{}
+	}
+	return json.Marshal(plain(e))
+}
+
+// decodeActor reads `action_event.actor`: a CallerPrincipal has an `account`, an OperatorPrincipal an `issuer`
+// and a `subject`.
+func decodeActor(data []byte) (Principal, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if _, caller := fields["account"]; caller {
+		var principal CallerPrincipal
+		if err := decodeFields(data, &principal, "account"); err != nil {
+			return nil, err
+		}
+		return principal, principal.Account.validate()
+	}
+	var principal OperatorPrincipal
+	if err := decodeFields(data, &principal, "issuer", "subject"); err != nil {
+		return nil, err
+	}
+	return principal, principal.validate()
+}

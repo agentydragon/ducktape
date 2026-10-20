@@ -1,0 +1,149 @@
+package store
+
+import (
+	"bytes"
+	_ "embed"
+	"encoding/json"
+	"math/big"
+	"reflect"
+	"testing"
+)
+
+// golden.json holds what the Python service writes and accepts: the values of the columns a Pydantic model
+// serializes, the inputs its models refuse, and the cursor a history page ends at, each from the Python code
+// that produces it. `generate_golden.py` writes it and `test_golden.py` checks it is current.
+//
+//go:embed golden.json
+var goldenJSON []byte
+
+// vector is one case: Input is what Python was given and Valid whether it accepted it.
+type vector struct {
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
+	Valid bool            `json:"valid"`
+}
+
+// storedVector also holds the JSON Python writes for an input it accepted.
+type storedVector struct {
+	vector
+	Stored json.RawMessage `json:"stored"`
+}
+
+// storedRequest is the columns of an `action_request` row that its submission fills.
+type storedRequest struct {
+	Action      json.RawMessage `json:"action"`
+	Arguments   json.RawMessage `json:"arguments"`
+	Title       string          `json:"title"`
+	Description *string         `json:"description"`
+}
+
+type golden struct {
+	Enums    map[string][]string `json:"enums"`
+	Requests []struct {
+		vector
+		Stored storedRequest `json:"stored"`
+	} `json:"requests"`
+	DecisionInputs   []vector `json:"decision_inputs"`
+	ProviderOutcomes []struct {
+		vector
+		// Decisive is whether the outcome decides; `no_opinion` defers to a human.
+		Decisive bool `json:"decisive"`
+	} `json:"provider_outcomes"`
+	ExternalGrants []storedVector `json:"external_grants"`
+	PolicyEvidence []storedVector `json:"policy_evidence"`
+	Actors         []struct {
+		storedVector
+		Kind string `json:"kind"`
+	} `json:"actors"`
+	HistoryCursors struct {
+		Encoded []struct {
+			Name      string `json:"name"`
+			HistoryAt string `json:"history_at"`
+			ID        string `json:"id"`
+			Cursor    string `json:"cursor"`
+		} `json:"encoded"`
+		Decoded []struct {
+			Name      string `json:"name"`
+			Cursor    string `json:"cursor"`
+			Valid     bool   `json:"valid"`
+			HistoryAt string `json:"history_at"`
+			ID        string `json:"id"`
+		} `json:"decoded"`
+	} `json:"history_cursors"`
+}
+
+// requestInput is the submission a vector holds.
+func requestInput(t *testing.T, document json.RawMessage) ActionRequestInput {
+	t.Helper()
+	var wire struct {
+		IdempotencyKey string `json:"idempotency_key"`
+		Action         struct {
+			Group string `json:"group"`
+			Name  string `json:"name"`
+		} `json:"action"`
+		Arguments   json.RawMessage `json:"arguments"`
+		Title       string          `json:"title"`
+		Description *string         `json:"description"`
+	}
+	if err := json.Unmarshal(document, &wire); err != nil {
+		t.Fatal(err)
+	}
+	return ActionRequestInput{
+		IdempotencyKey: wire.IdempotencyKey,
+		Action:         ActionIdentity{Group: wire.Action.Group, Name: wire.Action.Name},
+		Arguments:      wire.Arguments,
+		Title:          wire.Title,
+		Description:    wire.Description,
+	}
+}
+
+func loadGolden(t *testing.T) golden {
+	t.Helper()
+	var vectors golden
+	if err := json.Unmarshal(goldenJSON, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	return vectors
+}
+
+// sameJSON compares two JSON documents as values: key order, whitespace and the spelling of a number are not
+// part of what a JSONB column keeps, and the numbers are compared exactly, not as floats.
+func sameJSON(t *testing.T, got, want []byte) {
+	t.Helper()
+	parse := func(data []byte) any {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.UseNumber()
+		var value any
+		if err := decoder.Decode(&value); err != nil {
+			t.Fatalf("%s: %v", data, err)
+		}
+		return canonical(t, value)
+	}
+	if !reflect.DeepEqual(parse(got), parse(want)) {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
+// exactNumber is a JSON number by value.
+type exactNumber string
+
+func canonical(t *testing.T, value any) any {
+	t.Helper()
+	switch value := value.(type) {
+	case json.Number:
+		number, ok := new(big.Rat).SetString(string(value))
+		if !ok {
+			t.Fatalf("%s is not a number", value)
+		}
+		return exactNumber(number.RatString())
+	case []any:
+		for i, element := range value {
+			value[i] = canonical(t, element)
+		}
+	case map[string]any:
+		for key, element := range value {
+			value[key] = canonical(t, element)
+		}
+	}
+	return value
+}
