@@ -532,7 +532,11 @@ py_library(
         ":models",
         ":store",
         "//agentplane/notification_service/sources/github:models",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
         "//util:sqlalchemy_types",
+        "@pypi//protobuf",
         "@pypi//pydantic",
     ],
 )

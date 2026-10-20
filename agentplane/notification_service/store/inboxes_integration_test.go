@@ -107,7 +107,8 @@ func TestReadReturnsTheInboxsLatestNotice(t *testing.T) {
 	notice := f.read(t, subscription.InboxID, 0).Notice
 	unreachable := "unreachable"
 	requireEqual(t, notice, &Notice{
-		CommandID: command, ThroughCursor: 3, Attempted: true, Admitted: true, Confirmed: false, Error: &unreachable,
+		CommandID: command, ThroughCursor: 3, Text: "notice", Attempted: true, Admitted: true, Confirmed: false, Error: &unreachable,
+		RunnerCursor: 7,
 	})
 }
 

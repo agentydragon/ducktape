@@ -1,12 +1,15 @@
 package store
 
 import (
+	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 )
 
@@ -15,17 +18,22 @@ import (
 
 func (f fixture) insertInbox(t *testing.T, key string, ref DestinationRef, sessionID string) uuid.UUID {
 	t.Helper()
+	id := uuid.New()
+	f.insertInboxAs(t, id, key, ref, sessionID)
+	return id
+}
+
+func (f fixture) insertInboxAs(t *testing.T, id uuid.UUID, key string, ref DestinationRef, sessionID string) {
+	t.Helper()
 	destination, err := json.Marshal(ref)
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := uuid.New()
 	f.exec(t, `
 		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
 		VALUES ($1, $2, $3, $4, $5::jsonb, $6, 0, 0, 0, 0, false, now(), now(), now())`,
 		id, f.owner.Namespace, f.owner.Name, key, string(destination), sessionID)
-	return id
 }
 
 // insertSubscription writes a subscription of the inbox from the creation JSON Python stored, with the columns
@@ -169,4 +177,134 @@ func TestEntriesPythonWroteAreReadAndNotAppendedAgain(t *testing.T) {
 	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1`, subscription.InboxID); got != len(vectors) {
 		t.Fatalf("%d entries, want %d", got, len(vectors))
 	}
+}
+
+// pythonNotice is the notice Python prepared for an inbox that had acknowledged 2 entries and held 3.
+const pythonNotice = "partly acknowledged"
+
+func goldenNotice(t *testing.T, name string) (inboxID uuid.UUID, acknowledged, through int64, text string) {
+	t.Helper()
+	for _, vector := range loadGolden(t).Notices {
+		if vector.Name == name {
+			return vector.InboxID, vector.Acknowledged, vector.Through, vector.Text
+		}
+	}
+	t.Fatalf("no notice vector %q", name)
+	return
+}
+
+// goldenRunnerEntry is the History entry of the vector, and the bytes Python keeps of it in `notice.runner_entry`.
+func goldenRunnerEntry(t *testing.T, name string) (*eventlogpb.EventEntry, []byte) {
+	t.Helper()
+	for _, vector := range loadGolden(t).RunnerEntries {
+		if vector.Name == name {
+			serialized, err := hex.DecodeString(vector.Serialized)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return runnerEntry(t, vector.Entry), serialized
+		}
+	}
+	t.Fatalf("no runner entry vector %q", name)
+	return nil, nil
+}
+
+// insertPythonInbox writes the inbox the notice vector is for, with the cursors it had when Python prepared it.
+func (f fixture) insertPythonInbox(t *testing.T) (inboxID uuid.UUID, acknowledged, through int64, text string) {
+	t.Helper()
+	inboxID, acknowledged, through, text = goldenNotice(t, pythonNotice)
+	ref := body("first").DestinationRef
+	f.insertInboxAs(t, inboxID, DestinationKey(ref, "test-session"), ref, "test-session")
+	f.exec(t, `UPDATE inbox SET last_cursor = $2, acknowledged = $3 WHERE id = $1`, inboxID, through, acknowledged)
+	return inboxID, acknowledged, through, text
+}
+
+// claimPythonNotice claims the inbox with the notice Python prepared and attempted, its command ID in the case
+// the vectors parse it from, and the runner cursor and entry that Python had stored for it.
+func (f fixture) claimPythonNotice(t *testing.T, runnerCursor int64, runnerEntry []byte) (Claim, Notice) {
+	t.Helper()
+	inboxID, _, through, text := f.insertPythonInbox(t)
+	f.exec(t, `UPDATE inbox SET covered = $2 WHERE id = $1`, inboxID, through)
+	commandID, err := uuid.Parse(loadGolden(t).CommandID.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Python stores NULL until the first receipt, not an empty entry.
+	var stored any
+	if runnerEntry != nil {
+		stored = runnerEntry
+	}
+	f.exec(t, `
+		INSERT INTO notice (inbox_id, command_id, through_cursor, text, attempted, admitted, confirmed, runner_cursor, runner_entry)
+		VALUES ($1, $2, $3, $4, true, false, false, $5, $6)`, inboxID, commandID, through, text, runnerCursor, stored)
+	claim := f.claim(t)
+	return claim, f.currentNotice(t, claim)
+}
+
+func TestNoticesGoPreparesHaveTheTextPythonPrepares(t *testing.T) {
+	f := newClaimFixture(t)
+	inboxID, _, through, text := f.insertPythonInbox(t)
+	notice := f.prepareNotice(t, f.claim(t))
+	requireEqual(t, notice.Text, text)
+	requireEqual(t, notice.ThroughCursor, through)
+	requireEqual(t, f.read(t, inboxID, 0).Inbox.Covered, through)
+}
+
+func TestRunnerReceiptsFollowANoticePythonPrepared(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		entry string
+		// want is how the notice differs once the receipt is copied. A nil want is a receipt the notice refuses.
+		want func(*Notice)
+	}{
+		{"admission", "command admitted with the notice text", func(n *Notice) { n.Admitted = true }},
+		{"confirmation among other commands", "confirmation naming several commands", func(n *Notice) { n.Confirmed = true }},
+		{"failure", "command failed", func(n *Notice) { n.Error = ptr("failed") }},
+		{"no-op", "command no-op", func(n *Notice) { n.Error = ptr("no-op") }},
+		{"another command's admission", "command admitted for another command", func(*Notice) {}},
+		{"admission of other content", "command admitted with other text", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newClaimFixture(t)
+			claim, notice := f.claimPythonNotice(t, 0, nil)
+			entry, wire := goldenRunnerEntry(t, c.entry)
+			cursor := int64(entry.GetCursor())
+			if c.want == nil {
+				requireInvalidHistory(t, f.Receipt(t.Context(), claim, notice, entry, 0))
+				requireEqual(t, f.currentNotice(t, claim), notice)
+				return
+			}
+
+			f.receipt(t, claim, notice, entry, 0)
+			want := notice
+			want.RunnerCursor = cursor
+			c.want(&want)
+			got := f.currentNotice(t, claim)
+			if (got.Error != nil) != (want.Error != nil) {
+				t.Errorf("notice error = %v, want one = %v", got.Error, want.Error != nil)
+			}
+			got.Error, want.Error = nil, nil
+			requireEqual(t, got, want)
+			if !bytes.Equal(f.storedRunnerEntry(t, claim.ID), wire) {
+				t.Error("the boundary entry is not the bytes Python stores for it")
+			}
+			// Copying the same entry again, as a restarted worker does to verify the boundary, changes nothing.
+			f.receipt(t, claim, notice, entry, cursor-1)
+			requireEqual(t, f.currentNotice(t, claim).RunnerCursor, cursor)
+		})
+	}
+}
+
+func TestABoundaryPythonStoredIsVerifiedAgainstHistory(t *testing.T) {
+	entry, wire := goldenRunnerEntry(t, "command admitted with the notice text")
+	cursor := int64(entry.GetCursor())
+	f := newClaimFixture(t)
+	claim, notice := f.claimPythonNotice(t, cursor, wire)
+
+	f.receipt(t, claim, notice, entry, cursor-1)
+	other, _ := goldenRunnerEntry(t, "command admitted with other text")
+	if other.GetCursor() != entry.GetCursor() {
+		t.Fatalf("the vectors disagree on the cursor: %d and %d", other.GetCursor(), entry.GetCursor())
+	}
+	requireInvalidHistory(t, f.Receipt(t.Context(), claim, notice, other, cursor-1))
 }

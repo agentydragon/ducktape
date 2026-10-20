@@ -1,9 +1,14 @@
 package store
 
 import (
+	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"testing"
+
+	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestDestinationKeysAreThosePythonComputes(t *testing.T) {
@@ -78,6 +83,48 @@ func TestCreationsAreTheSameWhereThePythonCheckSaysSo(t *testing.T) {
 			}
 			if got := b.Equal(a); got != vector.Same {
 				t.Errorf("b.Equal(a) = %v, want %v", got, vector.Same)
+			}
+		})
+	}
+}
+
+func TestNoticeTextsAreThosePythonPrepares(t *testing.T) {
+	for _, vector := range loadGolden(t).Notices {
+		t.Run(vector.Name, func(t *testing.T) {
+			if got := noticeText(vector.InboxID, vector.Acknowledged, vector.Through); got != vector.Text {
+				t.Errorf("noticeText = %s, want %s", got, vector.Text)
+			}
+		})
+	}
+}
+
+// A replayed boundary is compared as bytes, so the bytes Go stores and the bytes it makes of a History entry
+// must be the ones Python makes of the same entry, in either direction.
+func TestRunnerEntriesSerializeAsPythonDoes(t *testing.T) {
+	for _, vector := range loadGolden(t).RunnerEntries {
+		t.Run(vector.Name, func(t *testing.T) {
+			want, err := hex.DecodeString(vector.Serialized)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := marshalEntry(runnerEntry(t, vector.Entry))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("a JSON entry serializes as %x, want %x", got, want)
+			}
+
+			var read eventlogpb.EventEntry
+			if err := proto.Unmarshal(want, &read); err != nil {
+				t.Fatal(err)
+			}
+			again, err := marshalEntry(&read)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(again, want) {
+				t.Errorf("Python's bytes serialize again as %x, want %x", again, want)
 			}
 		})
 	}

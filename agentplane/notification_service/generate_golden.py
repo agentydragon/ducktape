@@ -1,9 +1,10 @@
 """Golden vectors that pin the Go store (`agentplane/notification_service/store`) to the stored forms of this one.
 
 Stored rows hold values this service computed or serialized: the inbox's `destination_key`, a subscription's
-`creation` JSON and an entry's `event` JSON. Each vector is produced by the Python code that writes the column,
-and the Go store must reproduce it and read it back. A `creation` the Python model rejects is a vector too, as
-is whether two `creation` values name the same subscription.
+`creation` JSON, an entry's `event` JSON, a notice's `text` and the `EventEntry` bytes of `notice.runner_entry`.
+Each vector is produced by the Python code that writes the column, and the Go store must reproduce it and read
+it back. A `creation` the Python model rejects is a vector too, as is whether two `creation` values name the
+same subscription.
 
 Regenerate with `bb run //agentplane/notification_service:generate_golden_bin -- <path to golden.json>`.
 """
@@ -13,12 +14,15 @@ import sys
 from pathlib import Path
 from uuid import UUID
 
+from google.protobuf import json_format
+from google.protobuf.timestamp_pb2 import Timestamp
 from pydantic import ValidationError
 
 from agentplane.notification_service.db import Subscription
 from agentplane.notification_service.models import ActionsEvent, DestinationRef, Subscribe
 from agentplane.notification_service.sources.github.models import EventName, GitHubEvent
-from agentplane.notification_service.store import destination_key
+from agentplane.notification_service.store import destination_key, notice_text
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from util.sqlalchemy_types import PydanticColumn
 
 Json = dict[str, object]
@@ -26,6 +30,9 @@ Json = dict[str, object]
 REQUEST = "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
 OTHER_REQUEST = "6c0a2b3f-4d5e-4f60-9b7c-8d9e0f1a2b3c"
 DELIVERY = "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f"
+INBOX = "9e2f3a4b-5c6d-4e7f-80a1-b2c3d4e5f607"
+# In capitals, which `str(UUID)` writes back in lowercase: the form History echoes in a receipt.
+COMMAND = "7D1E2F3A-4B5C-4D6E-8F70-91A2B3C4D5E6"
 
 
 def creation_column() -> PydanticColumn[Subscribe]:
@@ -278,6 +285,118 @@ def events() -> dict[str, Json]:
     }
 
 
+def notices() -> list[Json]:
+    cases = {
+        "nothing acknowledged": (0, 1),
+        "partly acknowledged": (2, 3),
+        "large cursors": (123_456_789, 2**40),
+        "highest cursors": (2**62, 2**63 - 1),
+    }
+    return [
+        {
+            "name": name,
+            "inbox_id": INBOX,
+            "acknowledged": acknowledged,
+            "through": through,
+            "text": notice_text(UUID(INBOX), acknowledged=acknowledged, through=through),
+        }
+        for name, (acknowledged, through) in cases.items()
+    ]
+
+
+def runner_entries() -> list[Json]:
+    """Entries as `Store.receipt` and `Store.checkpoint_before_attempt` serialize them into `notice.runner_entry`.
+    A later claim compares those bytes with the entry History returns, serialized again, so both implementations
+    must write the same bytes."""
+    command = str(UUID(COMMAND))
+    text = notice_text(UUID(INBOX), acknowledged=2, through=3)
+
+    def entry(cursor: int, **event: object) -> event_log_pb2.EventEntry:
+        return event_log_pb2.EventEntry(cursor=cursor, event=event_pb2.Event(**event))  # type: ignore[arg-type]
+
+    reconciled = event_pb2.ConversationReconciled(
+        turn_id="turn-1",
+        items=[
+            event_pb2.ItemRecovery(item_id="item-1", disposition=event_pb2.RECOVERY_DISPOSITION_RETAINED),
+            event_pb2.ItemRecovery(
+                item_id="item-2",
+                disposition=event_pb2.RECOVERY_DISPOSITION_REVISED,
+                replacement=event_pb2.RecoveredContent(text="revised", arguments_json='{"a":1}'),
+            ),
+        ],
+    )
+    entries = {
+        "cursor only": event_log_pb2.EventEntry(cursor=1),
+        "high cursor": event_log_pb2.EventEntry(cursor=2**40),
+        "origin": event_log_pb2.EventEntry(
+            cursor=7, origin=event_log_pb2.EventOrigin(source_id="runner-source", sequence=3)
+        ),
+        "event time and source sequences": event_log_pb2.EventEntry(
+            cursor=9,
+            event=event_pb2.Event(
+                at=Timestamp(seconds=1_792_000_000, nanos=123_456_789),
+                source_sequences=[1, 300, 2**40],
+                harness_started=event_pb2.HarnessStarted(resumed=True, pid=4242),
+            ),
+        ),
+        "command admitted with the notice text": entry(
+            8,
+            command_admitted=event_pb2.CommandAdmitted(
+                command=command_pb2.Command(command_id=command, submit_input=command_pb2.SubmitInput(text=text))
+            ),
+        ),
+        "command admitted with other text": entry(
+            8,
+            command_admitted=event_pb2.CommandAdmitted(
+                command=command_pb2.Command(
+                    command_id=command, submit_input=command_pb2.SubmitInput(text="unicode é 名 🚀 \n\u2028")
+                )
+            ),
+        ),
+        "command admitted for another command": entry(
+            8,
+            command_admitted=event_pb2.CommandAdmitted(
+                command=command_pb2.Command(
+                    command_id="another-command", change_model=command_pb2.ChangeModel(model="model-a")
+                )
+            ),
+        ),
+        "confirmation naming several commands": entry(
+            11,
+            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                harness_message_id="message-1", text=text, origin_command_ids=["coalesced-other", command], turn_id="t"
+            ),
+        ),
+        "command failed": entry(9, command_failed=event_pb2.CommandFailed(command_id=command, reason="refused")),
+        "command no-op": entry(10, command_noop=event_pb2.CommandNoop(command_id=command, reason="nothing to do")),
+        "empty message in a oneof": entry(12, harness_lost=event_pb2.HarnessLost()),
+        "default values in a oneof": entry(13, harness_exited=event_pb2.HarnessExited()),
+        "negative int32": entry(14, harness_exited=event_pb2.HarnessExited(exit_code=-1, stopped_by_runner=True)),
+        "bytes": entry(15, setup_output=event_pb2.SetupOutput(stdout=b"\x00\xff\x80 text")),
+        "enum and unicode": entry(
+            16,
+            turn_completed=event_pb2.TurnCompleted(
+                turn_id="turn-1", status=event_pb2.TURN_STATUS_FAILED, error="boom é 名 🚀", ended_by_teardown=True
+            ),
+        ),
+        "nested repeated messages": entry(17, conversation_reconciled=reconciled),
+        "item completed with a tool result": entry(
+            18,
+            item_completed=event_pb2.ItemCompleted(
+                item_id="item-1", tool=event_pb2.ToolResult(output="done", succeeded=True)
+            ),
+        ),
+    }
+    return [
+        {
+            "name": name,
+            "entry": json_format.MessageToDict(value),
+            "serialized": value.SerializeToString(deterministic=True).hex(),
+        }
+        for name, value in entries.items()
+    ]
+
+
 def build() -> Json:
     valid = valid_subscriptions()
     invalid = []
@@ -306,6 +425,9 @@ def build() -> Json:
             for name, (a, b) in comparisons().items()
         ],
         "events": [{"name": name, "event": event} for name, event in events().items()],
+        "notices": notices(),
+        "command_id": {"input": COMMAND, "written": str(UUID(COMMAND))},
+        "runner_entries": runner_entries(),
     }
 
 

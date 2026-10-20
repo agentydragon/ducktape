@@ -1,4 +1,8 @@
 {
+ "command_id": {
+  "input": "7D1E2F3A-4B5C-4D6E-8F70-91A2B3C4D5E6",
+  "written": "7d1e2f3a-4b5c-4d6e-8f70-91a2b3c4d5e6"
+ },
  "comparisons": [
   {
    "a": {
@@ -2123,6 +2127,279 @@
     }
    },
    "name": "extra filter field"
+  }
+ ],
+ "notices": [
+  {
+   "acknowledged": 0,
+   "inbox_id": "9e2f3a4b-5c6d-4e7f-80a1-b2c3d4e5f607",
+   "name": "nothing acknowledged",
+   "text": "Agentplane inbox notice: {\"inbox_id\":\"9e2f3a4b-5c6d-4e7f-80a1-b2c3d4e5f607\",\"acknowledged_at_preparation\":0,\"through_at_preparation\":1}",
+   "through": 1
+  },
+  {
+   "acknowledged": 2,
+   "inbox_id": "9e2f3a4b-5c6d-4e7f-80a1-b2c3d4e5f607",
+   "name": "partly acknowledged",
+   "text": "Agentplane inbox notice: {\"inbox_id\":\"9e2f3a4b-5c6d-4e7f-80a1-b2c3d4e5f607\",\"acknowledged_at_preparation\":2,\"through_at_preparation\":3}",
+   "through": 3
+  },
+  {
+   "acknowledged": 123456789,
+   "inbox_id": "9e2f3a4b-5c6d-4e7f-80a1-b2c3d4e5f607",
+   "name": "large cursors",
+   "text": "Agentplane inbox notice: {\"inbox_id\":\"9e2f3a4b-5c6d-4e7f-80a1-b2c3d4e5f607\",\"acknowledged_at_preparation\":123456789,\"through_at_preparation\":1099511627776}",
+   "through": 1099511627776
+  },
+  {
+   "acknowledged": 4611686018427387904,
+   "inbox_id": "9e2f3a4b-5c6d-4e7f-80a1-b2c3d4e5f607",
+   "name": "highest cursors",
+   "text": "Agentplane inbox notice: {\"inbox_id\":\"9e2f3a4b-5c6d-4e7f-80a1-b2c3d4e5f607\",\"acknowledged_at_preparation\":4611686018427387904,\"through_at_preparation\":9223372036854775807}",
+   "through": 9223372036854775807
+  }
+ ],
+ "runner_entries": [
+  {
+   "entry": {
+    "cursor": "1"
+   },
+   "name": "cursor only",
+   "serialized": "0801"
+  },
+  {
+   "entry": {
+    "cursor": "1099511627776"
+   },
+   "name": "high cursor",
+   "serialized": "08808080808020"
+  },
+  {
+   "entry": {
+    "cursor": "7",
+    "origin": {
+     "sequence": "3",
+     "sourceId": "runner-source"
+    }
+   },
+   "name": "origin",
+   "serialized": "080712110a0d72756e6e65722d736f757263651003"
+  },
+  {
+   "entry": {
+    "cursor": "9",
+    "event": {
+     "at": "2026-10-14T17:46:40.123456789Z",
+     "harnessStarted": {
+      "pid": 4242,
+      "resumed": true
+     },
+     "sourceSequences": [
+      "1",
+      "300",
+      "1099511627776"
+     ]
+    }
+   },
+   "name": "event time and source sequences",
+   "serialized": "08091a1f0a0b088080bfd60610959aef3a120901ac0280808080802022050801109221"
+  },
+  {
+   "entry": {
+    "cursor": "8",
+    "event": {
+     "commandAdmitted": {
+      "command": {
+       "commandId": "7d1e2f3a-4b5c-4d6e-8f70-91a2b3c4d5e6",
+       "submitInput": {
+        "text": "Agentplane inbox notice: {\"inbox_id\":\"9e2f3a4b-5c6d-4e7f-80a1-b2c3d4e5f607\",\"acknowledged_at_preparation\":2,\"through_at_preparation\":3}"
+       }
+      }
+     }
+    }
+   },
+   "name": "command admitted with the notice text",
+   "serialized": "08081ab90142b6010ab3010a2437643165326633612d346235632d346436652d386637302d393161326233633464356536128a010a87014167656e74706c616e6520696e626f78206e6f746963653a207b22696e626f785f6964223a2239653266336134622d356336642d346537662d383061312d623263336434653566363037222c2261636b6e6f776c65646765645f61745f7072657061726174696f6e223a322c227468726f7567685f61745f7072657061726174696f6e223a337d"
+  },
+  {
+   "entry": {
+    "cursor": "8",
+    "event": {
+     "commandAdmitted": {
+      "command": {
+       "commandId": "7d1e2f3a-4b5c-4d6e-8f70-91a2b3c4d5e6",
+       "submitInput": {
+        "text": "unicode \u00e9 \u540d \ud83d\ude80 \n\u2028"
+       }
+      }
+     }
+    }
+   },
+   "name": "command admitted with other text",
+   "serialized": "08081a4642440a420a2437643165326633612d346235632d346436652d386637302d393161326233633464356536121a0a18756e69636f646520c3a920e5908d20f09f9a80200ae280a8"
+  },
+  {
+   "entry": {
+    "cursor": "8",
+    "event": {
+     "commandAdmitted": {
+      "command": {
+       "changeModel": {
+        "model": "model-a"
+       },
+       "commandId": "another-command"
+      }
+     }
+    }
+   },
+   "name": "command admitted for another command",
+   "serialized": "08081a20421e0a1c0a0f616e6f746865722d636f6d6d616e641a090a076d6f64656c2d61"
+  },
+  {
+   "entry": {
+    "cursor": "11",
+    "event": {
+     "harnessUserMessageConfirmed": {
+      "harnessMessageId": "message-1",
+      "originCommandIds": [
+       "coalesced-other",
+       "7d1e2f3a-4b5c-4d6e-8f70-91a2b3c4d5e6"
+      ],
+      "text": "Agentplane inbox notice: {\"inbox_id\":\"9e2f3a4b-5c6d-4e7f-80a1-b2c3d4e5f607\",\"acknowledged_at_preparation\":2,\"through_at_preparation\":3}",
+      "turnId": "t"
+     }
+    }
+   },
+   "name": "confirmation naming several commands",
+   "serialized": "080b1ad2015acf010a096d6573736167652d311287014167656e74706c616e6520696e626f78206e6f746963653a207b22696e626f785f6964223a2239653266336134622d356336642d346537662d383061312d623263336434653566363037222c2261636b6e6f776c65646765645f61745f7072657061726174696f6e223a322c227468726f7567685f61745f7072657061726174696f6e223a337d1a0f636f616c65736365642d6f746865721a2437643165326633612d346235632d346436652d386637302d393161326233633464356536220174"
+  },
+  {
+   "entry": {
+    "cursor": "9",
+    "event": {
+     "commandFailed": {
+      "commandId": "7d1e2f3a-4b5c-4d6e-8f70-91a2b3c4d5e6",
+      "reason": "refused"
+     }
+    }
+   },
+   "name": "command failed",
+   "serialized": "08091a314a2f0a2437643165326633612d346235632d346436652d386637302d393161326233633464356536120772656675736564"
+  },
+  {
+   "entry": {
+    "cursor": "10",
+    "event": {
+     "commandNoop": {
+      "commandId": "7d1e2f3a-4b5c-4d6e-8f70-91a2b3c4d5e6",
+      "reason": "nothing to do"
+     }
+    }
+   },
+   "name": "command no-op",
+   "serialized": "080a1a3752350a2437643165326633612d346235632d346436652d386637302d393161326233633464356536120d6e6f7468696e6720746f20646f"
+  },
+  {
+   "entry": {
+    "cursor": "12",
+    "event": {
+     "harnessLost": {}
+    }
+   },
+   "name": "empty message in a oneof",
+   "serialized": "080c1a023200"
+  },
+  {
+   "entry": {
+    "cursor": "13",
+    "event": {
+     "harnessExited": {}
+    }
+   },
+   "name": "default values in a oneof",
+   "serialized": "080d1a022a00"
+  },
+  {
+   "entry": {
+    "cursor": "14",
+    "event": {
+     "harnessExited": {
+      "exitCode": -1,
+      "stoppedByRunner": true
+     }
+    }
+   },
+   "name": "negative int32",
+   "serialized": "080e1a0f2a0d08ffffffffffffffffff011001"
+  },
+  {
+   "entry": {
+    "cursor": "15",
+    "event": {
+     "setupOutput": {
+      "stdout": "AP+AIHRleHQ="
+     }
+    }
+   },
+   "name": "bytes",
+   "serialized": "080f1a0dd2010a0a0800ff802074657874"
+  },
+  {
+   "entry": {
+    "cursor": "16",
+    "event": {
+     "turnCompleted": {
+      "endedByTeardown": true,
+      "error": "boom \u00e9 \u540d \ud83d\ude80",
+      "status": "TURN_STATUS_FAILED",
+      "turnId": "turn-1"
+     }
+    }
+   },
+   "name": "enum and unicode",
+   "serialized": "08101a206a1e0a067475726e2d3110031a10626f6f6d20c3a920e5908d20f09f9a802801"
+  },
+  {
+   "entry": {
+    "cursor": "17",
+    "event": {
+     "conversationReconciled": {
+      "items": [
+       {
+        "disposition": "RECOVERY_DISPOSITION_RETAINED",
+        "itemId": "item-1"
+       },
+       {
+        "disposition": "RECOVERY_DISPOSITION_REVISED",
+        "itemId": "item-2",
+        "replacement": {
+         "argumentsJson": "{\"a\":1}",
+         "text": "revised"
+        }
+       }
+      ],
+      "turnId": "turn-1"
+     }
+    }
+   },
+   "name": "nested repeated messages",
+   "serialized": "08111a37ba01340a067475726e2d31120a0a066974656d2d311001121e0a066974656d2d32100422120a077265766973656412077b2261223a317d"
+  },
+  {
+   "entry": {
+    "cursor": "18",
+    "event": {
+     "itemCompleted": {
+      "itemId": "item-1",
+      "tool": {
+       "output": "done",
+       "succeeded": true
+      }
+     }
+    }
+   },
+   "name": "item completed with a tool result",
+   "serialized": "08121a159a01120a066974656d2d311a080a04646f6e651001"
   }
  ],
  "subscriptions": [

@@ -41,12 +41,17 @@ type Entry struct {
 
 // Notice is the latest message sent to an inbox's Session naming the entries that await the agent.
 type Notice struct {
+	// CommandID is the durable command ID the notice is submitted under, so a retry is the same command.
 	CommandID     uuid.UUID
 	ThroughCursor int64
-	Attempted     bool
-	Admitted      bool
-	Confirmed     bool
-	Error         *string
+	// Text is the exact message, fixed when the notice is prepared.
+	Text      string
+	Attempted bool
+	Admitted  bool
+	Confirmed bool
+	Error     *string
+	// RunnerCursor is the runner history cursor through which receipts have been copied.
+	RunnerCursor int64
 }
 
 // InboxPage is entries after a cursor with the inbox they belong to and its latest notice.
@@ -60,12 +65,15 @@ const inboxColumns = `id, destination_ref, session_id, last_cursor, acknowledged
 
 type rowScanner interface{ Scan(...any) error }
 
-func scanInbox(row rowScanner) (Inbox, error) {
+// scanInbox reads inboxColumns, then any columns the query adds into extra.
+func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	var inbox Inbox
 	var destination []byte
 	var deliveryError sql.NullString
-	if err := row.Scan(&inbox.ID, &destination, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
-		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError); err != nil {
+	if err := row.Scan(append([]any{
+		&inbox.ID, &destination, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
+		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError,
+	}, extra...)...); err != nil {
 		return Inbox{}, err
 	}
 	if err := decode(destination, &inbox.DestinationRef); err != nil {
@@ -245,9 +253,10 @@ func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, lim
 func latestNotice(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID) (*Notice, error) {
 	var notice Notice
 	var noticeError sql.NullString
-	err := tx.QueryRowContext(ctx,
-		`SELECT command_id, through_cursor, attempted, admitted, confirmed, error FROM notice WHERE inbox_id = $1`,
-		inboxID).Scan(&notice.CommandID, &notice.ThroughCursor, &notice.Attempted, &notice.Admitted, &notice.Confirmed, &noticeError)
+	err := tx.QueryRowContext(ctx, `
+		SELECT command_id, through_cursor, text, attempted, admitted, confirmed, error, runner_cursor
+		FROM notice WHERE inbox_id = $1`, inboxID).Scan(&notice.CommandID, &notice.ThroughCursor, &notice.Text,
+		&notice.Attempted, &notice.Admitted, &notice.Confirmed, &noticeError, &notice.RunnerCursor)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

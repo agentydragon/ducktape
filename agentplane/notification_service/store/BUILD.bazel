@@ -5,13 +5,19 @@ package(default_visibility = ["//agentplane/notification_service:__subpackages__
 go_library(
     name = "store",
     srcs = [
+        "claims.go",
         "inboxes.go",
         "models.go",
+        "notices.go",
         "store.go",
         "subscriptions.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/store",
-    deps = ["@com_github_google_uuid//:uuid"],
+    deps = [
+        "//agentplane/proto:event_log_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_protobuf//proto",
+    ],
 )
 
 go_test(
@@ -22,15 +28,23 @@ go_test(
     ],
     embed = [":store"],
     embedsrcs = ["golden.json"],
+    deps = [
+        "//agentplane/proto:event_log_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
 )
 
 go_test(
     name = "store_integration_test",
     size = "medium",
     srcs = [
+        "claims_integration_test.go",
         "golden_vectors_test.go",
         "inboxes_integration_test.go",
         "integration_testmain_test.go",
+        "notices_integration_test.go",
         "python_rows_integration_test.go",
         "subscriptions_integration_test.go",
         "wakeups_integration_test.go",
@@ -41,9 +55,13 @@ go_test(
     deps = [
         "//agentplane/notification_service/migrations",
         "//agentplane/postgres/go/wakeups",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
         "//agentplane/testing/postgres",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
+        "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
 

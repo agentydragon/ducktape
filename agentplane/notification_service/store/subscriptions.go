@@ -60,15 +60,18 @@ type Subscription struct {
 const subscriptionColumns = `s.id, s.inbox_id, s.creation, s.idempotency_key, s.version, s.cancelled, s.expires_at,
 	s.last_success_at, s.error, s.error_kind, s.error_since, s.error_observed_at, s.next_attempt`
 
-// scanSubscription reads subscriptionColumns. viewedAt is the time the subscription is judged expired at.
-func scanSubscription(row rowScanner, viewedAt time.Time) (Subscription, error) {
+// scanSubscription reads subscriptionColumns, then any columns the query adds into extra. viewedAt is the time
+// the subscription is judged expired at.
+func scanSubscription(row rowScanner, viewedAt time.Time, extra ...any) (Subscription, error) {
 	var subscription Subscription
 	var creation []byte
 	var message, kind sql.NullString
 	var lastSuccess, since, observed, nextAttempt sql.NullTime
-	if err := row.Scan(&subscription.ID, &subscription.InboxID, &creation, &subscription.IdempotencyKey,
+	if err := row.Scan(append([]any{
+		&subscription.ID, &subscription.InboxID, &creation, &subscription.IdempotencyKey,
 		&subscription.Version, &subscription.Cancelled, &subscription.ExpiresAt, &lastSuccess, &message, &kind,
-		&since, &observed, &nextAttempt); err != nil {
+		&since, &observed, &nextAttempt,
+	}, extra...)...); err != nil {
 		return Subscription{}, err
 	}
 	var body Subscribe

@@ -104,6 +104,16 @@ def destination_key(destination_ref: DestinationRef, session_id: str) -> str:
     return hashlib.sha256(json.dumps([destination_ref.model_dump(), session_id], sort_keys=True).encode()).hexdigest()
 
 
+def notice_text(inbox_id: UUID, *, acknowledged: int, through: int) -> str:
+    """The text of an inbox's notice command, stored in `notice.text` and submitted unchanged on every retry."""
+    snapshot = {
+        "inbox_id": str(inbox_id),
+        "acknowledged_at_preparation": acknowledged,
+        "through_at_preparation": through,
+    }
+    return "Agentplane inbox notice: " + json.dumps(snapshot, separators=(",", ":"))
+
+
 def refresh_status(row: RefreshRow) -> GitHubRefreshStatus:
     return GitHubRefreshStatus(
         last_success_at=row.last_success_at,
@@ -1098,15 +1108,7 @@ class Store:
                 through_cursor=inbox.last_cursor,
                 # Standing instructions carry the shared read/ack procedure. Persist the exact
                 # snapshot hint once so lost responses replay the same command and cursors.
-                text="Agentplane inbox notice: "
-                + json.dumps(
-                    {
-                        "inbox_id": str(inbox.id),
-                        "acknowledged_at_preparation": inbox.acknowledged,
-                        "through_at_preparation": inbox.last_cursor,
-                    },
-                    separators=(",", ":"),
-                ),
+                text=notice_text(inbox.id, acknowledged=inbox.acknowledged, through=inbox.last_cursor),
                 attempted=False,
                 admitted=False,
                 confirmed=False,
