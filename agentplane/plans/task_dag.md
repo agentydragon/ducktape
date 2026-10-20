@@ -1642,6 +1642,7 @@ flowchart TD
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     RUNNER_RENAME[Decision, unscheduled: a better name than runner]
     GO_SERVICES_DROP_SETTINGS_FLAGS[Unscheduled: drop the settings flags the Gateway and controllers still receive]
+    SERVICE_SETTINGS_RETHINK[Decision, unscheduled: how Agentplane services are configured]
 ```
 
 ### `RUNNER_RENAME` — a better name than "runner"
@@ -1697,6 +1698,17 @@ manifests still send their old flags next to the settings (tombstones in `runner
 `args` in one change once each service's pinned image reads its settings and is Ready on staging and
 testing (image before config). The egress sidecar stays on strict `yaml.v3`:
 [Sidecar settings](../egress/docs/design.md#sidecar-settings-strict-yamlv3-not-viper).
+
+### `SERVICE_SETTINGS_RETHINK` — how Agentplane services are configured
+
+**Decision, then changes; unscheduled (operator, 2026-10-20 UTC: keep the egress sidecar on YAML "for now" and
+"leave a to-do to rethink how the configuration of this whole thing should work").** Today each Go service
+reads environment variables, plus a YAML file where it has settings env cannot carry, through Viper; the
+egress sidecar reads one strict `yaml.v3` file; each service's Python `Settings` schema renders both. The
+operator asked whether services need both files and environment variables ("Do we need both files and
+env vars", 2026-10-20 UTC). Moving the sidecar to Viper would also need its audience and route maps
+to become lists of records, since Viper lowercases map keys. Settle the approach for all services
+first; changes follow as their own nodes.
 
 ## 9. Legacy burn-down
 
