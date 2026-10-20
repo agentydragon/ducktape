@@ -1922,7 +1922,6 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 
 ```mermaid
 flowchart LR
-    HISTORY_PYTHON_RETIREMENT[Candidate: retire the Python History Service]
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     NOTIFICATION_SERVICE_GO_PORT[Candidate: port the Notification Service to Go]
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
@@ -1934,15 +1933,6 @@ flowchart LR
     ACTION_SERVICE_GO_PORT -. related .-> ACTION_API_MERGE
     ACTION_SERVICE_GO_PORT -. related .-> WEB_PUSH_SERVICE
 ```
-
-### `HISTORY_PYTHON_RETIREMENT` — retire the Python History Service
-
-**Candidate.** Delete the Python store, fold,
-servicers, ingress, runner and migration image with their BUILD targets and CI roster entries; keep
-`client.py`, which the app and the Notification service use. The app's, Electric's and browser tests run
-on the Go service but still import the Python fold's ORM models, view enums, `channels` and `FOLD_EPOCH`
-to read the fold's tables: move those to a home that survives. Move the references that name the Python delta
-templates (`docs/adr_delta_settlement.md`, the History README, `native/BUILD.bazel`).
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
 
