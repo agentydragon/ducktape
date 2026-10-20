@@ -537,6 +537,8 @@ _DISK_USAGE = [
         "disk_usage:component_used_bytes",
         "\nor\n".join(
             [
+                # Each pod-joining branch narrows the right side to its own pods: a pod elsewhere with two
+                # node-local PVCs would otherwise be a duplicate match group and fail the whole rule.
                 # One copy per volume server: replicas are separate physical bytes on separate disks.
                 _component(
                     "SeaweedFS",
@@ -553,7 +555,7 @@ _DISK_USAGE = [
                             "component", "SeaweedFS: $1", "collection", "(.+)"
                           )
                           * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                            disk_usage:pvc_filesystem:info
+                            disk_usage:pvc_filesystem:info{namespace="seaweedfs"}
                         )"""
                     ),
                 ),
@@ -567,7 +569,7 @@ _DISK_USAGE = [
                               SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="deleted_bytes"}
                             )
                             * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                              disk_usage:pvc_filesystem:info
+                              disk_usage:pvc_filesystem:info{namespace="seaweedfs"}
                           ),
                           "component", "SeaweedFS deleted, awaiting vacuum", "", ""
                         )"""
@@ -586,7 +588,7 @@ _DISK_USAGE = [
                               + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse"})
                             )
                             * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                              disk_usage:pvc_filesystem:info
+                              disk_usage:pvc_filesystem:info{namespace="clickhouse"}
                           ),
                           "component", "ClickHouse", "", ""
                         )"""

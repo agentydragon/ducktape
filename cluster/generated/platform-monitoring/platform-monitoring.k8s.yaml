@@ -284,7 +284,7 @@ spec:
                 "component", "SeaweedFS: $1", "collection", "(.+)"
               )
               * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                disk_usage:pvc_filesystem:info
+                disk_usage:pvc_filesystem:info{namespace="seaweedfs"}
             ),
               "category", "SeaweedFS", "", ""
             )
@@ -296,7 +296,7 @@ spec:
                   SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="deleted_bytes"}
                 )
                 * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                  disk_usage:pvc_filesystem:info
+                  disk_usage:pvc_filesystem:info{namespace="seaweedfs"}
               ),
               "component", "SeaweedFS deleted, awaiting vacuum", "", ""
             ),
@@ -311,7 +311,7 @@ spec:
                   + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse"})
                 )
                 * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                  disk_usage:pvc_filesystem:info
+                  disk_usage:pvc_filesystem:info{namespace="clickhouse"}
               ),
               "component", "ClickHouse", "", ""
             ),
