@@ -4,9 +4,19 @@ package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 
 go_library(
     name = "projection",
-    srcs = ["lease.go"],
+    srcs = [
+        "lease.go",
+        "payloads.go",
+        "recording.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/projection",
-    deps = ["@com_github_google_uuid//:uuid"],
+    deps = [
+        "//agentplane/history_service/settledcursors",
+        "//agentplane/history_service/threadfold",
+        "//agentplane/proto:history_service_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+    ],
 )
 
 go_test(
@@ -20,6 +30,27 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/history_service/migrations",
+        "//agentplane/testing/postgres",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+    ],
+)
+
+go_test(
+    name = "recording_integration_test",
+    size = "medium",
+    srcs = [
+        "integration_testmain_test.go",
+        "recording_integration_test.go",
+    ],
+    embed = [":projection"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/history_service/migrations",
+        "//agentplane/history_service/threadfold",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:history_service_go_proto",
         "//agentplane/testing/postgres",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
