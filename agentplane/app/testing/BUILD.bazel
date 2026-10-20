@@ -80,6 +80,7 @@ py_library(
         "//agentplane/app:identity",
         "//agentplane/app:live",
         "//agentplane/app:model_catalog",
+        "//agentplane/app:notifications_operator_client",
         "//agentplane/app:operator_sessions",
         "//agentplane/app:sandbox_access",
         "//agentplane/app:upstream_proxy",
@@ -260,5 +261,15 @@ py_library(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "notifications_operator",
+    srcs = ["notifications_operator.py"],
+    deps = [
+        "//agentplane/notification_service:notifications_operator_pb2",
+        "//agentplane/notification_service:notifications_operator_pb2_grpc",
+        "@pypi//grpcio",
     ],
 )

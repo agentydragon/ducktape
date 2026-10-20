@@ -8,6 +8,8 @@ load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EX
 load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
 
@@ -483,6 +485,25 @@ proto_library(
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "notifications_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [":notifications_proto"],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "notifications_operator_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [":notifications_operator_proto"],
+)
+
+py_grpc_service_library(
+    name = "notifications_operator_pb2_grpc",
+    proto = ":notifications_operator_proto",
+    py_proto = ":notifications_operator_pb2",
+    visibility = ["//agentplane:__subpackages__"],
 )
 
 go_proto_library(

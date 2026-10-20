@@ -25,6 +25,7 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_access import SandboxAccess
@@ -145,8 +146,7 @@ def bare_app(
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     electric_proxy: ElectricProxy,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
+    notifications: NotificationsOperatorClient,
     dispatcher_http: UpstreamProxy,
     event_logs: SeededEventLogStore,
     content: ContentStore,
@@ -168,8 +168,7 @@ def bare_app(
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
-        notifications_http=notifications_http,
-        notifications_token_file=notifications_token_file,
+        notifications=notifications,
         dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
@@ -810,8 +809,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     event_logs: SeededEventLogStore,
     content: ContentStore,
     electric_proxy: ElectricProxy,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
+    notifications: NotificationsOperatorClient,
     dispatcher_http: UpstreamProxy,
 ) -> None:
     """Bound command admission at the public service RPC, without runner internals."""
@@ -834,8 +832,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
             database_updates=database_updates,
             operator_sessions=operator_sessions,
             electric=electric_proxy,
-            notifications_http=notifications_http,
-            notifications_token_file=notifications_token_file,
+            notifications=notifications,
             dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )

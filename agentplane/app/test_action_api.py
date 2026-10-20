@@ -9,7 +9,6 @@ from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import cast
 from urllib.parse import parse_qs
 from uuid import uuid4
@@ -55,6 +54,7 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, SandboxSnapshot
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
@@ -164,8 +164,7 @@ async def review(
     history: History,
     history_client: HistoryServiceClient,
     electric_proxy: ElectricProxy,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
+    notifications: NotificationsOperatorClient,
     dispatcher_http: UpstreamProxy,
 ) -> AsyncIterator[Review]:
     server = FastMCP("test-review")
@@ -360,8 +359,7 @@ async def review(
             database_updates=database_updates,
             operator_sessions=operator_sessions,
             electric=electric_proxy,
-            notifications_http=notifications_http,
-            notifications_token_file=notifications_token_file,
+            notifications=notifications,
             dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )
@@ -396,8 +394,7 @@ async def review(
             database_updates=create_database_updates(replica_engine.url),
             operator_sessions=OperatorSessionStore(replica_engine),
             electric=electric_proxy,
-            notifications_http=notifications_http,
-            notifications_token_file=notifications_token_file,
+            notifications=notifications,
             dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )

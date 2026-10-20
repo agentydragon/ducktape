@@ -78,8 +78,11 @@ class Settings(AppSettingsConfig):
         "runner connection.",
     )
     history_service_target: str = Field(min_length=1)
-    notifications_url: HttpEndpointUrl
+    notifications_url: HttpEndpointUrl = Field(
+        description="The Notification Service's endpoint; its host and port serve the operator gRPC API."
+    )
     notifications_token_file: Path
+    notifications_request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
     runner_gateway_token_file: Path = Field(
         description="The rotating projected ServiceAccount token for the Runner Gateway audience."
     )

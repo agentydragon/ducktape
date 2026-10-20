@@ -25,11 +25,13 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.dispatcher import runner_proxy_backed_dispatcher
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.history import SeededEventLogStore
+from agentplane.app.testing.notifications_operator import FakeNotificationsOperator
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
@@ -56,6 +58,7 @@ from agentplane.history_service.testing.fixtures import (
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.kubernetes_watch import Freshness
+from agentplane.notification_service import notifications_operator_pb2_grpc
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 
@@ -379,11 +382,34 @@ def electric_proxy(
 
 
 @pytest.fixture
-async def notifications_http() -> AsyncIterator[httpx.AsyncClient]:
-    async with httpx.AsyncClient(
-        base_url="http://notifications.test", transport=_refusing("Notification Service")
-    ) as client:
-        yield client
+async def _notifications_operator_server() -> AsyncIterator[tuple[FakeNotificationsOperator, str]]:
+    operator = FakeNotificationsOperator()
+    server = grpc.aio.server()
+    notifications_operator_pb2_grpc.add_NotificationsOperatorServicer_to_server(operator, server)
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+        yield operator, f"127.0.0.1:{port}"
+
+
+@pytest.fixture
+def notifications_operator(
+    _notifications_operator_server: tuple[FakeNotificationsOperator, str],
+) -> FakeNotificationsOperator:
+    return _notifications_operator_server[0]
+
+
+@pytest.fixture
+async def notifications_channel(
+    _notifications_operator_server: tuple[FakeNotificationsOperator, str],
+) -> AsyncIterator[grpc.aio.Channel]:
+    async with dial(_notifications_operator_server[1]) as channel:
+        yield channel
+
+
+@pytest.fixture
+def notifications(
+    notifications_channel: grpc.aio.Channel, notifications_token_file: Path
+) -> NotificationsOperatorClient:
+    return NotificationsOperatorClient(notifications_channel, token_file=notifications_token_file, request_timeout_s=5)
 
 
 @pytest.fixture
@@ -396,5 +422,6 @@ async def dispatcher_http(tmp_path: Path) -> AsyncIterator[UpstreamProxy]:
 
 @pytest.fixture
 def notifications_token_file(tmp_path: Path) -> Path:
-    """Read only on a call into `notifications_http`, which these tests never make."""
-    return tmp_path / "notifications-token"
+    token_file = tmp_path / "notifications-token"
+    token_file.write_text("fake-notifications-token")
+    return token_file

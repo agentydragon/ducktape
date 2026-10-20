@@ -9,7 +9,6 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
 from dataclasses import dataclass, field
 from datetime import timedelta
-from pathlib import Path as FilePath
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -58,6 +57,7 @@ from agentplane.app.live import (
     router as live_router,
 )
 from agentplane.app.model_catalog import ModelCatalog
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import OIDCSettings, build_oauth
 from agentplane.app.operator_relay import operator_relay
 from agentplane.app.operator_sessions import (
@@ -147,8 +147,7 @@ class AppServices:
     content: ContentStore
     database_updates: WakeupListener
     operator_sessions: OperatorSessionStore
-    notifications_http: httpx.AsyncClient
-    notifications_token_file: FilePath
+    notifications: NotificationsOperatorClient
     system_status: SystemStatusChecker
     models: ModelCatalog
     presets: PresetCatalog
@@ -268,42 +267,18 @@ async def get_sandbox(inventory: Inventory, name: str) -> SandboxView:
 async def sandbox_notifications_stream(
     request: Request, services: Services, name: str, shutdown: Shutdown, updates: Updates
 ) -> StreamingResponse:
-    """Operator-only SSE proxy; scope the upstream by the current Sandbox incarnation UID."""
+    """Operator-only SSE of the Sandbox's notification state, scoped to the current incarnation's UID."""
     sandbox = sandbox_view(await services.inventory.get(name))
-    return _notifications_proxy(
+    return _operator_relay(
         request,
-        services,
         shutdown,
         updates,
-        f"/v1/operator/sandboxes/{sandbox.namespace}/{sandbox.name}/notifications/stream",
-        {"uid": str(sandbox.uid)},
-    )
-
-
-def _notifications_proxy(
-    request: Request,
-    services: AppServices,
-    shutdown: Shutdown,
-    updates: Updates,
-    upstream: str,
-    params: dict[str, str | list[str]],
-) -> StreamingResponse:
-    """Relay a Notification Service operator stream for as long as the operator session lasts."""
-
-    async def chunks() -> AsyncIterator[bytes]:
-        async with services.notifications_http.stream(
-            "GET",
-            upstream,
-            params=params,
-            headers={"Authorization": f"Bearer {services.notifications_token_file.read_text().strip()}"},
-            timeout=httpx.Timeout(None, connect=5),
-        ) as response:
-            response.raise_for_status()
-            async for chunk in response.aiter_bytes():
-                yield chunk
-
-    return _operator_relay(
-        request, shutdown, updates, services.operator_sessions, chunks(), "Notification", (httpx.HTTPError, OSError)
+        services.operator_sessions,
+        services.notifications.watch_sandbox_notifications(
+            namespace=sandbox.namespace, name=sandbox.name, uid=sandbox.uid
+        ),
+        "Notification",
+        (ServiceError, OSError),
     )
 
 
@@ -826,13 +801,15 @@ async def thread_notices_stream(
     """Operator-only SSE of the named threads' live notification inboxes: entries queued for a
     notice, entries a notice delivered that the agent has not acknowledged, and how far the latest
     notice got. Following it acknowledges nothing."""
-    return _notifications_proxy(
+    # A Thread's ID is its Session's.
+    return _operator_relay(
         request,
-        services,
         shutdown,
         updates,
-        "/v1/operator/notices/stream",
-        {"session_id": [str(thread) for thread in thread_id]},
+        services.operator_sessions,
+        services.notifications.watch_session_notices(thread_id),
+        "Notification",
+        (ServiceError, OSError),
     )
 
 
@@ -1221,8 +1198,7 @@ def create_app(
     content: ContentStore,
     database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: FilePath,
+    notifications: NotificationsOperatorClient,
     system_status: SystemStatusChecker,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
@@ -1276,8 +1252,7 @@ def create_app(
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
-        notifications_http=notifications_http,
-        notifications_token_file=notifications_token_file,
+        notifications=notifications,
         system_status=system_status,
         models=catalog,
         presets=configured_presets,

@@ -12,7 +12,6 @@ import re
 from collections.abc import AsyncIterator, Collection
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any, Protocol, cast
 
 import httpx
@@ -29,6 +28,7 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
@@ -74,8 +74,7 @@ def serve(
     event_logs: SeededEventLogStore,
     content: ContentStore,
     electric_proxy: ElectricProxy,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
+    notifications: NotificationsOperatorClient,
     dispatcher_http: UpstreamProxy,
 ) -> ServeApp:
     """The app as staging runs it -- a login and the token path on one port -- and its IdP."""
@@ -138,8 +137,7 @@ def serve(
             database_updates=database_updates,
             operator_sessions=operator_sessions,
             electric=electric_proxy,
-            notifications_http=notifications_http,
-            notifications_token_file=notifications_token_file,
+            notifications=notifications,
             dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )

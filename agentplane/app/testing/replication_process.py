@@ -35,6 +35,7 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.dispatcher import runner_proxy_backed_dispatcher
@@ -268,10 +269,10 @@ async def _serve(
             history.new_client() as watch_client,
             history.new_client() as openings_client,
             dial("test-unused-decisions.invalid:8081") as decisions_channel,
+            dial("test-unused-notifications.invalid:8080") as notifications_channel,
             httpx.AsyncClient(
                 base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
             ) as electric_http,
-            httpx.AsyncClient(base_url="http://test-unused-notifications.invalid") as notifications_http,
             httpx.AsyncClient(base_url="http://test-unused-dispatcher.invalid") as dispatcher_facade,
         ):
             inventory = SandboxAccess(
@@ -332,8 +333,9 @@ async def _serve(
                     database_updates=database_updates,
                     operator_sessions=OperatorSessionStore(engine),
                     dispatcher_http=UpstreamProxy(dispatcher_facade, Path(directory) / "dispatcher-token"),
-                    notifications_http=notifications_http,
-                    notifications_token_file=Path(directory) / "notifications-token",
+                    notifications=NotificationsOperatorClient(
+                        notifications_channel, token_file=Path(directory) / "notifications-token", request_timeout_s=1
+                    ),
                     system_status=answering_system_status(),
                 )
                 # Authentication is tested separately; the production routes, HTTP transport, ingestion,
