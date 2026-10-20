@@ -16,6 +16,8 @@ from more_itertools import one
 
 from cluster.cdk8s.agentplane import runner_vm, testing
 
+HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
+
 
 def _runner_vm_manifests(*, console_autologin: bool) -> dict[str, dict[str, Any]]:
     chart = Chart(Cdk8sTesting.app(), "test")
@@ -31,6 +33,7 @@ def _runner_vm_manifests(*, console_autologin: bool) -> dict[str, dict[str, Any]
             "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
         },
         platform_instructions="Test platform guidance.",
+        harness_env=HARNESS_ENV,
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     config_map = one(
@@ -53,6 +56,10 @@ def test_console_autologin_reaches_the_guest_config_only_when_enabled(
 ) -> None:
     # An image that predates the field rejects it, so a disabled environment must not render it.
     assert _guest_config(console_autologin=console_autologin).get("console_autologin") == rendered
+
+
+def test_harness_env_reaches_the_guest_config() -> None:
+    assert _guest_config(console_autologin=False)["harness_env"] == HARNESS_ENV
 
 
 def test_vm_workspace_is_a_controller_attached_raw_disk_image() -> None:
