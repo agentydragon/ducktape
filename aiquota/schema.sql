@@ -1,9 +1,9 @@
--- aiquota-owned ClickHouse schema, applied by the Deployment's `migrate` init
--- container (cluster/cdk8s/aiquota.py, clickhouse-client --multiquery)
--- ahead of the API server. Every statement is CREATE/ALTER ... IF NOT EXISTS, so re-running it
--- on every rollout is safe. The `aiquota` database itself is bootstrapped once
--- by ClickHouse admin (cluster/k8s/clickhouse/schema/schema.sql) since
--- database creation is outside the aiquota_ingest identity's grants.
+-- aiquota-owned ClickHouse schema, applied by the API server at every start
+-- (ClickHouseSnapshotSink.apply_schema), one statement per request. Every
+-- statement is CREATE/ALTER ... IF NOT EXISTS, so re-running it is safe. The
+-- `aiquota` database itself is bootstrapped once by ClickHouse admin
+-- (cluster/cdk8s/clickhouse/schema.sql) since database creation is outside the
+-- aiquota_ingest identity's grants.
 
 CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations ON CLUSTER default
 (

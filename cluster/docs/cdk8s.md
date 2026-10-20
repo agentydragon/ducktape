@@ -115,7 +115,7 @@ including names derived from controller-created targets; it permits unknown refe
 and does not distinguish namespaces. It does not establish reference existence.
 Whole-tree validation work is tracked in <../cdk8s/TODO.md>.
 
-A `configMapGenerator` input (`aiquota/schema.sql`)
+A `configMapGenerator` input (`cluster/k8s/haku/mailbox/nginx.conf`)
 stays hand-written the same way: the generated `kustomization.yaml` carries the
 generator entry (`flux.ConfigMapArgs`), keeping kustomize's content-hash
 name suffix and reference rewriting, and the construct mounting it references the

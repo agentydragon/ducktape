@@ -4,6 +4,7 @@ import json
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
+import pytest
 import pytest_bazel
 
 from aiquota.api import (
@@ -14,7 +15,7 @@ from aiquota.api import (
     QuotaSnapshot,
     RawUpstreamResponse,
 )
-from aiquota.clickhouse import ClickHouseSnapshotSink
+from aiquota.clickhouse import ClickHouseSnapshotSink, schema_statements
 from aiquota.models import (
     AllQuotas,
     FetchSuccess,
@@ -250,3 +251,47 @@ async def test_history_collector_records_failures_without_raising() -> None:
     }
     assert samples[("aiquota_history_poll_total", "error")] == 1
     assert ("aiquota_history_poll_total", "success") not in samples
+
+
+async def test_apply_schema_posts_each_idempotent_statement_alone() -> None:
+    requests: list[httpx.Request] = []
+
+    await _mock_sink(requests).apply_schema()
+
+    assert len(requests) > 1
+    for request in requests:
+        assert request.headers["authorization"] == "Basic " + base64.b64encode(b"aiquota_ingest:secret").decode()
+        body = request.content.decode()
+        # The HTTP interface refuses a body holding several statements, and the schema runs at
+        # every start, so each statement must be a no-op the second time.
+        assert ";" not in body
+        assert "IF NOT EXISTS" in body
+
+
+async def test_apply_schema_failure_carries_the_explanation_clickhouse_gives() -> None:
+    explanation = "Code: 497. DB::Exception: aiquota_ingest: Not enough privileges."
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(403, text=explanation, request=request)
+
+    sink = ClickHouseSnapshotSink(
+        url="http://clickhouse:8123",
+        username="aiquota_ingest",
+        password="secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError) as raised:
+        await sink.apply_schema()
+
+    assert raised.value.response.status_code == 403
+    assert explanation in str(raised.value)
+    assert len(requests) == 1
+
+
+def test_schema_statements_drop_comments_and_the_remainder_after_the_last_semicolon() -> None:
+    sql = "-- a; b\nCREATE TABLE t (x UInt8);\n\nALTER TABLE t ADD COLUMN y UInt8;\n-- end\n"
+
+    assert schema_statements(sql) == ["CREATE TABLE t (x UInt8)", "ALTER TABLE t ADD COLUMN y UInt8"]

@@ -161,9 +161,13 @@ py_library(
 py_library(
     name = "clickhouse",
     srcs = ["clickhouse.py"],
+    # keep: apply_schema reads it from runfiles; no module imports it.
+    data = ["schema.sql"],
     deps = [
         ":models",
+        "//util/bazel:runfiles",
         "@pypi//httpx",
+        "@pypi//sqlparse",
     ],
 )
 
@@ -336,6 +340,7 @@ py_test(
         ":models",
         "//:conftest",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

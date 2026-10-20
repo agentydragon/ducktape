@@ -179,14 +179,14 @@ stopped appearing on 2026-09-17.
 
 ### Schema
 
-`cluster/k8s/aiquota/schema.sql` defines every table, materialized view, and
-column aiquota owns inside the (admin-bootstrapped) `aiquota` database. The
-Deployment's `migrate` init container applies it with
-`clickhouse-client --multiquery` ahead of the API server, same as it would in
-a standalone migration Job — but an init container's pod template is mutable
-across rollouts, so a schema change ships in the same PR as the code that
-needs it, with no separate Job or version number to bump. Every statement is
-`CREATE`/`ALTER ... IF NOT EXISTS`, so re-running it on every rollout is safe.
+`schema.sql` defines every table, materialized view, and column aiquota owns
+inside the (admin-bootstrapped) `aiquota` database. The API server applies it
+over ClickHouse's HTTP interface, one statement per request, before it starts
+collecting (`ClickHouseSnapshotSink.apply_schema`); a failure ends the process,
+so the Pod restarts until the schema applies. A schema change therefore ships
+in the same PR as the code that needs it, with no Job or version number to
+bump. Every statement is `CREATE`/`ALTER ... IF NOT EXISTS`, so re-running it
+at every start is safe.
 
 ## Credential ownership
 

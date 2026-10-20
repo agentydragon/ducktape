@@ -159,9 +159,8 @@ def _users() -> dict[str, object]:
             "GRANT SELECT, INSERT ON aiquota.aiquota_windows",
             "GRANT SELECT, INSERT ON aiquota.token_activity_daily",
             "GRANT SELECT, INSERT ON aiquota.reset_credits",
-            # Scoped DDL so aiquota's own migrate init container can own its schema
-            # (cluster/k8s/aiquota/schema.sql), the same pattern as the langfuse
-            # user above. The aiquota database itself stays admin-created
+            # Scoped DDL so aiquota's API server can own its schema (aiquota/schema.sql),
+            # the same pattern as the langfuse user above. The aiquota database itself stays admin-created
             # (cluster/cdk8s/clickhouse/schema.sql).
             "GRANT CREATE, DROP TABLE, DROP VIEW ON aiquota.*",
             "GRANT ALTER ADD COLUMN ON aiquota.*",
@@ -525,9 +524,9 @@ def networkpolicy_chart(app: App) -> Chart:
                 ),
                 k8s.NetworkPolicyIngressRule(
                     from_=_from_namespace("cli-proxy-api", {"app.kubernetes.io/name": "aiquota"}),
-                    # The `migrate` init container runs clickhouse-client (native
-                    # protocol) to apply schema.sql; the main container only ever uses
-                    # the HTTP port.
+                    # CLEANUP(added 2026-10-20): Drop the native port once no aiquota-api Pod
+                    #   still has a `migrate` init container (the Deployment lists none and
+                    #   its old ReplicaSet is gone); the API server applies its schema over HTTP.
                     ports=_ports(client.HTTP.pod_port, client.NATIVE.pod_port),
                 ),
                 # The agent app itself cannot reach ClickHouse. Its credential-bearing

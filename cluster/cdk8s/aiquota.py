@@ -1,11 +1,9 @@
-"""aiquota's API Deployment (with the `migrate` init container that applies its own
-ClickHouse schema), Service, HTTPRoute and ServiceMonitor, the pull-credentials
+"""aiquota's API Deployment, Service, HTTPRoute and ServiceMonitor, the pull-credentials
 ExternalSecret, and the narrow per-consumer mirrors of its API bearer.
 
 Hand-written beside the generated output (cluster/docs/cdk8s.md): the bearer itself
-(aiquota-api-bearer.sops.yaml), the configMapGenerator input schema.sql, and
-image-pins/kustomization.yaml, which overrides the API container's `unset` placeholder
-tag.
+(aiquota-api-bearer.sops.yaml) and image-pins/kustomization.yaml, which overrides the API
+container's `unset` placeholder tag.
 """
 
 from __future__ import annotations
@@ -98,7 +96,6 @@ CONFIG_CONFIG_MAP = ConfigMapArgs(
     namespace=NAMESPACE,
     literals=[f"{_CONFIG_PATH.name}={_CONFIG_HEADER}{tomli_w.dumps(_CONFIG)}"],
 )
-SCHEMA_CONFIG_MAP = ConfigMapArgs(name="aiquota-schema", namespace=NAMESPACE, files=[client.SCHEMA_FILE])
 
 _API_NAME = "aiquota-api"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/aiquota-api"
@@ -218,20 +215,6 @@ class Aiquota(Construct):
             automount_service_account_token=False,
             enable_service_links=False,
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
-            # Applies schema.sql (idempotent CREATE/ALTER ... IF NOT EXISTS) before the API
-            # server starts. An init container's pod template is mutable across rollouts
-            # (unlike a bare Job's), so a schema change ships in the same PR as the code that
-            # needs it -- no separate Job/version to bump. Kubernetes retries a failing init
-            # container.
-            init_containers=[
-                client.queries_file_container(
-                    self,
-                    "migrate",
-                    schema=ConfigMap.from_config_map_name(self, "schema-ref", SCHEMA_CONFIG_MAP.name),
-                    credentials=_CLICKHOUSE,
-                    memory_limit=Size.gibibytes(1),
-                )
-            ],
         )
         deployment.select(LabelSelector.of(labels=SERVICE.pods.selector))
 

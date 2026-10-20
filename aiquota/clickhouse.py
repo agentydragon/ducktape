@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
+import sqlparse
 
 from aiquota.models import (
     AllQuotas,
@@ -20,8 +21,12 @@ from aiquota.models import (
     TokenActivityObservation,
     history_capture_key,
 )
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _DATASET = "aiquota"
+_SCHEMA = "aiquota/schema.sql"
+# `ON CLUSTER` DDL returns once every replica has applied it.
+_SCHEMA_TIMEOUT = 60.0
 
 
 class RawUpstreamResponse(Protocol):
@@ -77,6 +82,25 @@ class ClickHouseSnapshotSink:
         self._timeout = timeout
         self._transport = transport
 
+    async def apply_schema(self) -> None:
+        """Run the packaged `schema.sql`, which is idempotent, so every start can.
+
+        One request per statement: the HTTP interface refuses a body holding several.
+        """
+        statements = schema_statements(get_required_path(own_repo_rlocation(_SCHEMA)).read_text())
+        async with httpx.AsyncClient(
+            auth=(self._username, self._password), timeout=_SCHEMA_TIMEOUT, transport=self._transport
+        ) as client:
+            for statement in statements:
+                response = await client.post(self._url, content=statement.encode())
+                if response.is_error:
+                    # ClickHouse explains a refusal only in the body.
+                    raise httpx.HTTPStatusError(
+                        f"{response.status_code=} {response.text=} {statement=}",
+                        request=response.request,
+                        response=response,
+                    )
+
     async def write(self, snapshot: QuotaSnapshot) -> int:
         raw_rows = [_raw_row(snapshot, provider.provider) for provider in snapshot.quotas.providers]
         window_count = sum(_window_count(provider) for provider in snapshot.quotas.providers)
@@ -122,6 +146,15 @@ class ClickHouseSnapshotSink:
             headers={"Content-Type": "application/x-ndjson"},
         )
         response.raise_for_status()
+
+
+def schema_statements(sql: str) -> list[str]:
+    """`sql` as its statements, without comments or the `;` that ends each."""
+    statements = (
+        sqlparse.format(statement, strip_comments=True).strip()
+        for statement in sqlparse.split(sql, strip_semicolon=True)
+    )
+    return [statement for statement in statements if statement]
 
 
 def _raw_row(snapshot: QuotaSnapshot, provider_name: str) -> dict[str, object]:

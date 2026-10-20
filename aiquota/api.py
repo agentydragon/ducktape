@@ -15,7 +15,7 @@ import hmac
 import json
 import logging
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -554,6 +554,7 @@ def create_app(
     metrics: CollectorMetrics | None = None,
     frontend_dir: Path | None = None,
     browser_oauth: BrowserOAuth | None = None,
+    prepare_storage: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     app_metrics = metrics or (collector.metrics if collector else CollectorMetrics())
     feed = fetcher if isinstance(fetcher, SnapshotFeed) else SnapshotFeed(fetcher)
@@ -562,6 +563,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # A failure ends the process, so the Pod restarts until the schema applies.
+        if prepare_storage is not None:
+            await prepare_storage()
         async with anyio.create_task_group() as tasks:
             tasks.start_soon(feed.run_time_transitions, name="aiquota-view-transitions")
             if collector is not None:
@@ -749,6 +753,7 @@ def main() -> None:
             collector=collector,
             history_collector=history_collector,
             metrics=metrics,
+            prepare_storage=None if sink is None else sink.apply_schema,
             browser_oauth=BrowserOAuth(
                 issuer=settings.oauth_issuer,
                 client_id=settings.oauth_client_id,

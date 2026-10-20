@@ -1,7 +1,6 @@
 """The cluster's central ClickHouse as its clients address it, and the
 `clickhouse-client --queries-file` container that applies a ConfigMap-mounted SQL file
-over its native port: the database-bootstrap Job and aiquota's `migrate` init container
-differ only in the schema they mount and the credentials they present.
+over its native port (the database-bootstrap Job).
 
 Port 9000, not 9440: the Altinity operator generates 9440 secure remote-server entries
 when `secure: true` is set, but ClickHouse has no TLS listener unless one is configured

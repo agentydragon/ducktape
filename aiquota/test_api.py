@@ -410,6 +410,44 @@ async def test_clickhouse_failure_does_not_block_snapshot_publication() -> None:
         assert (await client.get("/readyz")).status_code == 503
 
 
+async def test_storage_is_prepared_before_collection_starts() -> None:
+    events: list[str] = []
+
+    class RecordingFetcher(FakeFetcher):
+        async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot:
+            events.append("fetch")
+            return await super().fetch(force_refresh)
+
+    async def prepare_storage() -> None:
+        events.append("prepare")
+
+    feed = SnapshotFeed(RecordingFetcher())
+    collector = BackgroundCollector(feed, None, interval=timedelta(seconds=300), metrics=CollectorMetrics())
+    app = create_app(bearer_token="test-bearer", fetcher=feed, collector=collector, prepare_storage=prepare_storage)
+    async with app.router.lifespan_context(app):
+        await feed.wait_after(0)
+
+    assert events[:2] == ["prepare", "fetch"]
+
+
+async def test_failed_storage_preparation_aborts_startup_before_collection() -> None:
+    fetcher = FakeFetcher()
+    feed = SnapshotFeed(fetcher)
+    collector = BackgroundCollector(feed, None, interval=timedelta(seconds=300), metrics=CollectorMetrics())
+
+    async def prepare_storage() -> None:
+        raise OSError("ClickHouse unavailable")
+
+    app = create_app(bearer_token="test-bearer", fetcher=feed, collector=collector, prepare_storage=prepare_storage)
+
+    with pytest.raises(OSError, match="ClickHouse unavailable"):
+        async with app.router.lifespan_context(app):
+            raise AssertionError("startup must not complete")
+
+    assert fetcher.calls == 0
+    assert not collector.is_running
+
+
 async def test_peak_transition_republishes_without_fetching(monkeypatch: pytest.MonkeyPatch) -> None:
     fetcher = FakeFetcher()
     feed = SnapshotFeed(fetcher)

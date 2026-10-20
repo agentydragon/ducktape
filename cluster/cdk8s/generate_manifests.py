@@ -1507,7 +1507,7 @@ def generate_manifests(root: Path) -> None:
             aiquota.chart,
             siblings=[f"{aiquota.BEARER_SECRET_NAME}.sops.yaml"],
             components=["./image-pins"],
-            config_map_generator=[aiquota.CONFIG_CONFIG_MAP, aiquota.SCHEMA_CONFIG_MAP],
+            config_map_generator=[aiquota.CONFIG_CONFIG_MAP],
         ),
         external_secrets_operator_kustomization,
         kyverno_kustomization,

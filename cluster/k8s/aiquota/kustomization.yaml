@@ -25,7 +25,3 @@ configMapGenerator:
 
         [zai]
         enabled = false
-  - name: aiquota-schema
-    namespace: cli-proxy-api
-    files:
-      - schema.sql

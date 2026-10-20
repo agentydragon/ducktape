@@ -106,6 +106,9 @@ dependencies = [
     # Database
     "sqlalchemy[asyncio]>=2.0.52",
     "alembic>=1.13.0",
+    # sqlparse: splits aiquota's schema.sql into the one statement per request that
+    # ClickHouse's HTTP interface accepts.
+    "sqlparse>=0.6.0",
     "psycopg[binary]>=3.3.5",
     "psycopg2-binary>=2.9.13",
 
