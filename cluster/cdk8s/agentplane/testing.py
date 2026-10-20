@@ -204,6 +204,7 @@ ENV = Environment(
         ],
     ),
     vm_sandboxes=True,
+    notifications_grpc_probes=True,
     vm_console_autologin=True,
     wake_caller_accounts=frozenset(
         {

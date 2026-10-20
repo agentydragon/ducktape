@@ -403,6 +403,7 @@ ENV = Environment(
         ],
     ),
     vm_sandboxes=True,
+    notifications_grpc_probes=False,
     wake_caller_accounts=frozenset(
         {
             ServiceAccountRef(namespace=STAGING_NAMESPACE, name=app_component.NAME),
