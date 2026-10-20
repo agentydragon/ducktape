@@ -263,3 +263,30 @@ answers the August open question: the pinned image was never the mechanism.
   on a 60s watch race (#5469), unrelated to any of the above; its file now runs in 0.35s. It is
   named here because it sat inside this same symptom and will otherwise look like more evidence
   for a story it does not belong to.
+
+## 2026-10-20: pytest walked the whole runfiles tree
+
+`//agentplane/app:test_system_status` and `//agentplane/app/threads:test_dispatcher_client` timed out
+on a PR that touched neither (and `test_dispatcher_client` timed out 1 in 3 on plain `devel`). The
+logs end at `pytest_bazel`'s `Running pytest.main with:` line, as above. With
+`PYTHONPROFILEIMPORTTIME=1` and `--durations=0` a run Bazel killed at 61s turned out to have passed
+(`1 passed in 24.82s`), and the time split was:
+
+| phase                                                  | healthy run | slow run |
+| ------------------------------------------------------ | ----------: | -------: |
+| interpreter and `pytest_bazel` imports                 |        2.9s |     4.7s |
+| `pytest.main` to the session header (conftest imports) |       12.1s |    25.7s |
+| pytest session for one 0.09s test                      |       11.6s |    24.8s |
+
+The last row is the avoidable part. `pytest_bazel` passes pytest no path, so pytest collects from the
+working directory, the root of the test's runfiles tree. No module is imported in that time, so the
+cost is the collection walk over the tree (inferred: the explicit path removes it). Handing pytest the
+entry-point file cuts the session to 0.1-0.2s
+(`test_dispatcher_client` 8.6-24.8s before, 0.08-0.22s after; `test_system_status` 10.1s before,
+0.13-0.19s after). `devinfra/python/defs.bzl` now passes it for every `py_test` whose entry point is a
+source file.
+
+What remains is the platform tail above: `agentplane/app/conftest.py` imports about 3000 modules for every
+test under `agentplane/app`, and each module is a file open on a lazily served filesystem. With the
+change and 21 concurrent actions, `test_dispatcher_client` still timed out 1 in 3 (min 26.1s). Not
+established: how much of the conftest cost a narrower conftest would save.
