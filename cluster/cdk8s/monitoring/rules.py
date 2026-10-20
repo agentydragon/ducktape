@@ -1,4 +1,4 @@
-"""The cluster-wide alert PrometheusRules in the monitoring namespace."""
+"""The cluster-wide alert and recording PrometheusRules in the monitoring namespace."""
 
 from __future__ import annotations
 
@@ -434,6 +434,213 @@ _ROAMING_NODE = [
     ),
 ]
 
+# Physical disk attribution for the cluster-disk-usage dashboard: which component holds how many bytes on
+# each scraped filesystem, keyed by (node, device). Component bytes are what the component itself reports
+# (SeaweedFS volume files, ClickHouse MergeTree parts, Postgres database files, kubelet volume stats), so
+# `disk_usage:unattributed_bytes` is everything else on the filesystem: container images, emptyDirs, logs,
+# etcd, node-local PVCs whose owner exports no size, and collector skew.
+_NODE_EXPORTER_NODE = (
+    'on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",'
+    'pod=~"prometheus-node-exporter-.+"})'
+)
+_FILESYSTEMS = 'fstype=~"ext4|xfs",device!=""'
+
+
+def _filesystem_bytes(metric: str) -> str:
+    return f"max by (node, device) ({metric}{{{_FILESYSTEMS}}} * {_NODE_EXPORTER_NODE})"
+
+
+def _pvc_on_mount_prefix(segments: int) -> str:
+    """PVCs whose backing path starts with a `segments`-component mountpoint on their pod's node."""
+    mountpoint = f'"$1", "path", "({"/[^/]+" * segments})(/.*)?"' if segments else '"/", "path", "/.*"'
+    return (
+        f'label_replace(disk_usage:pvc_path:info, "mountpoint", {mountpoint})\n'
+        "  * on (node, mountpoint) group_left (device) disk_usage:mount:info"
+    )
+
+
+def _component(category: str, expr: str) -> str:
+    return f'label_replace(\n{expr},\n  "category", "{category}", "", ""\n)'
+
+
+_DISK_USAGE = [
+    Rule.record(
+        "disk_usage:mount:info",
+        f"group by (node, device, mountpoint) (node_filesystem_size_bytes{{{_FILESYSTEMS}}} * {_NODE_EXPORTER_NODE})",
+    ),
+    Rule.record("disk_usage:filesystem_size_bytes", _filesystem_bytes("node_filesystem_size_bytes")),
+    # Free counts root-reserved blocks (ext4 reserves 5% by default); avail does not. Used is size - free.
+    Rule.record("disk_usage:filesystem_free_bytes", _filesystem_bytes("node_filesystem_free_bytes")),
+    Rule.record("disk_usage:filesystem_avail_bytes", _filesystem_bytes("node_filesystem_avail_bytes")),
+    # `media` from the kernel's rotational flag on the filesystem's whole disk. Virtual disks report
+    # rotational=1 whatever backs them on the hypervisor, so they are `virtual` instead.
+    Rule.record(
+        "disk_usage:filesystem:info",
+        dedent(
+            f"""\
+            max by (node, device, media) (
+              label_replace(
+                group by (node, device) (disk_usage:mount:info),
+                "disk", "$1", "device", "/dev/(nvme[0-9]+n[0-9]+|mmcblk[0-9]+|[a-z]+)(p?[0-9]+)?"
+              )
+              * on (node, disk) group_left (media)
+                max by (node, disk, media) (
+                  label_replace(label_replace(label_replace(label_replace(label_replace(
+                    node_disk_info * {_NODE_EXPORTER_NODE},
+                    "disk", "$1", "device", "(.+)"),
+                    "media", "HDD", "rotational", "1"),
+                    "media", "SSD", "rotational", "0"),
+                    "media", "virtual", "model", "QEMU_.*"),
+                    "media", "virtual", "device", "vd[a-z]+")
+                )
+              or on (node, device)
+              label_replace(group by (node, device) (disk_usage:mount:info), "media", "unknown", "", "")
+            )
+            """
+        ),
+    ),
+    # The host path behind each pod's PVC: `host_path` for local-path-provisioner volumes, `local_path`
+    # for static local PVs. CSI volumes have neither and drop out.
+    Rule.record(
+        "disk_usage:pvc_path:info",
+        dedent(
+            """\
+            max by (namespace, pod, volume, persistentvolumeclaim, node, path) (
+              max by (namespace, pod, volume, persistentvolumeclaim) (kube_pod_spec_volumes_persistentvolumeclaims_info)
+              * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{node!=""})
+              * on (namespace, persistentvolumeclaim) group_left (persistentvolume)
+                label_replace(
+                  max by (namespace, persistentvolumeclaim, volumename) (kube_persistentvolumeclaim_info),
+                  "persistentvolume", "$1", "volumename", "(.+)"
+                )
+              * on (persistentvolume) group_left (path)
+                label_replace(
+                  label_replace(
+                    max by (persistentvolume, host_path, local_path) (kube_persistentvolume_info),
+                    "path", "$1", "host_path", "(.+)"
+                  ),
+                  "path", "$1", "local_path", "(.+)"
+                )
+            )
+            """
+        ),
+    ),
+    # Longest mountpoint prefix of the PVC path wins; mountpoints deeper than three components are not
+    # matched and fall through to a shorter enclosing mount.
+    Rule.record(
+        "disk_usage:pvc_filesystem:info",
+        "max by (namespace, pod, volume, persistentvolumeclaim, node, device) (\n"
+        + "\nor on (namespace, pod, volume)\n".join(_pvc_on_mount_prefix(n) for n in (3, 2, 1, 0))
+        + "\n)\n",
+    ),
+    Rule.record(
+        "disk_usage:component_used_bytes",
+        "\nor\n".join(
+            [
+                # One copy per volume server: replicas are separate physical bytes on separate disks.
+                _component(
+                    "SeaweedFS",
+                    dedent(
+                        """\
+                        sum by (node, device, namespace, persistentvolumeclaim, component) (
+                          label_replace(
+                            label_replace(
+                              max by (namespace, pod, collection) (
+                                SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal"}
+                              ),
+                              "component", "SeaweedFS (default collection)", "collection", ""
+                            ),
+                            "component", "SeaweedFS: $1", "collection", "(.+)"
+                          )
+                          * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
+                            disk_usage:pvc_filesystem:info
+                        )"""
+                    ),
+                ),
+                _component(
+                    "SeaweedFS deleted, awaiting vacuum",
+                    dedent(
+                        """\
+                        label_replace(
+                          sum by (node, device, namespace, persistentvolumeclaim) (
+                            max by (namespace, pod) (
+                              SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="deleted_bytes"}
+                            )
+                            * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
+                              disk_usage:pvc_filesystem:info
+                          ),
+                          "component", "SeaweedFS deleted, awaiting vacuum", "", ""
+                        )"""
+                    ),
+                ),
+                # MergeTree parts only. ClickHouse's DiskUsed is the whole filesystem's used bytes, shared
+                # with everything else on the disk.
+                _component(
+                    "ClickHouse",
+                    dedent(
+                        """\
+                        label_replace(
+                          sum by (node, device, namespace, persistentvolumeclaim) (
+                            (
+                              max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace="clickhouse"})
+                              + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse"})
+                            )
+                            * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
+                              disk_usage:pvc_filesystem:info
+                          ),
+                          "component", "ClickHouse", "", ""
+                        )"""
+                    ),
+                ),
+                # Database files on each instance's PGDATA volume; WAL and other PostgreSQL files are not
+                # counted.
+                _component(
+                    "Postgres (CNPG)",
+                    dedent(
+                        """\
+                        sum by (node, device, namespace, persistentvolumeclaim, component) (
+                          label_replace(
+                            max by (namespace, pod, datname) (cnpg_pg_database_size_bytes{datname!~"template0|template1"}),
+                            "component", "Postgres: $1", "namespace", "(.+)"
+                          )
+                          * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
+                            disk_usage:pvc_filesystem:info{volume="pgdata"}
+                        )"""
+                    ),
+                ),
+                _component(
+                    "Kubelet-measured PVCs",
+                    dedent(
+                        """\
+                        label_replace(
+                          label_join(
+                            max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes)
+                            * on (namespace, persistentvolumeclaim) group_left (node, device)
+                              max by (namespace, persistentvolumeclaim, node, device) (disk_usage:pvc_filesystem:info),
+                            "component", "/", "namespace", "persistentvolumeclaim"
+                          ),
+                          "component", "PVC: $1", "component", "(.+)"
+                        )"""
+                    ),
+                ),
+            ]
+        )
+        + "\n",
+    ),
+    Rule.record(
+        "disk_usage:unattributed_bytes",
+        dedent(
+            """\
+            disk_usage:filesystem_size_bytes - disk_usage:filesystem_free_bytes
+            - on (node, device) (
+              sum by (node, device) (disk_usage:component_used_bytes)
+              or on (node, device) 0 * disk_usage:filesystem_size_bytes
+            )
+            """
+        ),
+    ),
+]
+
 _ROAMING_NODE_WORKLOAD = [
     # The stock rule has no node label. Join through kube_pod_info so a pod
     # on a tainted roaming node disappears from the alert, while the same
@@ -547,6 +754,12 @@ def chart(app: App) -> Chart:
         "control-plane-io-alerts",
         metadata=ApiObjectMetadata(name="control-plane-io-alerts", namespace=NAMESPACE),
         groups=[group("control-plane-io", _CONTROL_PLANE_IO)],
+    )
+    PrometheusRule(
+        chart,
+        "disk-usage-rules",
+        metadata=ApiObjectMetadata(name="disk-usage-rules", namespace=NAMESPACE),
+        groups=[group("disk-usage", _DISK_USAGE)],
     )
     PrometheusRule(
         chart,

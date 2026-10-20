@@ -25,14 +25,14 @@
       "title": "How to read this dashboard",
       "type": "text",
       "gridPos": {
-        "h": 5,
+        "h": 6,
         "w": 24,
         "x": 0,
         "y": 0
       },
       "options": {
         "mode": "markdown",
-        "content": "This dashboard shows **current size and growth over time** from existing collectors. The node filesystem totals cover scraped ext4/XFS filesystems and count each node/device once; they include operating-system and application files. They are not a complete inventory of every PVC.\n\n**The composition is approximate.** It uses SeaweedFS collection disk bytes, ClickHouse disk bytes, and CNPG database bytes summed across replicas. The remainder is node filesystem use after subtracting these estimates, so it also contains measurement differences. CNPG excludes WAL and other PostgreSQL files. Detailed SeaweedFS bucket logical bytes omit replicas, while physical bucket bytes and collection bytes mostly measure the same replicated data for S3 buckets; collections also cover non-S3 storage. Do not add the detailed charts together. No hostPath PVC or table-size scan is used. Missing samples and newly created databases or buckets do not imply zero use."
+        "content": "This dashboard shows **current size and growth over time** from existing collectors. It covers scraped ext4/XFS filesystems on nodes running node-exporter, each node/device counted once.\n\n**Per-disk attribution** comes from the `disk_usage:*` recording rules (`cluster/cdk8s/monitoring/rules.py`). Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available). Media is the kernel's rotational flag; virtual disks report rotational whatever backs them, so they show as `virtual`.\n\nLower sections are per-collector detail. SeaweedFS bucket logical bytes omit replicas; physical bucket bytes and collection bytes mostly measure the same replicated data. Do not add the detailed charts together. Missing samples do not imply zero use."
       }
     },
     {
@@ -44,7 +44,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 5
+        "y": 6
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -79,7 +79,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 5
+        "y": 6
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -107,39 +107,39 @@
     },
     {
       "id": 18,
-      "title": "Approximate used storage composition",
-      "description": "One physical-use estimate per component. SeaweedFS sums volume-server collection files, including replicas; ClickHouse sums server disks; CNPG sums database files on each instance, including replicas but excluding WAL and other PostgreSQL files. Other is node filesystem used minus those three estimates, so it includes remaining applications, host files, and differences between collectors. This is a rough attribution, not exact PVC accounting.",
+      "title": "Scraped disk capacity by use",
+      "description": "All scraped filesystem capacity, summed per category across disks. Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available).",
       "type": "piechart",
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(max by (collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace=\"seaweedfs\",type=\"normal\"}))",
+          "expr": "sum by (category) (disk_usage:component_used_bytes)",
           "instant": true,
-          "legendFormat": "SeaweedFS",
+          "legendFormat": "{{category}}",
           "refId": "A"
         },
         {
-          "expr": "sum(max by (pod, disk) (ClickHouseAsyncMetrics_DiskUsed{namespace=\"clickhouse\"}))",
+          "expr": "sum(disk_usage:unattributed_bytes)",
           "instant": true,
-          "legendFormat": "ClickHouse",
+          "legendFormat": "Unattributed",
           "refId": "B"
         },
         {
-          "expr": "sum(max by (namespace, pod, datname) (cnpg_pg_database_size_bytes{datname!~\"template0|template1\"}))",
+          "expr": "sum(disk_usage:filesystem_free_bytes - disk_usage:filesystem_avail_bytes)",
           "instant": true,
-          "legendFormat": "CNPG database files",
+          "legendFormat": "Reserved (root only)",
           "refId": "C"
         },
         {
-          "expr": "(sum(max by (node, device) (max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_avail_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"}))))) - (sum(max by (collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace=\"seaweedfs\",type=\"normal\"}))) - (sum(max by (pod, disk) (ClickHouseAsyncMetrics_DiskUsed{namespace=\"clickhouse\"}))) - (sum(max by (namespace, pod, datname) (cnpg_pg_database_size_bytes{datname!~\"template0|template1\"})))",
+          "expr": "sum(disk_usage:filesystem_avail_bytes)",
           "instant": true,
-          "legendFormat": "Other / unattributed (approx.)",
+          "legendFormat": "Free",
           "refId": "D"
         }
       ],
@@ -147,7 +147,53 @@
         "defaults": {
           "unit": "bytes"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Free"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "rgba(115, 191, 105, 0.35)"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unattributed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Reserved (root only)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8e8e8e"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "displayLabels": ["name", "percent"],
@@ -165,6 +211,345 @@
       }
     },
     {
+      "id": 19,
+      "title": "Each disk by component, grouped by machine",
+      "description": "One bar per scraped filesystem, labelled machine · device · mountpoint · media (HDD, SSD or virtual); bar length is the filesystem size, so bars compare across disks. Hover a bar for every component's bytes on that disk. Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available).",
+      "type": "barchart",
+      "gridPos": {
+        "h": 22,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "label_join((sum by (node, device, component) (disk_usage:component_used_bytes) or label_replace(disk_usage:unattributed_bytes, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes - disk_usage:filesystem_avail_bytes, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info) * on (node, device) group_left (media) disk_usage:filesystem:info), \"disk\", \" · \", \"node\", \"device\", \"mountpoint\", \"media\")",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "groupingToMatrix",
+          "options": {
+            "columnField": "component",
+            "rowField": "disk",
+            "valueField": "Value",
+            "emptyValue": "null"
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "disk\\component",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {},
+            "renameByName": {
+              "disk\\component": "Disk"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 85,
+            "lineWidth": 0,
+            "axisPlacement": "auto",
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Free"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "rgba(115, 191, 105, 0.35)"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unattributed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Reserved (root only)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8e8e8e"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Disk",
+        "stacking": "normal",
+        "showValue": "never",
+        "barWidth": 0.8,
+        "groupWidth": 0.7,
+        "xTickLabelMaxLength": 0,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      }
+    },
+    {
+      "id": 20,
+      "title": "Per-disk attribution",
+      "description": "Every component on every disk, with its share of that filesystem's size. Filter or sort a column to answer, for example, which disks hold a given SeaweedFS bucket. Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available).",
+      "type": "table",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sort_desc((sum by (node, device, component) (disk_usage:component_used_bytes) or label_replace(disk_usage:unattributed_bytes, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes - disk_usage:filesystem_avail_bytes, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info) * on (node, device) group_left (media) disk_usage:filesystem:info))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "(sum by (node, device, component) (disk_usage:component_used_bytes) or label_replace(disk_usage:unattributed_bytes, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes - disk_usage:filesystem_avail_bytes, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info) * on (node, device) group_left (media) disk_usage:filesystem:info) / on (node, device) group_left () disk_usage:filesystem_size_bytes",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "node": 0,
+              "device": 1,
+              "mountpoint": 2,
+              "media": 3,
+              "component": 4,
+              "Value #A": 5,
+              "Value #B": 6
+            },
+            "renameByName": {
+              "node": "Machine",
+              "device": "Device",
+              "mountpoint": "Mountpoint",
+              "media": "Media",
+              "component": "Component",
+              "Value #A": "Bytes",
+              "Value #B": "Share of disk"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Bytes",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Share of disk"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      }
+    },
+    {
+      "id": 21,
+      "title": "Unattributed bytes per disk",
+      "description": "Filesystem used (size minus free) minus every attributed component. On system disks (/var, /) this is mostly container images, emptyDir volumes, logs and etcd, which no scraped metric breaks down; on data disks, see the PVC list beside it.",
+      "type": "bargauge",
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 0,
+        "y": 54
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sort_desc(label_join(disk_usage:unattributed_bytes * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info) * on (node, device) group_left (media) disk_usage:filesystem:info), \"disk\", \" · \", \"node\", \"device\", \"mountpoint\", \"media\"))",
+          "instant": true,
+          "legendFormat": "{{disk}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "top",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 22,
+      "title": "Node-local PVCs with no usage metric",
+      "description": "PVCs whose host path is on each disk but whose bytes no component reports, so they fall into Unattributed. The size is the PVC's requested capacity, not its use: local-path does not enforce it.",
+      "type": "table",
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 12,
+        "y": 54
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sort_desc(max by (node, device, namespace, persistentvolumeclaim) (disk_usage:pvc_filesystem:info unless on (namespace, persistentvolumeclaim) disk_usage:component_used_bytes) * on (namespace, persistentvolumeclaim) group_left () max by (namespace, persistentvolumeclaim) (kube_persistentvolumeclaim_resource_requests_storage_bytes))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "node": 0,
+              "device": 1,
+              "namespace": 2,
+              "persistentvolumeclaim": 3,
+              "Value": 4
+            },
+            "renameByName": {
+              "node": "Machine",
+              "device": "Device",
+              "namespace": "Namespace",
+              "persistentvolumeclaim": "PVC",
+              "Value": "Requested"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      }
+    },
+    {
       "id": 4,
       "title": "Node filesystem used now",
       "description": "Used bytes per filesystem mount; repeated mounts are visible here but counted once per device in the totals.",
@@ -173,7 +558,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 18
+        "y": 65
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -220,7 +605,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 18
+        "y": 65
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -258,7 +643,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 74
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -305,7 +690,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 74
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -343,7 +728,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 36
+        "y": 83
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -390,7 +775,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 36
+        "y": 83
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -428,7 +813,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 45
+        "y": 92
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -475,7 +860,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 45
+        "y": 92
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -513,7 +898,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 54
+        "y": 101
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -560,7 +945,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 54
+        "y": 101
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -598,7 +983,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 63
+        "y": 110
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -645,7 +1030,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 63
+        "y": 110
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -676,14 +1061,14 @@
     },
     {
       "id": 16,
-      "title": "ClickHouse disk used now",
-      "description": "Used bytes by ClickHouse pod and disk; replicas are separate physical copies.",
+      "title": "ClickHouse MergeTree bytes now",
+      "description": "MergeTree part bytes per ClickHouse server, user and system tables; replicas are separate physical copies.",
       "type": "table",
       "gridPos": {
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 72
+        "y": 119
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -701,10 +1086,10 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(max by (namespace, pod, disk) (ClickHouseAsyncMetrics_DiskUsed{namespace=\"clickhouse\"}))",
+          "expr": "sort_desc(max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace=\"clickhouse\"}) + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace=\"clickhouse\"}))",
           "format": "table",
           "instant": true,
-          "legendFormat": "{{pod}} {{disk}}",
+          "legendFormat": "{{pod}}",
           "refId": "A"
         }
       ],
@@ -723,14 +1108,14 @@
     },
     {
       "id": 17,
-      "title": "ClickHouse disk used over time",
-      "description": "Disk usage history for each ClickHouse pod and disk.",
+      "title": "ClickHouse MergeTree bytes over time",
+      "description": "MergeTree part bytes history per ClickHouse server, user and system tables.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 72
+        "y": 119
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -753,8 +1138,8 @@
       },
       "targets": [
         {
-          "expr": "max by (namespace, pod, disk) (ClickHouseAsyncMetrics_DiskUsed{namespace=\"clickhouse\"})",
-          "legendFormat": "{{pod}} {{disk}}",
+          "expr": "max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace=\"clickhouse\"}) + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace=\"clickhouse\"})",
+          "legendFormat": "{{pod}}",
           "refId": "A"
         }
       ]

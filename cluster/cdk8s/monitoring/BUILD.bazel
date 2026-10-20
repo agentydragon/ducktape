@@ -275,6 +275,7 @@ py_test(
     name = "test_rules",
     srcs = ["test_rules.py"],
     data = [
+        "testdata/disk_usage_rules.yaml",
         "testdata/github_quota_rules.yaml",
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",

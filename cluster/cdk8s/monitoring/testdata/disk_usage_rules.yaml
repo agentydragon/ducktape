@@ -1,0 +1,165 @@
+rule_files:
+  - disk-usage.yaml
+evaluation_interval: 1m
+tests:
+  # One node with four filesystems: an HDD system partition, an HDD data disk with ext4-style reserved
+  # blocks, an NVMe mount holding a static local PV, and a virtio disk.
+  - name: per-disk attribution
+    interval: 1m
+    input_series:
+      - series: kube_pod_info{namespace="monitoring",pod="prometheus-node-exporter-test",node="test-node"}
+        values: 1x2
+      - series: node_filesystem_size_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/sda5",mountpoint="/var",fstype="xfs"}
+        values: 1000x2
+      - series: node_filesystem_free_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/sda5",mountpoint="/var",fstype="xfs"}
+        values: 600x2
+      - series: node_filesystem_avail_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/sda5",mountpoint="/var",fstype="xfs"}
+        values: 600x2
+      - series: node_filesystem_size_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/sdb",mountpoint="/var/mnt/test-hdd",fstype="ext4"}
+        values: 2000x2
+      - series: node_filesystem_free_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/sdb",mountpoint="/var/mnt/test-hdd",fstype="ext4"}
+        values: 500x2
+      - series: node_filesystem_avail_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/sdb",mountpoint="/var/mnt/test-hdd",fstype="ext4"}
+        values: 400x2
+      - series: node_filesystem_size_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/nvme1n1",mountpoint="/var/lib/test-fast",fstype="xfs"}
+        values: 500x2
+      - series: node_filesystem_free_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/nvme1n1",mountpoint="/var/lib/test-fast",fstype="xfs"}
+        values: 300x2
+      - series: node_filesystem_avail_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/nvme1n1",mountpoint="/var/lib/test-fast",fstype="xfs"}
+        values: 300x2
+      - series: node_filesystem_size_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/vdc",mountpoint="/test-scratch",fstype="ext4"}
+        values: 100x2
+      - series: node_filesystem_free_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/vdc",mountpoint="/test-scratch",fstype="ext4"}
+        values: 100x2
+      - series: node_filesystem_avail_bytes{namespace="monitoring",pod="prometheus-node-exporter-test",device="/dev/vdc",mountpoint="/test-scratch",fstype="ext4"}
+        values: 100x2
+      - series: node_disk_info{namespace="monitoring",pod="prometheus-node-exporter-test",device="sda",rotational="1"}
+        values: 1x2
+      - series: node_disk_info{namespace="monitoring",pod="prometheus-node-exporter-test",device="sdb",rotational="1"}
+        values: 1x2
+      - series: node_disk_info{namespace="monitoring",pod="prometheus-node-exporter-test",device="nvme1n1",rotational="0"}
+        values: 1x2
+      - series: node_disk_info{namespace="monitoring",pod="prometheus-node-exporter-test",device="vdc",rotational="1"}
+        values: 1x2
+
+      # SeaweedFS volume server on the HDD data disk.
+      - series: kube_pod_info{namespace="seaweedfs",pod="test-volume-0",node="test-node"}
+        values: 1x2
+      - series: kube_pod_spec_volumes_persistentvolumeclaims_info{namespace="seaweedfs",pod="test-volume-0",persistentvolumeclaim="data-test-volume-0",volume="data"}
+        values: 1x2
+      - series: kube_persistentvolumeclaim_info{namespace="seaweedfs",persistentvolumeclaim="data-test-volume-0",volumename="pv-test-volume-0"}
+        values: 1x2
+      - series: kube_persistentvolume_info{persistentvolume="pv-test-volume-0",host_path="/var/mnt/test-hdd/local-path/pv-test-volume-0"}
+        values: 1x2
+      - series: SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",pod="test-volume-0",collection="test-bucket",type="normal"}
+        values: 300x2
+      - series: SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",pod="test-volume-0",collection="",type="normal"}
+        values: 50x2
+      - series: SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",pod="test-volume-0",collection="test-bucket",type="deleted_bytes"}
+        values: 20x2
+
+      # ClickHouse on the HDD data disk.
+      - series: kube_pod_info{namespace="clickhouse",pod="test-ch-0",node="test-node"}
+        values: 1x2
+      - series: kube_pod_spec_volumes_persistentvolumeclaims_info{namespace="clickhouse",pod="test-ch-0",persistentvolumeclaim="data-test-ch-0",volume="data"}
+        values: 1x2
+      - series: kube_persistentvolumeclaim_info{namespace="clickhouse",persistentvolumeclaim="data-test-ch-0",volumename="pv-test-ch-0"}
+        values: 1x2
+      - series: kube_persistentvolume_info{persistentvolume="pv-test-ch-0",host_path="/var/mnt/test-hdd/local-path/pv-test-ch-0"}
+        values: 1x2
+      - series: ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace="clickhouse",pod="test-ch-0"}
+        values: 200x2
+      - series: ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse",pod="test-ch-0"}
+        values: 10x2
+
+      # CNPG instance with PGDATA on the HDD data disk and a second, unmeasured WAL volume.
+      - series: kube_pod_info{namespace="test-app",pod="test-db-1",node="test-node"}
+        values: 1x2
+      - series: kube_pod_spec_volumes_persistentvolumeclaims_info{namespace="test-app",pod="test-db-1",persistentvolumeclaim="test-db-1",volume="pgdata"}
+        values: 1x2
+      - series: kube_pod_spec_volumes_persistentvolumeclaims_info{namespace="test-app",pod="test-db-1",persistentvolumeclaim="test-db-1-wal",volume="pg-wal"}
+        values: 1x2
+      - series: kube_persistentvolumeclaim_info{namespace="test-app",persistentvolumeclaim="test-db-1",volumename="pv-test-db-1"}
+        values: 1x2
+      - series: kube_persistentvolumeclaim_info{namespace="test-app",persistentvolumeclaim="test-db-1-wal",volumename="pv-test-db-1-wal"}
+        values: 1x2
+      - series: kube_persistentvolume_info{persistentvolume="pv-test-db-1",host_path="/var/mnt/test-hdd/local-path/pv-test-db-1"}
+        values: 1x2
+      - series: kube_persistentvolume_info{persistentvolume="pv-test-db-1-wal",host_path="/var/mnt/test-hdd/local-path/pv-test-db-1-wal"}
+        values: 1x2
+      - series: cnpg_pg_database_size_bytes{namespace="test-app",pod="test-db-1",datname="test-app"}
+        values: 100x2
+      - series: cnpg_pg_database_size_bytes{namespace="test-app",pod="test-db-1",datname="template1"}
+        values: 5x2
+
+      # Static local PV below the NVMe mountpoint, measured by kubelet.
+      - series: kube_pod_info{namespace="test-models",pod="test-server-0",node="test-node"}
+        values: 1x2
+      - series: kube_pod_spec_volumes_persistentvolumeclaims_info{namespace="test-models",pod="test-server-0",persistentvolumeclaim="test-weights",volume="weights"}
+        values: 1x2
+      - series: kube_persistentvolumeclaim_info{namespace="test-models",persistentvolumeclaim="test-weights",volumename="pv-test-weights"}
+        values: 1x2
+      - series: kube_persistentvolume_info{persistentvolume="pv-test-weights",local_path="/var/lib/test-fast/weights/v1"}
+        values: 1x2
+      - series: kubelet_volume_stats_used_bytes{namespace="test-models",persistentvolumeclaim="test-weights",node="test-node"}
+        values: 70x2
+
+      # Default local-path directory that is not itself a mountpoint: it lands on the enclosing /var.
+      - series: kube_pod_info{namespace="test-home",pod="test-config-0",node="test-node"}
+        values: 1x2
+      - series: kube_pod_spec_volumes_persistentvolumeclaims_info{namespace="test-home",pod="test-config-0",persistentvolumeclaim="test-config",volume="config"}
+        values: 1x2
+      - series: kube_persistentvolumeclaim_info{namespace="test-home",persistentvolumeclaim="test-config",volumename="pv-test-config"}
+        values: 1x2
+      - series: kube_persistentvolume_info{persistentvolume="pv-test-config",host_path="/var/local-path-provisioner/pv-test-config"}
+        values: 1x2
+    promql_expr_test:
+      - expr: disk_usage:filesystem:info
+        eval_time: 1m
+        exp_samples:
+          - labels: disk_usage:filesystem:info{node="test-node",device="/dev/sda5",media="HDD"}
+            value: 1
+          - labels: disk_usage:filesystem:info{node="test-node",device="/dev/sdb",media="HDD"}
+            value: 1
+          - labels: disk_usage:filesystem:info{node="test-node",device="/dev/nvme1n1",media="SSD"}
+            value: 1
+          - labels: disk_usage:filesystem:info{node="test-node",device="/dev/vdc",media="virtual"}
+            value: 1
+      - expr: disk_usage:pvc_filesystem:info{namespace=~"test-home|test-models|test-app"}
+        eval_time: 1m
+        exp_samples:
+          - labels: disk_usage:pvc_filesystem:info{namespace="test-home",pod="test-config-0",volume="config",persistentvolumeclaim="test-config",node="test-node",device="/dev/sda5"}
+            value: 1
+          - labels: disk_usage:pvc_filesystem:info{namespace="test-models",pod="test-server-0",volume="weights",persistentvolumeclaim="test-weights",node="test-node",device="/dev/nvme1n1"}
+            value: 1
+          - labels: disk_usage:pvc_filesystem:info{namespace="test-app",pod="test-db-1",volume="pgdata",persistentvolumeclaim="test-db-1",node="test-node",device="/dev/sdb"}
+            value: 1
+          - labels: disk_usage:pvc_filesystem:info{namespace="test-app",pod="test-db-1",volume="pg-wal",persistentvolumeclaim="test-db-1-wal",node="test-node",device="/dev/sdb"}
+            value: 1
+      - expr: disk_usage:component_used_bytes
+        eval_time: 1m
+        exp_samples:
+          - labels: 'disk_usage:component_used_bytes{node="test-node",device="/dev/sdb",namespace="seaweedfs",persistentvolumeclaim="data-test-volume-0",category="SeaweedFS",component="SeaweedFS: test-bucket"}'
+            value: 300
+          - labels: 'disk_usage:component_used_bytes{node="test-node",device="/dev/sdb",namespace="seaweedfs",persistentvolumeclaim="data-test-volume-0",category="SeaweedFS",component="SeaweedFS (default collection)"}'
+            value: 50
+          - labels: 'disk_usage:component_used_bytes{node="test-node",device="/dev/sdb",namespace="seaweedfs",persistentvolumeclaim="data-test-volume-0",category="SeaweedFS deleted, awaiting vacuum",component="SeaweedFS deleted, awaiting vacuum"}'
+            value: 20
+          - labels: 'disk_usage:component_used_bytes{node="test-node",device="/dev/sdb",namespace="clickhouse",persistentvolumeclaim="data-test-ch-0",category="ClickHouse",component="ClickHouse"}'
+            value: 210
+          - labels: 'disk_usage:component_used_bytes{node="test-node",device="/dev/sdb",namespace="test-app",persistentvolumeclaim="test-db-1",category="Postgres (CNPG)",component="Postgres: test-app"}'
+            value: 100
+          - labels: 'disk_usage:component_used_bytes{node="test-node",device="/dev/nvme1n1",namespace="test-models",persistentvolumeclaim="test-weights",category="Kubelet-measured PVCs",component="PVC: test-models/test-weights"}'
+            value: 70
+      # Used is size - free; reserved blocks (free - avail) are not unattributed.
+      - expr: disk_usage:unattributed_bytes
+        eval_time: 1m
+        exp_samples:
+          - labels: disk_usage:unattributed_bytes{node="test-node",device="/dev/sda5"}
+            value: 400
+          - labels: disk_usage:unattributed_bytes{node="test-node",device="/dev/sdb"}
+            value: 820
+          - labels: disk_usage:unattributed_bytes{node="test-node",device="/dev/nvme1n1"}
+            value: 130
+          - labels: disk_usage:unattributed_bytes{node="test-node",device="/dev/vdc"}
+            value: 0
