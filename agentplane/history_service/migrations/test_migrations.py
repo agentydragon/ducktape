@@ -14,6 +14,7 @@ from agentplane.history_service.storage.database_migrate import RUNNER
 from agentplane.testing.electric_role import ensure_electric_role
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.postgres import DatabaseNames, create_temporary_database
+from util.testing.postgres_schema import schema_catalog
 
 # SQLAlchemy loads this URL dialect dynamically.
 # gazelle:include_dep @pypi//psycopg
@@ -25,38 +26,8 @@ _GOOSE_VERSION = "history_service_goose_version"
 _ALEMBIC_HEAD = "0022_drop_pending_harness_stops"
 _MIGRATOR_TABLES = ("alembic_version", _GOOSE_VERSION)
 
-# Each query lists one kind of schema object, ordered by its columns, so two schemas compare as lists.
-# Column order inside a table is not compared: no reader depends on it.
-_CATALOG = {
-    "columns": """
-        SELECT c.relname, a.attname, format_type(a.atttypid, a.atttypmod), a.attnotnull,
-               pg_get_expr(d.adbin, d.adrelid), a.attidentity, a.attgenerated
-        FROM pg_attribute a
-        JOIN pg_class c ON c.oid = a.attrelid
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
-        WHERE n.nspname = 'public' AND c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped
-              AND c.relname <> ALL(:migrator_tables)
-        ORDER BY 1, 2""",
-    "constraints": """
-        SELECT c.relname, con.conname, con.contype, pg_get_constraintdef(con.oid)
-        FROM pg_constraint con
-        JOIN pg_class c ON c.oid = con.conrelid
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public' AND c.relname <> ALL(:migrator_tables)
-        ORDER BY 1, 2""",
-    "indexes": """
-        SELECT tablename, indexname, indexdef FROM pg_indexes
-        WHERE schemaname = 'public' AND tablename <> ALL(:migrator_tables)
-        ORDER BY 1, 2""",
-    "sequences": """
-        SELECT sequencename, data_type::text, start_value, min_value, max_value, increment_by, cycle
-        FROM pg_sequences WHERE schemaname = 'public' AND sequencename NOT LIKE :migrator_sequences
-        ORDER BY 1""",
-    "replica_identity": """
-        SELECT c.relname, c.relreplident FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname <> ALL(:migrator_tables)
-        ORDER BY 1""",
+# What the schema holds beyond tables, constraints, indexes and sequences: Electric's login and publication.
+_ELECTRIC_CATALOG = {
     "electric_grants": """
         SELECT table_name, privilege_type FROM information_schema.role_table_grants
         WHERE grantee = 'electric' AND table_schema = 'public' ORDER BY 1, 2
@@ -72,9 +43,12 @@ _CATALOG = {
 
 
 def _catalog(engine: Engine) -> dict[str, list[tuple[object, ...]]]:
-    parameters = {"migrator_tables": list(_MIGRATOR_TABLES), "migrator_sequences": f"{_GOOSE_VERSION}%"}
-    with engine.connect() as conn:
-        return {kind: [tuple(row) for row in conn.execute(text(query), parameters)] for kind, query in _CATALOG.items()}
+    return schema_catalog(
+        engine,
+        migrator_tables=_MIGRATOR_TABLES,
+        migrator_sequence_prefix=_GOOSE_VERSION,
+        extra_queries=_ELECTRIC_CATALOG,
+    )
 
 
 def _wire_url(url: str) -> str:

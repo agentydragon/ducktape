@@ -384,3 +384,10 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "postgres_schema",
+    srcs = ["postgres_schema.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//sqlalchemy"],
+)

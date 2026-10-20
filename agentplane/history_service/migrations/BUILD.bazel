@@ -45,6 +45,7 @@ py_test(
         "//agentplane/testing:electric_role",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
+        "//util/testing:postgres_schema",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
