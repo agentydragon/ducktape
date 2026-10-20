@@ -14,15 +14,17 @@ outlive the Sandbox.
 
 Two set-typed lists in `Sandbox.spec`, like `spec.policySets`:
 
-|                                | Recipient tags                           | Reader tags                             |
+|                                | Inbox tags                               | History tags                            |
 | ------------------------------ | ---------------------------------------- | --------------------------------------- |
 | Gates                          | sends into the Sandbox's Session inboxes | reads of the Sandbox's retained history |
 | Checked by                     | Notifications, against the live CR       | History, against its own record         |
 | Once the Sandbox CR is deleted | gone with it                             | kept by History as it last saw them     |
 
 The operator keeps them apart because they are "permission gates for different services", and
-recipient tags do "not make sense to archive" (2026-10-20 00:21). `recipientTags` and `readerTags` are
-placeholder names; the operator may name each after the service it gates instead (01:39).
+inbox tags do "not make sense to archive" (2026-10-20 00:21). Each is named for the service where it
+counts (04:04): the inbox service, today the Notification service, and History. "Transcript tags",
+with History renamed to a transcript service, is a candidate (04:05, `HISTORY_SERVICE_RENAME` in the
+[task DAG](task_dag.md#8-ownership-and-naming-cleanup)).
 
 - A tag is "something like a tag on one or more Sandboxes that's just a string, without a UID
   identity or a k8s object backing it, no Membership objects" (2026-10-19 09:58).
@@ -47,33 +49,33 @@ placeholder names; the operator may name each after the service it gates instead
 type: session_access
 operations: [append_inbox]
 targets:
-  recipientTags: [developers]
+  inboxTags: [developers]
 ```
 
 The read operations' rule shape is held with `THREAD_READ_POLICY_DESIGN`. Whatever its shape, a read
-grant matches reader tags on History's record, never on the live CR, so a read is checked the same
+grant matches history tags on History's record, never on the live CR, so a read is checked the same
 way before and after the Sandbox is deleted.
 
 ## History's record of a Sandbox
 
-History keeps one row per Sandbox in its own database: UID, namespace, name and reader tags. Not a
+History keeps one row per Sandbox in its own database: UID, namespace, name and history tags. Not a
 Kubernetes object: "since history manages all the historical bulk in the database, it should
 probably not split its storage" (2026-10-20 00:12).
 
-- History watches Sandboxes read-only and copies `readerTags` into the record (00:32). It has no
+- History watches Sandboxes read-only and copies `historyTags` into the record (00:32). It has no
   finalizer and handles no deletion, so a deleted Sandbox's record keeps the last values seen. A
-  reader-tag edit made while History is down just before the deletion is lost until a retag.
+  history-tag edit made while History is down just before the deletion is lost until a retag.
 - The [service boundaries](../docs/service_boundaries.md) rule "never routes to, reads or manages
-  Sandboxes" relaxes to reading their reader tags (2026-10-19 23:29). The rule's text changes with
+  Sandboxes" relaxes to reading their history tags (2026-10-19 23:29). The rule's text changes with
   the change that adds the watch.
-- Reader tags are stored once per Sandbox, never copied into Session rows, and grants match them at
+- History tags are stored once per Sandbox, never copied into Session rows, and grants match them at
   read time, so retagging a deleted Sandbox later needs no backfill.
 - Each Session links to its record by the Sandbox UID that `HISTORY_SANDBOX_UID` records.
 
 ## Deleting a Sandbox
 
 Deleting the CR removes it and its children, its PVCs and its Dispatcher rows. History keeps the
-transcript and its record, so the history stays readable under direct, `allSandboxes` and reader-tag
+transcript and its record, so the history stays readable under direct, `allSandboxes` and history-tag
 grants. Nothing restores a Sandbox from History: the operator would not ask to "make a new Sandbox
 and make it restore and continue that history" (2026-10-19 09:53). A Sandbox meant to run again is
 stopped instead, with `spec.wakeOnSend: false`, and stays a CR.
@@ -82,8 +84,8 @@ stopped instead, with `spec.wakeOnSend: false`, and stays a CR.
 
 1. The first `session_access` schema has direct and `allSandboxes` targets only, with no membership
    CR (`SESSION_ACCESS_RULES_DESIGN`, then `SESSION_ACCESS_RULES`).
-2. Recipient tags and their send target (`SANDBOX_RECIPIENT_TAGS`).
-3. After `HISTORY_SANDBOX_UID`, in the Go History Service: reader tags and History's record
+2. Inbox tags and their send target (`SANDBOX_INBOX_TAGS`).
+3. After `HISTORY_SANDBOX_UID`, in the Go History Service: history tags and History's record
    (`HISTORY_SANDBOX_RECORD`).
 
 ## Deferred

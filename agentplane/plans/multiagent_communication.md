@@ -88,7 +88,7 @@ read-any does not imply send-any.
 
 **Collections are tags on the Sandbox, agreed with the operator, 2026-10-19 to 2026-10-20 UTC:**
 set-typed string lists in `Sandbox.spec`, with no membership or collection objects
-([design](sandbox_tags.md)). Recipient tags gate sends and go with the CR; reader tags gate history
+([design](sandbox_tags.md)). Inbox tags gate sends and go with the CR; history tags gate history
 reads, and History keeps them after the CR is deleted. Flux and the app write tags, with Sandbox
 RBAC as the only gate. An app preset supplies a launched Sandbox's initial tags; a tag removed later
 stays removed, and preset edits change only later launches. A recreated Sandbox gets the tags its
@@ -264,7 +264,7 @@ Illustrative rule syntax, not a selected CRD schema or an implemented rule type:
 type: session_access
 operations: [append_inbox]
 targets:
-  recipientTags: [developers]
+  inboxTags: [developers]
 ```
 
 **Send and transcript reads are not bundled, operator direction 2026-10-18 UTC (stated as
@@ -277,7 +277,7 @@ Support direct Sandbox targets as well as tags. For Sandbox-hosted Session opera
 authenticates the SA, takes the Sandbox from the request (or, in History, which owns the record of
 the Sandbox that wrote each Session, from that record), and allows the operation if any current
 bound rule matches that operation and Sandbox, directly or through its current tags (in History,
-the reader tags on its record). Share rule-reading and evaluation code while enforcing each
+the history tags on its record). Share rule-reading and evaluation code while enforcing each
 backend's own API, including paths that bypass Dispatcher. Preserve live bundle edits, tag changes,
 expiry and additive overlapping grants; listing, transcript reads and sending remain independently grantable.
 
@@ -371,12 +371,12 @@ a suspended Sandbox's storage.
 including one of a running Sandbox's Session, is an archive read. The tentative `session_access`
 operations already divide by the service that enforces them:
 
-| Aspect               | Live objects                                           | Archive                                                                         |
-| -------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| Operations           | `append_inbox`; control, when designed                 | `list_sessions`, `read_transcript`                                              |
-| Enforced by          | the inbox owner, the Dispatcher, the Runner Gateway    | History, on its own API                                                         |
-| Targets are named as | live Sandboxes: direct, recipient tags, `allSandboxes` | the Sandbox as History recorded it: namespace, name, UID once kept, reader tags |
-| Lasts as long as     | the Sandbox                                            | the history                                                                     |
+| Aspect               | Live objects                                        | Archive                                                                          |
+| -------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Operations           | `append_inbox`; control, when designed              | `list_sessions`, `read_transcript`                                               |
+| Enforced by          | the inbox owner, the Dispatcher, the Runner Gateway | History, on its own API                                                          |
+| Targets are named as | live Sandboxes: direct, inbox tags, `allSandboxes`  | the Sandbox as History recorded it: namespace, name, UID once kept, history tags |
+| Lasts as long as     | the Sandbox                                         | the history                                                                      |
 
 Today History checks only that the caller is one of its configured `reader_accounts` (staging: the
 app and Notifications), then serves any Session by ID; there is no per-Session or per-Sandbox check,
@@ -391,9 +391,9 @@ own for every history bound to a writer, which is what the split would build on.
   (namespace and name, optional UID) and `allSandboxes`, both matched on History's record. For
   these two the split changes where the rule lives, not what it matches, since neither reads a live
   object.
-- Tags already take this split ([design](sandbox_tags.md)): recipient tags are live and go with the
-  CR, while reader tags are archive data that History copies into its record of the Sandbox and
-  keeps after the CR is deleted. A reader-tag grant matches that record, never the live object.
+- Tags already take this split ([design](sandbox_tags.md)): inbox tags are live and go with the
+  CR, while history tags are archive data that History copies into its record of the Sandbox and
+  keeps after the CR is deleted. A history-tag grant matches that record, never the live object.
 - How separate is open. **Separate rule type**: same PolicySets and PolicyBindings, so assignment,
   GitOps authoring, live bundle edits and the shared `PolicyWatch` carry over. **Separate
   authority**: History stores and administers archive grants itself, with its own API and audit;
@@ -406,13 +406,13 @@ own for every history bound to a writer, which is what the split would build on.
 - A read needs no live Kubernetes object: no ownerReference or Sandbox has to exist, and no
   Kubernetes object becomes a historical log.
 - History's read path checks archive grants against its own records, never a live Sandbox.
-- Deleting a Sandbox or removing a recipient tag never changes archive access, and an archive
+- Deleting a Sandbox or removing an inbox tag never changes archive access, and an archive
   grant never keeps a Sandbox alive.
 
 **Trade-offs.**
 
 - A person who expects one grant gets two: "X may send to and read `developers`" is a rule in each
-  universe, and the recipient and reader tags of that name can drift apart. Only tags cost this;
+  universe, and the inbox and history tags of that name can drift apart. Only tags cost this;
   direct and `allSandboxes` targets read the same either way. Send and read are already independent
   grants.
 - A second rule type and target vocabulary to review, test and document. Evaluator and watch code

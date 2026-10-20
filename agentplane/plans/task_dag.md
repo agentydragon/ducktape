@@ -254,8 +254,8 @@ flowchart TD
     SESSION_ACCESS_RULES_DESIGN[Decision: Session-access rule schema]
     SESSION_ACCESS_RULES[Blocked: shared Session-access rules]
     THREAD_READ_POLICY_DESIGN[Held decision: remaining history read contract]
-    SANDBOX_RECIPIENT_TAGS[Blocked: recipient tags on the Sandbox]
-    HISTORY_SANDBOX_RECORD[Blocked: History's Sandbox record and reader tags]
+    SANDBOX_INBOX_TAGS[Blocked: inbox tags on the Sandbox]
+    HISTORY_SANDBOX_RECORD[Blocked: History's Sandbox record and history tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SESSION_KEY_DESIGN[Decision: record the Sandbox UID in History, and key Sessions by it]
     HISTORY_SANDBOX_UID[Blocked: History records and checks the Sandbox UID]
@@ -275,7 +275,7 @@ flowchart TD
     SESSION_ACCESS_RULES_DESIGN --> THREAD_READ_POLICY_DESIGN
     SESSION_ACCESS_RULES_DESIGN --> AGENT_MESSAGING_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
-    SESSION_ACCESS_RULES --> SANDBOX_RECIPIENT_TAGS
+    SESSION_ACCESS_RULES --> SANDBOX_INBOX_TAGS
     SESSION_ACCESS_RULES --> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN --> HISTORY_SANDBOX_UID
     HISTORY_SESSION_KEY_DESIGN -. read API shape .-> THREAD_READ_POLICY
@@ -325,7 +325,7 @@ rule schema for review, including administrative RBAC and freshness settings und
 [policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness), without
 requiring an auth-engine migration. The first schema has direct Sandbox and `allSandboxes` targets
 only. Collections are tags on the Sandbox, with no membership CRs (operator, 2026-10-19 to 2026-10-20
-UTC; [design](sandbox_tags.md)); their target forms arrive with `SANDBOX_RECIPIENT_TAGS` and
+UTC; [design](sandbox_tags.md)); their target forms arrive with `SANDBOX_INBOX_TAGS` and
 `HISTORY_SANDBOX_RECORD`.
 
 **Reads not bundled with send (operator, 2026-10-18 UTC, "probably"):** the first schema's rule carries
@@ -362,10 +362,10 @@ and additive overlapping grants. Cover mixed static/runtime SAs, allowed/denied 
 overlap, initial sync, stale watches, independently advancing replicas and Sandbox recreation under the
 same name. Backend enforcement and retained-history semantics remain in their respective nodes.
 
-### `SANDBOX_RECIPIENT_TAGS` — recipient tags on the Sandbox
+### `SANDBOX_INBOX_TAGS` — inbox tags on the Sandbox
 
 **Blocked on `SESSION_ACCESS_RULES`.** [Design](sandbox_tags.md#tags). Add a set-typed
-`spec.recipientTags` to `Sandbox` and a recipient-tag target to the `session_access` rule. The inbox
+`spec.inboxTags` to `Sandbox` and an inbox-tag target to the `session_access` rule. The inbox
 owner matches a send against the live CR's tags, with no History call. App presets supply a launch's
 initial tags. Test a send allowed and one denied by tag, a removed tag withdrawing the grant, a
 deleted Sandbox no longer matching, and a tag grant overlapping a direct one.
@@ -373,9 +373,9 @@ deleted Sandbox no longer matching, and a tag grant overlapping a direct one.
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
 **Decision, held by the operator for now (2026-10-17 UTC): do not raise it until the operator reopens
-it. Tentative Session-access rules, Sandbox minimum, reader tags and all-Sandboxes target selected.**
+it. Tentative Session-access rules, Sandbox minimum, history tags and all-Sandboxes target selected.**
 Reads are not bundled into the send rule, so this decision also settles their rule type or addition to
-`session_access`. Finalize caller replacement semantics. Collection reads match reader tags on History's
+`session_access`. Finalize caller replacement semantics. Collection reads match history tags on History's
 record of the Sandbox, which outlives it ([design](sandbox_tags.md)). V1 has no individual-Session
 grants or computed collection selection. Presets seed launch tags; later removals persist. Reading a
 Session resolves its recorded Sandbox identity, and all Sessions in that Sandbox use the same scope.
@@ -393,7 +393,7 @@ either way.
 ### `THREAD_READ_POLICY` — authorized retained-history access
 
 **Blocked on reviewed read policy, held by the operator, and on `HISTORY_SANDBOX_RECORD`, which keeps
-the Sandbox UID and reader tags the association needs.** Enforce the immutable Session-to-Sandbox
+the Sandbox UID and history tags the association needs.** Enforce the immutable Session-to-Sandbox
 association and Sandbox-scoped grants through the shared rule evaluation at the owning backend across
 list, raw/native evidence, direct reads and feeds, including reconnect and revocation. Keep app-only UI
 folds separate. Test allowed/denied histories, two principals, deleted Sandboxes and revocation with
@@ -450,13 +450,13 @@ refused, a failed read, and `FindSessions` and summaries reporting the UID. Upda
 recorded. A ServiceAccount recreated in place under the same Sandbox keeps failing as a different writer;
 letting the Sandbox UID take over as the pin is a separate decision.
 
-### `HISTORY_SANDBOX_RECORD` — History's Sandbox record and reader tags
+### `HISTORY_SANDBOX_RECORD` — History's Sandbox record and history tags
 
 **Blocked on `HISTORY_SANDBOX_UID`; it lands in the Go History Service.**
-[Design](sandbox_tags.md#historys-record-of-a-sandbox). Add a set-typed `spec.readerTags` to `Sandbox`
-in the same change, since History is its only reader; app presets supply a launch's initial reader tags.
+[Design](sandbox_tags.md#historys-record-of-a-sandbox). Add a set-typed `spec.historyTags` to `Sandbox`
+in the same change, since History is its only reader; app presets supply a launch's initial history tags.
 The Role granting History `get`, `list` and `watch` on Sandboxes lands first, then the code. History
-keeps one record per Sandbox UID with namespace, name and reader tags; a read-only watch writes it and
+keeps one record per Sandbox UID with namespace, name and history tags; a read-only watch writes it and
 never deletes it. The History rule in [service boundaries](../docs/service_boundaries.md) and the
 [History README](../history_service/README.md) change in the same PR. Test a tag edit reaching the
 record, a deleted Sandbox keeping its last tags, a same-name replacement getting its own record, and a
@@ -1618,6 +1618,7 @@ flowchart TD
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     RUNNER_RENAME[Decision, unscheduled: a better name than runner]
+    HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: how Agentplane services are configured]
 ```
 
@@ -1631,6 +1632,15 @@ and services (`runner.proto`, `runner_control.proto`, `runner_ingress.proto`), t
 Gateway's runner proxy and control tunnel, images and the `agentplane/runner` package, Leases and
 Services named for it, and docs. Audiences and wire names are a coordinated wire change, not a find and
 replace.
+
+### `HISTORY_SERVICE_RENAME` — History as a transcript service
+
+**Decision, unscheduled (operator, 2026-10-20 04:05 UTC: "consider maybe").** Consider renaming the
+History Service to a transcript service "or something like that", and history tags to transcript
+tags with it ([tags](sandbox_tags.md#tags)). Deciding before `HISTORY_SANDBOX_RECORD` lands lets the
+Sandbox field take its final name with no CRD rename. A service rename reaches its protos, token
+audiences, images, the `agentplane/history_service` package and docs, and `HISTORY_DATABASE_RENAME`
+would take the new name.
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 

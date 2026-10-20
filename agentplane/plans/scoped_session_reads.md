@@ -7,7 +7,7 @@ history and its Thread fold live in the [History Service](../history_service/REA
 which today serves only its configured reader accounts.
 
 SA-level caller attribution and Sandbox-level authorization are agreed. Reads may request an
-individual Session, but the permission covers its Sandbox's histories. V1 supports reader tags on the
+individual Session, but the permission covers its Sandbox's histories. V1 supports history tags on the
 Sandbox ([design](sandbox_tags.md)), an [`allSandboxes` target](multiagent_communication.md#target-collections-and-launch-enrollment)
 bounded to the rule's namespace and launch defaults at the same link, and no individual-Session
 grants or computed collection selection.
@@ -31,7 +31,7 @@ come from the same History Service.
 
 Retained history must be readable when the original Pod, Sandbox CR and PVC are gone.
 History owns the durable Session ID and its recorded Sandbox association. History keeps
-its own record of each Sandbox with its reader tags, so the facts an authorized historical read
+its own record of each Sandbox with its history tags, so the facts an authorized historical read
 needs survive the live Kubernetes objects ([design](sandbox_tags.md#historys-record-of-a-sandbox)).
 Grants follow the [Kubernetes-resource storage preference](multiagent_communication.md#target-collections-and-launch-enrollment),
 with alternatives allowed on concrete implementation friction. The operator has tentatively floated
@@ -44,7 +44,7 @@ held with the other read decisions.
   use that Sandbox's authorization scope. A Session ID is a lookup address, not a permission
   exception. Do not infer a missing historical association from a reused Sandbox name. Histories
   whose association is unknown remain operator-only until explicitly resolved.
-- Grant SAs `read` on specific Sandboxes, reader tags or every Sandbox in the rule's namespace.
+- Grant SAs `read` on specific Sandboxes, history tags or every Sandbox in the rule's namespace.
   Presets can supply initial tags at authorized launch; a tag removed later stays removed. Tags and
   permission bundles are separate configurable facts, not a compulsory compartment, role hierarchy
   or agent type. Tag writes follow the
@@ -100,7 +100,7 @@ to cover Events beyond its cursor.
 Before exposing scoped reads, finalize the tentative rule schemas, concrete administrative RBAC,
 freshness settings and replacement semantics. Enforce the
 reviewed policy and immutable Sandbox association on every history path. Test two Sessions in one authorized
-Sandbox, an unrelated denied Sandbox, reader tag addition/removal and an ungranted SA
+Sandbox, an unrelated denied Sandbox, history tag addition/removal and an ungranted SA
 that discovers nothing. Cover deleted Sandboxes, same-name replacement, unknown associations,
 raw/native paths, filtering before pagination, initial sync, stale watches, replicas observing
 changes at different times and revocation during a follow. Include

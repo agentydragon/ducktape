@@ -13,8 +13,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   objects and data live, the operator's workflows through each, what Agentplane borrows from
   Kubernetes and what each direction keeps or replaces, what is right under every direction, and the
   experiments that would narrow the choice; no direction chosen
-- [Sandbox tags and History's Sandbox records](sandbox_tags.md) — agreed design for recipient and
-  reader tags on the Sandbox and History's own record of each Sandbox, which outlives it
+- [Sandbox tags and History's Sandbox records](sandbox_tags.md) — agreed design for inbox and
+  history tags on the Sandbox and History's own record of each Sandbox, which outlives it
 - [Native session discovery](native_session_discovery.md) — remaining harness characterization and
   deferred shared-session design with identity, attribution and durability gates
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
