@@ -1925,29 +1925,18 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 
 ```mermaid
 flowchart LR
-    HISTORY_GO_STAGING_CUTOVER[Candidate: cut staging over to the Go History Service]
-    HISTORY_PYTHON_RETIREMENT[Blocked: retire the Python History Service]
-    HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
+    HISTORY_PYTHON_RETIREMENT[Candidate: retire the Python History Service]
+    HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     NOTIFICATION_SERVICE_GO_PORT[Candidate: port the Notification Service to Go]
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
-    HISTORY_GO_STAGING_CUTOVER --> HISTORY_PYTHON_RETIREMENT
-    HISTORY_GO_STAGING_CUTOVER --> HISTORY_READS_FACADE
     NOTIFICATION_SERVICE_GO_PORT -. related .-> NOTIFICATION_SERVICE_SPLIT
 ```
 
-### `HISTORY_GO_STAGING_CUTOVER` — cut staging over to the Go History Service
-
-**Candidate.** The Go service runs on `agentplane-testing`; staging's `image-pins` keeps the Python service by
-dropping the policy marker on the service pin. Backup and restore proof first
-([staging data preservation](../docs/staging_data_preservation.md)); on the restored copy, a Go refold of
-every retained Session equals the rows the Python fold stored. Then image before config. No staging
-database or Session is dropped or recreated.
-
 ### `HISTORY_PYTHON_RETIREMENT` — retire the Python History Service
 
-**Blocked on `HISTORY_GO_STAGING_CUTOVER`.** Delete the Python store, fold,
+**Candidate.** Delete the Python store, fold,
 servicers, ingress, runner and migration image with their BUILD targets and CI roster entries; keep
 `client.py`, which the app and the Notification service use. The app's, Electric's and browser tests run
 on the Go service but still import the Python fold's ORM models, view enums, `channels` and `FOLD_EPOCH`
@@ -1956,7 +1945,7 @@ templates (`docs/adr_delta_settlement.md`, the History README, `native/BUILD.baz
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
 
-**Blocked on `HISTORY_GO_STAGING_CUTOVER`.** Annotate the browser's History
+**Candidate.** Annotate the browser's History
 reads and replace the app's mirror models (`app/threads/view/content.py`,
 `app/threads/events/debug.py`) with the generic proxy. `WatchSessionSummaries` says only that something
 changed, so a browser-facing watch gets frames that carry state. Decide on purpose whether the app's Thread
