@@ -137,25 +137,92 @@ func (s *Store) checkActiveSubscriptionQuota(ctx context.Context, tx *sql.Tx, in
 // state.
 type sourceBinding struct {
 	actionsAfterSequence sql.NullInt64
+	// githubStartPosition is the newest delivery when a GitHub subscription was created: only later ones are owed.
+	githubStartPosition                             sql.NullInt64
+	githubApp, githubInstallation, githubRepository sql.NullInt64
+	githubSubjectKind, githubSubjectKey             sql.NullString
 }
 
-// bindSource is where subscribing meets a source kind. A GitHub subscription also needs the repository's
-// authorization and the shared GitHub rows, which this store does not write, so it is refused here and the
-// creating transaction rolls back.
-func bindSource(source Source) (sourceBinding, error) {
+// checkAccess requires the access a source needs: a GitHub subscription is bound to the repository access it was
+// authorized under, and no other source has any.
+func checkAccess(source Source, access *GitHubAccessKey) error {
+	_, github := source.(GitHubSource)
+	switch {
+	case !github && access != nil:
+		return errors.New("only a GitHub subscription is bound to GitHub access")
+	case github && access == nil:
+		return errors.New("a GitHub subscription is bound to the access it was authorized under")
+	case github && (access.AppID <= 0 || access.InstallationID <= 0 || access.RepositoryID <= 0):
+		return invalid("GitHub access names an App, installation and repository above 0")
+	}
+	return nil
+}
+
+// bindSource is where subscribing meets a source kind. A GitHub subscription also creates, unless they exist, the
+// shared rows it reads through: its installation, repository, grant and subject. The caller holds the GitHub lock.
+func bindSource(ctx context.Context, tx *sql.Tx, source Source, access *GitHubAccessKey) (sourceBinding, error) {
 	switch source := source.(type) {
 	case ActionsSource:
 		return sourceBinding{actionsAfterSequence: sql.NullInt64{Int64: source.AfterSequence, Valid: true}}, nil
+	case GitHubSource:
+		subject, err := NewGitHubSubjectKey(access.RepositoryID, source.Subject)
+		if err != nil {
+			return sourceBinding{}, err
+		}
+		var start int64
+		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(position), 0) FROM github_delivery`).Scan(&start); err != nil {
+			return sourceBinding{}, err
+		}
+		for _, statement := range []struct {
+			query string
+			args  []any
+		}{
+			{
+				`INSERT INTO github_installation (app_id, installation_id, generation) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING`,
+				[]any{access.AppID, access.InstallationID},
+			},
+			{
+				`INSERT INTO github_repository (repository_id, full_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+				[]any{access.RepositoryID, source.Repository},
+			},
+			{
+				`INSERT INTO github_repository_access (app_id, installation_id, repository_id, generation) VALUES ($1, $2, $3, 0)
+					ON CONFLICT DO NOTHING`,
+				[]any{access.AppID, access.InstallationID, access.RepositoryID},
+			},
+			{
+				`INSERT INTO github_subject (repository_id, kind, subject_key, generation) VALUES ($1, $2, $3, 0) ON CONFLICT DO NOTHING`,
+				[]any{subject.RepositoryID, subject.Kind, subject.Key},
+			},
+		} {
+			if _, err := tx.ExecContext(ctx, statement.query, statement.args...); err != nil {
+				return sourceBinding{}, err
+			}
+		}
+		return sourceBinding{
+			githubStartPosition: sql.NullInt64{Int64: start, Valid: true},
+			githubApp:           sql.NullInt64{Int64: access.AppID, Valid: true},
+			githubInstallation:  sql.NullInt64{Int64: access.InstallationID, Valid: true},
+			githubRepository:    sql.NullInt64{Int64: access.RepositoryID, Valid: true},
+			githubSubjectKind:   sql.NullString{String: subject.Kind, Valid: true},
+			githubSubjectKey:    sql.NullString{String: subject.Key, Valid: true},
+		}, nil
 	default:
-		return sourceBinding{}, ErrUnsupportedSource
+		return sourceBinding{}, invalid("source must be an Action request or a GitHub subject")
 	}
 }
 
 // Subscribe creates the owner's subscription, and the Session's inbox with the first one. A creation whose
 // idempotency key the inbox already holds returns that subscription, cancelled or not, if it was created with
 // the same arguments, and fails with ErrIdempotencyKeyReused if not.
-func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscribe) (Subscription, error) {
+//
+// access is the repository access a GitHub subscription was authorized under, which the caller has just read from
+// GitHub, and nil for any other source. A replay of a creation returns the subscription it made and writes no rows.
+func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscribe, access *GitHubAccessKey) (Subscription, error) {
 	if err := body.Validate(); err != nil {
+		return Subscription{}, err
+	}
+	if err := checkAccess(body.Source, access); err != nil {
 		return Subscription{}, err
 	}
 	creation, err := json.Marshal(body)
@@ -164,6 +231,12 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 	}
 	var subscription Subscription
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
+		if _, github := body.Source.(GitHubSource); github {
+			// Lock order: the GitHub lock, then the inbox.
+			if err := githubLock(ctx, tx); err != nil {
+				return err
+			}
+		}
 		inbox, err := s.ensureInbox(ctx, tx, owner, body.DestinationRef, body.SessionID)
 		if err != nil {
 			return err
@@ -190,17 +263,19 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 		if err := s.checkActiveSubscriptionQuota(ctx, tx, inbox.ID, written); err != nil {
 			return err
 		}
-		binding, err := bindSource(body.Source)
+		binding, err := bindSource(ctx, tx, body.Source, access)
 		if err != nil {
 			return err
 		}
 		id := uuid.New()
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO subscription (id, inbox_id, idempotency_key, creation, version, actions_after_sequence,
-				generation, cancelled, expires_at, next_attempt)
-			VALUES ($1, $2, $3, $4::jsonb, 1, $5, 0, false, $6, $7)`,
+				github_start_position, github_app_id, github_installation_id, github_repository_id, github_subject_kind,
+				github_subject_key, generation, cancelled, expires_at, next_attempt)
+			VALUES ($1, $2, $3, $4::jsonb, 1, $5, $6, $7, $8, $9, $10, $11, 0, false, $12, $13)`,
 			id, inbox.ID, body.IdempotencyKey, string(creation), binding.actionsAfterSequence,
-			expiry(written, body.LifetimeDays), written); err != nil {
+			binding.githubStartPosition, binding.githubApp, binding.githubInstallation, binding.githubRepository,
+			binding.githubSubjectKind, binding.githubSubjectKey, expiry(written, body.LifetimeDays), written); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET updated_at = $2, next_attempt = $2 WHERE id = $1`,

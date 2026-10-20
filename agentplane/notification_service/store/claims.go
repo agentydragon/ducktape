@@ -243,25 +243,35 @@ type DueSubscription struct {
 	// ActionsAfterSequence is the sequence of the last event of the Action request this subscription recorded,
 	// which is its creation's `after_sequence` until it records one. Nil for a GitHub subscription.
 	ActionsAfterSequence *int64
+	// GitHubAccess is the access a GitHub subscription was authorized under when it was created, nil for any other.
+	GitHubAccess *GitHubAccessKey
+	// Generation moves on each time GitHub ingress wakes the subscription, so that a read made before can tell
+	// that it may have missed a delivery.
+	Generation int64
 }
 
 // Source returns the claimed inbox's subscription whose source has waited longest past its due time, or nil.
 // Cancelled and expired subscriptions are never due.
 func (s *Store) Source(ctx context.Context, claim Claim) (*DueSubscription, error) {
-	var afterSequence sql.NullInt64
+	var afterSequence, app, installation, repository sql.NullInt64
+	var generation int64
 	subscription, err := scanSubscription(s.db.QueryRowContext(ctx, `
-		SELECT `+subscriptionColumns+`, s.actions_after_sequence FROM subscription s
+		SELECT `+subscriptionColumns+`, s.actions_after_sequence, s.generation, s.github_app_id, s.github_installation_id,
+			s.github_repository_id FROM subscription s
 		WHERE s.inbox_id = $1 AND NOT s.cancelled AND s.expires_at > now() AND s.next_attempt <= now()
-		ORDER BY s.next_attempt LIMIT 1`, claim.ID), now(), &afterSequence)
+		ORDER BY s.next_attempt LIMIT 1`, claim.ID), now(), &afterSequence, &generation, &app, &installation, &repository)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	due := DueSubscription{Subscription: subscription}
+	due := DueSubscription{Subscription: subscription, Generation: generation}
 	if afterSequence.Valid {
 		due.ActionsAfterSequence = &afterSequence.Int64
+	}
+	if app.Valid {
+		due.GitHubAccess = &GitHubAccessKey{AppID: app.Int64, InstallationID: installation.Int64, RepositoryID: repository.Int64}
 	}
 	return &due, nil
 }

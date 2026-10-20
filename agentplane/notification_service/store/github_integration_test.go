@@ -34,6 +34,7 @@ var (
 type githubFixture struct {
 	fixture
 	app, installation, repository int64
+	destination                   DestinationRef
 	inbox                         uuid.UUID
 	state                         *GitHubState
 }
@@ -44,7 +45,7 @@ func newGitHubFixture(t *testing.T) githubFixture {
 	base := 1<<41 + rand.Int64N(1<<40)
 	ref := DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-uid"}
 	return githubFixture{
-		fixture: f, app: base, installation: base + 1, repository: base + 2,
+		fixture: f, app: base, installation: base + 1, repository: base + 2, destination: ref,
 		inbox: f.insertInbox(t, DestinationKey(ref, "test-session"), ref, "test-session"),
 		state: NewGitHubState(f.Store, testFreshness),
 	}
@@ -147,72 +148,27 @@ type githubSubscription struct {
 	Subject     GitHubSubjectKey
 }
 
-// follow subscribes the fixture's inbox to the source, as Python's subscribe does: under the GitHub lock, at the
-// newest delivery, over rows it creates for the grant and the subject if they are not there.
+// follow subscribes the fixture's inbox to the source, under the fixture's grant.
 func (g githubFixture) follow(t *testing.T, source GitHubSource, key string) githubSubscription {
 	t.Helper()
-	return g.followIn(t, g.inbox, source, key)
+	return g.followIn(t, g.destination, source, key)
 }
 
-func (g githubFixture) followIn(t *testing.T, inboxID uuid.UUID, source GitHubSource, key string) githubSubscription {
+// followIn subscribes the inbox of another destination of the fixture's owner to the source.
+func (g githubFixture) followIn(t *testing.T, destination DestinationRef, source GitHubSource, key string) githubSubscription {
 	t.Helper()
 	subject, err := NewGitHubSubjectKey(g.repository, source.Subject)
 	if err != nil {
 		t.Fatal(err)
 	}
-	creation, err := json.Marshal(Subscribe{
-		DestinationRef: DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-uid"},
-		SessionID:      "test-session", IdempotencyKey: key, Source: source, LifetimeDays: 7,
-	})
+	access := g.access()
+	subscription, err := g.Subscribe(t.Context(), g.owner, Subscribe{
+		DestinationRef: destination, SessionID: "test-session", IdempotencyKey: key, Source: source, LifetimeDays: 7,
+	}, &access)
 	if err != nil {
 		t.Fatal(err)
 	}
-	subscription := githubSubscription{ID: uuid.New(), InboxID: inboxID, Source: source, Subject: subject}
-	err = g.transaction(t.Context(), func(tx *sql.Tx) error {
-		if err := githubLock(t.Context(), tx); err != nil {
-			return err
-		}
-		var start int64
-		if err := tx.QueryRowContext(t.Context(), `SELECT coalesce(max(position), 0) FROM github_delivery`).Scan(&start); err != nil {
-			return err
-		}
-		for _, statement := range []struct {
-			query string
-			args  []any
-		}{
-			{
-				`INSERT INTO github_installation (app_id, installation_id, generation) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING`,
-				[]any{g.app, g.installation},
-			},
-			{
-				`INSERT INTO github_repository (repository_id, full_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-				[]any{g.repository, testRepositoryName},
-			},
-			{`INSERT INTO github_repository_access (app_id, installation_id, repository_id, generation) VALUES ($1, $2, $3, 0)
-				ON CONFLICT DO NOTHING`, []any{g.app, g.installation, g.repository}},
-			{
-				`INSERT INTO github_subject (repository_id, kind, subject_key, generation) VALUES ($1, $2, $3, 0) ON CONFLICT DO NOTHING`,
-				[]any{subject.RepositoryID, subject.Kind, subject.Key},
-			},
-			{
-				`INSERT INTO subscription (id, inbox_id, idempotency_key, creation, version, generation, github_start_position,
-					github_app_id, github_installation_id, github_repository_id, github_subject_kind, github_subject_key,
-					cancelled, expires_at, next_attempt)
-				VALUES ($1, $2, $3, $4::jsonb, 1, 0, $5, $6, $7, $8, $9, $10, false, now() + interval '1 day', now())`,
-				[]any{subscription.ID, inboxID, key, string(creation), start, g.app, g.installation, g.repository, subject.Kind, subject.Key},
-			},
-			{`UPDATE inbox SET next_attempt = now() WHERE id = $1`, []any{inboxID}},
-		} {
-			if _, err := tx.ExecContext(t.Context(), statement.query, statement.args...); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return subscription
+	return githubSubscription{ID: subscription.ID, InboxID: subscription.InboxID, Source: source, Subject: subject}
 }
 
 // claimInbox makes the inbox claimed by a worker, as a claim of the inbox does.

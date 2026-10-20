@@ -65,10 +65,10 @@ func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
 	var subscription Subscription
 	check("creating a subscription", true, func() { subscription = f.subscribe(t, creation) })
 	check("replaying a creation", false, func() { f.subscribe(t, creation) })
-	github := body("github")
-	github.Source = GitHubSource{Repository: "owner/repository", Subject: PullRequestSubject{Number: 1}}
+	reused := creation
+	reused.LifetimeDays = 30
 	check("a refused creation", false, func() {
-		if _, err := f.Subscribe(t.Context(), f.owner, github); !errors.Is(err, ErrUnsupportedSource) {
+		if _, err := f.Subscribe(t.Context(), f.owner, reused, nil); !errors.Is(err, ErrIdempotencyKeyReused) {
 			t.Error(err)
 		}
 	})

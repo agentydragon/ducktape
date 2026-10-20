@@ -135,13 +135,15 @@ func TestSubscriptionsPythonCreatedAreReadAndFoundByTheirKey(t *testing.T) {
 			}
 			// The shared state Python wrote for a GitHub subscription is what its status reports: the one grant it is
 			// bound through, not yet validated, and the subject.
+			var access *GitHubAccessKey
 			if _, github := sent.Source.(GitHubSource); github {
 				status := read.GitHub
 				if status == nil || len(status.Access) != 1 || status.Access[0].CurrentlyValid ||
 					status.Access[0].Key.AppID != 1 || status.Access[0].Key.InstallationID != 2 ||
 					status.Subject.Key.RepositoryID != status.Access[0].Key.RepositoryID {
-					t.Errorf("GitHub status = %+v, want the one grant of the binding and its subject", status)
+					t.Fatalf("GitHub status = %+v, want the one grant of the binding and its subject", status)
 				}
+				access = &status.Access[0].Key
 			} else if read.GitHub != nil {
 				t.Errorf("GitHub status = %+v, want none", read.GitHub)
 			}
@@ -153,8 +155,9 @@ func TestSubscriptionsPythonCreatedAreReadAndFoundByTheirKey(t *testing.T) {
 				t.Errorf("listed %+v, want only the subscription Python created", listed)
 			}
 			// The same creation again is the retry of the one Python stored, for either source.
-			if retried := f.subscribe(t, sent); retried.ID != id {
-				t.Errorf("a retry created %s, not the stored %s", retried.ID, id)
+			retried, err := f.Subscribe(t.Context(), f.owner, sent, access)
+			if err != nil || retried.ID != id {
+				t.Errorf("a retry = %+v, %v; want the stored %s", retried, err, id)
 			}
 		})
 	}

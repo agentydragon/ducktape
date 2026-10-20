@@ -175,10 +175,10 @@ func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 
 	later := creation
 	later.IdempotencyKey = "later"
-	if _, err := f.Subscribe(t.Context(), f.owner, later); !errors.Is(err, ErrInboxRetired) {
+	if _, err := f.Subscribe(t.Context(), f.owner, later, nil); !errors.Is(err, ErrInboxRetired) {
 		t.Fatalf("subscribe: error = %v, want ErrInboxRetired", err)
 	}
-	if _, err := f.Subscribe(t.Context(), f.owner, creation); !errors.Is(err, ErrInboxRetired) {
+	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, ErrInboxRetired) {
 		t.Fatalf("replayed subscribe: error = %v, want ErrInboxRetired", err)
 	}
 	if _, err := f.Renew(t.Context(), f.owner, subscription.ID, 2, 7); !errors.Is(err, ErrInboxRetired) {

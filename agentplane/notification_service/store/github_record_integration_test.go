@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -321,8 +322,17 @@ func TestDeliveriesPythonAlreadyRecordedAreNotRecordedAgain(t *testing.T) {
 			if err := json.Unmarshal(identity["action"], &actionValue); err != nil {
 				t.Fatal(err)
 			}
+			// The subject is one the event can be followed on.
+			var subject GitHubSubject = PullRequestSubject{Number: 7}
+			about := onPullRequest(7)
+			switch {
+			case EventName(event) == EventIssues:
+				subject, about = IssueSubject{Number: 7}, onIssue(7)
+			case slices.Contains(refEvents, EventName(event)):
+				subject, about = BranchSubject{Name: "main"}, onBranch("main")
+			}
 			options := func(label string) []deliveryOption {
-				options := []deliveryOption{onPullRequest(7), labelled(label)}
+				options := []deliveryOption{about, labelled(label)}
 				if actionValue != nil {
 					options = append(options, action(*actionValue))
 				}
@@ -330,7 +340,7 @@ func TestDeliveriesPythonAlreadyRecordedAreNotRecordedAgain(t *testing.T) {
 			}
 
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}, EventFilter{Event: EventName(event)}), "follow")
+			sub := g.follow(t, g.source(subject, EventFilter{Event: EventName(event)}), "follow")
 			delivery := g.deliver(t, event, options("recorded by Python")...)
 			// The entry Python wrote for this delivery: its identity with the ids this delivery has, the rest as Python
 			// wrote it.

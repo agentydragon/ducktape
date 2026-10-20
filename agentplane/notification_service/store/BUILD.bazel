@@ -51,6 +51,7 @@ go_test(
         "github_matching_integration_test.go",
         "github_record_integration_test.go",
         "github_state_integration_test.go",
+        "github_subscribe_integration_test.go",
         "golden_vectors_test.go",
         "inboxes_integration_test.go",
         "integration_testmain_test.go",

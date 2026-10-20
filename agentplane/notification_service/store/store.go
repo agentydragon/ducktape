@@ -45,8 +45,6 @@ var (
 	ErrInboxRetired = errors.New("inbox is retired")
 	// ErrCursorOutOfRange is an acknowledgement beyond the inbox's last committed entry.
 	ErrCursorOutOfRange = errors.New("cursor is beyond the committed prefix")
-	// ErrUnsupportedSource is a source this store cannot subscribe to yet.
-	ErrUnsupportedSource = errors.New("unsupported subscription source")
 )
 
 // Quota names a limit in Quotas.

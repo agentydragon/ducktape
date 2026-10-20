@@ -81,7 +81,7 @@ func body(key string) Subscribe {
 
 func (f fixture) subscribe(t *testing.T, creation Subscribe) Subscription {
 	t.Helper()
-	subscription, err := f.Subscribe(t.Context(), f.owner, creation)
+	subscription, err := f.Subscribe(t.Context(), f.owner, creation, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -317,10 +317,10 @@ func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 	g := newGitHubFixture(t)
 	source := g.source(PullRequestSubject{Number: 7})
 	idle := g.follow(t, source, "idle")
-	backedOff := g.followIn(t, g.otherInbox(t, "backed-off"), source, "backed-off")
-	cancelled := g.followIn(t, g.otherInbox(t, "cancelled"), source, "cancelled")
-	expired := g.followIn(t, g.otherInbox(t, "expired"), source, "expired")
-	retired := g.followIn(t, g.otherInbox(t, "retired"), source, "retired")
+	backedOff := g.followIn(t, otherDestination("backed-off"), source, "backed-off")
+	cancelled := g.followIn(t, otherDestination("cancelled"), source, "cancelled")
+	expired := g.followIn(t, otherDestination("expired"), source, "expired")
+	retired := g.followIn(t, otherDestination("retired"), source, "retired")
 	otherApp := newGitHubFixture(t)
 	foreign := otherApp.follow(t, source, "other-app")
 
@@ -369,11 +369,10 @@ func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 	}
 }
 
-// otherInbox is another inbox of the fixture's owner, for a subscription that must not share the fixture's.
-func (g githubFixture) otherInbox(t *testing.T, name string) uuid.UUID {
-	t.Helper()
-	ref := DestinationRef{Namespace: "test-namespace", Name: name, UID: "test-uid"}
-	return g.insertInbox(t, DestinationKey(ref, "test-session"), ref, "test-session")
+// otherDestination is another destination of the fixture's owner, for a subscription that must not share the
+// fixture's inbox.
+func otherDestination(name string) DestinationRef {
+	return DestinationRef{Namespace: "test-namespace", Name: name, UID: "test-uid"}
 }
 
 func TestIngestWakesWorkersOnlyForADeliveryItStores(t *testing.T) {

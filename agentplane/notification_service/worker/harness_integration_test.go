@@ -281,7 +281,7 @@ func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) store
 	subscription, err := h.store.Subscribe(t.Context(), testOwner, store.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: key,
 		Source: store.ActionsSource{RequestID: request}, LifetimeDays: 7,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

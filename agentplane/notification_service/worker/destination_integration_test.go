@@ -96,7 +96,7 @@ func TestStaleDestinationRetiresTheInboxAfterThePersistedRecheck(t *testing.T) {
 				_, err := h.store.Subscribe(t.Context(), testOwner, store.Subscribe{
 					DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "new",
 					Source: store.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
-				})
+				}, nil)
 				if !errors.Is(err, store.ErrInboxRetired) {
 					t.Errorf("Subscribe = %v, want ErrInboxRetired", err)
 				}
@@ -181,7 +181,7 @@ func TestADestinationOutsideTheServedNamespaceIsRejectedWithoutALookup(t *testin
 	subscription, err := h.store.Subscribe(t.Context(), testOwner, store.Subscribe{
 		DestinationRef: store.DestinationRef{Namespace: "elsewhere", Name: testSandbox, UID: testSandboxUID},
 		SessionID:      testSession, IdempotencyKey: "first", Source: store.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
