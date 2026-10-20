@@ -108,12 +108,14 @@ def _database(scope: Construct) -> None:
         ref=DATABASE,
         image_name=None,
         placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh",
+        # Instances whose PVs predate the move to SSD stay on their HDD worker until rebuilt; a
+        # changed class only applies to PVCs CNPG creates afterwards.
+        storage_class="local-path-ovh-ssd",
         size="2Gi",
         initdb=cnpg.same_owner_initdb("attic"),
         wal_archive=True,
-        # Attic autocommits several statements per ~64 KiB chunk. With a commit per fsync on this HDD
-        # tier, a large upload saturates the disk until Attic's 10-connection pool times out (a 500).
+        # Attic autocommits several statements per ~64 KiB chunk. With a commit per fsync on the HDD
+        # tier, a large upload saturated the disk until Attic's 10-connection pool timed out (a 500).
         # A crash loses under a second of commits: cache rows a client re-pushes.
         postgresql=ClusterSpecPostgresql(parameters={"synchronous_commit": "off"}),
     )
@@ -143,7 +145,7 @@ def _server(scope: Construct, *, storage: s3.PrivateBucket) -> None:
                 metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
-                    # Co-located with SeaweedFS and attic-db on OVH kimsufi workers.
+                    # In the OVH zone with SeaweedFS and attic-db.
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     # Stateless S3-backed service; allow control-plane nodes as overflow capacity.
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
