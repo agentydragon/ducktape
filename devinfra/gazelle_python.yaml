@@ -49,7 +49,6 @@ manifest:
     attr: attrs
     attrs: attrs
     authlib: authlib
-    av: av
     babel: babel
     bcrypt: bcrypt
     beancount: beancount
@@ -464,4 +463,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: d81909beab3bf78fa0c96bb04087b5c83602295802ae489449206286184c5dff
+integrity: 8472fd00e7e72b96a985c9eb8e79e16da303cd0aeb642f1f2e1fccb854e5b3ef

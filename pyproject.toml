@@ -195,9 +195,6 @@ dependencies = [
     # devinfra visual-review publisher — RGBA decode + pixel diff.
     "Pillow",
 
-    # x/neuron_tracking — video decoding and lossless annotation exports.
-    "av>=17.0.1",
-
     # augur (financial-futures simulator) — calibration's binomial confidence intervals
     "statsmodels>=0.15.0",
     # augur — NumPyro PPL spike (a JAX-backed probabilistic programming
