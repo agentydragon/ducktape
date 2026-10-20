@@ -1758,9 +1758,10 @@ advisory lock that frees itself when the connection drops. Write the comparison 
 behavior under a Postgres outage, the shared Lease RBAC rule in `runner_gateway_workload.py`); the Lease
 has no recorded comparison against doing this in Postgres.
 
-[Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) proposes retiring the `dispatcher-<uid>` Lease
-instead, by making the replica that holds a Sandbox's runner connection the owner, which this node's question then no
-longer needs. If the operator declines that part, this node stays as written.
+[Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) retires the `dispatcher-<uid>` Lease
+instead, by making the replica that holds a Sandbox's runner connection the owner; the operator chose that on
+2026-10-20 07:34 UTC, so this node's question is superseded. The node finishes with that plan's holder-owned
+delivery step once the operator approves the whole design.
 
 ## Scope and retirement of stale gates
 
@@ -1818,9 +1819,9 @@ into one gRPC service whose queue is optional. The operator proposed the last (2
 [Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) recommends it: queue on stores, delivers and
 is the only mode that wakes; queue off delivers at once or refuses with the queue's own reasons. The plan covers
 every command state in both modes, per-Session ordering, cancellation, duplicate opens, sender and replica failure,
-retries and the database inventory, which shows queue off removes the Gateway's database and not CNPG. It ends
-with one question: should the replica holding a Sandbox's runner connection own its delivery, retiring the
-`dispatcher-<uid>` Lease?
+retries and the database inventory, which shows queue off removes the Gateway's database and not CNPG. The
+operator chose that the replica holding a Sandbox's runner connection owns its delivery, retiring the
+`dispatcher-<uid>` Lease (2026-10-20 07:34 UTC); the rest awaits review.
 
 No implementation starts, and no implementation nodes are added, before the operator approves. On approval
 `DISPATCHER_OWNERSHIP_IN_POSTGRES` and `PROXY_START_METHODS_DISPATCHER_ONLY` finish with the plan's steps;

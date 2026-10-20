@@ -1,7 +1,7 @@
 # Dispatcher and Gateway as one service
 
-Status: **proposed, not reviewed.** The operator asked for this write-up (2026-10-20 07:14 UTC) and nothing
-here starts before they approve it. It answers the open decision `DISPATCHER_PERSISTENCE_MODEL_DESIGN` in the
+Status: **proposed; ownership chosen, the rest not reviewed.** The operator asked for this write-up (2026-10-20
+07:14 UTC) and chose holder-owned delivery (07:34 UTC). Nothing here starts before they approve the whole design. It answers the open decision `DISPATCHER_PERSISTENCE_MODEL_DESIGN` in the
 [task DAG](task_dag.md). Read at `devel` dd032c46. The plan burns down: a step leaves when it lands, and the file
 goes with the last one, after its durable content moves to the Gateway and Dispatcher READMEs and the
 [session-control ADR](../docs/adr_sandbox_session_control.md).
@@ -134,7 +134,8 @@ Gateway.
 
 Queue off needs no owner: nothing is stored, and only the replica holding the runner can act.
 
-Queue on, **proposed:** the owner of a Sandbox's queue is the replica holding its runner connection.
+Queue on, **chosen by the operator, 2026-10-20 07:34 UTC:** the owner of a Sandbox's queue is the replica holding
+its runner connection.
 
 - `<sandbox>-runner` stays. It names the holder, carries the connection epoch (its `leaseTransitions`,
   `gateway/records.go:134`) and the runner's facts, and the controller reads it for `RunnerConnected`.
@@ -158,8 +159,7 @@ they coincide one time in N, so the self-call stays and two ownership mechanisms
 
 **Relation to `DISPATCHER_OWNERSHIP_IN_POSTGRES`.** That node asks whether Postgres could own what the Lease owns,
 and found its fence cannot choose a live owner. This design answers differently: the connection chooses the live
-owner, so the Lease and the question both go. If the ownership part is declined, the node stays as written and
-only the API and the modes proceed.
+owner, so the Lease and the question both go.
 
 ## What queue off removes
 
@@ -209,9 +209,3 @@ are independent once step 3 has landed.
 On approval, the ADR row about the Dispatcher being its own service is replaced, the Gateway and Dispatcher
 READMEs describe the modes, and `DISPATCHER_OWNERSHIP_IN_POSTGRES` and `PROXY_START_METHODS_DISPATCHER_ONLY` leave
 the DAG with the steps that finish them.
-
-## Question for review
-
-Should the replica holding a Sandbox's runner connection own its delivery, retiring the `dispatcher-<uid>` Lease
-(recommended), or should the Lease stay for now and only the API and the modes change? The rest of this design
-holds either way.
