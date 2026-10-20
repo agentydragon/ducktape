@@ -1,0 +1,794 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "title": "How to read this dashboard",
+      "type": "text",
+      "options": {
+        "mode": "markdown",
+        "content": "IO pressure is Linux PSI: the share of wall time in which tasks were stalled waiting for block IO. **Some** means at least one task was stalled; **full** means every non-idle task was stalled at once, so the workload made no progress. Node PSI comes from node-exporter (`node_pressure_io_*`); pod PSI comes from cAdvisor's pod-level cgroup (`container_pressure_io_*{container=\"\"}`). Pod values are not additive: two pods stalled at the same instant each show 100%.\n\nDisk panels come from node-exporter `node_disk_*`, mapped to the Kubernetes node via the node-exporter pod. `hdd`/`ssd` is the kernel's per-device rotational flag from `node_disk_info`; virtual disks (`vd*`) usually report rotational regardless of what backs them. Device-mapper, loop and optical devices are left out. Latency is the mean service time per completed request over 5 minutes, empty when nothing completed; utilization is the fraction of time the device had IO in flight, which saturates at 100% on a spinning disk but not reliably on SSDs with deep queues."
+      },
+      "id": 1,
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "title": "Node IO pressure",
+      "type": "row",
+      "collapsed": false,
+      "panels": [],
+      "id": 2,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      }
+    },
+    {
+      "title": "Node IO stall: some",
+      "description": "Share of time at least one task on the node waited on IO (node_pressure_io_waiting_seconds_total).",
+      "type": "timeseries",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (node) (rate(node_pressure_io_waiting_seconds_total[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "id": 3,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      }
+    },
+    {
+      "title": "Node IO stall: full",
+      "description": "Share of time every non-idle task on the node waited on IO (node_pressure_io_stalled_seconds_total).",
+      "type": "timeseries",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (node) (rate(node_pressure_io_stalled_seconds_total[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "id": 4,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      }
+    },
+    {
+      "title": "Pod IO pressure",
+      "type": "row",
+      "collapsed": false,
+      "panels": [],
+      "id": 5,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      }
+    },
+    {
+      "title": "Top pods by IO stall: some",
+      "description": "Pod cgroup PSI from cAdvisor; the ${topk} pods with the highest current value.",
+      "type": "timeseries",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(${topk}, max by (namespace, pod, node) (rate(container_pressure_io_waiting_seconds_total{container=\"\", pod!=\"\", node=~\"$node\"}[5m])))",
+          "legendFormat": "{{namespace}}/{{pod}} ({{node}})",
+          "refId": "A"
+        }
+      ],
+      "id": 6,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      }
+    },
+    {
+      "title": "Top pods by IO stall: full",
+      "description": "Pod cgroup PSI from cAdvisor; the ${topk} pods with the highest current value.",
+      "type": "timeseries",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(${topk}, max by (namespace, pod, node) (rate(container_pressure_io_stalled_seconds_total{container=\"\", pod!=\"\", node=~\"$node\"}[5m])))",
+          "legendFormat": "{{namespace}}/{{pod}} ({{node}})",
+          "refId": "A"
+        }
+      ],
+      "id": 7,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      }
+    },
+    {
+      "title": "Pods by IO stall now",
+      "description": "Current 5-minute pod PSI. Rows are the ${topk} pods with the highest 'some' stall.",
+      "type": "table",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Some",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "topk(${topk}, max by (namespace, pod, node) (rate(container_pressure_io_waiting_seconds_total{container=\"\", pod!=\"\", node=~\"$node\"}[5m])))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "topk(1000, max by (namespace, pod, node) (rate(container_pressure_io_stalled_seconds_total{container=\"\", pod!=\"\", node=~\"$node\"}[5m])))",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "pod",
+            "mode": "inner"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time 1": true,
+              "Time 2": true,
+              "namespace 2": true,
+              "node 2": true
+            },
+            "indexByName": {
+              "namespace 1": 0,
+              "pod": 1,
+              "node 1": 2,
+              "Value #A": 3,
+              "Value #B": 4
+            },
+            "renameByName": {
+              "namespace 1": "namespace",
+              "node 1": "node",
+              "Value #A": "Some",
+              "Value #B": "Full"
+            }
+          }
+        }
+      ],
+      "id": 8,
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      }
+    },
+    {
+      "title": "Disks",
+      "type": "row",
+      "collapsed": false,
+      "panels": [],
+      "id": 9,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      }
+    },
+    {
+      "title": "Disk utilization",
+      "description": "Fraction of time the device had IO in flight (node_disk_io_time_seconds_total).",
+      "type": "timeseries",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          },
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (node, media, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "legendFormat": "{{node}} {{device}} ({{media}})",
+          "refId": "A"
+        }
+      ],
+      "id": 10,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      }
+    },
+    {
+      "title": "Disk queue depth",
+      "description": "Average number of requests in flight (node_disk_io_time_weighted_seconds_total).",
+      "type": "timeseries",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (node, media, device) (((rate(node_disk_io_time_weighted_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "legendFormat": "{{node}} {{device}} ({{media}})",
+          "refId": "A"
+        }
+      ],
+      "id": 11,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      }
+    },
+    {
+      "title": "Disk read latency",
+      "description": "Mean time per completed read over 5 minutes.",
+      "type": "timeseries",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (node, media, device) (((rate(node_disk_read_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) / rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "legendFormat": "{{node}} {{device}} ({{media}})",
+          "refId": "A"
+        }
+      ],
+      "id": 12,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 44
+      }
+    },
+    {
+      "title": "Disk write latency",
+      "description": "Mean time per completed write over 5 minutes.",
+      "type": "timeseries",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (node, media, device) (((rate(node_disk_write_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) / rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "legendFormat": "{{node}} {{device}} ({{media}})",
+          "refId": "A"
+        }
+      ],
+      "id": 13,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 44
+      }
+    },
+    {
+      "title": "Disk IOPS",
+      "description": "Completed reads plus writes per second.",
+      "type": "timeseries",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "iops",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (node, media, device) (((rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) + rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "legendFormat": "{{node}} {{device}} ({{media}})",
+          "refId": "A"
+        }
+      ],
+      "id": 14,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 53
+      }
+    },
+    {
+      "title": "Disk throughput",
+      "description": "Bytes read plus written per second.",
+      "type": "timeseries",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (node, media, device) (((rate(node_disk_read_bytes_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) + rate(node_disk_written_bytes_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "legendFormat": "{{node}} {{device}} ({{media}})",
+          "refId": "A"
+        }
+      ],
+      "id": 15,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 53
+      }
+    },
+    {
+      "title": "Disks now",
+      "description": "Current 5-minute values per disk. Latency is empty for a disk with no completed requests in the window.",
+      "type": "table",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Utilization"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Read latency"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Write latency"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "IOPS"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "iops"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Utilization",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "max by (node, media, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "max by (node, media, device) (((rate(node_disk_read_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) / rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        },
+        {
+          "expr": "max by (node, media, device) (((rate(node_disk_write_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) / rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "C"
+        },
+        {
+          "expr": "max by (node, media, device) (((rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) + rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "format": "table",
+          "instant": true,
+          "refId": "D"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "node": 0,
+              "device": 1,
+              "media": 2
+            },
+            "renameByName": {
+              "Value #A": "Utilization",
+              "Value #B": "Read latency",
+              "Value #C": "Write latency",
+              "Value #D": "IOPS"
+            }
+          }
+        }
+      ],
+      "id": 16,
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      }
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["cluster", "storage", "io", "pressure"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": ["$__all"]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "mimir"
+        },
+        "definition": "label_values(kube_node_info, node)",
+        "includeAll": true,
+        "label": "Node",
+        "multi": true,
+        "name": "node",
+        "query": "label_values(kube_node_info, node)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": "10",
+          "value": "10"
+        },
+        "label": "Pods",
+        "name": "topk",
+        "options": [
+          {
+            "selected": true,
+            "text": "10",
+            "value": "10"
+          },
+          {
+            "selected": false,
+            "text": "25",
+            "value": "25"
+          },
+          {
+            "selected": false,
+            "text": "50",
+            "value": "50"
+          }
+        ],
+        "query": "10,25,50",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "IO pressure",
+  "uid": "io-pressure",
+  "version": 1,
+  "weekStart": ""
+}

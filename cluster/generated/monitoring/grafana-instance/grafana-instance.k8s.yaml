@@ -401,6 +401,22 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
+  name: io-pressure
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: io-pressure.json
+    name: io-pressure-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_MIMIR
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
   name: home-network-overview
   namespace: monitoring
 spec:

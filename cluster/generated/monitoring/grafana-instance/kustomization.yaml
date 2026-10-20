@@ -27,6 +27,10 @@ configMapGenerator:
     namespace: monitoring
     files:
       - cluster-disk-usage.json
+  - name: io-pressure-dashboard
+    namespace: monitoring
+    files:
+      - io-pressure.json
   - name: home-network-overview-dashboard
     namespace: monitoring
     files:
