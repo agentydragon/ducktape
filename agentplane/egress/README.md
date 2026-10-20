@@ -7,7 +7,7 @@ one decision is in <../docs/egress_composition.md>. Transport choices and reject
 <docs/design.md>.
 
 The rules API serves [`/llms.txt`](docs/agents/llms.txt) and its linked credential/refusal guide
-under `/docs/agents/`. Update the guide when credential presentation or refusal behavior changes.
+and HTTP reference under `/docs/agents/`. Update the guide when credential presentation or refusal behavior changes.
 
 ```sh
 bbr test //agentplane/egress/...

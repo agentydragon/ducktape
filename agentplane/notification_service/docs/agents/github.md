@@ -1,29 +1,16 @@
 # Follow GitHub activity
 
-Check `GET /v1/sources` on Notifications first. Use GitHub only when advertised. The App's repository
-access and webhook installation coverage determine what can arrive, including on forks. An
-access/installation or source error means monitoring is not reliable. Any authenticated workload
-can follow repositories accessible to the App, including private repositories.
-
-Use the common creation envelope in [subscriptions](subscriptions.md), replacing `source` with:
-
-```json
-{
-  "provider": "github",
-  "repository": "owner/repo",
-  "subject": { "kind": "pull_request", "number": 123 }
-}
-```
+Check `GET /v1/sources` on Notifications first ([HTTP reference](http_api.md)). Use GitHub only when
+advertised. The App's repository access and webhook installation coverage determine what can arrive,
+including on forks. An access/installation or source error means monitoring is not reliable. Any
+authenticated workload can follow repositories accessible to the App, including private repositories.
 
 `agentplane notifications subscribe github pr OWNER/REPO#123` creates the pull-request subscription
 for your Session (`AGENTPLANE_DESTINATION`; or `--destination JSON`). Its repeated invocation
 returns the same subscription, `--event NAME[:ACTION[,ACTION]]` replaces the default events, and it
-exits `4` when the response is a cancelled subscription (pass a new `--key`). Other subjects are
-`{"kind":"issue","number":123}`, `{"kind":"branch","name":"devel"}`,
-or `{"kind":"commit","sha":"FULL_40_CHARACTER_COMMIT_SHA"}`. Use real repository identifiers.
-Omit `events` for subject defaults. For PR comments only, add
-`"events":[{"event":"issue_comment","actions":["created"]}]` to the source. Use the advertised
-schema for valid subject/filter combinations; workflow-job notifications require an explicit filter.
+exits `4` when the response is a cancelled subscription (pass a new `--key`). The other subjects
+(issue, branch, commit) take `POST /v1/subscriptions` with the GitHub source in the
+[HTTP reference](http_api.md#create-a-subscription). Use real repository identifiers.
 
 **Subscribe first, then read current GitHub state.** This is live follow from subscription creation,
 not historical webhook replay. Confirm creation before relying on monitoring. After reading current

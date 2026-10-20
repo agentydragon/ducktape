@@ -17,7 +17,7 @@ and notices for normal retention and inspection; it never acknowledges them or r
 an inbox to a replacement Sandbox.
 
 Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked subscription, inbox-handling and
-GitHub workflows served under `/docs/agents/`. Update the guides when those contracts change.
+GitHub workflows and an HTTP reference served under `/docs/agents/`. Update the guides when those contracts change.
 
 - [API, authorization, persistence and delivery semantics](docs/api.md)
 - [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.

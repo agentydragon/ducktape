@@ -6,10 +6,10 @@ Use this service's base URL and workload Bearer placeholder from your platform i
 through the configured egress proxy. Your identity comes from authentication; a Session ID does
 not select an owner or grant access. The operator routes are not a workload API.
 
-Find operations with `GET /v1/action-groups` and fetch the chosen Action's argument schema with
-`GET /v1/action-groups/{group}/actions/{action}`. Check `GET /v1/action-policy` for your current
+Find operations with `agentplane actions list` and fetch the chosen Action's argument schema with
+`agentplane actions show GROUP/ACTION`. Check `agentplane actions policy` for your current
 bindings, expiry, and exact argument constraints. A catalog entry alone grants nothing.
-`agentplane actions --help` lists the command for each route below.
+`agentplane actions --help` lists every command.
 
 Prefer your own Kubernetes access, allowed egress credentials, or matching auto-approved Actions
 before submitting a request that needs an operator click. A submitted request's decision and
@@ -21,8 +21,9 @@ execution result are authoritative; approval alone is not success.
 - [Recovery and cancellation](/docs/agents/recovery.md): Read after a lost response, timeout, uncertain execution, or before switching to an alternative.
 - [Kubernetes and temporary grants](/docs/agents/kubernetes.md): Read when checking Kubernetes permissions, using admin Actions, or requesting additional PolicySets.
 
-## Discovery
+## Reference
 
+- [HTTP reference](/docs/agents/http_api.md): Routes, request fields and query parameters, for a harness without the command.
 - [OpenAPI](/openapi.json): Request and response schemas.
 - [Action catalog](/v1/action-groups): Available operations; fetch individual argument schemas as needed.
 - [Current Action policy](/v1/action-policy): Your effective auto-approval bindings, not a dry-run guarantee.

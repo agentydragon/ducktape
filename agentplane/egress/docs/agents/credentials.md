@@ -1,8 +1,7 @@
 # Use credentials through the proxy
 
-Read `GET /v1/rules` on the Egress rules base URL from your platform instructions, authenticated
-with `Authorization: Bearer agentplane-credential-agentplane-workload`. Preserve the configured
-proxy and CA trust for this call and subsequent protected traffic.
+Run `agentplane egress rules` ([HTTP reference](http_api.md) for the raw request and response fields).
+Preserve the configured proxy and CA trust for this call and subsequent protected traffic.
 
 ## Build the request from a live rule
 

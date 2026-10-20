@@ -1,17 +1,16 @@
 # Action recovery and cancellation
 
-Paths are relative to the Actions base URL; use the workload authentication in your platform
-instructions. Keep the request ID and original idempotency key until the task is settled.
+Commands are `agentplane actions …`; the routes behind them are in the [HTTP reference](http_api.md).
+Keep the request ID and original idempotency key until the task is settled.
 
 ## Lost submission response
 
-Find the original request with
-`GET /v1/action-requests?idempotency_key={original_key}` (`agentplane actions get --key KEY`).
-A repeated POST is refused; neither a retry POST nor a new key recovers the response. After a lost
-response `agentplane actions submit` makes one such lookup itself and exits `15` when it finds
-nothing; run `get --key` later and never resubmit. Admission can still be running when a lookup
-initially finds nothing: use a bounded lookup of the same key and report unresolved submission
-rather than issuing another operation.
+Find the original request with `agentplane actions get --key KEY`, using the original key. A repeated
+submission is refused; neither a retry nor a new key recovers the response. After a lost response
+`agentplane actions submit` makes one such lookup itself and exits `15` when it finds nothing; run
+`get --key` later and never resubmit. Admission can still be running when a lookup initially finds
+nothing: use a bounded lookup of the same key and report unresolved submission rather than issuing
+another operation.
 
 Read the original request and its events to establish the decision and execution outcome. A
 transport error, expired wait, or `execution_unknown` does not prove that execution failed to
@@ -19,10 +18,9 @@ start. Do not repeat work whose outcome is uncertain.
 
 ## Abandoning an Action or choosing an alternative
 
-Cancel your own request with `POST /v1/action-requests/{id}/cancel` (no body), `agentplane actions cancel ID`,
-or MCP `cancel_action_request(request_id)`. Inspect both `outcome` and the returned request receipt;
-the command exits `0` for `cancelled` and `already_cancelled`, `16` for `too_late` and `17` for
-`already_finished`:
+Cancel your own request with `agentplane actions cancel ID` (or MCP `cancel_action_request(request_id)`).
+Inspect both `outcome` and the returned request receipt; the command exits `0` for `cancelled` and
+`already_cancelled`, `16` for `too_late` and `17` for `already_finished`:
 
 | Outcome                            | What to do                                                                                                                                    |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |

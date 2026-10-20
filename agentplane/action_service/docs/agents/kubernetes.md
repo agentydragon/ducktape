@@ -24,10 +24,10 @@ appropriate auto-approved Action before submitting an Action requiring manual ap
 
 The `kubernetes_admin` group performs operations under linked operator authority. Its presence
 in the catalog does not grant an alternate ServiceAccount or establish auto-approval. Discover the
-chosen operation at `GET /v1/action-groups/kubernetes_admin/actions/{action}` on Actions. Examples
+chosen operation with `agentplane actions show kubernetes_admin/ACTION`. Examples
 include `pods_log`, `pods_exec`, and `resources_get`.
 
-Check your `/v1/action-policy` against the exact operation and arguments. If manual approval is
+Check `agentplane actions policy` against the exact operation and arguments. If manual approval is
 needed, explain why your own RBAC and other available routes cannot perform it, and submit only
 the missing operation/scope using the [Action lifecycle](action_lifecycle.md). For a database
 migration check, prefer a read-only query in the named database Pod over an administrative
@@ -68,6 +68,6 @@ set and duration in the Action title; durations are usually under a few hours.
 Approval is not a live grant. After execution succeeds, inspect the new binding with
 `kubectl get policybinding <name> -n <namespace> -o yaml` or a `resources_get` Action. Wait for the
 relevant `ActionsReady`, `EgressReady`, or `KubernetesReady` condition to be `True`, then confirm
-effective access through `/v1/action-policy`, the Egress rules API, or the exact `kubectl auth can-i`
-check. Reconciliation can take a moment. The Policy Controller deletes the binding at `expiresAt`;
+effective access through `agentplane actions policy`, `agentplane egress rules`, or the exact
+`kubectl auth can-i` check. Reconciliation can take a moment. The Policy Controller deletes the binding at `expiresAt`;
 if the task finishes sooner, delete only that temporary binding with `resources_delete`.

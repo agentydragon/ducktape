@@ -1,14 +1,13 @@
 # Submit an Action and establish its result
 
-Paths on this page are relative to the Actions base URL in your platform instructions. Use its
-workload Bearer placeholder through the configured egress proxy.
+The commands are `agentplane actions …`; each command's `--help` lists its flags and exit statuses.
+Without the command, the routes behind them are in the [HTTP reference](http_api.md).
 
 ## Discover and check access
 
-1. Find the operation with `GET /v1/action-groups` (`agentplane actions list`). Fetch its current
-   argument schema with `GET /v1/action-groups/{group}/actions/{action}`
-   (`agentplane actions show GROUP/ACTION`); do not guess arguments.
-2. Inspect `GET /v1/action-policy` (`agentplane actions policy`): if `synced` is true, match the exact Action group/name and
+1. Find the operation with `agentplane actions list`. Fetch its current argument schema with
+   `agentplane actions show GROUP/ACTION`; do not guess arguments.
+2. Inspect `agentplane actions policy`: if `synced` is true, match the exact Action group/name and
    intended arguments against `auto_approve_if`. Check argument-schema constraints,
    owner/repository constraints, and any server-side repository visibility requirement.
 3. A confirmed match is expected to auto-approve. No match, or `synced: false`, requires operator
@@ -21,16 +20,12 @@ workload Bearer placeholder through the configured egress proxy.
 
 ## Submit once
 
-`POST /v1/action-requests` takes a unique caller-chosen `idempotency_key`, an `action` identity
-(`group` and `name`), `arguments` matching the discovered schema, and a human-readable `title`.
-Use OpenAPI for the complete envelope and field limits. The operator sees the title and optional
-`description`; explain the operation and necessary scope without putting credentials in either.
-Keep the key and returned request ID with the task state.
-
-`agentplane actions submit GROUP/ACTION --title TEXT --arguments JSON` does this with a generated
-`idempotency_key` that it writes to stderr before sending (`--key` supplies your own). `--arguments`
-also takes `@FILE` or `-`; the service validates them against the schema. It prints the receipt,
-and `--wait` follows with the wait below.
+`agentplane actions submit GROUP/ACTION --title TEXT --arguments JSON` takes `arguments` matching
+the discovered schema (`@FILE` or `-` read them from a file or stdin; the service validates them). The
+operator sees the title and optional `--description`; explain the operation and necessary scope
+without putting credentials in either. It generates an idempotency key and writes it to stderr before
+sending (`--key` supplies your own), then prints the receipt; `--wait` follows with the wait below.
+Keep the key and the returned request ID with the task state.
 
 A repeated submission key is refused, rather than replaying the original response. If the response
 is lost, use the [recovery procedure](recovery.md); do not resubmit or invent a replacement key.
@@ -38,19 +33,14 @@ is lost, use the [recovery procedure](recovery.md); do not resubmit or invent a 
 ## Wait and verify
 
 `decision_pending` means waiting for an operator. An allow decision is not execution success.
-Read `GET /v1/action-requests/{id}` for current decision, execution, and result. Retained events are
-at `GET /v1/action-requests/{id}/events?after_sequence={last_sequence}`; advance that sequence only
-after recording the returned events, and page after the last sequence when needed. Your requests,
-newest first, are at `GET /v1/action-requests`, optionally with `state`; pass `limit` (at most 128)
-and, for the next page, `after_id` set to the last request ID you already have.
+`agentplane actions get ID` reads the current decision, execution, and result. Advance
+`agentplane actions events ID --after SEQUENCE` only after recording the returned events.
+`agentplane actions requests` lists yours, newest first, optionally by `--state`.
 
-Add `wait_seconds` (a number, at most the instance's maximum; over it is refused) and `wait_until`
-(`decision` or `terminal`, the default) to the receipt read to hold it until that condition. A
-deadline returns the current receipt with status 200, which is not a failure and does not cancel
-anything. `agentplane actions wait {ID | --key KEY} [--until decision|terminal]` does this within
-`--timeout` (30 seconds by default) and `agentplane actions result` waits for `terminal` and prints
-the stored result; `agentplane actions requests` and `agentplane actions events ID --after SEQUENCE`
-page the two lists above.
+`agentplane actions wait {ID | --key KEY} [--until decision|terminal]` holds until that condition
+within `--timeout` (30 seconds by default), and `agentplane actions result` waits for `terminal` and
+prints the stored result. A deadline prints the current receipt and exits `10`; it is not a failure
+and does not cancel anything.
 
 Exit status is the platform's answer, never the Action's own output: `0` means the awaited condition
 holds and the Action succeeded; `10` the deadline passed first (the receipt is on stdout); `11`

@@ -33,19 +33,18 @@ The `agentplane` command calls these APIs for you. `agentplane actions`, `agentp
 and `agentplane egress` read the base URLs and placeholders above from your `AGENTPLANE_*`
 environment variables, so a command needs no URL, header or proxy flag. Start with
 `agentplane --help`; each command's `--help` says what it does and what its exit status means.
-`curl` against the URLs above stays supported, and the guides show each command beside the route it
-wraps.
 
-Each service serves `/llms.txt` for its overview and links to workflow guides. Actions and
-Notifications also serve `/openapi.json` for request/response schemas; the egress rules response is
-described in egress `/llms.txt`. Read the relevant service's index when starting a workflow, then
-only the guides needed for that task; you do not need to fetch every index at startup.
+Each service serves `/llms.txt` for its overview and links to workflow guides. For a harness
+without the command, and for the routes it lacks, each also serves an HTTP reference at
+`/docs/agents/http_api.md`, and Actions and Notifications serve `/openapi.json` for
+request/response schemas. Read the relevant service's index when starting a workflow, then only the
+guides needed for that task; you do not need to fetch every index at startup.
 
 | Task | Starting point |
 | --- | --- |
-| Call a protected service or diagnose an egress refusal | `agentplane egress rules` (egress `GET /v1/rules`); egress `/llms.txt` explains credential presentation |
-| Find an Action and its arguments | `agentplane actions list`, then `agentplane actions show GROUP/ACTION` (Actions `GET /v1/action-groups`, `GET /v1/action-groups/{group}/actions/{action}`) |
-| Establish expected auto-approval | `agentplane actions policy` (Actions `GET /v1/action-policy`): match the exact Action and intended arguments |
+| Call a protected service or diagnose an egress refusal | `agentplane egress rules`; egress `/llms.txt` explains credential presentation |
+| Find an Action and its arguments | `agentplane actions list`, then `agentplane actions show GROUP/ACTION` |
+| Establish expected auto-approval | `agentplane actions policy`: match the exact Action and intended arguments |
 | Submit, recover, cancel, or follow an Action | Actions `/llms.txt`: lifecycle and recovery guides |
 | Check Kubernetes access or request a temporary grant | `kubectl auth can-i`; Actions `/llms.txt`: Kubernetes and grants guide |
 | Subscribe to Actions or GitHub, or handle an inbox notice | Notifications `/llms.txt`; `GET /v1/sources` advertises enabled providers |
@@ -61,8 +60,8 @@ For user-authorized work, prefer your existing Kubernetes ServiceAccount permiss
 egress credentials, or matching auto-approved Actions over an Action requiring an operator click.
 Choose a narrow route and scope. Technical access does not authorize unrelated or destructive work.
 
-Before protected network access, read your current egress rules with the workload placeholder
-above. Follow the returned host, method, path, credential identity and presentation. Send each
+Before protected network access, read your current egress rules with `agentplane egress rules`.
+Follow the returned host, method, path, credential identity and presentation. Send each
 placeholder literally in its declared location and shape; do not replace it with `$TOKEN`,
 `<redacted>`, or another invented value. Never obtain, print, or persist substituted credentials,
 bypass the proxy, disable certificate verification, or impersonate the operator.

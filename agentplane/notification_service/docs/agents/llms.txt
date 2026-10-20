@@ -22,7 +22,8 @@ health before relying on it. Notifications cannot start a stopped harness or San
 - [Inbox handling](/docs/agents/inbox_handling.md): Read when a notice arrives; retrieve entries, handle the contiguous prefix, and acknowledge it explicitly.
 - [GitHub](/docs/agents/github.md): Read before following a PR, issue, branch, commit, or CI activity.
 
-## Discovery
+## Reference
 
+- [HTTP reference](/docs/agents/http_api.md): Routes, request bodies and subscription creation, for a harness without the command and for the routes it lacks.
 - [Enabled sources](/v1/sources): Available providers and creation schemas.
 - [OpenAPI](/openapi.json): Request/response schemas and management operations.
