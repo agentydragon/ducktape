@@ -3,9 +3,11 @@ package runner
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -36,6 +38,8 @@ type guestSeed struct {
 	ProxyURL             string   `json:"proxy_url"`
 	PlatformInstructions string   `json:"platform_instructions"`
 	ConsoleAutologin     bool     `json:"console_autologin"`
+	// HarnessEnv is added to the harness environment; it may not set a name the guest owns.
+	HarnessEnv map[string]string `json:"harness_env"`
 }
 
 // GuestConfiguration reads the KubeVirt guest's public config and Sandbox launch
@@ -96,6 +100,12 @@ func GuestConfiguration(path, launchPath string) (Config, Endpoint, Endpoint, er
 	identity := guestAgentUID
 	group := guestAgentGID
 	harnessEnvironment := guestHarnessEnvironment(proxyURL)
+	for _, name := range slices.Sorted(maps.Keys(seed.HarnessEnv)) {
+		if _, owned := harnessEnvironment[name]; owned {
+			return Config{}, Endpoint{}, Endpoint{}, fmt.Errorf("invalid guest config at %s: harness_env must not set %s, which the guest owns", path, name)
+		}
+		harnessEnvironment[name] = seed.HarnessEnv[name]
+	}
 	config := Config{
 		StateDir:           guestStateDir,
 		Launch:             launch,

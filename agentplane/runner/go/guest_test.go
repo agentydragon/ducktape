@@ -20,6 +20,7 @@ func TestGuestConfigurationBuildsIsolatedHarnessSettings(t *testing.T) {
 			"proxy_url":             "http://proxy.test:3128/",
 			"platform_instructions": "Test platform guidance.",
 			"console_autologin":     true,
+			"harness_env":           map[string]string{"AGENTPLANE_ACTIONS_URL": "http://actions.test:8080"},
 		},
 		map[string]any{
 			"sandbox":   map[string]string{"namespace": "test", "name": "sandbox", "uid": "sandbox-uid"},
@@ -65,6 +66,9 @@ func TestGuestConfigurationBuildsIsolatedHarnessSettings(t *testing.T) {
 	if config.HarnessEnvironment["KUBECONFIG"] != guestKubeconfig {
 		t.Fatalf("guest harness KUBECONFIG = %q", config.HarnessEnvironment["KUBECONFIG"])
 	}
+	if got := config.HarnessEnvironment["AGENTPLANE_ACTIONS_URL"]; got != "http://actions.test:8080" {
+		t.Fatalf("guest harness AGENTPLANE_ACTIONS_URL = %q", got)
+	}
 	if _, exists := config.HarnessEnvironment["ANTHROPIC_AUTH_TOKEN"]; exists {
 		t.Error("guest runner configuration leaked the real Anthropic token into harness environment")
 	}
@@ -90,6 +94,7 @@ func TestGuestConfigurationRejectsInvalidSeedAndLaunch(t *testing.T) {
 		{name: "zero port", seed: map[string]any{"proxy_url": "http://proxy.test:0"}},
 		{name: "empty platform instructions", seed: map[string]any{"platform_instructions": ""}},
 		{name: "unknown seed field", seed: map[string]any{"unexpected": "value"}},
+		{name: "harness_env overriding a guest-owned name", seed: map[string]any{"harness_env": map[string]string{"PATH": "/elsewhere"}}},
 		{name: "missing Sandbox identity", launch: map[string]any{"sandbox": map[string]string{"namespace": "test", "name": "sandbox"}}},
 		{name: "empty bootstrap", launch: map[string]any{"bootstrap": ""}},
 		{name: "unknown launch field", launch: map[string]any{"unexpected": "value"}},
