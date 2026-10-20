@@ -90,6 +90,14 @@ const (
 	ConflictAlreadyDecided
 	// ConflictNoPendingDispatch is an allowed request whose Execution does not await dispatch.
 	ConflictNoPendingDispatch
+	// ConflictNotDispatchable is a claim on an Execution that awaits dispatch although its request is not allowed.
+	ConflictNotDispatchable
+	// ConflictNotStartable is a start of an Execution that is not claimed, or already started.
+	ConflictNotStartable
+	// ConflictLeaseNotOwned is a completion that does not present the lease granted at claim time.
+	ConflictLeaseNotOwned
+	// ConflictNotFinishable is a completion of an Execution that is neither in flight nor awaiting reconciliation.
+	ConflictNotFinishable
 )
 
 // ConflictError is a request the state of the request or of the key's history refuses; retrying it unchanged

@@ -107,6 +107,57 @@ func TestWritesThatChangeWhatReadersFollowWakeThemAndOthersDoNot(t *testing.T) {
 	})
 }
 
+func TestExecutionWritesWakeFollowersAndNeverDispatchers(t *testing.T) {
+	f := newFixture(t)
+	check := observeWakeups(t, f)
+	refuse := func(ActionIdentity) bool { return false }
+
+	var allowed ActionRequest
+	var claim ExecutionClaim
+	check("allowing", true, true, func() { allowed = f.allowed(t, caller, "executed") })
+	check("a claim the dispatch filter refuses", false, false, func() {
+		if claim, err := f.ClaimExecution(t.Context(), allowed.ID, testExecutor, leaseWindow, refuse); claim != nil || err != nil {
+			t.Errorf("claim %+v, %v", claim, err)
+		}
+	})
+	check("claiming", true, false, func() { claim = f.claim(t, allowed.ID) })
+	check("claiming again", false, false, func() {
+		if claim, err := f.ClaimExecution(t.Context(), allowed.ID, testExecutor, leaseWindow, anywhere); claim != nil || err != nil {
+			t.Errorf("claim %+v, %v", claim, err)
+		}
+	})
+	check("renewing a lease", false, false, func() { f.heartbeat(t, allowed.ID, claim.Lease) })
+	check("an executor heartbeat", false, false, func() {
+		if err := f.RecordExecutorHeartbeat(t.Context(), testExecutor); err != nil {
+			t.Error(err)
+		}
+	})
+	check("starting", true, false, func() { f.markRunning(t, allowed.ID) })
+	check("sweeping a live lease", false, false, func() { f.expire(t) })
+	check("finishing", true, false, func() { f.finish(t, allowed.ID, claim.Lease, ExecutionSucceeded) })
+
+	var lapsed ActionRequest
+	check("allowing another", true, true, func() { lapsed = f.allowed(t, caller, "lapsed") })
+	check("claiming for a lapsed lease", true, false, func() { f.claimFor(t, lapsed.ID, -time.Second) })
+	check("sweeping a lapsed lease", true, false, func() { f.expire(t) })
+
+	grant := ExternalGrant{
+		Caller: caller.Account, Issuer: "https://issuer.test.example", ClientID: "test-client",
+		ConnectionID: uuid.New(), GrantID: uuid.New(), Revision: 1,
+	}
+	var granted ActionRequest
+	check("allowing a granted request", true, true, func() {
+		f.grants.set(grant, true)
+		granted = f.decide(t, f.submitInput(t, caller, input("granted"), Admission{RequestID: uuid.New(), ExternalGrant: &grant}), VerdictAllow)
+	})
+	f.grants.set(grant, false)
+	check("a claim whose grant was revoked", true, false, func() {
+		if claim, err := f.ClaimExecution(t.Context(), granted.ID, testExecutor, leaseWindow, anywhere); claim != nil || err != nil {
+			t.Errorf("claim %+v, %v", claim, err)
+		}
+	})
+}
+
 func TestAnUpdateNamesItsRequestAndADispatchNamesNothing(t *testing.T) {
 	f := newFixture(t)
 	listener := pq.NewListener(f.url, time.Second, time.Minute, nil)

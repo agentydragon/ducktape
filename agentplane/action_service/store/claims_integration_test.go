@@ -1,0 +1,337 @@
+package store
+
+import (
+	"errors"
+	"fmt"
+	"reflect"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/lib/pq"
+)
+
+const (
+	testExecutor = "test-executor"
+	leaseWindow  = 30 * time.Second
+)
+
+func anywhere(ActionIdentity) bool { return true }
+
+func (f fixture) claim(t *testing.T, id uuid.UUID) ExecutionClaim {
+	t.Helper()
+	return f.claimFor(t, id, leaseWindow)
+}
+
+// claimFor claims the Execution for a lease window of the given length, which may already have lapsed.
+func (f fixture) claimFor(t *testing.T, id uuid.UUID, window time.Duration) ExecutionClaim {
+	t.Helper()
+	claim, err := f.ClaimExecution(t.Context(), id, testExecutor, window, anywhere)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil {
+		t.Fatal("the execution was not claimed")
+	}
+	return *claim
+}
+
+func (f fixture) markRunning(t *testing.T, id uuid.UUID) ExecutionRequest {
+	t.Helper()
+	payload, err := f.MarkRunning(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return payload
+}
+
+func (f fixture) finish(t *testing.T, id uuid.UUID, lease Lease, state ExecutionState) {
+	t.Helper()
+	if err := f.FinishExecution(t.Context(), id, lease, ExecutionOutcome{State: state}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f fixture) pendingDispatches(t *testing.T) []uuid.UUID {
+	t.Helper()
+	ids, err := f.PendingDispatches(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ids
+}
+
+func TestClaimReservesTheOnlyExecutionAndGrantsItsLease(t *testing.T) {
+	f := newFixture(t)
+	allowed := f.allowed(t, caller, "claimed")
+
+	before := time.Now()
+	claim := f.claim(t, allowed.ID)
+	after := time.Now()
+	if claim.RequestID != allowed.ID || claim.ExecutorID != testExecutor || claim.Token == uuid.Nil ||
+		claim.ExpiresAt.Before(before.Add(leaseWindow).Add(-time.Millisecond)) || claim.ExpiresAt.After(after.Add(leaseWindow)) {
+		t.Errorf("claim %+v", claim)
+	}
+	got := f.get(t, allowed.ID)
+	if got.State != StateDispatching || got.Version != allowed.Version+1 || got.Execution.State != ExecutionDispatching ||
+		got.Execution.StartedAt != nil || got.Execution.CompletedAt != nil {
+		t.Errorf("request %+v, execution %+v", got, got.Execution)
+	}
+	if f.count(t, `SELECT count(*) FROM action_execution
+		WHERE request_id = $1 AND executor_id = $2 AND lease_token = $3 AND lease_expires_at = $4 AND heartbeat_at IS NOT NULL`,
+		allowed.ID, claim.ExecutorID, claim.Token, claim.ExpiresAt) != 1 {
+		t.Error("the lease was not recorded as the claim reports it")
+	}
+	events := f.events(t, allowed.ID)
+	if !slices.Equal(eventStates(events), []ActionState{StateDecisionPending, StateAllowed, StateDispatching}) ||
+		events[2].Actor != nil || !events[2].At.Equal(got.UpdatedAt) {
+		t.Errorf("events %+v", events)
+	}
+	if len(f.pendingDispatches(t)) != 0 {
+		t.Error("a claimed execution still awaits dispatch")
+	}
+
+	// The Execution has one claim: another executor finds nothing to dispatch and the lease stays the first's.
+	second, err := f.ClaimExecution(t.Context(), allowed.ID, "test-other-executor", leaseWindow, anywhere)
+	if err != nil || second != nil {
+		t.Errorf("second claim = %+v, %v", second, err)
+	}
+	if len(f.events(t, allowed.ID)) != 3 || f.count(t, `SELECT count(*) FROM action_execution WHERE lease_token = $1`, claim.Token) != 1 {
+		t.Error("the second claim wrote")
+	}
+}
+
+func TestClaimRefusesWhatItCannotReserve(t *testing.T) {
+	f := newFixture(t)
+	pending := f.submit(t, caller, "pending")
+	stranded := f.allowed(t, caller, "stranded")
+	f.exec(t, `UPDATE action_request SET state = 'cancelled' WHERE id = $1`, stranded.ID)
+
+	for name, test := range map[string]struct {
+		id       uuid.UUID
+		executor string
+		filter   func(ActionIdentity) bool
+		want     func(error) bool
+	}{
+		"an unknown request":             {uuid.New(), testExecutor, anywhere, func(err error) bool { return errors.Is(err, ErrNotFound) }},
+		"a request that was not decided": {pending.ID, testExecutor, anywhere, func(err error) bool { return errors.Is(err, ErrNotFound) }},
+		"an execution of a request that is not allowed": {stranded.ID, testExecutor, anywhere, func(err error) bool {
+			return conflictReason(err) == ConflictNotDispatchable
+		}},
+		"no executor": {stranded.ID, "", anywhere, func(err error) bool { return errors.Is(err, ErrInvalid) }},
+		"no filter":   {stranded.ID, testExecutor, nil, func(err error) bool { return errors.Is(err, ErrInvalid) }},
+	} {
+		claim, err := f.ClaimExecution(t.Context(), test.id, test.executor, leaseWindow, test.filter)
+		if claim != nil || !test.want(err) {
+			t.Errorf("%s: claim %+v, %v", name, claim, err)
+		}
+	}
+	if f.count(t, `SELECT count(*) FROM action_execution WHERE state = 'pending_dispatch'`) != 1 {
+		t.Error("a refused claim changed an execution")
+	}
+}
+
+func TestClaimLeavesWhatTheDispatchFilterRefusesToBeClaimedElsewhere(t *testing.T) {
+	f := newFixture(t)
+	allowed := f.allowed(t, caller, "filtered")
+	var asked []ActionIdentity
+
+	claim, err := f.ClaimExecution(t.Context(), allowed.ID, testExecutor, leaseWindow, func(action ActionIdentity) bool {
+		asked = append(asked, action)
+		return false
+	})
+	if err != nil || claim != nil || !reflect.DeepEqual(asked, []ActionIdentity{allowed.Action}) {
+		t.Errorf("claim %+v, %v after the filter was asked about %v", claim, err, asked)
+	}
+	if !reflect.DeepEqual(f.get(t, allowed.ID), allowed) || !slices.Equal(f.pendingDispatches(t), []uuid.UUID{allowed.ID}) {
+		t.Error("a refused claim changed the request")
+	}
+	f.claim(t, allowed.ID)
+}
+
+func TestAnExternalGrantIsRecheckedAtClaim(t *testing.T) {
+	grant := ExternalGrant{
+		Caller: caller.Account, Issuer: "https://issuer.test.example", ClientID: "test-client",
+		ConnectionID: uuid.New(), GrantID: uuid.New(), Revision: 1,
+	}
+	granted := func(t *testing.T) (fixture, ActionRequest) {
+		f := newFixture(t)
+		f.grants.set(grant, true)
+		request := f.submitInput(t, caller, input("granted"), Admission{RequestID: uuid.New(), ExternalGrant: &grant})
+		return f, f.decide(t, request, VerdictAllow)
+	}
+
+	for _, available := range []bool{true, false} {
+		t.Run(fmt.Sprintf("revoked, action dispatchable here: %v", available), func(t *testing.T) {
+			f, allowed := granted(t)
+			f.grants.set(grant, false)
+			asked := false
+
+			claim, err := f.ClaimExecution(t.Context(), allowed.ID, testExecutor, leaseWindow, func(ActionIdentity) bool {
+				asked = true
+				return available
+			})
+			if err != nil || claim != nil || asked {
+				t.Fatalf("claim %+v, %v, filter asked %v", claim, err, asked)
+			}
+			failed := f.get(t, allowed.ID)
+			execution := failed.Execution
+			if failed.State != StateFailed || !reflect.DeepEqual(failed.Decision, allowed.Decision) || *failed.ExternalGrant != grant ||
+				execution.State != ExecutionFailed || execution.StartedAt != nil || execution.CompletedAt == nil ||
+				!execution.CompletedAt.Equal(failed.UpdatedAt) {
+				t.Errorf("request %+v, execution %+v", failed, execution)
+			}
+			sameJSON(t, execution.Error, loadGolden(t).GrantNotAuthorizedError)
+			if got := eventStates(f.events(t, allowed.ID)); !slices.Equal(got, []ActionState{StateDecisionPending, StateAllowed, StateFailed}) {
+				t.Errorf("events %v", got)
+			}
+			if again, err := f.ClaimExecution(t.Context(), allowed.ID, testExecutor, leaseWindow, anywhere); err != nil || again != nil {
+				t.Errorf("claim after the failure = %+v, %v", again, err)
+			}
+			if len(f.pendingDispatches(t)) != 0 {
+				t.Error("a failed request still awaits dispatch")
+			}
+		})
+	}
+
+	t.Run("authorized, with the request locked for the check", func(t *testing.T) {
+		f, allowed := granted(t)
+		f.grants.during = func() {
+			_, err := f.db.ExecContext(t.Context(), `SELECT 1 FROM action_request WHERE id = $1 FOR UPDATE NOWAIT`, allowed.ID)
+			var failure *pq.Error
+			if !errors.As(err, &failure) || failure.Code != "55P03" {
+				t.Errorf("the request was not locked while the grant was checked: %v", err)
+			}
+		}
+		f.claim(t, allowed.ID)
+		if len(f.grants.calls) != 2 {
+			t.Errorf("the grant was checked %d times, want once at submission and once at claim", len(f.grants.calls))
+		}
+	})
+
+	t.Run("claimed work continues after revocation", func(t *testing.T) {
+		f, allowed := granted(t)
+		claim := f.claim(t, allowed.ID)
+		f.grants.set(grant, false)
+
+		payload := f.markRunning(t, allowed.ID)
+		f.finish(t, allowed.ID, claim.Lease, ExecutionSucceeded)
+		if payload.ExternalGrant == nil || *payload.ExternalGrant != grant || f.get(t, allowed.ID).State != StateSucceeded ||
+			len(f.grants.calls) != 2 {
+			t.Errorf("payload %+v, %d grant checks", payload, len(f.grants.calls))
+		}
+	})
+}
+
+func TestTwoClaimersHaveOneWinner(t *testing.T) {
+	f := newFixture(t)
+	allowed := f.allowed(t, caller, "contended")
+	release := f.holdRequest(t, allowed.ID)
+
+	claimant := func(executor string) <-chan *ExecutionClaim {
+		return async(func() *ExecutionClaim {
+			claim, err := f.ClaimExecution(t.Context(), allowed.ID, executor, leaseWindow, anywhere)
+			if err != nil {
+				t.Errorf("%s: %v", executor, err)
+			}
+			return claim
+		})
+	}
+	first, second := claimant("test-executor-a"), claimant("test-executor-b")
+	f.awaitBlocked(t, 2)
+	release()
+
+	a, b := await(t, first), await(t, second)
+	if (a == nil) == (b == nil) {
+		t.Fatalf("claims %+v and %+v, want exactly one", a, b)
+	}
+	winner := a
+	if winner == nil {
+		winner = b
+	}
+	if f.count(t, `SELECT count(*) FROM action_execution WHERE executor_id = $1 AND lease_token = $2`, winner.ExecutorID, winner.Token) != 1 ||
+		len(f.events(t, allowed.ID)) != 3 {
+		t.Error("the execution does not hold exactly the winner's claim")
+	}
+}
+
+func TestAClaimAndACancellationHaveOneWinner(t *testing.T) {
+	for _, claimFirst := range []bool{true, false} {
+		name := "cancellation queued first"
+		if claimFirst {
+			name = "claim queued first"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			allowed := f.allowed(t, caller, "raced")
+			release := f.holdRequest(t, allowed.ID)
+
+			claim := func() <-chan *ExecutionClaim {
+				return async(func() *ExecutionClaim {
+					claim, err := f.ClaimExecution(t.Context(), allowed.ID, testExecutor, leaseWindow, anywhere)
+					if err != nil {
+						t.Error(err)
+					}
+					return claim
+				})
+			}
+			cancel := func() <-chan CancellationResult {
+				return async(func() CancellationResult {
+					result, err := f.Cancel(t.Context(), allowed.ID, caller)
+					if err != nil {
+						t.Error(err)
+					}
+					return result
+				})
+			}
+			var claimed <-chan *ExecutionClaim
+			var cancelled <-chan CancellationResult
+			// Lock waiters are served in the order they queued.
+			if claimFirst {
+				claimed = claim()
+				f.awaitBlocked(t, 1)
+				cancelled = cancel()
+			} else {
+				cancelled = cancel()
+				f.awaitBlocked(t, 1)
+				claimed = claim()
+			}
+			f.awaitBlocked(t, 2)
+			release()
+
+			got, cancellation := await(t, claimed), await(t, cancelled)
+			wantOutcome, wantState := OutcomeTooLate, StateDispatching
+			if !claimFirst {
+				wantOutcome, wantState = OutcomeCancelled, StateCancelled
+			}
+			if (got != nil) != claimFirst || cancellation.Outcome != wantOutcome || f.get(t, allowed.ID).State != wantState {
+				t.Errorf("claim %+v, cancellation %s, state %s", got, cancellation.Outcome, f.get(t, allowed.ID).State)
+			}
+			if !claimFirst && len(f.pendingDispatches(t)) != 0 {
+				t.Error("a cancelled request still awaits dispatch")
+			}
+		})
+	}
+}
+
+func TestPendingDispatchesAreTheAllowedRequestsNobodyClaimedOldestFirst(t *testing.T) {
+	f := newFixture(t)
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var waiting []uuid.UUID
+	for i, key := range []string{"newest", "oldest", "middle"} {
+		allowed := f.allowed(t, caller, key)
+		f.exec(t, `UPDATE action_execution SET created_at = $2 WHERE request_id = $1`, allowed.ID, base.Add([]time.Duration{2, 0, 1}[i]*time.Minute))
+		waiting = append(waiting, allowed.ID)
+	}
+	claimed, cancelled := f.allowed(t, caller, "claimed"), f.allowed(t, caller, "cancelled")
+	f.claim(t, claimed.ID)
+	f.cancel(t, cancelled.ID)
+	f.decide(t, f.submit(t, caller, "denied"), VerdictDeny)
+	f.submit(t, caller, "undecided")
+
+	want := []uuid.UUID{waiting[1], waiting[2], waiting[0]}
+	if got := f.pendingDispatches(t); !slices.Equal(got, want) {
+		t.Errorf("pending dispatches = %v, want %v", got, want)
+	}
+}

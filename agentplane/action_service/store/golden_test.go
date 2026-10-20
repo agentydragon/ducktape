@@ -26,6 +26,36 @@ func TestVocabulariesAreThoseOfTheStoredColumns(t *testing.T) {
 	}
 }
 
+func TestTheSweepsReasonsAreAmongThoseOfPython(t *testing.T) {
+	python := loadGolden(t).Enums["unknown_outcome_reason"]
+	for _, reason := range []UnknownOutcomeReason{UnknownExecutorLost, UnknownLeaseExpired} {
+		if !slices.Contains(python, string(reason)) {
+			t.Errorf("Python has no reason %s among %v", reason, python)
+		}
+	}
+}
+
+func TestTerminalStatesGiveTheirRequestsThePythonState(t *testing.T) {
+	vectors := loadGolden(t).TerminalStates
+	got := map[ExecutionState]ActionState{}
+	for _, vector := range vectors {
+		got[ExecutionState(vector.ExecutionState)] = ActionState(vector.ActionState)
+	}
+	if !reflect.DeepEqual(got, terminalActionStates) || len(vectors) != len(terminalActionStates) {
+		t.Errorf("Python maps %v, the store %v", got, terminalActionStates)
+	}
+}
+
+func TestEndedExecutionsHoldTheErrorsPythonWrites(t *testing.T) {
+	vectors := loadGolden(t)
+	for _, vector := range vectors.UnknownOutcomes {
+		t.Run(vector.Reason, func(t *testing.T) {
+			sameJSON(t, []byte(unknownOutcomeError(UnknownOutcomeReason(vector.Reason))), vector.Error)
+		})
+	}
+	sameJSON(t, []byte(grantNotAuthorizedError), vectors.GrantNotAuthorizedError)
+}
+
 func toStrings[T ~string](values []T) []string {
 	strings := make([]string, len(values))
 	for i, value := range values {

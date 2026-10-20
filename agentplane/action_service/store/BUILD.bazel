@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "cancel.go",
         "decisions.go",
+        "executions.go",
         "models.go",
         "requests.go",
         "store.go",
@@ -34,9 +35,11 @@ go_test(
     size = "medium",
     srcs = [
         "cancel_integration_test.go",
+        "claims_integration_test.go",
         "decisions_integration_test.go",
         "golden_vectors_test.go",
         "integration_testmain_test.go",
+        "leases_integration_test.go",
         "python_rows_integration_test.go",
         "reads_integration_test.go",
         "submit_integration_test.go",

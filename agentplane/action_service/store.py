@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from binascii import Error as Base64Error
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,12 +61,17 @@ class ActionConflictError(Exception):
     pass
 
 
-_TERMINAL_ACTION_STATE = {
+TERMINAL_ACTION_STATE = {
     ExecutionState.SUCCEEDED: ActionState.SUCCEEDED,
     ExecutionState.FAILED: ActionState.FAILED,
     ExecutionState.CANCELLED: ActionState.CANCELLED,
     ExecutionState.EXECUTION_UNKNOWN: ActionState.EXECUTION_UNKNOWN,
 }
+
+
+def unknown_outcome_error(reason: UnknownOutcomeReason) -> dict[str, JsonValue]:
+    """`action_execution.error` of an Execution whose outcome could not be observed."""
+    return {"kind": reason, "message": "dispatch outcome unknown; not replayed"}
 
 
 class ActionStore:
@@ -410,7 +415,7 @@ class ActionStore:
         is accepted as a reconciliation, still gated on presenting the same lease — it
         never starts a second effect, only records the truth about the one attempt made.
         """
-        if result.state not in _TERMINAL_ACTION_STATE:
+        if result.state not in TERMINAL_ACTION_STATE:
             raise ValueError(f"executor returned non-terminal state {result.state}")
         async with self._sessions.begin() as session:
             row = await session.scalar(
@@ -433,7 +438,7 @@ class ActionStore:
             execution.state = result.state
             execution.result = result.result
             execution.error = result.error
-            row.state = _TERMINAL_ACTION_STATE[result.state]
+            row.state = TERMINAL_ACTION_STATE[result.state]
             row.version += 1
             row.updated_at = now
             _record_event(session, row, now)
@@ -472,7 +477,7 @@ class ActionStore:
                     else UnknownOutcomeReason.LEASE_EXPIRED
                 )
                 execution.state = ExecutionState.EXECUTION_UNKNOWN
-                execution.error = {"kind": reason, "message": "dispatch outcome unknown; not replayed"}
+                execution.error = unknown_outcome_error(reason)
                 execution.completed_at = now
                 row.state = ActionState.EXECUTION_UNKNOWN
                 row.version += 1

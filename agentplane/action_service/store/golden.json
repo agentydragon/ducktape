@@ -318,6 +318,12 @@
    "deny",
    "no_opinion"
   ],
+  "unknown_outcome_reason": [
+   "execution_outcome_unknown",
+   "coordinator_stopped",
+   "lease_expired",
+   "executor_lost"
+  ],
   "verdict": [
    "allow",
    "deny"
@@ -664,6 +670,9 @@
    "valid": false
   }
  ],
+ "grant_not_authorized_error": {
+  "code": "external_grant_not_authorized"
+ },
  "history_cursors": {
   "decoded": [
    {
@@ -2437,6 +2446,40 @@
    },
    "name": "arguments as null",
    "valid": false
+  }
+ ],
+ "terminal_states": [
+  {
+   "action_state": "succeeded",
+   "execution_state": "succeeded"
+  },
+  {
+   "action_state": "failed",
+   "execution_state": "failed"
+  },
+  {
+   "action_state": "cancelled",
+   "execution_state": "cancelled"
+  },
+  {
+   "action_state": "execution_unknown",
+   "execution_state": "execution_unknown"
+  }
+ ],
+ "unknown_outcomes": [
+  {
+   "error": {
+    "kind": "executor_lost",
+    "message": "dispatch outcome unknown; not replayed"
+   },
+   "reason": "executor_lost"
+  },
+  {
+   "error": {
+    "kind": "lease_expired",
+    "message": "dispatch outcome unknown; not replayed"
+   },
+   "reason": "lease_expired"
   }
  ]
 }
