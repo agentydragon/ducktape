@@ -316,16 +316,9 @@ type EntryTimes struct {
 func (s *Store) PendingEntryTimes(ctx context.Context, claim Claim) (*EntryTimes, error) {
 	var times *EntryTimes
 	err := s.fencedTransaction(ctx, claim, func(tx *sql.Tx, held heldInbox) error {
-		var first, last sql.NullTime
-		if err := tx.QueryRowContext(ctx,
-			`SELECT min(created_at), max(created_at) FROM entry WHERE inbox_id = $1 AND cursor > $2`,
-			held.ID, max(held.Covered, held.Acknowledged, held.ExpiredThrough)).Scan(&first, &last); err != nil {
-			return err
-		}
-		if first.Valid {
-			times = &EntryTimes{First: first.Time.UTC(), Last: last.Time.UTC()}
-		}
-		return nil
+		var err error
+		times, _, err = entriesBeyond(ctx, tx, held.ID, max(held.Covered, held.Acknowledged, held.ExpiredThrough))
+		return err
 	})
 	return times, err
 }

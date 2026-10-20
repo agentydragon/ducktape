@@ -159,10 +159,7 @@ func (w *Worker) noticeDueAt(ctx context.Context, claim store.Claim) (*time.Time
 	if err != nil || pending == nil {
 		return nil, err
 	}
-	due := pending.Last.Add(seconds(w.Settings.NoticeDebounce.QuietSeconds))
-	if byMaxWait := pending.First.Add(seconds(w.Settings.NoticeDebounce.MaxWaitSeconds)); byMaxWait.Before(due) {
-		due = byMaxWait
-	}
+	due := w.Settings.NoticeDebounce.Debounce().Window(*pending).Due
 	return &due, nil
 }
 

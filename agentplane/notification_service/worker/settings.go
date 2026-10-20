@@ -3,6 +3,8 @@ package worker
 import (
 	"errors"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 )
 
 // Settings are the worker's tunables, as the service's settings file holds them: the service's config embeds
@@ -22,6 +24,11 @@ type NoticeDebounce struct {
 	// MaxWaitSeconds caps the wait from the oldest unannounced entry, however busy the inbox is. It does not
 	// bound runner outages or delivery retries.
 	MaxWaitSeconds float64 `mapstructure:"max_wait_seconds"`
+}
+
+// Debounce is the same waits as the store's operator reads take, so they report what the worker does.
+func (d NoticeDebounce) Debounce() store.Debounce {
+	return store.Debounce{Quiet: seconds(d.QuietSeconds), MaxWait: seconds(d.MaxWaitSeconds)}
 }
 
 func DefaultSettings() Settings {
