@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -77,7 +78,7 @@ func subjectOf(ctx context.Context, verifier *identity.Verifier, authorization [
 // EgressCredential, a second source say, reaches a sandbox only when someone writes it in here.
 func responseOf(subject policyapi.ServiceAccountRef, policies []policy.EffectivePolicy) (*egressrulespb.GetRulesResponse, error) {
 	response := &egressrulespb.GetRulesResponse{
-		Subject:  &egressrulespb.Subject{Namespace: subject.Namespace, Name: subject.Name},
+		Subject:  &sandboxespb.ServiceAccount{Namespace: subject.Namespace, Name: subject.Name},
 		Policies: make([]*egressrulespb.Policy, len(policies)),
 	}
 	for i, effective := range policies {

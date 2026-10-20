@@ -4,7 +4,7 @@
 // in `runner_service.proto`.
 syntax = "proto3";
 
-package agentplane.proto.runner_control;
+package agentplane.runner_gateway;
 
 import "agentplane/proto/grpc_tunnel.proto";
 import "google/protobuf/timestamp.proto";
@@ -18,7 +18,7 @@ message RunnerFrame {
   oneof frame {
     Hello hello = 1;  // first frame, exactly once
     RunnerHeartbeat heartbeat = 3;
-    agentplane.proto.grpc_tunnel.Reply reply = 5;  // to a `call` on this stream
+    agentplane.proto.Reply reply = 5;  // to a `call` on this stream
   }
   reserved 2, 4;
   reserved "receipt", "control_result";
@@ -28,7 +28,7 @@ message ServiceFrame {
   oneof frame {
     Welcome welcome = 1;  // reply to Hello, exactly once
     Heartbeat heartbeat = 3;
-    agentplane.proto.grpc_tunnel.Call call = 7;  // a `Runner` call
+    agentplane.proto.Call call = 7;  // a `Runner` call
   }
   reserved 2, 4, 5, 6;
   reserved "deliver", "open_follow", "close_follow", "control";

@@ -1,7 +1,7 @@
 // The History Service's read boundary over retained Session history.
 syntax = "proto3";
 
-package agentplane.proto.history_service;
+package agentplane.history_service;
 
 import "agentplane/proto/event.proto";
 import "agentplane/proto/event_log.proto";
@@ -40,7 +40,7 @@ message ReadSessionEventsResponse {
   // Runner entries in ascending cursor order. A cursor missing between them, between
   // after_cursor and the first of them, or after the last of them when the page returns fewer
   // entries than its limit, is covered by a range of one of `settlements` or of `removed`.
-  repeated .agentplane.proto.event_log.EventEntry entries = 2;
+  repeated .agentplane.proto.EventEntry entries = 2;
   // Absent for imported history without a retained runner attachment.
   SessionFeedState feed_state = 3;
   // Every settlement whose completion entry or settled range falls after after_cursor and at or
@@ -76,11 +76,11 @@ message SettledDeltas {
 }
 
 message SessionFeedState {
-  .agentplane.proto.runner.Attached attached = 1;
+  .agentplane.proto.Attached attached = 1;
   reserved 2;
   reserved "ended";
   // The incarnation's seal, once history committed every entry through it. Sticky.
-  .agentplane.proto.runner.Sealed sealed = 3;
+  .agentplane.proto.Sealed sealed = 3;
 }
 
 message ReadSessionObservationsRequest {
@@ -141,8 +141,8 @@ message SessionSummary {
   google.protobuf.Timestamp last_event_at = 8;
   // Inferred from model-originated events, not an observed provider request.
   google.protobuf.Timestamp last_model_activity_at = 9;
-  optional .agentplane.proto.event.TurnStatus last_turn_status = 10;
-  .agentplane.proto.runner.Attached attached = 11;
+  optional .agentplane.proto.TurnStatus last_turn_status = 10;
+  .agentplane.proto.Attached attached = 11;
   FeedStatus feed_status = 12;
   // With FEED_STATUS_FAILED: why the runner's history was rejected.
   optional string feed_error = 13;
@@ -279,7 +279,7 @@ message SessionOpened {
 message NativeFrame {
   uint64 source_sequence = 1;
   // Absent when the retained entry at that sequence carries no native frame.
-  .agentplane.proto.event_log.EventEntry entry = 2;
+  .agentplane.proto.EventEntry entry = 2;
 }
 
 message ReadNativeFramesResponse {

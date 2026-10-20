@@ -4,7 +4,7 @@
 
 syntax = "proto3";
 
-package agentplane.proto.grpc_tunnel;
+package agentplane.proto;
 
 import "google/protobuf/duration.proto";
 

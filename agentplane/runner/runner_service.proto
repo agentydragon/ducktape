@@ -3,7 +3,7 @@
 // retires every Sandbox on the old protocol.
 syntax = "proto3";
 
-package agentplane.proto.runner_control;
+package agentplane.runner;
 
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
@@ -11,19 +11,19 @@ import "agentplane/proto/runner.proto";
 // Served by the runner through its outbound control stream. Sessions are durable;
 // process startup, native readiness and reconciliation are runner-owned after admission.
 service Runner {
-  rpc ListSessions(agentplane.proto.runner.ListSessionsRequest)
-      returns (agentplane.proto.runner.ListSessionsResponse);
+  rpc ListSessions(agentplane.proto.ListSessionsRequest)
+      returns (agentplane.proto.ListSessionsResponse);
   // Durably reserve or confirm a Session and immutable creation configuration.
   // An existing Session with another spec/setup returns ALREADY_EXISTS.
   // This acknowledgement does not assert native creation or process readiness.
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   // Informational live snapshot; never starts a process or wakes a Sandbox.
-  rpc GetStatus(agentplane.proto.runner.GetStatusRequest)
-      returns (agentplane.proto.runner.RunnerStatus);
+  rpc GetStatus(agentplane.proto.GetStatusRequest)
+      returns (agentplane.proto.RunnerStatus);
   // Sandbox teardown: durably refuse new Sessions and execution, let setup/bootstrap finish, stop harnesses,
   // and seal every journal at its final cursor. Idempotent: a repeat returns the same cursors with
   // each Session's current `flushed`, so teardown repeats it until every Session is flushed.
-  rpc Quiesce(agentplane.proto.runner.QuiesceRequest) returns (agentplane.proto.runner.QuiesceResponse);
+  rpc Quiesce(agentplane.proto.QuiesceRequest) returns (agentplane.proto.QuiesceResponse);
   // One RPC per command: the same `command_id` with the same operation and payload returns the
   // existing admission, and under another operation or payload it fails with `ALREADY_EXISTS`.
   // A `command_id` is unique across these operations.
@@ -37,12 +37,12 @@ service Runner {
 
 message OpenSessionRequest {
   string session_id = 1;
-  agentplane.proto.runner.SessionSpec spec = 2;
+  agentplane.proto.SessionSpec spec = 2;
   optional string setup_script = 3;  // selected only at creation
 }
 
 message OpenSessionResponse {
-  agentplane.proto.runner.Attached attached = 1;
+  agentplane.proto.Attached attached = 1;
 }
 
 // Command responses carry durable CommandAdmitted evidence, before any required startup.
@@ -54,7 +54,7 @@ message SubmitInputRequest {
 }
 
 message SubmitInputResponse {
-  agentplane.proto.event_log.EventEntry admission = 1;
+  agentplane.proto.EventEntry admission = 1;
 }
 
 message ChangeModelRequest {
@@ -64,7 +64,7 @@ message ChangeModelRequest {
 }
 
 message ChangeModelResponse {
-  agentplane.proto.event_log.EventEntry admission = 1;
+  agentplane.proto.EventEntry admission = 1;
 }
 
 message ChangeReasoningEffortRequest {
@@ -74,7 +74,7 @@ message ChangeReasoningEffortRequest {
 }
 
 message ChangeReasoningEffortResponse {
-  agentplane.proto.event_log.EventEntry admission = 1;
+  agentplane.proto.EventEntry admission = 1;
 }
 
 message InterruptTurnRequest {
@@ -84,5 +84,5 @@ message InterruptTurnRequest {
 }
 
 message InterruptTurnResponse {
-  agentplane.proto.event_log.EventEntry admission = 1;
+  agentplane.proto.EventEntry admission = 1;
 }

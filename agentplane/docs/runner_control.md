@@ -88,8 +88,8 @@ message RunnerFacts {
 ```
 
 - **Versioning.** The protos are `agentplane/runner_gateway/runner_control.proto` (`RunnerControl` and its frames)
-  and `agentplane/runner/runner_service.proto` (the `Runner` service), package
-  `agentplane.proto.runner_control`. An incompatible change, a rename included, rides a clean
+  and `agentplane/runner/runner_service.proto` (the `Runner` service), packages
+  `agentplane.runner_gateway` and `agentplane.runner`. An incompatible change, a rename included, rides a clean
   cutover: the operator retires every Sandbox on the old protocol, and no dual path is served.
   Nothing is negotiated: every connection carries commands and lifecycle requests. A frame of a
   kind the receiver does not know fails the stream, and an RPC the service does not implement
@@ -154,7 +154,7 @@ them. Only unary calls are carried; nothing here needs a streaming `Runner` meth
 
 ## Runner proxy
 
-The gateway replica holding a Sandbox's connection also serves `agentplane.proto.runner_control.Runner`
+The gateway replica holding a Sandbox's connection also serves `agentplane.runner.Runner`
 on its gRPC port, which the Sandbox's `<sandbox>-control` Service reaches. A call is forwarded as a
 tunnelled `Call` without decoding its messages, so the proxy serves every method of the service and
 answers with the runner's own status and bytes. It has no database.
@@ -204,9 +204,9 @@ service RunnerIngress {
 
 message PushFrame {
   oneof frame {
-    agentplane.proto.runner.Attached announce = 1;  // first frame, exactly once
-    agentplane.proto.event_log.EventEntry entry = 2; // the journal's, verbatim, in cursor order
-    agentplane.proto.runner.Sealed sealed = 3;      // terminal
+    agentplane.proto.Attached announce = 1;   // first frame, exactly once
+    agentplane.proto.EventEntry entry = 2;    // the journal's, verbatim, in cursor order
+    agentplane.proto.Sealed sealed = 3;       // terminal
     Heartbeat heartbeat = 4;
   }
 }
@@ -217,7 +217,7 @@ message Acknowledgement {
 }
 ```
 
-The ingress has its own package, `agentplane.proto.runner_ingress`: another server implements
+The ingress is its own service, `agentplane.history_service.RunnerIngress`, apart from `HistoryService`: another server implements
 it, under its own token audience, and a historyless client needs only it.
 
 1. **One call per Session.** The runner opens a `Push` call for every Session in its state

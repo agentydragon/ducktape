@@ -23,6 +23,7 @@ py_library(
         "//agentplane/egress:egress_admin_pb2",
         "//agentplane/egress:egress_admin_pb2_grpc",
         "//agentplane/grpc:calls",
+        "//agentplane/proto:sandboxes_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -186,7 +187,10 @@ py_test(
 proto_library(
     name = "egress_admin_proto",
     srcs = ["egress_admin.proto"],
-    deps = ["@protobuf//:timestamp_proto"],
+    deps = [
+        "//agentplane/proto:sandboxes_proto",
+        "@protobuf//:timestamp_proto",
+    ],
 )
 
 py_proto_library_with_mypy_stubs(
@@ -203,7 +207,10 @@ py_grpc_service_library(
 proto_library(
     name = "egress_rules_proto",
     srcs = ["egress_rules.proto"],
-    deps = ["@googleapis//google/api:annotations_proto"],
+    deps = [
+        "//agentplane/proto:sandboxes_proto",
+        "@googleapis//google/api:annotations_proto",
+    ],
 )
 
 go_proto_library(
@@ -214,6 +221,7 @@ go_proto_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb",
     proto = ":egress_admin_proto",
+    deps = ["//agentplane/proto:sandboxes_go_proto"],
 )
 
 go_proto_library(
@@ -225,5 +233,8 @@ go_proto_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb",
     proto = ":egress_rules_proto",
-    deps = ["@org_golang_google_genproto_googleapis_api//annotations"],
+    deps = [
+        "//agentplane/proto:sandboxes_go_proto",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
 )

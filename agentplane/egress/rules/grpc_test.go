@@ -10,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -55,7 +56,7 @@ func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 	}
 
 	want := &egressrulespb.GetRulesResponse{
-		Subject: &egressrulespb.Subject{Namespace: namespace, Name: "sb"},
+		Subject: &sandboxespb.ServiceAccount{Namespace: namespace, Name: "sb"},
 		Policies: []*egressrulespb.Policy{{Name: "github", Rules: []*egressrulespb.Rule{
 			{
 				Hosts:   []string{"api.github.com"},
@@ -150,7 +151,7 @@ func TestGetRulesAnswersNoEgressWithNoPolicies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := &egressrulespb.GetRulesResponse{Subject: &egressrulespb.Subject{Namespace: namespace, Name: "nobody"}}
+	want := &egressrulespb.GetRulesResponse{Subject: &sandboxespb.ServiceAccount{Namespace: namespace, Name: "nobody"}}
 	if !proto.Equal(got, want) {
 		t.Errorf("response = %v, want %v", got, want)
 	}

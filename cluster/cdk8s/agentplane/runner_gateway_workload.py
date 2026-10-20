@@ -259,7 +259,7 @@ class RunnerGateway(Construct):
             policy=runner_gateway.RUNNER_CONTROL_POLICY,
             credential=runner_gateway.RUNNER_CONTROL_CREDENTIAL,
             endpoint=control,
-            path="/agentplane.proto.runner_control.RunnerControl/Connect",
+            path="/agentplane.runner_gateway.RunnerControl/Connect",
             audience=RUNNER_CONTROL_AUDIENCE,
             purpose="control stream to the Runner Gateway",
         )

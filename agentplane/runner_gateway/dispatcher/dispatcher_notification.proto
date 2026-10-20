@@ -2,7 +2,7 @@
 // NOTIFY carries text, so each serialized envelope is base64-encoded once.
 syntax = "proto3";
 
-package agentplane.proto.dispatcher_notification;
+package agentplane.runner_gateway.dispatcher;
 
 message TerminalNotificationPart {
   string event_id = 1;

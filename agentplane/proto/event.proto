@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package agentplane.proto.event;
+package agentplane.proto;
 
 import "google/protobuf/timestamp.proto";
 import "agentplane/proto/command.proto";
@@ -76,7 +76,7 @@ message JournalReopened {
 // The emitting source has fsynced this exact Command and owns trying to process it. It does not
 // promise native delivery, model selection, interruption, or a timing category.
 message CommandAdmitted {
-  agentplane.proto.command.Command command = 1;
+  agentplane.proto.Command command = 1;
 }
 
 // A terminal failed outcome after admission. An invalid request is rejected before admission and

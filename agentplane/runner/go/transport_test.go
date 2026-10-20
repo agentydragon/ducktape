@@ -87,7 +87,7 @@ func (s *controlLoopback) Connect(stream grpc.BidiStreamingServer[controlpb.Runn
 		return err
 	}
 	if err := stream.Send(&controlpb.ServiceFrame{Frame: &controlpb.ServiceFrame_Call{Call: &tunnelpb.Call{
-		CallId: 17, Method: "/agentplane.proto.runner_control.Runner/ListSessions", Request: request,
+		CallId: 17, Method: "/agentplane.runner.Runner/ListSessions", Request: request,
 	}}}); err != nil {
 		return err
 	}

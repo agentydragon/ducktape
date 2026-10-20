@@ -2,7 +2,7 @@
 // agentplane/docs/adr_sandbox_session_control.md.
 syntax = "proto3";
 
-package agentplane.proto.session_dispatcher;
+package agentplane.runner_gateway.dispatcher;
 
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
@@ -91,7 +91,7 @@ message Dispatch {
   DeliveryState state = 6;
   optional string reason = 7;
   // The runner journal's `CommandAdmitted` entry, once the runner admitted it.
-  optional agentplane.proto.event_log.EventEntry admission = 8;
+  optional agentplane.proto.EventEntry admission = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
 }
@@ -140,7 +140,7 @@ message InterruptTurnResponse {
   // `DELIVERY_STATE_RUNNER_ADMITTED` with `admission`, or `DELIVERY_STATE_NO_OP` with `reason`.
   DeliveryState state = 1;
   optional string reason = 2;
-  optional agentplane.proto.event_log.EventEntry admission = 3;
+  optional agentplane.proto.EventEntry admission = 3;
 }
 message GetDispatchRequest {
   string command_id = 1;
@@ -193,7 +193,7 @@ message CancelDispatchResponse {
 message OpenSessionRequest {
   string session_id = 1;  // minted by the caller
   string sandbox = 2;
-  agentplane.proto.runner.SessionSpec spec = 3;
+  agentplane.proto.SessionSpec spec = 3;
   optional string setup_script = 4;  // selected only at creation
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -133,7 +134,7 @@ func bearing(token string) context.Context {
 
 func ofSubject(namespace, name string) *egressadminpb.DecisionFilter {
 	return &egressadminpb.DecisionFilter{Scope: &egressadminpb.DecisionFilter_Subject{
-		Subject: &egressadminpb.Subject{Namespace: namespace, Name: name},
+		Subject: &sandboxespb.ServiceAccount{Namespace: namespace, Name: name},
 	}}
 }
 

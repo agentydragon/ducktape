@@ -10,6 +10,7 @@ import grpc
 from agentplane.egress import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc
 from agentplane.egress.decisions import Decision, Outcome
 from agentplane.grpc.calls import bearer
+from agentplane.proto import sandboxes_pb2
 from agentplane.subjects import ServiceAccountRef
 
 # Generated messages use Timestamp methods and protobuf field-presence stubs.
@@ -52,7 +53,9 @@ class DecisionsClient:
         try:
             call = self._stub.WatchDecisions(
                 pb.WatchDecisionsRequest(
-                    filter=pb.DecisionFilter(subject=pb.Subject(namespace=subject.namespace, name=subject.name))
+                    filter=pb.DecisionFilter(
+                        subject=sandboxes_pb2.ServiceAccount(namespace=subject.namespace, name=subject.name)
+                    )
                 ),
                 metadata=await bearer(self._token_file),
             )

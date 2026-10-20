@@ -250,7 +250,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	}()
 
 	call := receiveTunnelCall(t, runnerStream)
-	if call.GetMethod() != "/agentplane.proto.runner_control.Runner/OpenSession" {
+	if call.GetMethod() != "/agentplane.runner.Runner/OpenSession" {
 		t.Fatalf("unexpected tunneled method: %q", call.GetMethod())
 	}
 	if call.GetTimeout() == nil || call.GetTimeout().AsDuration() <= 0 {
@@ -313,7 +313,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	}()
 	inputCall := receiveTunnelCall(t, runnerStream)
 	var inputRequest runnerservicepb.SubmitInputRequest
-	if inputCall.GetMethod() != "/agentplane.proto.runner_control.Runner/SubmitInput" ||
+	if inputCall.GetMethod() != "/agentplane.runner.Runner/SubmitInput" ||
 		proto.Unmarshal(inputCall.GetRequest(), &inputRequest) != nil ||
 		inputRequest.GetSessionId() != "session-a" || inputRequest.GetCommandId() != "command-a" || inputRequest.GetText() != "hello" {
 		t.Fatalf("Dispatcher input changed across Gateway tunnel: call=%v request=%v", inputCall, &inputRequest)
@@ -353,7 +353,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if statusCall.GetMethod() != "/agentplane.proto.runner_control.Runner/GetStatus" {
+	if statusCall.GetMethod() != "/agentplane.runner.Runner/GetStatus" {
 		t.Fatalf("runner status method did not survive the proxy: %v", statusCall)
 	}
 	if err := <-statusDone; status.Code(err) != codes.NotFound {
@@ -431,7 +431,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		controllerCall <- callErr
 	}()
 	quiesceCall := receiveTunnelCall(t, runnerStream)
-	if quiesceCall.GetMethod() != "/agentplane.proto.runner_control.Runner/Quiesce" {
+	if quiesceCall.GetMethod() != "/agentplane.runner.Runner/Quiesce" {
 		t.Fatalf("controller call did not reach the runner's Quiesce method: %v", quiesceCall)
 	}
 	quiesced, err := proto.Marshal(&runnerpb.QuiesceResponse{Stage: runnerpb.QuiesceStage_QUIESCE_STAGE_QUIESCED})
@@ -732,7 +732,7 @@ func TestGeneratedRunnerClientPreservesTunnelStatusTrailersAndCancellation(t *te
 		statusDone <- err
 	}()
 	statusCall := nextCall()
-	if statusCall.GetMethod() != "/agentplane.proto.runner_control.Runner/GetStatus" {
+	if statusCall.GetMethod() != "/agentplane.runner.Runner/GetStatus" {
 		t.Fatalf("generated GetStatus method did not reach tunnel: %v", statusCall)
 	}
 	connection.tunnel.answer(&tunnelpb.Reply{
@@ -753,7 +753,7 @@ func TestGeneratedRunnerClientPreservesTunnelStatusTrailersAndCancellation(t *te
 		changeDone <- err
 	}()
 	changeCall := nextCall()
-	if changeCall.GetMethod() != "/agentplane.proto.runner_control.Runner/ChangeModel" {
+	if changeCall.GetMethod() != "/agentplane.runner.Runner/ChangeModel" {
 		t.Fatalf("generated Runner method did not reach tunnel: %v", changeCall)
 	}
 	cancel()

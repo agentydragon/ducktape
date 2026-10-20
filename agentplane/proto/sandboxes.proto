@@ -1,7 +1,7 @@
 // Sandbox resource and caller request shapes shared by Kubernetes requesters and backend readers.
 syntax = "proto3";
 
-package agentplane.proto.sandboxes;
+package agentplane.proto;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";

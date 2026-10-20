@@ -3,7 +3,7 @@
 // agentplane/docs/runner_control.md § Event ingress.
 syntax = "proto3";
 
-package agentplane.proto.runner_ingress;
+package agentplane.history_service;
 
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
@@ -17,12 +17,12 @@ message PushFrame {
   oneof frame {
     // First frame, exactly once: the Session's snapshot. Its `session_id` is the UUID the client
     // minted when it created the Session.
-    agentplane.proto.runner.Attached announce = 1;
+    agentplane.proto.Attached announce = 1;
     // The runner journal's verbatim entries in cursor order, starting at most one past the first
     // acknowledgement's cursor. An entry at or below a committed cursor is an exact replay.
-    agentplane.proto.event_log.EventEntry entry = 2;
+    agentplane.proto.EventEntry entry = 2;
     // Terminal: the journal is sealed at this cursor, and every entry through it precedes this.
-    agentplane.proto.runner.Sealed sealed = 3;
+    agentplane.proto.Sealed sealed = 3;
     // Sent on an idle call every 10 s.
     Heartbeat heartbeat = 4;
   }

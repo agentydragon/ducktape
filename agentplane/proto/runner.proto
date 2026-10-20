@@ -4,7 +4,7 @@
 
 syntax = "proto3";
 
-package agentplane.proto.runner;
+package agentplane.proto;
 
 import "google/protobuf/timestamp.proto";
 

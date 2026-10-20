@@ -278,7 +278,7 @@ spec:
       methods:
         - POST
       paths:
-        - /agentplane.proto.runner_control.RunnerControl/Connect
+        - /agentplane.runner_gateway.RunnerControl/Connect
       type: egress
 ---
 apiVersion: cilium.io/v2

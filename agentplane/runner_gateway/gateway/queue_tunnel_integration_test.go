@@ -192,7 +192,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 	if err := proto.Unmarshal(input.GetRequest(), &request); err != nil {
 		t.Fatal(err)
 	}
-	if input.GetMethod() != "/agentplane.proto.runner_control.Runner/SubmitInput" ||
+	if input.GetMethod() != "/agentplane.runner.Runner/SubmitInput" ||
 		request.GetCommandId() != command.GetCommandId() || request.GetSessionId() != "session-queue" ||
 		request.GetText() != "persisted input" {
 		t.Fatalf("queued request changed before runner admission: call=%v request=%v", input, &request)

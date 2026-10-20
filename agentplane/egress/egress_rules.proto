@@ -1,8 +1,9 @@
 // What a sandbox may know about its own egress: the egress proxy's rules API.
 syntax = "proto3";
 
-package agentplane.proto.egress_rules;
+package agentplane.egress;
 
+import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
 
 service EgressRules {
@@ -20,14 +21,9 @@ message GetRulesRequest {}
 // Everything the sandbox may reach, as the proxy would decide it right now.
 message GetRulesResponse {
   // The ServiceAccount this view is of.
-  Subject subject = 1;
+  agentplane.proto.ServiceAccount subject = 1;
   // Granted egress policies; empty means no egress.
   repeated Policy policies = 2;
-}
-
-message Subject {
-  string namespace = 1;
-  string name = 2;
 }
 
 message Policy {

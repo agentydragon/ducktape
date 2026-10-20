@@ -2248,7 +2248,7 @@ spec:
       methods:
         - POST
       paths:
-        - /agentplane.proto.runner_ingress.RunnerIngress/Push
+        - /agentplane.history_service.RunnerIngress/Push
       type: egress
 ---
 apiVersion: cilium.io/v2

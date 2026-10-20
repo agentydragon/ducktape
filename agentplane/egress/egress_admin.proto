@@ -1,8 +1,9 @@
 // The egress proxy's cluster-internal read side over the admission decisions it recorded.
 syntax = "proto3";
 
-package agentplane.proto.egress_admin;
+package agentplane.egress;
 
+import "agentplane/proto/sandboxes.proto";
 import "google/protobuf/timestamp.proto";
 
 service EgressAdmin {
@@ -15,12 +16,6 @@ service EgressAdmin {
   rpc GetHealth(GetHealthRequest) returns (GetHealthResponse);
 }
 
-// A ServiceAccount a workload token proved.
-message Subject {
-  string namespace = 1;
-  string name = 2;
-}
-
 // Refusals that never proved a ServiceAccount.
 message Unauthenticated {}
 
@@ -28,7 +23,7 @@ message Unauthenticated {}
 // by leaving a field out.
 message DecisionFilter {
   oneof scope {
-    Subject subject = 1;
+    agentplane.proto.ServiceAccount subject = 1;
     Unauthenticated unauthenticated = 2;
   }
 }
