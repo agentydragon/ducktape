@@ -107,12 +107,18 @@ function formatAge(seconds) {
 // last successful snapshot (windows + extraSpend + reset credits) when the latest call
 // returned nothing usable. `staleAge` is null when no fallback was needed.
 function effectiveState(state) {
-  if (state.windows.length > 0 || state.availableResetCredits != null || state.paidCredits != null) {
+  if (
+    state.windows.length > 0 ||
+    state.availableResetCredits != null ||
+    state.paidCredits != null ||
+    state.prepaidBalance != null
+  ) {
     const staleAge = state.error && state.lastFetch != null ? Math.max(0, (Date.now() - state.lastFetch) / 1000) : null;
     return {
       windows: state.windows,
       extraSpend: state.extraSpend,
       paidCredits: state.paidCredits,
+      prepaidBalance: state.prepaidBalance,
       availableResetCredits: state.availableResetCredits,
       availableResetCreditExpiries: state.availableResetCreditExpiries,
       resetCreditExpiryLookupFailed: state.resetCreditExpiryLookupFailed,
@@ -120,11 +126,18 @@ function effectiveState(state) {
     };
   }
   const snap = state.lastSuccess;
-  if (!snap || snap.windows.length === 0) {
+  if (
+    !snap ||
+    (snap.windows.length === 0 &&
+      snap.availableResetCredits == null &&
+      snap.paidCredits == null &&
+      snap.prepaidBalance == null)
+  ) {
     return {
       windows: [],
       extraSpend: null,
       paidCredits: null,
+      prepaidBalance: null,
       availableResetCredits: null,
       availableResetCreditExpiries: [],
       resetCreditExpiryLookupFailed: false,
@@ -136,6 +149,7 @@ function effectiveState(state) {
     windows: snap.windows,
     extraSpend: snap.extraSpend,
     paidCredits: snap.paidCredits,
+    prepaidBalance: snap.prepaidBalance,
     availableResetCredits: snap.availableResetCredits,
     availableResetCreditExpiries: snap.availableResetCreditExpiries,
     resetCreditExpiryLookupFailed: snap.resetCreditExpiryLookupFailed,
@@ -265,6 +279,21 @@ function formatPaidCredits(credits, active) {
   return `${active ? "⚡ using paid credits" : "paid credits"} · ${amount}`;
 }
 
+function formatPrepaidBalance(balance) {
+  if (balance == null) return null;
+  if (balance.kind !== "available") return "Claude prepaid balance unavailable";
+  const negative = balance.amount_minor < 0;
+  const amountMinor = BigInt(Math.abs(balance.amount_minor));
+  const scale = 10n ** BigInt(balance.exponent);
+  const whole = (amountMinor / scale).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const fraction = balance.exponent > 0 ? `.${(amountMinor % scale).toString().padStart(balance.exponent, "0")}` : "";
+  const amount = `${whole}${fraction}`;
+  const sign = negative ? "-" : "";
+  return balance.currency === "USD"
+    ? `Claude prepaid balance · ${sign}$${amount}`
+    : `Claude prepaid balance · ${sign}${amount} ${balance.currency}`;
+}
+
 // Peak-burn formatting. The policy (is it peak, which windows are next) is
 // decided in aiquota/peak_windows.py and delivered as state.burn; this only
 // formats it. Instants arrive absolute and are shown in the viewer's local
@@ -323,6 +352,7 @@ function emptyProviderState() {
     error: null,
     extraSpend: null,
     paidCredits: null,
+    prepaidBalance: null,
     availableResetCredits: null,
     availableResetCreditExpiries: [],
     resetCreditExpiryLookupFailed: false,
@@ -431,6 +461,7 @@ const QuotaIndicator = GObject.registerClass(
           windows: [snap.short, snap.long].filter((window) => window != null),
           extraSpend: snap.extraSpend ?? null,
           paidCredits: snap.paidCredits ?? null,
+          prepaidBalance: snap.prepaidBalance ?? null,
           availableResetCredits: snap.availableResetCredits ?? null,
           availableResetCreditExpiries: snap.availableResetCreditExpiries ?? [],
           resetCreditExpiryLookupFailed: snap.resetCreditExpiryLookupFailed === true,
@@ -447,6 +478,7 @@ const QuotaIndicator = GObject.registerClass(
           error: node?.error ?? null,
           extraSpend: node?.extraSpend ?? null,
           paidCredits: node?.paidCredits ?? null,
+          prepaidBalance: node?.prepaidBalance ?? null,
           availableResetCredits: node?.availableResetCredits ?? null,
           availableResetCreditExpiries: node?.availableResetCreditExpiries ?? [],
           resetCreditExpiryLookupFailed: node?.resetCreditExpiryLookupFailed === true,
@@ -479,6 +511,7 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="SetStreamStatus"><arg type="s" direction="in" name="status"/><arg type="s" direction="in" name="error"/></method>' +
           '<method name="SetSyncState"><arg type="d" direction="in" name="lastAttemptAt"/><arg type="d" direction="in" name="nextRetryAt"/><arg type="d" direction="in" name="now"/></method>' +
           '<method name="GetStreamStatus"><arg type="s" direction="out" name="status"/></method>' +
+          '<method name="GetPrepaidText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="SetViewForTest"><arg type="s" direction="in" name="view"/></method>' +
           '<method name="ConnectDaemon"/>' +
           '<method name="FetchView"/>' +
@@ -496,6 +529,10 @@ const QuotaIndicator = GObject.registerClass(
             this._loadFixtureData(JSON.parse(decodeBytes(bytes)));
           },
           SetStreamStatus: (status, error) => this._setStreamState(status, error),
+          GetPrepaidText: (provider) => {
+            const item = this._providers.find(({ id }) => id === provider)?.prepaidRow;
+            return item?._summaryLabel.get_text() ?? "";
+          },
           SetSyncState: (lastAttemptAt, nextRetryAt, now) => {
             this._lastAttemptAt = lastAttemptAt;
             this._nextRetryAt = nextRetryAt;
@@ -741,11 +778,13 @@ const QuotaIndicator = GObject.registerClass(
         const rowCount = p.state.currentlyOverPlan || p.state.paidCreditsActive ? 1 : Math.max(1, windows.length);
         p.windowRows = Array.from({ length: rowCount }, () => this._makeQuotaRow("quota"));
         p.creditRow = this._makeTextRow();
+        p.prepaidRow = this._makeTextRow();
         // Separate from windowRows so window indexing is unaffected; hidden
         // outright for providers with no published schedule.
         p.burnRow = this._makeTextRow();
         this.menu.addMenuItem(p.header);
         this.menu.addMenuItem(p.creditRow);
+        this.menu.addMenuItem(p.prepaidRow);
         this.menu.addMenuItem(p.burnRow);
         for (const row of p.windowRows) this.menu.addMenuItem(row);
         p.header.label.add_style_class_name("quota-popup-header");
@@ -890,6 +929,7 @@ const QuotaIndicator = GObject.registerClass(
           .filter((window) => window.display),
         extraSpend: this._mapExtraSpend(snap.result.extra_spend),
         paidCredits: snap.result.paid_credits ?? null,
+        prepaidBalance: snap.result.prepaid_balance ?? null,
         availableResetCredits: snap.result.available_reset_credits ?? null,
         availableResetCreditExpiries: snap.result.available_reset_credit_expiries ?? [],
         resetCreditExpiryLookupFailed: snap.result.reset_credit_expiry_lookup_failed === true,
@@ -926,6 +966,7 @@ const QuotaIndicator = GObject.registerClass(
           error: isSuccess ? null : (result.error ?? null),
           extraSpend: isSuccess ? this._mapExtraSpend(result.extra_spend) : null,
           paidCredits: isSuccess ? (result.paid_credits ?? null) : null,
+          prepaidBalance: isSuccess ? (result.prepaid_balance ?? null) : null,
           availableResetCredits: isSuccess ? (result.available_reset_credits ?? null) : null,
           availableResetCreditExpiries: isSuccess ? (result.available_reset_credit_expiries ?? []) : [],
           resetCreditExpiryLookupFailed: isSuccess && result.reset_credit_expiry_lookup_failed === true,
@@ -1033,6 +1074,7 @@ const QuotaIndicator = GObject.registerClass(
       for (const p of this._providers) {
         this._renderProviderHeader(p.header, p.label, p.state);
         this._renderCreditRow(p.creditRow, p.state);
+        this._renderPrepaidRow(p.prepaidRow, p.state);
         this._renderBurnRow(p.burnRow, p.state.burn);
         if (p.state.currentlyOverPlan === true || p.state.paidCreditsActive === true) {
           const { windows } = effectiveState(p.state);
@@ -1092,6 +1134,12 @@ const QuotaIndicator = GObject.registerClass(
       item._summaryLabel.set_text(text);
       if (state.paidCreditsActive) item._summaryLabel.add_style_class_name("quota-credit-active");
       else item._summaryLabel.remove_style_class_name("quota-credit-active");
+    }
+
+    _renderPrepaidRow(item, state) {
+      const text = formatPrepaidBalance(effectiveState(state).prepaidBalance);
+      item.visible = text != null;
+      if (text != null) item._summaryLabel.set_text(text);
     }
 
     _renderBurnRow(item, burn) {

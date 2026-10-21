@@ -39,6 +39,24 @@ class PaidCredits(BaseModel):
     unlimited: bool = False
 
 
+class PrepaidBalanceAvailable(BaseModel):
+    """An exact provider-reported prepaid monetary balance."""
+
+    kind: Literal["available"] = "available"
+    amount_minor: int
+    exponent: int = Field(ge=0, le=9)
+    currency: str
+
+
+class PrepaidBalanceUnavailable(BaseModel):
+    """A supplemental prepaid balance lookup failed after usage succeeded."""
+
+    kind: Literal["unavailable"] = "unavailable"
+
+
+PrepaidBalance = Annotated[PrepaidBalanceAvailable | PrepaidBalanceUnavailable, Field(discriminator="kind")]
+
+
 class FetchSuccess(BaseModel):
     """Payload from a quota fetch that returned without error.
 
@@ -51,6 +69,9 @@ class FetchSuccess(BaseModel):
     windows: list[QuotaWindow] = Field(default_factory=list)
     extra_spend: ExtraSpend | None = None
     paid_credits: PaidCredits | None = None
+    # Claude's prepaid monetary balance is a separate endpoint and denomination
+    # from Codex paid credits. None means this provider does not report it.
+    prepaid_balance: PrepaidBalance | None = None
     # Earned Codex rate-limit resets. None means the provider did not publish a
     # count; 0 is an authoritative "none available" response.
     available_reset_credits: int | None = Field(default=None, ge=0)

@@ -232,6 +232,12 @@ def test_render(render_session: tuple[GnomeSession, Path], undeclared_dir: Path,
     try:
         session.close_menu()
         session.reload(f"/fixtures/{fixture_name}.json")
+        if fixture_name == "claude_prepaid_balance":
+            prepaid_text = _string_reply(session.call("GetPrepaidText", "claude"))
+            assert prepaid_text.startswith("Claude prepaid balance")
+            assert prepaid_text.endswith("$123.45")
+        elif fixture_name == "claude_prepaid_balance_unavailable":
+            assert _string_reply(session.call("GetPrepaidText", "claude")) == "Claude prepaid balance unavailable"
         geometry = session.open_menu()
         try:
             capture_panel_menu(

@@ -10,7 +10,14 @@
 
 import { describe, expect, it } from "vitest";
 
-import { displayUsedPercent, formatDuration, formatPace, formatPaceForecast, formatWindowLabel } from "./format";
+import {
+  displayUsedPercent,
+  formatDuration,
+  formatPace,
+  formatPaceForecast,
+  formatPrepaidBalance,
+  formatWindowLabel,
+} from "./format";
 import cases from "./fixtures/format_cases.json";
 import { computePace, isExhausted, tintFor } from "./pace";
 
@@ -60,5 +67,17 @@ describe("formatWindowLabel", () => {
   // real response does name them ("primary").
   it("qualifies a named window with its length", () => {
     expect(formatWindowLabel({ name: "primary", window_seconds: 3600 })).toBe("primary (1h)");
+  });
+});
+
+describe("formatPrepaidBalance", () => {
+  it.each([
+    [12345, 2, "USD", "$123.45"],
+    [123, 0, "USD", "$123"],
+    [1234567, 3, "EUR", "1,234.567 EUR"],
+    [0, 2, "USD", "$0.00"],
+    [-123, 2, "USD", "-$1.23"],
+  ])("matches Python's exact minor-unit rendering for %s %s %s", (amountMinor, exponent, currency, expected) => {
+    expect(formatPrepaidBalance(amountMinor, exponent, currency)).toBe(expected);
   });
 });

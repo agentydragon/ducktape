@@ -1,4 +1,20 @@
 # serializer version: 1
+# name: test_renders_shared_fixture[claude_prepaid_balance]
+  '''
+  claude
+    Claude prepaid balance · $123.45
+    5h:  45%  ↻ 2h00m  Δ-15%  leaves ~25% unused at reset
+    7d:  32%  ↻ 4d0h   Δ-11%  leaves ~25% unused at reset
+  '''
+# ---
+# name: test_renders_shared_fixture[claude_prepaid_balance_unavailable]
+  '''
+  claude
+    Claude prepaid balance unavailable
+    5h:  45%  ↻ 2h00m  Δ-15%  leaves ~25% unused at reset
+    7d:  32%  ↻ 4d0h   Δ-11%  leaves ~25% unused at reset
+  '''
+# ---
 # name: test_renders_shared_fixture[empty]
   '''
   claude

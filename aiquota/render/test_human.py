@@ -1,11 +1,21 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
 
-from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
+from aiquota.models import (
+    AllQuotas,
+    FetchError,
+    FetchSuccess,
+    PrepaidBalanceAvailable,
+    ProviderFetch,
+    ProviderQuota,
+    QuotaWindow,
+    SuccessfulProviderFetch,
+)
 from aiquota.render import human
+from aiquota.render.format import format_prepaid_balance
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_fixture
 from util.bazel.runfiles import get_required_path
 
@@ -137,12 +147,58 @@ def test_hidden_window_remains_in_model_but_is_not_rendered() -> None:
             ]
         ),
     )
-
     rendered = human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT, tz=UTC)
     assert "7d:   7%" in rendered
     assert "Spark" not in rendered
     assert isinstance(output.result, FetchSuccess)
     assert len(output.result.windows) == 2
+
+
+@pytest.mark.parametrize(
+    ("amount_minor", "exponent", "currency", "expected"),
+    [
+        (12345, 2, "USD", "$123.45"),
+        (123, 0, "USD", "$123"),
+        (1234567, 3, "EUR", "1,234.567 EUR"),
+        (0, 2, "USD", "$0.00"),
+        (-123, 2, "USD", "-$1.23"),
+    ],
+)
+def test_formats_exact_prepaid_minor_units(amount_minor: int, exponent: int, currency: str, expected: str) -> None:
+    assert (
+        format_prepaid_balance(PrepaidBalanceAvailable(amount_minor=amount_minor, exponent=exponent, currency=currency))
+        == expected
+    )
+
+
+def test_cli_renders_claude_prepaid_balance_separately_from_codex_credits() -> None:
+    output = ProviderFetch(
+        fetched_at=_FETCHED_AT,
+        result=FetchSuccess(prepaid_balance=PrepaidBalanceAvailable(amount_minor=12345, exponent=2, currency="USD")),
+    )
+
+    rendered = human.render(_quotas(_pq("claude", output)), now=_FETCHED_AT, tz=UTC)
+
+    assert "Claude prepaid balance · $123.45" in rendered
+    assert "paid credits" not in rendered
+    assert "no data" not in rendered
+
+
+def test_cli_marks_last_successful_prepaid_balance_stale_after_refresh_error() -> None:
+    last_success = SuccessfulProviderFetch(
+        fetched_at=_FETCHED_AT - timedelta(hours=1),
+        result=FetchSuccess(prepaid_balance=PrepaidBalanceAvailable(amount_minor=12345, exponent=2, currency="USD")),
+    )
+    quota = ProviderQuota(
+        provider="claude",
+        last_output=ProviderFetch(fetched_at=_FETCHED_AT, result=FetchError(error="temporary usage refresh failure")),
+        last_success=last_success,
+    )
+
+    rendered = human.render(_quotas(quota), now=_FETCHED_AT, tz=UTC)
+
+    assert "last refresh failed" in rendered
+    assert "Claude prepaid balance · $123.45 (stale 1h00m)" in rendered
 
 
 def test_renders_banked_reset_count_from_live_usage() -> None:

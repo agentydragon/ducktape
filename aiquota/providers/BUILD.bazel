@@ -89,7 +89,10 @@ py_test(
 py_test(
     name = "test_claude",
     srcs = ["test_claude.py"],
-    data = ["fixtures/claude_usage.json"],
+    data = [
+        "fixtures/claude_prepaid_credits.json",
+        "fixtures/claude_usage.json",
+    ],
     imports = ["../.."],
     deps = [
         ":claude_lib",

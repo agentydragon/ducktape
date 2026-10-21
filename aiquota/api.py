@@ -428,9 +428,15 @@ class _CapturingClientFactory:
         }
         if self._transport is not None:
             kwargs["transport"] = self._transport
-        # Only Claude's own quota endpoint sits behind the credential-substitution
-        # proxy; a per-endpoint capture key never matches this provider name.
-        if capture_key == "claude" and self._claude_proxy:
+        # Route only direct Claude provider requests through the legacy
+        # credential-substitution proxy. Management calls have a local
+        # `/api-call` response URL even when their capture key names a Claude
+        # endpoint, so the key alone cannot select the proxy.
+        is_direct_claude_endpoint = capture_key == "claude_profile_direct" or (
+            capture_key in {"claude", "claude_prepaid_balance"}
+            and any(url.startswith("https://api.anthropic.com/") for url in response_urls)
+        )
+        if is_direct_claude_endpoint and self._claude_proxy:
             kwargs["proxy"] = self._claude_proxy
             if self._claude_proxy_ca is not None:
                 kwargs["verify"] = str(self._claude_proxy_ca)
@@ -641,7 +647,21 @@ def create_app(
         snapshot = await service.fetch()
         if provider not in {quota.provider for quota in snapshot.quotas.providers}:
             raise HTTPException(status_code=404, detail="unknown provider", headers=_CACHE_CONTROL)
-        raw = snapshot.raw_responses.get(provider)
+        return raw_response(provider, provider, snapshot)
+
+    @app.get("/v1/providers/{provider}/prepaid-balance/raw", dependencies=[Depends(_require_api_auth)])
+    async def provider_prepaid_balance_raw(
+        provider: str, service: Annotated[SnapshotFetcher, Depends(_fetcher)]
+    ) -> JSONResponse:
+        snapshot = await service.fetch()
+        if provider not in {quota.provider for quota in snapshot.quotas.providers}:
+            raise HTTPException(status_code=404, detail="unknown provider", headers=_CACHE_CONTROL)
+        if provider != "claude":
+            raise HTTPException(status_code=404, detail="unknown provider endpoint", headers=_CACHE_CONTROL)
+        return raw_response(provider, "claude_prepaid_balance", snapshot)
+
+    def raw_response(provider: str, capture_key: str, snapshot: QuotaSnapshot) -> JSONResponse:
+        raw = snapshot.raw_responses.get(capture_key)
         if raw is None:
             raise HTTPException(status_code=503, detail="no upstream response available", headers=_CACHE_CONTROL)
         return JSONResponse(

@@ -14,6 +14,7 @@ GET /metrics
 GET /v1/quotas
 GET /v1/events
 GET /v1/providers/{provider}/raw
+GET /v1/providers/claude/prepaid-balance/raw
 ```
 
 `/healthz`, `/readyz`, and `/metrics` are public for Kubernetes and Alloy.
@@ -33,6 +34,8 @@ carries the bounded exact response bytes as base64, their full-body SHA-256 and
 original byte length. The exact-byte field is truncated only when the response
 exceeds the 1 MiB capture cap. It never returns request or response headers,
 OAuth refresh responses, cookies, or credentials.
+The Claude prepaid endpoint has a separate raw route and capture slot so it does
+not replace the normal Claude usage response.
 
 `/v1/events` uses the same browser-session or bearer authentication and sends
 Server-Sent Events. It first emits `event: view` with the complete `/v1/quotas`
@@ -154,6 +157,17 @@ usage beyond the included quota. AIQuota shows that balance in provider credits
 window with a positive balance is marked as using paid credits; the balance is
 the provider's latest reading, not a per-request charge ledger. Earned resets
 remain separate from this balance.
+
+Claude's OAuth provider also reports a prepaid monetary balance through its
+organization's `/api/oauth/organizations/{uuid}/prepaid/credits` endpoint. AIQuota
+first reads `/api/oauth/profile` to obtain the organization UUID, then parses the
+exact `balance.credits.amount_minor`, `balance.credits.exponent`, and response
+`currency` fields. It does not derive the amount from rounded `balance_credits`
+or tranche totals. This balance is displayed as money, separately from Codex paid
+credits. Profile and balance lookups are supplemental: if either fails while the
+usage request succeeds, quota data stays successful and the Claude prepaid row
+shows `unavailable`. The prepaid response is retained under its own raw-capture
+key and is available at `/v1/providers/claude/prepaid-balance/raw`.
 
 Raw response rows retain one year; typed quota observations retain five years.
 ClickHouse inserts use `JSONEachRow` over its internal HTTP endpoint with

@@ -27,6 +27,7 @@ import {
   formatPace,
   formatPaceForecast,
   formatPeakInterval,
+  formatPrepaidBalance,
   formatUsd,
   formatUsdWhole,
   formatWindowLabel,
@@ -41,6 +42,7 @@ import {
   type EffectiveQuota,
   type ExtraSpend,
   type PaidCredits,
+  type PrepaidBalance,
   type ProviderView,
   type QuotasView,
   type QuotaWindow,
@@ -91,6 +93,7 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {quota.paidCredits && (
         <PaidCreditsStrip credits={quota.paidCredits} active={paidCreditsActive} windows={quota.windows} now={now} />
       )}
+      {quota.prepaidBalance && <PrepaidBalanceStrip balance={quota.prepaidBalance} />}
       {quota.resetCredits !== null && (
         <ResetCreditsStrip
           count={quota.resetCredits}
@@ -103,7 +106,7 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {overPlan || paidCreditsActive
         ? null
         : quota.windows.length === 0
-          ? quota.error === null && <p className="aiquota-empty">No quota data.</p>
+          ? quota.error === null && quota.prepaidBalance === null && <p className="aiquota-empty">No quota data.</p>
           : quota.windows.map((window) => (
               <WindowRow
                 key={`${window.name ?? ""}-${window.window_seconds}`}
@@ -294,6 +297,14 @@ function PaidCreditsStrip({
       )}
     </div>
   );
+}
+
+function PrepaidBalanceStrip({ balance }: { balance: PrepaidBalance }): JSX.Element {
+  const line =
+    balance.kind === "available"
+      ? `Claude prepaid balance · ${formatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)}`
+      : "Claude prepaid balance unavailable";
+  return <p className="aiquota-aside">{line}</p>;
 }
 
 function formatCreditBalance(raw: string | null | undefined): string {

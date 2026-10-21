@@ -86,6 +86,66 @@ describe("quota subscription", () => {
     expect(Stream.instances).toHaveLength(1);
   });
 
+  it("renders Claude's exact prepaid balance as money, separate from Codex credits", () => {
+    const stream = Stream.instances[0];
+    act(() =>
+      stream.dispatchEvent(
+        new MessageEvent("view", {
+          data: JSON.stringify({
+            fetched_at: "2026-01-15T12:00:00Z",
+            providers: [
+              {
+                provider: "claude",
+                last_output: {
+                  fetched_at: "2026-01-15T12:00:00Z",
+                  result: {
+                    kind: "success",
+                    windows: [],
+                    prepaid_balance: { kind: "available", amount_minor: 12345, exponent: 2, currency: "USD" },
+                  },
+                },
+                last_success: null,
+                currently_over_plan: false,
+                paid_credits_active: false,
+                extra_status: "none",
+                burn: null,
+              },
+            ],
+          }),
+        })
+      )
+    );
+
+    expect(container.textContent).toContain("Claude prepaid balance · $123.45");
+    expect(container.textContent).not.toContain("No quota data.");
+    expect(container.textContent).not.toContain("Paid credits");
+
+    act(() =>
+      stream.dispatchEvent(
+        new MessageEvent("view", {
+          data: JSON.stringify({
+            fetched_at: "2026-01-15T12:00:00Z",
+            providers: [
+              {
+                provider: "claude",
+                last_output: {
+                  fetched_at: "2026-01-15T12:00:00Z",
+                  result: { kind: "success", windows: [], prepaid_balance: { kind: "unavailable" } },
+                },
+                last_success: null,
+                currently_over_plan: false,
+                paid_credits_active: false,
+                extra_status: "none",
+                burn: null,
+              },
+            ],
+          }),
+        })
+      )
+    );
+    expect(container.textContent).toContain("Claude prepaid balance unavailable");
+  });
+
   it("retains the snapshot through a disconnect and clears the error on recovery", () => {
     const stream = Stream.instances[0];
     act(() => stream.view("2026-01-15T12:00:00Z"));

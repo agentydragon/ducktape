@@ -4,7 +4,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, tzinfo
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, PaidCredits, QuotaWindow, SuccessfulProviderFetch
+from aiquota.models import (
+    AllQuotas,
+    ExtraSpend,
+    FetchSuccess,
+    PaidCredits,
+    PrepaidBalance,
+    PrepaidBalanceAvailable,
+    QuotaWindow,
+    SuccessfulProviderFetch,
+)
 from aiquota.pace import compute_pace, is_exhausted
 from aiquota.render.format import (
     display_used_percent,
@@ -15,6 +24,7 @@ from aiquota.render.format import (
     format_pace,
     format_pace_forecast,
     format_peak_schedule,
+    format_prepaid_balance,
     format_window_label,
 )
 from aiquota.render.view_model import ProviderView, to_view
@@ -57,19 +67,25 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
         stale_age,
     ) = _effective_windows(pv, now)
     credit_line = _format_paid_credits(paid_credits, pv.paid_credits_active)
+    prepaid_balance, prepaid_stale_age = _effective_prepaid_balance(pv, now)
+    prepaid_balance_line = _format_prepaid_balance(prepaid_balance, prepaid_stale_age)
 
     if error and not windows:
-        return _header(
-            pv.provider,
-            error,
-            pv.last_output.fetched_at,
-            now,
-            reset_credits,
-            reset_credit_expiries,
-            reset_credit_expiry_lookup_failed,
-            stale_age,
-            tz,
-        ) + (f"  {credit_line}" if credit_line else "")
+        return (
+            _header(
+                pv.provider,
+                error,
+                pv.last_output.fetched_at,
+                now,
+                reset_credits,
+                reset_credit_expiries,
+                reset_credit_expiry_lookup_failed,
+                stale_age,
+                tz,
+            )
+            + (f"  {credit_line}" if credit_line else "")
+            + (f"\n  {prepaid_balance_line}" if prepaid_balance_line else "")
+        )
 
     if pv.currently_over_plan or pv.paid_credits_active:
         # Mirror the GNOME popup's text-only active-extra view: while burning,
@@ -78,6 +94,8 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
             f"{_provider_label(pv.provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed)}  "
             f"{credit_line if pv.paid_credits_active else _format_extra_active(extra)}"
         ]
+        if prepaid_balance_line:
+            lines.append(f"  {prepaid_balance_line}")
         lines.append(_active_windows_line(windows))
         lines.extend(_burn_lines(pv, now, tz))
         return "\n".join(lines)
@@ -97,6 +115,8 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     ]
     if credit_line:
         lines.append(f"  {credit_line}")
+    if prepaid_balance_line:
+        lines.append(f"  {prepaid_balance_line}")
     lines.extend(_burn_lines(pv, now, tz))
     lines.extend(_format_window_line(_window_row(window), widths) for window in windows)
     # Prepaid still has room, but the user incurred billable spend earlier in the
@@ -107,11 +127,21 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     )
     if extra_line is not None:
         lines.append(extra_line)
-    if not windows and extra_line is None:
+    if not windows and extra_line is None and prepaid_balance_line is None:
         # Gate on "nothing substantive was reported", not on line count — the
         # burn schedule adds lines without saying anything about quota.
         lines.append("  no data")
     return "\n".join(lines)
+
+
+def _effective_prepaid_balance(pv: ProviderView, now: datetime) -> tuple[PrepaidBalance | None, str | None]:
+    out_result = pv.last_output.result
+    if isinstance(out_result, FetchSuccess) and out_result.prepaid_balance is not None:
+        return out_result.prepaid_balance, None
+    if pv.last_success is not None and pv.last_success.result.prepaid_balance is not None:
+        stale_age = format_age((now - pv.last_success.fetched_at).total_seconds())
+        return pv.last_success.result.prepaid_balance, stale_age
+    return None, None
 
 
 def _burn_lines(pv: ProviderView, now: datetime, tz: tzinfo | None) -> list[str]:
@@ -131,7 +161,10 @@ def _effective_windows(
     # If the latest call gave us nothing usable, fall back to the prior
     # successful snapshot — stale-but-real numbers beat "no data".
     if isinstance(out_result, FetchSuccess) and (
-        out_result.windows or out_result.available_reset_credits is not None or out_result.paid_credits is not None
+        out_result.windows
+        or out_result.available_reset_credits is not None
+        or out_result.paid_credits is not None
+        or out_result.prepaid_balance is not None
     ):
         return (
             [window for window in out_result.windows if window.display],
@@ -253,6 +286,18 @@ def _format_paid_credits(credits: PaidCredits | None, active: bool) -> str | Non
             return "credits available"
         balance = f"{amount.quantize(Decimal(1), rounding=ROUND_HALF_UP):,} credits left"
     return f"⚡ using paid credits · {balance}" if active else balance
+
+
+def _format_prepaid_balance(balance: PrepaidBalance | None, stale_age: str | None = None) -> str | None:
+    if balance is None:
+        return None
+    if not isinstance(balance, PrepaidBalanceAvailable):
+        line = "Claude prepaid balance unavailable"
+    else:
+        line = f"Claude prepaid balance · {format_prepaid_balance(balance)}"
+    if stale_age is not None:
+        line += f" (stale {stale_age})"
+    return line
 
 
 def _active_windows_line(windows: list[QuotaWindow]) -> str:

@@ -71,6 +71,7 @@ py_test(
     ],
     uses_syrupy = True,
     deps = [
+        ":format_lib",
         ":human_lib",
         "//:conftest",
         "//aiquota:models",

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import TypeAdapter
 
 from aiquota.models import (
     AllQuotas,
@@ -12,6 +13,7 @@ from aiquota.models import (
     FetchError,
     FetchSuccess,
     PaidCredits,
+    PrepaidBalance,
     ProviderFetch,
     ProviderQuota,
     QuotaWindow,
@@ -26,6 +28,8 @@ FIXTURE_NAMES = (
     "extra_enabled_not_burning",
     "stale_fallback",
     "paid_credits",
+    "claude_prepaid_balance",
+    "claude_prepaid_balance_unavailable",
     "reset_credit_expiry_unavailable",
 )
 PROVIDER_ORDER = ("claude", "codex", "zai")
@@ -80,6 +84,7 @@ def _success(node: dict[str, Any]) -> FetchSuccess:
         windows=[window for window in (_window(node.get("short")), _window(node.get("long"))) if window],
         extra_spend=_extra_spend(node.get("extraSpend")),
         paid_credits=PaidCredits.model_validate(node["paidCredits"]) if node.get("paidCredits") is not None else None,
+        prepaid_balance=_prepaid_balance(node.get("prepaidBalance")),
         available_reset_credits=node.get("availableResetCredits"),
         available_reset_credit_expiries=node.get("availableResetCreditExpiries", []),
         reset_credit_expiry_lookup_failed=node.get("resetCreditExpiryLookupFailed", False),
@@ -116,3 +121,11 @@ def _extra_spend(node: object) -> ExtraSpend | None:
         used_usd=float(node["used_usd"]),
         utilization=float(node["utilization"]),
     )
+
+
+def _prepaid_balance(node: object) -> PrepaidBalance | None:
+    if node is None:
+        return None
+    if not isinstance(node, dict):
+        raise ValueError("prepaidBalance fixture must be a mapping")
+    return TypeAdapter(PrepaidBalance).validate_python(node)

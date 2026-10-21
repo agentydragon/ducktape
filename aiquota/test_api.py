@@ -58,7 +58,12 @@ class FakeFetcher:
                     status_code=200,
                     content_type="application/json",
                     body={"five_hour": {"utilization": 45.0, "internal_detail": "upstream-only"}},
-                )
+                ),
+                "claude_prepaid_balance": RawUpstreamResponse(
+                    status_code=200,
+                    content_type="application/json",
+                    body={"balance": {"credits": {"amount_minor": 12345, "exponent": 2}}, "currency": "USD"},
+                ),
             },
         )
 
@@ -181,6 +186,85 @@ async def test_raw_provider_response_is_available_to_authenticated_callers(clien
     }
 
 
+async def test_prepaid_balance_raw_capture_does_not_replace_claude_usage_raw(client: httpx.AsyncClient) -> None:
+    headers = {"Authorization": "Bearer test-bearer"}
+    usage_response = await client.get("/v1/providers/claude/raw", headers=headers)
+    prepaid_response = await client.get("/v1/providers/claude/prepaid-balance/raw", headers=headers)
+
+    assert usage_response.status_code == 200
+    assert usage_response.json()["upstream"]["body"]["five_hour"]["utilization"] == 45.0
+    assert prepaid_response.status_code == 200
+    assert prepaid_response.json()["upstream"]["body"]["balance"]["credits"] == {"amount_minor": 12345, "exponent": 2}
+
+
+async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(monkeypatch: pytest.MonkeyPatch) -> None:
+    org_uuid = "123e4567-e89b-12d3-a456-426614174000"
+    balance_url = f"https://api.anthropic.com/api/oauth/organizations/{org_uuid}/prepaid/credits"
+    usage_body = {"five_hour": {"utilization": 10}}
+    profile_body = {"organization": {"uuid": org_uuid}}
+    balance_body = {
+        "currency": "USD",
+        "balance": {"credits": {"amount_minor": 12345, "exponent": 2}},
+        "balance_credits": 123,
+        "tranches": [{"remaining_amount_minor_units": 12000}],
+    }
+
+    requested_urls: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        bodies = {
+            "https://api.anthropic.com/api/oauth/usage": usage_body,
+            "https://api.anthropic.com/api/oauth/profile": profile_body,
+            balance_url: balance_body,
+        }
+        return httpx.Response(200, json=bodies[str(request.url)], request=request)
+
+    original_factory = api._CapturingClientFactory
+
+    def factory_with_mock_transport(
+        *, claude_proxy: str | None, claude_proxy_ca: Path | None
+    ) -> _CapturingClientFactory:
+        return original_factory(
+            claude_proxy=claude_proxy, claude_proxy_ca=claude_proxy_ca, transport=httpx.MockTransport(handler)
+        )
+
+    monkeypatch.setattr(api, "_CapturingClientFactory", factory_with_mock_transport)
+    service = QuotaAPIService(
+        Config.model_validate(
+            {"claude": {"access_token": "placeholder"}, "codex": {"enabled": False}, "zai": {"enabled": False}}
+        )
+    )
+
+    snapshot = await service.fetch(force_refresh=True)
+
+    assert set(requested_urls) == {
+        "https://api.anthropic.com/api/oauth/usage",
+        "https://api.anthropic.com/api/oauth/profile",
+        balance_url,
+    }
+    assert set(snapshot.raw_responses) == {"claude", "claude_prepaid_balance"}
+    assert snapshot.raw_responses["claude"].body == usage_body
+    assert snapshot.raw_responses["claude_prepaid_balance"].body == balance_body
+    output = snapshot.quotas.providers[0].last_output.result
+    assert isinstance(output, FetchSuccess)
+    assert output.prepaid_balance is not None
+    assert output.prepaid_balance.model_dump() == {
+        "kind": "available",
+        "amount_minor": 12345,
+        "exponent": 2,
+        "currency": "USD",
+    }
+
+
+async def test_prepaid_balance_raw_capture_is_claude_only(client: httpx.AsyncClient) -> None:
+    response = await client.get(
+        "/v1/providers/codex/prepaid-balance/raw", headers={"Authorization": "Bearer test-bearer"}
+    )
+
+    assert response.status_code == 404
+
+
 async def test_unknown_provider_is_not_found(client: httpx.AsyncClient) -> None:
     response = await client.get("/v1/providers/codex/raw", headers={"Authorization": "Bearer test-bearer"})
     assert response.status_code == 404
@@ -204,6 +288,38 @@ async def test_capture_preserves_exact_bounded_upstream_bytes() -> None:
     assert base64.b64decode(raw.body_base64) == body
     assert raw.body_size_bytes == len(body)
     assert raw.truncated is False
+
+
+def test_legacy_claude_proxy_routes_only_direct_provider_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    clients: list[dict[str, object]] = []
+
+    class RecordingAsyncClient:
+        def __init__(self, **kwargs: object) -> None:
+            clients.append(kwargs)
+
+    monkeypatch.setattr(api.httpx, "AsyncClient", RecordingAsyncClient)
+    factory = _CapturingClientFactory(claude_proxy="http://credential-proxy.test:8180", claude_proxy_ca=None)
+
+    factory("claude", {"http://cliproxy.test/api-call"}, 5.0)
+    factory("claude_prepaid_balance", {"http://cliproxy.test/api-call"}, 5.0)
+    factory("claude", {"https://api.anthropic.com/api/oauth/usage"}, 5.0)
+    factory("claude_profile_direct", set(), 5.0)
+    factory("claude_prepaid_balance", {"https://api.anthropic.com/api/oauth/organizations/test/prepaid/credits"}, 5.0)
+    service_with_both_configs = QuotaAPIService(
+        Config.model_validate({"cli_proxy_api": {"url": "http://cliproxy.test/v0/management"}}),
+        claude_proxy="http://credential-proxy.test:8180",
+    )
+    management_factory = service_with_both_configs._client_factory()
+    management_factory("claude", {"http://cliproxy.test/v0/management/api-call"}, 5.0)
+    management_factory("claude_prepaid_balance", {"http://cliproxy.test/v0/management/api-call"}, 5.0)
+
+    assert "proxy" not in clients[0]
+    assert "proxy" not in clients[1]
+    assert clients[2]["proxy"] == "http://credential-proxy.test:8180"
+    assert clients[3]["proxy"] == "http://credential-proxy.test:8180"
+    assert clients[4]["proxy"] == "http://credential-proxy.test:8180"
+    assert "proxy" not in clients[5]
+    assert "proxy" not in clients[6]
 
 
 def _make_snapshot(used_percent: float, fetched_at: datetime) -> QuotaSnapshot:

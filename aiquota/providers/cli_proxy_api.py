@@ -88,15 +88,26 @@ class CLIProxyAPIManagementClient:
     client_factory: ProviderClientFactory
     timeout: float = 5.0
 
-    async def fetch_usage(self, provider: str, usage_url: str, usage_headers: dict[str, str], capture_key: str) -> str:
+    async def fetch_usage(
+        self,
+        provider: str,
+        usage_url: str,
+        usage_headers: dict[str, str],
+        capture_key: str,
+        *,
+        capture_response: bool = True,
+    ) -> str:
         """Call one provider endpoint through CLIProxyAPI.
 
         `provider` selects the auth file; `capture_key` names the raw-response
-        slot, so a provider reading several endpoints keeps each body.
+        slot, so a provider reading several endpoints keeps each body. Set
+        `capture_response` false for lookup endpoints whose body is only used to
+        discover the URL of another endpoint and should not be retained.
         """
 
         if not self.key:
             raise ValueError("CLIProxyAPI key is not configured")
         api_call_url = f"{self.url.rstrip('/')}{MANAGEMENT_API_CALL_PATH}"
-        async with self.client_factory(capture_key, {api_call_url}, self.timeout) as client:
+        response_urls = {api_call_url} if capture_response else set()
+        async with self.client_factory(capture_key, response_urls, self.timeout) as client:
             return await _fetch_usage_via_management(self.url, self.key, provider, usage_url, usage_headers, client)

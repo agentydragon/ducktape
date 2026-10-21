@@ -16,12 +16,14 @@ export type ProviderView = components["schemas"]["ProviderView"];
 export type QuotaWindow = components["schemas"]["QuotaWindow"];
 export type ExtraSpend = components["schemas"]["ExtraSpend"];
 export type PaidCredits = components["schemas"]["PaidCredits"];
+export type PrepaidBalance = NonNullable<components["schemas"]["FetchSuccess"]["prepaid_balance"]>;
 export type BurnStatus = components["schemas"]["BurnStatus"];
 
 export type EffectiveQuota = {
   windows: QuotaWindow[];
   extraSpend: ExtraSpend | null;
   paidCredits: PaidCredits | null;
+  prepaidBalance: PrepaidBalance | null;
   resetCredits: number | null;
   resetCreditExpiries: string[];
   resetCreditExpiryLookupFailed: boolean;
@@ -35,7 +37,10 @@ export function effectiveQuota(provider: ProviderView): EffectiveQuota {
   const error = result.kind === "error" ? result.error : null;
   if (
     result.kind === "success" &&
-    (result.windows?.length || result.available_reset_credits != null || result.paid_credits != null)
+    (result.windows?.length ||
+      result.available_reset_credits != null ||
+      result.paid_credits != null ||
+      result.prepaid_balance != null)
   ) {
     return { ...shown(result), staleSince: null, error };
   }
@@ -45,6 +50,7 @@ export function effectiveQuota(provider: ProviderView): EffectiveQuota {
     windows: [],
     extraSpend: null,
     paidCredits: null,
+    prepaidBalance: null,
     resetCredits: null,
     resetCreditExpiries: [],
     resetCreditExpiryLookupFailed: false,
@@ -69,6 +75,7 @@ function shown(result: components["schemas"]["FetchSuccess"]): Omit<EffectiveQuo
     windows: (result.windows ?? []).filter((window) => window.display),
     extraSpend: result.extra_spend ?? null,
     paidCredits: result.paid_credits ?? null,
+    prepaidBalance: result.prepaid_balance ?? null,
     resetCredits: result.available_reset_credits ?? null,
     resetCreditExpiries: result.available_reset_credit_expiries ?? [],
     resetCreditExpiryLookupFailed: result.reset_credit_expiry_lookup_failed ?? false,

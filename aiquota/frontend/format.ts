@@ -65,6 +65,18 @@ export function formatAge(seconds: number): string {
   return total < 60 ? `${total}s` : formatDuration(total);
 }
 
+/** Exact minor-unit currency rendering shared with `render/format.py`. */
+export function formatPrepaidBalance(amountMinor: number, exponent: number, currency: string): string {
+  const negative = amountMinor < 0;
+  const amount = BigInt(Math.abs(amountMinor));
+  const scale = 10n ** BigInt(exponent);
+  const whole = (amount / scale).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const fraction = exponent > 0 ? `.${(amount % scale).toString().padStart(exponent, "0")}` : "";
+  const value = `${whole}${fraction}`;
+  const sign = negative ? "-" : "";
+  return currency === "USD" ? `${sign}$${value}` : `${sign}${value} ${currency}`;
+}
+
 /** Signed deviation from the constant-rate line; null while the window is too young to say. */
 export function formatPace(pace: Pace | null): string | null {
   if (pace === null || !pace.stable) return null;

@@ -105,6 +105,7 @@ def _assemble(name: str, output: ProviderFetch, prior: ProviderQuota | None) -> 
         output.result.windows
         or output.result.available_reset_credits is not None
         or output.result.paid_credits is not None
+        or output.result.prepaid_balance is not None
     ):
         success = SuccessfulProviderFetch(fetched_at=output.fetched_at, result=output.result)
     return ProviderQuota(

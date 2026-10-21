@@ -1,8 +1,9 @@
 """Shared format helpers for human and tmux renderers."""
 
 from datetime import datetime, tzinfo
+from decimal import Decimal
 
-from aiquota.models import PaceResult, QuotaWindow
+from aiquota.models import PaceResult, PrepaidBalanceAvailable, QuotaWindow
 from aiquota.pace import is_exhausted
 from aiquota.peak_windows import BurnStatus, PeakInterval
 
@@ -50,6 +51,14 @@ def format_age(seconds: float) -> str:
     if s < 60:
         return f"{s}s"
     return format_duration(s)
+
+
+def format_prepaid_balance(balance: PrepaidBalanceAvailable) -> str:
+    """Format minor units without converting the provider balance to float."""
+    sign = "-" if balance.amount_minor < 0 else ""
+    amount = Decimal(abs(balance.amount_minor)).scaleb(-balance.exponent)
+    value = f"{amount:,.{balance.exponent}f}"
+    return f"{sign}${value}" if balance.currency == "USD" else f"{sign}{value} {balance.currency}"
 
 
 def format_known_reset_credit_expiries(expiries: list[datetime], tz: tzinfo | None = None) -> str | None:

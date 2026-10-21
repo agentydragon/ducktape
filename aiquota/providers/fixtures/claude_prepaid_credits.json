@@ -1,0 +1,22 @@
+{
+  "amount": 12345,
+  "currency": "USD",
+  "balance": {
+    "money": null,
+    "credits": {
+      "amount_minor": 12345,
+      "exponent": 2
+    }
+  },
+  "balance_credits": 123,
+  "tranches": [
+    {
+      "remaining_amount_minor_units": 12000,
+      "currency": "USD",
+      "expires_at": null,
+      "granted_amount_minor_units": 50000
+    }
+  ],
+  "promo_tranches": [],
+  "next_expires_at": null
+}

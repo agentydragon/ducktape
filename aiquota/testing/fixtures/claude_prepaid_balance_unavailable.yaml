@@ -1,0 +1,6 @@
+claude:
+  short: { usedPercent: 45, resetSeconds: 7200, windowSeconds: 18000 }
+  long: { usedPercent: 32, resetSeconds: 345600, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  prepaidBalance: { kind: unavailable }

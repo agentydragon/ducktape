@@ -10,12 +10,22 @@ an external credential owner must use a non-file credential source instead.
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic.alias_generators import to_camel
 
-from aiquota.models import ExtraSpend, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
+from aiquota.models import (
+    ExtraSpend,
+    FetchError,
+    FetchSuccess,
+    PrepaidBalance,
+    PrepaidBalanceAvailable,
+    PrepaidBalanceUnavailable,
+    ProviderFetch,
+    QuotaWindow,
+)
 from aiquota.providers.base import Provider
 from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
 from aiquota.providers.client import ProviderClientFactory
@@ -25,10 +35,13 @@ from devinfra.claude.claude_api.usage import Spend, UsageBucket, UsageResponse
 logger = logging.getLogger(__name__)
 
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
+PREPAID_BALANCE_CAPTURE_KEY = "claude_prepaid_balance"
 TOKEN_EXPIRY_SKEW_SECS = 30
 API_TIMEOUT_SECS = 5.0
 SHORT_WINDOW_SECS = 5 * 3600
 LONG_WINDOW_SECS = 7 * 86400
+_OAUTH_HEADERS = {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"}
 
 
 class ClaudeSettings(BaseModel):
@@ -67,6 +80,38 @@ class _TokenRefreshResponse(BaseModel):
     access_token: str | None = None
     refresh_token: str | None = None
     expires_in: float | None = None
+
+
+class _ClaudeOrganization(BaseModel):
+    uuid: UUID
+
+    model_config = ConfigDict(hide_input_in_errors=True)
+
+
+class _ClaudeProfileResponse(BaseModel):
+    organization: _ClaudeOrganization
+
+    model_config = ConfigDict(hide_input_in_errors=True)
+
+
+class _ClaudeCreditAmount(BaseModel):
+    amount_minor: int
+    exponent: int = Field(ge=0, le=9)
+
+    model_config = ConfigDict(hide_input_in_errors=True)
+
+
+class _ClaudePrepaidBalance(BaseModel):
+    credits: _ClaudeCreditAmount | None = None
+
+    model_config = ConfigDict(hide_input_in_errors=True)
+
+
+class _ClaudePrepaidCreditsResponse(BaseModel):
+    currency: str
+    balance: _ClaudePrepaidBalance
+
+    model_config = ConfigDict(hide_input_in_errors=True)
 
 
 def _read_credentials(path: Path) -> tuple[_Credentials, str | None]:
@@ -146,10 +191,22 @@ def _spend_to_extra_spend(spend: Spend | None) -> ExtraSpend | None:
     )
 
 
-def _to_success(usage: UsageResponse) -> FetchSuccess:
+def _to_success(usage: UsageResponse, prepaid_balance: PrepaidBalance | None = None) -> FetchSuccess:
     windows = (_to_window(usage.five_hour, SHORT_WINDOW_SECS), _to_window(usage.seven_day, LONG_WINDOW_SECS))
     return FetchSuccess(
-        windows=[window for window in windows if window], extra_spend=_spend_to_extra_spend(usage.spend)
+        windows=[window for window in windows if window],
+        extra_spend=_spend_to_extra_spend(usage.spend),
+        prepaid_balance=prepaid_balance,
+    )
+
+
+def _prepaid_balance_from_body(body: str) -> PrepaidBalanceAvailable:
+    response = _ClaudePrepaidCreditsResponse.model_validate_json(body)
+    credits = response.balance.credits
+    if credits is None:
+        raise ValueError("Claude prepaid credits balance is unavailable")
+    return PrepaidBalanceAvailable(
+        amount_minor=credits.amount_minor, exponent=credits.exponent, currency=response.currency
     )
 
 
@@ -171,15 +228,13 @@ class ClaudeProvider(Provider):
         if self.management_client:
             try:
                 body = await self.management_client.fetch_usage(
-                    self.name,
-                    USAGE_URL,
-                    {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"},
-                    capture_key=self.name,
+                    self.name, USAGE_URL, _OAUTH_HEADERS, capture_key=self.name
                 )
                 usage = UsageResponse.model_validate_json(body)
             except Exception as e:
                 return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "CLIProxyAPI integration"))
-            return ProviderFetch(fetched_at=now, result=_to_success(usage))
+            prepaid_balance = await self._best_effort_prepaid_balance()
+            return ProviderFetch(fetched_at=now, result=_to_success(usage, prepaid_balance))
 
         path = self.settings.credentials_path
         creds, stored_token = _read_credentials(path)
@@ -196,12 +251,50 @@ class ClaudeProvider(Provider):
                     token = await _refresh_token(path, creds, client)
                     if not token:
                         return ProviderFetch(fetched_at=now, result=FetchError(error="token refresh failed"))
-                resp = await client.get(
-                    USAGE_URL, headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"}
-                )
+                resp = await client.get(USAGE_URL, headers={**_OAUTH_HEADERS, "Authorization": f"Bearer {token}"})
             resp.raise_for_status()
             usage = UsageResponse.model_validate_json(resp.content)
         except Exception as e:
             return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "claude quota fetch"))
 
-        return ProviderFetch(fetched_at=now, result=_to_success(usage))
+        prepaid_balance = await self._best_effort_prepaid_balance(token)
+        return ProviderFetch(fetched_at=now, result=_to_success(usage, prepaid_balance))
+
+    async def _best_effort_prepaid_balance(self, token: str | None = None) -> PrepaidBalance:
+        try:
+            return await self._fetch_prepaid_balance(token)
+        except Exception:
+            logger.warning("Claude prepaid balance lookup failed", exc_info=True)
+            return PrepaidBalanceUnavailable()
+
+    async def _fetch_prepaid_balance(self, token: str | None) -> PrepaidBalanceAvailable:
+        if self.management_client:
+            profile_body = await self.management_client.fetch_usage(
+                self.name, PROFILE_URL, _OAUTH_HEADERS, capture_key="claude_profile", capture_response=False
+            )
+        else:
+            if token is None:
+                raise ValueError("Claude access token is unavailable")
+            async with self.client_factory("claude_profile_direct", set(), API_TIMEOUT_SECS) as client:
+                profile_response = await client.get(
+                    PROFILE_URL, headers={**_OAUTH_HEADERS, "Authorization": f"Bearer {token}"}
+                )
+            profile_response.raise_for_status()
+            profile_body = profile_response.text
+
+        profile = _ClaudeProfileResponse.model_validate_json(profile_body)
+        balance_url = f"https://api.anthropic.com/api/oauth/organizations/{profile.organization.uuid}/prepaid/credits"
+        if self.management_client:
+            balance_body = await self.management_client.fetch_usage(
+                self.name, balance_url, _OAUTH_HEADERS, capture_key=PREPAID_BALANCE_CAPTURE_KEY
+            )
+        else:
+            if token is None:
+                raise ValueError("Claude access token is unavailable")
+            async with self.client_factory(PREPAID_BALANCE_CAPTURE_KEY, {balance_url}, API_TIMEOUT_SECS) as client:
+                balance_response = await client.get(
+                    balance_url, headers={**_OAUTH_HEADERS, "Authorization": f"Bearer {token}"}
+                )
+            balance_response.raise_for_status()
+            balance_body = balance_response.text
+        return _prepaid_balance_from_body(balance_body)
