@@ -15,6 +15,10 @@ is the pytest plugin that starts it and publishes it as the deployment under tes
 forwarding to the scenario's scripted model on the node. Scripted targets take the
 `harnesses/runner_layout` image, which carries both pinned harnesses.
 
+Each stack records its setup in `k3s-timeline.jsonl` among the test's undeclared outputs: when each
+step finished and how long each image took to import, written as it happens, so a hung run shows how far
+it got. An acceptance target's test log ends with the same timeline.
+
 A target declared with `mcp_fixtures = True` takes the `rendered/local-model-mcp-fixtures.json`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture
 (`mcp_fixtures/*_layout`), with test-only Dex clients, operator, MCP server and Action groups. Dex

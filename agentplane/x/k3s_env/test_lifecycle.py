@@ -17,7 +17,7 @@ from agentplane.acceptance.conftest import POD_TEMPLATE, wait_until_running
 from agentplane.app.sandbox_models import NewSandbox, SandboxView
 from agentplane.app.testing.client import Client
 from agentplane.sandbox_resource import OperatingMode
-from agentplane.x.k3s_env.stack import Stack, running_stack
+from agentplane.x.k3s_env.stack import Stack, Timeline, running_stack
 
 TRANSITION_SECONDS = 300.0
 STATE_FILE = "/state/lifecycle-marker"
@@ -25,7 +25,7 @@ STATE_FILE = "/state/lifecycle-marker"
 
 @pytest.fixture(scope="module")
 def stack() -> Iterator[Stack]:
-    with running_stack(models=None) as running:
+    with running_stack(models=None, timeline=Timeline()) as running:
         yield running
 
 

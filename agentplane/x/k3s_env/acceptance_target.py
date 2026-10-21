@@ -6,7 +6,8 @@ the `AGENTPLANE_ACCEPTANCE_*` variables the acceptance `conftest` reads, `KUBECO
 on `PATH`. LLM ingress forwards to the scenario's scripted model on the node, which the scenario starts
 on the published address (`scripted_upstream`). A stack with the MCP fixtures also publishes the
 operator's login Secret for `operator_login` and the Action Service's MCP endpoint, and trusts Dex's CA
-(`SSL_CERT_FILE`).
+(`SSL_CERT_FILE`). The test log ends with the stack's setup timeline, how long each step and each image
+import took.
 """
 
 import os
@@ -20,8 +21,10 @@ import pytest
 from agentplane.acceptance import operator_login, scripted_upstream
 from agentplane.acceptance.conftest import ACTIONS_MCP_URL, BASE_URL, NAMESPACE, TOKEN
 from agentplane.x.k3s_env import rendered_fixture
-from agentplane.x.k3s_env.stack import node_ip, running_stack
+from agentplane.x.k3s_env.stack import Timeline, node_ip, running_stack
 from util.bazel.runfiles import get_required_path
+
+TIMELINE = pytest.StashKey[Timeline]()
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -33,15 +36,23 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     items[:] = [item for item in items if item not in other]
 
 
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, config: pytest.Config) -> None:
+    # Absent when no scenario was collected, so the stack never started.
+    if (timeline := config.stash.get(TIMELINE, None)) is not None:
+        terminalreporter.write_sep("-", "k3s stack setup")
+        terminalreporter.write_line(timeline.summary())
+
+
 @pytest.fixture(scope="session", autouse=True)
-def k3s_deployment() -> Iterator[None]:
+def k3s_deployment(pytestconfig: pytest.Config) -> Iterator[None]:
     host = node_ip()
     # A free port now; each scenario listens on it while it runs. Nothing else binds ports in this action.
     with socket.socket() as probe:
         probe.bind((host, 0))
         port = probe.getsockname()[1]
+    timeline = pytestconfig.stash[TIMELINE] = Timeline()
     with (
-        running_stack(models=rendered_fixture.LocalModel(url=f"http://{host}:{port}")) as stack,
+        running_stack(models=rendered_fixture.LocalModel(url=f"http://{host}:{port}"), timeline=timeline) as stack,
         tempfile.TemporaryDirectory() as tools,
         pytest.MonkeyPatch.context() as environment,
     ):

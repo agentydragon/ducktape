@@ -15,7 +15,7 @@ from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.x.k3s_env.rendered_fixture import PublicLiteLLM
-from agentplane.x.k3s_env.stack import Stack, run, running_stack
+from agentplane.x.k3s_env.stack import Stack, Timeline, run, running_stack
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -25,7 +25,7 @@ SANDBOX = "smoke"
 
 @pytest.fixture(scope="module")
 def stack() -> Iterator[Stack]:
-    with running_stack(models=PublicLiteLLM(key=os.environ["LITELLM_QWEN_KEY"])) as running:
+    with running_stack(models=PublicLiteLLM(key=os.environ["LITELLM_QWEN_KEY"]), timeline=Timeline()) as running:
         yield running
 
 

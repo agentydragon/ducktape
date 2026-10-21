@@ -24,7 +24,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -82,6 +82,37 @@ def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
     entry = tarfile.TarInfo(name)
     entry.size = len(encoded)
     archive.addfile(entry, io.BytesIO(encoded))
+
+
+@dataclass
+class Timeline:
+    """When each step of bringing the stack up finished, in seconds after the timeline began, and how
+    long each image took to import. Each entry is also appended to `k3s-timeline.jsonl` in the test's
+    undeclared outputs as it happens, so a run that hangs shows how far it got."""
+
+    started: float = field(default_factory=time.monotonic)
+    steps: list[tuple[str, float]] = field(default_factory=list)
+    imports: list[tuple[str, float]] = field(default_factory=list)
+
+    def mark(self, step: str) -> None:
+        at = round(time.monotonic() - self.started, 1)
+        self.steps.append((step, at))
+        self._record({"step": step, "at": at})
+
+    def image_imported(self, image: str, seconds: float) -> None:
+        # `git.allegedly.works/ducktape-ci/agentplane-app:unset` or `quay.io/kubevirt/virt-api@sha256:…`
+        name = image.rsplit("/", 1)[-1].partition("@")[0].partition(":")[0]
+        self.imports.append((name, round(seconds, 1)))
+        self._record({"image": name, "seconds": round(seconds, 1), "at": round(time.monotonic() - self.started, 1)})
+
+    def summary(self) -> str:
+        steps = ", ".join(f"{step} {at}" for step, at in self.steps)
+        imports = ", ".join(f"{name} {seconds}" for name, seconds in sorted(self.imports, key=lambda i: -i[1]))
+        return f"seconds after start: {steps}\nimage imports, seconds, slowest first: {imports}"
+
+    def _record(self, entry: dict[str, str | float]) -> None:
+        with (undeclared_outputs_dir() / "k3s-timeline.jsonl").open("a") as out:
+            out.write(json.dumps(entry) + "\n")
 
 
 def node_ip() -> str:
@@ -162,20 +193,23 @@ class K3s:
             raise
         return process
 
-    def import_images(self, images: dict[str, Path]) -> None:
-        """Stream Bazel OCI layouts (`.rloc` files, keyed by the image reference each loads as) to
-        containerd, preserving blob digests and sharing duplicate blobs."""
-        manifests = []
-        blobs: dict[str, Path] = {}
+    def import_images(self, images: dict[str, Path], timeline: Timeline) -> None:
+        """Import Bazel OCI layouts (`.rloc` files, keyed by the image reference each loads as) into
+        containerd one image at a time, timing each. Blob digests are preserved, and a blob an earlier
+        image already imported is not streamed again."""
+        imported: set[str] = set()
         for image, rloc in images.items():
+            started = time.monotonic()
             layout = get_required_path(rloc.read_text().strip())
             index = json.loads((layout / "index.json").read_text())
             for descriptor in index["manifests"]:
                 descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = image
-                manifests.append(descriptor)
-            for blob in (layout / "blobs").glob("*/*"):
-                blobs.setdefault(blob.relative_to(layout).as_posix(), blob)
-        print(f"importing {len(images)} OCI layouts with {len(blobs)} distinct blobs")
+            blobs = {blob.relative_to(layout).as_posix(): blob for blob in (layout / "blobs").glob("*/*")}
+            self._import_layout(index["manifests"], {name: blobs[name] for name in blobs.keys() - imported})
+            imported |= blobs.keys()
+            timeline.image_imported(image, time.monotonic() - started)
+
+    def _import_layout(self, manifests: list[dict[str, Any]], blobs: dict[str, Path]) -> None:
         with tempfile.TemporaryFile() as output:
             with subprocess.Popen(
                 [
@@ -349,8 +383,9 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
 
 
 @contextlib.contextmanager
-def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
-    """The stack with every Deployment Available, LLM ingress forwarding to `models`.
+def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Iterator[Stack]:
+    """The stack with every Deployment Available, LLM ingress forwarding to `models`, each step of
+    bringing it up marked on `timeline`.
 
     The manifest is the build's rendering for `models`' backend, `K3S_FIXTURE_RLOCATION`. A rendering
     with the MCP fixtures takes their image layouts from `K3S_MCP_FIXTURE_LAYOUTS`, space-separated
@@ -367,6 +402,7 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
     work = Path(tempfile.mkdtemp())
     k3s = K3s(work, get_required_path(os.environ["K3S_BINARY_RLOCATION"]))
     process = k3s.start()
+    timeline.mark("node Ready")
     with contextlib.ExitStack() as cleanup:
         cleanup.callback(shutil.rmtree, work, ignore_errors=True)
         cleanup.callback(process.terminate)
@@ -391,19 +427,23 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
             releases = vm_sandboxes.releases()
             # Their images first, so they roll out while the stack's own import; a Pod that starts before
             # its image is in containerd pulls it from the registry.
-            k3s.import_images(vm_sandboxes.images(releases))
+            k3s.import_images(vm_sandboxes.images(releases), timeline)
             vm_sandboxes.install(k3s.kubectl, releases)
-        k3s.import_images(images)
+            timeline.mark("KubeVirt and Kyverno applied")
+        k3s.import_images(images, timeline)
+        timeline.mark("images imported")
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
         if fixture.vm_sandboxes:
             vm_sandboxes.wait_for_apis(k3s.kubectl)
+        timeline.mark("CRDs applied")
         # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
         namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
         rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
         print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
         logger.info("applied %s objects", len(rest))
+        timeline.mark("manifests applied")
 
         failed: list[str] = []
         deployments = [d["metadata"]["name"] for d in rest if d["kind"] == "Deployment"]
@@ -419,8 +459,10 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
         if failed:
             print(k3s.report(fixture.namespace))
             raise RuntimeError(f"Deployments not Available: {failed}")
+        timeline.mark("Deployments Available")
         if fixture.vm_sandboxes:
             vm_sandboxes.wait_until_ready(k3s.kubectl)
+            timeline.mark("KubeVirt and Kyverno ready")
         _resolve_on_node(k3s, fixture)
         access = None
         if mcp is not None and fixture.mcp_fixtures is not None:
@@ -444,6 +486,7 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
             "-n", fixture.namespace, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
         ).strip()
         print("memory:", run("free", "-m"))
+        timeline.mark("stack ready")
         yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         print(k3s.report(fixture.namespace))
         if fixture.vm_sandboxes:
