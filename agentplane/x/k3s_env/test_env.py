@@ -14,7 +14,7 @@ from agentplane.app.sandbox_models import NewSandbox
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
-from agentplane.x.k3s_env import fixture_chart
+from agentplane.x.k3s_env.rendered_fixture import PublicLiteLLM
 from agentplane.x.k3s_env.stack import Stack, run, running_stack
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
@@ -25,7 +25,7 @@ SANDBOX = "smoke"
 
 @pytest.fixture(scope="module")
 def stack() -> Iterator[Stack]:
-    with running_stack(models=fixture_chart.PublicLiteLLM(key=os.environ["LITELLM_QWEN_KEY"])) as running:
+    with running_stack(models=PublicLiteLLM(key=os.environ["LITELLM_QWEN_KEY"])) as running:
         yield running
 
 
@@ -38,7 +38,7 @@ def _print_turn_diagnostics(stack: Stack) -> None:
         f"agentplane.allegedly.works/sandbox={SANDBOX}",
     ):
         logs = stack.k3s.kubectl(
-            "logs", "-l", selector, "-n", fixture_chart.NAMESPACE, "--all-containers", "--tail=60", check=False
+            "logs", "-l", selector, "-n", stack.namespace, "--all-containers", "--tail=60", check=False
         )
         print(f"--- {selector}\n{logs}")
     print(

@@ -1967,7 +1967,6 @@ flowchart LR
     TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
     K3S_KUBE_PROXY_RETEST[Proposed: kube-proxy on today's executor]
     K3S_MIGRATOR_CONNECT_RETRY[Proposed: migrators retry their first connection]
-    K3S_TEST_STARTUP[Proposed: cut the time before pytest starts]
     K3S_CI_TIER[Decision: which k3s targets run in CI]
     APP_BRIDGE_TEST_SPLIT[Candidate: app bridge tests split by tier]
     FAKE_APISERVERS_TO_ENVTEST[Candidate: envtest in place of fake API servers]
@@ -1979,7 +1978,6 @@ flowchart LR
     K3S_CI_TIER -. if the k3s suite gates staging pins .-> TESTING_ENVIRONMENT_RETIRE
     K3S_KUBE_PROXY_RETEST -. faster, ClusterIP coverage .-> K3S_CI_TIER
     K3S_MIGRATOR_CONNECT_RETRY -. faster on slow workers .-> K3S_CI_TIER
-    K3S_TEST_STARTUP -. faster .-> K3S_CI_TIER
 ```
 
 ### `K3S_MODEL_CREDENTIALS` — model key for k3s acceptance
@@ -2086,13 +2084,6 @@ Ready ([ffa9564c](https://app.buildbuddy.io/invocation/ffa9564c-3c9d-4937-b091-9
 Every fresh run on 2026-10-21 paid one 10 s back-off per migrating service. Retry the first
 connection in process for a bounded time instead. Exit: no migrator restarts in a fresh lifecycle
 run, with time to all Deployments Available measured before and after.
-
-### `K3S_TEST_STARTUP` — cut the time before pytest starts
-
-**Proposed.** 27–78 s of each lifecycle action pass before pytest starts, while the test module
-imports the cdk8s chart code ([phase timings](../x/k3s_env/README.md#phase-timings-and-image-bytes-2026-10-21)).
-Profile that startup, then cut it, for example by rendering the fixture chart at build time and
-filling the runtime values in the test. Exit: before and after timings on fresh runs.
 
 ### `K3S_CI_TIER` — which k3s targets run in CI
 

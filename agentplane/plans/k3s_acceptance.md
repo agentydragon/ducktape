@@ -74,17 +74,16 @@ layer (−40%) and the harness-free runner image (−35%).
 2. **Migration crash-loop back-off.** Every service with a migration init container fails its
    first connection while PostgreSQL starts and waits a 10 s back-off; on a slow worker the
    back-offs reached 40 s, a minute of the run.
-3. **27–78 s pass before pytest starts.** The test module imports the cdk8s chart code (jsii
-   starts Node and loads the libraries) before `pytest_bazel.main()`; `test_render`'s
-   [startup note](../x/k3s_env/debug/render_startup.md) found that startup at 29–61 s on RBE. Not
-   broken down further here.
+3. **Python compiles its imports in every action.** Rules_python's precompile
+   (`pyc_collection = "include_pyc"`) fails on RBE: the exec interpreter does not find its
+   standard library. So each action compiles bytecode as it imports, about three quarters of import
+   time. With the fixture chart rendered at build time, imports still take 10–13 s before pytest
+   starts ([measurements](../x/k3s_env/README.md#fixture-chart-rendered-at-build-time-2026-10-21)).
 4. **What the RBE executor can run** (probed 2026-10-21 with `bb execute`, the k3s target's
    isolation properties): kernel 5.15.0, no `/dev/kvm` (`CONFIG_KVM` unset, only
    `CONFIG_KVM_GUEST`), no BPF JIT. So no KubeVirt with hardware virtualization and no Cilium.
    `MARK` and `-m mark` rules now insert and delete, which is what kube-proxy lacked on 2026-10-16
    ([networking note](../debug/2026-10-16-k3s-service-networking.md)).
-5. **`--test_arg=-s` breaks these targets:** the app's `Settings`, which the chart code uses, has
-   `cli_parse_args=True` and rejects the test's own argv.
 
 ## What `agentplane-testing` covers today
 
@@ -227,8 +226,8 @@ Speed, in parallel:
 - **`K3S_KUBE_PROXY_RETEST`**: rerun the reverted #10808 on today's executor (finding 4). If
   ClusterIP works, the fixture drops headless Services, node-IP API access and host-network CoreDNS.
   It also gains the Service routing it does not cover now.
-- **`K3S_TEST_STARTUP`**: profile the 27–78 s before pytest starts (finding 3) and cut it. One way
-  is rendering the fixture chart at build time, with the test filling in the runtime values.
+- **Precompiled bytecode**: up to 10 s of the remaining imports (finding 3). Measured here only; no
+  node until the operator wants one.
 - **`K3S_MIGRATOR_CONNECT_RETRY`**: the migrators retry their first database connection in process
   for a bounded time, instead of exiting into `CrashLoopBackOff` (finding 2).
   - The back-off costs 10 s on a typical run and about a minute on a slow one.

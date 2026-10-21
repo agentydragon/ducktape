@@ -24,7 +24,7 @@ from typing import Any
 import yaml
 
 from agentplane.acceptance.conftest import AUDIENCE, TESTING_SERVICE_ACCOUNT
-from agentplane.x.k3s_env import fixture_chart
+from agentplane.x.k3s_env import rendered_fixture
 from agentplane.x.k3s_env.bootstrap import Bootstrap
 from util.bazel.runfiles import get_required_path
 
@@ -236,35 +236,26 @@ class K3s:
                 raise RuntimeError(f"containerd image import exited {code}: {log[-6000:]}")
             print(log)
 
-    def report(self) -> str:
+    def report(self, namespace: str) -> str:
         parts = [
             self.kubectl("get", "pods", "-A", "-o", "wide", check=False),
             self.kubectl("get", "events", "-A", "--sort-by=.lastTimestamp", check=False)[-6000:],
         ]
-        pods = self.kubectl("get", "pods", "-n", fixture_chart.NAMESPACE, "-o", "name", check=False).split()
+        pods = self.kubectl("get", "pods", "-n", namespace, "-o", "name", check=False).split()
         for pod in pods:
             ready = self.kubectl(
                 "get",
                 pod,
                 "-n",
-                fixture_chart.NAMESPACE,
+                namespace,
                 "-o",
                 "jsonpath={.status.conditions[?(@.type=='Ready')].status}",
                 check=False,
             )
             if ready != "True":
-                logs = self.kubectl(
-                    "logs", pod, "-n", fixture_chart.NAMESPACE, "--all-containers", "--tail=40", check=False
-                )
+                logs = self.kubectl("logs", pod, "-n", namespace, "--all-containers", "--tail=40", check=False)
                 previous = self.kubectl(
-                    "logs",
-                    pod,
-                    "-n",
-                    fixture_chart.NAMESPACE,
-                    "--all-containers",
-                    "--previous",
-                    "--tail=40",
-                    check=False,
+                    "logs", pod, "-n", namespace, "--all-containers", "--previous", "--tail=40", check=False
                 )
                 parts.append(f"--- {pod}\n{logs}\n--- previous\n{previous}")
         return "\n".join(parts)
@@ -295,6 +286,7 @@ def _openssl_ca(work: Path) -> tuple[str, str]:
 @dataclass(frozen=True)
 class Stack:
     k3s: K3s
+    namespace: str
     base_url: str
     token: str
 
@@ -312,8 +304,11 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
 
 
 @contextlib.contextmanager
-def running_stack(*, models: fixture_chart.Models) -> Iterator[Stack]:
-    """The stack with every Deployment Available, LLM ingress forwarding to `models`."""
+def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
+    """The stack with every Deployment Available, LLM ingress forwarding to `models`.
+
+    The manifest is the build's rendering for `models`' backend, `K3S_FIXTURE_RLOCATION`.
+    """
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     layouts = sorted(get_required_path("_main/agentplane/x/k3s_env").glob("*_layout.rloc"))
     layouts.append(get_required_path(os.environ["K3S_RUNNER_LAYOUT_RLOCATION"]))
@@ -324,20 +319,23 @@ def running_stack(*, models: fixture_chart.Models) -> Iterator[Stack]:
     try:
         ca_cert, ca_key = _openssl_ca(work)
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
-        everything = fixture_chart.objects(
-            node_ip=k3s.node_ip,
-            ca_cert=ca_cert,
-            ca_key=ca_key,
-            system_roots=Path("/etc/ssl/certs/ca-certificates.crt").read_text(),
-            cluster_ca=cluster_ca,
-            models=models,
+        fixture = rendered_fixture.load(
+            get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]),
+            rendered_fixture.RuntimeInputs(
+                node_ip=k3s.node_ip,
+                ca_cert=ca_cert,
+                ca_key=ca_key,
+                system_roots=Path("/etc/ssl/certs/ca-certificates.crt").read_text(),
+                cluster_ca=cluster_ca,
+            ),
+            models,
         )
-        k3s.import_images(layouts, required_images=_deployment_images(everything))
+        k3s.import_images(layouts, required_images=_deployment_images(fixture.objects))
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
         # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
-        namespaces = [d for d in everything if d["kind"] == "Namespace"]
-        rest = [d for d in everything if d["kind"] != "Namespace"]
+        namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
+        rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
         print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
         logger.info("applied %s objects", len(rest))
@@ -348,24 +346,24 @@ def running_stack(*, models: fixture_chart.Models) -> Iterator[Stack]:
         for name in deployments:
             remaining = max(5, int(deadline - time.monotonic()))
             out = k3s.kubectl(
-                "wait", "--for=condition=Available", f"deployment/{name}", "-n", fixture_chart.NAMESPACE,
+                "wait", "--for=condition=Available", f"deployment/{name}", "-n", fixture.namespace,
                 f"--timeout={remaining}s", check=False,
             )  # fmt: skip
             if "condition met" not in out:
                 failed.append(name)
         if failed:
-            print(k3s.report())
+            print(k3s.report(fixture.namespace))
             raise RuntimeError(f"Deployments not Available: {failed}")
         app_ip = k3s.kubectl(
-            "get", "pod", "-n", fixture_chart.NAMESPACE, "-l", "app.kubernetes.io/name=app",
+            "get", "pod", "-n", fixture.namespace, "-l", "app.kubernetes.io/name=app",
             "-o", "jsonpath={.items[0].status.podIP}",
         )  # fmt: skip
         token = k3s.kubectl(
-            "-n", fixture_chart.NAMESPACE, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
+            "-n", fixture.namespace, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
         ).strip()
         print("memory:", run("free", "-m"))
-        yield Stack(k3s=k3s, base_url=f"http://{app_ip}:8080", token=token)
-        print(k3s.report())
+        yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=f"http://{app_ip}:8080", token=token)
+        print(k3s.report(fixture.namespace))
     finally:
         process.terminate()
         shutil.rmtree(work, ignore_errors=True)

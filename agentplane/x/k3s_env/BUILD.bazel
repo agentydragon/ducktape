@@ -2,7 +2,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/x/k3s_env:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_TAGS")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
 
@@ -141,7 +141,7 @@ py_library(
     srcs = ["acceptance_target.py"],
     visibility = ["//agentplane/acceptance:__pkg__"],
     deps = [
-        ":fixture_chart",
+        ":rendered_fixture",
         ":stack",
         "//agentplane/acceptance:conftest",
         "//agentplane/acceptance:scripted_upstream",
@@ -164,7 +164,7 @@ py_library(
     ] + [":" + name + "_layout" for name in _IMAGES],
     deps = [
         ":bootstrap",
-        ":fixture_chart",
+        ":rendered_fixture",
         "//agentplane/acceptance:conftest",
         "//util/bazel:runfiles",
         "@pypi//pyyaml",
@@ -178,19 +178,19 @@ py_test(
     srcs = ["test_env.py"],
     data = [
         ":claude/runner_layout",
-        "@nodejs_linux_amd64//:bin/node",
+        ":rendered/public-litellm.json",
         K3S_BINARY,
     ],
     env = {
-        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/public-litellm.json)",
         "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath :claude/runner_layout)",
     },
     env_inherit = ["LITELLM_QWEN_KEY"],
     exec_properties = K3S_EXEC_PROPERTIES,
     tags = K3S_TAGS,
     deps = [
-        ":fixture_chart",
+        ":rendered_fixture",
         ":stack",
         "//:conftest",
         "//agentplane/acceptance:agent",
@@ -212,18 +212,17 @@ py_test(
     srcs = ["test_lifecycle.py"],
     data = [
         ":lifecycle/runner_layout",
-        "@nodejs_linux_amd64//:bin/node",
+        ":rendered/none.json",
         K3S_BINARY,
     ],
     env = {
-        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/none.json)",
         "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath :lifecycle/runner_layout)",
     },
     exec_properties = K3S_EXEC_PROPERTIES,
     tags = K3S_TAGS,
     deps = [
-        ":fixture_chart",
         ":stack",
         "//:conftest",
         "//agentplane:sandbox_resource",
@@ -243,6 +242,7 @@ py_library(
     srcs = ["fixture_chart.py"],
     deps = [
         ":fixture_database",
+        ":rendered_fixture",
         "//agentplane:subjects",
         "//agentplane/acceptance:launch_preset",
         "//agentplane/acceptance:runtime_grant",
@@ -273,6 +273,48 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
+)
+
+py_library(
+    name = "rendered_fixture",
+    srcs = ["rendered_fixture.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "render_fixture",
+    testonly = True,
+    srcs = ["render_fixture.py"],
+    deps = [
+        ":fixture_chart",
+        ":rendered_fixture",
+    ],
+)
+
+py_binary(
+    name = "render_fixture_bin",
+    testonly = True,
+    imports = ["../../.."],
+    main_module = "agentplane.x.k3s_env.render_fixture",
+    deps = [":render_fixture"],
+)
+
+# The fixture chart for each model backend, rendered once per build so no test action starts Node or
+# compiles the chart code. The values only the test action knows are placeholders it fills in.
+genrule(
+    name = "rendered",
+    testonly = True,
+    outs = [
+        "rendered/local-model.json",
+        "rendered/none.json",
+        "rendered/public-litellm.json",
+    ],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    tools = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/acceptance:__pkg__"],
 )
 
 py_library(

@@ -17,7 +17,7 @@ import pytest
 
 from agentplane.acceptance import scripted_upstream
 from agentplane.acceptance.conftest import BASE_URL, NAMESPACE, TOKEN
-from agentplane.x.k3s_env import fixture_chart
+from agentplane.x.k3s_env.rendered_fixture import LocalModel
 from agentplane.x.k3s_env.stack import node_ip, running_stack
 
 
@@ -36,7 +36,7 @@ def k3s_deployment() -> Iterator[None]:
         probe.bind((host, 0))
         port = probe.getsockname()[1]
     with (
-        running_stack(models=fixture_chart.LocalModel(url=f"http://{host}:{port}")) as stack,
+        running_stack(models=LocalModel(url=f"http://{host}:{port}")) as stack,
         tempfile.TemporaryDirectory() as tools,
         pytest.MonkeyPatch.context() as environment,
     ):
@@ -46,6 +46,6 @@ def k3s_deployment() -> Iterator[None]:
         environment.setenv("KUBECONFIG", str(stack.k3s.kubeconfig))
         environment.setenv(BASE_URL, stack.base_url)
         environment.setenv(TOKEN, stack.token)
-        environment.setenv(NAMESPACE, fixture_chart.NAMESPACE)
+        environment.setenv(NAMESPACE, stack.namespace)
         environment.setenv(scripted_upstream.ADDRESS, f"{host}:{port}")
         yield

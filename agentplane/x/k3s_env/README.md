@@ -136,6 +136,29 @@ build outputs of the same revision (PostgreSQL from its pinned descriptor sizes)
 382.1 MiB of the Python group is used by no other image; the rest is the Debian base the tools
 image shares. The eight Go images share under 1 MiB.
 
+### Fixture chart rendered at build time, 2026-10-21
+
+The test module imported the cdk8s chart code, and with it jsii and Node, only to render the
+manifest; rendering itself took about 1 s. `render_fixture` now renders one manifest per model
+backend at build time, and `rendered_fixture.load` fills in the node IP, CAs and model address.
+Three fresh `test_lifecycle` runs each, with temporary wall-clock markers
+([before](https://app.buildbuddy.io/invocation/0f6663f7-3cca-458b-b7f2-0cbfdb095df7),
+[after](https://app.buildbuddy.io/invocation/94bb75ae-3b07-4f5e-8955-ba3788f2ebaf)):
+
+| Seconds per run                               | Before           | After            |
+| --------------------------------------------- | ---------------- | ---------------- |
+| Test module imports                           | 27.0, 42.8, 28.2 | 12.1, 12.6, 10.1 |
+| Action start to `pytest_bazel.main()`         | 36.2, 52.6, 37.7 | 22.8, 23.5, 15.8 |
+| Manifest ready in the fixture (render / load) | 1.5, 1.3, 0.9    | 0.1, 0.1, 0.1    |
+
+What is left before pytest is 5–10 s of VM and workspace setup and the remaining imports, mostly
+bytecode compilation ([plan finding 3](../../plans/k3s_acceptance.md#findings-that-shape-the-plan)).
+
+The test process no longer builds the app's `Settings`, which parses argv, so pytest flags such as
+`--test_arg=-s` work on `test_lifecycle` and the `_k3s` acceptance targets
+([run](https://app.buildbuddy.io/invocation/93bfc317-4354-46fd-b19b-fac04650fb20)). `test_render`
+still renders the chart in process and rejects them.
+
 ### Published PostgreSQL minimal image, 2026-10-17
 
 The fixture uses `ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie`, pinned for linux/amd64 at

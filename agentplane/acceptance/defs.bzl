@@ -10,6 +10,9 @@ _RUNNER_LAYOUTS = {
     "scripted": "//agentplane/x/k3s_env:harnesses/runner_layout",
 }
 
+# The stack's manifest, LLM ingress forwarding to the scenario's scripted model.
+_FIXTURE = "//agentplane/x/k3s_env:rendered/local-model.json"
+
 def acceptance_test(name, srcs, deps, k3s = None, deployed = True, size = "small", timeout = None):
     """Generates `name` unless `deployed` is False, and `name + "_k3s"` when `k3s` names its
     scenarios' kind.
@@ -63,15 +66,14 @@ def acceptance_test(name, srcs, deps, k3s = None, deployed = True, size = "small
         size = "enormous",
         data = [
             runner_layout,
-            "@nodejs_linux_amd64//:bin/node",
+            _FIXTURE,
             K3S_BINARY,
         ],
         env = {
-            "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
             "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
             "AGENTPLANE_ACCEPTANCE_MODEL_BACKEND": "scripted_model",
+            "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + _FIXTURE + ")",
             "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath " + runner_layout + ")",
-            # Loaded by name, not argv: the fixture chart parses argv as app settings.
             "PYTEST_PLUGINS": "agentplane.x.k3s_env.acceptance_target",
         },
         exec_properties = K3S_EXEC_PROPERTIES,

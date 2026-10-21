@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import secrets
 import string
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Any
 
 from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRulesMethods
@@ -29,6 +29,7 @@ from cdk8s_plus_34 import (
 from agentplane.acceptance import launch_preset, runtime_grant
 from agentplane.subjects import ServiceAccountRef
 from agentplane.x.k3s_env import fixture_database
+from agentplane.x.k3s_env.rendered_fixture import LocalModel, Models, PublicLiteLLM
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
     actions,
@@ -63,24 +64,6 @@ QUEUE_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gatewa
 DISPATCHER_PORT = 8080
 EGRESS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset"
 EGRESS_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate:unset"
-
-
-@dataclass(frozen=True)
-class PublicLiteLLM:
-    """LLM ingress forwards to the public LiteLLM with this virtual key."""
-
-    key: str
-
-
-@dataclass(frozen=True)
-class LocalModel:
-    """LLM ingress forwards, keyless, to a process on the node: the test's scripted model."""
-
-    url: str
-
-
-# None leaves LLM ingress at the cluster-internal LiteLLM Service, which does not exist here, so no turn can run.
-Models = PublicLiteLLM | LocalModel | None
 
 
 def _password(length: int = 40) -> str:
