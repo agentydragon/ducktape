@@ -237,8 +237,8 @@ message DecideConnectionEnrollmentRequest {
   string browser_binding = 2;
   // The preview's `version`.
   int64 expected_version = 3;
-  // Chosen by the caller: 1 to 200 characters.
-  string idempotency_key = 4;
+  reserved 4;
+  reserved "idempotency_key";
   // Exactly one field is set.
   oneof decision {
     EnrollmentAllow allow = 5;

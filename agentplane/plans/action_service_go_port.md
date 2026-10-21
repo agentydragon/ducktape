@@ -112,8 +112,8 @@ enrollments) and `WebPushService`. They live in files apart from `action_service
 
 - `external_connection.request_digest` is `sha256` of Pydantic's `request.model_dump_json()`; an idempotent retry
   after cutover compares against it. A different serialization turns every retry into a conflict.
-  (`connection_enrollment.decision_digest` need not match: no enrollment open at the flip can finish its code
-  exchange in Go.)
+  (Go neither reads nor writes `connection_enrollment.decision_digest`: a repeated decision is compared with the
+  decision's own columns.)
 - `handle_hash`, `browser_hash` and `mcp_linkage_flow.state_hash` are `sha256` hex of the raw string, and the PKCE
   challenge is the unpadded URL-safe base64 of `sha256` of the verifier.
 - `action_request.arguments`, `action_event.actor`, `action_execution.result` and `error`, and the scope lists are
@@ -137,7 +137,7 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 | L     | Callers, prepared against the protos and merged with the cutover: the app's Action routes and relays, `OperatorActionServiceClient`, the CLI's generated client, the Go Notification Service's HTTP client, acceptance tests. |
 | M     | Testing cutover: repoint `devinfra/ci/image_targets.json`, soak the migrator, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                               |
 | N     | Staging cutover, below.                                                                                                                                                                                                       |
-| O     | Python retirement: delete the Python service, tests, Alembic directory, migration image, `agentplane_oauth_kv` (a migration), the `fastmcp` pin and CI roster entries.                                                        |
+| O     | Python retirement: delete the Python service, tests, Alembic directory, migration image, `agentplane_oauth_kv` and `connection_enrollment.decision_digest` (a migration), the `fastmcp` pin and CI roster entries.            |
 
 Stage O also deletes the Python-parity golden generators and tests (`generate_golden.py`, `generate_mcp_golden.py`,
 `generate_mcp_executor_golden.py`, `generate_catalog_golden.py`, `policies/generate_golden.py` and their

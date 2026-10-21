@@ -6,7 +6,6 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -43,16 +42,15 @@ type enrollment struct {
 	// browserHash and the operator are those of the first preview; nil until then.
 	browserHash *string
 	operator    *operator
-	// verdict and decisionDigest are nil until the enrollment is decided.
-	verdict        *verdict
-	decisionDigest *string
+	// verdict is nil until the enrollment is decided, and allowed is nil unless it was allowed.
+	verdict *verdict
+	allowed *allowance
 }
 
 // decision is an operator's decision on an enrollment.
 type decision struct {
 	browserBinding  string
 	expectedVersion int64
-	idempotencyKey  string
 	// allow is nil for a refusal.
 	allow *allowance
 }
@@ -97,15 +95,18 @@ func digest(value string) string {
 // lockEnrollment reads the live enrollment the handle names and locks it.
 func lockEnrollment(ctx context.Context, tx *sql.Tx, handle string) (enrollment, error) {
 	var e enrollment
-	var issuer, subject *string
+	var issuer, subject, displayName *string
+	var caller []byte
+	var connectionID *uuid.UUID
+	var connectionVersion *int64
 	err := tx.QueryRowContext(
 		ctx, `
 		SELECT id, client_id, client_name, redirect_uri, upstream_url, expires_at, version, browser_hash, operator_issuer,
-			operator_subject, verdict, decision_digest
+			operator_subject, verdict, caller, display_name, connection_id, connection_version
 		FROM connection_enrollment WHERE handle_hash = $1 FOR UPDATE`, digest(handle),
 	).Scan(
 		&e.id, &e.clientID, &e.clientName, &e.redirectURI, &e.upstreamURL, &e.expiresAt, &e.version, &e.browserHash,
-		&issuer, &subject, &e.verdict, &e.decisionDigest,
+		&issuer, &subject, &e.verdict, &caller, &displayName, &connectionID, &connectionVersion,
 	)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -117,6 +118,21 @@ func lockEnrollment(ctx context.Context, tx *sql.Tx, handle string) (enrollment,
 	}
 	if issuer != nil && subject != nil {
 		e.operator = &operator{issuer: *issuer, subject: *subject}
+	}
+	if caller != nil {
+		account, err := decodeAccount(caller)
+		if err != nil {
+			return e, err
+		}
+		e.allowed = &allowance{account: account}
+		switch {
+		case connectionID != nil && connectionVersion != nil:
+			e.allowed.connection = reconnection{id: *connectionID, expectedVersion: *connectionVersion}
+		case displayName != nil:
+			e.allowed.connection = newConnection{displayName: *displayName}
+		default:
+			return e, fmt.Errorf("%w: enrollment %s allows no Connection", errStored, e.id)
+		}
 	}
 	return e, nil
 }
@@ -153,52 +169,20 @@ func (s *Store) previewEnrollment(ctx context.Context, handle, browserBinding st
 	return previewed, err
 }
 
-// decisionDocument is what a decision's digest is taken of: every field of the decision, so only an exact retry has
-// the digest of the recorded one.
-type decisionDocument struct {
-	BrowserBinding  string           `json:"browser_binding"`
-	ExpectedVersion int64            `json:"expected_version"`
-	IdempotencyKey  string           `json:"idempotency_key"`
-	Verdict         verdict          `json:"verdict"`
-	Connection      any              `json:"connection,omitempty"`
-	ServiceAccount  *accountDocument `json:"service_account,omitempty"`
+// repeats reports whether d is the decision e records.
+func (d decision) repeats(e enrollment) bool {
+	if d.allow == nil || e.allowed == nil {
+		return d.allow == nil && *e.verdict == verdictDeny
+	}
+	return *d.allow == *e.allowed
 }
 
-func (d decision) digest() (string, error) {
-	document := decisionDocument{
-		BrowserBinding: d.browserBinding, ExpectedVersion: d.expectedVersion, IdempotencyKey: d.idempotencyKey,
-		Verdict: verdictDeny,
-	}
-	if d.allow != nil {
-		document.Verdict = verdictAllow
-		account := accountDocument(d.allow.account)
-		document.ServiceAccount = &account
-		switch choice := d.allow.connection.(type) {
-		case newConnection:
-			document.Connection = map[string]any{"kind": "new", "display_name": choice.displayName}
-		case reconnection:
-			document.Connection = map[string]any{
-				"kind": "reconnect", "connection_id": choice.id, "expected_version": choice.expectedVersion,
-			}
-		}
-	}
-	encoded, err := json.Marshal(document)
-	if err != nil {
-		return "", err
-	}
-	return digest(string(encoded)), nil
-}
-
-// decideEnrollment records the operator's decision once. An exact retry answers with the recorded result; any other
-// decision after one is refused. An allow records the account and the Connection: it grants nothing until the
+// decideEnrollment records the operator's decision once. A repeat of the recorded decision, such as a retry after a lost
+// answer, answers with its result; any other decision after one is refused. An allow records the account and the Connection: it grants nothing until the
 // authorization server turns it into a grant.
 func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision, by operator) (decisionResult, error) {
-	recordedDigest, err := d.digest()
-	if err != nil {
-		return decisionResult{}, err
-	}
 	var result decisionResult
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		e, err := lockEnrollment(ctx, tx, handle)
 		if err != nil {
 			return err
@@ -206,12 +190,9 @@ func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision,
 		if err := e.requireBrowser(d.browserBinding, by); err != nil {
 			return err
 		}
-		if e.decisionDigest != nil {
-			if subtle.ConstantTimeCompare([]byte(*e.decisionDigest), []byte(recordedDigest)) != 1 {
+		if e.verdict != nil {
+			if !d.repeats(e) {
 				return status.Error(codes.FailedPrecondition, "enrollment already has a different decision")
-			}
-			if e.verdict == nil {
-				return fmt.Errorf("%w: enrollment %s has a decision digest and no verdict", errStored, e.id)
 			}
 			result = e.result(*e.verdict)
 			return nil
@@ -250,9 +231,9 @@ func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision,
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE connection_enrollment SET verdict = $2, decision_digest = $3, version = version + 1, caller = $4::jsonb,
-				display_name = $5, connection_id = $6, connection_version = $7
-			WHERE id = $1`, e.id, decided, recordedDigest, caller, displayName, connectionID, connectionVersion); err != nil {
+			UPDATE connection_enrollment SET verdict = $2, version = version + 1, caller = $3::jsonb, display_name = $4,
+				connection_id = $5, connection_version = $6
+			WHERE id = $1`, e.id, decided, caller, displayName, connectionID, connectionVersion); err != nil {
 			return err
 		}
 		result = e.result(decided)

@@ -60,9 +60,9 @@ func (s *served) previewed(t *testing.T) string {
 	return handle
 }
 
-func allowNew(handle, key string) *pb.DecideConnectionEnrollmentRequest {
+func allowNew(handle string) *pb.DecideConnectionEnrollmentRequest {
 	return &pb.DecideConnectionEnrollmentRequest{
-		Handle: handle, BrowserBinding: testBrowser, ExpectedVersion: 1, IdempotencyKey: key,
+		Handle: handle, BrowserBinding: testBrowser, ExpectedVersion: 1,
 		Decision: &pb.DecideConnectionEnrollmentRequest_Allow{Allow: &pb.EnrollmentAllow{
 			ServiceAccount: message(callerAccount),
 			Connection: &pb.EnrollmentAllow_NewConnection{
@@ -72,15 +72,15 @@ func allowNew(handle, key string) *pb.DecideConnectionEnrollmentRequest {
 	}
 }
 
-func deny(handle, key string) *pb.DecideConnectionEnrollmentRequest {
+func deny(handle string) *pb.DecideConnectionEnrollmentRequest {
 	return &pb.DecideConnectionEnrollmentRequest{
-		Handle: handle, BrowserBinding: testBrowser, ExpectedVersion: 1, IdempotencyKey: key,
+		Handle: handle, BrowserBinding: testBrowser, ExpectedVersion: 1,
 		Decision: &pb.DecideConnectionEnrollmentRequest_Deny{Deny: &emptypb.Empty{}},
 	}
 }
 
 func reconnect(handle, id string, version int64) *pb.DecideConnectionEnrollmentRequest {
-	request := allowNew(handle, "test-key")
+	request := allowNew(handle)
 	request.GetAllow().Connection = &pb.EnrollmentAllow_Reconnect{Reconnect: &pb.ReconnectConnection{
 		ConnectionId: id, ExpectedVersion: version, AuthorityChangeConfirmed: true,
 	}}
@@ -142,11 +142,11 @@ func TestTheFirstPreviewBindsAnEnrollmentToItsBrowserAndOperator(t *testing.T) {
 	wantCode(t, "a preview from another browser", err, codes.PermissionDenied)
 	_, err = s.preview(t, testOtherOperator, handle, testBrowser)
 	wantCode(t, "a preview by another operator", err, codes.PermissionDenied)
-	_, err = s.client.DecideConnectionEnrollment(as(t, testOtherOperator), deny(handle, "test-key"))
+	_, err = s.client.DecideConnectionEnrollment(as(t, testOtherOperator), deny(handle))
 	wantCode(t, "a decision by another operator", err, codes.PermissionDenied)
 
 	// Only a preview binds an enrollment: a decision on one nobody previewed is refused.
-	_, err = s.client.DecideConnectionEnrollment(as(t, testOperator), deny(s.enroll(t, expiresAt), "test-key"))
+	_, err = s.client.DecideConnectionEnrollment(as(t, testOperator), deny(s.enroll(t, expiresAt)))
 	wantCode(t, "a decision before any preview", err, codes.PermissionDenied)
 }
 
@@ -169,7 +169,7 @@ func TestAnAllowIsRecordedOnceAndAnExactRetryGetsItsAnswer(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range decisions {
 		wg.Go(func() {
-			answers[i], failures[i] = s.client.DecideConnectionEnrollment(as(t, testOperator), allowNew(handle, "test-key"))
+			answers[i], failures[i] = s.client.DecideConnectionEnrollment(as(t, testOperator), allowNew(handle))
 		})
 	}
 	wg.Wait()
@@ -194,16 +194,18 @@ func TestAnAllowIsRecordedOnceAndAnExactRetryGetsItsAnswer(t *testing.T) {
 		t.Errorf("%d Connections after an allow", connections)
 	}
 
-	_, err := s.client.DecideConnectionEnrollment(as(t, testOperator), deny(handle, "test-key"))
+	_, err := s.client.DecideConnectionEnrollment(as(t, testOperator), deny(handle))
 	wantCode(t, "a deny after the allow", err, codes.FailedPrecondition)
-	_, err = s.client.DecideConnectionEnrollment(as(t, testOperator), allowNew(handle, "test-other-key"))
-	wantCode(t, "the allow under another idempotency key", err, codes.FailedPrecondition)
+	other := allowNew(handle)
+	other.GetAllow().GetNewConnection().DisplayName = "test-other-connection"
+	_, err = s.client.DecideConnectionEnrollment(as(t, testOperator), other)
+	wantCode(t, "an allow of another Connection after the allow", err, codes.FailedPrecondition)
 }
 
 func TestADenyRecordsNoAccountAndSendsTheBrowserNowhere(t *testing.T) {
 	s := serve(t)
 	handle := s.previewed(t)
-	answer, err := s.client.DecideConnectionEnrollment(as(t, testOperator), deny(handle, "test-key"))
+	answer, err := s.client.DecideConnectionEnrollment(as(t, testOperator), deny(handle))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,16 +220,16 @@ func TestADenyRecordsNoAccountAndSendsTheBrowserNowhere(t *testing.T) {
 func TestADecisionNeedsTheReviewedVersionAndALabeledAccount(t *testing.T) {
 	s := serve(t)
 	handle := s.previewed(t)
-	stale := deny(handle, "test-key")
+	stale := deny(handle)
 	stale.ExpectedVersion = 2
 	_, err := s.client.DecideConnectionEnrollment(as(t, testOperator), stale)
 	wantCode(t, "a decision at a stale version", err, codes.Aborted)
-	unlabeled := allowNew(handle, "test-key")
+	unlabeled := allowNew(handle)
 	unlabeled.GetAllow().ServiceAccount = message(unlabeledAccount)
 	_, err = s.client.DecideConnectionEnrollment(as(t, testOperator), unlabeled)
 	wantCode(t, "an allow of an unlabeled account", err, codes.PermissionDenied)
 	s.callers.goStale()
-	_, err = s.client.DecideConnectionEnrollment(as(t, testOperator), allowNew(handle, "test-key"))
+	_, err = s.client.DecideConnectionEnrollment(as(t, testOperator), allowNew(handle))
 	wantCode(t, "an allow while the view of the callers is stale", err, codes.PermissionDenied)
 	// None of them was recorded.
 	if got := s.storedDecision(t, handle); got.verdict.Valid || got.version != 1 {
@@ -242,7 +244,6 @@ func TestAMalformedDecisionIsAnInvalidArgument(t *testing.T) {
 		"no decision":               func(r *pb.DecideConnectionEnrollmentRequest) { r.Decision = nil },
 		"a short browser binding":   func(r *pb.DecideConnectionEnrollmentRequest) { r.BrowserBinding = "test-short" },
 		"version 0":                 func(r *pb.DecideConnectionEnrollmentRequest) { r.ExpectedVersion = 0 },
-		"no idempotency key":        func(r *pb.DecideConnectionEnrollmentRequest) { r.IdempotencyKey = "" },
 		"an allow of no account":    func(r *pb.DecideConnectionEnrollmentRequest) { r.GetAllow().ServiceAccount = nil },
 		"an allow of no Connection": func(r *pb.DecideConnectionEnrollmentRequest) { r.GetAllow().Connection = nil },
 		"a blank Connection name": func(r *pb.DecideConnectionEnrollmentRequest) {
@@ -259,7 +260,7 @@ func TestAMalformedDecisionIsAnInvalidArgument(t *testing.T) {
 			}}
 		},
 	} {
-		request := allowNew(handle, "test-key")
+		request := allowNew(handle)
 		change(request)
 		_, err := s.client.DecideConnectionEnrollment(as(t, testOperator), request)
 		wantCode(t, name, err, codes.InvalidArgument)

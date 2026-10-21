@@ -288,13 +288,7 @@ func parseDecision(request *pb.DecideConnectionEnrollmentRequest) (decision, err
 	if err := checkVersion("expected_version", request.GetExpectedVersion()); err != nil {
 		return decision{}, err
 	}
-	if count := utf8.RuneCountInString(request.GetIdempotencyKey()); count < 1 || count > 200 {
-		return decision{}, invalid("idempotency_key must be 1 to 200 characters")
-	}
-	d := decision{
-		browserBinding: request.GetBrowserBinding(), expectedVersion: request.GetExpectedVersion(),
-		idempotencyKey: request.GetIdempotencyKey(),
-	}
+	d := decision{browserBinding: request.GetBrowserBinding(), expectedVersion: request.GetExpectedVersion()}
 	switch choice := request.GetDecision().(type) {
 	case *pb.DecideConnectionEnrollmentRequest_Deny:
 		return d, nil
