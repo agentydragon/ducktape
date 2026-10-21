@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -102,7 +103,7 @@ func TestEachPrincipalReadsThePolicyOfTheAccountsItMayName(t *testing.T) {
 		namespace.binding(t, binding, account, "test-set")
 	}
 	index, _ := namespace.watch(t)
-	s := serveWithPolicy(t, kube.TokenReviews(), namespace, index)
+	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
 	for name, tc := range map[string]struct {
 		token string
 		// subject is the account named, or nil for the caller's own.
@@ -183,7 +184,7 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 	}
 	create(t, binding)
 	index, _ := namespace.watch(t)
-	s := serveWithPolicy(t, kube.TokenReviews(), namespace, index)
+	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
 	// The informer judges the binding once it has listed every kind, so its first ActionsReady is its last.
 	var ready *metav1.Condition
 	eventually(t, "the binding's ActionsReady", func() bool {
@@ -261,7 +262,7 @@ func TestAPolicyIndexThatGoesStaleShowsNothingAutoDecided(t *testing.T) {
 	namespace.policySet(t, "test-set", exactActions(testGroup, testAction))
 	namespace.binding(t, "test-binding", callerAccount, "test-set")
 	index, stop := namespace.watch(t)
-	s := serveWithPolicy(t, kube.TokenReviews(), namespace, index)
+	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
 	if got, err := s.readPolicy(t, callerToken, nil); err != nil || !got.GetSynced() || len(got.GetAutoApproveIf()) != 1 {
 		t.Fatalf("the caller's policy while the index is available: %v, %v", got, err)
 	}
@@ -289,7 +290,7 @@ func TestTheHTTPFacadeAnswersActionPolicyAsTheRPC(t *testing.T) {
 	namespace.binding(t, "test-caller-binding", callerAccount, "test-set")
 	namespace.binding(t, "test-other-binding", otherAccount, "test-set")
 	index, _ := namespace.watch(t)
-	s := serveWithPolicy(t, kube.TokenReviews(), namespace, index)
+	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
 	named := fmt.Sprintf("?subject.namespace=%s&subject.name=%s", otherAccount.Namespace, otherAccount.Name)
 	for name, tc := range map[string]struct {
 		token, query string

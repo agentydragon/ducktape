@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -166,7 +167,7 @@ func TestAWorkloadIsRefusedOnceItsAccountLosesTheLabelOrItsPodIsGone(t *testing.
 }
 
 func TestAWorkloadIsUnavailableWhileTheAPIServerCannotBeReached(t *testing.T) {
-	s := serveWith(t, kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")})
+	s := serveWith(t, kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")}, &catalog.Catalog{})
 	_, err := s.client.ListActionRequests(as(t, callerToken), &action_servicepb.ListActionRequestsRequest{})
 	wantCode(t, "a workload", err, codes.Unavailable)
 	// An operator's token is verified against the issuer's keys alone.

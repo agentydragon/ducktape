@@ -35,7 +35,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -158,15 +157,16 @@ const updatesConnection = "test-action-updates"
 
 func serve(t *testing.T) *served {
 	t.Helper()
-	return serveWith(t, kube.TokenReviews())
+	return serveWith(t, kube.TokenReviews(), newCatalog(t, submissionCatalog))
 }
 
-// serveWith serves the API with workload tokens reviewed by reviews, and a policy index of a namespace of its own.
-func serveWith(t *testing.T, reviews auth.TokenReviews) *served {
+// serveWith serves the API over the groups, with workload tokens reviewed by reviews, and a policy index of a
+// namespace of its own.
+func serveWith(t *testing.T, reviews auth.TokenReviews, groups *catalog.Catalog) *served {
 	t.Helper()
 	namespace := newPolicyNamespace(t)
 	index, _ := namespace.watch(t)
-	return serveWithPolicy(t, reviews, namespace, index)
+	return serveWithPolicy(t, reviews, groups, namespace, index)
 }
 
 // policyNamespace is a namespace of one test's own, for its PolicySets and PolicyBindings.
@@ -219,9 +219,9 @@ func eventually(t *testing.T, what string, condition func() bool) {
 	}
 }
 
-// testCatalog are the ActionGroups submissions name. test-group's and test-github's Actions run and test-offline's
-// would, while no Executor runs test-unbound's; test-broken's input schema is no JSON Schema.
-const testCatalog = `{
+// submissionCatalog are the ActionGroups submissions name. test-group's and test-github's Actions run and
+// test-offline's would, while no Executor runs test-unbound's; test-broken's input schema is no JSON Schema.
+const submissionCatalog = `{
 	"test-group": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"}, "actions": {
 		"test-action": {"description": "d", "input_schema": {
 			"type": "object", "properties": {"target": {"type": "string", "maxLength": 20}}, "additionalProperties": false}},
@@ -280,17 +280,9 @@ func fakeGitHub(t *testing.T) string {
 	return github.URL
 }
 
-// submissions admits against testCatalog.
+// submissions runs the Actions of submissionCatalog's groups but test-unbound's.
 func (s *served) submissions(t *testing.T) Submissions {
 	t.Helper()
-	var settings catalog.Settings
-	if err := yaml.Unmarshal([]byte(testCatalog), &settings); err != nil {
-		t.Fatal(err)
-	}
-	groups, err := catalog.New(settings)
-	if err != nil {
-		t.Fatal(err)
-	}
 	s.routes = routes{
 		groups:   map[string]bool{"test-group": true, "test-github": true, "test-offline": true, "test-broken": true},
 		executor: succeeding{},
@@ -299,12 +291,14 @@ func (s *served) submissions(t *testing.T) Submissions {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Submissions{Catalog: groups, Executors: s.routes, Provider: policies.NewProvider(visibility)}
+	return Submissions{Executors: s.routes, Provider: policies.NewProvider(visibility)}
 }
 
-// serveWithPolicy serves the API with workload tokens reviewed by reviews, admitting submissions against testCatalog
-// and reading Action policy from index, which holds the namespace's policy objects.
-func serveWithPolicy(t *testing.T, reviews auth.TokenReviews, namespace policyNamespace, index *informer.Index) *served {
+// serveWithPolicy serves the API over the groups with workload tokens reviewed by reviews, reading Action policy from
+// index, which holds the namespace's policy objects.
+func serveWithPolicy(
+	t *testing.T, reviews auth.TokenReviews, groups *catalog.Catalog, namespace policyNamespace, index *informer.Index,
+) *served {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
 	db, err := sql.Open("postgres", dsn)
@@ -343,7 +337,7 @@ func serveWithPolicy(t *testing.T, reviews auth.TokenReviews, namespace policyNa
 		Operators: operators,
 	})
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
-	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, s.gate, index, s.submissions(t)))
+	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, groups, s.gate, index, s.submissions(t)))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

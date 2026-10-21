@@ -3,7 +3,8 @@
 Each `action_groups` vector is a value of the `action_groups` setting, as the settings file's YAML parses. This
 service's models decide whether it is accepted, and for one they accept, `held` is the catalog they hold: every group
 with its defaults filled in, as `ActionCatalog` dumps it. The Go catalog must accept and refuse the same values and
-hold the same groups.
+hold the same groups. `views` is what a workload reads of that catalog at `/v1/action-groups`, which the Go service's
+`ListActionGroups` must answer alike.
 
 Each `arguments` vector is an Action's input schema and a submission's arguments, with what admission makes of them:
 `satisfied`, `not_satisfied` (the request is refused as invalid) or `fault` (the schema cannot be used, and the
@@ -376,8 +377,10 @@ def build() -> dict[str, object]:
         if not accepted(ActionCatalog, {"groups": case}):
             vectors.append({"name": name, "input": case, "valid": False})
             continue
-        held = ActionCatalog.model_validate({"groups": case}).model_dump(mode="json")["groups"]
-        vectors.append({"name": name, "input": case, "valid": True, "held": held})
+        catalog = ActionCatalog.model_validate({"groups": case})
+        held = catalog.model_dump(mode="json")["groups"]
+        views: list[JsonValue] = [view.model_dump(mode="json") for view in catalog.group_views(with_detail=False)]
+        vectors.append({"name": name, "input": case, "valid": True, "held": held, "views": views})
     arguments: list[JsonValue] = [
         {"name": name, "schema": schema, "arguments": case, "outcome": checked(schema, case)}
         for name, (schema, case) in argument_cases().items()

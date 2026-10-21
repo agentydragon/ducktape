@@ -708,3 +708,43 @@ func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPCAndHTTP(t *testi
 		t.Errorf("HTTP policy: %d %s, want %v", response.StatusCode, body, got)
 	}
 }
+
+// A sandbox group's Actions are declared, so its view holds still between the reads, where an MCP group's health moves
+// with its server.
+func TestTheServiceAnswersItsCatalogOverGRPCAndHTTP(t *testing.T) {
+	namespace := sandboxNamespace(t, kube, true)
+	service := start(t, kube.Config, newCatalog(t, `{"test-sandbox": {"title": "t", "description": "d",
+		"executor": {"kind": "pod", "description": "e", "namespace": "`+namespace+`",
+			"templates": {"test-template": "the test box"}}}}`))
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken)
+	listed, err := service.actions.ListActionGroups(ctx, &action_servicepb.ListActionGroupsRequest{})
+	if err != nil || len(listed.GetActionGroups()) != 1 || len(listed.GetActionGroups()[0].GetActions()) == 0 {
+		t.Fatalf("gRPC catalog: %v, %v", listed, err)
+	}
+	action := listed.GetActionGroups()[0].GetActions()[0]
+	got, err := service.actions.GetAction(ctx, &action_servicepb.GetActionRequest{GroupKey: "test-sandbox", ActionKey: action.GetName()})
+	if err != nil || !proto.Equal(got.GetAction(), action) {
+		t.Errorf("gRPC Action: %v, %v", got, err)
+	}
+
+	call, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+"/v1/action-groups", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call.Header.Set("Authorization", "Bearer "+readerToken)
+	response, err := http.DefaultClient.Do(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogRead := &action_servicepb.ListActionGroupsResponse{}
+	if response.StatusCode != http.StatusOK || protojson.Unmarshal(body, catalogRead) != nil || !proto.Equal(catalogRead, listed) {
+		t.Errorf("HTTP catalog: %d %s", response.StatusCode, body)
+	}
+}

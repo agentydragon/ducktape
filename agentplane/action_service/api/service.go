@@ -1,6 +1,6 @@
-// Package api serves the Action Service's request RPCs over its store: `ActionService`'s submission, reads and
-// watches of requests and their events, a caller's cancellation and the Action policy over the policy index, and
-// `OperatorActionService`'s Decisions.
+// Package api serves the Action Service's request RPCs over its store and its catalog: `ActionService`'s submission,
+// reads and watches of requests and their events, a caller's cancellation, the reads and watch of the ActionGroups and
+// the Action policy over the policy index, and `OperatorActionService`'s Decisions.
 //
 // A Gate admits every call before it runs (agentplane/docs/grpc_services.md). The bearer picks the principal, as
 // action_service.proto says: a workload of a labeled ServiceAccount submits, reads and cancels its own account's
@@ -11,6 +11,7 @@ import (
 	"context"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -33,6 +34,7 @@ type Service struct {
 	store *store.Store
 	// updates wakes a watch on each commit to a request.
 	updates *wakeups.Hub
+	catalog *catalog.Catalog
 	// gate admitted each call; a watch asks it again before every frame.
 	gate *Gate
 	// policy is the policy index admission resolves bindings from.
@@ -40,8 +42,10 @@ type Service struct {
 	submissions Submissions
 }
 
-func NewService(requests *store.Store, updates *wakeups.Hub, gate *Gate, policy *informer.Index, submissions Submissions) *Service {
-	return &Service{store: requests, updates: updates, gate: gate, policy: policy, submissions: submissions}
+func NewService(
+	requests *store.Store, updates *wakeups.Hub, groups *catalog.Catalog, gate *Gate, policy *informer.Index, submissions Submissions,
+) *Service {
+	return &Service{store: requests, updates: updates, catalog: groups, gate: gate, policy: policy, submissions: submissions}
 }
 
 func parseRequestID(value string) (uuid.UUID, error) {

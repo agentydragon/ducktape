@@ -24,11 +24,10 @@ import (
 // GitHub lookup that has not answered by then confirms nothing, so the request waits for an operator.
 const providerTimeout = 5 * time.Second
 
-// Submissions is what SubmitActionRequest admits a request against, beside the policy index.
+// Submissions is what SubmitActionRequest admits a request against, beside the catalog, which holds the Actions a
+// request may name with their input schemas, and the policy index.
 type Submissions struct {
-	// Catalog holds the Actions a request may name, with their input schemas.
-	Catalog *catalog.Catalog
-	// Executors says which of them this service runs: an Action no Executor runs is refused.
+	// Executors says which of the catalog's Actions this service runs: an Action no Executor runs is refused.
 	Executors worker.Executors
 	// Provider decides from the caller's PolicyBindings as the policy index resolves them at admission.
 	Provider *policies.Provider
@@ -111,7 +110,7 @@ func submission(request *action_servicepb.SubmitActionRequestRequest) (store.Act
 // runnable is the definition of an Action this service runs. One the catalog does not offer, or of a group no
 // Executor runs, it cannot run; one of a group that is unavailable it may run once the group is back.
 func (s *Service) runnable(action store.ActionIdentity) (catalog.ActionDefinition, error) {
-	_, definition, err := s.submissions.Catalog.Resolve(action.Group, action.Name)
+	_, definition, err := s.catalog.Resolve(action.Group, action.Name)
 	switch {
 	case errors.Is(err, catalog.ErrUnavailable):
 		return definition, status.Error(codes.Unavailable, catalog.ErrUnavailable.Error())
