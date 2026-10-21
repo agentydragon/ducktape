@@ -1722,48 +1722,13 @@ spec:
         name: agentplane-workload
       hosts:
         - llm-ingress.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-        - POST
+        - actions.agentplane-staging.svc.cluster.local
       type: egress
     - clusterInternal: true
       credentialRef:
         name: agentplane-notifications-workload
       hosts:
         - notifications.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-        - POST
-        - PUT
-        - PATCH
-        - DELETE
-      paths:
-        - /llms.txt
-        - /docs/agents/**
-        - /openapi.json
-        - /v1/subscriptions
-        - /v1/subscriptions/**
-        - /v1/inboxes
-        - /v1/inboxes/**
-      type: egress
-    - clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-      hosts:
-        - actions.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-        - POST
-      paths:
-        - /mcp
-        - /llms.txt
-        - /docs/agents/**
-        - /openapi.json
-        - /v1/action-groups
-        - /v1/action-groups/**
-        - /v1/action-policy
-        - /v1/action-requests
-        - /v1/action-requests/**
       type: egress
     - clusterInternal: true
       credentialRef:

@@ -393,50 +393,22 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
         rules=[
             # The proxy matches a request's host on the exact string, so the in-cluster hosts are the
             # full names their clients spell.
+            #
+            # Whole services, as for the API server below: each authenticates the workload token the
+            # proxy substitutes and authorizes the caller itself, so a method or path list here would
+            # only be a second copy of their routes to keep in step.
             Rule.egress(
-                hosts=[llm_ingress.service(namespace).fqdn],
+                hosts=[llm_ingress.service(namespace).fqdn, actions.service(namespace).fqdn],
                 cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
                 credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
             Rule.egress(
                 hosts=[notifications.service(namespace).fqdn],
                 cluster_internal=True,
-                methods=[
-                    PolicySetSpecRulesMethods.GET,
-                    PolicySetSpecRulesMethods.POST,
-                    PolicySetSpecRulesMethods.PUT,
-                    PolicySetSpecRulesMethods.PATCH,
-                    PolicySetSpecRulesMethods.DELETE,
-                ],
-                paths=[
-                    "/llms.txt",
-                    "/docs/agents/**",
-                    "/openapi.json",
-                    "/v1/subscriptions",
-                    "/v1/subscriptions/**",
-                    "/v1/inboxes",
-                    "/v1/inboxes/**",
-                ],
                 credential_ref=PolicySetSpecRulesCredentialRef(name=notifications.WORKLOAD_CREDENTIAL),
             ),
-            Rule.egress(
-                hosts=[actions.service(namespace).fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
-                paths=[
-                    "/mcp",
-                    "/llms.txt",
-                    "/docs/agents/**",
-                    "/openapi.json",
-                    "/v1/action-groups",
-                    "/v1/action-groups/**",
-                    "/v1/action-policy",
-                    "/v1/action-requests",
-                    "/v1/action-requests/**",
-                ],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
-            ),
+            # Narrowed, unlike the services above: this host is also the proxy's own listener, and a
+            # rule matches hosts, not ports.
             Rule.egress(
                 hosts=[agent_api(namespace).fqdn],
                 cluster_internal=True,
