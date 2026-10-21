@@ -1,5 +1,5 @@
 // The Notification Service's workload API: subscriptions that deliver events from a source into a Session's
-// inbox, and the inbox an agent reads and acknowledges.
+// inbox, messages one workload sends to another's Session, and the inbox an agent reads and acknowledges.
 syntax = "proto3";
 
 package agentplane.notification_service;
@@ -14,11 +14,11 @@ import "google/protobuf/timestamp.proto";
 // wraps the subscription ones.
 //
 // An error carries the gRPC status code that names it. `INVALID_ARGUMENT` is a malformed or out-of-range request,
-// `NOT_FOUND` a missing or unowned resource, `PERMISSION_DENIED` a source the account may not follow,
-// `ALREADY_EXISTS` a creation key reused for other arguments, `ABORTED` a renewal on a stale `version`,
-// `FAILED_PRECONDITION` a retired inbox, `OUT_OF_RANGE` a cursor past the inbox's end, `RESOURCE_EXHAUSTED` a
-// quota, and `UNAVAILABLE` the service's backend or a source being down; a GitHub rate limit also carries
-// `google.rpc.RetryInfo`.
+// `NOT_FOUND` a missing or unowned resource, `PERMISSION_DENIED` a source the account may not follow or a Sandbox
+// it may not send to, `ALREADY_EXISTS` a creation key reused for other arguments, `ABORTED` a renewal on a stale
+// `version`, `FAILED_PRECONDITION` a retired inbox, `OUT_OF_RANGE` a cursor past the inbox's end,
+// `RESOURCE_EXHAUSTED` a quota, and `UNAVAILABLE` the service's backend, its view of send grants or a source being
+// down; a GitHub rate limit also carries `google.rpc.RetryInfo`.
 service Notifications {
   // Subscribes a Session's inbox to a source. The inbox is the Session's inbox for the caller's account; it is
   // created with its first subscription.
@@ -79,11 +79,40 @@ service Notifications {
     option (google.api.http) = {put: "/v1/inboxes/{inbox_id}/acknowledgement" body: "*"};
   }
 
-  // Retires an inbox: its subscriptions are cancelled and nothing more is matched or delivered to it. A command
-  // already submitted to the runner cannot be withdrawn. Idempotent. A missing endpoint or a transient lookup
-  // failure is not retirement.
+  // Retires an inbox: its subscriptions are cancelled and nothing more is matched, sent or delivered to it. A
+  // command already submitted to the runner cannot be withdrawn. Idempotent. A missing endpoint or a transient
+  // lookup failure is not retirement.
   rpc RetireInbox(RetireInboxRequest) returns (RetireInboxResponse) {
     option (google.api.http) = {delete: "/v1/inboxes/{inbox_id}"};
+  }
+
+  // Sends a message to a Session's inbox, which notices it to the Session as it does any entry. The answer is
+  // durable acceptance: not that a notice was sent, nor that the agent read it.
+  //
+  // The caller's ServiceAccount must hold a `session_inbox_access` rule that allows `send_message` to the
+  // destination Sandbox, through a PolicyBinding, else `PERMISSION_DENIED`; before the service has read the
+  // PolicySets and PolicyBindings, and while its view of them is out of date, every send fails `UNAVAILABLE`.
+  // The recipient sees the caller's ServiceAccount as the sender. `destination_ref` names a Sandbox in the
+  // service's namespace; a missing one, or one whose UID is not the `uid` given, is `NOT_FOUND`. A suspended
+  // Sandbox accepts messages.
+  //
+  // The inbox belongs to the Sandbox's ServiceAccount. Without one yet for the Session, it is created only once
+  // the History Service has recorded the Session as written by that Sandbox, else `NOT_FOUND`.
+  //
+  // A message is identified by `idempotency_key` within the caller's messages to the inbox: an identical retry
+  // answers with the same message, and the key reused for another body or `from_session` fails `ALREADY_EXISTS`.
+  // A sender may have only so many messages in an inbox beyond its acknowledged cursor, 128 unless configured; one
+  // more fails `RESOURCE_EXHAUSTED` until the recipient acknowledges. A retired inbox fails `FAILED_PRECONDITION`.
+  // Losing the grant later stops new sends only: a message accepted stays in the inbox.
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse) {
+    option (google.api.http) = {post: "/v1/messages" body: "*"};
+  }
+
+  // A message the caller sent, with how far the recipient's inbox has moved past it. Needs no current send
+  // grant. A message another account sent, an unknown ID and a message whose inbox was purged are all
+  // `NOT_FOUND`, which never says the message was not delivered.
+  rpc GetMessage(GetMessageRequest) returns (GetMessageResponse) {
+    option (google.api.http) = {get: "/v1/messages/{message_id}"};
   }
 }
 
@@ -184,6 +213,52 @@ message RetireInboxRequest {
 }
 
 message RetireInboxResponse {}
+
+message SendMessageRequest {
+  // The Session's Sandbox. `uid` may be empty, for the Sandbox of that name now; the answer names its UID.
+  DestinationRef destination_ref = 1;
+  // The Session whose inbox receives the message: 1 to 200 characters.
+  string session_id = 2;
+  // Chosen by the caller, unique among its messages to the inbox: 1 to 200 characters.
+  string idempotency_key = 3;
+  // The message, 1 byte to the service's limit of UTF-8 bytes: 32 KiB unless configured, never above 256 KiB.
+  string body = 4;
+  // The caller's label for the Session it writes from, 1 to 200 characters, shown to the recipient as given.
+  // Nothing verifies it.
+  optional string from_session = 5;
+}
+
+message SendMessageResponse {
+  Message message = 1;
+}
+
+message GetMessageRequest {
+  // UUID.
+  string message_id = 1;
+}
+
+message GetMessageResponse {
+  Message message = 1;
+}
+
+// A message as its sender sees it. Its facts are independent, not stages: an inbox acknowledged past a message
+// no notice covered is acknowledged and not covered.
+message Message {
+  // UUID.
+  string id = 1;
+  // With the UID of the Sandbox the message was accepted for.
+  DestinationRef destination_ref = 2;
+  string session_id = 3;
+  string idempotency_key = 4;
+  google.protobuf.Timestamp accepted_at = 5;
+  // A notice has named the message to the recipient Session. Not that the notice reached the agent.
+  bool covered = 6;
+  // The recipient acknowledged its inbox through the message: the inbox's handled prefix reaches it, which says
+  // neither that the agent handled this message itself nor that any task succeeded.
+  bool acknowledged = 7;
+  // The recipient's inbox was retired, as when its Sandbox is deleted: a message no notice covered never will be.
+  bool inbox_retired = 8;
+}
 
 // The Sandbox a Session runs in, by the identity that tells it from a Sandbox recreated under the same name.
 message DestinationRef {

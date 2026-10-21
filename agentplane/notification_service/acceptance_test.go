@@ -16,6 +16,7 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -24,6 +25,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ownedActions is an Action Service whose requests were each submitted by the ServiceAccount that owners names,
@@ -84,7 +88,7 @@ func (d *losingDispatcher) commands() []command {
 	return append([]command(nil), d.submitted...)
 }
 
-// journal is the History of one Session: the runner entries a test adds.
+// journal is the History of the test Sandbox's one Session: the runner entries a test adds.
 type journal struct {
 	historypb.UnimplementedHistoryServiceServer
 	mu      sync.Mutex
@@ -102,6 +106,15 @@ func (j *journal) ReadSessionEvents(_ context.Context, in *historypb.ReadSession
 		}
 	}
 	return response, nil
+}
+
+func (j *journal) GetSessionSummary(_ context.Context, in *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
+	if in.GetSessionId() != testSession {
+		return nil, status.Error(codes.NotFound, "test-unrecorded-session")
+	}
+	return &historypb.SessionSummary{
+		SessionId: testSession, Sandbox: &historypb.SandboxRef{Namespace: testNamespace, Name: sandboxName},
+	}, nil
 }
 
 func (j *journal) add(entries ...*eventlogpb.EventEntry) {
@@ -341,4 +354,117 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 	if got := acknowledge(second); got != second {
 		t.Errorf("acknowledged = %v after acknowledging through %v", got, second)
 	}
+}
+
+// grantSend binds a set allowing the account to send to the test Sandbox, and waits for the service to report
+// the binding ready. The test deletes the binding when it ends, or earlier through the returned object.
+func grantSend(t *testing.T, account string) *policyapi.PolicyBinding {
+	t.Helper()
+	set := &policyapi.PolicySet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: account + "-send"},
+		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{
+			Type: "session_inbox_access", Operations: []string{"send_message"},
+			Targets: &policyapi.SandboxTargets{Sandboxes: []policyapi.SandboxTarget{{Name: sandboxName}}},
+		}}},
+	}
+	binding := &policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: account},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject:    policyapi.ServiceAccountRef{Namespace: testNamespace, Name: account},
+			PolicySets: []string{set.Name},
+		},
+	}
+	for _, object := range []client.Object{set, binding} {
+		if err := apiClient.Create(t.Context(), object); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := client.IgnoreNotFound(apiClient.Delete(context.Background(), object)); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	eventually(t, "the binding to be ready", func() bool {
+		var current policyapi.PolicyBinding
+		if err := apiClient.Get(t.Context(), client.ObjectKeyFromObject(binding), &current); err != nil {
+			t.Fatal(err)
+		}
+		return meta.IsStatusConditionTrue(current.Status.Conditions, "SessionInboxAccessReady")
+	})
+	return binding
+}
+
+// An agent messages another Sandbox's Session through the HTTP routes under a PolicyBinding the service watches:
+// the recipient is notified and acknowledges the message, the sender follows it to the acknowledgement, and once
+// the binding is gone the sender may send no more.
+func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgement(t *testing.T) {
+	dispatcher, history := &losingDispatcher{}, &journal{}
+	historyAddress := serveGRPC(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })
+	dispatcherAddress := serveGRPC(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })
+	service := start(t, func(c *config) {
+		c.HistoryService.Target, c.SessionDispatcher.Target = historyAddress, dispatcherAddress
+		c.NoticeDebounce.QuietSeconds = 0
+	})
+	message := func(key string) map[string]any {
+		return map[string]any{
+			"destinationRef": map[string]any{"namespace": testNamespace, "name": sandboxName},
+			"sessionId":      testSession, "idempotencyKey": key, "body": "Please review the change.",
+			"fromSession": "test-from-session",
+		}
+	}
+	binding := grantSend(t, otherName)
+	if code, refused := agentCall(t, service, http.MethodPost, "/v1/messages", sandboxToken, message("ungranted")); code != http.StatusForbidden {
+		t.Fatalf("a send no binding grants = %d %v, want 403", code, refused)
+	}
+	code, sent := agentCall(t, service, http.MethodPost, "/v1/messages", otherToken, message("review"))
+	if code != http.StatusOK {
+		t.Fatalf("send = %d %v", code, sent)
+	}
+	id := at(t, sent, "message", "id").(string)
+	if at(t, sent, "message", "destinationRef", "uid") != sandboxUID {
+		t.Errorf("the message went to %v, want the Sandbox's current incarnation", at(t, sent, "message", "destinationRef"))
+	}
+
+	// The recipient Session is told of its inbox, which holds the message.
+	eventually(t, "a notice to be submitted", func() bool {
+		wake(t, service)
+		return len(dispatcher.commands()) > 0
+	})
+	if notice := dispatcher.commands()[0]; notice.sandbox != sandboxName || notice.session != testSession {
+		t.Errorf("the notice went to %q/%q", notice.sandbox, notice.session)
+	}
+	receipt := func() map[string]any {
+		code, followed := agentCall(t, service, http.MethodGet, "/v1/messages/"+id, otherToken, nil)
+		if code != http.StatusOK {
+			t.Fatalf("get message = %d %v", code, followed)
+		}
+		return at(t, followed, "message").(map[string]any)
+	}
+	if got := receipt(); got["covered"] != true || got["acknowledged"] != false {
+		t.Errorf("once notified: %v", got)
+	}
+	_, inboxes := agentCall(t, service, http.MethodGet, "/v1/inboxes", sandboxToken, nil)
+	inboxID := at(t, inboxes, "inboxes", 0, "id").(string)
+	_, page := agentCall(t, service, http.MethodGet, "/v1/inboxes/"+inboxID+"/entries?limit=128&after_cursor=0", sandboxToken, nil)
+	entry := at(t, page, "entries", 0)
+	if at(t, entry, "event", "message", "messageId") != id || at(t, entry, "event", "message", "sender", "name") != otherName ||
+		at(t, entry, "payload", "body") != "Please review the change." || at(t, entry, "payload", "from_session") != "test-from-session" {
+		t.Errorf("entry = %v", entry)
+	}
+	if code, acknowledged := agentCall(t, service, http.MethodPut, "/v1/inboxes/"+inboxID+"/acknowledgement", sandboxToken,
+		map[string]any{"throughCursor": at(t, entry, "cursor")}); code != http.StatusOK {
+		t.Fatalf("acknowledge = %d %v", code, acknowledged)
+	}
+	if got := receipt(); got["acknowledged"] != true {
+		t.Errorf("once acknowledged: %v", got)
+	}
+
+	if err := apiClient.Delete(t.Context(), binding); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "sends to be refused", func() bool {
+		code, _ := agentCall(t, service, http.MethodPost, "/v1/messages", otherToken, message("after-revocation"))
+		return code == http.StatusForbidden
+	})
+	receipt()
 }

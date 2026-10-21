@@ -4,14 +4,15 @@ import (
 	"context"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
 
-// Notifications is the workloads' API: subscriptions that deliver events from a source into a Session's inbox, and
-// the inbox an agent reads and acknowledges.
+// Notifications is the workloads' API: subscriptions that deliver events from a source into a Session's inbox,
+// messages one workload sends to another's Session, and the inbox an agent reads and acknowledges.
 type Notifications struct {
 	notificationspb.UnimplementedNotificationsServer
 	store     *store.Store
@@ -21,13 +22,18 @@ type Notifications struct {
 	runner    Runner
 	actions   Actions
 	github    GitHub
-	timeout   time.Duration
+	policy    *inboxaccess.Policy
+	history   SessionHistory
+	// messageBodyLimit is in UTF-8 bytes.
+	messageBodyLimit int
+	timeout          time.Duration
 }
 
 func NewNotifications(options Options) *Notifications {
 	return &Notifications{
 		store: options.Store, resolver: options.Resolver, namespace: options.Namespace, sandboxes: options.Sandboxes,
-		runner: options.Runner, actions: options.Actions, github: options.GitHub, timeout: options.RequestTimeout,
+		runner: options.Runner, actions: options.Actions, github: options.GitHub, policy: options.SendPolicy,
+		history: options.History, messageBodyLimit: options.MessageBodyLimit, timeout: options.RequestTimeout,
 	}
 }
 

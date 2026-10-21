@@ -92,6 +92,7 @@ flowchart LR
     app --> k8s
 
     gw --> k8s
+    notif --> k8s
     policy --> k8s
     sandboxctl --> k8s
     sandboxctl --> gw

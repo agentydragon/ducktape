@@ -20,8 +20,10 @@ verified ServiceAccount, shared by its workloads. Every creation specifies `dest
   snapshots, not fetched at read time or promoted to operator instructions.
 - `PUT /v1/inboxes/{id}/acknowledgement` with `through_cursor`: monotonically acknowledge the handled
   prefix. Future cursors are refused. Delivery and reads never acknowledge.
-- `DELETE /v1/inboxes/{id}`: explicit retirement; no future matching or delivery. An already submitted
-  runner command cannot be withdrawn. Missing endpoints or transient lookup failures are not retirement.
+- `DELETE /v1/inboxes/{id}`: explicit retirement; no future matching, messages or delivery. An already
+  submitted runner command cannot be withdrawn. Missing endpoints or transient lookup failures are not retirement.
+- `POST /v1/messages`, `GET /v1/messages/{id}`: send a message to a Session's inbox, and follow one the caller
+  sent ([Messages](#messages)).
 
 `idempotency_key` is caller-chosen and unique within an inbox (owning ServiceAccount, qualified sandbox
 incarnation, and runner session), not across the entire sandbox. The server-generated subscription `id`
@@ -71,6 +73,41 @@ Notices carry only the inbox ID and preparation-time acknowledgement/coverage cu
 paging, and contiguous-ack instructions live in the served inbox-handling guide. Previously prepared notices
 keep their original text on retries.
 
+## Messages
+
+A workload sends a message to a Session's inbox when a `session_inbox_access` rule of a PolicySet bound to its
+ServiceAccount allows `send_message` to the Session's Sandbox. A rule targets Sandboxes of its PolicySet's
+namespace by name, optionally pinned to one incarnation by `uid`, or all of them with `allSandboxes`; grants
+combine additively. A target without `uid` follows a Sandbox deleted and recreated under its name. The service
+checks the grant against its watched view of the namespace's PolicySets and PolicyBindings at acceptance: it
+refuses every send as `UNAVAILABLE` before its first sync and once a watched kind has missed three periods of
+`policy_watch_period_s`, and it reports each binding's rules in its `SessionInboxAccessReady` condition. Replicas
+watch independently, so a grant or revocation takes effect on each as it observes it. Revocation stops new sends
+only; accepted messages stay in the inbox. The recipient needs no subscription or consent of its own.
+
+A send names the Sandbox (namespace and name; `uid` optional) and the Session ID, as a subscription does. The
+service pins the UID of the Sandbox it finds and refuses a missing Sandbox, one outside its namespace or another
+incarnation than a given `uid` as `NOT_FOUND`; it never retargets. A suspended Sandbox accepts messages. The
+inbox is the Sandbox ServiceAccount's inbox for that Session. When it does not exist yet, the service first asks
+the History Service which Sandbox wrote the Session (`SessionSummary.sandbox`) and refuses a Session recorded for
+no Sandbox or another one as `NOT_FOUND`, so invented Session IDs cannot use up the recipient's inbox quota.
+History records the Sandbox by name, so a Session of a deleted predecessor of the same name passes. Sends to an
+existing inbox skip the check.
+
+A message is an inbox entry like any other, with the same cursors, notices, acknowledgement, payload expiry and
+purge. Its event identity is the message ID and the sender ServiceAccount the service authenticated; its payload
+is the `body` and the optional `from_session`, the sender's unverified label for the Session it writes from. The
+idempotency key is unique per sender within the inbox: an identical retry answers with the accepted message,
+also after its payload expired, and other content under the key is `ALREADY_EXISTS`. Bodies are UTF-8, at most
+`message_body_limit_bytes`; the database refuses more than 256 KiB whatever the setting. A sender may have
+`quotas.unacknowledged_messages_per_sender` messages in an inbox beyond its acknowledged cursor; messages do not
+count towards `quotas.entries_per_inbox`.
+
+`GET /v1/messages/{id}` answers only the sender, whatever its current grants, with three independent facts from
+the inbox's cursors: `covered` (a notice named the message), `acknowledged` (the acknowledged prefix reaches it)
+and `inbox_retired`. It shows no cursors or other entries. Another account's message, an unknown ID and a
+message whose inbox was purged are all `NOT_FOUND`.
+
 ## Persistence and recovery
 
 The service has its own PostgreSQL database and role on the shared cluster. Migrations are Goose files run by an
@@ -110,7 +147,8 @@ reminders for unacknowledged entries, including after a worker restart. Only a r
 input; this service never calls CreateSession, ResumeSession, or sandbox provisioning APIs.
 
 Default limits: 64 inboxes per account; 64 active (not cancelled and not expired) subscriptions per inbox; 10000
-source-event identities per inbox lifetime; 128 entries per read/poll/replay step; subscriptions last
+source-event identities per inbox lifetime; 128 unacknowledged messages per sender and inbox; 128 entries per
+read/poll/replay step; subscriptions last
 7 days by default and can be renewed up to 30 days at a time. A full inbox stops source progress with
 an observable error rather than dropping events. Provider payloads expire after 30 days, preserving
 identity tombstones to prevent replay duplicates. `expired_through` reports the resulting prefix gap
@@ -126,13 +164,15 @@ quotas:
   inboxes_per_account: 64
   active_subscriptions_per_inbox: 64
   entries_per_inbox: 10000
+  unacknowledged_messages_per_sender: 128
 ```
 
 Each value must be positive. Environment overrides use the nested settings delimiter, for example
 `AGENTPLANE_NOTIFICATIONS_QUOTAS__ACTIVE_SUBSCRIPTIONS_PER_INBOX=128`. Configure the same
 quotas on all replicas. Lowering a quota does not delete retained data; it blocks new allocations
 when capacity is exhausted. The inbox quota counts retained inboxes, and the entry quota counts
-distinct event identities over an inbox's lifetime, including payload-expiry tombstones.
+distinct source-event identities over an inbox's lifetime, including payload-expiry tombstones. The message quota
+counts one sender's messages past the inbox's acknowledged cursor.
 
 Cancelled and expired subscription records do not consume active capacity; they remain
 available for history and idempotent replay. Renewing an expired subscription consumes
@@ -154,8 +194,9 @@ forwarded.
 The worker uses rotating, audience-specific projected service tokens. It is allowlisted at the Runner
 Gateway, which validates sandbox UID and account binding and serves read-only Session validation, and
 is a History Service reader. Notice delivery goes through the Session Dispatcher.
-Notification Kubernetes RBAC is TokenReview plus `get` on Sandboxes in the Sandbox namespace, which
-resolves a destination's UID and owner. Cilium allows egress proxy/app → notifications, the
+Notification Kubernetes RBAC is TokenReview, `get` on Sandboxes in the Sandbox namespace, which
+resolves a destination's UID and owner, and `get`, `list` and `watch` on PolicySets and PolicyBindings with
+`patch` on PolicyBinding status there, for send grants. Cilium allows egress proxy/app → notifications, the
 staging GitHub webhook route → notifications, notifications → Actions/Runner Gateway/Session
 Dispatcher/History Service/PostgreSQL/API server/GitHub API, and no notifications → runner path.
 

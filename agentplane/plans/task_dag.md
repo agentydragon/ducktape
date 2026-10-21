@@ -84,7 +84,7 @@ point.** The service (`agentplane/notification_service/`) has grown to several r
   since the last notice or acknowledgement.
 
 Decide which stay, which move to other services, and what the remaining service is called. The inbox
-messaging nodes of section 3 (`AGENT_MESSAGE_INGRESS` and the nodes after it) record the service name as
+messaging nodes of section 3 (`AGENT_MESSAGE_RECEPTION` and the nodes after it) record the service name as
 open and keep v1 in one deployment; this node is the later restructuring, not a prerequisite for them.
 Related: whether notice delivery belongs with the Dispatcher
 ([freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership)),
@@ -250,17 +250,15 @@ the remaining contracts below still require review before implementation.
 ```mermaid
 flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
-    SESSION_INBOX_ACCESS_RULES[Candidate: Session inbox access rules]
     THREAD_READ_POLICY_DESIGN[Held decision: remaining history read contract]
-    SANDBOX_INBOX_TAGS[Blocked: inbox tags on the Sandbox]
+    SANDBOX_INBOX_TAGS[Candidate: inbox tags on the Sandbox]
     HISTORY_SANDBOX_RECORD[Blocked: History's Sandbox record and history tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SESSION_KEY_DESIGN[Decision: record the Sandbox UID in History, and key Sessions by it]
     HISTORY_SANDBOX_UID[Blocked: History records and checks the Sandbox UID]
     APP_THREAD_SANDBOX_UID[Blocked: the app stores each Thread's Sandbox UID]
     HISTORY_SESSION_REKEY[Blocked: key History by Sandbox UID and Session ID]
-    AGENT_MESSAGE_INGRESS[Blocked: authorized send API and durable receipts]
-    AGENT_MESSAGE_RECEPTION[Blocked: receiving, recovery and acknowledgement]
+    AGENT_MESSAGE_RECEPTION[Candidate: receiving, recovery and acknowledgement]
     AGENT_MESSAGING[Capstone: end-to-end agent messaging]
     THREAD_CREATE_POLICY[Decision: opening a session in an existing Sandbox]
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
@@ -269,8 +267,6 @@ flowchart TD
     MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
-    SESSION_INBOX_ACCESS_RULES --> SANDBOX_INBOX_TAGS
-    SESSION_INBOX_ACCESS_RULES --> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN --> HISTORY_SANDBOX_UID
     HISTORY_SESSION_KEY_DESIGN -. read API shape .-> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN -. only if re-keyed .-> APP_THREAD_SANDBOX_UID
@@ -278,10 +274,7 @@ flowchart TD
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
     HISTORY_SANDBOX_UID --> APP_THREAD_SANDBOX_UID
     APP_THREAD_SANDBOX_UID --> HISTORY_SESSION_REKEY
-    SESSION_INBOX_ACCESS_RULES --> AGENT_MESSAGE_INGRESS
-    AGENT_MESSAGE_INGRESS --> AGENT_MESSAGE_RECEPTION
-    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities, section 2] -. related .-> AGENT_MESSAGE_INGRESS
-    NOTIFICATION_SERVICE_SPLIT -. related .-> AGENT_MESSAGE_RECEPTION
+    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities, section 2] -. related .-> AGENT_MESSAGE_RECEPTION
     AGENT_MESSAGE_RECEPTION --> AGENT_MESSAGING
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
@@ -304,39 +297,14 @@ and which controls must remain unavailable. Native integration itself stays froz
 native children from the messaging and access model.
 
 This gates `THREAD_CREATE_POLICY` and `AGENT_LAUNCH_POLICY_DESIGN`. Messaging needs only the
-[Session inbox access rule](multiagent_communication.md#schema-for-the-session-inbox-access-rule) and
+[Session inbox access rule](../notification_service/docs/api.md#messages) and
 history reads only their own rule type, so creator, manager and parent semantics do not hold them up. The app's existing auth path may remain a special case for v1. Reducing that
 special handling is optional, separately reviewed follow-up work and does not gate multiagent
 implementation.
 
-### `SESSION_INBOX_ACCESS_RULES` — Session inbox access rule support
-
-**Candidate; the [rule schema](multiagent_communication.md#schema-for-the-session-inbox-access-rule) is
-reviewed (operator, 2026-10-21 UTC).** Add the `session_inbox_access` rule type to the Go `Rule` in
-`policy/api/v1alpha1`, whose first operation is `send_message`, and implement shared
-rule-reading/evaluation code for API owners. Factor that code out of the egress policy index and informer
-when a service other than egress needs it (operator, 2026-10-21 UTC: "that refactor sounds good to me when
-they end up needing it"); the Notification service, which is Go, is the first. Listing and transcript reads
-get their own rule type, as they get their own tag kind (operator, 2026-10-21 UTC), shaped when
-`THREAD_READ_POLICY_DESIGN` reopens, and reuse the shared code. Reuse existing SA
-authentication and PolicyBindings. Match `send_message` against direct Sandbox targets and an
-all-Sandboxes target, without changing recorded Session associations when a Sandbox name is reused.
-Implement independent watched policy views, initial-sync and configurable freshness checks, and
-asynchronous revocation under the agreed contract; no global replica acknowledgement is required.
-Preserve live bundle updates, existing binding lifecycle and additive overlapping grants. Cover mixed
-static/runtime SAs, allowed/denied operations and targets, overlap, initial sync, stale watches,
-independently advancing replicas and Sandbox recreation under the same name. Backend enforcement and
-retained-history semantics remain in their respective nodes.
-
-Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads. OAuth
-callers reach the backends from an Action box whose egress substitutes the SA's projected
-token ([agreed route](multiagent_communication.md#oauth-callers)); no OAuth admission path is added to
-other backends. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and
-Connection representation/storage changes are outside this work.
-
 ### `SANDBOX_INBOX_TAGS` — inbox tags on the Sandbox
 
-**Blocked on `SESSION_INBOX_ACCESS_RULES`.** [Design](sandbox_tags.md#tags). Add a set-typed
+**Candidate.** [Design](sandbox_tags.md#tags). Add a set-typed
 `spec.inboxTags` to `Sandbox` and an inbox-tag target to the `session_inbox_access` rule. The inbox
 owner matches a send against the live CR's tags, with no History call. App presets supply a launch's
 initial tags. Test a send allowed and one denied by tag, a removed tag withdrawing the grant, a
@@ -452,32 +420,10 @@ announces the pair; the app and Notifications pass the UID they hold. The ingres
 Sandbox UID up as part of the key. Electric shape handles reset, so verify a browser reconnects. Rows of
 deleted Sandboxes follow the review's answer.
 
-### `AGENT_MESSAGE_INGRESS` — authorized send and acceptance
-
-**Blocked on `SESSION_INBOX_ACCESS_RULES`.** The [peer message path](multiagent_communication.md#peer-message-path)
-is the agreed contract, including the inbox defaults the operator accepted on 2026-10-21 UTC. Implement a configurable inbox-service
-message-body byte limit backed by a database ceiling; reject oversized messages before acceptance
-without truncation and reject configurations above the ceiling. Default 32 KiB, ceiling 256 KiB.
-Implement server-authenticated sender provenance, `session_inbox_access` rule enforcement, idempotent
-message IDs and honest acceptance receipts in the chosen authority. Implement the sender's receipt
-query from the inbox coverage and acknowledgement cursors, visible only to the authenticated sender.
-Create an inbox for a message only after confirming the named Session against the Sandbox History
-recorded for it, so invented Session IDs cannot use up the recipient's inbox quota; sends to an
-existing inbox skip the check. The History Service reports that Sandbox's namespace and name today
-(`SessionSummary.sandbox`), which the Notification service's existing History client reads, so the check needs no
-Sandbox UID and no History key change. It also accepts the Session IDs of a deleted same-name
-predecessor, a finite set that cannot exhaust the quota; comparing the Sandbox UID after
-`HISTORY_SANDBOX_UID` closes that. Check send permission at durable
-acceptance against a fresh local policy view; observed revocation blocks new sends without retracting
-accepted messages. Require no separate recipient opt-in or source subscription. Test authorized
-acceptance without either, denied pairs, spoofing, retry/conflict behavior, size bounds and this
-revocation boundary. Cover coverage and acknowledgement reaching a message independently, a retired
-recipient inbox, and not found for another account's message, an unknown ID and a purged inbox.
-
 ### `AGENT_MESSAGE_RECEPTION` — delivery, recovery and acknowledgement
 
-**Blocked on ingress contract/implementation.** Integrate peer messages with the existing
-owner-SA-scoped inbox listing, monotonic acknowledgement, notices and unread-work recovery.
+**Candidate.** Messages already reach the recipient as inbox entries, carried by the existing
+listing, notices and acknowledgement ([send contract](../notification_service/docs/api.md#messages)).
 Delegated inbox reading and acknowledgement remain frozen. Test peer-message owner-scoped read/ack,
 recipient-access revocation, deleted recipients,
 ordinary offline catch-up and duplicate delivery without leaking payloads. Accepted correspondence
@@ -523,7 +469,7 @@ service-reserved identity changes both. Neither depends on any History key or re
 - Handle "where can SA X create new sessions" "similarly to the inbox-sending permission groups". As
   sends and reads each get their own rule type, session creation would be one more, with the same
   direct and `allSandboxes` targets as the
-  [Session inbox access rule](multiagent_communication.md#schema-for-the-session-inbox-access-rule).
+  [Session inbox access rule](../notification_service/docs/api.md#messages).
   Only enforcement differs: the Dispatcher's caller, not the Notification service.
 - Creating sessions in the Sandbox the SA runs in is "a permission i'd be ok granting automatically
   (since SA is the unit of isolation)". "Own" needs no rule: a Sandbox runs as the ServiceAccount of its

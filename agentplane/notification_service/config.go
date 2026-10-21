@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/spf13/viper"
 )
 
@@ -48,8 +49,13 @@ type config struct {
 	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
 	// WatchLeaseSeconds is how long a watch stream lasts before planned renewal.
 	WatchLeaseSeconds float64 `mapstructure:"watch_lease_s"`
-	Host              string  `mapstructure:"host"`
-	Port              int     `mapstructure:"port"`
+	// MessageBodyLimitBytes is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
+	MessageBodyLimitBytes int `mapstructure:"message_body_limit_bytes"`
+	// PolicyWatchPeriodSeconds is how long the API server holds each watch of PolicySets and PolicyBindings open.
+	// Sends are refused once a watch has missed reader.StaleAfterCycles of these.
+	PolicyWatchPeriodSeconds int    `mapstructure:"policy_watch_period_s"`
+	Host                     string `mapstructure:"host"`
+	Port                     int    `mapstructure:"port"`
 }
 
 // runnerGateway is how the service reaches a Sandbox's runner through the Runner Gateway's proxy.
@@ -73,7 +79,9 @@ type peer struct {
 func defaultConfig() config {
 	return config{
 		TokenAudience: tokenAudience,
-		Quotas:        store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000},
+		Quotas: store.Quotas{
+			InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000, UnacknowledgedMessagesPerSender: 128,
+		},
 		Settings:      worker.DefaultSettings(),
 		Actions:       actions.DefaultSettings(),
 		RunnerGateway: runnerGateway{RequestTimeoutSeconds: 5},
@@ -82,8 +90,11 @@ func defaultConfig() config {
 		SessionDispatcher:     peer{RequestTimeoutSeconds: 15},
 		GitHub:                github.DefaultSettings(),
 		RequestTimeoutSeconds: 15, WatchLeaseSeconds: 300,
-		Host: "0.0.0.0",
-		Port: 8080,
+		MessageBodyLimitBytes: 32 * 1024,
+		// A wedged watch then refuses sends within three minutes; a healthy one costs a re-watch a minute.
+		PolicyWatchPeriodSeconds: 60,
+		Host:                     "0.0.0.0",
+		Port:                     8080,
 	}
 }
 
@@ -141,6 +152,7 @@ func (c *config) validate() error {
 		{"quotas.inboxes_per_account", c.Quotas.InboxesPerAccount},
 		{"quotas.active_subscriptions_per_inbox", c.Quotas.ActiveSubscriptionsPerInbox},
 		{"quotas.entries_per_inbox", c.Quotas.EntriesPerInbox},
+		{"quotas.unacknowledged_messages_per_sender", c.Quotas.UnacknowledgedMessagesPerSender},
 	} {
 		if quota.value < 1 {
 			return fmt.Errorf("%s must be at least 1", quota.name)
@@ -159,6 +171,12 @@ func (c *config) validate() error {
 		if !(timeout.value > 0) || math.IsInf(timeout.value, 0) {
 			return fmt.Errorf("%s must be a finite number above 0", timeout.name)
 		}
+	}
+	if c.MessageBodyLimitBytes < 1 || c.MessageBodyLimitBytes > store.MessageBodyCeiling {
+		return fmt.Errorf("message_body_limit_bytes must be 1 to %d", store.MessageBodyCeiling)
+	}
+	if time.Duration(c.PolicyWatchPeriodSeconds)*time.Second < reader.MinWatchPeriod {
+		return fmt.Errorf("policy_watch_period_s must be at least %v", reader.MinWatchPeriod.Seconds())
 	}
 	if err := c.Settings.Validate(); err != nil {
 		return err

@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "inboxaccess",
+    srcs = ["policy.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess",
+    visibility = ["//agentplane/notification_service:__subpackages__"],
+    deps = [
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/reader",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_client_go//rest",
+    ],
+)
+
+go_test(
+    name = "inboxaccess_test",
+    srcs = ["policy_test.go"],
+    embed = [":inboxaccess"],
+    deps = [
+        "//agentplane/policy/api/v1alpha1",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/types",
+    ],
+)

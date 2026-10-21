@@ -103,21 +103,23 @@ flowchart LR
     dispatcher[Runner Gateway Dispatcher API]
     history[History Service]
 
-    agent -->|notification API| notifications
+    agent -->|subscriptions, inboxes, messages| notifications
     app -->|gRPC operator watches + health| notifications
     github --> notifications
     notifications --> github
     notifications -->|Action history| actions
-    notifications -->|Sandbox identity| k8s
+    notifications -->|Sandbox identity, watched send grants| k8s
     notifications -->|Session validation| gateway
     notifications -->|SubmitInput| dispatcher
-    notifications -->|command receipts| history
+    notifications -->|command receipts, Session's Sandbox| history
 ```
 
 The Notification service does not call the integration app, which watches subscription and notice
 state over the operator-only `NotificationsOperator` gRPC service. GitHub sends it signed webhooks; it
 makes GitHub App REST calls, reads receipt evidence from History before retrying a delivery, and
-submits every runner notice through the Session Dispatcher.
+submits every runner notice through the Session Dispatcher. It authorizes a message against the
+PolicySets and PolicyBindings it watches, and asks History which Sandbox wrote a Session before a
+message opens that Session's inbox.
 
 ## Actions and egress
 

@@ -48,6 +48,20 @@ func (s *Notifications) subscribe(ctx context.Context, owner store.ServiceAccoun
 // destination resolves the Sandbox the reference names to the exact incarnation, which must run as the owner. A
 // Sandbox outside the service's namespace, a missing or replaced one, and another account's are all not found.
 func (s *Notifications) destination(ctx context.Context, owner store.ServiceAccount, ref store.DestinationRef) (sandboxreader.Identity, error) {
+	sandbox, err := s.sandbox(ctx, ref)
+	if err != nil {
+		return sandboxreader.Identity{}, err
+	}
+	// A Sandbox runs as the ServiceAccount of its own name.
+	if (store.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}) != owner {
+		return sandboxreader.Identity{}, errSandboxMissing
+	}
+	return sandbox, nil
+}
+
+// sandbox reads the Sandbox the reference names, which must be in the service's namespace and, when the reference
+// gives a UID, that incarnation; else it is not found.
+func (s *Notifications) sandbox(ctx context.Context, ref store.DestinationRef) (sandboxreader.Identity, error) {
 	if ref.Namespace != s.namespace {
 		return sandboxreader.Identity{}, errSandboxMissing
 	}
@@ -57,11 +71,7 @@ func (s *Notifications) destination(ctx context.Context, owner store.ServiceAcco
 		return sandboxreader.Identity{}, errSandboxMissing
 	case err != nil:
 		return sandboxreader.Identity{}, unavailable("sandbox lookup", err)
-	case view.Identity.UID != ref.UID:
-		return sandboxreader.Identity{}, errSandboxMissing
-	}
-	// A Sandbox runs as the ServiceAccount of its own name.
-	if (store.ServiceAccount{Namespace: view.Identity.Namespace, Name: view.Identity.Name}) != owner {
+	case ref.UID != "" && view.Identity.UID != ref.UID:
 		return sandboxreader.Identity{}, errSandboxMissing
 	}
 	return view.Identity, nil

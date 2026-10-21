@@ -1,9 +1,11 @@
 # Notification Service
 
-Standalone Actions and GitHub App subscriptions and durable session inboxes. The service reads Actions history,
-reads destination Sandboxes from their Sandbox resources, validates Sessions through the read-only Runner Gateway,
-sends every runner notice through the Session Dispatcher, and reads command receipts from the Session's runner
-entries in the History Service. It does not depend on the integration app or connect directly to runners.
+Standalone Actions and GitHub App subscriptions, messages between workloads, and durable session inboxes. The
+service reads Actions history, reads destination Sandboxes from their Sandbox resources, validates Sessions through
+the read-only Runner Gateway, sends every runner notice through the Session Dispatcher, and reads command receipts
+from the Session's runner entries in the History Service. It authorizes messages by the `session_inbox_access`
+rules of the PolicySets bound to the sender, which it watches. It does not depend on the integration app or
+connect directly to runners.
 
 Agents subscribe with an explicit destination/session and an idempotence key, then retrieve stored
 payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
@@ -16,8 +18,8 @@ confirm retirement. Retirement cancels subscriptions and stops retries but retai
 and notices for normal retention and inspection; it never acknowledges them or rebinds
 an inbox to a replacement Sandbox.
 
-Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked subscription, inbox-handling and
-GitHub workflows served under `/docs/agents/`, and `/openapi.json` as the HTTP reference. Update the guides
+Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked subscription, inbox-handling,
+GitHub and messaging workflows served under `/docs/agents/`, and `/openapi.json` as the HTTP reference. Update the guides
 when those contracts change.
 
 - [API, authorization, persistence and delivery semantics](docs/api.md)
@@ -34,7 +36,8 @@ History Service lags the runner's journal, so a retry never precedes an admissio
 `:service_image` (binary `:notification-service`) is the service, and `//agentplane/notification_service/migrations:image`
 its Goose migrator, which the Deployment's init container runs before the service starts. The service needs its own
 PostgreSQL database, Actions, Runner Gateway, History Service and Session Dispatcher endpoints, projected
-service-account tokens, and Kubernetes read access to Sandboxes. Preserve existing staging data. Verify an Action
+service-account tokens, Kubernetes read access to Sandboxes, PolicySets and PolicyBindings, and `patch` on
+PolicyBinding status. Preserve existing staging data. Verify an Action
 subscription through a newly opened harness after rollout. Existing sessions retain their original prompt.
 
 A schema change is a Goose file in `migrations/notifications/`. The baseline, `00001_baseline.sql`, takes over a
@@ -43,7 +46,10 @@ the migrator keeps the advisory lock key the Alembic runner took.
 
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
-and `watch_lease_s` (default 300) is how long a watch lasts before it ends with `reconnect_required`. GitHub is on
+and `watch_lease_s` (default 300) is how long a watch lasts before it ends with `reconnect_required`.
+`message_body_limit_bytes` (default 32768, at most 262144, which the database also holds) bounds a message body.
+`policy_watch_period_s` (default 60, at least 2) is how long each watch of PolicySets and PolicyBindings stays
+open; sends are refused once a watch has missed three. GitHub is on
 when any `github.*` setting is set, so a Secret without `github.app_id`, or the reverse, fails startup. A setting
 that fails validation stops startup without printing its value.
 

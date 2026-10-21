@@ -24,8 +24,12 @@ type Quotas struct {
 	InboxesPerAccount int `mapstructure:"inboxes_per_account"`
 	// ActiveSubscriptionsPerInbox is the most subscriptions of an inbox that are neither cancelled nor expired.
 	ActiveSubscriptionsPerInbox int `mapstructure:"active_subscriptions_per_inbox"`
-	// EntriesPerInbox is the most distinct source-event identities over an inbox's lifetime.
+	// EntriesPerInbox is the most distinct source-event identities over an inbox's lifetime. Messages are not
+	// counted: reaching it ends the inbox's subscriptions.
 	EntriesPerInbox int `mapstructure:"entries_per_inbox"`
+	// UnacknowledgedMessagesPerSender is the most messages one sender may have in an inbox beyond its
+	// acknowledged cursor.
+	UnacknowledgedMessagesPerSender int `mapstructure:"unacknowledged_messages_per_sender"`
 }
 
 // ServiceAccount is the owner of inboxes and subscriptions: the account a caller's workloads run as.
@@ -38,8 +42,9 @@ type ServiceAccount struct {
 var (
 	// ErrNotFound is a missing resource, or one that belongs to another account.
 	ErrNotFound = errors.New("resource not found or not owned by this account")
-	// ErrIdempotencyKeyReused is a creation key that already names a subscription made with other arguments.
-	ErrIdempotencyKeyReused = errors.New("idempotency key already names another subscription")
+	// ErrIdempotencyKeyReused is a creation key that already names a subscription or message made with other
+	// arguments.
+	ErrIdempotencyKeyReused = errors.New("idempotency key already names another subscription or message")
 	// ErrVersionChanged is a renewal of a subscription whose version moved on, or that is cancelled.
 	ErrVersionChanged = errors.New("subscription version changed or subscription cancelled")
 	// ErrInboxRetired is a change to an inbox that was retired.
@@ -55,6 +60,7 @@ const (
 	InboxesPerAccount Quota = iota + 1
 	ActiveSubscriptionsPerInbox
 	EntriesPerInbox
+	UnacknowledgedMessagesPerSender
 )
 
 // QuotaError is a write that would pass a quota.
@@ -69,6 +75,8 @@ func (e *QuotaError) Error() string {
 		return fmt.Sprintf("%d inboxes per owning ServiceAccount", e.Limit)
 	case ActiveSubscriptionsPerInbox:
 		return fmt.Sprintf("%d active subscriptions per inbox", e.Limit)
+	case UnacknowledgedMessagesPerSender:
+		return fmt.Sprintf("%d unacknowledged messages per sender in an inbox; wait for the recipient to acknowledge", e.Limit)
 	default:
 		return fmt.Sprintf("inbox has reached its %d-entry lifetime limit; retire it explicitly", e.Limit)
 	}

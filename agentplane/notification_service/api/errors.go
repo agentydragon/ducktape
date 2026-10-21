@@ -24,9 +24,20 @@ func (e admissionRefused) Unwrap() error { return e.err }
 // errGitHubDisabled is a GitHub source asked of a service that has no GitHub App.
 var errGitHubDisabled = errors.New("GitHub provider is disabled")
 
-// errSandboxMissing is a destination that names no Sandbox the caller runs as: it is missing, outside the
-// service's namespace, another incarnation, or another account's.
+// errSandboxMissing is a destination that names no Sandbox the caller may use: it is missing, outside the
+// service's namespace, another incarnation, or, for a subscription, another account's.
 var errSandboxMissing = errors.New("destination Sandbox not found")
+
+var (
+	// errSendDenied is a message to a Sandbox no current grant of the sender covers.
+	errSendDenied = errors.New("no session_inbox_access rule bound to this ServiceAccount allows send_message to the Sandbox")
+	// errSendPolicyUnavailable is a send while the service's view of the grants is not current: before its first
+	// read of them, or once a watch has fallen behind.
+	errSendPolicyUnavailable = errors.New("the service's view of send grants is not current")
+	// errSessionUnrecorded is a message that would open an inbox for a Session the History Service has not
+	// recorded as the destination Sandbox's, which is as unknown to the caller as a missing Sandbox.
+	errSessionUnrecorded = errors.New("the History Service records no such Session of the Sandbox")
+)
 
 // unavailableError is a collaborator that could not be asked, or answered badly. The client is told only that
 // the service could not answer; the cause is logged.
@@ -60,7 +71,8 @@ func failure(ctx context.Context, err error) error {
 		return refused.err
 	case errors.Is(err, store.ErrInvalid):
 		return status.Error(codes.InvalidArgument, err.Error())
-	case errors.Is(err, store.ErrNotFound), errors.Is(err, errSandboxMissing), errors.Is(err, errNoSession):
+	case errors.Is(err, store.ErrNotFound), errors.Is(err, errSandboxMissing), errors.Is(err, errNoSession),
+		errors.Is(err, errSessionUnrecorded):
 		return status.Error(codes.NotFound, store.ErrNotFound.Error())
 	case errors.Is(err, store.ErrIdempotencyKeyReused):
 		return status.Error(codes.AlreadyExists, err.Error())
@@ -72,8 +84,10 @@ func failure(ctx context.Context, err error) error {
 		return status.Error(codes.OutOfRange, err.Error())
 	case errors.As(err, &quota):
 		return status.Error(codes.ResourceExhausted, quota.Error())
-	case errors.Is(err, errGitHubDisabled):
+	case errors.Is(err, errGitHubDisabled), errors.Is(err, errSendDenied):
 		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, errSendPolicyUnavailable):
+		return status.Error(codes.Unavailable, err.Error())
 	case errors.As(err, &limited):
 		return rateLimited(ctx, limited)
 	case errors.As(err, &notInstalled):

@@ -83,10 +83,9 @@ stopped instead, with `spec.wakeOnSend: false`, and stays a CR.
 
 ## Steps
 
-1. The `session_inbox_access` rule with direct and `allSandboxes` targets only, and no membership
-   CR (`SESSION_INBOX_ACCESS_RULES`).
-2. Inbox tags and their send target (`SANDBOX_INBOX_TAGS`).
-3. After `HISTORY_SANDBOX_UID`, in the Go History Service: history tags and History's record
+1. Inbox tags and their send target (`SANDBOX_INBOX_TAGS`), beside the `session_inbox_access`
+   rule's direct and `allSandboxes` targets.
+2. After `HISTORY_SANDBOX_UID`, in the Go History Service: history tags and History's record
    (`HISTORY_SANDBOX_RECORD`).
 
 ## Deferred

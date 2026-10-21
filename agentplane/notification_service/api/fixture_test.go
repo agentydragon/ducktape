@@ -8,9 +8,13 @@ import (
 	"testing"
 	"time"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -152,12 +156,48 @@ func (g *fakeGitHub) authorized() []store.GitHubSource {
 	return append([]store.GitHubSource(nil), g.sources...)
 }
 
+// fakeHistory holds the Sandbox that wrote each Session.
+type fakeHistory struct {
+	mu        sync.Mutex
+	sandboxes map[string]*historypb.SandboxRef
+	err       error
+	asked     []string
+}
+
+func (h *fakeHistory) GetSessionSummary(_ context.Context, request *historypb.GetSessionSummaryRequest, _ ...grpc.CallOption) (*historypb.SessionSummary, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.asked = append(h.asked, request.GetSessionId())
+	if h.err != nil {
+		return nil, h.err
+	}
+	sandbox, ok := h.sandboxes[request.GetSessionId()]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "session not found")
+	}
+	return &historypb.SessionSummary{SessionId: request.GetSessionId(), Sandbox: sandbox}, nil
+}
+
+func (h *fakeHistory) failWith(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.err = err
+}
+
+func (h *fakeHistory) questions() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.asked...)
+}
+
 type serverConfig struct {
 	lease, requestTimeout time.Duration
 	debounce              store.Debounce
 	githubDisabled        bool
 	// operatorReader is the account that may call NotificationsOperator, none when empty.
 	operatorReader string
+	// messageBodyLimit is in UTF-8 bytes.
+	messageBodyLimit int
 }
 
 type testServer struct {
@@ -171,7 +211,10 @@ type testServer struct {
 	runner          *fakeRunner
 	actions         *fakeActions
 	github          *fakeGitHub
-	config          serverConfig
+	// policy is current and grants nothing until a test grants.
+	policy  *inboxaccess.Policy
+	history *fakeHistory
+	config  serverConfig
 }
 
 // newServer serves both APIs over the shared database, emptied of earlier tests' inboxes, with a hub listening to
@@ -181,7 +224,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	config := serverConfig{
 		lease: time.Hour, requestTimeout: callDeadline,
 		debounce:       store.Debounce{Quiet: time.Minute, MaxWait: 2 * time.Minute},
-		operatorReader: operatorName,
+		operatorReader: operatorName, messageBodyLimit: 64,
 	}
 	for _, configure := range configure {
 		configure(&config)
@@ -215,17 +258,28 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		t.Fatal(err)
 	}
 	server := testServer{
-		store: store.New(db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}),
-		hub:   hub, db: db, config: config,
+		store: store.New(db, store.Quotas{
+			InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000,
+			UnacknowledgedMessagesPerSender: 128,
+		}),
+		hub: hub, db: db, config: config,
 		runner: &fakeRunner{sessions: map[string][]string{
 			sandboxName: {testSession, "another-session"}, otherSandboxName: {testSession},
 		}},
 		actions: &fakeActions{},
 		github:  &fakeGitHub{access: store.GitHubAccessKey{AppID: 11, InstallationID: 22, RepositoryID: 33}},
+		policy:  inboxaccess.NewPolicy(time.Hour),
+		history: &fakeHistory{sandboxes: map[string]*historypb.SandboxRef{
+			testSession: {Namespace: testNamespace, Name: sandboxName},
+		}},
 	}
+	server.policy.Freshness.MarkSynced()
+	server.policy.Freshness.RecordCycle(reader.PolicySets, time.Now())
+	server.policy.Freshness.RecordCycle(reader.PolicyBindings, time.Now())
 	options := Options{
 		Store: server.store, Wakeups: hub, Resolver: resolver, Namespace: testNamespace, Sandboxes: sandboxes,
 		Runner: server.runner, Actions: server.actions, OperatorReader: config.operatorReader,
+		SendPolicy: server.policy, History: server.history, MessageBodyLimit: config.messageBodyLimit,
 		Debounce: config.debounce, RequestTimeout: config.requestTimeout, WatchLease: config.lease,
 	}
 	if !config.githubDisabled {
@@ -309,6 +363,24 @@ func (s testServer) subscribe(t *testing.T, key string, sessionID ...string) *no
 		t.Fatal(err)
 	}
 	return response.GetSubscription()
+}
+
+// grantSend binds a set of one rule, allowing send_message to the targets, to the account of the given name.
+// The binding is named after the account.
+func (s testServer) grantSend(account string, targets policyapi.SandboxTargets) {
+	s.policy.Rules.PutPolicySet(&policyapi.PolicySet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: account + "-send"},
+		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{
+			{Type: "session_inbox_access", Operations: []string{"send_message"}, Targets: &targets},
+		}},
+	})
+	s.policy.Rules.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: account},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject:    policyapi.ServiceAccountRef{Namespace: testNamespace, Name: account},
+			PolicySets: []string{account + "-send"},
+		},
+	})
 }
 
 func (s testServer) exec(t *testing.T, query string, args ...any) {

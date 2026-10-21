@@ -1,11 +1,12 @@
 # Policy sets: reusable grants for ServiceAccounts
 
 A `PolicySet` is a named, subject-free list of typed rules. A `PolicyBinding` attaches sets to
-one ServiceAccount. Egress, Action and Kubernetes rules share these two kinds
+one ServiceAccount. Egress, Action, Session inbox and Kubernetes rules share these two kinds
 (`agentplane/crds/manifests/crd-policy{sets,bindings}.yaml`), so one binding grants all of them
 and one set can carry rules for several services. Each reader enforces only its own rule types and
-reports in its own condition (`KubernetesReady`, `ActionsReady`, `EgressReady`) under its own
-field manager. `EgressCredential` stays a separate kind. The Kubernetes reader is the
+reports in its own condition (`KubernetesReady`, `ActionsReady`, `EgressReady`,
+`SessionInboxAccessReady`) under its own field manager; egress and the Notification service read
+through the shared `policy/reader` package. `EgressCredential` stays a separate kind. The Kubernetes reader is the
 [Policy Controller](../policy_controller/SPEC.md); the Sandbox Controller writes each Sandbox's
 binding ([SPEC](../sandbox_controller/SPEC.md#identity)).
 

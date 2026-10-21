@@ -24,11 +24,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/docs"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/webhook"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -58,10 +60,12 @@ const (
 	historyReceiveBytes = 32 * 1024 * 1024
 )
 
-// kubeDeps is what the service reads from Kubernetes: whom a bearer proves, and the Sandboxes of its namespace.
+// kubeDeps is what the service reads from Kubernetes: whom a bearer proves, the Sandboxes of its namespace, and
+// the API server its send grants are watched on.
 type kubeDeps struct {
 	Reviews   auth.TokenReviews
 	Sandboxes client.Reader
+	Policies  *rest.Config
 }
 
 func inClusterDeps() (kubeDeps, error) {
@@ -84,7 +88,7 @@ func inClusterDeps() (kubeDeps, error) {
 	if err != nil {
 		return kubeDeps{}, err
 	}
-	return kubeDeps{Reviews: kube.AuthenticationV1().TokenReviews(), Sandboxes: sandboxes}, nil
+	return kubeDeps{Reviews: kube.AuthenticationV1().TokenReviews(), Sandboxes: sandboxes, Policies: kubeConfig}, nil
 }
 
 // run serves on the configured address, authenticating callers with the cluster's TokenReview API.
@@ -169,6 +173,24 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	if err != nil {
 		return err
 	}
+	watchPeriod := time.Duration(c.PolicyWatchPeriodSeconds) * time.Second
+	sendPolicy := inboxaccess.NewPolicy(reader.StaleAfterCycles * watchPeriod)
+	policyWatches, err := sendPolicy.Watch(deps.Policies, c.Namespace, watchPeriod)
+	if err != nil {
+		return err
+	}
+	// Until the watches have listed, every send is refused as unavailable; nothing else waits for them.
+	watchContext, stopWatching := context.WithCancel(ctx)
+	watching := make(chan struct{})
+	go func() {
+		defer close(watching)
+		policyWatches.Run(watchContext)
+	}()
+	defer func() {
+		stopWatching()
+		<-watching
+	}()
+	history := historypb.NewHistoryServiceClient(historyConnection)
 
 	inboxes := store.New(db, c.Quotas)
 	actionsSource := &actions.Source{Service: actionsClient, Store: inboxes}
@@ -193,7 +215,8 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 			TargetTemplate: c.RunnerGateway.ControlTarget,
 		},
 		// The Action Service source authorizes a subscription the same way it reads one.
-		Actions: actionsSource, GitHub: githubAPI, OperatorReader: c.OperatorReaderAccount,
+		Actions: actionsSource, GitHub: githubAPI, SendPolicy: sendPolicy, History: history,
+		MessageBodyLimit: c.MessageBodyLimitBytes, OperatorReader: c.OperatorReaderAccount,
 		Debounce:       c.NoticeDebounce.Debounce(),
 		RequestTimeout: seconds(c.RequestTimeoutSeconds), WatchLease: seconds(c.WatchLeaseSeconds),
 	}
@@ -232,7 +255,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	}
 	inboxWorker := &worker.Worker{
 		Store: inboxes, Namespace: c.Namespace, Sandboxes: sandboxes,
-		History:    historypb.NewHistoryServiceClient(historyConnection),
+		History:    history,
 		Dispatcher: dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
 		Actions:    actionsSource, GitHub: githubSource, Settings: c.Settings,
 	}

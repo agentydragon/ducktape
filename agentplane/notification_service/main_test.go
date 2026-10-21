@@ -173,6 +173,7 @@ func restart(t *testing.T, tune func(*config)) running {
 		Sandboxes: clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(
 			&sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID}},
 		).Build(),
+		Policies: apiConfig,
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

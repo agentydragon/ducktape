@@ -308,58 +308,20 @@ the replica observes loss of the required permission or its policy view becomes 
 Independent overlapping grants still apply. The enforcing backends are Go services, so freshness
 follows the egress informer: each watched kind is held open for a configured watch period, a watch the
 server ends on schedule counts as a completed cycle, and a view is refused after three missed periods.
-Select the watch period during implementation; no global replica-acknowledgement barrier is required
-for v1.
+The Notification service's watch period defaults to 60 seconds; no global replica-acknowledgement
+barrier is required for v1.
 
 ### Schema for the Session inbox access rule
 
-**Reviewed with the operator, 2026-10-21 UTC**, who named the type `session_inbox_access` and its
-operation `send_message` (03:43), since transcript reads take a different kind of rule. The rule is a
-new `type` of the `Rule` in `policy/api/v1alpha1`, beside `egress` and `action_auto_approve`:
-snake_case `type`, camelCase fields, targets named explicitly and never selected. The CRD regenerates
-from that Go type, whose validation rules keep each type's fields off the others. Its one operation
-for now is `send_message`:
-
-```yaml
-type: session_inbox_access
-operations: [send_message]
-targets:
-  sandboxes: # direct, in the PolicySet's namespace
-    - name: coordinator
-    - name: dev-1
-      uid: 3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1 # optional: this incarnation only
-  allSandboxes: true # every Sandbox in the PolicySet's namespace
-```
-
-At least one target field is required, and the fields combine additively. An inbox-tag target
-arrives with `SANDBOX_INBOX_TAGS` ([steps](sandbox_tags.md#steps)); history tags belong to the read
-rule. There are no membership objects.
-
-- **Match.** A send to Sandbox S is allowed when a rule of a set bound to the caller lists
-  `send_message` and either lists S in `sandboxes` or sets `allSandboxes`. A `uid` that is given must
-  equal S's current UID. A reference without `uid` follows a deleted and recreated Sandbox of that
-  name; a UID-pinned one does not.
-- **Bindings.** A `PolicyBinding` names its subject by namespace and name and a reader matches the
-  caller on those two, as egress does, so a replaced same-name ServiceAccount keeps its grants. A set
-  whose `session_inbox_access` rule does not parse grants this reader nothing, and the reader reports that in
-  its own condition on each binding that names the set, as egress does with `EgressReady`.
-- **Shared reader.** Notification (sends) and History (reads, once they reopen) are Go services, so the
-  reading is a Go package. Egress already keeps an index of sets and bindings with cycle-based
-  freshness (`egress/policy`, `egress/informer`), but only for its own rules. The shared part is
-  factored out of that code, with egress using the result, when the first other service needs it
-  (operator, 2026-10-21 UTC), so a copy does not grow beside it.
-- **Administration.** Rule and binding writes go through ordinary RBAC on `policysets` and
-  `policybindings`. No Sandbox or agent ServiceAccount gets them, and a send grant carries none. The
-  Notification service gets a namespaced Role with `get`, `list` and `watch` on `policysets` and
-  `policybindings`, and `patch` on `policybindings/status`, as egress and the Action Service hold for
-  policy; its Role holds `get` on `sandboxes` already. The Role lands before the code that uses it.
-- **Freshness.** The Notification service refuses sends as unavailable before its first sync and once
-  any watched kind has missed three watch periods ([propagation](#policy-propagation-and-freshness)).
-  The watch period is a setting, and its default is chosen with the implementation.
-- **Namespace.** The Notification service serves the one namespace it is configured for and rejects a
-  destination elsewhere, so v1 direct targets are same-namespace, with no `namespace` field.
-  **Settled with the operator, 2026-10-18 UTC**, who needs no way to name another namespace. A field
-  can be added without changing existing rules when a service serves a second namespace.
+**Implemented** after review with the operator, 2026-10-21 UTC: the `session_inbox_access` type of the `Rule`
+in `policy/api/v1alpha1`, whose one operation is `send_message`, with direct (`sandboxes`, each with an
+optional `uid`) and `allSandboxes` targets in the PolicySet's namespace. The Notification service enforces
+it, reading through the shared `policy/reader` package; the
+[send contract](../notification_service/docs/api.md#messages) states matching, freshness and revocation.
+An inbox-tag target arrives with `SANDBOX_INBOX_TAGS` ([steps](sandbox_tags.md#steps)); history reads take
+their own rule type and reuse `policy/reader`. Direct targets are same-namespace, with no `namespace`
+field: **settled with the operator, 2026-10-18 UTC**, who needs no way to name another namespace. A field
+can be added without changing existing rules when a service serves a second namespace.
 
 ### Alternatives if the tentative direction needs revision
 
@@ -487,8 +449,8 @@ own for every history bound to a writer, which is what the split would build on.
   re-key once recorded values exist. A `(sandbox_uid, session_id)` key would make a scoped read a
   lookup inside one owner's keys, but a grant can match the recorded column without it, so the
   split does not force the re-key.
-- The send path is unaffected. `AGENT_MESSAGE_INGRESS` needs `send_message` against live Sandboxes
-  and History's recorded namespace and name. `session_inbox_access` carries `send_message` alone,
+- The send path is unaffected: it checks `send_message` against live Sandboxes and History's
+  recorded namespace and name. `session_inbox_access` carries `send_message` alone,
   and the archive operations get their own rule type with or without the split
   ([separate rule types](#tentative-implementation-direction)).
 
@@ -522,38 +484,18 @@ being generalized.
 
 ### Peer message path
 
-Add an authorized peer-send path that writes durable correspondence into the destination inbox;
-peer sends do not require a source subscription. Subscriptions can produce other inbox entries.
-**V1 acceptance authorization agreed:** the sender's grant to append to the target Session's inbox
-is sufficient; no separate recipient-side opt-in, allowlist or approval is required. Evaluate the
-grant at the agreed Sandbox granularity against the current fresh policy view. Acceptance does
-not imply the receiving agent has read or handled the message.
+**Implemented:** the authorized send, its addressing (agreed with the operator, 2026-10-17), the
+History check before a message opens an inbox, recipient states (reviewed with the operator,
+2026-10-21 UTC) and sender provenance ([send contract](../notification_service/docs/api.md#messages)).
+The operator accepts the History check for v1 and may revisit addressing with the planned
+Notification Service refactors. A send to a suspended or offline Sandbox is to be noticed per
+`spec.wakeOnSend`.
 
-**Addressing agreed with the operator, 2026-10-17:** a send names the destination Sandbox
-(namespace and name; the UID is optional and pinned at acceptance from the Sandbox resource) and the
-Session ID within it, as the Dispatcher and the subscription API do. The inbox/messaging service keeps
-and queries no Session-to-Sandbox mapping, and wake-on-send uses the named Sandbox. The sender's rule is
-matched against that Sandbox. The inbox is owned by the named Sandbox's SA, so a wrong pairing can
-only reach an inbox the sender is authorized to send into. To stop a sender from using up the
-recipient's inbox quota with invented Session IDs, creating an inbox for a message first confirms the
-pair against the Sandbox History recorded for that Session. This is an existence check, not routing
-state. Sends to an existing inbox skip it, and a Session History has not yet recorded is refused until
-its first push. History reads resolve a Session to its recorded Sandbox because History owns that
-record. The operator accepts this for v1 and may revisit addressing with the planned Notification
-Service refactors.
-
-**Recipient states, reviewed with the operator, 2026-10-21 UTC:** a send to a suspended or offline Sandbox is
-accepted and noticed per `spec.wakeOnSend`. A send to a Sandbox outside the service's namespace, a
-missing one, or one whose UID differs from a given one is refused as not found and never retargeted,
-as the subscription API does.
-
-Store the peer message with authenticated sender-SA provenance and the qualified destination.
-The inbox/messaging service prepares a platform-generated
-inbox notice; Dispatcher delivers that notice through the existing input path. The peer's raw text
-stays in the inbox and is not promoted into a human user-role instruction. The recipient retrieves
-entries and explicitly acknowledges handled work. Reuse the existing batching, durable cursors,
-retry/idempotency and read/ack mechanisms. Validate actual agent receive/read/ack behavior before
-claiming the workflow is effective; this is an initial approach to try, not measured agent evidence.
+The inbox/messaging service prepares a platform-generated inbox notice; Dispatcher delivers that
+notice through the existing input path. The peer's raw text stays in the inbox and is not promoted
+into a human user-role instruction. The recipient retrieves entries and explicitly acknowledges
+handled work. Validate actual agent receive/read/ack behavior before claiming the workflow is
+effective; this is an initial approach to try, not measured agent evidence.
 
 Protocol facades can be evaluated later without changing the reviewed SA and operation/target
 policy. Protocol roles or room membership cannot silently grant history reads, controls or reverse
@@ -572,27 +514,12 @@ not v1 prerequisites.
 
 ### Sender-facing receipts
 
-**V1 direction agreed with the operator, 2026-10-17:** a send returns durable acceptance with the
-message ID, and the sender can later query the status of a message it sent. The status reports
-independent facts, not a progress ladder: whether a notice covers the message, and whether the
-recipient's acknowledgement has reached it. Both derive from the inbox's existing coverage and
-acknowledgement cursors. It also reports when the recipient's inbox was retired because its Sandbox
-is gone, so a message that will never arrive is distinguishable from one still pending.
-
-- Acknowledgement is a prefix cursor: "acknowledged" means the recipient's cursor passed the
-  message, not that the agent individually handled it, and never that the task succeeded.
-- There is no read receipt, because reads are not recorded. Notice delivery stage (admitted,
-  confirmed) is not part of v1 receipts: Notifications keeps only the latest notice per inbox, so
-  older messages have no stage history.
-- Authorization is being the authenticated sender of the message, not a current send grant. The
-  response exposes no cursors, other entries or inbox read/ack authority. Replies still require the
-  independently granted reverse send permission.
-- An unknown message ID, a message sent by another account and a message that retention has removed
-  all respond with not found. Not found means no record; it is never evidence that a message was not
-  delivered.
-- Retention already removes expired payloads and purges retired inboxes, so not found occurs in v1
-  once a deleted Sandbox's inbox is purged. Removing other old inboxes is deferred
-  ([`INBOX_VACUUM`](task_freezer.md#inbox_vacuum--remove-old-live-inboxes)).
+**Implemented** as agreed with the operator, 2026-10-17 ([send contract](../notification_service/docs/api.md#messages)):
+the sender reads independent `covered`, `acknowledged` and `inbox_retired` facts derived from the
+inbox cursors. There is no read receipt, because reads are not recorded, and no notice delivery
+stage, because Notifications keeps only the latest notice per inbox. Removing other old inboxes is
+deferred ([`INBOX_VACUUM`](task_freezer.md#inbox_vacuum--remove-old-live-inboxes)); a removed record
+answers not found, which never means "not delivered".
 
 ### Batching and wake behavior
 

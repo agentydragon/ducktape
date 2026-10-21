@@ -329,10 +329,13 @@ func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscripti
 	err = tx.QueryRowContext(ctx, `SELECT cursor FROM entry WHERE inbox_id = $1 AND event = $2::jsonb`,
 		inboxID, string(identity)).Scan(&cursor)
 	if errors.Is(err, sql.ErrNoRows) {
-		if err := tx.QueryRowContext(ctx, `SELECT last_cursor FROM inbox WHERE id = $1`, inboxID).Scan(&cursor); err != nil {
+		var messages int64
+		if err := tx.QueryRowContext(ctx,
+			`SELECT last_cursor, (SELECT count(*) FROM message WHERE inbox_id = $1) FROM inbox WHERE id = $1`,
+			inboxID).Scan(&cursor, &messages); err != nil {
 			return err
 		}
-		if cursor >= int64(s.quotas.EntriesPerInbox) {
+		if cursor-messages >= int64(s.quotas.EntriesPerInbox) {
 			return &QuotaError{Quota: EntriesPerInbox, Limit: s.quotas.EntriesPerInbox}
 		}
 		cursor++

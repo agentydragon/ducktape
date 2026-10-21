@@ -44,6 +44,8 @@ func TestTheOpenAPIDocumentDescribesTheRoutesTheGuidesUse(t *testing.T) {
 		{"patch", "/v1/subscriptions/", ""},
 		{"get", "/v1/inboxes/", "/entries"},
 		{"put", "/v1/inboxes/", "/acknowledgement"},
+		{"post", "/v1/messages", ""},
+		{"get", "/v1/messages/", ""},
 	} {
 		found := false
 		for path, operations := range document.Paths {

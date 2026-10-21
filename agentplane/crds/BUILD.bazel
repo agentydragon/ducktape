@@ -20,6 +20,7 @@ filegroup(
     srcs = glob(["manifests/crd-*.yaml"]),
     visibility = [
         "//agentplane/egress/informer:__pkg__",
+        "//agentplane/notification_service:__pkg__",
         "//agentplane/policy/reader:__pkg__",
         "//agentplane/policy_controller:__pkg__",
         "//agentplane/sandbox_controller:__pkg__",

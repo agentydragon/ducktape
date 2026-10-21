@@ -30,6 +30,8 @@ func TestEveryRPCRefusesACallerWhoseBearerIsNotAWorkloadOfTheNamespace(t *testin
 		"ReadInbox":          unary(server.client.ReadInbox),
 		"AcknowledgeInbox":   unary(server.client.AcknowledgeInbox),
 		"RetireInbox":        unary(server.client.RetireInbox),
+		"SendMessage":        unary(server.client.SendMessage),
+		"GetMessage":         unary(server.client.GetMessage),
 	}
 	for name, call := range rpcs {
 		for bearer, token := range map[string]string{"no bearer": "", "unknown bearer": "test-token-unknown", "other namespace": outsiderToken} {

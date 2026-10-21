@@ -10,13 +10,16 @@ import (
 	"context"
 	"time"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 )
 
 // Runner lists the Sessions a Sandbox's runner holds.
@@ -28,6 +31,11 @@ type Runner interface {
 // request. A subscription is refused when it cannot, so a caller cannot follow another account's requests.
 type Actions interface {
 	Events(ctx context.Context, owner store.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error)
+}
+
+// SessionHistory reads the Sandbox the History Service recorded as writing a Session.
+type SessionHistory interface {
+	GetSessionSummary(ctx context.Context, in *historypb.GetSessionSummaryRequest, opts ...grpc.CallOption) (*historypb.SessionSummary, error)
 }
 
 // GitHub authorizes a GitHub source: it returns the access the service's GitHub App reads the source under, or
@@ -52,6 +60,12 @@ type Options struct {
 	Actions   Actions
 	// GitHub is nil while the provider is off: a GitHub source is then refused.
 	GitHub GitHub
+	// SendPolicy is the grants a message is checked against.
+	SendPolicy *inboxaccess.Policy
+	// History confirms a Session before a message opens an inbox for it.
+	History SessionHistory
+	// MessageBodyLimit is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
+	MessageBodyLimit int
 	// OperatorReader is the name, in Namespace, of the ServiceAccount that may call NotificationsOperator. Empty
 	// refuses every caller.
 	OperatorReader string

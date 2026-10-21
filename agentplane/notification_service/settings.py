@@ -116,7 +116,12 @@ class QuotaSettings(BaseModel):
         default=64, ge=1, description="Maximum non-cancelled, unexpired subscriptions per inbox."
     )
     entries_per_inbox: int = Field(
-        default=10_000, ge=1, description="Maximum distinct source-event identities over an inbox's lifetime."
+        default=10_000,
+        ge=1,
+        description="Maximum distinct source-event identities over an inbox's lifetime; messages are not counted.",
+    )
+    unacknowledged_messages_per_sender: int = Field(
+        default=128, ge=1, description="Maximum messages one sender may have past an inbox's acknowledged cursor."
     )
 
 
