@@ -52,7 +52,6 @@ flowchart LR
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
     ACTION_SERVICE_GO_PORT --> ACTION_MCP_EDGE_SPLIT
-    K3S_TRACK -. left behind .-> ACCEPTANCE_OPERATOR_CREDENTIALS_RETIRE[Candidate: retire the acceptance operator login]
     K3S_TRACK --> K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
     K3S_MODEL_SCENARIOS --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
     K3S_VM_ACCEPTANCE --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
@@ -2105,7 +2104,6 @@ produce are named at the fake and are not cleanups.
 flowchart LR
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
-    ACCEPTANCE_OPERATOR_CREDENTIALS_RETIRE[Candidate: retire the acceptance operator login]
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s, section 14] --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
     K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
     K3S_VM_ACCEPTANCE[In flight: KubeVirt emulation on k3s, section 14] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
@@ -2139,21 +2137,6 @@ keeps only a fault it injects, named at the fake.
 
 Exit: those users go through the Go Gateway's runner proxy (`sandbox_control` in `app/testing/runner_gateway.py`),
 the runner fixtures push straight to `GoHistoryService`'s ingress, and both stand-ins are deleted.
-
-### `ACCEPTANCE_OPERATOR_CREDENTIALS_RETIRE` — retire the deployed-run operator login
-
-**Candidate; no acceptance run logs in as the deployed operator since #11389 (merged 2026-10-21 09:25 UTC).** These
-have no reader left. Callers-gone removals:
-
-- The Authentik user `agentplane-acceptance-operator`, its policy bindings and reflected Secret
-  (`tf/gitops/sso-providers/agentplane_acceptance_operator.tf`, staging Authentik, outside
-  `TESTING_ENVIRONMENT_RETIRE`).
-- public-coder-agent's `get` on `agentplane-acceptance-operator` and `agentplane-testing-acceptance-operator` (Role
-  `agentplane-testing-login-reader` in `cluster/cdk8s/public_coder/app.py`), with
-  `cluster/validation/test_cluster_integration.py`, the public_coder `test_app` assertion and
-  `cluster/docs/agent_rbac.md`.
-- The reflector annotations and login, password, issuer and subject keys in testing Dex's ExternalSecret
-  (`cluster/cdk8s/agentplane/dex.py`); Dex still reads `config.yaml` from it.
 
 ### `K3S_SPIKE_TARGETS_RETIRE` — delete the k3s spike targets
 
