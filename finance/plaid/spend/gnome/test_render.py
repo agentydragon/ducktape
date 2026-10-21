@@ -16,6 +16,7 @@ import time
 import zipfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,7 @@ _FIXTURE_NAMES = (
     "ready_two_cards",
     "authentication_required",
     "offline",
+    "retrying",
     "allowance_paced",
     "allowance_warming",
     "allowance_exhausted",
@@ -56,10 +58,16 @@ const mainXml = `<node><interface name="works.allegedly.PlaidSpend1">
   <signal name="ViewChanged"><arg name="view" type="s"/></signal>
   <property name="Status" type="s" access="read"/>
   <property name="LastError" type="s" access="read"/>
+  <property name="LastAttemptAt" type="d" access="read"/>
+  <property name="NextRetryAt" type="d" access="read"/>
 </interface></node>`;
 const controlXml = `<node><interface name="works.allegedly.PlaidSpendFake">
   <method name="SetView"><arg name="view" type="s" direction="in"/></method>
   <method name="SetViewSilently"><arg name="view" type="s" direction="in"/></method>
+  <method name="SetTiming">
+    <arg name="last_attempt_at" type="d" direction="in"/>
+    <arg name="next_retry_at" type="d" direction="in"/>
+  </method>
   <method name="ReleaseGetView"/>
   <method name="ReleaseName"/>
   <method name="AcquireName"/>
@@ -71,6 +79,8 @@ const controlXml = `<node><interface name="works.allegedly.PlaidSpendFake">
   <method name="Stop"/>
 </interface></node>`;
 let currentView = JSON.stringify({generated_at: "2026-10-18T12:00:00Z", cards: [{spend_minor_units: 1000, currency: "USD"}]});
+let lastAttemptAt = 0;
+let nextRetryAt = 0;
 let getCalls = 0;
 let replies = 0;
 let pendingViews = [];
@@ -84,12 +94,32 @@ const service = Gio.DBusExportedObject.wrapJSObject(mainXml, {
   },
   get Status() { return "ready"; },
   get LastError() { return ""; },
+  get LastAttemptAt() { return lastAttemptAt; },
+  get NextRetryAt() { return nextRetryAt; },
 });
 service.export(Gio.DBus.session, path);
 const control = Gio.DBusExportedObject.wrapJSObject(controlXml, {
   SetView(view) {
     currentView = view;
     service.emit_signal("ViewChanged", new GLib.Variant("(s)", [view]));
+  },
+  SetTiming(lastAttemptValue, nextRetryValue) {
+    lastAttemptAt = lastAttemptValue;
+    nextRetryAt = nextRetryValue;
+    Gio.DBus.session.emit_signal(
+      null,
+      path,
+      "org.freedesktop.DBus.Properties",
+      "PropertiesChanged",
+      new GLib.Variant("(sa{sv}as)", [
+        "works.allegedly.PlaidSpend1",
+        {
+          LastAttemptAt: new GLib.Variant("d", lastAttemptAt),
+          NextRetryAt: new GLib.Variant("d", nextRetryAt),
+        },
+        [],
+      ])
+    );
   },
   SetViewSilently(view) { currentView = view; },
   ReleaseGetView() {
@@ -267,12 +297,20 @@ def test_view_signal_wins_initial_get_and_owner_restart_rehydrates(render_sessio
         assert _fake_daemon_counters(session) == (1, 1, 0)
         assert _string_reply(session.call("GetPanelLabel")) == "$20"
 
+        test_clock = datetime.fromisoformat("2026-10-15T12:00:00+00:00").timestamp()
+        _fake_daemon_call(session, "SetTiming", str(test_clock - 75), str(test_clock + 20))
+        _wait_until(
+            lambda: "Last attempt 1m 15s ago · Retry in 20s" in _string_reply(session.call("GetMenuText")),
+            "extension did not project desktop retry properties",
+        )
+
         _fake_daemon_call(session, "SetViewSilently", _card_view(3000))
         _fake_daemon_call(session, "ReleaseName")
         _wait_until(
             lambda: _string_reply(session.call("GetDaemonOwner")) == "",
             "extension did not observe the daemon going away",
         )
+        assert "Last attempt" not in _string_reply(session.call("GetMenuText"))
         _fake_daemon_call(session, "AcquireName")
         _wait_until(lambda: _fake_daemon_counters(session)[0] == 2, "extension did not rehydrate after daemon restart")
         _fake_daemon_call(session, "ReleaseGetView")
@@ -368,6 +406,29 @@ def test_allowance_exhausted(render_session: tuple[GnomeSession, Path]) -> None:
     with _menu(session, "allowance_exhausted", "Flex -<$1 !!") as geometry:
         assert "Exhausted" in _allowance_menu_text(session)
         _capture(session, output_dir, geometry, "allowance_exhausted")
+
+
+def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
+    render_session: tuple[GnomeSession, Path],
+) -> None:
+    session, output_dir = render_session
+    with _menu(session, "retrying", "Flex unavailable") as geometry:
+        menu_text = _string_reply(session.call("GetMenuText"))
+        assert "Last attempt 1m 15s ago · Retry in 20s" in menu_text
+        assert "Sync 1h ago" in menu_text
+        session.call("AdvanceClock", "5")
+        menu_text = _string_reply(session.call("GetMenuText"))
+        assert "Last attempt 1m 20s ago · Retry in 15s" in menu_text
+        assert "Sync 1h ago" in menu_text
+        _capture(session, output_dir, geometry, "retrying")
+
+
+def test_authentication_required_has_no_retry_countdown(render_session: tuple[GnomeSession, Path]) -> None:
+    session, _ = render_session
+    with _menu(session, "authentication_required", "Sign in"):
+        menu_text = _string_reply(session.call("GetMenuText"))
+        assert "Last attempt 1m 15s ago · Sign-in required" in menu_text
+        assert "Retry in" not in menu_text
 
 
 if __name__ == "__main__":
