@@ -22,8 +22,8 @@ const eventsPageSize = 128
 // ActionService is the two reads of the Action Service that the Actions source needs: who submitted an Action
 // request, and its events.
 //
-// Transitional: ACTION_SERVICE_GO_PORT replaces Client with the Action Service's gRPC client behind this
-// interface.
+// Transitional: the Action Service's gRPC client replaces Client behind this interface once the Action Service
+// serves `ActionService` over gRPC.
 //
 // A failure a subscription shows and retries is a *worker.ProviderError.
 type ActionService interface {
