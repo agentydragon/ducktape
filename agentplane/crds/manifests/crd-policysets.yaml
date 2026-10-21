@@ -217,6 +217,19 @@ spec:
                           description: AllSandboxes covers every Sandbox in the namespace,
                             including ones created later.
                           type: boolean
+                        inboxTags:
+                          description: 'InboxTags covers every Sandbox in the namespace
+                            whose `spec.inboxTags` holds one of these when the rule
+                            is
+
+                            checked.'
+                          items:
+                            maxLength: 63
+                            minLength: 1
+                            type: string
+                          minItems: 1
+                          type: array
+                          x-kubernetes-list-type: set
                         sandboxes:
                           description: Sandboxes names Sandboxes directly.
                           items:
@@ -243,8 +256,9 @@ spec:
                           x-kubernetes-list-type: map
                       type: object
                       x-kubernetes-validations:
-                      - message: Name a Sandbox or set allSandboxes.
-                        rule: has(self.sandboxes) || (has(self.allSandboxes) && self.allSandboxes)
+                      - message: Name a Sandbox or an inbox tag, or set allSandboxes.
+                        rule: has(self.sandboxes) || has(self.inboxTags) || (has(self.allSandboxes)
+                          && self.allSandboxes)
                     type:
                       description: Type selects the consumer that handles this rule.
                       enum:

@@ -1,6 +1,7 @@
 # Sandbox tags and History's Sandbox records
 
-Status: **agreed with the operator, 2026-10-19 to 2026-10-20 UTC; not implemented.** Implementation
+Status: **agreed with the operator, 2026-10-19 to 2026-10-20 UTC; inbox tags partly implemented ([steps](#steps)),
+history tags not.** Implementation
 gates are in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations). The costs
 that led here and the directions weighed are in the
 [architecture overview](architecture_overview.md#keeping-finished-sandboxes-as-records).
@@ -83,8 +84,8 @@ stopped instead, with `spec.wakeOnSend: false`, and stays a CR.
 
 ## Steps
 
-1. Inbox tags and their send target (`SANDBOX_INBOX_TAGS`), beside the `session_inbox_access`
-   rule's direct and `allSandboxes` targets.
+1. Inbox tags and their send target (`SANDBOX_INBOX_TAGS`). `spec.inboxTags` and the rule's `inboxTags`
+   target are implemented; app presets supplying a launch's tags remain.
 2. After `HISTORY_SANDBOX_UID`, in the Go History Service: history tags and History's record
    (`HISTORY_SANDBOX_RECORD`).
 

@@ -56,6 +56,7 @@ async def test_policyset_admission() -> None:
             action("home_assistant_entity_control", entities={"light.office": ["turn_on"]}),
             inbox({"sandboxes": [{"name": "coordinator"}, pinned]}),
             inbox({"allSandboxes": True}),
+            inbox({"inboxTags": ["test-group"], "sandboxes": [{"name": "coordinator"}]}),
         )
         for rule in rules:
             created = await create(rule)
@@ -82,6 +83,8 @@ async def test_policyset_admission() -> None:
             action("home_assistant_entity_control"),
             inbox({}),
             inbox({"allSandboxes": False}),
+            inbox({"inboxTags": []}),
+            inbox({"inboxTags": [""]}),
             inbox({"sandboxes": [{"name": "dev-1", "uid": "dev-1"}]}),
             inbox({"allSandboxes": True}, hosts=["api.example.com"]),
             {"type": "session_inbox_access", "operations": ["read_transcript"], "targets": {"allSandboxes": True}},

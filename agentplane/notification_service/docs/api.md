@@ -79,8 +79,10 @@ keep their original text on retries.
 
 A workload sends a message to a Session's inbox when a `session_inbox_access` rule of a PolicySet bound to its
 ServiceAccount allows `send_message` to the Session's Sandbox. A rule targets Sandboxes of its PolicySet's
-namespace by name, optionally pinned to one incarnation by `uid`, or all of them with `allSandboxes`; grants
-combine additively. A target without `uid` follows a Sandbox deleted and recreated under its name. The service
+namespace by name, optionally pinned to one incarnation by `uid`, by inbox tag (`inboxTags`), or all of them with
+`allSandboxes`; grants combine additively. A target without `uid` follows a Sandbox deleted and recreated under its
+name. A tag target matches the Sandbox's `spec.inboxTags` as the service reads it at acceptance, so removing the tag
+stops new sends to it, and a deleted Sandbox matches nothing. The service
 checks the grant against its watched view of the namespace's PolicySets and PolicyBindings at acceptance: it
 refuses every send as `UNAVAILABLE` before its first sync and once a watched kind has missed three periods of
 `policy_watch_period_s`, and it reports each binding's rules in its `SessionInboxAccessReady` condition. Replicas

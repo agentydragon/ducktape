@@ -9,10 +9,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // toSandbox targets the test Sandbox by name, whatever its incarnation.
@@ -140,6 +142,29 @@ func TestASendNeedsAGrantCoveringTheSandboxAsItIsNow(t *testing.T) {
 			server.requireNoInbox(t)
 		})
 	}
+}
+
+func TestATagGrantCoversTheSandboxWhileItHoldsTheTag(t *testing.T) {
+	server := newServer(t)
+	server.grantSend(otherSandboxName, policyapi.SandboxTargets{InboxTags: []string{"test-group"}})
+	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("untagged"))
+	requireCode(t, err, codes.PermissionDenied)
+	tag := func(tags ...string) {
+		t.Helper()
+		var sandbox sandboxapi.Sandbox
+		if err := server.kube.Get(t.Context(), client.ObjectKey{Namespace: testNamespace, Name: sandboxName}, &sandbox); err != nil {
+			t.Fatal(err)
+		}
+		sandbox.Spec.InboxTags = tags
+		if err := server.kube.Update(t.Context(), &sandbox); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tag("test-other-group", "test-group")
+	server.send(t, sendRequest("tagged"))
+	tag("test-other-group")
+	_, err = server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("untagged-again"))
+	requireCode(t, err, codes.PermissionDenied)
 }
 
 func TestRevokingAGrantRefusesNewMessagesButKeepsTheSentOnes(t *testing.T) {

@@ -72,6 +72,17 @@ spec:
                 x-kubernetes-validations:
                 - message: idleSuspendAfter is at least one minute
                   rule: duration(self) >= duration('1m')
+              inboxTags:
+                description: 'InboxTags are the groups the Sandbox''s Session inboxes
+                  take messages as: a `session_inbox_access` rule
+
+                  targeting one of them covers the Sandbox while it holds the tag.'
+                items:
+                  maxLength: 63
+                  minLength: 1
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
               policySets:
                 description: PolicySets names the PolicySets in the Sandbox's namespace
                   its ServiceAccount is bound to.

@@ -106,6 +106,12 @@ type SandboxSpec struct {
 	// +listType=set
 	// +kubebuilder:validation:items:MinLength=1
 	PolicySets []string `json:"policySets,omitempty"`
+	// InboxTags are the groups the Sandbox's Session inboxes take messages as: a `session_inbox_access` rule
+	// targeting one of them covers the Sandbox while it holds the tag.
+	// +listType=set
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=63
+	InboxTags []string `json:"inboxTags,omitempty"`
 	// Bootstrap is the shell source the Sandbox's runner runs once, before its first Session.
 	// +kubebuilder:validation:MaxLength=65536
 	Bootstrap string `json:"bootstrap,omitempty"`

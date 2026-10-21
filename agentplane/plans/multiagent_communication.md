@@ -315,11 +315,10 @@ barrier is required for v1.
 
 **Implemented** after review with the operator, 2026-10-21 UTC: the `session_inbox_access` type of the `Rule`
 in `policy/api/v1alpha1`, whose one operation is `send_message`, with direct (`sandboxes`, each with an
-optional `uid`) and `allSandboxes` targets in the PolicySet's namespace. The Notification service enforces
+optional `uid`), `inboxTags` and `allSandboxes` targets in the PolicySet's namespace. The Notification service enforces
 it, reading through the shared `policy/reader` package; the
 [send contract](../notification_service/docs/api.md#messages) states matching, freshness and revocation.
-An inbox-tag target arrives with `SANDBOX_INBOX_TAGS` ([steps](sandbox_tags.md#steps)); history reads take
-their own rule type and reuse `policy/reader`. Direct targets are same-namespace, with no `namespace`
+History reads take their own rule type and reuse `policy/reader`. Direct targets are same-namespace, with no `namespace`
 field: **settled with the operator, 2026-10-18 UTC**, who needs no way to name another namespace. A field
 can be added without changing existing rules when a service serves a second namespace.
 

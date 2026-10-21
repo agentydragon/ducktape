@@ -65,9 +65,9 @@ type Rule struct {
 	Targets *SandboxTargets `json:"targets,omitempty"`
 }
 
-// SandboxTargets names Sandboxes in the PolicySet's namespace explicitly, never by selection. The
-// fields combine additively.
-// +kubebuilder:validation:XValidation:rule="has(self.sandboxes) || (has(self.allSandboxes) && self.allSandboxes)",message="Name a Sandbox or set allSandboxes."
+// SandboxTargets names Sandboxes in the PolicySet's namespace by name, by inbox tag, or all of them. The fields
+// combine additively.
+// +kubebuilder:validation:XValidation:rule="has(self.sandboxes) || has(self.inboxTags) || (has(self.allSandboxes) && self.allSandboxes)",message="Name a Sandbox or an inbox tag, or set allSandboxes."
 type SandboxTargets struct {
 	// Sandboxes names Sandboxes directly.
 	// +listType=map
@@ -76,6 +76,13 @@ type SandboxTargets struct {
 	Sandboxes []SandboxTarget `json:"sandboxes,omitempty"`
 	// AllSandboxes covers every Sandbox in the namespace, including ones created later.
 	AllSandboxes bool `json:"allSandboxes,omitempty"`
+	// InboxTags covers every Sandbox in the namespace whose `spec.inboxTags` holds one of these when the rule is
+	// checked.
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=63
+	InboxTags []string `json:"inboxTags,omitempty"`
 }
 
 // SandboxTarget is one Sandbox by name. Without a UID it also covers a deleted and recreated

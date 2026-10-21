@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
-        "@io_k8s_apimachinery//pkg/types",
+        "//agentplane/sandboxes/api",
         "@io_k8s_client_go//rest",
     ],
 )
@@ -19,6 +19,7 @@ go_test(
     embed = [":inboxaccess"],
     deps = [
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/sandboxes/api",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/types",
     ],

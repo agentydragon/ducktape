@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 func (s *Notifications) SendMessage(ctx context.Context, request *notificationspb.SendMessageRequest) (*notificationspb.SendMessageResponse, error) {
@@ -41,13 +40,14 @@ func (s *Notifications) sendMessage(ctx context.Context, sender store.ServiceAcc
 	if !s.policy.Freshness.Available(time.Now()) {
 		return nil, errSendPolicyUnavailable
 	}
-	sandbox, err := s.sandbox(ctx, message.DestinationRef)
+	view, err := s.sandbox(ctx, message.DestinationRef)
 	if err != nil {
 		return nil, err
 	}
-	if !s.policy.PermitsSend(policyapi.ServiceAccountRef(sender), sandbox.Name, types.UID(sandbox.UID)) {
+	if !s.policy.PermitsSend(policyapi.ServiceAccountRef(sender), view.Resource) {
 		return nil, errSendDenied
 	}
+	sandbox := view.Identity
 	message.DestinationRef.UID = sandbox.UID
 	// A Sandbox runs as the ServiceAccount of its own name.
 	message.Recipient = store.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}

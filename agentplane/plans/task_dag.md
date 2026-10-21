@@ -260,7 +260,7 @@ the remaining contracts below still require review before implementation.
 flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
     THREAD_READ_POLICY_DESIGN[Held decision: remaining history read contract]
-    SANDBOX_INBOX_TAGS[Candidate: inbox tags on the Sandbox]
+    SANDBOX_INBOX_TAGS[Candidate: app presets set a launch's inbox tags]
     HISTORY_SANDBOX_RECORD[Blocked: History's Sandbox record and history tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SESSION_KEY_DESIGN[Decision: record the Sandbox UID in History, and key Sessions by it]
@@ -311,11 +311,8 @@ implementation.
 
 ### `SANDBOX_INBOX_TAGS` — inbox tags on the Sandbox
 
-**Candidate.** [Design](sandbox_tags.md#tags). Add a set-typed
-`spec.inboxTags` to `Sandbox` and an inbox-tag target to the `session_inbox_access` rule. The inbox
-owner matches a send against the live CR's tags, with no History call. App presets supply a launch's
-initial tags. Test a send allowed and one denied by tag, a removed tag withdrawing the grant, a
-deleted Sandbox no longer matching, and a tag grant overlapping a direct one.
+**Candidate.** [Design](sandbox_tags.md#tags). `spec.inboxTags` and the rule's `inboxTags` target are
+implemented. Remaining: app presets supply a launch's initial tags, and the app shows a Sandbox's tags.
 
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
