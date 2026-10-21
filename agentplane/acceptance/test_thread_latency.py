@@ -3,7 +3,7 @@
 **The turn.** A session at low reasoning effort, on the model the deployment offers its harness, is
 asked to say PING. Opening a session starts the harness and completes its handshake before the app
 answers, so the turn runs on a started harness. Timed on the test's clock: from the app answering
-the input as admitted (runner admission plus archival, `Turn.admitted`) to the turn's
+the input as accepted (the Dispatcher's receipt, `Turn.accepted`) to the turn's
 `TurnCompleted` arriving on the thread's event stream. The harness reports the same turn on its own
 clock in the frame that ends it: Claude's `result` `duration_ms`, Codex's `turn/completed`
 `turn.durationMs`. That span holds the model call and the proxies on its path. The ceiling is on the
@@ -224,7 +224,7 @@ async def test_a_one_word_turn_answers_and_its_thread_opens_in_time(
     view = await sandbox(f"accept-latency-{harness}")
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     turn = await agent.run(PING)
-    turn_seconds = time.monotonic() - turn.admitted
+    turn_seconds = time.monotonic() - turn.accepted
     assert "PING" in turn.answer, turn.transcript
     harness_seconds = _harness_seconds(harness, turn.native)
 

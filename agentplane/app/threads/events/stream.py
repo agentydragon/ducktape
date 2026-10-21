@@ -24,9 +24,19 @@ KEEPALIVE_S = 15
 
 
 async def follow(
-    event_logs: EventLogStore, changes: ChangeSignal, thread_id: UUID, *, after_cursor: int
+    event_logs: EventLogStore,
+    changes: ChangeSignal,
+    thread_id: UUID,
+    *,
+    after_cursor: int,
+    awaiting_command_id: str | None = None,
 ) -> AsyncGenerator[bytes]:
-    """Follow the committed archive without requiring or starting a runner attachment."""
+    """Follow the committed archive without requiring or starting a runner attachment.
+
+    `awaiting_command_id` names a command submitted after `after_cursor`: the stream does not end
+    before streaming its admission. The Dispatcher answers a submission before History archives the
+    admission, and until then a Session whose harness exited reads as ended.
+    """
     if not await event_logs.exists(thread_id):
         raise ThreadNotFoundError(thread_id)
     waiter = asyncio.Event()
@@ -43,12 +53,18 @@ async def follow(
                 for entry in page:
                     yield frame("event", MessageToDict(entry), event_id=entry.cursor)
                     cursor = entry.cursor
+                    if (
+                        entry.event.HasField("command_admitted")
+                        and entry.event.command_admitted.command.command_id == awaiting_command_id
+                    ):
+                        awaiting_command_id = None
             snapshot = await event_logs.feed_state(thread_id)
             # A terminal snapshot may precede fold catch-up, or be an older end that entries
             # already streamed have superseded and the fold has yet to clear. It ends the stream
             # only once it is at the streamed cursor; otherwise wait without busy-polling.
             if (
-                snapshot is not None
+                awaiting_command_id is None
+                and snapshot is not None
                 and snapshot.end is not None
                 and snapshot.attached.last_cursor >= cursor
                 and await event_logs.last_cursor(thread_id) <= cursor

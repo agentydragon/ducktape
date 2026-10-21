@@ -273,9 +273,10 @@ class Client:
                 raise ValueError(f"unrecognized command submission kind: {kind!r}")
 
     async def events(
-        self, thread_id: UUID, *, after: int, read_seconds: float
+        self, thread_id: UUID, *, after: int, read_seconds: float, awaiting_command_id: str | None = None
     ) -> AsyncGenerator[event_log_pb2.EventEntry]:
-        """The Thread's events from `after`, ending when the app sends the `end` frame.
+        """The Thread's events from `after`, ending when the app sends the `end` frame, and not before
+        the admission of `awaiting_command_id` (a command submitted after `after`).
 
         A stream that drops without one -- an app rollout or crash, a closed connection, a `502`, `503` or `504`, or the proxy's plain-text `403`, while no replica is up -- is reopened after the last entry yielded, so a
         caller sees every entry once and in order. An outage that outlasts `RECONNECT_SECONDS`
@@ -293,8 +294,11 @@ class Client:
         outage_began: float | None = None
         while True:
             try:
+                params: dict[str, str | int] = {"after": cursor}
+                if awaiting_command_id is not None:
+                    params["awaiting_command_id"] = awaiting_command_id
                 async with self._http.stream(
-                    "GET", url, params={"after": cursor}, headers={"Accept": "text/event-stream"}, timeout=timeout
+                    "GET", url, params=params, headers={"Accept": "text/event-stream"}, timeout=timeout
                 ) as response:
                     if _no_app_answered(response):
                         raise _StreamDroppedError(f"{response.status_code=}")
@@ -318,6 +322,12 @@ class Client:
                                 entry = _event(payload)
                                 cursor = entry.cursor
                                 outage_began = None
+                                if (
+                                    entry.event.HasField("command_admitted")
+                                    and entry.event.command_admitted.command.command_id == awaiting_command_id
+                                ):
+                                    # A reopened stream starts past the admission, so it must not await it.
+                                    awaiting_command_id = None
                                 yield entry
                     reason = "the stream closed without an end frame"
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadError, httpx.RemoteProtocolError) as error:

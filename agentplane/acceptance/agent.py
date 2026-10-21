@@ -65,9 +65,9 @@ _OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 class Turn:
     """What one turn produced: the harness's own tool outputs and its assistant text."""
 
-    # `time.monotonic()` when the app answered the turn's input as admitted: the runner has admitted
-    # it and the app has archived that, and no native work need have started.
-    admitted: float
+    # `time.monotonic()` when the app accepted the turn's input: the Dispatcher holds it, and no
+    # native work need have started.
+    accepted: float
     tool_outputs: list[str] = field(default_factory=list)
     text: list[str] = field(default_factory=list)
     # Every line the harness wrote during the turn, as the runner recorded it.
@@ -150,11 +150,16 @@ class Agent:
         """Send `prompt` and collect the turn it starts. Nothing else drives this session, so reading
         the cursor before submitting cannot miss an event."""
         after = self._cursor
-        await self._client.submit_input(self._thread_id, f"input-{uuid4().hex[:8]}", prompt)
-        turn = Turn(admitted=time.monotonic())
+        command_id = f"input-{uuid4().hex[:8]}"
+        await self._client.submit_input(self._thread_id, command_id, prompt)
+        turn = Turn(accepted=time.monotonic())
         async with (
             asyncio.timeout(TURN_SECONDS),
-            aclosing(self._client.events(self._thread_id, after=after, read_seconds=TURN_SECONDS)) as entries,
+            aclosing(
+                self._client.events(
+                    self._thread_id, after=after, read_seconds=TURN_SECONDS, awaiting_command_id=command_id
+                )
+            ) as entries,
         ):
             async for entry in entries:
                 self._cursor = entry.cursor

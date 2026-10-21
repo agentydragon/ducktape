@@ -1126,6 +1126,10 @@ async def thread_event_stream(
     shutdown: Shutdown,
     thread_id: UUID,
     after: Annotated[int, Query(ge=0, description="Replay EventEntries with a greater cursor.")] = 0,
+    awaiting_command_id: Annotated[
+        str | None,
+        Query(description="A command submitted after `after`: the stream does not end before its admission."),
+    ] = None,
     last_event_id: Annotated[int | None, Header(ge=0)] = None,
 ) -> StreamingResponse:
     thread = await store.get_thread(thread_id)
@@ -1136,7 +1140,15 @@ async def thread_event_stream(
     if cursor > await event_logs.read_watermark(thread_id):
         raise HTTPException(status.HTTP_409_CONFLICT, "cursor is beyond the archived Thread prefix")
     return sse_response(
-        shutdown.until(stream.follow(event_logs, updates.changes[Channel.THREADS], thread_id, after_cursor=cursor))
+        shutdown.until(
+            stream.follow(
+                event_logs,
+                updates.changes[Channel.THREADS],
+                thread_id,
+                after_cursor=cursor,
+                awaiting_command_id=awaiting_command_id,
+            )
+        )
     )
 
 
