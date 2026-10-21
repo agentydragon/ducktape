@@ -51,19 +51,12 @@ const (
 	idleConnections = 4
 )
 
-// deps is who the service asks about a caller: the API server, which reviews a workload's bearer, and the view of
-// which ServiceAccounts carry the caller label; and the API server whose policy objects the policy index reads.
+// deps is who the service asks about a caller: the API server that reviews a workload's bearer, and the one whose
+// policy objects and caller labels the policy index reads.
 type deps struct {
 	Reviews auth.TokenReviews
-	Callers api.Callers
 	Policy  *rest.Config
 }
-
-// noCallers admits no workload, as if no ServiceAccount carried the caller label: the Gate does not read the policy
-// index's view of the label (informer.Index) yet. Service readers and operators are admitted.
-type noCallers struct{}
-
-func (noCallers) Admits(auth.Account) bool { return false }
 
 func inClusterDeps() (deps, error) {
 	kubeConfig, err := rest.InClusterConfig()
@@ -77,7 +70,7 @@ func inClusterDeps() (deps, error) {
 	if err != nil {
 		return deps{}, err
 	}
-	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Callers: noCallers{}, Policy: kubeConfig}, nil
+	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Policy: kubeConfig}, nil
 }
 
 // run serves on the configured address until ctx ends, authenticating workloads with the cluster's TokenReview API
@@ -149,13 +142,13 @@ func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckReque
 	return r.Probes.Check(ctx, request)
 }
 
-// gate admits the callers of the service's RPCs.
-func gate(c config, d deps) (*api.Gate, error) {
+// gate admits the callers of the service's RPCs: a workload calls while callers admits its ServiceAccount.
+func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 	workloads, err := auth.NewResolver(d.Reviews, c.TokenAudience, c.CallerServiceAccountNamespaces)
 	if err != nil {
 		return nil, err
 	}
-	options := api.GateOptions{Workloads: workloads, Callers: d.Callers, ReaderAccounts: c.ReaderAccounts}
+	options := api.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts}
 	if c.operatorsEnabled() {
 		if options.Operators, err = api.NewOperatorVerifier(c.OperatorOIDC); err != nil {
 			return nil, err
@@ -182,7 +175,9 @@ func newRoutes(httpFacade http.Handler) (http.Handler, error) {
 // gRPC and the HTTP routes share the listener. The worker drains from then on, beside the listener's shutdown, and
 // serve returns once it has and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
-	admission, err := gate(c, d)
+	watchPeriod := c.policyWatchPeriod()
+	policy := informer.NewIndex(reader.StaleAfterCycles*watchPeriod, c.CallerServiceAccountNamespaces)
+	admission, err := gate(c, d, policy)
 	if err != nil {
 		return err
 	}
@@ -208,8 +203,6 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		return err
 	}
 
-	watchPeriod := c.policyWatchPeriod()
-	policy := informer.NewIndex(reader.StaleAfterCycles*watchPeriod, c.CallerServiceAccountNamespaces)
 	policyInformer, err := informer.New(d.Policy, policy, c.PolicyNamespace, watchPeriod)
 	if err != nil {
 		return err

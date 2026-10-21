@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -30,6 +31,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 )
@@ -38,6 +41,8 @@ const (
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
 	testAudience = "test-actions"
+	// callerLabel admits a ServiceAccount's workloads: sandbox_controller's ActionCallerLabel sets it.
+	callerLabel = "agentplane.allegedly.works/use-action-service"
 )
 
 var (
@@ -77,8 +82,7 @@ func start(t *testing.T, policy *rest.Config) running {
 	c.ReaderAccounts = []auth.Account{readerAccount}
 	c.PolicyNamespace = "test-agentplane"
 	c.PolicyResyncSeconds = int(reader.MinWatchPeriod / time.Second)
-	// As deployed until the Gate reads the caller label's index: no workload is admitted as a caller.
-	cluster := deps{Reviews: kube.TokenReviews(), Callers: noCallers{}, Policy: policy}
+	cluster := deps{Reviews: kube.TokenReviews(), Policy: policy}
 	db, err := sql.Open("postgres", c.DatabaseURL)
 	if err != nil {
 		t.Fatal(err)
@@ -303,4 +307,120 @@ func TestTheServiceGatesTheOperatorServiceOverGRPCAndHTTP(t *testing.T) {
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Errorf("a reader's Decision over HTTP: %d", response.StatusCode)
 	}
+}
+
+// setCallerLabel sets or removes the caller label on the account's ServiceAccount, which it creates when absent.
+func setCallerLabel(t *testing.T, account auth.Account, labeled bool) {
+	t.Helper()
+	if _, err := kube.ServiceAccount(t.Context(), account); err != nil {
+		t.Fatal(err)
+	}
+	value := "null"
+	if labeled {
+		value = `"true"`
+	}
+	if _, err := kube.Clientset.CoreV1().ServiceAccounts(account.Namespace).Patch(t.Context(), account.Name, types.MergePatchType,
+		fmt.Appendf(nil, `{"metadata":{"labels":{%q:%s}}}`, callerLabel, value), metav1.PatchOptions{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// listOverGRPC lists the requests the bearer's account may read, until the call answers code.
+func listOverGRPC(t *testing.T, service running, bearer string, code codes.Code) *action_servicepb.ListActionRequestsResponse {
+	t.Helper()
+	var listed *action_servicepb.ListActionRequestsResponse
+	var err error
+	if waited := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(ctx context.Context) (bool, error) {
+		listed, err = service.actions.ListActionRequests(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+bearer),
+			&action_servicepb.ListActionRequestsRequest{})
+		return status.Code(err) == code, nil
+	}); waited != nil {
+		t.Fatalf("ListActionRequests answered %v, never %v", err, code)
+	}
+	return listed
+}
+
+// listOverHTTP lists the requests the bearer's account may read through the HTTP facade, and answers the status code
+// with the list it carries.
+func listOverHTTP(t *testing.T, service running, bearer string) (int, *action_servicepb.ListActionRequestsResponse) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+	call, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+"/v1/action-requests", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call.Header.Set("Authorization", "Bearer "+bearer)
+	response, err := http.DefaultClient.Do(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := &action_servicepb.ListActionRequestsResponse{}
+	if response.StatusCode == http.StatusOK {
+		if err := protojson.Unmarshal(body, listed); err != nil {
+			t.Fatalf("HTTP list %s: %v", body, err)
+		}
+	}
+	return response.StatusCode, listed
+}
+
+func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t *testing.T) {
+	service := start(t, kube.Config)
+	caller := auth.Account{Namespace: readerAccount.Namespace, Name: "test-labeled-caller"}
+	setCallerLabel(t, caller, false)
+	token, err := kube.WorkloadToken(t.Context(), caller, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}},
+		store.ActionRequestInput{
+			IdempotencyKey: "test-own", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
+			Arguments: json.RawMessage(`{}`), Title: "test title",
+		}, store.Admission{RequestID: uuid.New()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ready once the policy index has listed, which then vouches that the account carries no label.
+	if err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
+		got, err := checkHealth(t, service.health, "")
+		return got == healthpb.HealthCheckResponse_SERVING, err
+	}); err != nil {
+		t.Fatalf("the service never turned ready: %v", err)
+	}
+	refused := func(when string) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+		defer cancel()
+		if _, err := service.actions.ListActionRequests(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token),
+			&action_servicepb.ListActionRequestsRequest{}); status.Code(err) != codes.Unauthenticated {
+			t.Errorf("%s, over gRPC: %v, want UNAUTHENTICATED", when, err)
+		}
+		if code, _ := listOverHTTP(t, service, token); code != http.StatusUnauthorized {
+			t.Errorf("%s, over HTTP: %d, want 401", when, code)
+		}
+	}
+	refused("unlabeled")
+
+	setCallerLabel(t, caller, true)
+	ownOnly := func(over string, listed *action_servicepb.ListActionRequestsResponse) {
+		t.Helper()
+		if got := listed.GetActionRequests(); len(got) != 1 || got[0].GetId() != submitted.ID.String() {
+			t.Errorf("over %s the caller lists %v, want its own request %s", over, got, submitted.ID)
+		}
+	}
+	ownOnly("gRPC", listOverGRPC(t, service, token, codes.OK))
+	code, listed := listOverHTTP(t, service, token)
+	if code != http.StatusOK {
+		t.Errorf("labeled, over HTTP: %d, want 200", code)
+	}
+	ownOnly("HTTP", listed)
+
+	setCallerLabel(t, caller, false)
+	listOverGRPC(t, service, token, codes.Unauthenticated)
+	refused("unlabeled again")
 }
