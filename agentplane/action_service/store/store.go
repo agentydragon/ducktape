@@ -78,8 +78,6 @@ const (
 	ConflictVersionChanged
 	// ConflictAlreadyDecided is a Decision on a request that is no longer awaiting one.
 	ConflictAlreadyDecided
-	// ConflictNoPendingDispatch is an allowed request whose Execution does not await dispatch.
-	ConflictNoPendingDispatch
 	// ConflictNotDispatchable is a claim on an Execution that awaits dispatch although its request is not allowed.
 	ConflictNotDispatchable
 	// ConflictNotStartable is a start of an Execution that is not claimed, or already started.

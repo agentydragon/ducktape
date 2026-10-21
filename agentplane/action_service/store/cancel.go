@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,11 +52,12 @@ func (s *Store) Cancel(ctx context.Context, id uuid.UUID, principal Principal) (
 	return result, err
 }
 
-// cancelPendingDispatch ends the Execution an allowed request awaits dispatch of, so nothing claims it.
+// cancelPendingDispatch ends the Execution an allowed request awaits dispatch of, so nothing claims it. An allowed
+// request whose Execution does not await dispatch is a fault no store call leaves behind.
 func cancelPendingDispatch(ctx context.Context, tx *sql.Tx, id uuid.UUID, at time.Time) error {
 	execution, err := lockExecution(ctx, tx, id)
 	if errors.Is(err, ErrNotFound) || err == nil && execution.State != ExecutionPendingDispatch {
-		return &ConflictError{Reason: ConflictNoPendingDispatch, Message: "allowed request has no pending dispatch"}
+		return fmt.Errorf("allowed request %s has no Execution awaiting dispatch", id)
 	}
 	if err != nil {
 		return err

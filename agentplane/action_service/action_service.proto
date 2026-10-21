@@ -26,9 +26,8 @@ import "google/protobuf/timestamp.proto";
 // a malformed request, an invalid history cursor, arguments that do not satisfy the Action's schema, or a group and
 // Action this service cannot run. `NOT_FOUND` is a request that does not exist or that the caller may not read, or an
 // unknown Action in `GetAction`. `ALREADY_EXISTS` is an idempotency key the account already used. `PERMISSION_DENIED`
-// is a `decided_only` submission no policy decides, or an operator submitting or cancelling. `FAILED_PRECONDITION` is
-// an allowed request whose dispatch is no longer pending. `UNAVAILABLE` is a draining service or an ActionGroup that is
-// temporarily unavailable.
+// is a `decided_only` submission no policy decides, or an operator submitting or cancelling. `UNAVAILABLE` is a
+// draining service or an ActionGroup that is temporarily unavailable.
 //
 // An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT` unless its field says it stands for a default; a
 // response never carries one.

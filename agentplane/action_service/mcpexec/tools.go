@@ -82,11 +82,7 @@ func optional[T comparable](v T) *T {
 	return &v
 }
 
-// schemaURL names a tool's input schema while it compiles; nothing else resolves.
-const schemaURL = "urn:agentplane:mcp-tool-input-schema"
-
-// compileSchema compiles an input schema, which must be a JSON object, checking it against its draft's metaschema.
-// A schema without `$schema` is read as draft 2020-12, as Python's jsonschema reads it.
+// compileSchema compiles an input schema, which must be a JSON object, as catalog.CompileSchema does.
 func compileSchema(schema json.RawMessage) (*jsonschema.Schema, error) {
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schema))
 	if err != nil {
@@ -95,20 +91,7 @@ func compileSchema(schema json.RawMessage) (*jsonschema.Schema, error) {
 	if _, isObject := document.(map[string]any); !isObject {
 		return nil, fmt.Errorf("must be a JSON object")
 	}
-	compiler := jsonschema.NewCompiler()
-	compiler.DefaultDraft(jsonschema.Draft2020)
-	compiler.UseLoader(noDocuments{})
-	if err := compiler.AddResource(schemaURL, document); err != nil {
-		return nil, err
-	}
-	return compiler.Compile(schemaURL)
-}
-
-// noDocuments loads no document a schema refers to; the library's default loader reads local files.
-type noDocuments struct{}
-
-func (noDocuments) Load(url string) (any, error) {
-	return nil, fmt.Errorf("an MCP tool's input schema cannot refer to %s", url)
+	return catalog.CompileSchema(document)
 }
 
 // matches is whether arguments, a JSON object, satisfy the tool's input schema.

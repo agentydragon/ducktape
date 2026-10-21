@@ -27,17 +27,11 @@ type Executor struct {
 }
 
 func NewExecutor(binding catalog.PodBinding, inventory *Inventory) (*Executor, error) {
-	compiler := jsonschema.NewCompiler()
-	compiler.DefaultDraft(jsonschema.Draft2020)
 	arguments := map[string]*jsonschema.Schema{}
 	for action, schema := range schemas() {
-		url := "urn:agentplane:sandbox:" + action
-		if err := compiler.AddResource(url, schema); err != nil {
-			return nil, err
-		}
-		compiled, err := compiler.Compile(url)
+		compiled, err := catalog.CompileSchema(schema)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", action, err)
 		}
 		arguments[action] = compiled
 	}
@@ -57,7 +51,7 @@ func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, 
 		// A Pod can only run as a ServiceAccount of its own namespace, so a caller from anywhere else cannot be given
 		// a box that is it. Stamping the box as some other account would quietly hand it authority its caller never
 		// had.
-		return failed("caller_not_local", fmt.Sprintf("sandboxes run as their caller, so the calling ServiceAccount "+
+		return worker.Failed("caller_not_local", fmt.Sprintf("sandboxes run as their caller, so the calling ServiceAccount "+
 			"must live in %q; %q cannot be given one", e.binding.Namespace, caller.Namespace)), nil
 	}
 	return worker.Hold(ctx, lease, func(ctx context.Context) (store.ExecutionOutcome, error) {
@@ -74,13 +68,13 @@ func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) 
 	var unrun *ExecError
 	switch {
 	case errors.As(err, &foreign):
-		return failed("sandbox_not_yours", err.Error()), nil
+		return worker.Failed("sandbox_not_yours", err.Error()), nil
 	case errors.As(err, &unavailable):
-		return failed("sandbox_unavailable", err.Error()), nil
+		return worker.Failed("sandbox_unavailable", err.Error()), nil
 	case errors.As(err, &unrun):
-		return failed("exec_failed", err.Error()), nil
+		return worker.Failed("exec_failed", err.Error()), nil
 	case errors.Is(err, errInvalidArguments):
-		return failed("invalid_arguments", err.Error()), nil
+		return worker.Failed("invalid_arguments", err.Error()), nil
 	}
 	return outcome, err
 }
@@ -162,7 +156,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		return succeeded(DisposeResult{Name: args.Name, Existed: existed}, err)
 	default:
 		// The catalog admitted it, so this is a roster that grew without a branch here.
-		return failed("unknown_action", fmt.Sprintf("this executor has no %q", action)), nil
+		return worker.Failed("unknown_action", fmt.Sprintf("this executor has no %q", action)), nil
 	}
 }
 
@@ -190,15 +184,4 @@ func succeeded[T any](result T, err error) (store.ExecutionOutcome, error) {
 		return store.ExecutionOutcome{}, err
 	}
 	return store.ExecutionOutcome{State: store.ExecutionSucceeded, Result: document}, nil
-}
-
-func failed(kind, message string) store.ExecutionOutcome {
-	document, err := json.Marshal(struct {
-		Kind    string `json:"kind"`
-		Message string `json:"message"`
-	}{kind, message})
-	if err != nil {
-		panic(err)
-	}
-	return store.ExecutionOutcome{State: store.ExecutionFailed, Error: document}
 }

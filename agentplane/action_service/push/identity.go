@@ -2,8 +2,8 @@
 // subscriptions the browsers register.
 //
 // Delivery reconciles from the tables: each subscription's ledger (`action_push_delivery`) records what its browser was
-// last told of each request, and a pass compares it with the requests awaiting a Decision, which it reads of the
-// lifecycle through Lifecycle alone. webpush-go signs the VAPID header (RFC 8292) and encrypts the payload (RFC 8291,
+// last told of each request, and a pass compares it with the requests awaiting a Decision, which it reads through
+// store.Store.Approvals alone. webpush-go signs the VAPID header (RFC 8292) and encrypts the payload (RFC 8291,
 // `aes128gcm`); the HTTP send runs with no transaction open.
 package push
 

@@ -6,7 +6,6 @@ package mcpexec
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -460,7 +459,7 @@ func (e *Executor) call(ctx context.Context, request store.ExecutionRequest, lea
 		if current {
 			e.wake()
 		}
-		return failed("mcp_invalid_schema", "backend tool schema is invalid"), nil
+		return worker.Failed("mcp_invalid_schema", "backend tool schema is invalid"), nil
 	case err != nil:
 		diagnostics := map[string]any{
 			"exception_type":     fmt.Sprintf("%T", err),
@@ -474,10 +473,10 @@ func (e *Executor) call(ctx context.Context, request store.ExecutionRequest, lea
 	}
 	tool, offered := tools[name]
 	if !offered {
-		return failed("unknown_action", "action is no longer offered by the backend"), nil
+		return worker.Failed("unknown_action", "action is no longer offered by the backend"), nil
 	}
 	if !tool.matches(request.Arguments) {
-		return failed("incompatible_action_schema", "arguments no longer match the current tool schema"), nil
+		return worker.Failed("incompatible_action_schema", "arguments no longer match the current tool schema"), nil
 	}
 	if err := lease.Renew(ctx); err != nil {
 		return store.ExecutionOutcome{}, err
@@ -524,24 +523,7 @@ func seconds(d time.Duration) float64 {
 // unavailable is the failure of an Execution the group cannot run now, with diagnostics of the request that showed
 // it when there are any.
 func unavailable(diagnostics map[string]any) store.ExecutionOutcome {
-	return failedWith(errorDocument{Kind: "mcp_unavailable", Message: "could not verify the current tool schema", Diagnostics: diagnostics})
-}
-
-func failed(kind, message string) store.ExecutionOutcome {
-	return failedWith(errorDocument{Kind: kind, Message: message})
-}
-
-// errorDocument is a failed Execution's error.
-type errorDocument struct {
-	Kind        string         `json:"kind"`
-	Message     string         `json:"message"`
-	Diagnostics map[string]any `json:"diagnostics,omitempty"`
-}
-
-func failedWith(document errorDocument) store.ExecutionOutcome {
-	encoded, err := json.Marshal(document)
-	if err != nil {
-		panic(err)
-	}
-	return store.ExecutionOutcome{State: store.ExecutionFailed, Error: encoded}
+	return worker.ErrorDocument{
+		Kind: "mcp_unavailable", Message: "could not verify the current tool schema", Diagnostics: diagnostics,
+	}.Outcome(store.ExecutionFailed)
 }

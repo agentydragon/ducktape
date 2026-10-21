@@ -32,10 +32,16 @@ exports_files(
 
 go_test(
     name = "mcpexec_test",
-    srcs = ["golden_test.go"],
+    srcs = [
+        "golden_test.go",
+        "tools_test.go",
+    ],
     embed = [":mcpexec"],
     embedsrcs = ["golden.json"],
-    deps = ["@com_github_modelcontextprotocol_go_sdk//mcp"],
+    deps = [
+        "@com_github_modelcontextprotocol_go_sdk//mcp",
+        "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
+    ],
 )
 
 go_test(
