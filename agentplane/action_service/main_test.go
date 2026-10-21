@@ -15,7 +15,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -30,14 +32,19 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
 	testAudience = "test-actions"
+	// policyNamespace holds the PolicySets and PolicyBindings the service watches.
+	policyNamespace = "test-agentplane"
 )
 
 var (
@@ -70,15 +77,20 @@ type running struct {
 // start serves over a database of its own, reading the policy objects of the API server policy reaches.
 func start(t *testing.T, policy *rest.Config) running {
 	t.Helper()
+	// As deployed until the Gate reads the caller label's index: no workload is admitted as a caller.
+	return startWith(t, deps{Reviews: kube.TokenReviews(), Callers: noCallers{}, Policy: policy})
+}
+
+// startWith serves over a database of its own, asking cluster about callers and reading its policy objects.
+func startWith(t *testing.T, cluster deps) running {
+	t.Helper()
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.Clone(t)
 	c.TokenAudience = testAudience
 	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
 	c.ReaderAccounts = []auth.Account{readerAccount}
-	c.PolicyNamespace = "test-agentplane"
+	c.PolicyNamespace = policyNamespace
 	c.PolicyResyncSeconds = int(reader.MinWatchPeriod / time.Second)
-	// As deployed until the Gate reads the caller label's index: no workload is admitted as a caller.
-	cluster := deps{Reviews: kube.TokenReviews(), Callers: noCallers{}, Policy: policy}
 	db, err := sql.Open("postgres", c.DatabaseURL)
 	if err != nil {
 		t.Fatal(err)
@@ -302,5 +314,78 @@ func TestTheServiceGatesTheOperatorServiceOverGRPCAndHTTP(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Errorf("a reader's Decision over HTTP: %d", response.StatusCode)
+	}
+}
+
+// admitting admits one account as a caller.
+type admitting auth.Account
+
+func (a admitting) Admits(account auth.Account) bool { return account == auth.Account(a) }
+
+func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPCAndHTTP(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+	caller := auth.Account{Namespace: policyNamespace, Name: "test-policy-caller"}
+	token, err := kube.WorkloadToken(ctx, caller, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheme := runtime.NewScheme()
+	if err := policyapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	policyObjects, err := client.New(kube.Config, client.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, object := range []client.Object{
+		&policyapi.PolicySet{
+			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-policy-set"},
+			Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: policies.RuleType, Policy: &policyapi.ActionPolicy{
+				Type: string(store.PolicyExactActions), Actions: map[string]policyapi.ActionNames{"test-group": {"test-action"}},
+			}}}},
+		},
+		&policyapi.PolicyBinding{
+			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-policy-binding"},
+			Spec: policyapi.PolicyBindingSpec{
+				Subject:    policyapi.ServiceAccountRef{Namespace: caller.Namespace, Name: caller.Name},
+				PolicySets: []string{"test-policy-set"},
+			},
+		},
+	} {
+		if err := policyObjects.Create(ctx, object); err != nil {
+			t.Fatal(err)
+		}
+	}
+	service := startWith(t, deps{Reviews: kube.TokenReviews(), Callers: admitting(caller), Policy: kube.Config})
+
+	// The service resolves the binding once its policy index has listed it.
+	authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+	var got *action_servicepb.GetActionPolicyResponse
+	err = wait.PollUntilContextTimeout(ctx, 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
+		got, err = service.actions.GetActionPolicy(authorized, &action_servicepb.GetActionPolicyRequest{})
+		return got.GetActionPolicy().GetSynced() && len(got.GetActionPolicy().GetAutoApproveIf()) == 1, err
+	})
+	if err != nil {
+		t.Fatalf("the caller's policy: %v, %v", got, err)
+	}
+
+	call, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+"/v1/action-policy", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call.Header.Set("Authorization", "Bearer "+token)
+	response, err := http.DefaultClient.Do(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	answered := &action_servicepb.GetActionPolicyResponse{}
+	if response.StatusCode != http.StatusOK || protojson.Unmarshal(body, answered) != nil || !proto.Equal(answered, got) {
+		t.Errorf("HTTP policy: %d %s, want %v", response.StatusCode, body, got)
 	}
 }

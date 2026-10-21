@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"slices"
 	"testing"
@@ -311,28 +310,7 @@ func TestAStoredRequestTheAPICannotShowIsAnInternalError(t *testing.T) {
 func TestTheHTTPFacadeAnswersAsTheRPCs(t *testing.T) {
 	s := serve(t)
 	request := s.submit(t, caller, "test-http").ID.String()
-	get := func(path, token string) (int, []byte) {
-		t.Helper()
-		call, err := http.NewRequestWithContext(t.Context(), http.MethodGet, s.url+path, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if token != "" {
-			call.Header.Set("Authorization", "Bearer "+token)
-		}
-		response, err := http.DefaultClient.Do(call)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer response.Body.Close()
-		body, err := io.ReadAll(response.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return response.StatusCode, body
-	}
-
-	code, body := get("/v1/action-requests/"+request, callerToken)
+	code, body := s.get(t, "/v1/action-requests/"+request, callerToken)
 	answered := &action_servicepb.GetActionRequestResponse{}
 	if code != http.StatusOK || protojson.Unmarshal(body, answered) != nil {
 		t.Fatalf("receipt: %d %s", code, body)
@@ -341,7 +319,7 @@ func TestTheHTTPFacadeAnswersAsTheRPCs(t *testing.T) {
 	if err != nil || !proto.Equal(answered, rpc) {
 		t.Errorf("the HTTP receipt %v differs from the RPC's %v, %v", answered, rpc, err)
 	}
-	code, body = get("/v1/action-requests?state=ACTION_STATE_DECISION_PENDING", s.operatorToken)
+	code, body = s.get(t, "/v1/action-requests?state=ACTION_STATE_DECISION_PENDING", s.operatorToken)
 	listed := &action_servicepb.ListActionRequestsResponse{}
 	if code != http.StatusOK || protojson.Unmarshal(body, listed) != nil || !slices.Equal(orderedIDs(listed.GetActionRequests()), []string{request}) {
 		t.Errorf("pending requests: %d %s", code, body)
@@ -356,7 +334,7 @@ func TestTheHTTPFacadeAnswersAsTheRPCs(t *testing.T) {
 		"another caller's receipt":        {"/v1/action-requests/" + request, otherToken, http.StatusNotFound},
 		"a request ID that is not a UUID": {"/v1/action-requests/test-not-a-uuid", callerToken, http.StatusBadRequest},
 	} {
-		if code, body := get(tc.path, tc.token); code != tc.code {
+		if code, body := s.get(t, tc.path, tc.token); code != tc.code {
 			t.Errorf("%s: %d %s, want %d", name, code, body, tc.code)
 		}
 	}

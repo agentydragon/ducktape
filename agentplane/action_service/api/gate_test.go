@@ -166,7 +166,7 @@ func TestAWorkloadIsRefusedOnceItsAccountLosesTheLabelOrItsPodIsGone(t *testing.
 }
 
 func TestAWorkloadIsUnavailableWhileTheAPIServerCannotBeReached(t *testing.T) {
-	s := serveWith(t, kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")})
+	s := serveWith(t, kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")}, unwatchedPolicy())
 	_, err := s.client.ListActionRequests(as(t, callerToken), &action_servicepb.ListActionRequestsRequest{})
 	wantCode(t, "a workload", err, codes.Unavailable)
 	// An operator's token is verified against the issuer's keys alone.
