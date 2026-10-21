@@ -158,11 +158,6 @@ class Environment:
     # Whether this environment has VM Sandboxes: the runner VM template (runner_vm.py) and the egress
     # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool
-    # Whether the Notification Service Pod probes the Go service's `grpc.health.v1` instead of the Python
-    # service's HTTP `/readyz` and `/healthz`, which the Go service answers with 404.
-    # CLEANUP(added 2026-10-20): Remove with the HTTP probes in notifications.py once staging runs the Go
-    #   service (stage K of NOTIFICATION_SERVICE_GO_PORT).
-    notifications_grpc_probes: bool
     # Whether a VM Sandbox's serial console is a root shell, for whoever holds the VMI `console`
     # subresource. Only meaningful with `vm_sandboxes`.
     vm_console_autologin: bool = False

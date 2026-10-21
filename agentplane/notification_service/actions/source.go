@@ -32,7 +32,7 @@ func (s *Source) Events(ctx context.Context, owner store.ServiceAccount, request
 	if err != nil {
 		return nil, err
 	}
-	if caller == nil || *caller != owner {
+	if caller != owner {
 		return nil, &worker.ProviderError{Kind: store.FailureAccessDenied, Message: "SourceNotOwnedError"}
 	}
 	return s.Service.Events(ctx, requestID, afterSequence)

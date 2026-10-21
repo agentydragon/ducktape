@@ -82,9 +82,7 @@ def objects(
     *, node_ip: str, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, litellm_key: str | None
 ) -> list[dict[str, Any]]:
     """Synthesize only the objects the one-node, operator-light k3s fixture deploys."""
-    # `_IMAGES` deploys the Python Notification Service (`//agentplane/notification_service:image`), which has no
-    # `grpc.health.v1`.
-    env = replace(testing.ENV, vm_sandboxes=False, notifications_grpc_probes=False)
+    env = replace(testing.ENV, vm_sandboxes=False)
     sandbox_api_env = (
         k8s.EnvVar(name="KUBERNETES_SERVICE_HOST", value=node_ip),
         k8s.EnvVar(name="KUBERNETES_SERVICE_PORT", value="6443"),

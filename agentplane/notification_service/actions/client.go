@@ -27,9 +27,8 @@ const eventsPageSize = 128
 //
 // A failure a subscription shows and retries is a *worker.ProviderError.
 type ActionService interface {
-	// Caller is the ServiceAccount that submitted the Action request, or nil when the Action Service reports
-	// none.
-	Caller(ctx context.Context, requestID uuid.UUID) (*store.ServiceAccount, error)
+	// Caller is the ServiceAccount that submitted the Action request.
+	Caller(ctx context.Context, requestID uuid.UUID) (store.ServiceAccount, error)
 	// Events returns the request's next page of events after afterSequence, in sequence order.
 	Events(ctx context.Context, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error)
 }
@@ -62,25 +61,17 @@ func NewClient(settings Settings) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Caller(ctx context.Context, requestID uuid.UUID) (*store.ServiceAccount, error) {
+func (c *Client) Caller(ctx context.Context, requestID uuid.UUID) (store.ServiceAccount, error) {
 	var view struct {
-		Caller json.RawMessage `json:"caller"`
+		Caller *store.ServiceAccount `json:"caller"`
 	}
 	if err := c.get(ctx, c.base.JoinPath("v1", "action-requests", requestID.String()), &view); err != nil {
-		return nil, err
+		return store.ServiceAccount{}, err
 	}
-	// The key is required but may be null: the Action Service hides who submitted from some readers.
 	if view.Caller == nil {
-		return nil, validationFailure()
+		return store.ServiceAccount{}, validationFailure()
 	}
-	if string(view.Caller) == "null" {
-		return nil, nil
-	}
-	var caller store.ServiceAccount
-	if err := json.Unmarshal(view.Caller, &caller); err != nil {
-		return nil, validationFailure()
-	}
-	return &caller, nil
+	return *view.Caller, nil
 }
 
 func (c *Client) Events(ctx context.Context, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {

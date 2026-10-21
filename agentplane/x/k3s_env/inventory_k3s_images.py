@@ -38,10 +38,13 @@ IMAGES = {
     "history_migrate": ("//agentplane/history_service/migrations:image", "agentplane/history_service/migrations/image"),
     "history_service": ("//agentplane/history_service:service_image", "agentplane/history_service/service_image"),
     "llm_ingress": ("//agentplane/llm_ingress:image", "agentplane/llm_ingress/image"),
-    "notification_service": ("//agentplane/notification_service:image", "agentplane/notification_service/image"),
+    "notification_service": (
+        "//agentplane/notification_service:service_image",
+        "agentplane/notification_service/service_image",
+    ),
     "notification_service_migrate": (
-        "//agentplane/notification_service:migration_image",
-        "agentplane/notification_service/migration_image",
+        "//agentplane/notification_service/migrations:image",
+        "agentplane/notification_service/migrations/image",
     ),
     "policy_controller": ("//agentplane/policy_controller:image", "agentplane/policy_controller/image"),
     "runner": ("//agentplane/x/k3s_env:runner_image", "agentplane/x/k3s_env/runner_image"),
