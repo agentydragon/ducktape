@@ -502,9 +502,9 @@ something like a tag" (09:58).
 
 ## Open PRs that encode unconfirmed defaults
 
-| PR     | Encodes                                                                      | Handling                                                                   |
-| ------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| #10987 | The draft send schema with the membership CR, freshness and recipient states | Trim to direct and `allSandboxes` targets ([steps](sandbox_tags.md#steps)) |
+| PR     | Encodes                                                                                                      | Handling                                          |
+| ------ | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| #11323 | The draft session access rules, trimmed to direct and `allSandboxes` targets, in Go (replaces closed #10987) | Review against the [steps](sandbox_tags.md#steps) |
 
 ## Parked
 
