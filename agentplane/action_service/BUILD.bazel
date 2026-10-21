@@ -1348,6 +1348,30 @@ py_test(
     ],
 )
 
+py_binary(
+    name = "generate_mcp_golden_bin",
+    main_module = "agentplane.action_service.generate_mcp_golden",
+    deps = [":generate_mcp_golden"],
+)
+
+py_test(
+    name = "test_mcp_golden",
+    srcs = ["test_mcp_golden.py"],
+    # Pure test that runs its own event loop; no conftest fixture is needed.
+    args = ["--noconftest"],
+    data = [
+        "//agentplane/mcp_edge/mcpserver:golden.json",
+        "//agentplane/mcp_edge/mcpserver:tools.json",
+    ],
+    deps = [
+        ":conftest",
+        ":generate_mcp_golden",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 proto_library(
     name = "action_service_proto",
     srcs = ["action_service.proto"],
@@ -1500,5 +1524,26 @@ go_test(
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+py_library(
+    name = "generate_mcp_golden",
+    srcs = ["generate_mcp_golden.py"],
+    deps = [
+        ":caller_auth",
+        ":catalog",
+        ":mcp_frontend",
+        ":models",
+        ":policy_view",
+        ":service",
+        ":store",
+        ":updates",
+        "//agentplane:subjects",
+        "//agentplane/action_service/sandbox:binding",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//pydantic",
     ],
 )

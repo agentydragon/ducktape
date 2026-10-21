@@ -46,6 +46,10 @@ agentplane/action_service/catalog/golden.json
 # The Python Action Service generates these golden vectors as its generator writes them; regenerating leaves no diff.
 agentplane/action_service/policies/golden.json
 
+# The Python Action Service generates these MCP tools and vectors; test_mcp_golden checks exact output.
+agentplane/mcp_edge/mcpserver/golden.json
+agentplane/mcp_edge/mcpserver/tools.json
+
 # controller-gen owns these Agentplane CRD snapshots; test_generate checks exact output.
 agentplane/crds/manifests/crd-sandboxes.yaml
 agentplane/crds/manifests/crd-sandboxtemplates.yaml

@@ -71,6 +71,9 @@ require (
 	github.com/google/go-github/v88 v88.0.0
 )
 
+// Direct dependencies for agentplane/mcp_edge
+require github.com/modelcontextprotocol/go-sdk v1.8.0
+
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
@@ -284,6 +287,9 @@ require (
 	github.com/cilium/ebpf v0.16.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
+	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa // indirect
 )
