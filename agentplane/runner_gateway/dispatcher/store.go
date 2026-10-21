@@ -570,7 +570,9 @@ func (s *Store) Settle(ctx context.Context, id string, owner Owner, from []strin
 		if err != nil || !current {
 			return err
 		}
-		var payload []byte
+		// A nil `[]byte` stores an empty bytea, which reads back as an empty admission; only a nil
+		// interface stores NULL.
+		var payload any
 		if admission != nil {
 			payload, err = wire(admission)
 			if err != nil {

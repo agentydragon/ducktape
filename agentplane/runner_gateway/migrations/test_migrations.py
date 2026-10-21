@@ -41,7 +41,7 @@ def test_fresh_database_and_repeat_are_idempotent(postgres_admin_url: str, datab
         try:
             with engine.connect() as conn:
                 assert conn.scalar(text("SELECT to_regclass('dispatch') IS NOT NULL"))
-                assert conn.scalar(text(f"SELECT max(version_id) FROM {_VERSION}")) == 3
+                assert conn.scalar(text(f"SELECT max(version_id) FROM {_VERSION}")) == 4
         finally:
             engine.dispose()
 
@@ -57,7 +57,7 @@ def test_concurrent_runners_serialize(postgres_admin_url: str, database_names: D
         engine = create_engine(url)
         try:
             with engine.connect() as conn:
-                assert conn.scalar(text(f"SELECT count(*) FROM {_VERSION} WHERE version_id=3 AND is_applied")) == 1
+                assert conn.scalar(text(f"SELECT count(*) FROM {_VERSION} WHERE version_id=4 AND is_applied")) == 1
         finally:
             engine.dispose()
 
@@ -79,11 +79,45 @@ def test_stop_receipts_are_dropped_and_other_dispatches_kept(
                         ),
                         {"command_id": command_id, "operation": operation},
                     )
-                # Reapply the migration over data it did not see at its first run.
-                conn.execute(text(f"DELETE FROM {_VERSION} WHERE version_id = 3"))
+                # Reapply the migration over data it did not see at its first run; Goose refuses to fill
+                # a gap below an applied version, so later ones run again too.
+                conn.execute(text(f"DELETE FROM {_VERSION} WHERE version_id >= 3"))
             _run(url)
             with engine.connect() as conn:
                 assert conn.scalars(text("SELECT command_id FROM dispatch")).all() == ["send-1"]
+        finally:
+            engine.dispose()
+
+
+def test_empty_admissions_are_cleared_and_runner_admissions_kept(
+    postgres_admin_url: str, database_names: DatabaseNames
+) -> None:
+    with create_temporary_database(postgres_admin_url, database_names()) as url:
+        _run(url)
+        engine = create_engine(url)
+        try:
+            with engine.begin() as conn:
+                for command_id, state, admission in (
+                    ("claimed", "DELIVERING_TO_RUNNER", b""),
+                    ("admitted", "RUNNER_ADMITTED", b"\x08\x01"),
+                ):
+                    conn.execute(
+                        text(
+                            "INSERT INTO dispatch (command_id, session_id, sandbox_name, sandbox_uid, operation,"
+                            " command, state, admission, created_at, updated_at) VALUES (:command_id, 'session',"
+                            " 'sandbox', gen_random_uuid(), 'submit_input', '\\x'::bytea, :state, :admission,"
+                            " now(), now())"
+                        ),
+                        {"command_id": command_id, "state": state, "admission": admission},
+                    )
+                # Reapply the migration over data it did not see at its first run.
+                conn.execute(text(f"DELETE FROM {_VERSION} WHERE version_id = 4"))
+            _run(url)
+            with engine.connect() as conn:
+                assert dict(conn.execute(text("SELECT command_id, admission FROM dispatch")).tuples().all()) == {
+                    "claimed": None,
+                    "admitted": b"\x08\x01",
+                }
         finally:
             engine.dispose()
 

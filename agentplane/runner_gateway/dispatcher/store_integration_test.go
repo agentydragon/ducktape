@@ -242,6 +242,30 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 	}
 }
 
+func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	const uid = "00000000-0000-4000-8000-000000000085"
+	if _, err := store.Enqueue(ctx, "admission-session", "sandbox-admission", uid, input("admission-input", "hello"), nil); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, uid, "admission-lease", 1, "replica-a", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("owner: %+v %v", owner, err)
+	}
+	claimed, err := store.Settle(ctx, "admission-input", *owner, []string{QueueState}, DeliveringState, "", nil)
+	if err != nil || claimed == nil || claimed.Admission != nil {
+		t.Fatalf("claimed row carries an admission: %+v %v", claimed, err)
+	}
+	admission := &eventlogpb.EventEntry{Cursor: 7, Origin: &eventlogpb.EventOrigin{SourceId: "runner", Sequence: 7}}
+	if _, err := store.Settle(ctx, "admission-input", *owner, []string{DeliveringState}, AdmittedState, "", admission); err != nil {
+		t.Fatal(err)
+	}
+	if row, err := store.GetDispatch(ctx, "admission-input"); err != nil || !proto.Equal(row.Admission, admission) {
+		t.Fatalf("admitted row: %+v %v", row, err)
+	}
+}
+
 func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
