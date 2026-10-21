@@ -142,7 +142,7 @@ class PolicyEvidence(BaseModel):
 
 
 class ExternalGrantProvenance(BaseModel):
-    """Immutable authenticated submission evidence, never part of the caller envelope."""
+    """The Connection grant a bearer resolved to, for one transport request; never stored."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -289,7 +289,6 @@ class ActionRequestView(BaseModel):
         description="The caller-authored added detail, projected unchanged; absent when the caller supplied none."
     )
     caller: ServiceAccountRef = Field(description="Who submitted it.")
-    external_grant: ExternalGrantProvenance | None = None
     state: ActionState
     version: int
     created_at: datetime
@@ -335,7 +334,6 @@ class ExecutionRequest(BaseModel):
     action: ActionIdentity
     arguments: dict[str, JsonValue]
     caller: ServiceAccountRef
-    external_grant: ExternalGrantProvenance | None = None
 
 
 class ExecutionResult(BaseModel):

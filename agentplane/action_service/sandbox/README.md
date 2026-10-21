@@ -160,9 +160,8 @@ hop away. The split buys process isolation, not privilege isolation.
 
 **Forwarding the caller's own credential.** There is no caller credential at dispatch. Submission
 and dispatch are separated by a human Decision, a possible restart, and a possibly different
-replica, so a Pod-bound token or an OAuth access token has expired or is simply absent.
-`ExternalGrantProvenance` holds issuer, client, connection, grant and revision, and no token, by
-design. Making one exist would mean retaining a credential in the request, which the service
+replica, so a Pod-bound token or an OAuth access token has expired or is simply absent. Making one
+exist would mean retaining a credential in the request, which the service
 refuses, or minting one per caller through TokenRequest, which would let the Action Service act as
 any account that can call it.
 

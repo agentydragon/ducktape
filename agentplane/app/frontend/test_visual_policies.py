@@ -666,19 +666,6 @@ async def test_action_detail_ssh_raw_view(view: VisualPage, app: AgentplaneFixtu
     await view.capture(target=page.locator("#app"), name=f"action_detail_ssh_raw_{viewport.width}")
 
 
-@DESKTOP_AND_MOBILE
-async def test_action_detail_external_grant_audit(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.set_flag(Flag.PENDING_ACTIONS)
-    await app.mount_app("/actions/70000000-0000-4000-8000-000000000001")
-    await view.check(context="fixture ready")
-    page = view.page
-    audit = page.get_by_text("Request & grant audit details")
-    await expect(audit).to_be_visible()
-    await audit.click()
-    await expect(page.get_by_text("test-external-client")).to_be_visible()
-    await view.capture(target=page.locator("#app"))
-
-
 async def capture_long_ssh_preview_scrolled(view: VisualPage, app: AgentplaneFixture) -> None:
     """The fully expanded 55-line SSH preview stays a bounded box that scrolls to its end."""
     await app.set_flag(Flag.PENDING_ACTIONS)

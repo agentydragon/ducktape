@@ -37,21 +37,16 @@ Only the internal OAuth adapter may call `bind`, `activate`, `resolve`, or grant
 there is no HTTP endpoint accepting client-provided ServiceAccount/issuer/client/grant bindings.
 Bind is idempotent by its consent grant UUID, reconnect locks the Connection and ends the old
 grant, and activation is bounded by its deadline. The [app consent UI](../app/README.md) and
-[OAuth adapter](#external-oauth) use this authority. An authenticated external adapter submits a resolved
-`Grant.provenance()` through the trusted `ActionService.submit(..., external_grant=...)` keyword,
-never a caller-envelope field. Admission stores the exact issuer/client/Connection/grant/revision
-snapshot, including the current binding version, atomically with the first request.
-A shared-ServiceAccount repeat of the key is refused; the lookup by key returns the original
-snapshot, including after rename, rebind or reconnect. Workload requests carry no snapshot.
-
-The snapshot is provenance, not authority. The grant is resolved on every MCP request and again
-after a wait, so revoking, unbinding or reconnecting a Connection refuses its token's next request,
-while requests it already submitted proceed through decision and dispatch. The operator may rebind
-an active Connection to a different eligible ServiceAccount without issuing a new OAuth token; this
+[OAuth adapter](#external-oauth) use this authority. A Connection's bearer resolves to its grant's
+currently bound ServiceAccount, and the request is that account's: neither the request, its receipt
+nor its executor projection records the grant, and a repeat of a key is refused whichever Connection
+or Pod of the account submitted it. The grant is resolved on every MCP request and again after a
+wait, so revoking, unbinding or reconnecting a Connection refuses its token's next request, while
+requests it already submitted proceed through decision and dispatch. The operator may rebind an
+active Connection to a different eligible ServiceAccount without issuing a new OAuth token; this
 increments the binding version and retains immutable original grant history in `original_caller`.
 Later requests from the existing token use the new account. Authority comes from `bound_caller`,
-history from `original_caller`. Receipt and executor projections carry the original snapshot; no
-credentials are stored in it.
+history from `original_caller`.
 
 Action Service/PostgreSQL owns Connection authority; the integration app owns its operator UI.
 Configurable policies and the Thread lifecycle are separate from this authority.
@@ -260,7 +255,7 @@ default to `id`/`state`/`version`/
 `created_at`/`updated_at` on the receipt -- `state` alone already distinguishes
 pending/allowed/denied/dispatching/running/succeeded/failed/cancelled without naming `execution` --
 widened by naming `input` (the submitted `idempotency_key`/`action`/`arguments`/`title`/
-`description`, echoed back as one unit), `caller`, `external_grant`, `decision`, or `execution`.
+`description`, echoed back as one unit), `caller`, `decision`, or `execution`.
 Naming only the wide fields you want **replaces** the default rather
 than adding to it, so keeping the compact fields alongside a widened one means naming both.
 `cancel_action_request`'s nested `request` is gated the same way, under its own `include_fields`.

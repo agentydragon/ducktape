@@ -676,14 +676,12 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
             )
         )
         assert receipt.id is not None
-        assert receipt.external_grant == grant.provenance()
         assert receipt.caller == grant.caller
         cancelled = CancellationView.model_validate(
             await _call_mcp(
                 http, bearer, "cancel_action_request", {"request_id": str(receipt.id), "include_fields": all_fields}
             )
         )
-        assert cancelled.request.external_grant == grant.provenance()
         repeat = await _call_mcp_result(http, bearer, "request_action", {"request": request})
         assert repeat.is_error, repeat
         recovered = Receipt.model_validate(

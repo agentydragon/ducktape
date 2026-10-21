@@ -418,7 +418,7 @@ def create_app(
         sets that resolved, and the auto_approve_if entries in evaluation order. This surface only
         ever sees a Sandbox principal; an external grant reaches the service through `/mcp`, whose
         tool reads the grant `CallerTokenVerifier` verified."""
-        return service.caller_action_policy(principal, external_grant=None)
+        return service.caller_action_policy(principal)
 
     @operator.get("/action-requests")
     async def operator_list_requests(

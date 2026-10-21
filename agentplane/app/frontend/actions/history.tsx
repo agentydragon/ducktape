@@ -210,11 +210,6 @@ export function ActionHistoryCard({
             {request.title}
           </Text>
           {!raw && summary !== undefined && summary !== null && <div>{summary}</div>}
-          {request.external_grant && (
-            <Text size="xs" fw={600}>
-              Authenticated external caller at submission
-            </Text>
-          )}
           <Group justify="space-between" gap="xs">
             {timestamp}
             <Anchor

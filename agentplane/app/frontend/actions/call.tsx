@@ -15,41 +15,14 @@ import {
   type RenderedActionCall,
 } from "./rendering/index";
 
-/** The grant fields, folded inside `RequestAuditDetails`' disclosure rather than shown
- * unconditionally: verbose per-request provenance an operator deciding needs occasionally, not on
- * every glance at the card. */
-function ExternalGrantFields({ grant }: { grant: NonNullable<ActionRequestView["external_grant"]> }): JSX.Element {
-  return (
-    <Stack gap={2} style={{ overflowWrap: "anywhere" }}>
-      <Text size="xs">
-        Acts as <Code>{serviceAccountKey(grant.caller)}</Code> · Client <Code>{grant.client_id}</Code>
-      </Text>
-      <Text size="xs">
-        Issuer <Code>{grant.issuer}</Code>
-      </Text>
-      <Text size="xs">
-        Connection <Code>{grant.connection_id}</Code>
-      </Text>
-      <Text size="xs">
-        Grant <Code>{grant.grant_id}</Code> · Revision <Code>{grant.revision}</Code>
-      </Text>
-      <Text size="xs" c="dimmed">
-        Historical submission evidence, not the connection’s current authorization status.
-      </Text>
-    </Stack>
-  );
-}
-
 /** The request's own verbose identifiers, folded behind one disclosure rather than shown
- * unconditionally: the UUID nobody reads at a glance, and -- when the caller authenticated
- * externally -- the grant provenance behind it. */
+ * unconditionally: the UUID and timestamps nobody reads at a glance. */
 function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.Element {
-  const grant = request.external_grant;
   return (
     <Disclosure
       summary={
         <Text component="span" size="xs" c="dimmed">
-          {grant ? "Request & grant audit details" : "Request audit details"}
+          Request audit details
         </Text>
       }
       keepMounted
@@ -77,7 +50,6 @@ function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.E
               Completed <TimeAgo value={request.execution.completed_at} />
             </Text>
           )}
-          {grant && <ExternalGrantFields grant={grant} />}
         </Stack>
       </DisclosureBody>
     </Disclosure>
@@ -155,12 +127,6 @@ export function ActionCall({
         {request.caller && (
           <Text size="xs" c="dimmed">
             requested by {serviceAccountKey(request.caller)}
-          </Text>
-        )}
-        {/* The grant provenance behind an external caller is in the audit details below. */}
-        {request.external_grant && !detailsOnly && (
-          <Text size="xs" fw={600}>
-            Authenticated external caller at submission
           </Text>
         )}
         <RequestAuditDetails request={request} />

@@ -40,7 +40,6 @@ from agentplane.action_service.models import (
     CancellationOutcome,
     DecisionView,
     ExecutionState,
-    ExternalGrantProvenance,
 )
 from agentplane.action_service.policy_view import SELF, PolicyTarget
 from agentplane.action_service.service import (
@@ -79,7 +78,6 @@ class RequestField(StrEnum):
     UPDATED_AT = "updated_at"
     INPUT = "input"
     CALLER = "caller"
-    EXTERNAL_GRANT = "external_grant"
     DECISION = "decision"
     EXECUTION = "execution"
 
@@ -167,7 +165,6 @@ class Receipt(BaseModel):
     updated_at: datetime | None = None
     input: RequestInput | None = None
     caller: ServiceAccountRef | None = None
-    external_grant: ExternalGrantProvenance | None = None
     decision: DecisionView | None = None
     execution: ExecutionReceipt | None = None
 
@@ -211,12 +208,11 @@ class Caller:
     """Who this transport request authenticated as, injected into every tool that acts for a caller
     and never a tool argument.
 
-    The same two fields as `CallerToken`, deliberately: that one extends FastMCP's `AccessToken` and
-    so carries the bearer itself, which tool code has no business holding.
+    `CallerToken`'s principal without the rest: that one extends FastMCP's `AccessToken` and so
+    carries the bearer itself, which tool code has no business holding.
     """
 
     principal: CallerPrincipal
-    external_grant: ExternalGrantProvenance | None
 
 
 # FastMCP resolves a parameter by its dependency default and strips it from a tool's input schema;
@@ -231,8 +227,7 @@ def _caller_token(token: AccessToken | None) -> CallerToken:
 
 
 def _caller(token: AccessToken = CURRENT_ACCESS_TOKEN) -> Caller:
-    verified = _caller_token(token)
-    return Caller(principal=verified.principal, external_grant=verified.external_grant)
+    return Caller(principal=_caller_token(token).principal)
 
 
 CALLER = Depends(_caller)
@@ -303,8 +298,6 @@ def _receipt(view: ActionRequestView, fields: set[RequestField]) -> Receipt:
         )
     if RequestField.CALLER in fields:
         values["caller"] = view.caller
-    if RequestField.EXTERNAL_GRANT in fields:
-        values["external_grant"] = view.external_grant
     if RequestField.DECISION in fields:
         values["decision"] = view.decision
     if RequestField.EXECUTION in fields:
@@ -407,7 +400,6 @@ def create_server(
                     idempotency_key=f"direct-{uuid4()}", title=DIRECT_CALL_TITLE, action=action, arguments=arguments
                 ),
                 principal,
-                external_grant=verified.external_grant,
             )
         except UndecidedRequestError as undecided:
             return refusal(action, str(undecided))
@@ -478,7 +470,7 @@ def create_server(
         submits an Action and says nothing about past Decisions; read those with get_action_request.
         """
         view = (
-            service.caller_action_policy(caller.principal, caller.external_grant)
+            service.caller_action_policy(caller.principal)
             if target == SELF
             else service.target_action_policy(target.service_account)
         )
@@ -498,14 +490,14 @@ def create_server(
         """Submit one Action for policy evaluation, human decision if needed, and single-shot execution.
         Supply a stable idempotency_key with structured action group/name, validated arguments, and a title the deciding operator reads.
         Answers once wait ends as get_action_result would: a finished Action's own result exactly as its tool answered, otherwise what it waits on or why it has none. wait.wait_seconds (0 through this instance's configured maximum, default 0) optionally waits for wait.wait_until ("decision" or "terminal", default terminal).
-        respond_with="receipt" answers with a compact receipt (id, state, version, created_at, updated_at) instead. include_fields, for a receipt only, is a pure allowlist: input (the submitted idempotency_key/action/arguments/title/description as one unit), caller, external_grant, decision, and execution (state, error and timing, never the result) widen it.
+        respond_with="receipt" answers with a compact receipt (id, state, version, created_at, updated_at) instead. include_fields, for a receipt only, is a pure allowlist: input (the submitted idempotency_key/action/arguments/title/description as one unit), caller, decision, and execution (state, error and timing, never the result) widen it.
         Pending is not success. A key this caller already used is refused; after response loss read the request with get_action_request or get_action_result(idempotency_key=...), never submit a new key.
         """
         waiter.validate(wait)
         if respond_with is ResponseForm.RESULT and set(include_fields) != set(DEFAULT_RECEIPT_FIELDS):
             raise ToolError('include_fields shapes a receipt; pass respond_with="receipt" to get one.')
         principal = caller.principal
-        view = await service.submit(request, principal, external_grant=caller.external_grant)
+        view = await service.submit(request, principal)
         if wait.wait_seconds:
             view = await wait_for_receipt(view.id, principal, wait)
             await revalidate(principal)

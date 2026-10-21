@@ -574,7 +574,6 @@ async def test_tools_act_as_the_identity_the_transport_verified(frontend: Fronte
     for token, request_id in request_ids.items():
         stored = await frontend.store.get(request_id, OPERATOR)
         assert stored.caller == CallerPrincipal(account=frontend.tokens[token].account).account
-        assert stored.external_grant is None
 
 
 async def test_rejects_a_revoked_bearer_duplicate_auth_and_forged_caller_fields(frontend: Frontend) -> None:

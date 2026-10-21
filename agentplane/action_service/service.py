@@ -39,7 +39,6 @@ from agentplane.action_service.models import (
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
-    ExternalGrantProvenance,
     OperatorPrincipal,
     Principal,
     ProviderOutcome,
@@ -323,33 +322,16 @@ class ActionService:
         self._heartbeat_task = None
         self._sweep_task = None
 
-    async def submit(
-        self,
-        body: ActionRequestInput,
-        principal: CallerPrincipal,
-        *,
-        external_grant: ExternalGrantProvenance | None = None,
-    ) -> ActionRequestView:
-        return await self._submit(body, principal, external_grant=external_grant, decided_only=False)
+    async def submit(self, body: ActionRequestInput, principal: CallerPrincipal) -> ActionRequestView:
+        return await self._submit(body, principal, decided_only=False)
 
-    async def submit_decided(
-        self,
-        body: ActionRequestInput,
-        principal: CallerPrincipal,
-        *,
-        external_grant: ExternalGrantProvenance | None = None,
-    ) -> ActionRequestView:
+    async def submit_decided(self, body: ActionRequestInput, principal: CallerPrincipal) -> ActionRequestView:
         """Submit only a request a policy decides at admission. Anything else raises
         `UndecidedRequestError` before a row exists, so no one is asked and nothing is left to cancel."""
-        return await self._submit(body, principal, external_grant=external_grant, decided_only=True)
+        return await self._submit(body, principal, decided_only=True)
 
     async def _submit(
-        self,
-        body: ActionRequestInput,
-        principal: CallerPrincipal,
-        *,
-        external_grant: ExternalGrantProvenance | None,
-        decided_only: bool,
+        self, body: ActionRequestInput, principal: CallerPrincipal, *, decided_only: bool
     ) -> ActionRequestView:
         if self.draining:
             raise ServiceDrainingError("Action Service is draining")
@@ -367,9 +349,7 @@ class ActionService:
                 "; ".join(each.outcome.reason_description or each.outcome.reason_code for each in votes)
                 or "no decision provider is configured"
             )
-        view = await self._store.submit(
-            body, principal, request_id=request_id, vote=vote, external_grant=external_grant
-        )
+        view = await self._store.submit(body, principal, request_id=request_id, vote=vote)
         if vote is not None and vote.outcome.verdict is ProviderVerdict.ALLOW:
             self._schedule(view.id)
         return view
@@ -421,9 +401,7 @@ class ActionService:
         """The Actions the caller's bindings could auto-approve now, for some arguments."""
         return auto_approvable(resolve_bindings(self._policies, principal.account))
 
-    def caller_action_policy(
-        self, principal: CallerPrincipal, external_grant: ExternalGrantProvenance | None
-    ) -> CallerActionPolicyView:
+    def caller_action_policy(self, principal: CallerPrincipal) -> CallerActionPolicyView:
         """What the caller's own bindings auto-decide, resolved as admission would resolve them now."""
         return caller_view(self._policies, principal.account)
 

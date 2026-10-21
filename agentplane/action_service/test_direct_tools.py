@@ -247,13 +247,12 @@ async def test_direct_call_runs_the_action_and_answers_as_its_tool_did(
     assert snapshot.content == answer.content
     assert snapshot.structured_content == {"width": 1}
     assert ExecResult.model_validate(executed.structured_content) == ran
-    # Each call is an ordinary Action: auto-approved by policy, with the Connection's provenance.
+    # Each call is an ordinary Action of the Connection's ServiceAccount, auto-approved by policy.
     requests = await direct.store.list_requests(direct.grant.principal())
     assert {request.action for request in requests} == {SNAPSHOT, EXEC}
     for request in requests:
         assert request.state is ActionState.SUCCEEDED
         assert request.title == DIRECT_CALL_TITLE
-        assert request.external_grant == direct.grant.provenance()
         assert request.decision is not None
         assert request.decision.provider == PROVIDER_NAME
 

@@ -38,7 +38,6 @@ from agentplane.action_service.models import (
     ExecutionResult,
     ExecutionState,
     ExecutionView,
-    ExternalGrantProvenance,
     OperatorPrincipal,
     PolicyEvidence,
     Principal,
@@ -74,21 +73,12 @@ class ActionStore:
         self._sessions = sessions
 
     async def submit(
-        self,
-        body: ActionRequestInput,
-        principal: CallerPrincipal,
-        *,
-        request_id: UUID,
-        vote: ProviderVote | None,
-        external_grant: ExternalGrantProvenance | None = None,
+        self, body: ActionRequestInput, principal: CallerPrincipal, *, request_id: UUID, vote: ProviderVote | None
     ) -> ActionRequestView:
         """Persist an admitted request; ActionService resolves its group/action before calling here.
 
         A decisive `vote` from admission's provider evaluation commits with the insert, so the
         request is never visible as pending: `decision_pending` only ever means waiting for a human.
-
-        `external_grant` is provenance only: `CallerTokenVerifier` resolved it for this request, and
-        revoking the grant later stops new requests, not this one.
         """
         async with self._sessions.begin() as session:
             now = datetime.now(UTC)
@@ -103,7 +93,6 @@ class ActionStore:
                     description=body.description,
                     caller_namespace=principal.account.namespace,
                     caller_name=principal.account.name,
-                    external_grant=external_grant,
                     state=ActionState.DECISION_PENDING,
                     version=1,
                     created_at=now,
@@ -405,7 +394,6 @@ class ActionStore:
                 action=row.action,
                 arguments=row.arguments,
                 caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name),
-                external_grant=row.external_grant,
             )
 
     async def finish_execution(
@@ -508,7 +496,6 @@ class ActionStore:
             title=row.title,
             description=row.description,
             caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name),
-            external_grant=row.external_grant,
             state=row.state,
             version=row.version,
             created_at=row.created_at,

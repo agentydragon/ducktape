@@ -142,6 +142,8 @@ class ActionRequestRow(Base):
     description: Mapped[str | None] = mapped_column(Text)
     caller_namespace: Mapped[str] = mapped_column(Text)
     caller_name: Mapped[str] = mapped_column(Text)
+    # CLEANUP(added 2026-10-21): Drop this column (a migration, in its own data-deletion PR) once the
+    #   deployed Action Service image is one that never writes it; nothing reads it.
     external_grant: Mapped[ExternalGrantProvenance | None] = mapped_column(PydanticColumn(ExternalGrantProvenance))
     state: Mapped[ActionState] = mapped_column(TextBackedStrEnumColumn(ActionState))
     version: Mapped[int] = mapped_column(Integer)

@@ -238,10 +238,10 @@ message ActionRequest {
   string title = 5;
   // The caller-authored detail, unchanged; absent when the caller supplied none.
   optional string description = 6;
-  // The ServiceAccount that submitted it.
+  // The ServiceAccount that submitted it, from a Pod or through a Connection acting as it.
   agentplane.proto.ServiceAccount caller = 7;
-  // The external Connection grant that submitted it; absent for a request from a Pod.
-  ExternalGrantProvenance external_grant = 8;
+  reserved 8;
+  reserved "external_grant";
   ActionState state = 9;
   // Starts at 1 and increases with every change of state: the `sequence` of the latest event.
   int64 version = 10;
@@ -280,21 +280,6 @@ enum ActionState {
   ACTION_STATE_CANCELLED = 8;
   // The executor may have started the Action and its outcome could not be observed. The request is never replayed.
   ACTION_STATE_EXECUTION_UNKNOWN = 9;
-}
-
-// The submission evidence of an external Connection: the grant that submitted the request, as it stood then. It
-// never changes afterwards, whatever happens to the Connection.
-message ExternalGrantProvenance {
-  // The ServiceAccount the grant acted as.
-  agentplane.proto.ServiceAccount caller = 1;
-  string issuer = 2;
-  string client_id = 3;
-  // UUID.
-  string connection_id = 4;
-  // UUID.
-  string grant_id = 5;
-  int32 revision = 6;
-  int32 binding_version = 7;
 }
 
 // How a request was decided, by an operator or by a policy.

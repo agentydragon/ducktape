@@ -17,57 +17,15 @@ describe("ActionRequests", () => {
     expect(container.textContent).not.toContain("[object Object]");
   });
 
-  it("shows the immutable authenticated submitter for a pending receipt", async () => {
-    const grant = {
-      caller: { namespace: "agentplane-test", name: "test-caller" },
-      issuer: "https://test-issuer.example/oauth",
-      client_id: "test-external-client",
-      connection_id: "40000000-0000-4000-8000-000000000001",
-      grant_id: "50000000-0000-4000-8000-000000000001",
-      revision: 7,
-      binding_version: 0,
-    };
-    const row = {
-      ...request("decision_pending", 1),
-      caller: { namespace: "agentplane-test", name: "test-caller" },
-      external_grant: grant,
-    };
+  it("shows the caller and folds the request id behind its audit details", async () => {
+    const row = request("decision_pending", 1);
     const container = await renderLive(<ActionRequests />, [row]);
-
-    expect(container.textContent).toContain("requested by agentplane-test/test-caller");
-    expect(container.textContent).toContain("Authenticated external caller at submission");
-    for (const value of [grant.issuer, grant.client_id, grant.connection_id]) {
-      expect(container.textContent).toContain(value);
-    }
-    const control = button(container, "Request & grant audit details");
-    expect(control.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => control.click());
-    expect(control.getAttribute("aria-expanded")).toBe("true");
-    expect(container.textContent).toContain(grant.grant_id);
-    expect(container.textContent).toContain("Revision 7");
-    expect(container.textContent).toContain("Historical submission evidence");
+    expect(container.textContent).toContain(`requested by ${row.caller!.namespace}/${row.caller!.name}`);
+    const control = button(container, "Request audit details");
+    expect(control?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).toContain(row.id);
+    expect(button(container, "Approve").disabled).toBe(false);
   });
-
-  it.each([null, undefined])(
-    "retains workload caller display without manufacturing external provenance (%s)",
-    async (external_grant) => {
-      const row = {
-        ...request("decision_pending", 1),
-        external_grant,
-      };
-      const container = await renderLive(<ActionRequests />, [row]);
-      expect(container.textContent).toContain(`requested by ${row.caller!.namespace}/${row.caller!.name}`);
-      expect(container.textContent).not.toContain("Authenticated external caller");
-      // The request-id disclosure exists regardless of external_grant, but carries only the id --
-      // no grant provenance to fold in without one.
-      const control = button(container, "Request audit details");
-      expect(container.textContent).not.toContain("Authenticated external caller");
-      expect(control?.textContent).toBe("Request audit details");
-      expect(control?.getAttribute("aria-expanded")).toBe("false");
-      expect(container.textContent).toContain(row.id);
-      expect(button(container, "Approve").disabled).toBe(false);
-    }
-  );
 
   it("renders every pending request with its arguments", async () => {
     const container = await renderLive(<ActionRequests />, [request("decision_pending", 1)]);

@@ -125,11 +125,6 @@ function PendingActionList({
             {!expanded && decision !== null && <div className="agentplane-actions-sidebar-decision">{decision}</div>}
             {expanded && (
               <Stack className="agentplane-actions-sidebar-preview" gap="xs" data-operation-density="compact">
-                {request.external_grant && (
-                  <Text size="xs" fw={600}>
-                    Authenticated external caller
-                  </Text>
-                )}
                 {openedPreview === undefined ? (
                   <>
                     <Text size="xs" c="dimmed">
