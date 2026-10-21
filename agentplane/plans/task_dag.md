@@ -91,6 +91,15 @@ Related: whether notice delivery belongs with the Dispatcher
 and the history-free notice outcome (`NOTIFICATION_COMMAND_OUTCOME_DESIGN`), which bears on the notice
 decision's last clause.
 
+**Operator, 2026-10-21 07:33 UTC: rethink the inbox model and its names together with the rename.**
+Noticing agents is only one part of what the service does; it is more a mailbox ("email" or "mailbox")
+service. The operator's sketch, explicitly not a committed shape or naming: inboxes contain messages;
+a message has a sender, which is another agent or an event source such as GitHub; a message is
+structured, like a GitHub webhook, or unstructured text; a subscription connects an inbox to an event
+source, with its configuration (which pull requests, for example). Today's terms to reconcile with it
+include entries and their event identities (`actions`, `github`, `message`), notices, sources and
+`DestinationRef`.
+
 ### `COMMAND_WATCH_SUBSCRIPTION_DESIGN` — a subscription kind that runs an agent's command on a schedule
 
 **Unscheduled; operator, 2026-10-17 PDT: possibly useful as a subscription option, trigger to be decided.**
