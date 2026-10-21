@@ -2004,12 +2004,16 @@ Bazel-built test guest (`agentplane/x/k3s_env/guest`), not production's NixOS im
 it ([timings](../x/k3s_env/README.md#vm-lifecycle-timings-2026-10-21)): KubeVirt's image pulls take
 about 3 minutes, the VM itself under 2.
 
-Remaining: give the VM cases (`test_vm_sandbox`, `test_vm_workspace_ownership`, the `test_suspend_resume`
-and `test_storage_deployed` VM cases) `_k3s` targets on the VM rendering, then delete
-`test_vm_lifecycle`. The `test_suspend_resume` change goes through the k3s tests lane, which owns that
-file.
+Remaining:
 
-Exit: the VM cases pass on k3s.
+- Load KubeVirt's and Kyverno's images from Bazel-pulled layouts, as the stack does for its own
+  services, in place of runtime pulls from their registries; then `test_vm_lifecycle` loses its
+  `manual` tag and runs in PR CI.
+- Give the VM cases (`test_vm_sandbox`, `test_vm_workspace_ownership`, the `test_suspend_resume` and
+  `test_storage_deployed` VM cases) `_k3s` targets on the VM rendering, in PR CI like the other
+  `_k3s` targets; then delete `test_vm_lifecycle`.
+
+Exit: the VM cases pass on k3s in PR CI.
 
 ### `TESTING_ROLLOUT_ROLE` — what replaces testing as the stage before staging
 
