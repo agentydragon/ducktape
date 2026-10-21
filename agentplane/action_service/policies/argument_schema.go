@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -19,7 +21,9 @@ const schemaURL = "urn:agentplane:action-policy-schema"
 // ArgumentSchema matches a listed Action whose arguments satisfy a JSON Schema, with plain JSON Schema semantics: the
 // schema says which properties are required and which may be absent, so `properties` alone never implies presence.
 type ArgumentSchema struct {
-	schema *jsonschema.Schema
+	// Schema is the JSON Schema as the rule writes it.
+	Schema   *structpb.Struct
+	compiled *jsonschema.Schema
 }
 
 func (ArgumentSchema) Type() store.PolicyKind { return store.PolicyArgumentSchema }
@@ -44,7 +48,11 @@ func parseArgumentSchema(spec policyapi.ActionPolicy) (ArgumentSchema, error) {
 	if err != nil {
 		return ArgumentSchema{}, fmt.Errorf("schema is not a valid JSON Schema: %w", err)
 	}
-	return ArgumentSchema{schema: compiled}, nil
+	written := &structpb.Struct{}
+	if err := protojson.Unmarshal(spec.Schema.Raw, written); err != nil {
+		return ArgumentSchema{}, fmt.Errorf("schema is not a JSON object: %w", err)
+	}
+	return ArgumentSchema{Schema: written, compiled: compiled}, nil
 }
 
 // noDocuments loads no document a schema refers to; the library's default loader reads local files.
@@ -55,7 +63,7 @@ func (noDocuments) Load(url string) (any, error) {
 }
 
 func (k ArgumentSchema) evaluate(_ context.Context, action store.ActionIdentity, arguments map[string]any, _ *Visibility) Outcome {
-	err := k.schema.Validate(arguments)
+	err := k.compiled.Validate(arguments)
 	if err == nil {
 		return Matched{Explanation: fmt.Sprintf("arguments of %s/%s satisfy the schema", action.Group, action.Name)}
 	}

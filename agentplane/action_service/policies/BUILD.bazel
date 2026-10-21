@@ -274,6 +274,8 @@ go_library(
         "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
         "@io_k8s_apimachinery//pkg/util/cache",
         "@io_k8s_apimachinery//pkg/util/sets",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//types/known/structpb",
         "@org_golang_x_sync//singleflight",
         "@org_golang_x_text//cases",
     ],
