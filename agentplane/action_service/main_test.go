@@ -21,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
@@ -74,6 +75,8 @@ type running struct {
 	health    healthpb.HealthClient
 	actions   action_servicepb.ActionServiceClient
 	operators operator_action_servicepb.OperatorActionServiceClient
+	// connections is the MCP edge's ConnectionService, which the service serves until the edge is split out.
+	connections connection_servicepb.ConnectionServiceClient
 	// url is the base URL of the service's HTTP routes.
 	url string
 	// store is the service's database, and updates is signalled on every Event committed to it.
@@ -139,8 +142,9 @@ func start(t *testing.T, kubeConfig *rest.Config, groups *catalog.Catalog) runni
 	t.Cleanup(func() { connection.Close() })
 	return running{
 		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
-		operators: operator_action_servicepb.NewOperatorActionServiceClient(connection),
-		url:       "http://" + listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
+		operators:   operator_action_servicepb.NewOperatorActionServiceClient(connection),
+		connections: connection_servicepb.NewConnectionServiceClient(connection),
+		url:         "http://" + listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
 }
 
@@ -412,31 +416,42 @@ func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
 	}
 }
 
-// No operator is configured here, so the operator service refuses every bearer; refusing one shows the service is
+// No operator is configured here, so the operator services refuse every bearer; refusing one shows a service is
 // served and gated, where a service that is not served would answer UNIMPLEMENTED, and a route that is not, 404.
-func TestTheServiceGatesTheOperatorServiceOverGRPCAndHTTP(t *testing.T) {
+func TestTheServiceGatesTheOperatorServicesOverGRPCAndHTTP(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
+	asReader := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken)
 	decision := &operator_action_servicepb.DecideActionRequestRequest{
 		RequestId: uuid.NewString(), Verdict: action_servicepb.Verdict_VERDICT_ALLOW, ExpectedVersion: 1, IdempotencyKey: "test-decision",
 	}
-	if _, err := service.operators.DecideActionRequest(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken), decision); status.Code(err) != codes.Unauthenticated {
+	if _, err := service.operators.DecideActionRequest(asReader, decision); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("a reader's Decision over gRPC: %v", err)
 	}
-	call, err := http.NewRequestWithContext(ctx, http.MethodPost, service.url+"/v1/operator/action-requests/"+decision.GetRequestId()+"/decision",
-		strings.NewReader(`{"verdict": "VERDICT_ALLOW", "expected_version": 1, "idempotency_key": "test-decision"}`))
-	if err != nil {
-		t.Fatal(err)
+	if _, err := service.connections.ListConnections(asReader, &connection_servicepb.ListConnectionsRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("a reader's Connections over gRPC: %v", err)
 	}
-	call.Header.Set("Authorization", "Bearer "+readerToken)
-	response, err := http.DefaultClient.Do(call)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusUnauthorized {
-		t.Errorf("a reader's Decision over HTTP: %d", response.StatusCode)
+	for _, route := range []struct{ method, path, body string }{
+		{
+			http.MethodPost, "/v1/operator/action-requests/" + decision.GetRequestId() + "/decision",
+			`{"verdict": "VERDICT_ALLOW", "expected_version": 1, "idempotency_key": "test-decision"}`,
+		},
+		{http.MethodGet, "/v1/operator/connections", ""},
+	} {
+		call, err := http.NewRequestWithContext(ctx, route.method, service.url+route.path, strings.NewReader(route.body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		call.Header.Set("Authorization", "Bearer "+readerToken)
+		response, err := http.DefaultClient.Do(call)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusUnauthorized {
+			t.Errorf("a reader's %s %s over HTTP: %d", route.method, route.path, response.StatusCode)
+		}
 	}
 }
 

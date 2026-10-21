@@ -24,6 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -146,6 +147,8 @@ type served struct {
 	client      action_servicepb.ActionServiceClient
 	// operators is the OperatorActionService client.
 	operators operator_action_servicepb.OperatorActionServiceClient
+	// connections calls the MCP edge's ConnectionService, which the Gate admits; this server implements none of it.
+	connections connection_servicepb.ConnectionServiceClient
 	// url is the base URL of the HTTP facade.
 	url string
 	// operatorToken is a token the issuer signed for the operator.
@@ -339,6 +342,8 @@ func serveWithPolicy(
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, groups, s.gate, index, s.submissions(t)))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store))
+	// gRPC runs no interceptor for a service it does not serve, so a stub stands behind the Gate.
+	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connection_servicepb.UnimplementedConnectionServiceServer{})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -362,6 +367,7 @@ func serveWithPolicy(
 	t.Cleanup(func() { connection.Close() })
 	s.client = action_servicepb.NewActionServiceClient(connection)
 	s.operators = operator_action_servicepb.NewOperatorActionServiceClient(connection)
+	s.connections = connection_servicepb.NewConnectionServiceClient(connection)
 	s.url = "http://" + listener.Addr().String()
 	return s
 }

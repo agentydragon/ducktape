@@ -112,8 +112,9 @@ enrollments) and `WebPushService`. They live in files apart from `action_service
 "Schema unchanged" is not "stored data unchanged":
 
 - `external_connection.request_digest` is `sha256` of Pydantic's `request.model_dump_json()`; an idempotent retry
-  after cutover compares against it. `connection_enrollment.decision_digest` is the same over the decision request.
-  A different serialization turns every retry into a conflict.
+  after cutover compares against it. A different serialization turns every retry into a conflict.
+  (`connection_enrollment.decision_digest` need not match: no enrollment open at the flip can finish its code
+  exchange in Go.)
 - `handle_hash`, `browser_hash` and `mcp_linkage_flow.state_hash` are `sha256` hex of the raw string, and the PKCE
   challenge is the unpadded URL-safe base64 of `sha256` of the verifier.
 - `action_request.arguments`, `action_event.actor`, `action_execution.result` and `error`, and the scope lists are
@@ -131,7 +132,6 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | D     | Workload auth, catalog, decision providers and policy kinds with the GitHub visibility lookup, `ActionService`, the receipt stream, `docs/agents/`, `/openapi.json`.                                                          |
 | E     | Operator JWT as `ActionService`'s second principal with its wider reads, the set watches, the decision RPC.                                                                                                                   |
-| F     | Connections and enrollments: a package owning its tables, which the core store never imports; `ConnectionService`.                                                                                                            |
 | H     | Outbound linkage, its callback and the CIMD document; MCP-server RPCs; refreshing linked tokens, and waking an MCP group's supervisor when its linkage changes.                                                               |
 | I     | Web Push: package `push` behind one interface to the lifecycle; `WebPushService`.                                                                                                                                             |
 | J     | `/mcp` on `go-sdk` and the resource-server `TokenVerifier`, calling the core only through the `ActionService` interface.                                                                                                      |

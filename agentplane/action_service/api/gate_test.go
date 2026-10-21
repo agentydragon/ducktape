@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc/codes"
@@ -196,4 +197,20 @@ func TestAnRPCNotServedYetIsUnimplementedOnceAdmitted(t *testing.T) {
 	wantCode(t, "an admitted operator", err, codes.Unimplemented)
 	_, err = s.operators.ListMcpServers(as(t, "test-token-unknown"), &operator_action_servicepb.ListMcpServersRequest{})
 	wantCode(t, "an unknown token", err, codes.Unauthenticated)
+}
+
+// The Gate admits the MCP edge's Connection service as it admits the operator service: an operator's call passes it
+// to the fixture's stub, which implements nothing, while a workload's is refused before any TokenReview.
+func TestOnlyAnOperatorPassesTheGateToTheConnectionService(t *testing.T) {
+	reviews := &kubeapiserver.CountedReviews{TokenReviews: kube.TokenReviews()}
+	s := serveWith(t, reviews, &catalog.Catalog{})
+	for _, token := range []string{callerToken, readerToken} {
+		_, err := s.connections.ListConnections(as(t, token), &connection_servicepb.ListConnectionsRequest{})
+		wantCode(t, "a workload's call", err, codes.Unauthenticated)
+	}
+	if calls := reviews.Calls.Load(); calls != 0 {
+		t.Errorf("%d workload tokens reviewed", calls)
+	}
+	_, err := s.connections.ListConnections(as(t, s.operatorToken), &connection_servicepb.ListConnectionsRequest{})
+	wantCode(t, "an operator's call", err, codes.Unimplemented)
 }

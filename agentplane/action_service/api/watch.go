@@ -70,7 +70,7 @@ func (f follower) changed(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-recheck.C:
-			if err := f.gate.recheck(ctx); err != nil {
+			if err := f.gate.Recheck(ctx); err != nil {
 				return err
 			}
 		}
@@ -79,7 +79,7 @@ func (f follower) changed(ctx context.Context) error {
 
 // send checks the bearer again, then sends the frame.
 func send[Frame any](ctx context.Context, gate *Gate, stream grpc.ServerStreamingServer[Frame], frame *Frame) error {
-	if err := gate.recheck(ctx); err != nil {
+	if err := gate.Recheck(ctx); err != nil {
 		return err
 	}
 	return stream.Send(frame)

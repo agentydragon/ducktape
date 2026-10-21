@@ -96,6 +96,7 @@ go_test(
         "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
         "//agentplane/grpc/facade",
+        "//agentplane/mcp_edge:connection_service_go_proto",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
         "//agentplane/postgres/go/wakeups",

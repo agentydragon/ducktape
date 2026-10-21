@@ -1,0 +1,270 @@
+package connections
+
+import (
+	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+// An enrollment is the consent of one OAuth authorization in flight. The authorization server creates it and later
+// turns an allowed one into a grant; between the two, the operator who previews it first, from one browser, decides
+// it. Only hashes of the handle in the consent URL and of the browser's binding are stored.
+
+// operator is the person an operator call acts for: the issuer of their token and its subject.
+type operator struct{ issuer, subject string }
+
+type verdict string
+
+const (
+	verdictAllow verdict = "allow"
+	verdictDeny  verdict = "deny"
+)
+
+// enrollment is a consent as an operator previews and decides it.
+type enrollment struct {
+	id         uuid.UUID
+	clientID   string
+	clientName *string
+	// redirectURI is the OAuth client's; upstreamURL is where an allowed consent sends the browser next.
+	redirectURI, upstreamURL string
+	expiresAt                time.Time
+	version                  int64
+	// browserHash and the operator are those of the first preview; nil until then.
+	browserHash *string
+	operator    *operator
+	// verdict and decisionDigest are nil until the enrollment is decided.
+	verdict        *verdict
+	decisionDigest *string
+}
+
+// decision is an operator's decision on an enrollment.
+type decision struct {
+	browserBinding  string
+	expectedVersion int64
+	idempotencyKey  string
+	// allow is nil for a refusal.
+	allow *allowance
+}
+
+// allowance is a consent: the labeled account the Connection acts as, and the Connection.
+type allowance struct {
+	account    auth.Account
+	connection connectionChoice
+}
+
+// connectionChoice is the Connection a consent creates or replaces: newConnection or reconnection.
+type connectionChoice interface{ choice() }
+
+type newConnection struct{ displayName string }
+
+// reconnection replaces the authority of an existing Connection, as the operator reviewed it at expectedVersion.
+type reconnection struct {
+	id              uuid.UUID
+	expectedVersion int64
+}
+
+func (newConnection) choice() {}
+func (reconnection) choice()  {}
+
+// decisionResult is the recorded decision: where an allowed one sends the browser next.
+type decisionResult struct {
+	verdict     verdict
+	redirectURL *string
+}
+
+var (
+	errEnrollmentNotFound = status.Error(codes.NotFound, "enrollment not found")
+	errEnrollmentExpired  = status.Error(codes.FailedPrecondition, "enrollment expired; restart authorization")
+	errOtherBrowser       = status.Error(codes.PermissionDenied, "enrollment is bound to another browser or operator")
+)
+
+func digest(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
+}
+
+// lockEnrollment reads the live enrollment the handle names and locks it.
+func lockEnrollment(ctx context.Context, tx *sql.Tx, handle string) (enrollment, error) {
+	var e enrollment
+	var issuer, subject *string
+	err := tx.QueryRowContext(
+		ctx, `
+		SELECT id, client_id, client_name, redirect_uri, upstream_url, expires_at, version, browser_hash, operator_issuer,
+			operator_subject, verdict, decision_digest
+		FROM connection_enrollment WHERE handle_hash = $1 FOR UPDATE`, digest(handle),
+	).Scan(
+		&e.id, &e.clientID, &e.clientName, &e.redirectURI, &e.upstreamURL, &e.expiresAt, &e.version, &e.browserHash,
+		&issuer, &subject, &e.verdict, &e.decisionDigest,
+	)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return e, errEnrollmentNotFound
+	case err != nil:
+		return e, err
+	case !e.expiresAt.After(time.Now()):
+		return e, errEnrollmentExpired
+	}
+	if issuer != nil && subject != nil {
+		e.operator = &operator{issuer: *issuer, subject: *subject}
+	}
+	return e, nil
+}
+
+// requireBrowser refuses all but the browser and operator of the enrollment's first preview.
+func (e enrollment) requireBrowser(browserBinding string, by operator) error {
+	if e.browserHash == nil || subtle.ConstantTimeCompare([]byte(*e.browserHash), []byte(digest(browserBinding))) != 1 ||
+		e.operator == nil || *e.operator != by {
+		return errOtherBrowser
+	}
+	return nil
+}
+
+// previewEnrollment shows the operator the enrollment, which the first preview binds to its browser and operator.
+func (s *Store) previewEnrollment(ctx context.Context, handle, browserBinding string, by operator) (enrollment, error) {
+	var previewed enrollment
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		e, err := lockEnrollment(ctx, tx, handle)
+		if err != nil {
+			return err
+		}
+		if e.browserHash == nil {
+			hash := digest(browserBinding)
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE connection_enrollment SET browser_hash = $2, operator_issuer = $3, operator_subject = $4
+				WHERE id = $1`, e.id, hash, by.issuer, by.subject); err != nil {
+				return err
+			}
+			e.browserHash, e.operator = &hash, &by
+		}
+		previewed = e
+		return e.requireBrowser(browserBinding, by)
+	})
+	return previewed, err
+}
+
+// decisionDocument is what a decision's digest is taken of: every field of the decision, so only an exact retry has
+// the digest of the recorded one.
+type decisionDocument struct {
+	BrowserBinding  string           `json:"browser_binding"`
+	ExpectedVersion int64            `json:"expected_version"`
+	IdempotencyKey  string           `json:"idempotency_key"`
+	Verdict         verdict          `json:"verdict"`
+	Connection      any              `json:"connection,omitempty"`
+	ServiceAccount  *accountDocument `json:"service_account,omitempty"`
+}
+
+func (d decision) digest() (string, error) {
+	document := decisionDocument{
+		BrowserBinding: d.browserBinding, ExpectedVersion: d.expectedVersion, IdempotencyKey: d.idempotencyKey,
+		Verdict: verdictDeny,
+	}
+	if d.allow != nil {
+		document.Verdict = verdictAllow
+		account := accountDocument(d.allow.account)
+		document.ServiceAccount = &account
+		switch choice := d.allow.connection.(type) {
+		case newConnection:
+			document.Connection = map[string]any{"kind": "new", "display_name": choice.displayName}
+		case reconnection:
+			document.Connection = map[string]any{
+				"kind": "reconnect", "connection_id": choice.id, "expected_version": choice.expectedVersion,
+			}
+		}
+	}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		return "", err
+	}
+	return digest(string(encoded)), nil
+}
+
+// decideEnrollment records the operator's decision once. An exact retry answers with the recorded result; any other
+// decision after one is refused. An allow records the account and the Connection: it grants nothing until the
+// authorization server turns it into a grant.
+func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision, by operator) (decisionResult, error) {
+	recordedDigest, err := d.digest()
+	if err != nil {
+		return decisionResult{}, err
+	}
+	var result decisionResult
+	err = s.transaction(ctx, func(tx *sql.Tx) error {
+		e, err := lockEnrollment(ctx, tx, handle)
+		if err != nil {
+			return err
+		}
+		if err := e.requireBrowser(d.browserBinding, by); err != nil {
+			return err
+		}
+		if e.decisionDigest != nil {
+			if subtle.ConstantTimeCompare([]byte(*e.decisionDigest), []byte(recordedDigest)) != 1 {
+				return status.Error(codes.FailedPrecondition, "enrollment already has a different decision")
+			}
+			if e.verdict == nil {
+				return fmt.Errorf("%w: enrollment %s has a decision digest and no verdict", errStored, e.id)
+			}
+			result = e.result(*e.verdict)
+			return nil
+		}
+		if e.version != d.expectedVersion {
+			return status.Error(codes.Aborted, "enrollment version changed")
+		}
+		decided := verdictDeny
+		var caller any
+		var displayName *string
+		var connectionID *uuid.UUID
+		var connectionVersion *int64
+		if d.allow != nil {
+			if !s.labeled(d.allow.account) {
+				return status.Error(codes.PermissionDenied, notLabeled)
+			}
+			decided = verdictAllow
+			if caller, err = encodeAccount(d.allow.account); err != nil {
+				return err
+			}
+			switch choice := d.allow.connection.(type) {
+			case newConnection:
+				displayName = &choice.displayName
+			case reconnection:
+				var current int64
+				err := tx.QueryRowContext(ctx, `SELECT version FROM external_connection WHERE id = $1`, choice.id).Scan(&current)
+				switch {
+				case errors.Is(err, sql.ErrNoRows):
+					return errConnectionNotFound
+				case err != nil:
+					return err
+				case current != choice.expectedVersion:
+					return status.Error(codes.Aborted, "the Connection changed since it was reviewed; restart authorization")
+				}
+				connectionID, connectionVersion = &choice.id, &choice.expectedVersion
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE connection_enrollment SET verdict = $2, decision_digest = $3, version = version + 1, caller = $4::jsonb,
+				display_name = $5, connection_id = $6, connection_version = $7
+			WHERE id = $1`, e.id, decided, recordedDigest, caller, displayName, connectionID, connectionVersion); err != nil {
+			return err
+		}
+		result = e.result(decided)
+		return nil
+	})
+	return result, err
+}
+
+func (e enrollment) result(decided verdict) decisionResult {
+	result := decisionResult{verdict: decided}
+	if decided == verdictAllow {
+		result.redirectURL = &e.upstreamURL
+	}
+	return result
+}

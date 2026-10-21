@@ -1,9 +1,9 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
 // `ActionService`'s submission, request reads, watches and cancellation, its catalog reads and watch and the Action
-// policy, and `OperatorActionService`'s Decisions, over gRPC and their HTTP facade under /v1/, the agent documentation,
-// the standard gRPC health service and the process's Prometheus metrics at /metrics, runs the dispatch worker, which
-// runs the Actions of the sandbox groups and of the MCP groups, and keeps its policy index equal to the API server's.
-// The other RPCs answer UNIMPLEMENTED.
+// policy, `OperatorActionService`'s Decisions, and the MCP edge's `ConnectionService` until the edge is split out, over
+// gRPC and their HTTP facade under /v1/, the agent documentation, the standard gRPC health service and the process's
+// Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the sandbox groups and of the MCP
+// groups, and keeps its policy index equal to the API server's. The other RPCs answer UNIMPLEMENTED.
 package main
 
 import (
@@ -34,6 +34,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -255,7 +257,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		return err
 	}
 	defer db.Close()
-	hub, err := wakeups.Listen(ctx, c.DatabaseURL, store.UpdatesChannel, store.DispatchChannel)
+	hub, err := wakeups.Listen(ctx, c.DatabaseURL, store.UpdatesChannel, store.DispatchChannel, connections.UpdatesChannel)
 	if err != nil {
 		return fmt.Errorf("Action Service PostgreSQL listener unavailable: %w", err)
 	}
@@ -315,6 +317,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		Executors: actions, Provider: policies.NewProvider(visibility),
 	}))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests))
+	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connections.NewStore(db, policy), admission, hub))
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
 	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish
 	// while draining.
@@ -324,6 +327,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		facadeContext, listener.Addr().String(),
 		action_servicepb.RegisterActionServiceHandlerFromEndpoint,
 		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
+		connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint,
 	)
 	if err != nil {
 		return err
