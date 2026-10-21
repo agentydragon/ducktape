@@ -1725,7 +1725,7 @@ flowchart LR
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
     RUNNER_HARNESS_OBJECTS_DESIGN --> RUNNER_CODEX_SHARED_PROCESS[Blocked: share at most one Codex app-server per Runner]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_QUEUE_OPTIONAL[Blocked: the combined service runs without its queue]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN -.- DISPATCHER_QUEUE_OPTIONAL[Unscheduled: the combined service runs without its queue]
     K3S_VM_IMAGE -. real VM path prerequisite .-> CNPG_FREE_K3S_INTEGRATION_TIER
 ```
 
@@ -1748,16 +1748,18 @@ asked for) are added, before the operator approves. On approval
 
 ### `DISPATCHER_QUEUE_OPTIONAL` — the combined service runs without its queue
 
-**Blocked on `DISPATCHER_PERSISTENCE_MODEL_DESIGN` and the merge steps before it in
-[the plan](dispatcher_gateway_merge.md#order-of-work); operator, 2026-10-21 06:06 UTC: "No queue -> refuse whatever we
-cannot immediately confirm as having reached the runner".** Make the PostgreSQL queue of the combined
+**Unscheduled; operator, 2026-10-21 06:21 UTC: "maybe we can just prioritize this low and revisit it if I ever
+actually want this stateless mode".** Comes
+after the merge steps in [the plan](dispatcher_gateway_merge.md#order-of-work); operator, 2026-10-21 06:06 UTC: "No
+queue -> refuse whatever we cannot immediately confirm as having reached the runner". Make the PostgreSQL queue of the combined
 Dispatcher and Gateway service optional. With the queue off, the service accepts a command only once the runner
 holding the Sandbox's connection has confirmed receiving it, and refuses everything else (no connected runner, a
 suspended Sandbox, a delivery it cannot confirm) with the queue's own reasons; nothing is stored, and wake-on-send
 needs the queue. Image first: the database URL becomes optional and the immediate path lands; then a manifest
 renders the service without the queue database, Secret and migrator Job, and the K3s fixture drops the
 Gateway's PostgreSQL. Exit: tests of both modes over the same command states, and a queue-off deployment refusing
-a send to a suspended Sandbox.
+a send to a suspended Sandbox. Open before scheduling (operator, 06:21 UTC): the same request may be queued in one
+mode and refused in the other without the caller declaring it accepts queuing.
 
 ### `CNPG_FREE_K3S_INTEGRATION_TIER` — add a narrow database-independent integration tier
 
