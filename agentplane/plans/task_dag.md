@@ -33,7 +33,6 @@ flowchart LR
         ACTION_MCP_EDGE_SPLIT[Blocked: split mcp-edge out after the flip]
     end
     subgraph MESSAGING_TRACK[Agent messaging]
-        SANDBOX_INBOX_TAGS[Candidate: app presets set a launch's inbox tags]
         AGENT_MESSAGING[Capstone: end-to-end agent messaging]
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
     end
@@ -1947,15 +1946,10 @@ old paths.
 
 ## 14. Acceptance on k3s and retiring `agentplane-testing`
 
-**Proposed 2026-10-21 UTC. Nothing here is dispatchable until the operator approves
-[the plan](k3s_acceptance.md).**
-
-- The deployed acceptance scenarios take their deployment as a target: testing, staging, or the
-  disposable k3s stack in [`x/k3s_env`](../x/k3s_env/README.md). The Dispatcher and Pod storage
-  scenarios run on k3s (#11330, [acceptance README](../acceptance/README.md)).
-- They take a model backend: a real model, or a scripted one.
-- `agentplane-testing` goes.
-- k3s targets enter CI once they meet a time and reliability bar.
+**Approved 2026-10-21 UTC ([the plan](k3s_acceptance.md)).** Acceptance scenarios take a target (testing, staging or
+the disposable k3s stack in [`x/k3s_env`](../x/k3s_env/README.md)) and a model backend (real or scripted), and every
+`_k3s` target runs in PR CI ([acceptance README](../acceptance/README.md)). What remains: the model key and the
+real-model set on k3s, VM acceptance, and retiring `agentplane-testing`.
 
 The [K3s startup experiment constraints](#k3s-startup-experiment-constraints) still apply to fixture
 changes.
@@ -1986,7 +1980,7 @@ Question: which models, what budget, and is a BuildBuddy secret acceptable?
 ### `K3S_MODEL_SCENARIOS` — the real-model set on k3s
 
 **Blocked on `K3S_MODEL_CREDENTIALS`.** Only scenarios where the model's behavior is under test
-have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-backend)). Their
+have a real-model version. Their
 `_k3s_real` targets pass on both harnesses:
 
 - `test_session_instructions`
@@ -2089,8 +2083,8 @@ cases (check suspend/resume and storage).
 
 ### `K3S_ENV_OUT_OF_X` — the k3s stack leaves `x/`
 
-**Blocked on its targets running in PR CI (#11370), after which it is no longer experimental, and on the fixture and
-VM lanes no longer editing it.** Move `agentplane/x/k3s_env` to a stable home and update every reference (BUILD labels, acceptance
+**Blocked on the fixture and VM lanes no longer editing it; its targets run in PR CI (#11370), so it is no longer
+experimental.** Move `agentplane/x/k3s_env` to a stable home and update every reference (BUILD labels, acceptance
 targets, docs, workflows).
 
 ### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest

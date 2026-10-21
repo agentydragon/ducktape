@@ -79,6 +79,18 @@ templates, registration and lifecycle behavior stay the same. Image volumes need
 and the `ImageVolume` feature gate, which `stack.py` turns on in the API server and kubelet. This fixture
 split does not select a deployment-wide harness-delivery mechanism.
 
+## RBE executor constraints
+
+Probed 2026-10-21 with `bb execute` under the k3s target's isolation properties: kernel 5.15.0, no `/dev/kvm`
+(`CONFIG_KVM` unset, only `CONFIG_KVM_GUEST`) and no BPF JIT. So the stack runs no Cilium, KubeVirt only with
+software emulation, and kube-proxy with ClusterIP Services.
+
+**Gotcha:** rules_python's precompile (`pyc_collection = "include_pyc"`) fails on RBE, because the exec
+interpreter does not find its standard library. Each action compiles bytecode as it imports, about three
+quarters of import time; with the chart rendered at build time, imports still take 10–13 s before pytest starts
+([measurements](#fixture-chart-rendered-at-build-time-2026-10-21)). Worker speed dominates run-to-run variance
+([per-worker timings](#phase-timings-and-image-bytes-2026-10-21)), so a time budget has to hold on slow workers.
+
 ## Lifecycle coverage
 
 The model-free [lifecycle tests](test_lifecycle.py) wait for the Sandbox's own `Ready=True`
@@ -194,7 +206,7 @@ Three fresh `test_lifecycle` runs each, with temporary wall-clock markers
 | Manifest ready in the fixture (render / load) | 1.5, 1.3, 0.9    | 0.1, 0.1, 0.1    |
 
 What is left before pytest is 5–10 s of VM and workspace setup and the remaining imports, mostly
-bytecode compilation ([plan finding 2](../../plans/k3s_acceptance.md#findings-that-shape-the-plan)).
+bytecode compilation ([executor constraints](#rbe-executor-constraints)).
 
 The test process no longer builds the app's `Settings`, which parses argv, so pytest flags such as
 `--test_arg=-s` work on `test_lifecycle` and the `_k3s` acceptance targets
