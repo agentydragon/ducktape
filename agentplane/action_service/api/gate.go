@@ -28,10 +28,11 @@ var errDraining = errors.New("Action Service is draining")
 var unauthenticated = status.Error(codes.Unauthenticated, "invalid bearer")
 
 // The method prefixes of the services the Gate admits callers to; it lets every other call, such as the health
-// service's, through.
+// service's, through. The Connection service is the MCP edge's, served by this process until the edge is split out.
 const (
-	actionService   = "/agentplane.action_service.ActionService/"
-	operatorService = "/agentplane.action_service.OperatorActionService/"
+	actionService     = "/agentplane.action_service.ActionService/"
+	operatorService   = "/agentplane.action_service.OperatorActionService/"
+	connectionService = "/agentplane.mcp_edge.ConnectionService/"
 )
 
 // GateOptions are whom a Gate admits.
@@ -121,9 +122,18 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	return admission{principal: store.CallerPrincipal{Account: account}}, nil
 }
 
-// recheck verifies the call's bearer again, as a watch does before every frame: it fails once the bearer is no
+// Operator is the issuer and subject of the operator the Gate admitted a call of an operator-only service as.
+func (g *Gate) Operator(ctx context.Context) (issuer, subject string) {
+	operator := admitted(ctx).principal.(store.OperatorPrincipal)
+	return operator.Issuer, operator.Subject
+}
+
+// Draining is closed once the service drains.
+func (g *Gate) Draining() <-chan struct{} { return g.draining.Done() }
+
+// Recheck verifies the call's bearer again, as a watch does before every frame: it fails once the bearer is no
 // longer accepted as the principal the call was admitted as.
-func (g *Gate) recheck(ctx context.Context) error {
+func (g *Gate) Recheck(ctx context.Context) error {
 	current, err := g.authenticate(ctx)
 	if err != nil {
 		return err
@@ -160,7 +170,7 @@ func (g *Gate) authenticator(method string) func(context.Context) (admission, er
 	switch {
 	case strings.HasPrefix(method, actionService):
 		return g.authenticate
-	case strings.HasPrefix(method, operatorService):
+	case strings.HasPrefix(method, operatorService), strings.HasPrefix(method, connectionService):
 		return g.authenticateOperator
 	default:
 		return nil

@@ -63,6 +63,10 @@ func TestOnlyLabeledServiceAccountsOfTheCallerNamespacesAreAdmitted(t *testing.T
 			t.Errorf("%+v is admitted", refused)
 		}
 	}
+	// f.callers sorts before f.moreCallers.
+	if listed, available := f.index.CallerServiceAccounts(); !available || !slices.Equal(listed, []auth.Account{admitted, alsoAdmitted}) {
+		t.Errorf("the callers listed: %v, %v", listed, available)
+	}
 
 	delete(labeled.Labels, CallerLabel)
 	f.update(labeled)
@@ -72,6 +76,9 @@ func TestOnlyLabeledServiceAccountsOfTheCallerNamespacesAreAdmitted(t *testing.T
 	f.eventually("the label changes and the deletion to be followed", func() bool {
 		return !f.index.Admits(admitted) && f.index.Admits(unlabeled) && !f.index.Admits(alsoAdmitted)
 	})
+	if listed, available := f.index.CallerServiceAccounts(); !available || !slices.Equal(listed, []auth.Account{unlabeled}) {
+		t.Errorf("the callers listed after the changes: %v, %v", listed, available)
+	}
 }
 
 func TestNothingIsAdmittedOrResolvedWhileACallerNamespaceIsStale(t *testing.T) {
@@ -106,8 +113,8 @@ func TestNothingIsAdmittedOrResolvedWhileACallerNamespaceIsStale(t *testing.T) {
 	if status.Ages[held] <= status.StaleAfter || status.Ages[serviceAccounts(f.moreCallers)] > status.StaleAfter {
 		t.Errorf("unavailable for something else than the stalled namespace: %+v", status)
 	}
-	if f.index.Admits(caller) || f.index.ResolveBindings(subject) != nil {
-		t.Error("a stale index admits a caller or resolves its bindings")
+	if listed, available := f.index.CallerServiceAccounts(); f.index.Admits(caller) || f.index.ResolveBindings(subject) != nil || available || listed != nil {
+		t.Error("a stale index admits a caller, resolves its bindings or lists the callers")
 	}
 
 	release()

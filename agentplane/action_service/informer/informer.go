@@ -5,9 +5,12 @@
 package informer
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -87,6 +90,19 @@ func (i *Index) Admits(account auth.Account) bool {
 			"namespace", account.Namespace, "name", account.Name, "label", CallerLabel)
 	}
 	return labeled
+}
+
+// CallerServiceAccounts are the ServiceAccounts that carry the caller label now, in namespace and name order, and
+// whether the Index was available to read them: none when it was not.
+func (i *Index) CallerServiceAccounts() ([]auth.Account, bool) {
+	if !i.Freshness.Available(time.Now()) {
+		return nil, false
+	}
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	return slices.SortedFunc(maps.Keys(i.callers), func(a, b auth.Account) int {
+		return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
+	}), true
 }
 
 // Resolve is the subject's PolicyBindings in name order, each with how the sets it names stand, and whether the Index

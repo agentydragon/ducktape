@@ -73,7 +73,10 @@ go_library(
     srcs = ["migrations.go"],
     embedsrcs = glob(["actions/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/migrations",
-    visibility = ["//agentplane/action_service:__subpackages__"],
+    visibility = [
+        "//agentplane/action_service:__subpackages__",
+        "//agentplane/mcp_edge:__subpackages__",
+    ],
     deps = [
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
