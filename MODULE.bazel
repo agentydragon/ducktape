@@ -287,8 +287,8 @@ oci.pull(
     tag = "18.6-minimal-trixie",
 )
 
-# Bare-k3s fixture, for MCP scenarios: Dex, the image agentplane-testing runs, and `mcp-everything`
-# (//cluster/cdk8s/agentplane:{dex,actions_testing_fixtures}).
+# Bare-k3s fixture: the Dex and `mcp-everything` images agentplane-testing runs
+# (//cluster/cdk8s/agentplane:{dex,actions_testing_fixtures}), for MCP scenarios.
 oci.pull(
     name = "dex",
     digest = "sha256:8499afd690c437f52301efd2b05b2455da5bd2dfc20332cd697dc9937f808462",

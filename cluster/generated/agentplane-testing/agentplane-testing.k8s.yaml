@@ -5055,28 +5055,6 @@ rules:
     verbs:
       - get
   - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - policysets
-    verbs:
-      - create
-      - get
-      - list
-      - watch
-      - patch
-      - delete
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - policybindings
-    verbs:
-      - create
-      - get
-      - list
-      - watch
-      - patch
-      - delete
-  - apiGroups:
       - ""
     resourceNames:
       - agentplane-agent

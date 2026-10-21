@@ -286,14 +286,6 @@ _DISPATCHER_ACCEPTANCE_RULES = [
     RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["delete"]),
 ]
 
-# testing's MCP acceptance scenario additionally creates, expires, and deletes the
-# PolicySet/PolicyBinding its Sandbox is auto-approved under, reading the binding's
-# ActionsReady condition to know the Action Service has seen it.
-_ACTION_POLICY_RULE = RolePolicyRule(
-    resources=[custom_resource(GROUP, "policysets"), custom_resource(GROUP, "policybindings")],
-    verbs=["create", "get", "list", "watch", "patch", "delete"],
-)
-
 
 class AgentRbac(Construct):
     """The operator Role/RoleBinding an agent needs to drive Agentplane **testing**
@@ -317,7 +309,7 @@ class AgentRbac(Construct):
             self,
             "role",
             metadata=ApiObjectMetadata(name=TESTING_OPERATOR_ROLE_NAME, namespace=env.namespace),
-            rules=[*_SANDBOX_RULES, _ACTION_POLICY_RULE, _TOKEN_RULE, *_DISPATCHER_ACCEPTANCE_RULES],
+            rules=[*_SANDBOX_RULES, _TOKEN_RULE, *_DISPATCHER_ACCEPTANCE_RULES],
         )
 
         RoleBinding(
@@ -337,7 +329,7 @@ class AcceptanceToken(Construct):
     """Lets `agentplane-staging`'s `claude-ai` and `haku-agent` mint this namespace's app token,
     so their sandboxes can run the acceptance suite's harness scenarios
     (`agentplane/acceptance/README.md`), which ask the API server for nothing else. None of
-    `AgentRbac`'s Sandbox lifecycle, exec or PolicySet and PolicyBinding writes are granted by this Role:
+    `AgentRbac`'s Sandbox lifecycle or exec rights are granted by this Role:
     the token is an identity for the app, as `_TOKEN_RULE` says. `claude-ai` separately
     receives `AgentRbac` in testing; `haku-agent` does not.
     """
