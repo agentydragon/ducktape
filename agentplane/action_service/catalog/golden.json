@@ -2772,5 +2772,809 @@
    "name": "direct tools in a group whose key holds the separator",
    "valid": false
   }
+ ],
+ "arguments": [
+  {
+   "arguments": {
+    "count": 2,
+    "owner": "test-owner"
+   },
+   "name": "an object that satisfies its schema",
+   "outcome": "satisfied",
+   "schema": {
+    "additionalProperties": false,
+    "properties": {
+     "count": {
+      "minimum": 1,
+      "type": "integer"
+     },
+     "owner": {
+      "maxLength": 39,
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "count": 2
+   },
+   "name": "a missing required property",
+   "outcome": "not_satisfied",
+   "schema": {
+    "additionalProperties": false,
+    "properties": {
+     "count": {
+      "minimum": 1,
+      "type": "integer"
+     },
+     "owner": {
+      "maxLength": 39,
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "owner": 5
+   },
+   "name": "a property of the wrong type",
+   "outcome": "not_satisfied",
+   "schema": {
+    "additionalProperties": false,
+    "properties": {
+     "count": {
+      "minimum": 1,
+      "type": "integer"
+     },
+     "owner": {
+      "maxLength": 39,
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "extra": true,
+    "owner": "test-owner"
+   },
+   "name": "an additional property",
+   "outcome": "not_satisfied",
+   "schema": {
+    "additionalProperties": false,
+    "properties": {
+     "count": {
+      "minimum": 1,
+      "type": "integer"
+     },
+     "owner": {
+      "maxLength": 39,
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "owner": "\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d"
+   },
+   "name": "a string at its maximum length in code points",
+   "outcome": "satisfied",
+   "schema": {
+    "additionalProperties": false,
+    "properties": {
+     "count": {
+      "minimum": 1,
+      "type": "integer"
+     },
+     "owner": {
+      "maxLength": 39,
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "owner": "oooooooooooooooooooooooooooooooooooooooo"
+   },
+   "name": "a string over its maximum length",
+   "outcome": "not_satisfied",
+   "schema": {
+    "additionalProperties": false,
+    "properties": {
+     "count": {
+      "minimum": 1,
+      "type": "integer"
+     },
+     "owner": {
+      "maxLength": 39,
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "count": 0,
+    "owner": "test-owner"
+   },
+   "name": "an integer below its minimum",
+   "outcome": "not_satisfied",
+   "schema": {
+    "additionalProperties": false,
+    "properties": {
+     "count": {
+      "minimum": 1,
+      "type": "integer"
+     },
+     "owner": {
+      "maxLength": 39,
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "count": 2.0,
+    "owner": "test-owner"
+   },
+   "name": "an integral float as an integer",
+   "outcome": "satisfied",
+   "schema": {
+    "additionalProperties": false,
+    "properties": {
+     "count": {
+      "minimum": 1,
+      "type": "integer"
+     },
+     "owner": {
+      "maxLength": 39,
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "count": 2.5,
+    "owner": "test-owner"
+   },
+   "name": "a fraction as an integer",
+   "outcome": "not_satisfied",
+   "schema": {
+    "additionalProperties": false,
+    "properties": {
+     "count": {
+      "minimum": 1,
+      "type": "integer"
+     },
+     "owner": {
+      "maxLength": 39,
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "anything": [
+     1,
+     {
+      "nested": null
+     }
+    ]
+   },
+   "name": "the empty schema",
+   "outcome": "satisfied",
+   "schema": {}
+  },
+  {
+   "arguments": {},
+   "name": "no arguments where none is required",
+   "outcome": "satisfied",
+   "schema": {
+    "properties": {
+     "a": {
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "state": "open"
+   },
+   "name": "an enum member",
+   "outcome": "satisfied",
+   "schema": {
+    "properties": {
+     "state": {
+      "enum": [
+       "open",
+       "closed"
+      ]
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "state": "merged"
+   },
+   "name": "not an enum member",
+   "outcome": "not_satisfied",
+   "schema": {
+    "properties": {
+     "state": {
+      "enum": [
+       "open",
+       "closed"
+      ]
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "note": null
+   },
+   "name": "a null where null is allowed",
+   "outcome": "satisfied",
+   "schema": {
+    "properties": {
+     "note": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "note": null
+   },
+   "name": "a null where it is not",
+   "outcome": "not_satisfied",
+   "schema": {
+    "properties": {
+     "note": {
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "a": "x"
+   },
+   "name": "a local $ref, satisfied",
+   "outcome": "satisfied",
+   "schema": {
+    "$defs": {
+     "name": {
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "properties": {
+     "a": {
+      "$ref": "#/$defs/name"
+     }
+    }
+   }
+  },
+  {
+   "arguments": {
+    "a": ""
+   },
+   "name": "a local $ref, not satisfied",
+   "outcome": "not_satisfied",
+   "schema": {
+    "$defs": {
+     "name": {
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "properties": {
+     "a": {
+      "$ref": "#/$defs/name"
+     }
+    }
+   }
+  },
+  {
+   "arguments": {
+    "a": 1
+   },
+   "name": "a draft-07 definitions $ref",
+   "outcome": "not_satisfied",
+   "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+     "n": {
+      "type": "string"
+     }
+    },
+    "properties": {
+     "a": {
+      "$ref": "#/definitions/n"
+     }
+    }
+   }
+  },
+  {
+   "arguments": {
+    "a": "x"
+   },
+   "name": "a remote $ref",
+   "outcome": "fault",
+   "schema": {
+    "properties": {
+     "a": {
+      "$ref": "https://schema.test/name.json"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "a": "x"
+   },
+   "name": "a file $ref",
+   "outcome": "fault",
+   "schema": {
+    "properties": {
+     "a": {
+      "$ref": "file:///etc/hostname"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "a": "x"
+   },
+   "name": "a local $ref to nowhere",
+   "outcome": "fault",
+   "schema": {
+    "properties": {
+     "a": {
+      "$ref": "#/$defs/missing"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {},
+   "name": "a schema that is not a JSON Schema",
+   "outcome": "fault",
+   "schema": {
+    "type": 5
+   }
+  },
+  {
+   "arguments": {
+    "a": "x"
+   },
+   "name": "a negative minLength",
+   "outcome": "fault",
+   "schema": {
+    "properties": {
+     "a": {
+      "minLength": -1,
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "url": "not a uri"
+   },
+   "name": "a uri format in draft-07, not a URI",
+   "outcome": "satisfied",
+   "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "properties": {
+     "url": {
+      "format": "uri",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "email": "nobody"
+   },
+   "name": "an email format in draft-07, not an address",
+   "outcome": "satisfied",
+   "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "properties": {
+     "email": {
+      "format": "email",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "id": "x"
+   },
+   "name": "a uuid format in draft-04, not a UUID",
+   "outcome": "satisfied",
+   "schema": {
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "properties": {
+     "id": {
+      "format": "uuid",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "at": "soon"
+   },
+   "name": "a date-time format in 2020-12, not a time",
+   "outcome": "satisfied",
+   "schema": {
+    "properties": {
+     "at": {
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "p": "("
+   },
+   "name": "a regex format in draft-07, not a regex",
+   "outcome": "satisfied",
+   "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "properties": {
+     "p": {
+      "format": "regex",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "n": 5
+   },
+   "name": "a draft-04 exclusiveMaximum as a boolean",
+   "outcome": "not_satisfied",
+   "schema": {
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "properties": {
+     "n": {
+      "exclusiveMaximum": true,
+      "maximum": 5,
+      "type": "number"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "a": 1
+   },
+   "name": "draft-07 dependencies",
+   "outcome": "not_satisfied",
+   "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "dependencies": {
+     "a": [
+      "b"
+     ]
+    }
+   }
+  },
+  {
+   "arguments": {
+    "a": 1
+   },
+   "name": "dependentRequired in 2020-12",
+   "outcome": "not_satisfied",
+   "schema": {
+    "dependentRequired": {
+     "a": [
+      "b"
+     ]
+    }
+   }
+  },
+  {
+   "arguments": {
+    "a": 1
+   },
+   "name": "dependencies in 2020-12",
+   "outcome": "satisfied",
+   "schema": {
+    "dependencies": {
+     "a": [
+      "b"
+     ]
+    }
+   }
+  },
+  {
+   "arguments": {
+    "a": 1
+   },
+   "name": "draft 2019-09",
+   "outcome": "satisfied",
+   "schema": {
+    "$schema": "https://json-schema.org/draft/2019-09/schema",
+    "required": [
+     "a"
+    ]
+   }
+  },
+  {
+   "arguments": {},
+   "name": "an unknown $schema",
+   "outcome": "not_satisfied",
+   "schema": {
+    "$schema": "https://schema.test/unknown",
+    "required": [
+     "a"
+    ]
+   }
+  },
+  {
+   "arguments": {
+    "n": 0.3
+   },
+   "name": "0.3 as a multiple of 0.1",
+   "outcome": "not_satisfied",
+   "schema": {
+    "properties": {
+     "n": {
+      "multipleOf": 0.1
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "n": 9007199254740991
+   },
+   "name": "the largest exact integer",
+   "outcome": "satisfied",
+   "schema": {
+    "properties": {
+     "n": {
+      "maximum": 9007199254740991,
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "name": "abc"
+   },
+   "name": "a pattern that matches",
+   "outcome": "satisfied",
+   "schema": {
+    "properties": {
+     "name": {
+      "pattern": "^[a-z]+$"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "name": "ABC"
+   },
+   "name": "a pattern that does not match",
+   "outcome": "not_satisfied",
+   "schema": {
+    "properties": {
+     "name": {
+      "pattern": "^[a-z]+$"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "name": "user"
+   },
+   "name": "a lookahead pattern",
+   "outcome": "satisfied",
+   "schema": {
+    "properties": {
+     "name": {
+      "pattern": "^(?!admin).*$",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "xs": [
+     1,
+     true
+    ]
+   },
+   "name": "uniqueItems with 1 and true",
+   "outcome": "satisfied",
+   "schema": {
+    "properties": {
+     "xs": {
+      "type": "array",
+      "uniqueItems": true
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "xs": [
+     1,
+     1.0
+    ]
+   },
+   "name": "uniqueItems with 1 and 1.0",
+   "outcome": "not_satisfied",
+   "schema": {
+    "properties": {
+     "xs": {
+      "type": "array",
+      "uniqueItems": true
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "owner": "o",
+    "perPage": 30,
+    "repo": "r",
+    "since": "today"
+   },
+   "name": "an MCP tool's schema, satisfied",
+   "outcome": "satisfied",
+   "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+     "owner": {
+      "description": "Repository owner",
+      "type": "string"
+     },
+     "perPage": {
+      "maximum": 100,
+      "minimum": 1,
+      "type": "number"
+     },
+     "repo": {
+      "type": "string"
+     },
+     "since": {
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner",
+     "repo"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "owner": "o",
+    "perPage": 0,
+    "repo": "r"
+   },
+   "name": "an MCP tool's schema, a number out of range",
+   "outcome": "not_satisfied",
+   "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+     "owner": {
+      "description": "Repository owner",
+      "type": "string"
+     },
+     "perPage": {
+      "maximum": 100,
+      "minimum": 1,
+      "type": "number"
+     },
+     "repo": {
+      "type": "string"
+     },
+     "since": {
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner",
+     "repo"
+    ],
+    "type": "object"
+   }
+  }
  ]
 }

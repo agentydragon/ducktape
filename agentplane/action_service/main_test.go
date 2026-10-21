@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -31,6 +32,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
+	"gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -72,10 +75,11 @@ type running struct {
 	stop func() error
 }
 
-// start serves over a database of its own, reading the policy objects of the API server policy reaches.
-func start(t *testing.T, policy *rest.Config) running {
+// start serves the groups over a database of its own, reading the policy objects of the API server policy reaches.
+func start(t *testing.T, policy *rest.Config, groups *catalog.Catalog) running {
 	t.Helper()
 	c := defaultConfig()
+	c.ActionGroups = groups
 	c.DatabaseURL = integrationDatabase.Clone(t)
 	c.TokenAudience = testAudience
 	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
@@ -139,16 +143,20 @@ func checkHealth(t *testing.T, client healthpb.HealthClient, service string) (he
 	return response.GetStatus(), err
 }
 
-func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testing.T) {
-	service := start(t, kube.Config)
-	// Ready once the policy index has listed.
-	err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
+// waitReady returns once the service is ready, which it is once the policy index has listed.
+func waitReady(t *testing.T, service running) {
+	t.Helper()
+	if err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
 		got, err := checkHealth(t, service.health, "")
 		return got == healthpb.HealthCheckResponse_SERVING, err
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("the service never turned ready: %v", err)
 	}
+}
+
+func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testing.T) {
+	service := start(t, kube.Config, &catalog.Catalog{})
+	waitReady(t, service)
 	if got, err := checkHealth(t, service.health, probes.LivenessService); err != nil || got != healthpb.HealthCheckResponse_SERVING {
 		t.Errorf("liveness = %v, %v; want SERVING", got, err)
 	}
@@ -182,14 +190,19 @@ func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testi
 	}
 }
 
-func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {
-	// An API server that refuses every connection: the policy index never lists.
+// refusingAPIServer reaches an API server that refuses every connection, so a policy index of it never lists.
+func refusingAPIServer(t *testing.T) *rest.Config {
+	t.Helper()
 	refusing, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	refusing.Close()
-	service := start(t, &rest.Config{Host: "http://" + refusing.Addr().String()})
+	return &rest.Config{Host: "http://" + refusing.Addr().String()}
+}
+
+func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {
+	service := start(t, refusingAPIServer(t), &catalog.Catalog{})
 	if got, err := checkHealth(t, service.health, ""); err != nil || got != healthpb.HealthCheckResponse_NOT_SERVING {
 		t.Errorf("readiness = %v, %v; want NOT_SERVING", got, err)
 	}
@@ -200,7 +213,7 @@ func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {
 }
 
 func TestTheServiceRunsTheDispatchWorkerWhichHasNoExecutorYet(t *testing.T) {
-	service := start(t, kube.Config)
+	service := start(t, kube.Config, &catalog.Catalog{})
 	operator := store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 	pending, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
 		store.ActionRequestInput{
@@ -241,7 +254,7 @@ func TestTheServiceRunsTheDispatchWorkerWhichHasNoExecutorYet(t *testing.T) {
 }
 
 func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
-	service := start(t, kube.Config)
+	service := start(t, kube.Config, &catalog.Catalog{})
 	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-read", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
@@ -284,7 +297,7 @@ func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
 // No operator is configured here, so the operator service refuses every bearer; refusing one shows the service is
 // served and gated, where a service that is not served would answer UNIMPLEMENTED, and a route that is not, 404.
 func TestTheServiceGatesTheOperatorServiceOverGRPCAndHTTP(t *testing.T) {
-	service := start(t, kube.Config)
+	service := start(t, kube.Config, &catalog.Catalog{})
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
 	decision := &operator_action_servicepb.DecideActionRequestRequest{
@@ -370,7 +383,7 @@ func listOverHTTP(t *testing.T, service running, bearer string) (int, *action_se
 }
 
 func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t *testing.T) {
-	service := start(t, kube.Config)
+	service := start(t, kube.Config, &catalog.Catalog{})
 	caller := auth.Account{Namespace: readerAccount.Namespace, Name: "test-labeled-caller"}
 	setCallerLabel(t, caller, false)
 	token, err := kube.WorkloadToken(t.Context(), caller, testAudience)
@@ -385,13 +398,8 @@ func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Ready once the policy index has listed, which then vouches that the account carries no label.
-	if err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
-		got, err := checkHealth(t, service.health, "")
-		return got == healthpb.HealthCheckResponse_SERVING, err
-	}); err != nil {
-		t.Fatalf("the service never turned ready: %v", err)
-	}
+	// The index, once listed, vouches that the account carries no label.
+	waitReady(t, service)
 	refused := func(when string) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
@@ -423,4 +431,92 @@ func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t 
 	setCallerLabel(t, caller, false)
 	listOverGRPC(t, service, token, codes.Unauthenticated)
 	refused("unlabeled again")
+}
+
+// offlineGroups is one group, which is unavailable.
+const offlineGroups = `
+test-offline:
+  title: t
+  description: d
+  executor: {kind: mcp, description: e}
+  available: false
+  actions: {test-action: {description: d}}
+`
+
+// submitOverHTTP submits the body through the HTTP facade, and answers the status code.
+func submitOverHTTP(t *testing.T, service running, bearer, body string) int {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+	call, err := http.NewRequestWithContext(ctx, http.MethodPost, service.url+"/v1/action-requests", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	call.Header.Set("Authorization", "Bearer "+bearer)
+	response, err := http.DefaultClient.Do(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	return response.StatusCode
+}
+
+// The service runs no Executor yet, so no submission is stored here: these refusals show that submission is served
+// against the configured catalog, behind the Gate's policy index.
+func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmitsTheCaller(t *testing.T) {
+	var settings catalog.Settings
+	if err := yaml.Unmarshal([]byte(offlineGroups), &settings); err != nil {
+		t.Fatal(err)
+	}
+	groups, err := catalog.New(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller := auth.Account{Namespace: readerAccount.Namespace, Name: "test-submitter"}
+	setCallerLabel(t, caller, true)
+	token, err := kube.WorkloadToken(t.Context(), caller, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	submit := func(service running, group string) error {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+		defer cancel()
+		_, err := service.actions.SubmitActionRequest(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token),
+			&action_servicepb.SubmitActionRequestRequest{
+				IdempotencyKey: "test-submission", Action: &action_servicepb.ActionIdentity{Group: group, Name: "test-action"},
+				Arguments: &structpb.Struct{}, Title: "test title",
+			})
+		return err
+	}
+	body := func(group string) string {
+		return `{"idempotency_key": "test-submission", "action": {"group": "` + group + `", "name": "test-action"},
+			"arguments": {}, "title": "test title"}`
+	}
+
+	service := start(t, kube.Config, groups)
+	waitReady(t, service)
+	for group, want := range map[string]struct {
+		code   codes.Code
+		status int
+	}{
+		"test-offline": {codes.Unavailable, http.StatusServiceUnavailable},
+		"test-unknown": {codes.InvalidArgument, http.StatusBadRequest},
+	} {
+		if err := submit(service, group); status.Code(err) != want.code {
+			t.Errorf("%s over gRPC: %v, want %v", group, err, want.code)
+		}
+		if got := submitOverHTTP(t, service, token, body(group)); got != want.status {
+			t.Errorf("%s over HTTP: %d, want %d", group, got, want.status)
+		}
+	}
+
+	// The policy index never lists, so it admits no caller.
+	unindexed := start(t, refusingAPIServer(t), groups)
+	if err := submit(unindexed, "test-offline"); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("without the policy index, over gRPC: %v, want UNAUTHENTICATED", err)
+	}
+	if got := submitOverHTTP(t, unindexed, token, body("test-offline")); got != http.StatusUnauthorized {
+		t.Errorf("without the policy index, over HTTP: %d, want 401", got)
+	}
 }
