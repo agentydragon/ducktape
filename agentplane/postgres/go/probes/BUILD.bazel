@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "probes",
+    srcs = ["probes.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/postgres/go/probes",
+    deps = [
+        "//agentplane/postgres/go/wakeups",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "integration_test",
+    size = "medium",
+    srcs = [
+        "integration_testmain_test.go",
+        "probes_test.go",
+    ],
+    embed = [":probes"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/postgres/go/wakeups",
+        "//agentplane/testing/postgres",
+        "@com_github_lib_pq//:pq",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+    ],
+)

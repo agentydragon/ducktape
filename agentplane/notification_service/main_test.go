@@ -26,8 +26,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/actions"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -230,7 +229,7 @@ func TestTheServiceAnswersHealthChecksAndCallsAndStopsWhenTold(t *testing.T) {
 	for _, check := range []struct {
 		service string
 		want    healthpb.HealthCheckResponse_ServingStatus
-	}{{"", healthpb.HealthCheckResponse_SERVING}, {livenessService, healthpb.HealthCheckResponse_SERVING}} {
+	}{{"", healthpb.HealthCheckResponse_SERVING}, {probes.LivenessService, healthpb.HealthCheckResponse_SERVING}} {
 		if got, err := checkHealth(t, service.health, check.service); err != nil || got != check.want {
 			t.Errorf("health of %q = %v, %v; want %v", check.service, got, err, check.want)
 		}
@@ -289,36 +288,6 @@ func TestAWorkerThatStopsEndsTheServiceWithoutSayingWhy(t *testing.T) {
 	}
 	if _, err := checkHealth(t, service.health, ""); err == nil {
 		t.Error("the service answered after a worker stopped")
-	}
-}
-
-func TestReadinessNeedsTheWakeupsTheDatabaseAndAServiceThatIsNotStopping(t *testing.T) {
-	for name, spoil := range map[string]func(p *probes){
-		"stopping":    func(p *probes) { p.draining.Store(true) },
-		"no wakeups":  func(p *probes) { p.hub.Close() },
-		"no database": func(p *probes) { p.db.Close() },
-	} {
-		t.Run(name, func(t *testing.T) {
-			hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, store.WorkChannel)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { hub.Close() })
-			p := &probes{db: testDatabase(t), hub: hub}
-			request := &healthpb.HealthCheckRequest{}
-			if response, err := p.Check(t.Context(), request); err != nil || response.GetStatus() != healthpb.HealthCheckResponse_SERVING {
-				t.Fatalf("a healthy service is %v, %v", response.GetStatus(), err)
-			}
-			spoil(p)
-			if response, err := p.Check(t.Context(), request); err != nil || response.GetStatus() != healthpb.HealthCheckResponse_NOT_SERVING {
-				t.Errorf("readiness = %v, %v; want NOT_SERVING", response.GetStatus(), err)
-			}
-			// Liveness never follows the dependencies, so that waiting out their outage restarts nothing.
-			response, err := p.Check(t.Context(), &healthpb.HealthCheckRequest{Service: livenessService})
-			if err != nil || response.GetStatus() != healthpb.HealthCheckResponse_SERVING {
-				t.Errorf("liveness = %v, %v; want SERVING", response.GetStatus(), err)
-			}
-		})
 	}
 }
 

@@ -136,6 +136,7 @@ go_library(
         "//agentplane/notification_service/store",
         "//agentplane/notification_service/webhook",
         "//agentplane/notification_service/worker",
+        "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
@@ -148,9 +149,7 @@ go_library(
         "@io_k8s_client_go//rest",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//health/grpc_health_v1",
-        "@org_golang_google_grpc//status",
     ],
 )
 
@@ -203,8 +202,7 @@ go_test(
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/notification_service/actions",
         "//agentplane/notification_service/migrations",
-        "//agentplane/notification_service/store",
-        "//agentplane/postgres/go/wakeups",
+        "//agentplane/postgres/go/probes",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
