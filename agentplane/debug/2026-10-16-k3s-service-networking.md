@@ -67,6 +67,12 @@ been given a new real lifecycle run; its PR reports current CI separately.
 
 ## Conditions for retrying standard networking
 
+**2026-10-21 probe:** a `bb execute` action with the k3s target's isolation properties (Firecracker,
+pinned RBE image, `recycle-runner=false`) saw kernel `5.15.0` with `MARK` in
+`/proc/net/ip_tables_targets` (`CONFIG_NETFILTER_XT_MARK=y`), and legacy `iptables` v1.8.10 inserted
+and deleted both a mangle `MARK --set-xmark 0x4000/0x4000` rule and a nat `-m mark` rule. Condition 1's
+rule check passes on that executor, so condition 2 does not arise; condition 3 has not been run.
+
 1. On a candidate executor, first use a small remote action to verify actual insertion/removal of
    the mark match/target rules kube-proxy needs, plus the namespace, mount and network privileges
    required by k3s. Module filenames or a different container image alone are insufficient.

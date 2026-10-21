@@ -80,6 +80,56 @@ constructs, one plain PostgreSQL instance, and a pinned K3s binary. Electric and
 frontend remain outside this test. Earlier snapshots below use different source revisions;
 only each explicitly paired experiment supports its own comparison.
 
+### Phase timings and image bytes, 2026-10-21
+
+Pytest time of every passing `test_lifecycle` run BuildBuddy holds, by UTC day (each day mixes
+branches, and some runs carried temporary profilers; only the paired sections below isolate a change):
+
+| Day   | Landed that day                                            | Runs | Median s | Range s |
+| ----- | ---------------------------------------------------------- | ---: | -------: | ------: |
+| 10-14 | OCI-layout streaming                                       |    5 |      723 | 534–957 |
+| 10-15 | shared Python interpreter layer                            |   13 |      721 | 336–874 |
+| 10-16 | Go Gateway/Dispatcher fixture                              |    3 |      293 | 254–338 |
+| 10-17 | harness-free runner, Go egress sidecar, Go LLM ingress     |   17 |      204 | 157–309 |
+| 10-21 | Go History and Notifications, k3s 1.34, runner disk volume |    5 |      158 |  98–318 |
+
+Three fresh runs on `c0d2b833` ([invocation](https://app.buildbuddy.io/invocation/703e55fa-95f8-41bc-9cc1-c8b6d9aeb2f1),
+`--runs_per_test=3 --nocache_test_results`) passed all four cases. Temporary markers in `stack.py`,
+not committed, wrote wall-clock phase times; the RBE execution metadata gives the action start and end:
+
+| Seconds on each worker                              | Fast | Middle | Slow |
+| --------------------------------------------------- | ---: | -----: | ---: |
+| Before pytest starts                                |   27 |     78 |   41 |
+| k3s up, CoreDNS moved to the node                   |   13 |     15 |   25 |
+| Image import: streaming the blobs to containerd     |   21 |     30 |   54 |
+| Image import: containerd finishing after the stream |   13 |     30 |   35 |
+| CRDs and manifests applied                          |    3 |      5 |    7 |
+| All Deployments Available                           |   31 |     35 |   53 |
+| The four lifecycle cases                            |   40 |     40 |   42 |
+| Teardown and upload                                 |    7 |      6 |   12 |
+| Action execution                                    |  156 |    241 |  269 |
+
+PostgreSQL started in about 2 s in every run; each service with a migration init container failed
+its first connection and waited one 10 s `CrashLoopBackOff` before starting. In the slower
+[ffa9564c](https://app.buildbuddy.io/invocation/ffa9564c-3c9d-4937-b091-9fc8b191104d) run (318 s
+pytest, 421 s action, 586 CPU-seconds) the back-offs reached 40 s; in
+[a973af66](https://app.buildbuddy.io/invocation/a973af66-e28b-48b9-8ae2-c1111feeb441) the same
+fixture took 98 s pytest, 131 s action and 166 CPU-seconds.
+
+The import is 84 distinct blobs, 938,776,320 bytes. Stored layer bytes by image group, from the
+build outputs of the same revision (PostgreSQL from its pinned descriptor sizes):
+
+| Images                                                                                                          |   MiB |
+| --------------------------------------------------------------------------------------------------------------- | ----: |
+| Python: app, app migrate, Action Service, Action migrate                                                        | 410.7 |
+| Go: Gateway, egress, Notifications, Sandbox Controller, History, Policy Controller, LLM ingress, egress sidecar | 313.0 |
+| Goose migrators (4)                                                                                             |  24.9 |
+| Runner disk image and the tools image's own layers                                                              |  68.0 |
+| PostgreSQL                                                                                                      |  78.8 |
+
+382.1 MiB of the Python group is used by no other image; the rest is the Debian base the tools
+image shares. The eight Go images share under 1 MiB.
+
 ### Published PostgreSQL minimal image, 2026-10-17
 
 The fixture uses `ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie`, pinned for linux/amd64 at
