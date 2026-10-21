@@ -42,9 +42,10 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   cheaper route
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
-- [Acceptance on k3s](k3s_acceptance.md) — proposed: the acceptance scenarios move onto the
-  disposable k3s stack, `agentplane-testing` is retired, and k3s targets enter CI; measured
-  timings, executor limits and the decisions that gate each step; awaiting operator review
+- [Acceptance against any deployment](k3s_acceptance.md) — proposed: the acceptance scenarios
+  run against testing, staging or the disposable k3s stack, with a real or a scripted model;
+  `agentplane-testing` is retired and k3s targets enter CI; measured timings, executor limits and
+  the decisions that gate each step; awaiting operator review
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
   DAG node names; the design is [VM Sandboxes](../docs/vm_sandboxes.md)
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
