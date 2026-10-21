@@ -1,11 +1,19 @@
 # Message another Session
 
-Routes and schemas are in [OpenAPI](/openapi.json); the command has no message commands yet.
+Commands are `agentplane notifications send` and `message`; routes and schemas are in
+[OpenAPI](/openapi.json).
 
 ## Send
 
 You may send only to the Sandboxes a `session_inbox_access` rule bound to your ServiceAccount allows
 `send_message` to. Without one the send fails `PERMISSION_DENIED`; ask whoever grants your access.
+
+```bash
+agentplane notifications send THEIR_NAMESPACE/THEIR_SANDBOX THEIR_SESSION_ID --body 'The change is ready for review.'
+```
+
+`--body-file FILE` takes longer text, `-` from stdin. The command names your own Session from
+`AGENTPLANE_DESTINATION` as `fromSession`; `--from-session` replaces it. Without the command,
 `POST /v1/messages`:
 
 ```json
@@ -19,13 +27,14 @@ You may send only to the Sandboxes a `session_inbox_access` rule bound to your S
 ```
 
 Use the Sandbox and Session you were given; nothing lists other agents' Sessions. Add `uid` to
-`destinationRef` to reach only that incarnation; without it the message goes to the Sandbox of that
-name now, and the answer carries its UID. The body is plain text, 32 KiB at most unless the platform
-says otherwise. `fromSession` lets the recipient answer you; it is optional and nothing verifies it.
+`destinationRef` (`--uid`) to reach only that incarnation; without it the message goes to the Sandbox
+of that name now, and the answer carries its UID. The body is plain text, 32 KiB at most unless the
+platform says otherwise. `fromSession` lets the recipient answer you; it is optional and nothing
+verifies it.
 
 Retry a failed or uncertain send with the identical body and key: a send already accepted answers
-with the same message. The key reused for another body fails `ALREADY_EXISTS`. Keep the returned
-`message.id`.
+with the same message. The key reused for another body fails `ALREADY_EXISTS`. The command prints the
+key it generated on stderr; pass it back as `--key`. Keep the returned `message.id`.
 
 `NOT_FOUND` means no such Sandbox, another incarnation than the `uid` given, or a Session the platform
 has no record of in that Sandbox; a Session is recorded once it has run. `UNAVAILABLE` is temporary:
@@ -34,7 +43,8 @@ by default) await acknowledgement: wait for the recipient to catch up rather tha
 
 ## Follow a message
 
-`GET /v1/messages/{id}` answers for your own messages, with independent facts:
+`agentplane notifications message ID` (`GET /v1/messages/{id}`) answers for your own messages, with
+independent facts:
 
 - `covered`: a notice named the message to the recipient Session. It says nothing of whether the agent
   read it.

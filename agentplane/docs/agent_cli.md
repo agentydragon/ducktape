@@ -41,6 +41,8 @@ joins as one more group under them.
 | `notifications subscription ID`                                                                                                                | `GET /v1/subscriptions/{id}`                           |
 | `notifications renew ID [--lifetime-days N]`                                                                                                   | `GET`, then `PATCH` with the read `version`            |
 | `notifications cancel ID`                                                                                                                      | `DELETE /v1/subscriptions/{id}`                        |
+| `notifications send NAMESPACE/SANDBOX SESSION_ID {--body TEXT \| --body-file FILE\|-} [--uid UID] [--from-session ID] [--key KEY]`             | `POST /v1/messages`                                    |
+| `notifications message ID`                                                                                                                     | `GET /v1/messages/{id}`                                |
 | `egress rules`                                                                                                                                 | `GET /v1/rules`                                        |
 
 Every command takes `--json` and `--timeout`; the paged lists take `--limit` and `--after`.
@@ -95,7 +97,7 @@ no discovery calls, so no command depends on a service it does not talk to.
 | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
 | `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                      | the service's base URL: `http` or `https`, no credentials, query or fragment            |
 | `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service                     |
-| `AGENTPLANE_DESTINATION`                                                                               | `notifications subscribe`: `{"destination_ref": {...}, "session_id": "..."}`, the inbox |
+| `AGENTPLANE_DESTINATION`                                                                               | `{"destination_ref": {...}, "session_id": "..."}`: this Session for `subscribe`, `send` |
 
 `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` are the harness environment's existing proxy
 and trust settings; the CLI uses them as `curl` does. `subscribe` also accepts `--destination JSON` (the
@@ -154,7 +156,8 @@ body, else the `Retry-After` header. The mapping:
 | `502`, `503`, `504`, connection failure, deadline | `UNAVAILABLE` / `DEADLINE_EXCEEDED` | `3`  |
 | any other status                                  | `INTERNAL` (`500`) / `UNKNOWN`      | `1`  |
 
-A `409` is `ALREADY_EXISTS` for `submit` (a repeated key) and `ABORTED` elsewhere (a stale `version`).
+A `409` is `ALREADY_EXISTS` for `submit` and `send` (a repeated key) and `ABORTED` elsewhere (a stale
+`version`).
 
 **Deviation:** a gRPC-Gateway service answers an error with a `google.rpc.Status` body, whose numeric
 `code` names the gRPC code and replaces the guess above, because the HTTP status only approximates it
@@ -235,6 +238,13 @@ returns a **cancelled** subscription when a cancelled key is reused, so `subscri
 response is cancelled and says to pass a new `--key`. A changed `--lifetime-days` under the same key is a
 `409` (exit `4`); `renew` changes the lifetime. `--event` replaces the subject's default events rather
 than adding to them, as the service does.
+
+`notifications send` generates a random key when `--key` is absent and writes it to stderr before the
+`POST`, as `submit` does. The service answers an identical retry under the key with the message it already
+accepted, so a send that failed or lost its response is retried with `--key KEY` and the same text; the key
+with other text is `409` (exit `4`). A message is not a subscription: identical text sent twice is two
+messages, so the key is not derived from it. `--from-session` defaults to the `session_id` of
+`AGENTPLANE_DESTINATION` and is omitted without it.
 
 ## Waiting
 

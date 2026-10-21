@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -38,6 +39,8 @@ type notificationsServer struct {
 	get    func(*notificationspb.GetSubscriptionRequest) (*notificationspb.Subscription, error)
 	renew  func(*notificationspb.RenewSubscriptionRequest) (*notificationspb.Subscription, error)
 	cancel func(*notificationspb.CancelSubscriptionRequest) (*notificationspb.Subscription, error)
+	send   func(*notificationspb.SendMessageRequest) (*notificationspb.Message, error)
+	lookup func(*notificationspb.GetMessageRequest) (*notificationspb.Message, error)
 
 	mu            sync.Mutex
 	calls         []proto.Message
@@ -92,6 +95,18 @@ func (s *notificationsServer) CancelSubscription(ctx context.Context, request *n
 	s.record(ctx, request)
 	subscription, err := s.cancel(request)
 	return &notificationspb.CancelSubscriptionResponse{Subscription: subscription}, err
+}
+
+func (s *notificationsServer) SendMessage(ctx context.Context, request *notificationspb.SendMessageRequest) (*notificationspb.SendMessageResponse, error) {
+	s.record(ctx, request)
+	message, err := s.send(request)
+	return &notificationspb.SendMessageResponse{Message: message}, err
+}
+
+func (s *notificationsServer) GetMessage(ctx context.Context, request *notificationspb.GetMessageRequest) (*notificationspb.GetMessageResponse, error) {
+	s.record(ctx, request)
+	message, err := s.lookup(request)
+	return &notificationspb.GetMessageResponse{Message: message}, err
 }
 
 // serveNotifications runs the servicer behind the gateway and returns the facade's base URL.
@@ -424,6 +439,138 @@ func TestDestinationIsStrictAboutItsFields(t *testing.T) {
 	}
 	if sent := received[*notificationspb.CreateSubscriptionRequest](servicer); len(sent) != 0 {
 		t.Errorf("%d creations after bad destinations, want none", len(sent))
+	}
+}
+
+const messageID = "00000000-0000-0000-0000-0000000000c1"
+
+// acceptedMessage is a message to the test recipient's Sandbox as the service pins it.
+func acceptedMessage() *notificationspb.Message {
+	return &notificationspb.Message{
+		Id: messageID, DestinationRef: &notificationspb.DestinationRef{Namespace: "test-recipient-ns", Name: "test-recipient", Uid: "test-recipient-uid"},
+		SessionId: "test-recipient-session", IdempotencyKey: "test-key", AcceptedAt: timestamppb.New(time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)),
+	}
+}
+
+// messaging is a servicer whose message RPCs answer with message, or fail with err.
+func messaging(message *notificationspb.Message, err error) *notificationsServer {
+	return &notificationsServer{
+		send:   func(*notificationspb.SendMessageRequest) (*notificationspb.Message, error) { return message, err },
+		lookup: func(*notificationspb.GetMessageRequest) (*notificationspb.Message, error) { return message, err },
+	}
+}
+
+func sendArgs(extra ...string) []string {
+	return append([]string{"notifications", "send", "test-recipient-ns/test-recipient", "test-recipient-session"}, extra...)
+}
+
+func TestSendAMessageFromThisSession(t *testing.T) {
+	servicer := messaging(acceptedMessage(), nil)
+	code, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, servicer)), sendArgs("--body", "Please review the change.", "--json")...)
+	sent := received[*notificationspb.SendMessageRequest](servicer)
+	if code != 0 || len(sent) != 1 || decodeObject(t, stdout)["id"] != messageID {
+		t.Fatalf("exit %d, %d sends, stdout %q, stderr %q", code, len(sent), stdout, stderr)
+	}
+	want := &notificationspb.SendMessageRequest{
+		DestinationRef: &notificationspb.DestinationRef{Namespace: "test-recipient-ns", Name: "test-recipient"},
+		SessionId:      "test-recipient-session", IdempotencyKey: sent[0].GetIdempotencyKey(), Body: "Please review the change.",
+		FromSession: proto.String("test-session"),
+	}
+	if !proto.Equal(sent[0], want) {
+		t.Errorf("sent %v, want %v: any incarnation, from the Session of AGENTPLANE_DESTINATION", sent[0], want)
+	}
+	// The generated key is on stderr before the POST, for a retry with --key.
+	if got := decodeObject(t, stderr); sent[0].GetIdempotencyKey() == "" || got["idempotency_key"] != sent[0].GetIdempotencyKey() {
+		t.Errorf("stderr %q, want the generated key %q", stderr, sent[0].GetIdempotencyKey())
+	}
+}
+
+func TestSendTakesTheTextFromStdinAndItsOptionsFromFlags(t *testing.T) {
+	servicer := messaging(acceptedMessage(), nil)
+	env := notificationsEnv(serveNotifications(t, servicer))
+	c := newCLI(env, "line one\nline two\n")
+	code := c.run(sendArgs("--body-file", "-", "--uid", "test-recipient-uid", "--from-session", "test-flag-session", "--key", "test-key")...)
+	delete(env, "AGENTPLANE_DESTINATION")
+	invoke(env, sendArgs("--body", "test body", "--key", "test-key-2")...)
+	sent := received[*notificationspb.SendMessageRequest](servicer)
+	if code != 0 || len(sent) != 2 {
+		t.Fatalf("exit %d, %d sends, stderr %q", code, len(sent), c.stderr.String())
+	}
+	if got := sent[0]; got.GetBody() != "line one\nline two\n" || got.GetDestinationRef().GetUid() != "test-recipient-uid" ||
+		got.GetFromSession() != "test-flag-session" || got.GetIdempotencyKey() != "test-key" {
+		t.Errorf("sent %v; want stdin as given, the flags' UID, Session and key", got)
+	}
+	if c.stderr.String() != "" {
+		t.Errorf("stderr %q, want nothing when --key is given", c.stderr.String())
+	}
+	if sent[1].FromSession != nil {
+		t.Errorf("from_session %q without AGENTPLANE_DESTINATION, want none", sent[1].GetFromSession())
+	}
+}
+
+func TestSendRefusesAMalformedCommandBeforeSending(t *testing.T) {
+	servicer := messaging(acceptedMessage(), nil)
+	env := notificationsEnv(serveNotifications(t, servicer))
+	for name, args := range map[string][]string{
+		"no namespace":    {"notifications", "send", "test-recipient", "test-recipient-session", "--body", "x"},
+		"nested name":     {"notifications", "send", "test-ns/a/b", "test-recipient-session", "--body", "x"},
+		"no text":         sendArgs(),
+		"two texts":       sendArgs("--body", "x", "--body-file", "-"),
+		"missing file":    sendArgs("--body-file", t.TempDir()+"/test-missing"),
+		"bad destination": sendArgs("--body", "x"),
+	} {
+		env := maps.Clone(env)
+		if name == "bad destination" {
+			env["AGENTPLANE_DESTINATION"] = "not json"
+		}
+		if code, stdout, _ := invoke(env, args...); code != 2 || stdout != "" {
+			t.Errorf("%s: exit %d, stdout %q; want exit 2", name, code, stdout)
+		}
+	}
+	if sent := received[*notificationspb.SendMessageRequest](servicer); len(sent) != 0 {
+		t.Errorf("%d sends, want none", len(sent))
+	}
+}
+
+func TestSendExitsWithWhatTheRefusalAsks(t *testing.T) {
+	for _, tc := range []struct {
+		code codes.Code
+		name string
+		exit int
+	}{
+		{codes.PermissionDenied, "PERMISSION_DENIED", 1},
+		{codes.FailedPrecondition, "FAILED_PRECONDITION", 1},
+		{codes.Unavailable, "UNAVAILABLE", 3},
+		{codes.ResourceExhausted, "RESOURCE_EXHAUSTED", 3},
+		{codes.AlreadyExists, "ALREADY_EXISTS", 4},
+		{codes.NotFound, "NOT_FOUND", 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			servicer := messaging(nil, status.Error(tc.code, "test refusal"))
+			exit, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, servicer)), sendArgs("--body", "x", "--key", "test-key", "--json")...)
+			if got := errorOf(t, stderr); exit != tc.exit || stdout != "" || got.Code != tc.name {
+				t.Errorf("exit %d, stdout %q, envelope %+v; want exit %d", exit, stdout, got, tc.exit)
+			}
+		})
+	}
+}
+
+func TestMessageShowsWhatTheSenderCanFollow(t *testing.T) {
+	message := acceptedMessage()
+	message.Acknowledged = true
+	servicer := messaging(message, nil)
+	code, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, servicer)), "notifications", "message", messageID)
+	looked := received[*notificationspb.GetMessageRequest](servicer)
+	if code != 0 || len(looked) != 1 || looked[0].GetMessageId() != messageID {
+		t.Fatalf("exit %d, lookups %v, stderr %q", code, looked, stderr)
+	}
+	for _, want := range []string{messageID, "to test-recipient-ns/test-recipient session test-recipient-session", "accepted 2026-01-08T00:00:00Z", "acknowledged"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout %q does not contain %q", stdout, want)
+		}
+	}
+	if strings.Contains(stdout, "covered") {
+		t.Errorf("stdout %q says covered, which this message is not", stdout)
 	}
 }
 
