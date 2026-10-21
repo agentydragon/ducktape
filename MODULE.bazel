@@ -2199,6 +2199,7 @@ use_repo(
     "com_github_tcm1911_r2g2",
     "com_github_testcontainers_testcontainers_go",
     "com_github_yosida95_uritemplate_v3",
+    "com_github_zitadel_oidc_v3",
     "dev_dny_code_ssrf",
     "in_gopkg_yaml_v3",
     "in_yaml_go_yaml_v4",

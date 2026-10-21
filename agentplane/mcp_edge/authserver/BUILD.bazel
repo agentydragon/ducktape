@@ -1,0 +1,59 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "authserver",
+    srcs = [
+        "authorize.go",
+        "authserver.go",
+        "clients.go",
+        "tokens.go",
+        "upstream.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/authserver",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/mcp_edge/connections",
+        "//agentplane/mcp_edge/mcpserver",
+        "@com_github_coreos_go_oidc_v3//oidc",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_modelcontextprotocol_go_sdk//auth",
+        "@com_github_modelcontextprotocol_go_sdk//oauthex",
+        "@com_github_zitadel_oidc_v3//pkg/http",
+        "@com_github_zitadel_oidc_v3//pkg/oidc",
+        "@com_github_zitadel_oidc_v3//pkg/op",
+        "@dev_dny_code_ssrf//:ssrf",
+        "@org_golang_x_oauth2//:oauth2",
+    ],
+)
+
+go_test(
+    name = "integration_test",
+    size = "medium",
+    srcs = [
+        "authorize_test.go",
+        "authserver_test.go",
+        "clients_test.go",
+        "integration_testmain_test.go",
+        "tokens_test.go",
+    ],
+    embed = [":authserver"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/action_service/migrations",
+        "//agentplane/mcp_edge:connection_service_go_proto",
+        "//agentplane/mcp_edge/connections",
+        "//agentplane/mcp_edge/mcpserver",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/testing/postgres",
+        "//agentplane/workload_auth/go/auth",
+        "@com_github_go_jose_go_jose_v4//:go-jose",
+        "@com_github_go_jose_go_jose_v4//jwt",
+        "@com_github_lib_pq//:pq",
+        "@com_github_modelcontextprotocol_go_sdk//auth",
+        "@com_github_modelcontextprotocol_go_sdk//mcp",
+        "@com_github_modelcontextprotocol_go_sdk//oauthex",
+        "@dev_dny_code_ssrf//:ssrf",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_x_oauth2//:oauth2",
+    ],
+)
