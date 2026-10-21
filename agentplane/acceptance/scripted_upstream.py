@@ -13,6 +13,7 @@ import json
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from aiohttp import web
 
@@ -21,7 +22,11 @@ from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import runner_pb2
 from agentplane.testing.claude_model import ClaudeModel
 from agentplane.testing.codex_model import CodexModel
+from agentplane.testing.scripted_model import ScriptedModel
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf
 
 # `host:port`; set only on a target whose LLM ingress forwards here.
 ADDRESS = "AGENTPLANE_ACCEPTANCE_SCRIPTED_UPSTREAM"
@@ -37,7 +42,7 @@ class ScriptedUpstream:
         self._responses: defaultdict[str, OpenAIResponses] = defaultdict(OpenAIResponses)
         self._received = itertools.count(1)
 
-    def model(self, pod: str, harness: runner_pb2.Harness) -> ClaudeModel | CodexModel:
+    def model(self, pod: str, harness: runner_pb2.Harness) -> ScriptedModel[Any]:
         """The model `harness` in Sandbox Pod `pod` talks to."""
         match harness:
             case runner_pb2.HARNESS_CLAUDE:
@@ -60,7 +65,8 @@ class ScriptedUpstream:
             yield
         finally:
             await runner.cleanup()
-        for endpoint in [*self._messages.values(), *self._responses.values()]:
+        endpoints: list[AnthropicMessages | OpenAIResponses] = [*self._messages.values(), *self._responses.values()]
+        for endpoint in endpoints:
             await endpoint.stop()
 
     async def _serve_messages(self, request: web.Request) -> web.StreamResponse:

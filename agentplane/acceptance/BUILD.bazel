@@ -532,7 +532,9 @@ py_library(
         "//agentplane/proto:runner_pb2",
         "//agentplane/testing:claude_model",
         "//agentplane/testing:codex_model",
+        "//agentplane/testing:scripted_model",
         "//util/testing:undeclared_outputs",
         "@pypi//aiohttp",
+        "@pypi//protobuf",
     ],
 )
