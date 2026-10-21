@@ -22,7 +22,7 @@ func TestRelistRemovesNamesThatVanishedWhileTheWatchWasDown(t *testing.T) {
 	names := []string{"test-stays", "test-vanishes", "test-arrives"}
 	f.eventually("the first list", func() bool {
 		got := f.index.Resolve(names)
-		return got.Rules == 2 && slices.Equal(got.Missing, []string{"test-arrives"})
+		return got.Rules() == 2 && slices.Equal(got.Missing, []string{"test-arrives"})
 	})
 
 	// The watch is cut and cannot be resumed, so only a relist can show what changed meanwhile.
@@ -37,7 +37,7 @@ func TestRelistRemovesNamesThatVanishedWhileTheWatchWasDown(t *testing.T) {
 	f.eventually("a relist", func() bool { return f.faults.listCount(PolicySets) > listed })
 	f.eventually("the relist to be applied", func() bool {
 		got := f.index.Resolve(names)
-		return got.Rules == 2 && slices.Equal(got.Missing, []string{"test-vanishes"})
+		return got.Rules() == 2 && slices.Equal(got.Missing, []string{"test-vanishes"})
 	})
 }
 
@@ -102,7 +102,7 @@ func TestTheConditionFollowsTheSetsABindingNames(t *testing.T) {
 	late := f.policySet("test-late", testRule())
 	f.create(late)
 	ready := f.eventuallyCondition("test-grant", func(c *metav1.Condition) bool { return c.Status == metav1.ConditionTrue })
-	if ready.Reason != enforced || ready.ObservedGeneration != written.Generation {
+	if ready.Reason != testCondition.Reason || ready.ObservedGeneration != written.Generation {
 		t.Errorf("a binding whose sets all exist: %+v", ready)
 	}
 

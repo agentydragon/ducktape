@@ -23,6 +23,7 @@ const (
 // Ready is the condition this service keeps on each PolicyBinding.
 var Ready = reader.Condition{
 	Type: "SessionInboxAccessReady", FieldManager: "agentplane-notifications", Rules: "session inbox access rules",
+	Reason: "Enforced",
 }
 
 // Rule is a `session_inbox_access` rule that allows `send_message` to its targets.

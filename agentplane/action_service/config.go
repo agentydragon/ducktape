@@ -8,9 +8,12 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
@@ -39,12 +42,32 @@ type config struct {
 	ReaderAccounts []auth.Account `mapstructure:"reader_accounts"`
 	// OperatorOIDC is on when any of its settings differs from its default; off, no operator is admitted.
 	OperatorOIDC api.OperatorOIDCSettings `mapstructure:"operator_oidc"`
+	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on
+	// those bindings.
+	PolicyNamespace string `mapstructure:"policy_namespace"`
+	// PolicyResyncSeconds is how long the API server holds each policy watch open; nothing auto-decides once a
+	// watch has missed reader.StaleAfterCycles of these.
+	PolicyResyncSeconds int `mapstructure:"policy_resync_seconds"`
+	// GitHubVisibility is the unauthenticated GitHub lookup behind `github_public_repository` policies.
+	GitHubVisibility gitHubVisibility `mapstructure:"github_visibility"`
 	// ActionGroups is read from the file alone; see settingsFile.
 	ActionGroups *catalog.Catalog `mapstructure:"-"`
 }
 
+type gitHubVisibility struct {
+	APIBaseURL string `mapstructure:"api_base_url"`
+	// CacheTTLSeconds is how long one repository's confirmed visibility is reused before GitHub is asked again.
+	CacheTTLSeconds float64 `mapstructure:"cache_ttl_seconds"`
+}
+
 func defaultConfig() config {
-	return config{Host: "0.0.0.0", Port: 8080, OperatorOIDC: api.DefaultOperatorOIDCSettings(), ActionGroups: &catalog.Catalog{}}
+	return config{
+		Host: "0.0.0.0", Port: 8080, OperatorOIDC: api.DefaultOperatorOIDCSettings(), PolicyResyncSeconds: 300,
+		GitHubVisibility: gitHubVisibility{
+			APIBaseURL: policies.GitHubAPIBaseURL, CacheTTLSeconds: policies.VisibilityTTL.Seconds(),
+		},
+		ActionGroups: &catalog.Catalog{},
+	}
 }
 
 func loadConfig() (config, error) {
@@ -89,6 +112,7 @@ func (c *config) validate() error {
 		{"database_url", c.DatabaseURL},
 		{"host", c.Host},
 		{"token_audience", c.TokenAudience},
+		{"policy_namespace", c.PolicyNamespace},
 	} {
 		if required.value == "" {
 			return errors.New(required.name + " is required")
@@ -100,10 +124,20 @@ func (c *config) validate() error {
 	if len(c.CallerServiceAccountNamespaces) == 0 {
 		return errors.New("caller_service_account_namespaces must list at least one namespace")
 	}
+	if c.policyWatchPeriod() < reader.MinWatchPeriod {
+		return fmt.Errorf("policy_resync_seconds must be at least %v", reader.MinWatchPeriod.Seconds())
+	}
+	if c.GitHubVisibility.CacheTTLSeconds < 0 {
+		return errors.New("github_visibility.cache_ttl_seconds must not be negative")
+	}
 	if c.operatorsEnabled() {
 		return c.OperatorOIDC.Validate()
 	}
 	return nil
+}
+
+func (c *config) policyWatchPeriod() time.Duration {
+	return time.Duration(c.PolicyResyncSeconds) * time.Second
 }
 
 // settingsFile is the settings file as gopkg.in/yaml.v3 decodes it.

@@ -1,8 +1,8 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
 // `ActionService`'s request reads, watches and cancellation and `OperatorActionService`'s Decisions over gRPC and
 // their HTTP facade under /v1/, the agent documentation, the standard gRPC health service and the process's
-// Prometheus metrics at /metrics, and it runs the dispatch worker. The other RPCs answer UNIMPLEMENTED, and it runs
-// no Executor.
+// Prometheus metrics at /metrics, runs the dispatch worker, and keeps its policy index equal to the API server's. The
+// other RPCs answer UNIMPLEMENTED, and it runs no Executor.
 package main
 
 import (
@@ -23,10 +23,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
@@ -50,14 +52,15 @@ const (
 )
 
 // deps is who the service asks about a caller: the API server, which reviews a workload's bearer, and the view of
-// which ServiceAccounts carry the caller label.
+// which ServiceAccounts carry the caller label; and the API server whose policy objects the policy index reads.
 type deps struct {
 	Reviews auth.TokenReviews
 	Callers api.Callers
+	Policy  *rest.Config
 }
 
-// noCallers admits no workload, as if no ServiceAccount carried the caller label: the label's index is not ported
-// yet. Service readers and operators are admitted.
+// noCallers admits no workload, as if no ServiceAccount carried the caller label: the Gate does not read the policy
+// index's view of the label (informer.Index) yet. Service readers and operators are admitted.
 type noCallers struct{}
 
 func (noCallers) Admits(auth.Account) bool { return false }
@@ -74,11 +77,11 @@ func inClusterDeps() (deps, error) {
 	if err != nil {
 		return deps{}, err
 	}
-	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Callers: noCallers{}}, nil
+	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Callers: noCallers{}, Policy: kubeConfig}, nil
 }
 
-// run serves on the configured address until ctx ends, authenticating workloads with the cluster's TokenReview
-// API.
+// run serves on the configured address until ctx ends, authenticating workloads with the cluster's TokenReview API
+// and reading the cluster's policy objects.
 func run(ctx context.Context, c config) error {
 	cluster, err := inClusterDeps()
 	if err != nil {
@@ -129,6 +132,23 @@ func (e executors) Route(action store.ActionIdentity) (worker.Executor, bool) {
 	return executor, true
 }
 
+// readiness is the health service of probes, whose readiness also needs the policy index available: a replica whose
+// watches have wedged would auto-decide from a frozen copy, so it leaves the Service instead.
+type readiness struct {
+	*probes.Probes
+	policy *reader.Freshness
+}
+
+func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+	if request.GetService() == "" {
+		if status := r.policy.Status(time.Now()); !status.Available {
+			slog.WarnContext(ctx, "policy index unavailable", "synced", status.Synced, "stale_after", status.StaleAfter, "ages", status.Ages)
+			return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_NOT_SERVING}, nil
+		}
+	}
+	return r.Probes.Check(ctx, request)
+}
+
 // gate admits the callers of the service's RPCs.
 func gate(c config, d deps) (*api.Gate, error) {
 	workloads, err := auth.NewResolver(d.Reviews, c.TokenAudience, c.CallerServiceAccountNamespaces)
@@ -158,9 +178,9 @@ func newRoutes(httpFacade http.Handler) (http.Handler, error) {
 	return routes, nil
 }
 
-// serve answers on listener and runs the dispatch worker until ctx ends or the listener fails. gRPC and the HTTP
-// routes share the listener. The worker drains from then on, beside the listener's shutdown, and serve returns
-// once it has.
+// serve answers on listener, runs the dispatch worker and keeps the policy index until ctx ends or the listener fails.
+// gRPC and the HTTP routes share the listener. The worker drains from then on, beside the listener's shutdown, and
+// serve returns once it has and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	admission, err := gate(c, d)
 	if err != nil {
@@ -188,11 +208,29 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		return err
 	}
 
+	watchPeriod := c.policyWatchPeriod()
+	policy := informer.NewIndex(reader.StaleAfterCycles*watchPeriod, c.CallerServiceAccountNamespaces)
+	policyInformer, err := informer.New(d.Policy, policy, c.PolicyNamespace, watchPeriod)
+	if err != nil {
+		return err
+	}
+	// Until the watches have listed, the replica is not ready and the index admits no caller and resolves no binding.
+	watchContext, stopWatching := context.WithCancel(ctx)
+	watching := make(chan struct{})
+	go func() {
+		defer close(watching)
+		policyInformer.Run(watchContext)
+	}()
+	defer func() {
+		stopWatching()
+		<-watching
+	}()
+
 	health := probes.New(db, hub)
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
 	)
-	healthpb.RegisterHealthServer(grpcServer, health)
+	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Freshness})
 	action_servicepb.RegisterActionServiceServer(grpcServer, api.NewService(requests, hub, admission))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests))
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the

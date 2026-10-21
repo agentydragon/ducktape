@@ -47,7 +47,7 @@ func TestOnlyAWatchTheServerEndsOnScheduleIsACycle(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			clock := &fakeClock{now: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
 			freshness := NewFreshness(time.Hour, PolicySets)
-			transport := cycleRecorder{freshness: freshness, now: clock.Now}.wrap(roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			transport := cycleRecorder{freshness: freshness, now: clock.Now, kindOf: kindByPath}.wrap(roundTripFunc(func(request *http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: http.StatusOK, Body: endingBody{clock, tc.after, tc.err}, Request: request}, nil
 			}))
 			request, err := http.NewRequest(http.MethodGet, tc.url, nil)

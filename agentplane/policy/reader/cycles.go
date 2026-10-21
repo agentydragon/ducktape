@@ -3,6 +3,7 @@ package reader
 import (
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"time"
@@ -14,7 +15,12 @@ import (
 type cycleRecorder struct {
 	freshness *Freshness
 	now       func() time.Time
+	// kindOf is the kind a watch's cycles are recorded as.
+	kindOf func(*url.URL) Kind
 }
+
+// kindByPath is the kind a watch's path names, by plural.
+func kindByPath(watched *url.URL) Kind { return Kind(path.Base(watched.Path)) }
 
 func (c cycleRecorder) wrap(next http.RoundTripper) http.RoundTripper {
 	return &recordingTransport{next: next, cycleRecorder: c}
@@ -41,7 +47,7 @@ func (t *recordingTransport) RoundTrip(request *http.Request) (*http.Response, e
 	}
 	response.Body = &cycleBody{
 		ReadCloser: response.Body, cycleRecorder: t.cycleRecorder,
-		kind: Kind(path.Base(request.URL.Path)), started: started, period: time.Duration(period) * time.Second,
+		kind: t.kindOf(request.URL), started: started, period: time.Duration(period) * time.Second,
 	}
 	return response, nil
 }

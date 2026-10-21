@@ -34,7 +34,7 @@ const watchPeriod = MinWatchPeriod
 const testRuleType = "egress"
 
 // testCondition is the condition the reader under test keeps on each binding.
-var testCondition = Condition{Type: "TestReady", FieldManager: "agentplane-reader-test", Rules: "test rules"}
+var testCondition = Condition{Type: "TestReady", FieldManager: "agentplane-reader-test", Rules: "test rules", Reason: "TestEnforced"}
 
 var (
 	fixtures atomic.Int32

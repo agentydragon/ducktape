@@ -1,0 +1,45 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "informer",
+    srcs = ["informer.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/informer",
+    visibility = ["//agentplane/action_service:__subpackages__"],
+    deps = [
+        "//agentplane/action_service/policies",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/reader",
+        "//agentplane/workload_auth/go/auth",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/util/sets",
+        "@io_k8s_client_go//informers/core/v1:core",
+        "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//rest",
+    ],
+)
+
+go_test(
+    name = "informer_test",
+    srcs = [
+        "fixture_test.go",
+        "informer_test.go",
+    ],
+    embed = [":informer"],
+    deps = [
+        "//agentplane/action_service/policies",
+        "//agentplane/action_service/store",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/reader",
+        "//agentplane/testing/kubeapiserver",
+        "//agentplane/workload_auth/go/auth",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/util/wait",
+        "@io_k8s_client_go//kubernetes/scheme",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+    ],
+)

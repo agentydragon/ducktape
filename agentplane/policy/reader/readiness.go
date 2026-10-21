@@ -12,11 +12,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const (
-	enforced = "Enforced"
-	// messageLimit is the CRD's maxLength for a condition message.
-	messageLimit = 32768
-)
+// messageLimit is the CRD's maxLength for a condition message.
+const messageLimit = 32768
 
 // Condition is the condition a reader keeps on each PolicyBinding: the one write a reader makes to
 // the API server.
@@ -28,15 +25,17 @@ type Condition struct {
 	FieldManager string
 	// Rules names the reader's rules in a ready condition's message, such as "egress rules".
 	Rules string
+	// Reason is a ready condition's reason, such as Enforced.
+	Reason string
 }
 
 // judge is the condition a binding's named sets give this reader: ready when every set exists and
 // parses. The sets that do parse grant either way.
-func (c Condition) judge(resolution Resolution) metav1.Condition {
+func judge[R any](c Condition, resolution Resolution[R]) metav1.Condition {
 	if len(resolution.Missing) == 0 && len(resolution.Refused) == 0 {
 		return metav1.Condition{
-			Type: c.Type, Status: metav1.ConditionTrue, Reason: enforced,
-			Message: fmt.Sprintf("%s: %d", c.Rules, resolution.Rules),
+			Type: c.Type, Status: metav1.ConditionTrue, Reason: c.Reason,
+			Message: fmt.Sprintf("%s: %d", c.Rules, resolution.Rules()),
 		}
 	}
 	var unavailable []string
@@ -82,7 +81,7 @@ func (r *rules[R]) apply(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	configuration := policyapply.PrepareConditionApply(binding, r.condition.judge(r.index.Resolve(binding.Spec.PolicySets)))
+	configuration := policyapply.PrepareConditionApply(binding, judge(r.condition, r.index.Resolve(binding.Spec.PolicySets)))
 	if configuration == nil {
 		return nil
 	}

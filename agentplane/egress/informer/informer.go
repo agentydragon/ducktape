@@ -21,7 +21,7 @@ import (
 )
 
 // EgressReady is the condition this proxy keeps on each PolicyBinding.
-var EgressReady = reader.Condition{Type: "EgressReady", FieldManager: "agentplane-egress", Rules: "egress rules"}
+var EgressReady = reader.Condition{Type: "EgressReady", FieldManager: "agentplane-egress", Rules: "egress rules", Reason: "Enforced"}
 
 // Config says what to watch and for how long.
 type Config struct {

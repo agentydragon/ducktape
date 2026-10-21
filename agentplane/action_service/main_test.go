@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -29,6 +30,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -39,14 +42,14 @@ const (
 
 var (
 	kube *kubeapiserver.Server
-	// reader reads every account's requests; readerToken proves it, from a Pod running as it.
-	reader      = auth.Account{Namespace: "test-agentplane", Name: "test-reader"}
-	readerToken string
+	// readerAccount reads every account's requests; readerToken proves it, from a Pod running as it.
+	readerAccount = auth.Account{Namespace: "test-agentplane", Name: "test-reader"}
+	readerToken   string
 )
 
 func useAPIServer(server *kubeapiserver.Server) (err error) {
 	kube = server
-	readerToken, err = server.WorkloadToken(context.Background(), reader, testAudience)
+	readerToken, err = server.WorkloadToken(context.Background(), readerAccount, testAudience)
 	return err
 }
 
@@ -64,15 +67,18 @@ type running struct {
 	stop func() error
 }
 
-func start(t *testing.T) running {
+// start serves over a database of its own, reading the policy objects of the API server policy reaches.
+func start(t *testing.T, policy *rest.Config) running {
 	t.Helper()
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.Clone(t)
 	c.TokenAudience = testAudience
-	c.CallerServiceAccountNamespaces = []string{reader.Namespace}
-	c.ReaderAccounts = []auth.Account{reader}
-	// As deployed until the caller label's index lands: no workload is admitted as a caller.
-	cluster := deps{Reviews: kube.TokenReviews(), Callers: noCallers{}}
+	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
+	c.ReaderAccounts = []auth.Account{readerAccount}
+	c.PolicyNamespace = "test-agentplane"
+	c.PolicyResyncSeconds = int(reader.MinWatchPeriod / time.Second)
+	// As deployed until the Gate reads the caller label's index: no workload is admitted as a caller.
+	cluster := deps{Reviews: kube.TokenReviews(), Callers: noCallers{}, Policy: policy}
 	db, err := sql.Open("postgres", c.DatabaseURL)
 	if err != nil {
 		t.Fatal(err)
@@ -130,11 +136,17 @@ func checkHealth(t *testing.T, client healthpb.HealthClient, service string) (he
 }
 
 func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testing.T) {
-	service := start(t)
-	for _, name := range []string{"", probes.LivenessService} {
-		if got, err := checkHealth(t, service.health, name); err != nil || got != healthpb.HealthCheckResponse_SERVING {
-			t.Errorf("health of %q = %v, %v; want SERVING", name, got, err)
-		}
+	service := start(t, kube.Config)
+	// Ready once the policy index has listed.
+	err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
+		got, err := checkHealth(t, service.health, "")
+		return got == healthpb.HealthCheckResponse_SERVING, err
+	})
+	if err != nil {
+		t.Fatalf("the service never turned ready: %v", err)
+	}
+	if got, err := checkHealth(t, service.health, probes.LivenessService); err != nil || got != healthpb.HealthCheckResponse_SERVING {
+		t.Errorf("liveness = %v, %v; want SERVING", got, err)
 	}
 	if _, err := checkHealth(t, service.health, "test-unknown-service"); status.Code(err) != codes.NotFound {
 		t.Errorf("health of an unknown service: %v", err)
@@ -166,8 +178,25 @@ func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testi
 	}
 }
 
+func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {
+	// An API server that refuses every connection: the policy index never lists.
+	refusing, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refusing.Close()
+	service := start(t, &rest.Config{Host: "http://" + refusing.Addr().String()})
+	if got, err := checkHealth(t, service.health, ""); err != nil || got != healthpb.HealthCheckResponse_NOT_SERVING {
+		t.Errorf("readiness = %v, %v; want NOT_SERVING", got, err)
+	}
+	// Liveness never follows the API server, so that waiting out its outage restarts nothing.
+	if got, err := checkHealth(t, service.health, probes.LivenessService); err != nil || got != healthpb.HealthCheckResponse_SERVING {
+		t.Errorf("liveness = %v, %v; want SERVING", got, err)
+	}
+}
+
 func TestTheServiceRunsTheDispatchWorkerWhichHasNoExecutorYet(t *testing.T) {
-	service := start(t)
+	service := start(t, kube.Config)
 	operator := store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 	pending, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
 		store.ActionRequestInput{
@@ -208,7 +237,7 @@ func TestTheServiceRunsTheDispatchWorkerWhichHasNoExecutorYet(t *testing.T) {
 }
 
 func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
-	service := start(t)
+	service := start(t, kube.Config)
 	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-read", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
@@ -251,7 +280,7 @@ func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
 // No operator is configured here, so the operator service refuses every bearer; refusing one shows the service is
 // served and gated, where a service that is not served would answer UNIMPLEMENTED, and a route that is not, 404.
 func TestTheServiceGatesTheOperatorServiceOverGRPCAndHTTP(t *testing.T) {
-	service := start(t)
+	service := start(t, kube.Config)
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
 	decision := &operator_action_servicepb.DecideActionRequestRequest{

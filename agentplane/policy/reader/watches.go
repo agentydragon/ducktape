@@ -3,6 +3,7 @@ package reader
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +30,7 @@ const MinWatchPeriod = 2 * time.Second
 // backoff are client-go's.
 type Watches struct {
 	freshness *Freshness
+	base      *rest.Config
 	config    *rest.Config
 	period    int64
 	informers []cache.SharedIndexInformer
@@ -45,13 +47,26 @@ func NewWatches(base *rest.Config, freshness *Freshness, period time.Duration) (
 	if period < MinWatchPeriod || period%time.Second != 0 {
 		return nil, fmt.Errorf("the watch period is a whole number of seconds, at least %v: %v", MinWatchPeriod, period)
 	}
-	recorded := rest.CopyConfig(base)
-	recorded.Wrap(cycleRecorder{freshness: freshness, now: time.Now}.wrap)
-	return &Watches{freshness: freshness, config: recorded, period: int64(period / time.Second)}, nil
+	w := &Watches{freshness: freshness, base: base, period: int64(period / time.Second)}
+	w.config = w.recording(kindByPath)
+	return w, nil
 }
 
-// Config is the client configuration every watched kind is read through, so its cycles are recorded.
+// Config is the client configuration every watched kind is read through, so its cycles are recorded,
+// each as the kind its path names.
 func (w *Watches) Config() *rest.Config { return w.config }
+
+// ConfigRecordingAs is a client configuration that records its watches' cycles as kind: for a resource
+// watched in several namespaces, whose path alone does not tell the namespaces' cycles apart.
+func (w *Watches) ConfigRecordingAs(kind Kind) *rest.Config {
+	return w.recording(func(*url.URL) Kind { return kind })
+}
+
+func (w *Watches) recording(kindOf func(*url.URL) Kind) *rest.Config {
+	recorded := rest.CopyConfig(w.base)
+	recorded.Wrap(cycleRecorder{freshness: w.freshness, now: time.Now, kindOf: kindOf}.wrap)
+	return recorded
+}
 
 // TweakListOptions is every informer's list-options tweak: the server ends each watch after one
 // period, so a watch it ends on schedule stands as proof of life.

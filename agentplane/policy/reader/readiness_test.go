@@ -9,14 +9,16 @@ import (
 )
 
 func TestTheConditionNamesWhatIsUnavailable(t *testing.T) {
-	refused := testCondition.judge(Resolution{
-		Missing: []string{"test-late"}, Refused: []Refusal{{Set: "test-broken", Reason: "test reason"}}, Rules: 3,
+	refused := judge(testCondition, Resolution[[]string]{
+		Sets:    []PolicySet[[]string]{{Name: "test-early"}},
+		Missing: []string{"test-late"}, Refused: []Refusal{{Set: "test-broken", Reason: "test reason"}},
 	})
 	if refused.Type != testCondition.Type || refused.Status != metav1.ConditionFalse || refused.Reason != policyapi.PolicySetUnavailable ||
 		!strings.Contains(refused.Message, "test-late") || !strings.Contains(refused.Message, "test-broken") {
 		t.Errorf("a binding with a missing and a refused set: %+v", refused)
 	}
-	if ready := testCondition.judge(Resolution{Rules: 3}); ready.Type != testCondition.Type || ready.Status != metav1.ConditionTrue || ready.Reason != enforced {
+	if ready := judge(testCondition, Resolution[[]string]{Sets: []PolicySet[[]string]{{Name: "test-early"}}}); ready.Type != testCondition.Type ||
+		ready.Status != metav1.ConditionTrue || ready.Reason != testCondition.Reason {
 		t.Errorf("a binding whose sets all parse: %+v", ready)
 	}
 }

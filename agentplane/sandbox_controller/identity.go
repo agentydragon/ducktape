@@ -16,7 +16,7 @@ import (
 
 // ActionCallerLabel on a ServiceAccount is what admits its workload to the Action Service. It
 // grants nothing alone: the account's PolicyBinding action rules decide. Must equal CALLER_LABEL in
-// agentplane/action_service/policies/resources.py.
+// agentplane/action_service/policies/resources.py and CallerLabel in agentplane/action_service/informer.
 const ActionCallerLabel = "agentplane.allegedly.works/use-action-service"
 
 // ensureIdentity keeps the Sandbox's own ServiceAccount and, while it names PolicySets, its one
