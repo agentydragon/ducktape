@@ -2018,7 +2018,7 @@ Question: which models, what budget, and is a BuildBuddy secret acceptable?
 have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-backend)). Their
 `_k3s_real` targets pass on both harnesses:
 
-- `test_instructions`
+- `test_session_instructions`
 - The `test_egress` probe
 
 ### `ACCEPTANCE_SCRIPTED_MODEL` — scripted-model scenarios on k3s
@@ -2036,7 +2036,7 @@ have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-b
 - Scenario functions carry `real_model` or `scripted_model`, and each target deselects what it
   cannot serve.
 
-Exit: scripted versions of `test_instructions`, `test_launch_presets`, the Pod case of
+Exit: scripted versions of `test_session_instructions`, `test_launch_presets`, the Pod case of
 `test_suspend_resume` and the `test_egress` cases that need no outside credential pass on k3s on
 both harnesses. The plumbing scenarios' real versions are deleted in the same PRs, so against
 staging only the real-model set and the model-free scenarios run.
