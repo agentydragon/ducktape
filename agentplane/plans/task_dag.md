@@ -2001,7 +2001,7 @@ flowchart LR
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
     ACCEPTANCE_SCRIPTED_MODEL[In flight: scripted-model scenarios on k3s]
     K3S_FIXTURE_IDENTITY[Proposed: Dex and MCP fixtures in the k3s chart]
-    K3S_VM_ACCEPTANCE[Decision: where VM acceptance runs]
+    K3S_VM_ACCEPTANCE[In flight: KubeVirt emulation spike on k3s]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     TESTING_ROLLOUT_ROLE[Decision: what replaces testing before staging]
     TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
@@ -2009,6 +2009,8 @@ flowchart LR
     K3S_MIGRATOR_CONNECT_RETRY[Proposed: migrators retry their first connection]
     K3S_TEST_STARTUP[Proposed: cut the time before pytest starts]
     K3S_CI_TIER[Decision: which k3s targets run in CI]
+    APP_BRIDGE_TEST_SPLIT[Candidate: app bridge tests split by tier]
+    FAKE_APISERVERS_TO_ENVTEST[Candidate: envtest in place of fake API servers]
     K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
     ACCEPTANCE_SCRIPTED_MODEL --> TESTING_ENVIRONMENT_RETIRE
     K3S_VM_IMAGE -. the emulation spike needs it .-> K3S_VM_ACCEPTANCE
@@ -2072,12 +2074,43 @@ Exit: `test_mcp` and `test_dcr` pass on k3s with whichever model backend exists 
 
 ### `K3S_VM_ACCEPTANCE` — where VM acceptance runs
 
-**Decision.** The RBE Firecracker guest has no KVM (probed 2026-10-21: kernel 5.15.0, no `/dev/kvm`,
-`CONFIG_KVM` unset). Options: KubeVirt with software emulation inside the RBE k3s; VM acceptance on
-staging as an operator-run check; self-hosted BuildBuddy executors with KVM (Enterprise-only per
-the [self-hosting notes](../../docs/buildbuddy_selfhost.md)). Recommendation: spike emulation on the
-`K3S_VM_IMAGE` guest. If one boot is too slow to be a test, the same VM scenarios run against
-staging as an operator-run target.
+**In flight: the emulation spike (operator, 2026-10-21 06:42).** The RBE Firecracker guest has no
+KVM (probed 2026-10-21: kernel 5.15.0, no `/dev/kvm`, `CONFIG_KVM` unset). The spike installs
+KubeVirt with `useEmulation` in the k3s fixture and boots the `K3S_VM_IMAGE` guest. If one boot is
+too slow to be a test, the same VM scenarios run against staging as an operator-run target;
+self-hosted BuildBuddy executors with KVM are Enterprise-only per the
+[self-hosting notes](../../docs/buildbuddy_selfhost.md).
+
+Exit: a VM scenario passes on k3s with its boot time recorded, or the staging fallback is chosen.
+
+### `APP_BRIDGE_TEST_SPLIT` — app bridge tests split by tier
+
+**Candidate (operator, 2026-10-21 06:41: [test tiers](k3s_acceptance.md#test-tiers)).** The app's
+bridge tests (`app/test_bridge.py`) run the app on `RunnerProxyBackedDispatcher`, a Python
+Dispatcher that delivers to the runner before answering. The Go Dispatcher answers at enqueue, so
+the bridge tests cannot see races between enqueue and admission, such as the stream-end race the k3s
+run found (#11345). Their end-to-end flows become
+scripted k3s scenarios; the cases that inject a fault stay component tests against the Go
+Dispatcher.
+
+Exit: `RunnerProxyBackedDispatcher` is gone, and each remaining bridge case injects a fault k3s
+cannot.
+
+### `FAKE_APISERVERS_TO_ENVTEST` — envtest in place of fake API servers
+
+**Candidate (operator, 2026-10-21 06:41: [test tiers](k3s_acceptance.md#test-tiers)).** Component
+tests use envtest (Python: [`kubernetes_apiserver.py`](../testing/kubernetes_apiserver.py), which
+mints Pod-bound tokens; Go: [`testing/envtest`](../testing/envtest)) in place of:
+
+- `agentplane/testing/fake_apiserver.py`, behind the egress, Action Service, Sandbox inventory and
+  app History gateway tests;
+- `agentplane/sandboxes/testing/fake_inventory.py`, behind the app tests;
+- TokenReview stubs in Go tests, such as `runner_gateway/gateway/control_test.go`'s.
+
+A fake stays only for a fault the real API server cannot be made to produce, such as a forced
+watch close for an informer's relist, named at the fake. One PR per fake.
+
+Exit: those fakes and stubs are deleted or reduced to the faults they inject.
 
 ### `TESTING_ROLLOUT_ROLE` — what replaces testing as the stage before staging
 

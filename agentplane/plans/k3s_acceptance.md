@@ -15,6 +15,28 @@ The operator's goal (2026-10-21 03:40, 04:11):
 The disposable stack is [`x/k3s_env`](../x/k3s_env/README.md): one k3s per RBE test action, images
 built from the tree under test.
 
+## Test tiers
+
+Decided 2026-10-21 06:41 (operator). A test runs in the cheapest tier that has the real thing it
+depends on.
+
+| Tier      | What is real                                                                                                                                                       | What it tests                                                                                                                                                |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unit      | the code, in process                                                                                                                                               | pure logic                                                                                                                                                   |
+| Component | one service, PostgreSQL in Docker, an envtest API server ([`kubernetes_apiserver.py`](../testing/kubernetes_apiserver.py) mints Pod-bound tokens), real neighbours | RBAC, watches, admission, token review, a service's API and storage; a neighbour is faked only to inject a fault                                             |
+| Harness   | the Go runner, Claude Code and Codex, a scripted model                                                                                                             | harness protocols, Codex code mode included                                                                                                                  |
+| System    | the k3s stack with the scripted model                                                                                                                              | every acceptance scenario: what needs a kubelet (running Pods, PVCs, suspend/resume, egress networking, LLM ingress identity) or several services; CI on PRs |
+| Live      | a deployment with real models                                                                                                                                      | only where the model's behavior is under test ([which](#two-axes-target-and-model-backend))                                                                  |
+
+The reshuffle this implies:
+
+- **`APP_BRIDGE_TEST_SPLIT`.** The app's bridge tests run the app on a Python Dispatcher
+  (`RunnerProxyBackedDispatcher`), which drifted from the Go one: it answers after runner
+  admission, where the Go Dispatcher answers at enqueue.
+- **`FAKE_APISERVERS_TO_ENVTEST`.** Hand-written API servers and TokenReview stubs give way to
+  envtest.
+- **`K3S_VM_ACCEPTANCE`.** VM Sandboxes need KubeVirt on k3s without KVM (finding 4).
+
 ## Where the k3s tests are
 
 Measured 2026-10-21 ([phase timings and image bytes](../x/k3s_env/README.md#phase-timings-and-image-bytes-2026-10-21)):
@@ -184,9 +206,9 @@ Ordered by what unblocks what. Speed work runs alongside and blocks only the CI 
      fixture.
    - Add `mcp-everything` and the `example` OAuth server.
    - Add an operator-login kubeconfig guard that accepts the fixture's apiserver.
-4. **`K3S_VM_ACCEPTANCE`** (decision): where VM-Sandbox acceptance runs with no testing cluster.
-   - Recommended: spike KubeVirt with software emulation inside the RBE k3s, on the Bazel-built
-     guest (`K3S_VM_IMAGE`).
+4. **`K3S_VM_ACCEPTANCE`**: where VM-Sandbox acceptance runs with no testing cluster.
+   - In flight: a spike of KubeVirt with software emulation (`useEmulation`) inside the RBE k3s, on
+     the Bazel-built guest (`K3S_VM_IMAGE`) (operator, 2026-10-21 06:42).
    - If a guest boot under emulation is too slow to be a test, VM acceptance runs against staging
      as an operator-run check: the same scenarios, a different target.
    - Executors with `/dev/kvm` would need self-hosted BuildBuddy executors, which
