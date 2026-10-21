@@ -59,7 +59,9 @@ restricted app DB role, not a read-only analytics role. No new encryption-key se
 Cookies remain HttpOnly, SameSite=Lax, and Secure with the `__Host-` name on HTTPS. Unsafe
 session-authenticated requests, including logout, require an **exact** same-origin `Origin` header;
 missing, trailing-slash, and foreign origins fail. Kubernetes-token callers keep their separate
-non-ambient authentication and never enter the operator Action path. Responses are `no-store`. The app disables Uvicorn access logs to keep OAuth callback codes out of
+non-ambient authentication and never enter the operator Action path. Responses are `no-store`,
+except where a route states its own `Cache-Control`: Electric shapes are `private, no-cache`, stored
+but served only after a request the app authorizes. The app disables Uvicorn access logs to keep OAuth callback codes out of
 request URLs in logs; callback failures use fixed messages without provider/query text.
 Already-admitted requests are not retrospectively cancelled by logout; revocation gates the next
 request. The Actions stream (`/actions/stream`) is the exception: deleting a session row notifies

@@ -312,7 +312,7 @@ async def dispatcher_upstream(
         operator_relay(request, shutdown, updates, sessions, response_body(upstream), "Dispatcher", (httpx.HTTPError,)),
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type"),
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
 
 

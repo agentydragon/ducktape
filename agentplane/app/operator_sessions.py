@@ -445,7 +445,9 @@ class OperatorSessionMiddleware(BaseHTTPMiddleware):
                 self._forget(response)
         elif cookie is not None and row is None:
             self._forget(response)
-        response.headers["Cache-Control"] = "no-store"
+        # A route that states its own cache policy keeps it: the Electric shape proxy's `private, no-cache`
+        # is what lets a browser revalidate a shape by its entity tag instead of re-reading it whole.
+        response.headers.setdefault("Cache-Control", "no-store")
         return response
 
     def _remember(self, response: Response, handle: str, absolute_expires_at: datetime) -> None:

@@ -1,5 +1,6 @@
 """Requests presenting one browser session, through `OperatorSessionMiddleware` in the app
-`create_app` builds: none waits for another, and what each makes of the session survives the others.
+`create_app` builds: none waits for another, what each makes of the session survives the others, and
+none is stored by the browser unless its route says how.
 
 Requests meant to overlap park at a `Gate` in their handlers -- after the middleware has read the
 session, before it saves what they made of it -- or in the Action Service's answer. Each overlap is
@@ -9,6 +10,7 @@ bounded, because the regression it guards against waits for the parked request, 
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import httpx
 import pytest
@@ -32,13 +34,19 @@ from agentplane.app.operator_sessions import BrowserSession, OperatorSession, Op
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
+from agentplane.proto import event_pb2
+
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
 
 APP_URL = "http://test-app.invalid"
 OIDC = OIDCSettings(
@@ -49,6 +57,7 @@ OIDC = OIDCSettings(
     public_base_url=APP_URL,
 )
 LOGIN = OperatorSession(issuer=OIDC.issuer, subject="test-subject", username="test-operator")
+SHAPE_TAG = '"test-shape-tag"'
 
 
 class Gate:
@@ -90,6 +99,32 @@ class OpenStream(httpx.AsyncByteStream):
 @pytest.fixture
 def gate() -> Gate:
     return Gate()
+
+
+@pytest.fixture
+async def electric_http() -> AsyncIterator[httpx.AsyncClient]:
+    """Electric serving every shape read under one entity tag, and 304 to a read that presents it."""
+
+    async def answer(request: httpx.Request) -> httpx.Response:
+        if request.headers.get("if-none-match") == SHAPE_TAG:
+            return httpx.Response(304, stream=httpx.ByteStream(b""), headers={"etag": SHAPE_TAG})
+        return httpx.Response(200, stream=httpx.ByteStream(b"[]"), headers={"etag": SHAPE_TAG})
+
+    async with httpx.AsyncClient(
+        base_url="http://test-electric.invalid", transport=httpx.MockTransport(answer)
+    ) as client:
+        yield client
+
+
+@pytest.fixture
+async def folded(event_logs: SeededEventLogStore, history: History) -> UUID:
+    """A thread whose fold gives its shapes a scope."""
+    source = ReplicationSource()
+    source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
+    thread = await event_logs.seed(SANDBOX, SESSION)
+    await history.set_attached(thread, source.attached)
+    await history.record(thread, source.entries)
+    return thread
 
 
 @pytest.fixture
@@ -337,6 +372,23 @@ async def test_a_logout_refuses_the_login_it_overtakes(
         gate.open()
         assert (await callback).status_code == 401
     assert await _rows(operator_sessions) == []
+
+
+async def test_shape_reads_revalidate_where_other_reads_are_not_stored(app: FastAPI, folded: UUID) -> None:
+    """The Electric proxy's `private, no-cache` lets a browser re-read a shape by its entity tag;
+    `no-store` would have it fetch the whole shape again on every read."""
+    cookie = await _session(app, "/test-login")
+    async with _browser(app, cookie) as browser:
+        scope = await browser.get(f"/threads/{folded}/sync/scope")
+        shape = {"projection_epoch": scope.json()["projection_epoch"], "offset": "-1"}
+        first = await browser.get(f"/threads/{folded}/sync/entities", params=shape)
+        again = await browser.get(
+            f"/threads/{folded}/sync/entities", params=shape, headers={"if-none-match": first.headers["etag"]}
+        )
+
+    assert (first.status_code, again.status_code) == (200, 304)
+    assert [first.headers["cache-control"], again.headers["cache-control"]] == ["private, no-cache"] * 2
+    assert scope.headers["cache-control"] == "no-store"
 
 
 if __name__ == "__main__":

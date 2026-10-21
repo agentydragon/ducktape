@@ -16,5 +16,5 @@ def frame(event: str, data: object, *, event_id: int | None = None) -> bytes:
 def sse_response(frames: AsyncIterator[bytes]) -> StreamingResponse:
     # X-Accel-Buffering: a buffering reverse proxy would hold frames back until the stream ends.
     return StreamingResponse(
-        frames, media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+        frames, media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
     )
