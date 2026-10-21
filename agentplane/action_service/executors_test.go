@@ -2,13 +2,25 @@ package main
 
 import (
 	"context"
+	"errors"
+	"os"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
-	"gopkg.in/yaml.v3"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 )
+
+var kube *kubeapiserver.Server
+
+// TestMain runs one API server for the sandbox groups' tests; each works in a namespace of its own.
+func TestMain(m *testing.M) {
+	os.Exit(kubeapiserver.Run(m, func(started *kubeapiserver.Server) error {
+		kube = started
+		return nil
+	}))
+}
 
 type unusedExecutor struct{}
 
@@ -17,21 +29,14 @@ func (*unusedExecutor) Execute(context.Context, store.ExecutionRequest, *worker.
 }
 
 func TestAnActionRoutesToItsGroupsExecutorWhileTheCatalogOffersIt(t *testing.T) {
-	var settings catalog.Settings
-	if err := yaml.Unmarshal([]byte(`{
+	groups := newCatalog(t, `{
 		"test-group": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
 			"actions": {"test-action": {"description": "d"}}},
 		"test-offline": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
 			"available": false, "actions": {"test-action": {"description": "d"}}},
 		"test-unbound": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
 			"actions": {"test-action": {"description": "d"}}}
-	}`), &settings); err != nil {
-		t.Fatal(err)
-	}
-	groups, err := catalog.New(settings)
-	if err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	executor := &unusedExecutor{}
 	router := executors{catalog: groups, byGroup: map[string]worker.Executor{"test-group": executor, "test-offline": executor}}
 	for _, route := range []struct {
@@ -50,5 +55,43 @@ func TestAnActionRoutesToItsGroupsExecutorWhileTheCatalogOffersIt(t *testing.T) 
 			t.Errorf("Route(%s/%s) = %v, %v; want it run = %v, ready = %v", route.group, route.action, got, ready,
 				route.runs, route.ready)
 		}
+	}
+}
+
+func TestASandboxGroupOffersTheSandboxActionsAndRunsThem(t *testing.T) {
+	groups := sandboxGroups(t, sandboxNamespace(t, kube, true), `["create"]`)
+	byGroup, err := sandboxExecutors(t.Context(), groups, kube.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, bound := byGroup["test-mcp"]; bound || len(byGroup) != 1 {
+		t.Errorf("executors are bound to %v, want the sandbox group alone", byGroup)
+	}
+	router := executors{catalog: groups, byGroup: byGroup}
+	if executor, ready := router.Route(store.ActionIdentity{Group: "test-sandbox", Name: "create"}); executor == nil || !ready {
+		t.Errorf("create routes to %v, %t; want the sandbox group's executor, ready", executor, ready)
+	}
+}
+
+func TestAStartupCheckRefusesASandboxGroup(t *testing.T) {
+	unsafe := func(err error) bool {
+		var refusal *sandbox.TemplateError
+		return errors.As(err, &refusal)
+	}
+	for _, test := range []struct {
+		name        string
+		sidecar     bool
+		directTools string
+		refused     func(error) bool
+	}{
+		{"whose template lets a box escape the egress path", false, "null", unsafe},
+		{"whose direct tools name an Action it does not offer", true, `["create", "test-unoffered"]`, func(err error) bool { return err != nil }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			groups := sandboxGroups(t, sandboxNamespace(t, kube, test.sidecar), test.directTools)
+			if byGroup, err := sandboxExecutors(t.Context(), groups, kube.Config); !test.refused(err) {
+				t.Errorf("sandboxExecutors() = %v, %v; want it refused", byGroup, err)
+			}
+		})
 	}
 }

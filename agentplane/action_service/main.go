@@ -1,8 +1,8 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
 // `ActionService`'s request reads, watches and cancellation and `OperatorActionService`'s Decisions over gRPC and
 // their HTTP facade under /v1/, the agent documentation, the standard gRPC health service and the process's
-// Prometheus metrics at /metrics, runs the dispatch worker, and keeps its policy index equal to the API server's. The
-// other RPCs answer UNIMPLEMENTED, and it runs no Executor.
+// Prometheus metrics at /metrics, runs the dispatch worker, which runs the sandbox groups' Actions, and keeps its policy
+// index equal to the API server's. The other RPCs answer UNIMPLEMENTED.
 package main
 
 import (
@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"syscall"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -52,11 +54,12 @@ const (
 )
 
 // deps is who the service asks about a caller: the API server, which reviews a workload's bearer, and the view of
-// which ServiceAccounts carry the caller label; and the API server whose policy objects the policy index reads.
+// which ServiceAccounts carry the caller label. Kube reaches that API server, whose policy objects the policy index
+// reads and where the sandbox groups run.
 type deps struct {
 	Reviews auth.TokenReviews
 	Callers api.Callers
-	Policy  *rest.Config
+	Kube    *rest.Config
 }
 
 // noCallers admits no workload, as if no ServiceAccount carried the caller label: the Gate does not read the policy
@@ -77,7 +80,7 @@ func inClusterDeps() (deps, error) {
 	if err != nil {
 		return deps{}, err
 	}
-	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Callers: noCallers{}, Policy: kubeConfig}, nil
+	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Callers: noCallers{}, Kube: kubeConfig}, nil
 }
 
 // run serves on the configured address until ctx ends, authenticating workloads with the cluster's TokenReview API
@@ -114,7 +117,8 @@ func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
 // waits for it to come back.
 type executors struct {
 	catalog *catalog.Catalog
-	// byGroup holds the Executor of each group that has one, by key. No Executor is ported yet.
+	// byGroup holds the Executor of each group that has one, by key: the sandbox groups'. No MCP Executor is ported
+	// yet.
 	byGroup map[string]worker.Executor
 }
 
@@ -147,6 +151,49 @@ func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckReque
 		}
 	}
 	return r.Probes.Check(ctx, request)
+}
+
+// sandboxExecutors builds the Executor of each sandbox group, and gives the group the Actions it offers: they are
+// declared, not discovered, so a direct tool the roster lacks is a typo found now. The offered templates are read once,
+// here, so that a missing or unsafe one stops the service rather than failing each create.
+func sandboxExecutors(ctx context.Context, groups *catalog.Catalog, kube *rest.Config) (map[string]worker.Executor, error) {
+	byGroup := map[string]worker.Executor{}
+	var exec sandbox.Exec
+	var client kubernetes.Interface
+	for key, group := range groups.Groups() {
+		binding, isSandbox := group.Executor.(catalog.PodBinding)
+		if !isSandbox {
+			continue
+		}
+		if client == nil {
+			var err error
+			if client, err = kubernetes.NewForConfig(kube); err != nil {
+				return nil, err
+			}
+			exec = sandbox.KubernetesExec(kube, client)
+		}
+		inventory := sandbox.NewInventory(binding, client, exec)
+		if err := inventory.CheckTemplates(ctx); err != nil {
+			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
+		}
+		group.Actions = sandbox.Actions(binding)
+		var unoffered []string
+		for tool := range group.DirectTools {
+			if _, offered := group.Actions[tool]; !offered {
+				unoffered = append(unoffered, tool)
+			}
+		}
+		if len(unoffered) > 0 {
+			slices.Sort(unoffered)
+			return nil, fmt.Errorf("ActionGroup %s direct_tools names Actions it does not offer: %q", key, unoffered)
+		}
+		executor, err := sandbox.NewExecutor(binding, inventory)
+		if err != nil {
+			return nil, err
+		}
+		byGroup[key] = executor
+	}
+	return byGroup, nil
 }
 
 // gate admits the callers of the service's RPCs.
@@ -202,15 +249,19 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		return err
 	}
 	defer unsubscribe()
+	byGroup, err := sandboxExecutors(ctx, c.ActionGroups, d.Kube)
+	if err != nil {
+		return err
+	}
 	requests := store.New(db)
-	dispatcher, err := worker.New(requests, executors{catalog: c.ActionGroups}, worker.DefaultTiming())
+	dispatcher, err := worker.New(requests, executors{catalog: c.ActionGroups, byGroup: byGroup}, worker.DefaultTiming())
 	if err != nil {
 		return err
 	}
 
 	watchPeriod := c.policyWatchPeriod()
 	policy := informer.NewIndex(reader.StaleAfterCycles*watchPeriod, c.CallerServiceAccountNamespaces)
-	policyInformer, err := informer.New(d.Policy, policy, c.PolicyNamespace, watchPeriod)
+	policyInformer, err := informer.New(d.Kube, policy, c.PolicyNamespace, watchPeriod)
 	if err != nil {
 		return err
 	}

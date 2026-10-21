@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -30,6 +31,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 )
@@ -67,10 +69,12 @@ type running struct {
 	stop func() error
 }
 
-// start serves over a database of its own, reading the policy objects of the API server policy reaches.
-func start(t *testing.T, policy *rest.Config) running {
+// start serves groups over a database of its own, reading the policy objects of, and running the sandbox groups on,
+// the API server kubeConfig reaches.
+func start(t *testing.T, kubeConfig *rest.Config, groups *catalog.Catalog) running {
 	t.Helper()
 	c := defaultConfig()
+	c.ActionGroups = groups
 	c.DatabaseURL = integrationDatabase.Clone(t)
 	c.TokenAudience = testAudience
 	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
@@ -78,7 +82,7 @@ func start(t *testing.T, policy *rest.Config) running {
 	c.PolicyNamespace = "test-agentplane"
 	c.PolicyResyncSeconds = int(reader.MinWatchPeriod / time.Second)
 	// As deployed until the Gate reads the caller label's index: no workload is admitted as a caller.
-	cluster := deps{Reviews: kube.TokenReviews(), Callers: noCallers{}, Policy: policy}
+	cluster := deps{Reviews: kube.TokenReviews(), Callers: noCallers{}, Kube: kubeConfig}
 	db, err := sql.Open("postgres", c.DatabaseURL)
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +140,7 @@ func checkHealth(t *testing.T, client healthpb.HealthClient, service string) (he
 }
 
 func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testing.T) {
-	service := start(t, kube.Config)
+	service := start(t, kube.Config, &catalog.Catalog{})
 	// Ready once the policy index has listed.
 	err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
 		got, err := checkHealth(t, service.health, "")
@@ -185,7 +189,7 @@ func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	refusing.Close()
-	service := start(t, &rest.Config{Host: "http://" + refusing.Addr().String()})
+	service := start(t, &rest.Config{Host: "http://" + refusing.Addr().String()}, &catalog.Catalog{})
 	if got, err := checkHealth(t, service.health, ""); err != nil || got != healthpb.HealthCheckResponse_NOT_SERVING {
 		t.Errorf("readiness = %v, %v; want NOT_SERVING", got, err)
 	}
@@ -195,49 +199,70 @@ func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {
 	}
 }
 
-func TestTheServiceRunsTheDispatchWorkerWhichHasNoExecutorYet(t *testing.T) {
-	service := start(t, kube.Config)
+// run submits action as caller, allows it, and returns the request once its Execution has ended.
+func (r running) run(t *testing.T, caller store.ServiceAccount, action store.ActionIdentity, arguments string) store.ActionRequest {
+	t.Helper()
 	operator := store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
-	pending, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
-		store.ActionRequestInput{
-			IdempotencyKey: "test-dispatched", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
-			Arguments: json.RawMessage(`{}`), Title: "test title",
-		}, store.Admission{RequestID: uuid.New()})
+	pending, err := r.store.Submit(t.Context(), store.CallerPrincipal{Account: caller}, store.ActionRequestInput{
+		IdempotencyKey: "test-dispatched", Action: action, Arguments: json.RawMessage(arguments), Title: "test title",
+	}, store.Admission{RequestID: uuid.New()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.store.Decide(t.Context(), pending.ID, store.DecisionInput{
+	if _, _, err := r.store.Decide(t.Context(), pending.ID, store.DecisionInput{
 		Verdict: store.VerdictAllow, ExpectedVersion: pending.Version, IdempotencyKey: "test-allow",
 	}, operator); err != nil {
 		t.Fatal(err)
 	}
-	// The worker claims the allowed Execution and, with no Executor to run it, fails it.
 	deadline := time.After(callDeadline)
 	for {
-		request, err := service.store.Get(t.Context(), pending.ID, operator)
+		request, err := r.store.Get(t.Context(), pending.ID, operator)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if request.State == store.StateFailed {
-			var failure struct{ Kind string }
-			if err := json.Unmarshal(request.Execution.Error, &failure); err != nil || failure.Kind != "*worker.UnsupportedActionError" {
-				t.Errorf("execution error %s, %v", request.Execution.Error, err)
-			}
-			break
+		if request.State == store.StateSucceeded || request.State == store.StateFailed {
+			return request
 		}
 		select {
-		case <-service.updates:
+		case <-r.updates:
 		case <-deadline:
-			t.Fatalf("the request is %s, never failed", request.State)
+			t.Fatalf("the request is %s, never ended", request.State)
 		}
+	}
+}
+
+func TestTheServiceFailsAnActionNoExecutorRuns(t *testing.T) {
+	service := start(t, kube.Config, &catalog.Catalog{})
+	request := service.run(t, store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
+		store.ActionIdentity{Group: "test-group", Name: "test-action"}, `{}`)
+	var failure struct{ Kind string }
+	if err := json.Unmarshal(request.Execution.Error, &failure); err != nil || request.State != store.StateFailed ||
+		failure.Kind != "*worker.UnsupportedActionError" {
+		t.Errorf("the request is %s with execution error %s, %v", request.State, request.Execution.Error, err)
 	}
 	if err := service.stop(); !errors.Is(err, context.Canceled) {
 		t.Errorf("serve returned %v, want the cancellation that stopped it", err)
 	}
 }
 
+// A sandbox group's Action runs through the worker, holding its lease, to a box on the API server.
+func TestTheServiceRunsASandboxGroupsActions(t *testing.T) {
+	namespace := sandboxNamespace(t, kube, true)
+	service := start(t, kube.Config, sandboxGroups(t, namespace, "null"))
+	caller := store.ServiceAccount{Namespace: namespace, Name: "test-caller"}
+	request := service.run(t, caller, store.ActionIdentity{Group: "test-sandbox", Name: "create"},
+		`{"name": "test-box", "template": "test-template"}`)
+	if request.State != store.StateSucceeded {
+		t.Fatalf("the request is %s with execution error %s", request.State, request.Execution.Error)
+	}
+	pods, err := kube.Clientset.CoreV1().Pods(namespace).List(t.Context(), metav1.ListOptions{})
+	if err != nil || len(pods.Items) != 1 || pods.Items[0].Spec.ServiceAccountName != caller.Name {
+		t.Errorf("the namespace holds %v, %v; want one box running as the caller", pods, err)
+	}
+}
+
 func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
-	service := start(t, kube.Config)
+	service := start(t, kube.Config, &catalog.Catalog{})
 	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-read", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
@@ -280,7 +305,7 @@ func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
 // No operator is configured here, so the operator service refuses every bearer; refusing one shows the service is
 // served and gated, where a service that is not served would answer UNIMPLEMENTED, and a route that is not, 404.
 func TestTheServiceGatesTheOperatorServiceOverGRPCAndHTTP(t *testing.T) {
-	service := start(t, kube.Config)
+	service := start(t, kube.Config, &catalog.Catalog{})
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
 	decision := &operator_action_servicepb.DecideActionRequestRequest{

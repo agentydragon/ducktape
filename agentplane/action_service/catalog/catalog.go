@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"maps"
 	"math"
 	"regexp"
@@ -88,6 +89,18 @@ type Group struct {
 // Catalog is the groups this process was started with, by key. The zero Catalog holds none.
 type Catalog struct {
 	groups map[string]*Group
+}
+
+// Groups are the catalog's groups in key order. A group whose executor declares its Actions rather than reading them
+// from settings has them set here, before the catalog serves.
+func (c *Catalog) Groups() iter.Seq2[string, *Group] {
+	return func(yield func(string, *Group) bool) {
+		for _, key := range slices.Sorted(maps.Keys(c.groups)) {
+			if !yield(key, c.groups[key]) {
+				return
+			}
+		}
+	}
 }
 
 var (
