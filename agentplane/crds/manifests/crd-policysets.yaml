@@ -110,6 +110,16 @@ spec:
                       minItems: 1
                       type: array
                       x-kubernetes-list-type: set
+                    operations:
+                      description: Operations lists what a session_inbox_access rule
+                        allows on its targets' Session inboxes.
+                      items:
+                        enum:
+                        - send_message
+                        type: string
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-type: set
                     paths:
                       description: Paths lists path patterns as the proxy matches
                         them; omitted means any path.
@@ -199,6 +209,42 @@ spec:
                       - kind
                       - name
                       type: object
+                    targets:
+                      description: Targets names the Sandboxes whose Session inboxes
+                        a session_inbox_access rule covers.
+                      properties:
+                        allSandboxes:
+                          description: AllSandboxes covers every Sandbox in the namespace,
+                            including ones created later.
+                          type: boolean
+                        sandboxes:
+                          description: Sandboxes names Sandboxes directly.
+                          items:
+                            description: 'SandboxTarget is one Sandbox by name. Without
+                              a UID it also covers a deleted and recreated
+
+                              Sandbox of that name; with one, only that incarnation.'
+                            properties:
+                              name:
+                                minLength: 1
+                                type: string
+                              uid:
+                                description: UID pins the target to one incarnation
+                                  of the Sandbox.
+                                format: uuid
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          minItems: 1
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                      type: object
+                      x-kubernetes-validations:
+                      - message: Name a Sandbox or set allSandboxes.
+                        rule: has(self.sandboxes) || (has(self.allSandboxes) && self.allSandboxes)
                     type:
                       description: Type selects the consumer that handles this rule.
                       enum:
@@ -206,6 +252,7 @@ spec:
                       - kubernetes_cluster_role_binding
                       - egress
                       - action_auto_approve
+                      - session_inbox_access
                       type: string
                   required:
                   - type
@@ -225,10 +272,17 @@ spec:
                       && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal)
                       && !has(self.credentialRef) && !has(self.policy)) : self.type
                       == ''egress'' ? (has(self.hosts) && !has(self.role) && !has(self.namespaces)
-                      && !has(self.clusterRole) && !has(self.policy)) : has(self.policy)
-                      && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole)
-                      && !has(self.hosts) && !has(self.methods) && !has(self.paths)
-                      && !has(self.clusterInternal) && !has(self.credentialRef)'
+                      && !has(self.clusterRole) && !has(self.policy)) : self.type
+                      == ''session_inbox_access'' ? (!has(self.role) && !has(self.namespaces)
+                      && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods)
+                      && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef)
+                      && !has(self.policy)) : has(self.policy) && !has(self.role)
+                      && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts)
+                      && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal)
+                      && !has(self.credentialRef)'
+                  - message: Rule fields must match type.
+                    rule: 'self.type == ''session_inbox_access'' ? (has(self.operations)
+                      && has(self.targets)) : (!has(self.operations) && !has(self.targets))'
                 maxItems: 256
                 minItems: 1
                 type: array

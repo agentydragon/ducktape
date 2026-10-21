@@ -34,6 +34,11 @@ async def test_policyset_admission() -> None:
         def action(kind: str, **fields: Any) -> dict[str, Any]:
             return {"type": "action_auto_approve", "policy": {"type": kind, "actions": {"g": ["a"]}, **fields}}
 
+        def inbox(targets: dict[str, Any], **fields: Any) -> dict[str, Any]:
+            return {"type": "session_inbox_access", "operations": ["send_message"], "targets": targets, **fields}
+
+        pinned = {"name": "dev-1", "uid": "3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1"}
+
         rules: tuple[dict[str, Any], ...] = (
             {"type": "kubernetes_role_binding", "role": {"kind": "Role", "name": "reader"}, "namespaces": ["team-a"]},
             {"type": "kubernetes_cluster_role_binding", "clusterRole": "reader"},
@@ -49,6 +54,8 @@ async def test_policyset_admission() -> None:
             action("github_repository", owner="owner", repository="repo"),
             action("github_public_repository"),
             action("home_assistant_entity_control", entities={"light.office": ["turn_on"]}),
+            inbox({"sandboxes": [{"name": "coordinator"}, pinned]}),
+            inbox({"allSandboxes": True}),
         )
         for rule in rules:
             created = await create(rule)
@@ -73,6 +80,14 @@ async def test_policyset_admission() -> None:
             action("argument_schema"),
             action("github_repository", owner="owner"),
             action("home_assistant_entity_control"),
+            inbox({}),
+            inbox({"allSandboxes": False}),
+            inbox({"sandboxes": [{"name": "dev-1", "uid": "dev-1"}]}),
+            inbox({"allSandboxes": True}, hosts=["api.example.com"]),
+            {"type": "session_inbox_access", "operations": ["read_transcript"], "targets": {"allSandboxes": True}},
+            {"type": "session_inbox_access", "targets": {"allSandboxes": True}},
+            {"type": "egress", "hosts": ["api.example.com"], "operations": ["send_message"]},
+            {**action("exact_actions"), "targets": {"allSandboxes": True}},
         )
         for rule in invalid_rules:
             with pytest.raises(ApiException) as rejected:

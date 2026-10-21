@@ -7,6 +7,7 @@ package v1alpha1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 type RoleRef struct {
@@ -18,10 +19,11 @@ type RoleRef struct {
 
 // Rule is shared by policy consumers; each consumer handles its own Type.
 // +kubebuilder:validation:XValidation:rule="!has(self.hosts) || !self.hosts.exists(h, h == '*') || (!has(self.credentialRef) && (!has(self.clusterInternal) || !self.clusterInternal))",message="A blanket host rule cannot set clusterInternal or credentialRef."
-// +kubebuilder:validation:XValidation:rule="self.type == 'kubernetes_role_binding' ? (has(self.role) && has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : self.type == 'kubernetes_cluster_role_binding' ? (has(self.clusterRole) && !has(self.role) && !has(self.namespaces) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : self.type == 'egress' ? (has(self.hosts) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.policy)) : has(self.policy) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef)",message="Rule fields must match type."
+// +kubebuilder:validation:XValidation:rule="self.type == 'kubernetes_role_binding' ? (has(self.role) && has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : self.type == 'kubernetes_cluster_role_binding' ? (has(self.clusterRole) && !has(self.role) && !has(self.namespaces) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : self.type == 'egress' ? (has(self.hosts) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.policy)) : self.type == 'session_inbox_access' ? (!has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : has(self.policy) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef)",message="Rule fields must match type."
+// +kubebuilder:validation:XValidation:rule="self.type == 'session_inbox_access' ? (has(self.operations) && has(self.targets)) : (!has(self.operations) && !has(self.targets))",message="Rule fields must match type."
 type Rule struct {
 	// Type selects the consumer that handles this rule.
-	// +kubebuilder:validation:Enum=kubernetes_role_binding;kubernetes_cluster_role_binding;egress;action_auto_approve
+	// +kubebuilder:validation:Enum=kubernetes_role_binding;kubernetes_cluster_role_binding;egress;action_auto_approve;session_inbox_access
 	Type string `json:"type"`
 	// Role names the Role or ClusterRole to bind; the named object must already exist.
 	Role *RoleRef `json:"role,omitempty"`
@@ -54,6 +56,36 @@ type Rule struct {
 	ClusterInternal bool `json:"clusterInternal,omitempty"`
 	// Policy configures the Action evaluator for an action_auto_approve rule.
 	Policy *ActionPolicy `json:"policy,omitempty"`
+	// Operations lists what a session_inbox_access rule allows on its targets' Session inboxes.
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:Enum=send_message
+	Operations []string `json:"operations,omitempty"`
+	// Targets names the Sandboxes whose Session inboxes a session_inbox_access rule covers.
+	Targets *SandboxTargets `json:"targets,omitempty"`
+}
+
+// SandboxTargets names Sandboxes in the PolicySet's namespace explicitly, never by selection. The
+// fields combine additively.
+// +kubebuilder:validation:XValidation:rule="has(self.sandboxes) || (has(self.allSandboxes) && self.allSandboxes)",message="Name a Sandbox or set allSandboxes."
+type SandboxTargets struct {
+	// Sandboxes names Sandboxes directly.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MinItems=1
+	Sandboxes []SandboxTarget `json:"sandboxes,omitempty"`
+	// AllSandboxes covers every Sandbox in the namespace, including ones created later.
+	AllSandboxes bool `json:"allSandboxes,omitempty"`
+}
+
+// SandboxTarget is one Sandbox by name. Without a UID it also covers a deleted and recreated
+// Sandbox of that name; with one, only that incarnation.
+type SandboxTarget struct {
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// UID pins the target to one incarnation of the Sandbox.
+	// +kubebuilder:validation:Format=uuid
+	UID types.UID `json:"uid,omitempty"`
 }
 
 // CredentialRef names an EgressCredential in the PolicySet's namespace.
