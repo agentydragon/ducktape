@@ -454,3 +454,14 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_net",
+    srcs = ["test_net.py"],
+    deps = [
+        ":net",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
