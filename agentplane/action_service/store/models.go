@@ -304,7 +304,7 @@ type ExecutionOutcome struct {
 	Error json.RawMessage
 }
 
-// UnknownOutcomeReason is why the lease sweep ended an Execution without an outcome.
+// UnknownOutcomeReason is why an Execution ended without an outcome. It is the `kind` of its error.
 type UnknownOutcomeReason string
 
 const (
@@ -312,6 +312,10 @@ const (
 	UnknownExecutorLost UnknownOutcomeReason = "executor_lost"
 	// UnknownLeaseExpired is a lapsed lease whose executor is otherwise healthy.
 	UnknownLeaseExpired UnknownOutcomeReason = "lease_expired"
+	// UnknownAdapterOutcome is an executor that could not tell whether the effect happened.
+	UnknownAdapterOutcome UnknownOutcomeReason = "execution_outcome_unknown"
+	// UnknownCoordinatorStopped is an Execution its worker stopped while draining.
+	UnknownCoordinatorStopped UnknownOutcomeReason = "coordinator_stopped"
 )
 
 // terminalActionStates is the state of a request whose Execution ended in the key.

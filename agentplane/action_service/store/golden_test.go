@@ -26,9 +26,9 @@ func TestVocabulariesAreThoseOfTheStoredColumns(t *testing.T) {
 	}
 }
 
-func TestTheSweepsReasonsAreAmongThoseOfPython(t *testing.T) {
+func TestTheUnknownOutcomeReasonsAreAmongThoseOfPython(t *testing.T) {
 	python := loadGolden(t).Enums["unknown_outcome_reason"]
-	for _, reason := range []UnknownOutcomeReason{UnknownExecutorLost, UnknownLeaseExpired} {
+	for _, reason := range []UnknownOutcomeReason{UnknownExecutorLost, UnknownLeaseExpired, UnknownAdapterOutcome, UnknownCoordinatorStopped} {
 		if !slices.Contains(python, string(reason)) {
 			t.Errorf("Python has no reason %s among %v", reason, python)
 		}
