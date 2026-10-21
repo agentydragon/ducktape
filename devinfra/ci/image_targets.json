@@ -284,6 +284,11 @@
       "test": "//agentplane/runner_gateway/migrations/...",
       "registry": "forgejo"
     },
+    "agentplane-runner-disk": {
+      "target": "//agentplane/runner:disk_image",
+      "test": "//agentplane/runner/...",
+      "registry": "forgejo"
+    },
     "agentplane-notification-service": {
       "target": "//agentplane/notification_service:service_image",
       "test": "//agentplane/notification_service/...",

@@ -530,6 +530,18 @@ apt.install(
     ],
 )
 
+# erofs-utils for //devinfra/erofs: mkfs.erofs and its libraries as a closure that runs on the
+# RBE image's Ubuntu libc (devinfra/erofs/erofs_tool.py).
+apt.install(
+    dependency_set = "trixie_erofs_utils",
+    packages = ["erofs-utils"],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
 # Budget exporter image: git + ca-certificates on debian:trixie-slim so the
 # export_ledger CronJob can clone/commit/push the Beancount ledger repo.
 apt.install(
@@ -557,7 +569,7 @@ apt.install(
         "trixie-security",
     ],
 )
-use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_wayback_cache")
+use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")

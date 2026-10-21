@@ -8,28 +8,12 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # The runner Pod's tools image. It keeps Debian's shell utilities for bootstrap and process-lifecycle
 # fixtures; the Nix-built production image supplies the full toolset. As in production, the runner is
-# not in it: the Pod runs it from the runner disk image's volume.
+# not in it: the Pod runs it from the volume of the production runner disk image.
 oci_image(
     name = "runner_image",
     base = "@debian_trixie_slim_linux_amd64",
     tars = ["//third_party/debian_slim:cacerts"],
     user = "1000:1000",
-)
-
-# The runner disk image's `bin/` (agentplane/runner/runner-disk.nix), which the runner Pod mounts as an
-# image volume at /run/agentplane/runner. The `agentplane` command is left out: no fixture runs it.
-pkg_tar(
-    name = "runner_disk_bin",
-    srcs = ["//agentplane/runner/go/cmd:agentplane-runner"],
-    mode = "0755",
-    package_dir = "/bin",
-)
-
-oci_image(
-    name = "runner_disk_image",
-    architecture = "amd64",
-    os = "linux",
-    tars = [":runner_disk_bin"],
 )
 
 pkg_tar(
@@ -85,7 +69,7 @@ _IMAGES = {
     "notification_service_migrate": "//agentplane/notification_service/migrations:image",
     "policy_controller": "//agentplane/policy_controller:image",
     "postgres": "@postgres_18_minimal_linux_amd64",
-    "runner_disk": ":runner_disk_image",
+    "runner_disk": "//agentplane/runner:disk_image",
     "runner_gateway": "//agentplane/runner_gateway:image",
     "runner_gateway_queue_migrate": "//agentplane/runner_gateway/migrations:image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",

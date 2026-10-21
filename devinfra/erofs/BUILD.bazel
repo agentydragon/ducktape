@@ -1,0 +1,14 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "erofs_tool",
+    srcs = ["erofs_tool.py"],
+)
+
+py_binary(
+    name = "erofs_tool_bin",
+    imports = ["../.."],
+    main_module = "devinfra.erofs.erofs_tool",
+    visibility = ["//visibility:public"],
+    deps = [":erofs_tool"],
+)

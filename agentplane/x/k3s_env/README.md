@@ -48,8 +48,8 @@ The importer consumes the `oci_image` targets through `oci_layout_rloc`, combine
 descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
 Docker-format `oci_load` tarballs.
 
-The runner Pod is laid out as in production: the real runner comes from the `:runner_disk_image` image
-volume at `/run/agentplane/runner`, and the tools image holds the rest. The lifecycle target supplies
+The runner Pod is laid out as in production: the real runner comes from the production `//agentplane/runner:disk_image`
+image volume at `/run/agentplane/runner`, and the tools image holds the rest. The lifecycle target supplies
 `:runner_image`, with no native harnesses. The model smoke supplies `:runner_claude_image`, which adds only
 pinned Claude Code to the same base. Each target carries its own `runner_layout.rloc` through
 `K3S_RUNNER_LAYOUT_RLOCATION`; the shared stack library carries only service layouts, among them the runner
