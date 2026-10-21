@@ -1,0 +1,1663 @@
+{
+  "views": {
+    "a binding naming only sets that grant nothing": {
+      "operator": {
+        "autoApprovable": [],
+        "autoApproveIf": [],
+        "bindings": [
+          {
+            "generation": 1,
+            "labels": {},
+            "missingPolicySets": ["test-gone"],
+            "name": "test-nothing",
+            "policySets": [
+              {
+                "generation": 6,
+                "name": "test-other-reader"
+              },
+              {
+                "generation": 2,
+                "name": "test-refused",
+                "refused": "rules[0]: 1 validation error for AutoApproveRule\npolicy.argument_schema.schema\n  Value error, schema is not a valid JSON Schema: 5 is not valid under any of the given schemas [type=value_error, input_value={'type': 5}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      },
+      "policy_bindings": [
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-nothing",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-nothing"
+          },
+          "spec": {
+            "policySets": ["test-other-reader", "test-refused", "test-gone"],
+            "subject": {
+              "name": "test-workload",
+              "namespace": "test-callers"
+            }
+          }
+        }
+      ],
+      "policy_sets": [
+        {
+          "metadata": {
+            "generation": 6,
+            "name": "test-other-reader",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-other-reader"
+          },
+          "spec": {
+            "rules": [
+              {
+                "hosts": ["egress.test"],
+                "type": "egress"
+              }
+            ]
+          }
+        },
+        {
+          "metadata": {
+            "generation": 2,
+            "name": "test-refused",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-refused"
+          },
+          "spec": {
+            "rules": [
+              {
+                "policy": {
+                  "actions": {
+                    "test-group": ["test-a"]
+                  },
+                  "schema": {
+                    "type": 5
+                  },
+                  "type": "argument_schema"
+                },
+                "type": "action_auto_approve"
+              }
+            ]
+          }
+        }
+      ],
+      "subject": {
+        "name": "test-workload",
+        "namespace": "test-callers"
+      },
+      "synced": true,
+      "workload": {
+        "autoApprovable": [],
+        "autoApproveIf": [],
+        "bindings": [
+          {
+            "name": "test-nothing",
+            "policySets": [
+              {
+                "generation": 6,
+                "name": "test-other-reader"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      }
+    },
+    "a binding's sets that resolve, are refused, are missing or are another reader's": {
+      "operator": {
+        "autoApprovable": [
+          {
+            "group": "test-group",
+            "name": "test-a"
+          },
+          {
+            "group": "test-group",
+            "name": "test-read"
+          }
+        ],
+        "autoApproveIf": [
+          {
+            "binding": "test-mixed",
+            "index": 0,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-a", "test-read"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-reads",
+            "source": "POLICY_SOURCE_RULES"
+          }
+        ],
+        "bindings": [
+          {
+            "generation": 3,
+            "labels": {
+              "test.example/managed-by": "test-writer"
+            },
+            "missingPolicySets": ["test-missing"],
+            "name": "test-mixed",
+            "policySets": [
+              {
+                "generation": 2,
+                "name": "test-refused",
+                "refused": "rules[0]: 1 validation error for AutoApproveRule\npolicy.argument_schema.schema\n  Value error, schema is not a valid JSON Schema: 5 is not valid under any of the given schemas [type=value_error, input_value={'type': 5}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+              },
+              {
+                "generation": 1,
+                "name": "test-reads"
+              },
+              {
+                "generation": 6,
+                "name": "test-other-reader"
+              }
+            ],
+            "ready": {
+              "message": "missing PolicySets: test-missing",
+              "observedGeneration": 2,
+              "reason": "PolicySetUnavailable",
+              "status": "CONDITION_STATUS_FALSE"
+            }
+          }
+        ],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      },
+      "policy_bindings": [
+        {
+          "metadata": {
+            "generation": 3,
+            "labels": {
+              "test.example/managed-by": "test-writer"
+            },
+            "name": "test-mixed",
+            "namespace": "test-policies",
+            "resourceVersion": "17",
+            "uid": "uid-test-mixed"
+          },
+          "spec": {
+            "policySets": ["test-refused", "test-reads", "test-missing", "test-other-reader"],
+            "subject": {
+              "name": "test-workload",
+              "namespace": "test-callers"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "lastTransitionTime": "2026-10-01T11:00:00Z",
+                "message": "egress rules: 0",
+                "observedGeneration": 3,
+                "reason": "Enforced",
+                "status": "True",
+                "type": "EgressReady"
+              },
+              {
+                "lastTransitionTime": "2026-10-01T11:00:00Z",
+                "message": "missing PolicySets: test-missing",
+                "observedGeneration": 2,
+                "reason": "PolicySetUnavailable",
+                "status": "False",
+                "type": "ActionsReady"
+              }
+            ]
+          }
+        }
+      ],
+      "policy_sets": [
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-reads",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-reads"
+          },
+          "spec": {
+            "rules": [
+              {
+                "policy": {
+                  "actions": {
+                    "test-group": ["test-read", "test-a"]
+                  },
+                  "type": "exact_actions"
+                },
+                "type": "action_auto_approve"
+              }
+            ]
+          }
+        },
+        {
+          "metadata": {
+            "generation": 2,
+            "name": "test-refused",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-refused"
+          },
+          "spec": {
+            "rules": [
+              {
+                "policy": {
+                  "actions": {
+                    "test-group": ["test-a"]
+                  },
+                  "schema": {
+                    "type": 5
+                  },
+                  "type": "argument_schema"
+                },
+                "type": "action_auto_approve"
+              }
+            ]
+          }
+        },
+        {
+          "metadata": {
+            "generation": 6,
+            "name": "test-other-reader",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-other-reader"
+          },
+          "spec": {
+            "rules": [
+              {
+                "hosts": ["egress.test"],
+                "type": "egress"
+              }
+            ]
+          }
+        }
+      ],
+      "subject": {
+        "name": "test-workload",
+        "namespace": "test-callers"
+      },
+      "synced": true,
+      "workload": {
+        "autoApprovable": [
+          {
+            "group": "test-group",
+            "name": "test-a"
+          },
+          {
+            "group": "test-group",
+            "name": "test-read"
+          }
+        ],
+        "autoApproveIf": [
+          {
+            "binding": "test-mixed",
+            "index": 0,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-a", "test-read"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-reads",
+            "source": "POLICY_SOURCE_RULES"
+          }
+        ],
+        "bindings": [
+          {
+            "name": "test-mixed",
+            "policySets": [
+              {
+                "generation": 1,
+                "name": "test-reads"
+              },
+              {
+                "generation": 6,
+                "name": "test-other-reader"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      }
+    },
+    "a set named twice, and an ActionsReady of unknown status naming no generation": {
+      "operator": {
+        "autoApprovable": [
+          {
+            "group": "test-group",
+            "name": "test-a"
+          },
+          {
+            "group": "test-group",
+            "name": "test-read"
+          }
+        ],
+        "autoApproveIf": [
+          {
+            "binding": "test-twice",
+            "index": 0,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-a", "test-read"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-reads",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-twice",
+            "index": 0,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-a", "test-read"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-reads",
+            "source": "POLICY_SOURCE_RULES"
+          }
+        ],
+        "bindings": [
+          {
+            "generation": 1,
+            "labels": {},
+            "missingPolicySets": [],
+            "name": "test-twice",
+            "policySets": [
+              {
+                "generation": 1,
+                "name": "test-reads"
+              },
+              {
+                "generation": 1,
+                "name": "test-reads"
+              }
+            ],
+            "ready": {
+              "message": "test-unjudged",
+              "reason": "TestUnjudged",
+              "status": "CONDITION_STATUS_UNKNOWN"
+            }
+          }
+        ],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      },
+      "policy_bindings": [
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-twice",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-twice"
+          },
+          "spec": {
+            "policySets": ["test-reads", "test-reads"],
+            "subject": {
+              "name": "test-workload",
+              "namespace": "test-callers"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "lastTransitionTime": "2026-10-01T11:00:00Z",
+                "message": "test-unjudged",
+                "reason": "TestUnjudged",
+                "status": "Unknown",
+                "type": "ActionsReady"
+              }
+            ]
+          }
+        }
+      ],
+      "policy_sets": [
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-reads",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-reads"
+          },
+          "spec": {
+            "rules": [
+              {
+                "policy": {
+                  "actions": {
+                    "test-group": ["test-read", "test-a"]
+                  },
+                  "type": "exact_actions"
+                },
+                "type": "action_auto_approve"
+              }
+            ]
+          }
+        }
+      ],
+      "subject": {
+        "name": "test-workload",
+        "namespace": "test-callers"
+      },
+      "synced": true,
+      "workload": {
+        "autoApprovable": [
+          {
+            "group": "test-group",
+            "name": "test-a"
+          },
+          {
+            "group": "test-group",
+            "name": "test-read"
+          }
+        ],
+        "autoApproveIf": [
+          {
+            "binding": "test-twice",
+            "index": 0,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-a", "test-read"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-reads",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-twice",
+            "index": 0,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-a", "test-read"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-reads",
+            "source": "POLICY_SOURCE_RULES"
+          }
+        ],
+        "bindings": [
+          {
+            "name": "test-twice",
+            "policySets": [
+              {
+                "generation": 1,
+                "name": "test-reads"
+              },
+              {
+                "generation": 1,
+                "name": "test-reads"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      }
+    },
+    "a subject no binding names": {
+      "operator": {
+        "autoApprovable": [],
+        "autoApproveIf": [],
+        "bindings": [],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      },
+      "policy_bindings": [
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-c",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-c"
+          },
+          "spec": {
+            "policySets": ["test-reads"],
+            "subject": {
+              "name": "test-other-workload",
+              "namespace": "test-callers"
+            }
+          }
+        }
+      ],
+      "policy_sets": [
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-reads",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-reads"
+          },
+          "spec": {
+            "rules": [
+              {
+                "policy": {
+                  "actions": {
+                    "test-group": ["test-read", "test-a"]
+                  },
+                  "type": "exact_actions"
+                },
+                "type": "action_auto_approve"
+              }
+            ]
+          }
+        }
+      ],
+      "subject": {
+        "name": "test-workload",
+        "namespace": "test-callers"
+      },
+      "synced": true,
+      "workload": {
+        "autoApprovable": [],
+        "autoApproveIf": [],
+        "bindings": [],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      }
+    },
+    "an index that is not synced": {
+      "operator": {
+        "autoApprovable": [],
+        "autoApproveIf": [],
+        "bindings": [],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": false
+      },
+      "policy_bindings": [
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-a",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-a"
+          },
+          "spec": {
+            "policySets": ["test-reads"],
+            "subject": {
+              "name": "test-workload",
+              "namespace": "test-callers"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "lastTransitionTime": "2026-10-01T11:00:00Z",
+                "message": "Action rules: 1",
+                "observedGeneration": 2,
+                "reason": "Applied",
+                "status": "True",
+                "type": "ActionsReady"
+              }
+            ]
+          }
+        }
+      ],
+      "policy_sets": [
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-reads",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-reads"
+          },
+          "spec": {
+            "rules": [
+              {
+                "policy": {
+                  "actions": {
+                    "test-group": ["test-read", "test-a"]
+                  },
+                  "type": "exact_actions"
+                },
+                "type": "action_auto_approve"
+              }
+            ]
+          }
+        }
+      ],
+      "subject": {
+        "name": "test-workload",
+        "namespace": "test-callers"
+      },
+      "synced": false,
+      "workload": {
+        "autoApprovable": [],
+        "autoApproveIf": [],
+        "bindings": [],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": false
+      }
+    },
+    "bindings in name order, an expiring one and another subject's": {
+      "operator": {
+        "autoApprovable": [
+          {
+            "group": "test-another-group",
+            "name": "test-c"
+          },
+          {
+            "group": "test-github",
+            "name": "get_file_contents"
+          },
+          {
+            "group": "test-github",
+            "name": "search_code"
+          },
+          {
+            "group": "test-group",
+            "name": "test-a"
+          },
+          {
+            "group": "test-group",
+            "name": "test-b"
+          },
+          {
+            "group": "test-group",
+            "name": "test-echo"
+          },
+          {
+            "group": "test-group",
+            "name": "test-read"
+          },
+          {
+            "group": "test-home-assistant",
+            "name": "ha_call_service"
+          }
+        ],
+        "autoApproveIf": [
+          {
+            "binding": "test-a",
+            "index": 0,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-a", "test-read"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-reads",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-b",
+            "index": 1,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-another-group": {
+                    "values": ["test-c"]
+                  },
+                  "test-group": {
+                    "values": ["test-a", "test-b"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-b",
+            "index": 2,
+            "policy": {
+              "argumentSchema": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-echo"]
+                  }
+                },
+                "argumentSchema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "maxLength": 5,
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "type": "object"
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-b",
+            "index": 3,
+            "policy": {
+              "githubRepository": {
+                "actions": {
+                  "test-github": {
+                    "values": ["get_file_contents", "search_code"]
+                  }
+                },
+                "owner": "test-owner",
+                "repository": "test-repo"
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-b",
+            "index": 4,
+            "policy": {
+              "githubPublicRepository": {
+                "actions": {
+                  "test-github": {
+                    "values": ["get_file_contents"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-b",
+            "index": 5,
+            "policy": {
+              "homeAssistantEntityControl": {
+                "actions": {
+                  "test-home-assistant": {
+                    "values": ["ha_call_service"]
+                  }
+                },
+                "entities": {
+                  "fan.test_fan": {
+                    "values": ["turn_off"]
+                  },
+                  "light.test_lamp": {
+                    "values": ["toggle", "turn_on"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          }
+        ],
+        "bindings": [
+          {
+            "expiresAt": "2026-10-01T13:00:00Z",
+            "generation": 1,
+            "labels": {},
+            "missingPolicySets": [],
+            "name": "test-a",
+            "policySets": [
+              {
+                "generation": 1,
+                "name": "test-reads"
+              }
+            ]
+          },
+          {
+            "generation": 1,
+            "labels": {},
+            "missingPolicySets": [],
+            "name": "test-b",
+            "policySets": [
+              {
+                "generation": 4,
+                "name": "test-every-kind"
+              }
+            ],
+            "ready": {
+              "message": "Action rules: 1",
+              "observedGeneration": 2,
+              "reason": "Applied",
+              "status": "CONDITION_STATUS_TRUE"
+            }
+          }
+        ],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      },
+      "policy_bindings": [
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-b",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-b"
+          },
+          "spec": {
+            "policySets": ["test-every-kind"],
+            "subject": {
+              "name": "test-workload",
+              "namespace": "test-callers"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "lastTransitionTime": "2026-10-01T11:00:00Z",
+                "message": "Action rules: 1",
+                "observedGeneration": 2,
+                "reason": "Applied",
+                "status": "True",
+                "type": "ActionsReady"
+              }
+            ]
+          }
+        },
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-a",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-a"
+          },
+          "spec": {
+            "expiresAt": "2026-10-01T13:00:00Z",
+            "policySets": ["test-reads"],
+            "subject": {
+              "name": "test-workload",
+              "namespace": "test-callers"
+            }
+          }
+        },
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-c",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-c"
+          },
+          "spec": {
+            "policySets": ["test-reads"],
+            "subject": {
+              "name": "test-other-workload",
+              "namespace": "test-callers"
+            }
+          }
+        }
+      ],
+      "policy_sets": [
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-reads",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-reads"
+          },
+          "spec": {
+            "rules": [
+              {
+                "policy": {
+                  "actions": {
+                    "test-group": ["test-read", "test-a"]
+                  },
+                  "type": "exact_actions"
+                },
+                "type": "action_auto_approve"
+              }
+            ]
+          }
+        },
+        {
+          "metadata": {
+            "generation": 4,
+            "name": "test-every-kind",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-every-kind"
+          },
+          "spec": {
+            "rules": [
+              {
+                "hosts": ["egress.test"],
+                "type": "egress"
+              },
+              {
+                "policy": {
+                  "actions": {
+                    "test-another-group": ["test-c"],
+                    "test-group": ["test-b", "test-a"]
+                  },
+                  "type": "exact_actions"
+                },
+                "type": "action_auto_approve"
+              },
+              {
+                "policy": {
+                  "actions": {
+                    "test-group": ["test-echo"]
+                  },
+                  "schema": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "count": {
+                        "type": "integer"
+                      },
+                      "message": {
+                        "maxLength": 5,
+                        "type": "string"
+                      }
+                    },
+                    "required": ["message"],
+                    "type": "object"
+                  },
+                  "type": "argument_schema"
+                },
+                "type": "action_auto_approve"
+              },
+              {
+                "policy": {
+                  "actions": {
+                    "test-github": ["search_code", "get_file_contents"]
+                  },
+                  "owner": "test-owner",
+                  "repository": "test-repo",
+                  "type": "github_repository"
+                },
+                "type": "action_auto_approve"
+              },
+              {
+                "policy": {
+                  "actions": {
+                    "test-github": ["get_file_contents"]
+                  },
+                  "type": "github_public_repository"
+                },
+                "type": "action_auto_approve"
+              },
+              {
+                "policy": {
+                  "actions": {
+                    "test-home-assistant": ["ha_call_service"]
+                  },
+                  "entities": {
+                    "fan.test_fan": ["turn_off"],
+                    "light.test_lamp": ["turn_on", "toggle"]
+                  },
+                  "type": "home_assistant_entity_control"
+                },
+                "type": "action_auto_approve"
+              }
+            ]
+          }
+        }
+      ],
+      "subject": {
+        "name": "test-workload",
+        "namespace": "test-callers"
+      },
+      "synced": true,
+      "workload": {
+        "autoApprovable": [
+          {
+            "group": "test-another-group",
+            "name": "test-c"
+          },
+          {
+            "group": "test-github",
+            "name": "get_file_contents"
+          },
+          {
+            "group": "test-github",
+            "name": "search_code"
+          },
+          {
+            "group": "test-group",
+            "name": "test-a"
+          },
+          {
+            "group": "test-group",
+            "name": "test-b"
+          },
+          {
+            "group": "test-group",
+            "name": "test-echo"
+          },
+          {
+            "group": "test-group",
+            "name": "test-read"
+          },
+          {
+            "group": "test-home-assistant",
+            "name": "ha_call_service"
+          }
+        ],
+        "autoApproveIf": [
+          {
+            "binding": "test-a",
+            "index": 0,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-a", "test-read"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-reads",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-b",
+            "index": 1,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-another-group": {
+                    "values": ["test-c"]
+                  },
+                  "test-group": {
+                    "values": ["test-a", "test-b"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-b",
+            "index": 2,
+            "policy": {
+              "argumentSchema": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-echo"]
+                  }
+                },
+                "argumentSchema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "maxLength": 5,
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "type": "object"
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-b",
+            "index": 3,
+            "policy": {
+              "githubRepository": {
+                "actions": {
+                  "test-github": {
+                    "values": ["get_file_contents", "search_code"]
+                  }
+                },
+                "owner": "test-owner",
+                "repository": "test-repo"
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-b",
+            "index": 4,
+            "policy": {
+              "githubPublicRepository": {
+                "actions": {
+                  "test-github": {
+                    "values": ["get_file_contents"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-b",
+            "index": 5,
+            "policy": {
+              "homeAssistantEntityControl": {
+                "actions": {
+                  "test-home-assistant": {
+                    "values": ["ha_call_service"]
+                  }
+                },
+                "entities": {
+                  "fan.test_fan": {
+                    "values": ["turn_off"]
+                  },
+                  "light.test_lamp": {
+                    "values": ["toggle", "turn_on"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          }
+        ],
+        "bindings": [
+          {
+            "expiresAt": "2026-10-01T13:00:00Z",
+            "name": "test-a",
+            "policySets": [
+              {
+                "generation": 1,
+                "name": "test-reads"
+              }
+            ]
+          },
+          {
+            "name": "test-b",
+            "policySets": [
+              {
+                "generation": 4,
+                "name": "test-every-kind"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      }
+    },
+    "every kind, walked in rule order": {
+      "operator": {
+        "autoApprovable": [
+          {
+            "group": "test-another-group",
+            "name": "test-c"
+          },
+          {
+            "group": "test-github",
+            "name": "get_file_contents"
+          },
+          {
+            "group": "test-github",
+            "name": "search_code"
+          },
+          {
+            "group": "test-group",
+            "name": "test-a"
+          },
+          {
+            "group": "test-group",
+            "name": "test-b"
+          },
+          {
+            "group": "test-group",
+            "name": "test-echo"
+          },
+          {
+            "group": "test-home-assistant",
+            "name": "ha_call_service"
+          }
+        ],
+        "autoApproveIf": [
+          {
+            "binding": "test-grant",
+            "index": 1,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-another-group": {
+                    "values": ["test-c"]
+                  },
+                  "test-group": {
+                    "values": ["test-a", "test-b"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-grant",
+            "index": 2,
+            "policy": {
+              "argumentSchema": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-echo"]
+                  }
+                },
+                "argumentSchema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "maxLength": 5,
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "type": "object"
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-grant",
+            "index": 3,
+            "policy": {
+              "githubRepository": {
+                "actions": {
+                  "test-github": {
+                    "values": ["get_file_contents", "search_code"]
+                  }
+                },
+                "owner": "test-owner",
+                "repository": "test-repo"
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-grant",
+            "index": 4,
+            "policy": {
+              "githubPublicRepository": {
+                "actions": {
+                  "test-github": {
+                    "values": ["get_file_contents"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-grant",
+            "index": 5,
+            "policy": {
+              "homeAssistantEntityControl": {
+                "actions": {
+                  "test-home-assistant": {
+                    "values": ["ha_call_service"]
+                  }
+                },
+                "entities": {
+                  "fan.test_fan": {
+                    "values": ["turn_off"]
+                  },
+                  "light.test_lamp": {
+                    "values": ["toggle", "turn_on"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          }
+        ],
+        "bindings": [
+          {
+            "generation": 1,
+            "labels": {},
+            "missingPolicySets": [],
+            "name": "test-grant",
+            "policySets": [
+              {
+                "generation": 4,
+                "name": "test-every-kind"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      },
+      "policy_bindings": [
+        {
+          "metadata": {
+            "generation": 1,
+            "name": "test-grant",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-grant"
+          },
+          "spec": {
+            "policySets": ["test-every-kind"],
+            "subject": {
+              "name": "test-workload",
+              "namespace": "test-callers"
+            }
+          }
+        }
+      ],
+      "policy_sets": [
+        {
+          "metadata": {
+            "generation": 4,
+            "name": "test-every-kind",
+            "namespace": "test-policies",
+            "resourceVersion": "1",
+            "uid": "uid-test-every-kind"
+          },
+          "spec": {
+            "rules": [
+              {
+                "hosts": ["egress.test"],
+                "type": "egress"
+              },
+              {
+                "policy": {
+                  "actions": {
+                    "test-another-group": ["test-c"],
+                    "test-group": ["test-b", "test-a"]
+                  },
+                  "type": "exact_actions"
+                },
+                "type": "action_auto_approve"
+              },
+              {
+                "policy": {
+                  "actions": {
+                    "test-group": ["test-echo"]
+                  },
+                  "schema": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "count": {
+                        "type": "integer"
+                      },
+                      "message": {
+                        "maxLength": 5,
+                        "type": "string"
+                      }
+                    },
+                    "required": ["message"],
+                    "type": "object"
+                  },
+                  "type": "argument_schema"
+                },
+                "type": "action_auto_approve"
+              },
+              {
+                "policy": {
+                  "actions": {
+                    "test-github": ["search_code", "get_file_contents"]
+                  },
+                  "owner": "test-owner",
+                  "repository": "test-repo",
+                  "type": "github_repository"
+                },
+                "type": "action_auto_approve"
+              },
+              {
+                "policy": {
+                  "actions": {
+                    "test-github": ["get_file_contents"]
+                  },
+                  "type": "github_public_repository"
+                },
+                "type": "action_auto_approve"
+              },
+              {
+                "policy": {
+                  "actions": {
+                    "test-home-assistant": ["ha_call_service"]
+                  },
+                  "entities": {
+                    "fan.test_fan": ["turn_off"],
+                    "light.test_lamp": ["turn_on", "toggle"]
+                  },
+                  "type": "home_assistant_entity_control"
+                },
+                "type": "action_auto_approve"
+              }
+            ]
+          }
+        }
+      ],
+      "subject": {
+        "name": "test-workload",
+        "namespace": "test-callers"
+      },
+      "synced": true,
+      "workload": {
+        "autoApprovable": [
+          {
+            "group": "test-another-group",
+            "name": "test-c"
+          },
+          {
+            "group": "test-github",
+            "name": "get_file_contents"
+          },
+          {
+            "group": "test-github",
+            "name": "search_code"
+          },
+          {
+            "group": "test-group",
+            "name": "test-a"
+          },
+          {
+            "group": "test-group",
+            "name": "test-b"
+          },
+          {
+            "group": "test-group",
+            "name": "test-echo"
+          },
+          {
+            "group": "test-home-assistant",
+            "name": "ha_call_service"
+          }
+        ],
+        "autoApproveIf": [
+          {
+            "binding": "test-grant",
+            "index": 1,
+            "policy": {
+              "exactActions": {
+                "actions": {
+                  "test-another-group": {
+                    "values": ["test-c"]
+                  },
+                  "test-group": {
+                    "values": ["test-a", "test-b"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-grant",
+            "index": 2,
+            "policy": {
+              "argumentSchema": {
+                "actions": {
+                  "test-group": {
+                    "values": ["test-echo"]
+                  }
+                },
+                "argumentSchema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "maxLength": 5,
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "type": "object"
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-grant",
+            "index": 3,
+            "policy": {
+              "githubRepository": {
+                "actions": {
+                  "test-github": {
+                    "values": ["get_file_contents", "search_code"]
+                  }
+                },
+                "owner": "test-owner",
+                "repository": "test-repo"
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-grant",
+            "index": 4,
+            "policy": {
+              "githubPublicRepository": {
+                "actions": {
+                  "test-github": {
+                    "values": ["get_file_contents"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          },
+          {
+            "binding": "test-grant",
+            "index": 5,
+            "policy": {
+              "homeAssistantEntityControl": {
+                "actions": {
+                  "test-home-assistant": {
+                    "values": ["ha_call_service"]
+                  }
+                },
+                "entities": {
+                  "fan.test_fan": {
+                    "values": ["turn_off"]
+                  },
+                  "light.test_lamp": {
+                    "values": ["toggle", "turn_on"]
+                  }
+                }
+              }
+            },
+            "policySet": "test-every-kind",
+            "source": "POLICY_SOURCE_RULES"
+          }
+        ],
+        "bindings": [
+          {
+            "name": "test-grant",
+            "policySets": [
+              {
+                "generation": 4,
+                "name": "test-every-kind"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "name": "test-workload",
+          "namespace": "test-callers"
+        },
+        "synced": true
+      }
+    }
+  }
+}
