@@ -96,6 +96,7 @@ py_library(
         ":config",
         ":models",
         "//aiquota/render:view_model_lib",
+        "//util:network_monitor",
         "@pypi//dbus_next",
         "@pypi//httpx",
         "@pypi//httpx_sse",
@@ -347,11 +348,15 @@ py_test(
 
 py_package(
     name = "aiquota_pkg",
-    packages = ["aiquota"],
+    packages = [
+        "aiquota",
+        "util",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":cli_lib",
         ":desktop_lib",
+        "//util:network_monitor",
     ],
 )
 

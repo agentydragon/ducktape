@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import signal
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,7 @@ from aiquota.cache import QuotaCache
 from aiquota.config import DEFAULT_CONFIG_PATH, Config, load as load_config
 from aiquota.models import AllQuotas
 from aiquota.render.view_model import AllQuotasView, to_view
+from util.network_monitor import NetworkMonitor
 
 BUS_NAME = "works.allegedly.AiQuota"
 OBJECT_PATH = "/works/allegedly/AiQuota"
@@ -29,10 +31,12 @@ READ_TIMEOUT_SECONDS = 45.0
 
 if TYPE_CHECKING:
     DBusString = str
+    DBusDouble = float
 else:
     # dbus-next 0.2.3 inspects runtime annotations for literal wire signatures;
     # type checkers need the alias to be `str` instead.
     DBusString = "s"
+    DBusDouble = "d"
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +74,14 @@ class AiQuotaBusInterface(ServiceInterface):
     def error(self) -> DBusString:
         return self.owner.error
 
+    @dbus_property(access=PropertyAccess.READ, name="LastAttemptAt")
+    def last_attempt_at(self) -> DBusDouble:
+        return self.owner.last_attempt_at
+
+    @dbus_property(access=PropertyAccess.READ, name="NextRetryAt")
+    def next_retry_at(self) -> DBusDouble:
+        return self.owner.next_retry_at
+
     @dbus_signal(name="ViewChanged")
     def view_changed(self, view_json: DBusString) -> DBusString:
         return view_json
@@ -94,7 +106,10 @@ class QuotaDaemon:
         self.status = "starting"
         self.error = ""
         self.retry_delay = BASE_RETRY_SECONDS
+        self.last_attempt_at = 0.0
+        self.next_retry_at = 0.0
         self.stop_event = asyncio.Event()
+        self.network_online_event = asyncio.Event()
         self.bus: MessageBus | None = None
         self.bus_interface = AiQuotaBusInterface(self)
 
@@ -126,6 +141,54 @@ class QuotaDaemon:
         self.set_status("connected")
         return True
 
+    def _set_attempt(self) -> None:
+        self.last_attempt_at = time.time()
+        changed: dict[str, float] = {"LastAttemptAt": self.last_attempt_at}
+        if self.next_retry_at != 0:
+            self.next_retry_at = 0.0
+            changed["NextRetryAt"] = self.next_retry_at
+        self.bus_interface.emit_properties_changed(changed)
+
+    def _set_next_retry(self, retry_at: float | None) -> None:
+        value = retry_at or 0.0
+        if self.next_retry_at == value:
+            return
+        self.next_retry_at = value
+        self.bus_interface.emit_properties_changed({"NextRetryAt": value})
+
+    async def _await_connection_or_interrupt(self) -> None:
+        connection = asyncio.create_task(self.connect_once())
+        stopped = asyncio.create_task(self.stop_event.wait())
+        recovered = asyncio.create_task(self.network_online_event.wait())
+        try:
+            await asyncio.wait((connection, stopped, recovered), return_when=asyncio.FIRST_COMPLETED)
+            # Shutdown wins if it races a network transition or a connection error.
+            if self.stop_event.is_set():
+                connection.cancel()
+                await asyncio.gather(connection, return_exceptions=True)
+                return
+            if self.network_online_event.is_set() and not connection.done():
+                connection.cancel()
+                await asyncio.gather(connection, return_exceptions=True)
+                return
+            await connection
+        finally:
+            for task in (connection, stopped, recovered):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(connection, stopped, recovered, return_exceptions=True)
+
+    async def _wait_for_retry(self, delay: float) -> None:
+        stopped = asyncio.create_task(self.stop_event.wait())
+        recovered = asyncio.create_task(self.network_online_event.wait())
+        try:
+            await asyncio.wait((stopped, recovered), timeout=delay, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for task in (stopped, recovered):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(stopped, recovered, return_exceptions=True)
+
     async def connect_once(self) -> None:
         url = self.config.remote_api.url
         token = self.config.remote_api.bearer_token.get_secret_value() if self.config.remote_api.bearer_token else None
@@ -152,38 +215,59 @@ class QuotaDaemon:
             raise SSEProtocolError("AIQuota event stream ended")
 
     async def stream_forever(self) -> None:
-        self.set_status("connecting")
-        if self.config_error:
-            self.set_status("disconnected", self.config_error)
-            await self.stop_event.wait()
-            return
-        if not self.config.remote_api.url:
-            self.set_status("disconnected", "AIQuota remote API URL is not configured")
-            await self.stop_event.wait()
-            return
-        if not self.config.remote_api.bearer_token:
-            self.set_status("disconnected", "AIQuota remote API bearer token is not configured")
-            await self.stop_event.wait()
-            return
-        while not self.stop_event.is_set():
-            try:
-                await self.connect_once()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                message = _bounded_error(
-                    exc,
-                    self.config.remote_api.bearer_token.get_secret_value()
-                    if self.config.remote_api.bearer_token
-                    else None,
-                )
-                logger.warning("AIQuota event stream disconnected: %s", message)
-                self.set_status("disconnected", message)
-            if self.stop_event.is_set():
+        try:
+            self.set_status("connecting")
+            if self.config_error:
+                self.set_status("disconnected", self.config_error)
+                await self.stop_event.wait()
                 return
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(self.stop_event.wait(), timeout=self.retry_delay)
-            self.retry_delay = min(self.retry_delay * 2, MAX_RETRY_SECONDS)
+            if not self.config.remote_api.url:
+                self.set_status("disconnected", "AIQuota remote API URL is not configured")
+                await self.stop_event.wait()
+                return
+            if not self.config.remote_api.bearer_token:
+                self.set_status("disconnected", "AIQuota remote API bearer token is not configured")
+                await self.stop_event.wait()
+                return
+            async with NetworkMonitor(on_online=self.network_online_event.set):
+                while not self.stop_event.is_set():
+                    # Clearing an earlier transition is safe because this new attempt
+                    # itself acts on that recovery; later transitions still interrupt it.
+                    self.network_online_event.clear()
+                    self.set_status("connecting")
+                    self._set_attempt()
+                    try:
+                        await self._await_connection_or_interrupt()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        message = _bounded_error(
+                            exc,
+                            self.config.remote_api.bearer_token.get_secret_value()
+                            if self.config.remote_api.bearer_token
+                            else None,
+                        )
+                        logger.warning("AIQuota event stream disconnected: %s", message)
+                        self.set_status("disconnected", message)
+                        if self.stop_event.is_set():
+                            return
+                        if self.network_online_event.is_set():
+                            continue
+                        self.network_online_event.clear()
+                        delay = self.retry_delay
+                        self._set_next_retry(time.time() + delay)
+                        await self._wait_for_retry(delay)
+                        self._set_next_retry(None)
+                        if self.stop_event.is_set():
+                            return
+                        if self.network_online_event.is_set():
+                            self.network_online_event.clear()
+                            continue
+                        self.retry_delay = min(self.retry_delay * 2, MAX_RETRY_SECONDS)
+                    if self.stop_event.is_set():
+                        return
+        finally:
+            self._set_next_retry(None)
 
     async def serve(self) -> None:
         stream_task: asyncio.Task[None] | None = None
@@ -193,6 +277,7 @@ class QuotaDaemon:
             stream_task = asyncio.create_task(self.stream_forever())
             await self.stop_event.wait()
         finally:
+            self._set_next_retry(None)
             if stream_task is not None:
                 stream_task.cancel()
                 await asyncio.gather(stream_task, return_exceptions=True)

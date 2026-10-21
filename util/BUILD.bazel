@@ -465,3 +465,21 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "network_monitor",
+    srcs = ["network_monitor.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//dbus_next"],
+)
+
+py_test(
+    name = "test_network_monitor",
+    srcs = ["test_network_monitor.py"],
+    deps = [
+        ":network_monitor",
+        "//:conftest",
+        "@pypi//dbus_next",
+        "@pypi//pytest_bazel",
+    ],
+)

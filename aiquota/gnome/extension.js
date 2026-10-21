@@ -19,6 +19,8 @@ const INTERFACE_INFO = Gio.DBusNodeInfo.new_for_xml(
     <signal name="ViewChanged"><arg name="view" type="s"/></signal>
     <property name="Status" type="s" access="read"/>
     <property name="Error" type="s" access="read"/>
+    <property name="LastAttemptAt" type="d" access="read"/>
+    <property name="NextRetryAt" type="d" access="read"/>
   </interface></node>`
 ).lookup_interface(INTERFACE_NAME);
 
@@ -51,6 +53,11 @@ function errorMessage(error) {
 function unpackString(value, fallback = null) {
   const unpacked = value?.deep_unpack();
   return typeof unpacked === "string" ? unpacked : fallback;
+}
+
+function unpackNumber(value, fallback = 0) {
+  const unpacked = value?.deep_unpack();
+  return typeof unpacked === "number" && Number.isFinite(unpacked) ? unpacked : fallback;
 }
 
 function formatDuration(seconds) {
@@ -354,6 +361,9 @@ const QuotaIndicator = GObject.registerClass(
       this._viewSignalSequence = 0;
       this._streamStatus = "starting";
       this._streamError = "";
+      this._lastAttemptAt = 0;
+      this._nextRetryAt = 0;
+      this._testNow = null;
       this._remoteView = "";
       this._statusRow = null;
 
@@ -407,6 +417,9 @@ const QuotaIndicator = GObject.registerClass(
     _loadFixtureData(data) {
       this._streamStatus = "connected";
       this._streamError = "";
+      this._lastAttemptAt = 0;
+      this._nextRetryAt = 0;
+      this._testNow = null;
       // Test fixtures specify currentlyOverPlan / extraStatus explicitly so
       // we never re-derive policy on the JS side (see aiquota/AGENTS.md).
       const loadLastSuccess = (snap) => {
@@ -464,6 +477,8 @@ const QuotaIndicator = GObject.registerClass(
         '<node><interface name="works.allegedly.AiQuotaTest">' +
           '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
           '<method name="SetStreamStatus"><arg type="s" direction="in" name="status"/><arg type="s" direction="in" name="error"/></method>' +
+          '<method name="SetSyncState"><arg type="d" direction="in" name="lastAttemptAt"/><arg type="d" direction="in" name="nextRetryAt"/><arg type="d" direction="in" name="now"/></method>' +
+          '<method name="GetStreamStatus"><arg type="s" direction="out" name="status"/></method>' +
           '<method name="SetViewForTest"><arg type="s" direction="in" name="view"/></method>' +
           '<method name="ConnectDaemon"/>' +
           '<method name="FetchView"/>' +
@@ -481,6 +496,13 @@ const QuotaIndicator = GObject.registerClass(
             this._loadFixtureData(JSON.parse(decodeBytes(bytes)));
           },
           SetStreamStatus: (status, error) => this._setStreamState(status, error),
+          SetSyncState: (lastAttemptAt, nextRetryAt, now) => {
+            this._lastAttemptAt = lastAttemptAt;
+            this._nextRetryAt = nextRetryAt;
+            this._testNow = now;
+            this._renderPopup();
+          },
+          GetStreamStatus: () => this._statusRow._summaryLabel.get_text(),
           SetViewForTest: (view) => this._acceptView(view),
           ConnectDaemon: () => this._connectDaemon(),
           FetchView: () => this._fetchView(),
@@ -553,6 +575,8 @@ const QuotaIndicator = GObject.registerClass(
                   this._readProperties();
                   this._fetchView();
                 } else {
+                  this._lastAttemptAt = 0;
+                  this._nextRetryAt = 0;
                   this._setStreamState("disconnected", "AIQuota daemon is not running");
                 }
               })
@@ -573,6 +597,8 @@ const QuotaIndicator = GObject.registerClass(
       if (!this._proxy) return;
       const status = unpackString(this._proxy.get_cached_property("Status"));
       const error = unpackString(this._proxy.get_cached_property("Error"));
+      this._lastAttemptAt = unpackNumber(this._proxy.get_cached_property("LastAttemptAt"));
+      this._nextRetryAt = unpackNumber(this._proxy.get_cached_property("NextRetryAt"));
       if (status !== null) this._streamStatus = status;
       if (error !== null) this._streamError = error;
       this._renderPanel();
@@ -637,8 +663,15 @@ const QuotaIndicator = GObject.registerClass(
           : this._streamStatus === "disconnected"
             ? "Quota stream disconnected"
             : "Connecting to quota stream";
-      const detail = this._streamError ? ` · ${this._streamError.slice(0, 120)}` : "";
-      this._statusRow._summaryLabel.set_text(`${label}${detail}`);
+      const now = this._testNow ?? Date.now() / 1000;
+      const lastAttempt =
+        this._lastAttemptAt > 0
+          ? `Desktop sync attempt ${formatAge(Math.max(0, now - this._lastAttemptAt))} ago`
+          : "Desktop sync not attempted yet";
+      const retry = this._nextRetryAt > 0 ? `Retry in ${formatAge(this._nextRetryAt - now)}` : "No retry scheduled";
+      const error = this._streamError ? this._streamError.slice(0, 120) : "";
+      const status = error ? `${label} · ${error}` : label;
+      this._statusRow._summaryLabel.set_text(`${status}\n${lastAttempt} · ${retry}`);
     }
 
     _acceptView(rawView) {

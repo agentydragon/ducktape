@@ -74,6 +74,8 @@ const mainXml = `<node><interface name="works.allegedly.AiQuota1">
   <signal name="ViewChanged"><arg name="view" type="s"/></signal>
   <property name="Status" type="s" access="read"/>
   <property name="Error" type="s" access="read"/>
+  <property name="LastAttemptAt" type="d" access="read"/>
+  <property name="NextRetryAt" type="d" access="read"/>
 </interface></node>`;
 const controlXml = `<node><interface name="works.allegedly.AiQuotaFake">
   <method name="SetView"><arg name="view" type="s" direction="in"/></method>
@@ -89,6 +91,8 @@ const controlXml = `<node><interface name="works.allegedly.AiQuotaFake">
   <method name="Stop"/>
 </interface></node>`;
 let currentView = JSON.stringify({fetched_at: "2026-10-18T12:00:00Z", providers: []});
+let lastAttemptAt = 0;
+let nextRetryAt = 0;
 let getCalls = 0;
 let replies = 0;
 let pendingViews = [];
@@ -102,6 +106,8 @@ const service = Gio.DBusExportedObject.wrapJSObject(mainXml, {
   },
   get Status() { return "connected"; },
   get Error() { return ""; },
+  get LastAttemptAt() { return lastAttemptAt; },
+  get NextRetryAt() { return nextRetryAt; },
 });
 service.export(Gio.DBus.session, path);
 const control = Gio.DBusExportedObject.wrapJSObject(controlXml, {
@@ -249,6 +255,16 @@ def test_render_disconnected_stream(render_session: tuple[GnomeSession, Path], u
         session.close_menu()
         session.reload("/fixtures/hot.json")
         session.call("SetStreamStatus", "disconnected", "Connection to quota API was lost")
+        session.call("SetSyncState", "958", "1019", "1000")
+        session.wait_for_paint()
+        stream_status = _string_reply(session.call("GetStreamStatus")).lower()
+        assert "desktop sync attempt 42s ago" in stream_status
+        assert "retry in 19s" in stream_status
+        session.call("SetSyncState", "958", "1019", "1001")
+        stream_status = _string_reply(session.call("GetStreamStatus")).lower()
+        assert "desktop sync attempt 43s ago" in stream_status
+        assert "retry in 18s" in stream_status
+        session.call("SetSyncState", "958", "1019", "1000")
         session.wait_for_paint()
         geometry = session.open_menu()
         try:

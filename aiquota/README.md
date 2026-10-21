@@ -73,8 +73,17 @@ Remote results use the normal local `~/.cache/aiquota/quotas.json` cache. The
 CLI can use the last cached snapshot while offline, and the desktop daemon
 publishes its cached snapshot to GNOME while reporting that the live stream is
 disconnected. The browser and GNOME popup display stream connection status instead
-of routine snapshot-age counters. Provider errors and stale-data warnings remain
+of routine server snapshot-age counters. Provider errors and stale-data warnings remain
 visible even when the stream is live.
+
+The desktop D-Bus interface exposes `Status`, `Error`, `LastAttemptAt`, and
+`NextRetryAt`. The two timestamps are Unix epoch seconds; `0` means unset.
+`LastAttemptAt` is recorded before each desktop stream connection attempt, and
+`NextRetryAt` is set only while the daemon waits through retry backoff. The GNOME
+status row shows their live age/countdown separately from server provider-fetch
+timestamps. A NetworkManager online transition interrupts backoff or a stalled
+stream so the daemon can reconnect immediately; regular backoff remains active
+when network monitoring is unavailable.
 
 Responses use `Cache-Control: no-store`. The service keeps the most recent
 snapshot in process memory (default 120 seconds). One background quota collector
