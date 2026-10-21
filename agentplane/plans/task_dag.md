@@ -821,7 +821,6 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
-    K3S_IMPORT_CONCURRENCY[Blocked: needs a runtime exposing the unpack limit]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
@@ -994,23 +993,6 @@ PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the 
 
 **TODO; operator request, 2026-10-16.** Rename the egress sidecar to "relay" across code,
 configuration, image names and docs. Update all consumers atomically.
-
-### `K3S_IMPORT_CONCURRENCY` — measure native containerd import and unpack concurrency
-
-**Blocked on an operator runtime choice.** The matched `--local` comparison (#10879) found no useful speedup and the pinned containerd cannot bound unpacking, so dispatch only if a containerd or k3s version exposing the unpack limiter is selected; otherwise delete this node. Evaluate containerd's own concurrency
-configuration against the current combined stream, preserving distinct-blob deduplication. Count
-deferred unpacking through Pod readiness so moving work later is not reported as a saving.
-The profiled tar-streaming time includes pipe backpressure; it is not a CPU-cost estimate or
-the expected saving from rewriting the streamer. Exit: a matched comparison of import/unpack,
-resource use and total lifecycle time with unchanged lifecycle assertions, and a recommendation
-to adopt or discard the concurrency change.
-
-The [native containerd profile](../x/k3s_env/README.md#containerd-import-tail) identifies parallel
-layer extraction and filesystem writes. The pinned `v2.0.5-k3s2` transfer importer has no unpack-limit
-configuration and constructs an unrestricted unpacker. A bounded-tuning experiment needs a runtime
-with that control. The [matched native `--local` comparison](../x/k3s_env/README.md#native-transfer-versus-local-import-2026-10-17)
-passed but found no useful speedup; retain transfer mode. Any bounded-concurrency experiment and
-its runtime choice remain open; no upgrade or import-mode change is selected.
 
 ### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
 

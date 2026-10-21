@@ -240,7 +240,7 @@ cost to each service.
 
 A [follow-up diagnostic run](https://app.buildbuddy.io/invocation/5604804f-51fd-4abf-ac66-dc579abcf8ff)
 on `44298d8645d25ecb8d3914d35b8608f0c2ef55f9` passed all four lifecycle cases in 243.614 s.
-Temporary configuration enabled a Unix debug socket in the pinned containerd `v2.0.5-k3s2`.
+Temporary configuration enabled a Unix debug socket in the then-pinned containerd `v2.0.5-k3s2`.
 Immediately after closing the tar input stream, concurrent requests collected a 45-second CPU
 profile, a 10-second Go execution trace and goroutine stacks. The invocation retains the raw
 profiles and `ctr-import-help.txt`; [extracted measurements](containerd-tail-profile-2026-10-17.json)
@@ -268,17 +268,12 @@ parallel goroutines, not additional wall seconds or independent phases. The pare
 excludes those child processes; their waits can include decompression and pipe backpressure from
 extraction, so they do not prove decompression is the limiting CPU cost.
 
-**Pinned-runtime constraint:** the [v2.0.5-k3s2 transfer plugin configuration](https://github.com/k3s-io/containerd/blob/v2.0.5-k3s2/plugins/transfer/plugin.go)
-exposes download/upload limits, not `max_concurrent_unpacks`. Its [import path](https://github.com/k3s-io/containerd/blob/v2.0.5-k3s2/core/transfer/local/import.go)
-constructs the unpacker without `WithLimiter`; the [unpacker](https://github.com/k3s-io/containerd/blob/v2.0.5-k3s2/core/unpack/unpacker.go)
-treats a nil limiter as unrestricted. A current-version concurrency setting cannot be assumed to
-exist on this pin, and changing download limits does not bound this archive-import unpack work.
-
-**Next experiment:** for `K3S_IMPORT_CONCURRENCY`, a bounded-tuning comparison first needs a
-runtime exposing that control. The [native `--local` comparison](#native-transfer-versus-local-import-2026-10-17)
-found no useful speedup; retain the transfer pipeline. Keep inputs, lifecycle assertions and timeouts fixed
-for any importer comparison, and count deferred unpack through Pod readiness. No runtime upgrade,
-import-mode change, scheduler or measured saving is selected by this profile.
+**Unpack limit:** containerd `v2.2.7-k3s1` (k3s v1.34.12, the current pin) has the transfer plugin option
+`max_concurrent_unpacks`, but only the [pull path](https://github.com/k3s-io/containerd/blob/v2.2.7-k3s1/core/transfer/local/pull.go)
+passes it to the unpacker. The [import path](https://github.com/k3s-io/containerd/blob/v2.2.7-k3s1/core/transfer/local/import.go),
+which `ctr images import` takes unless given `--local`, builds the unpacker without a limiter, so no
+configuration bounds this archive-import unpack work. On the earlier `v2.0.5-k3s2` the option did not exist.
+The native `--local` comparison above (on `v2.0.5-k3s2`) found no useful speedup; retain the transfer pipeline.
 
 ### Harness-specific runner comparison, 2026-10-16
 
