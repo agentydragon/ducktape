@@ -144,7 +144,6 @@ class RunnerSandbox(Construct):
         storage_class: str = "local-path-ovh-hdd",
         runner_resources: k8s.ResourceRequirements | None = None,
         sidecar_resources: k8s.ResourceRequirements | None = None,
-        workload_env: Sequence[k8s.EnvVar] = (),
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
         control_service: ServiceRef | None = None,
@@ -172,7 +171,6 @@ class RunnerSandbox(Construct):
             storage_class=storage_class,
             runner_resources=runner_resources,
             sidecar_resources=sidecar_resources,
-            workload_env=workload_env,
             image_pull_secret_name=image_pull_secret_name,
             trust_mounts=trust_mounts,
             control_service=control_service,
@@ -229,7 +227,6 @@ class RunnerTemplate(Construct):
         storage_class: str = "local-path-ovh-hdd",
         runner_resources: k8s.ResourceRequirements | None = None,
         sidecar_resources: k8s.ResourceRequirements | None = None,
-        workload_env: Sequence[k8s.EnvVar] = (),
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
         control_service: ServiceRef | None = None,
@@ -242,7 +239,6 @@ class RunnerTemplate(Construct):
         self.storage_class = storage_class
         self.runner_resources = runner_resources
         self.sidecar_resources = sidecar_resources
-        self.workload_env = workload_env
         self.image_pull_secret_name = image_pull_secret_name
         self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
         self.control_service = control_service
@@ -323,7 +319,6 @@ class RunnerTemplate(Construct):
                     k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value=_WORKLOAD_PLACEHOLDER),
                     k8s.EnvVar(name="OPENAI_API_KEY", value=_WORKLOAD_PLACEHOLDER),
                 ],
-                self.workload_env,
             ),
             resources=self.runner_resources
             or k8s.ResourceRequirements(
@@ -393,7 +388,6 @@ class RunnerTemplate(Construct):
                         else []
                     ),
                 ],
-                sidecar_env=self.workload_env,
                 sidecar_resources=self.sidecar_resources,
                 image_pull_secret_name=self.image_pull_secret_name,
             ),

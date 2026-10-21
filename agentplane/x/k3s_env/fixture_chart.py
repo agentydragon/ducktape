@@ -1,7 +1,7 @@
 """Compose the ephemeral Agentplane testing stack directly from cdk8s constructs.
 
 The fixture keeps the service contracts and settings authored in cluster/cdk8s/agentplane.
-It supplies bare-k3s dependencies (Secrets, headless routing, local-path storage) as inputs
+It supplies bare-k3s dependencies (Secrets, local-path storage) as inputs
 and never reads or edits the production generated manifest.
 """
 
@@ -82,9 +82,7 @@ def _secret(
     )
 
 
-def objects(
-    *, node_ip: str, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models
-) -> list[dict[str, Any]]:
+def objects(*, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models) -> list[dict[str, Any]]:
     """Synthesize only the objects the one-node, operator-light k3s fixture deploys."""
     env = replace(
         testing.ENV,
@@ -108,20 +106,12 @@ def objects(
         # falls back to for an unknown slug and calls the function tools the scripted model answers. A
         # bundled model's entry would switch it to code mode.
         env = replace(env, llm_ingress=replace(env.llm_ingress, codex_routes=()))
-    sandbox_api_env = (
-        k8s.EnvVar(name="KUBERNETES_SERVICE_HOST", value=node_ip),
-        k8s.EnvVar(name="KUBERNETES_SERVICE_PORT", value="6443"),
-    )
     sandbox_sidecar_resources = k8s.ResourceRequirements(
         requests={
             "cpu": k8s.Quantity.from_string(Cpu.millis(10).amount),
             "memory": k8s.Quantity.from_string(Size.mebibytes(32).as_string()),
         }
     )
-    kube_api_env = {
-        "KUBERNETES_SERVICE_HOST": EnvValue.from_value(node_ip),
-        "KUBERNETES_SERVICE_PORT": EnvValue.from_value("6443"),
-    }
     app = Testing.app()
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
@@ -157,8 +147,6 @@ def objects(
         litellm_url=_litellm_url(models),
         placement=None,
         registry_secret_name=None,
-        service_cluster_ip="None",
-        container_env=kube_api_env,
         memory_limit=None,
     )
     agent_api = ServiceRef(name=egress.NAME, port=Port(name="http", number=8082), pods=egress.agent_api(NAMESPACE).pods)
@@ -175,8 +163,7 @@ def objects(
         litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
         placement=None,
         registry_secret_name=None,
-        service_cluster_ip="None",
-        container_env={**kube_api_env, **database_env},
+        container_env=database_env,
         memory_limit=None,
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         migrate_memory_limit=None,
@@ -191,7 +178,7 @@ def objects(
     }
     dispatcher_callers = app_caller | notifications_caller
     control = runner_gateway_workload.runner_control_service(NAMESPACE, port=Port(name="grpc", number=8080))
-    runner_gateway_workload.add_stable_services(chart, env, cluster_ip="None", control=control)
+    runner_gateway_workload.add_stable_services(chart, env, control=control)
     runner_gateway_workload.RunnerGateway(
         chart,
         "runner-gateway",
@@ -217,7 +204,7 @@ def objects(
         ),
         registry_secret_name=None,
         placement=None,
-        container_env={**kube_api_env, **database_env},
+        container_env=database_env,
         memory_limit=None,
     )
     control_target = f"{control.fqdn}:{control.port.number}"
@@ -229,8 +216,7 @@ def objects(
         callers=app_caller | notifications_caller,
         placement=None,
         registry_secret_name=None,
-        service_cluster_ip="None",
-        container_env={**kube_api_env, **database_env},
+        container_env=database_env,
         migrate_env=database_env,
         memory_limit=None,
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
@@ -244,9 +230,7 @@ def objects(
         database_url=app_database_url,
         placement=None,
         registry_secret_name=None,
-        service_cluster_ip="None",
         runner_control_target=f"{{sandbox}}-control.{{namespace}}.svc:{control.port.number}",
-        container_env=kube_api_env,
         memory_limit=None,
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         migrate_memory_limit=None,
@@ -264,7 +248,6 @@ def objects(
             }
         ),
         sidecar_resources=sandbox_sidecar_resources,
-        workload_env=sandbox_api_env,
         image_pull_secret_name=None,
         trust_mounts=sandbox_pod.egress_proxy_mounts(),
         control_service=control,
@@ -278,8 +261,6 @@ def objects(
         gateway_control_target=control_target,
         placement=None,
         registry_secret_name=None,
-        service_cluster_ip="None",
-        container_env=kube_api_env,
         memory_limit=None,
     )
     actions.Actions(
@@ -289,8 +270,6 @@ def objects(
         database_url=actions_database_url,
         placement=None,
         registry_secret_name=None,
-        service_cluster_ip="None",
-        container_env=kube_api_env,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         memory_limit=None,
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
@@ -312,8 +291,7 @@ def objects(
         callers=[egress.proxy(NAMESPACE).pods, app_component.service(NAMESPACE).pods],
         placement=None,
         registry_secret_name=None,
-        service_cluster_ip="None",
-        container_env={**kube_api_env, **database_env},
+        container_env=database_env,
         memory_limit=None,
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         migrate_memory_limit=None,
@@ -322,8 +300,6 @@ def objects(
         chart,
         "command-sandbox",
         env,
-        workload_env=sandbox_api_env,
-        sidecar_env=sandbox_api_env,
         sidecar_resources=sandbox_sidecar_resources,
         image_pull_secret_name=None,
         trust_mounts=sandbox_pod.egress_proxy_mounts(),
@@ -383,14 +359,7 @@ def objects(
         ],
     )
     controller = policy_controller.PolicyController(
-        chart,
-        "policy-controller",
-        env,
-        placement=None,
-        registry_secret_name=None,
-        service_cluster_ip="None",
-        container_env=kube_api_env,
-        memory_limit=None,
+        chart, "policy-controller", env, placement=None, registry_secret_name=None, memory_limit=None
     )
     policy_controller_rbac.PolicyControllerRbac(
         chart, "policy-controller-rbac", env, account=controller.account, assignable_grants=[tool_config_grant]

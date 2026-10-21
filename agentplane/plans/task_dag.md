@@ -1965,7 +1965,6 @@ flowchart LR
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     TESTING_ROLLOUT_ROLE[Decision: what replaces testing before staging]
     TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
-    K3S_KUBE_PROXY_RETEST[Proposed: kube-proxy on today's executor]
     K3S_MIGRATOR_CONNECT_RETRY[Proposed: migrators retry their first connection]
     K3S_CI_TIER[Decision: which k3s targets run in CI]
     APP_BRIDGE_TEST_SPLIT[Candidate: app bridge tests split by tier]
@@ -1976,7 +1975,6 @@ flowchart LR
     K3S_VM_ACCEPTANCE --> TESTING_ENVIRONMENT_RETIRE
     TESTING_ROLLOUT_ROLE --> TESTING_ENVIRONMENT_RETIRE
     K3S_CI_TIER -. if the k3s suite gates staging pins .-> TESTING_ENVIRONMENT_RETIRE
-    K3S_KUBE_PROXY_RETEST -. faster, ClusterIP coverage .-> K3S_CI_TIER
     K3S_MIGRATOR_CONNECT_RETRY -. faster on slow workers .-> K3S_CI_TIER
 ```
 
@@ -2067,13 +2065,6 @@ model backend on k3s.** Three PRs:
 recipes, docs and RBAC that name testing; the Flux kustomization, generated manifests, DNS and
 routes; the testing databases and volumes, a data drop that waits for the operator's word.
 `test_thread_latency` and `test_ollama_routes` remain staging-only manual checks. Preserve staging.
-
-### `K3S_KUBE_PROXY_RETEST` — kube-proxy on today's executor
-
-**Proposed.** The executor now inserts the `MARK` and `-m mark` rules kube-proxy lacked on 2026-10-16
-([networking note](../debug/2026-10-16-k3s-service-networking.md)). Rerun the reverted #10808 on
-`devel`. Exit: ClusterIP Services work and the fixture drops headless Services, node-IP API
-access and host-network CoreDNS, or the note records the new failure.
 
 ### `K3S_MIGRATOR_CONNECT_RETRY` — migrators retry their first connection
 

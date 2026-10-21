@@ -43,7 +43,6 @@ class Backend(StrEnum):
 
 @dataclass(frozen=True)
 class RuntimeInputs:
-    node_ip: str
     ca_cert: str
     ca_key: str
     system_roots: str
@@ -51,7 +50,6 @@ class RuntimeInputs:
 
 
 PLACEHOLDERS = RuntimeInputs(
-    node_ip="192.0.2.254",  # TEST-NET-1: never a node's
     ca_cert="k3s-env-placeholder-egress-ca-cert",
     ca_key="k3s-env-placeholder-egress-ca-key",
     system_roots="k3s-env-placeholder-system-roots",

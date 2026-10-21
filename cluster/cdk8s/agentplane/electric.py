@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerResources,
@@ -59,8 +57,6 @@ class Electric(Construct):
         env: Environment,
         *,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
-        service_cluster_ip: str | None = None,
-        container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
@@ -108,7 +104,6 @@ class Electric(Construct):
                 # Window rotation and exact payload reads create finite shapes. Enable Electric's
                 # once-per-minute LRU expiry; the upstream default retains every shape forever.
                 "ELECTRIC_MAX_SHAPES": EnvValue.from_value("1024"),
-                **(container_env or {}),
             },
             ports=[electric.port.container_port()],
             readiness=http_probe("/v1/health", port=electric.pod_port, initial_delay_seconds=5, period_seconds=10),
@@ -134,7 +129,6 @@ class Electric(Construct):
             "service",
             metadata=ApiObjectMetadata(name=electric.name, namespace=env.namespace, labels=electric.labels),
             selector=deployment,
-            cluster_ip=service_cluster_ip,
             ports=[electric.port.service_port()],
         )
 

@@ -138,7 +138,6 @@ def add_database(scope: Construct, env: Environment) -> Construct:
         "service",
         metadata=ApiObjectMetadata(name=SERVICE, namespace=env.namespace),
         selector=deployment,
-        cluster_ip="None",
         ports=[ServicePort(name="postgres", port=PORT, target_port=PORT)],
     )
     return db_scope

@@ -632,7 +632,6 @@ class Egress(Construct):
         litellm_cluster_internal: bool = True,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
-        service_cluster_ip: str | None = None,
         container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
@@ -649,7 +648,6 @@ class Egress(Construct):
         self.runners = runners
         self.placement = placement
         self.registry_secret_name = registry_secret_name
-        self.service_cluster_ip = service_cluster_ip
         self.container_env = container_env or {}
         self.memory_limit = memory_limit
         self.migrate_pull_policy = migrate_pull_policy
@@ -687,7 +685,6 @@ class Egress(Construct):
             "service-admin",
             metadata=ApiObjectMetadata(name=self.admin.name, namespace=env.namespace),
             selector=workload.deployment,
-            cluster_ip=service_cluster_ip,
             ports=[self.admin.port.service_port()],
         )
         _egress_credentials(self, namespace=env.namespace)
@@ -857,7 +854,6 @@ class Egress(Construct):
             tolerate_control_plane=True,
             placement=self.placement,
             registry_secret_name=self.registry_secret_name,
-            service_cluster_ip=self.service_cluster_ip,
         )
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)

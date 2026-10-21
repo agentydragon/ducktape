@@ -5,8 +5,6 @@ policy_controller_rbac.py and binding_delegation.py.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, MemoryResources
 from constructs import Construct
@@ -52,8 +50,6 @@ class PolicyController(Construct):
         *,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
-        service_cluster_ip: str | None = None,
-        container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
@@ -76,10 +72,7 @@ class PolicyController(Construct):
             serves=[endpoint],
             container="policy-controller",
             image=f"{_IMAGE}:unset",
-            env_variables={
-                **{env_name(Settings, field): EnvValue.from_value(value) for field, value in text.items()},
-                **(container_env or {}),
-            },
+            env_variables={env_name(Settings, field): EnvValue.from_value(value) for field, value in text.items()},
             extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
             readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),
@@ -90,7 +83,6 @@ class PolicyController(Construct):
             termination_grace=Duration.seconds(30),
             placement=placement,
             registry_secret_name=registry_secret_name,
-            service_cluster_ip=service_cluster_ip,
         )
         self.account = workload.account
 

@@ -82,8 +82,7 @@ layer (−40%) and the harness-free runner image (−35%).
 4. **What the RBE executor can run** (probed 2026-10-21 with `bb execute`, the k3s target's
    isolation properties): kernel 5.15.0, no `/dev/kvm` (`CONFIG_KVM` unset, only
    `CONFIG_KVM_GUEST`), no BPF JIT. So no KubeVirt with hardware virtualization and no Cilium.
-   `MARK` and `-m mark` rules now insert and delete, which is what kube-proxy lacked on 2026-10-16
-   ([networking note](../debug/2026-10-16-k3s-service-networking.md)).
+   kube-proxy runs, and the fixture uses ClusterIP Services.
 
 ## What `agentplane-testing` covers today
 
@@ -98,7 +97,7 @@ layer (−40%) and the harness-free runner image (−35%).
 | `test_ollama_routes`                                                                                             | the GPU Ollama                                                                                        | not reachable from RBE                                             |
 
 What testing proves that no test names: Flux reconciling the generated manifests, Cilium policies,
-ClusterIP Services, CNPG, External Secrets, cert-manager, Gateway API routes, Kyverno, real image
+CNPG, External Secrets, cert-manager, Gateway API routes, Kyverno, real image
 pins, and a real rollout before staging ([testing before staging](task_dag.md#testing_rollout_role--what-replaces-testing-as-the-stage-before-staging)).
 
 ## Two axes: target and model backend
@@ -223,9 +222,6 @@ Ordered by what unblocks what. Speed work runs alongside and blocks only the CI 
 
 Speed, in parallel:
 
-- **`K3S_KUBE_PROXY_RETEST`**: rerun the reverted #10808 on today's executor (finding 4). If
-  ClusterIP works, the fixture drops headless Services, node-IP API access and host-network CoreDNS.
-  It also gains the Service routing it does not cover now.
 - **Precompiled bytecode**: up to 10 s of the remaining imports (finding 3). Measured here only; no
   node until the operator wants one.
 - **`K3S_MIGRATOR_CONNECT_RETRY`**: the migrators retry their first database connection in process

@@ -92,9 +92,7 @@ def _account(account: ServiceAccountRef) -> str:
     return f"{account.namespace}/{account.name}"
 
 
-def add_stable_services(
-    scope: Construct, env: Environment, *, cluster_ip: str | None = None, control: ServiceRef | None = None
-) -> None:
+def add_stable_services(scope: Construct, env: Environment, *, control: ServiceRef | None = None) -> None:
     """Keep stable Services in their root Flux owner, targeting the shared listener."""
     proxy = runner_gateway.service(env.namespace)
     control = control or runner_control_service(env.namespace)
@@ -105,7 +103,6 @@ def add_stable_services(
         "runner-gateway-service",
         metadata=k8s.ObjectMeta(name=proxy.name, namespace=env.namespace, labels=proxy.labels),
         spec=k8s.ServiceSpec(
-            cluster_ip=cluster_ip,
             selector=proxy.pods.selector,
             ports=(
                 [proxy.port.k8s_service_port()]
@@ -129,7 +126,6 @@ def add_stable_services(
             name=dispatcher.name, namespace=env.namespace, labels={"app.kubernetes.io/name": dispatcher.name}
         ),
         spec=k8s.ServiceSpec(
-            cluster_ip=cluster_ip,
             selector=dispatcher.pods.selector,
             ports=[
                 k8s.ServicePort(

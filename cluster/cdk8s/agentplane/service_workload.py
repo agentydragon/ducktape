@@ -99,7 +99,6 @@ def add_service_workload(
     create_service: bool = True,
     placement: node_scheduling.Placement | None = None,
     registry_secret_name: str | None = None,
-    service_cluster_ip: str | None = None,
 ) -> ServiceWorkload:
     """`serves` identify the Pod ports and shared name/labels. Normally build their Service here;
     a separately reconciled Service can instead use the same refs. Mount into the returned container."""
@@ -159,7 +158,6 @@ def add_service_workload(
             "service",
             metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels),
             selector=deployment,
-            cluster_ip=service_cluster_ip,
             ports=[ref.service_port() for ref in serves],
         )
     if replicas.pdb_min_available is not None:

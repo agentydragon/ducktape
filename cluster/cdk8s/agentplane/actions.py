@@ -6,7 +6,6 @@ objects (staging's policy sets, testing's MCP fixtures) come from `Environment.e
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from typing import Any
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -94,8 +93,6 @@ class Actions(Construct):
         database_url: EnvValue,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
-        service_cluster_ip: str | None = None,
-        container_env: Mapping[str, EnvValue] | None = None,
         image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
@@ -106,8 +103,6 @@ class Actions(Construct):
         self.database_url = database_url
         self.placement = placement
         self.registry_secret_name = registry_secret_name
-        self.service_cluster_ip = service_cluster_ip
-        self.container_env = container_env or {}
         self.image_pull_policy = image_pull_policy
         self.memory_limit = memory_limit
         self.migrate_pull_policy = migrate_pull_policy
@@ -245,7 +240,7 @@ class Actions(Construct):
                 .key("client_id")
                 .env_value(self, "github-mcp-client-secret-env")
             )
-        return env | dict(self.container_env)
+        return env
 
     def _add_workload(self, settings: SettingsFile) -> ServiceWorkload:
         env = self._container_env()
@@ -280,7 +275,6 @@ class Actions(Construct):
             ),
             placement=self.placement,
             registry_secret_name=self.registry_secret_name,
-            service_cluster_ip=self.service_cluster_ip,
             annotations={
                 "secret.reloader.stakater.com/reload": secret_reload,
                 # No configMapGenerator hash rolls the Deployment on settings changes

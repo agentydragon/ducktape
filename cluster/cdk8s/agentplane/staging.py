@@ -483,12 +483,7 @@ def chart(app: App) -> Chart:
             rules=[*agent_access_profiles.rules_for_grants(grants), *deployment_rules.get(name, ())],
         )
     controller = policy_controller.PolicyController(
-        chart,
-        "policy-controller",
-        ENV,
-        placement=node_scheduling.HIL_OVH,
-        registry_secret_name=REGISTRY_SECRET_NAME,
-        service_cluster_ip=None,
+        chart, "policy-controller", ENV, placement=node_scheduling.HIL_OVH, registry_secret_name=REGISTRY_SECRET_NAME
     )
     controller.add_platform_resources()
     policy_controller_rbac.PolicyControllerRbac(

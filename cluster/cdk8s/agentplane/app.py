@@ -5,7 +5,6 @@ HTTPRoute, NetworkPolicy, and the agent and app ServiceAccounts.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -93,9 +92,7 @@ class App(Construct):
         database_url: EnvValue,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
-        service_cluster_ip: str | None = None,
         runner_control_target: str | None = None,
-        container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
         migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
@@ -106,9 +103,7 @@ class App(Construct):
         self.database_url = database_url
         self.placement = placement
         self.registry_secret_name = registry_secret_name
-        self.service_cluster_ip = service_cluster_ip
         self.runner_control_target = runner_control_target or runner_gateway.control_target(env.namespace)
-        self.container_env = container_env or {}
         self.memory_limit = memory_limit
         self.migrate_pull_policy = migrate_pull_policy
         self.migrate_memory_limit = migrate_memory_limit
@@ -195,7 +190,6 @@ class App(Construct):
         namespace = self.env.namespace
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
-            **self.container_env,
             env_name(Settings, "database_url"): self.database_url,
             **(
                 {env_name(Settings, "electric_url"): EnvValue.from_value(self.electric.url)}
@@ -270,7 +264,6 @@ class App(Construct):
             ),
             placement=self.placement,
             registry_secret_name=self.registry_secret_name,
-            service_cluster_ip=self.service_cluster_ip,
             annotations={
                 # A re-minted client secret otherwise leaves the pod on the old
                 # one, and every login 401s.

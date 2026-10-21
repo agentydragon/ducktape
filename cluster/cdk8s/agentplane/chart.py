@@ -84,16 +84,9 @@ def environment_chart(app: App, env: Environment) -> Chart:
         .key("uri")
         .env_value(chart, "session-dispatcher-database-url")
     )
-    electric.Electric(
-        chart, "electric", env, placement=node_scheduling.HIL_OVH, service_cluster_ip=None
-    ).add_platform_resources()
+    electric.Electric(chart, "electric", env, placement=node_scheduling.HIL_OVH).add_platform_resources()
     llm_ingress.LlmIngress(
-        chart,
-        "llm-ingress",
-        env,
-        placement=node_scheduling.HIL_OVH,
-        registry_secret_name=REGISTRY_SECRET_NAME,
-        service_cluster_ip=None,
+        chart, "llm-ingress", env, placement=node_scheduling.HIL_OVH, registry_secret_name=REGISTRY_SECRET_NAME
     ).add_platform_resources()
     egress.Egress(
         chart,
@@ -104,7 +97,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         admin_grpc_callers=[app_account],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
-        service_cluster_ip=None,
     ).add_platform_resources()
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {app_account: app_component.service(env.namespace).pods}
@@ -122,7 +114,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         callers=app_caller | notifications_caller,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
-        service_cluster_ip=None,
     ).add_platform_resources()
     app_component.App(
         chart,
@@ -132,7 +123,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         database_url=app_database_url,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
-        service_cluster_ip=None,
         runner_control_target=runner_gateway.control_target(env.namespace),
     ).add_platform_resources()
     runner_sandbox.RunnerSandbox(
@@ -152,7 +142,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         gateway_control_target=runner_gateway.control_target(env.namespace),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
-        service_cluster_ip=None,
     ).add_platform_resources()
     actions.Actions(
         chart,
@@ -161,7 +150,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         database_url=actions_database_url,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
-        service_cluster_ip=None,
     ).add_platform_resources()
     notifications.Notifications(
         chart,
@@ -179,6 +167,5 @@ def environment_chart(app: App, env: Environment) -> Chart:
         callers=[egress.proxy(env.namespace).pods, app_component.service(env.namespace).pods],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
-        service_cluster_ip=None,
     ).add_platform_resources()
     return chart

@@ -98,20 +98,14 @@ def egress_env() -> list[k8s.EnvVar]:
     ]
 
 
-def workload_environment(
-    env: Environment, existing: Sequence[k8s.EnvVar], extra_env: Sequence[k8s.EnvVar] = ()
-) -> list[k8s.EnvVar]:
+def workload_environment(env: Environment, existing: Sequence[k8s.EnvVar]) -> list[k8s.EnvVar]:
     """Add the deployment's non-secret defaults to one workload container."""
     existing_env_names = {item.name for item in existing}
-    conflicting_env_names = existing_env_names & (env.sandbox_workload_env.keys() | {item.name for item in extra_env})
+    conflicting_env_names = existing_env_names & env.sandbox_workload_env.keys()
     if conflicting_env_names:
         names = ", ".join(sorted(conflicting_env_names))
         raise ValueError(f"sandbox workload environment defaults conflict with container env: {names}")
-    return [
-        *existing,
-        *(k8s.EnvVar(name=name, value=value) for name, value in env.sandbox_workload_env.items()),
-        *extra_env,
-    ]
+    return [*existing, *(k8s.EnvVar(name=name, value=value) for name, value in env.sandbox_workload_env.items())]
 
 
 def egress_proxy_mounts() -> list[k8s.VolumeMount]:
@@ -242,13 +236,11 @@ def add_sidecar_settings(
     )
 
 
-def _egress_sidecar(
-    settings: PodWiring, extra_env: Sequence[k8s.EnvVar], resources: k8s.ResourceRequirements
-) -> k8s.Container:
+def _egress_sidecar(settings: PodWiring, resources: k8s.ResourceRequirements) -> k8s.Container:
     return k8s.Container(
         name=sidecar_config.CONTAINER_NAME,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
-        env=[settings.path_env, *extra_env],
+        env=[settings.path_env],
         security_context=workload_security_context(),
         readiness_probe=k8s.Probe(
             http_get=k8s.HttpGetAction(
@@ -306,7 +298,6 @@ def pod_spec(
     service_account_name: str | None,
     sidecar_settings: SettingsFile,
     workload_volumes: Sequence[k8s.Volume] = (),
-    sidecar_env: Sequence[k8s.EnvVar] = (),
     sidecar_resources: k8s.ResourceRequirements | None = None,
     image_pull_secret_name: str | None = SECRET_NAME,
 ) -> k8s.PodSpec:
@@ -314,9 +305,8 @@ def pod_spec(
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
     `service_account_name` is the template's own; whoever creates a box from it may replace it.
-    `sidecar_settings` is the sidecar's settings file (`add_sidecar_settings`), `workload_volumes` are
-    Pod volumes the workload mounts beyond the egress path's own, and `sidecar_env` is the sidecar's
-    environment beyond the egress path's own."""
+    `sidecar_settings` is the sidecar's settings file (`add_sidecar_settings`), and `workload_volumes`
+    are Pod volumes the workload mounts beyond the egress path's own."""
     settings = sidecar_settings.pod_wiring(
         volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
     )
@@ -327,7 +317,6 @@ def pod_spec(
             workload,
             _egress_sidecar(
                 settings,
-                sidecar_env,
                 sidecar_resources
                 or k8s.ResourceRequirements(
                     requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},

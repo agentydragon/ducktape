@@ -1,7 +1,7 @@
 # k3s environment spike
 
-Does the Agentplane testing chart come up on a bare k3s in an RBE action (no Cilium, no
-kube-proxy)? The model-free lifecycle target runs in the separate
+Does the Agentplane testing chart come up on a bare k3s in an RBE action (no Cilium)? The
+model-free lifecycle target runs in the separate
 [`Agentplane k3s lifecycle` workflow](../../../.github/workflows/agentplane-k3s-lifecycle.yml), launched explicitly with
 `workflow_dispatch`. It does not run automatically on pull requests or pushes while its cost remains
 high. Agents can still run it
@@ -18,14 +18,16 @@ Both targets drive the app's REST/SSE API and omit Electric and the browser fron
 frontend sync protocol run Electric separately. The database bootstrap still creates the `electric`
 role required by the existing migrations; it does not start an Electric process.
 
-The current Firecracker executor lacks the iptables `MARK` target required by kube-proxy. The
-fixture uses headless Services, node-IP API access and host-network CoreDNS; it does not cover
-ClusterIP routing. See the [Service networking investigation](../../debug/2026-10-16-k3s-service-networking.md)
-for the failed real-k3s run and the capability checks required before removing these compensations.
+k3s runs its bundled kube-proxy, so the fixture's Services are ordinary ClusterIP Services and Pods
+use cluster DNS and the `kubernetes` Service. `test_lifecycle` checks both from inside the app's Pod.
+**Gotcha:** kube-proxy needs the iptables `MARK` target from the executor's guest kernel, which no
+image change supplies. The executor lacked it until 2026-10-21 and [#10808](https://github.com/agentydragon/ducktape/pull/10808)
+was reverted for that; only a real lifecycle run, never a green `test_render`, shows an executor
+can run it.
 
 [`fixture_chart.py`](fixture_chart.py) constructs the chart directly
 with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,
-headless Services, local-path storage and a test egress CA. The fixture runs the Go egress proxy
+local-path storage and a test egress CA. The fixture runs the Go egress proxy
 and Goose history migrator through the same construct as testing, with fixture-only PostgreSQL TLS
 settings. The shared construct supplies the egress RBAC, policies, trust mounts, images and flags.
 One PostgreSQL 18 Deployment uses the
@@ -140,7 +142,7 @@ image shares. The eight Go images share under 1 MiB.
 
 The test module imported the cdk8s chart code, and with it jsii and Node, only to render the
 manifest; rendering itself took about 1 s. `render_fixture` now renders one manifest per model
-backend at build time, and `rendered_fixture.load` fills in the node IP, CAs and model address.
+backend at build time, and `rendered_fixture.load` fills in the CAs and model address.
 Three fresh `test_lifecycle` runs each, with temporary wall-clock markers
 ([before](https://app.buildbuddy.io/invocation/0f6663f7-3cca-458b-b7f2-0cbfdb095df7),
 [after](https://app.buildbuddy.io/invocation/94bb75ae-3b07-4f5e-8955-ba3788f2ebaf)):
@@ -630,7 +632,7 @@ remaining OCI/containerd import and unpack cost, while keeping lifecycle asserti
 unchanged. Do not use this one pair to justify moving the expensive workflow into general CI.
 
 The separate workflow runs only the model-free lifecycle target. Its bare-cluster fixtures do not
-provide real KubeVirt, Cilium, ClusterIP routing or OIDC/Dex coverage, and this target is not
+provide real KubeVirt, Cilium or OIDC/Dex coverage, and this target is not
 Dispatcher multi-replica acceptance. Keep the `agentplane-testing` environment and fixture/spike
 cleanup as separate future work until those coverage gaps have an explicit owner and replacement.
 
@@ -682,8 +684,7 @@ result for the new Go composition. Breaks found on the way, in order:
   `litellm-key-cheap-experiments`, and llm-ingress and the egress rules dial `https://litellm.allegedly.works`
   instead of the cluster-internal Service.
 
-Not yet reached: Service port≠targetPort under headless Services (egress is 80→8082; only the agent-facing
-rules URL uses it) and Dex/OIDC public hostnames. The k3s lifecycle tests use stub KubeVirt CRDs and no
+Not yet reached: Dex/OIDC public hostnames. The k3s lifecycle tests use stub KubeVirt CRDs and no
 Cilium, so they do not validate those integrations or real external identity.
 
 The [historical image inventory](k3s_image_inventory_2026_10_14.md) records the layer and unpacked-file

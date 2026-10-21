@@ -67,7 +67,6 @@ class HistoryService(Construct):
         callers: dict[ServiceAccountRef, Pods],
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
-        service_cluster_ip: str | None = None,
         container_env: Mapping[str, EnvValue] | None = None,
         migrate_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
@@ -135,7 +134,6 @@ class HistoryService(Construct):
             ),
             placement=placement,
             registry_secret_name=registry_secret_name,
-            service_cluster_ip=service_cluster_ip,
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
         egress.add_runner_egress(

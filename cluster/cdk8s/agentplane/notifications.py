@@ -72,7 +72,6 @@ class Notifications(Construct):
         callers: list[Pods],
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
-        service_cluster_ip: str | None = None,
         container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
@@ -158,7 +157,6 @@ class Notifications(Construct):
             ),
             placement=placement,
             registry_secret_name=registry_secret_name,
-            service_cluster_ip=service_cluster_ip,
         )
         role_name = NAME.removeprefix("agentplane-")
         Role(

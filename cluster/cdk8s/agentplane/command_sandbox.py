@@ -70,16 +70,13 @@ class CommandSandbox(Construct):
         id: str,
         env: Environment,
         *,
-        workload_env: Sequence[k8s.EnvVar] = (),
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         sidecar_resources: k8s.ResourceRequirements | None = None,
-        sidecar_env: Sequence[k8s.EnvVar] = (),
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
     ) -> None:
         super().__init__(scope, id)
         self.image_pull_secret_name = image_pull_secret_name
         self.sidecar_resources = sidecar_resources
-        self.sidecar_env = sidecar_env
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
         self.sidecar_settings = sandbox_pod.add_sidecar_settings(
             self, env, name=f"{NAME}-egress-sidecar", platform_routes={}
@@ -89,7 +86,7 @@ class CommandSandbox(Construct):
             "podtemplate",
             env,
             name=NAME,
-            workload=_workload(_IMAGE, _COMMAND_RESOURCES, env, workload_env=workload_env, trust_mounts=mounts),
+            workload=_workload(_IMAGE, _COMMAND_RESOURCES, env, trust_mounts=mounts),
         )
         _pod_template(
             self,
@@ -101,7 +98,6 @@ class CommandSandbox(Construct):
                 _BUILD_RESOURCES,
                 env,
                 k8s.VolumeMount(name=_BUILD_HOME.name, mount_path=HOME),
-                workload_env=workload_env,
                 trust_mounts=mounts,
             ),
             volumes=[_BUILD_HOME],
@@ -140,7 +136,6 @@ def _pod_template(
             service_account_name=None,
             workload_volumes=volumes,
             sidecar_settings=scope.sidecar_settings,
-            sidecar_env=scope.sidecar_env,
             sidecar_resources=scope.sidecar_resources,
             image_pull_secret_name=scope.image_pull_secret_name,
         ),
@@ -157,7 +152,6 @@ def _workload(
     resources: k8s.ResourceRequirements,
     env: Environment,
     *mounts: k8s.VolumeMount,
-    workload_env: Sequence[k8s.EnvVar] = (),
     trust_mounts: Sequence[k8s.VolumeMount] = (),
 ) -> k8s.Container:
     return k8s.Container(
@@ -168,7 +162,7 @@ def _workload(
         # dispose, and the quota the box holds, for the whole termination grace period.
         command=["bash", "-c", "trap 'exit 0' TERM; sleep infinity & wait"],
         security_context=sandbox_pod.workload_security_context(),
-        env=sandbox_pod.workload_environment(env, sandbox_pod.egress_env(), workload_env),
+        env=sandbox_pod.workload_environment(env, sandbox_pod.egress_env()),
         resources=resources,
         volume_mounts=[*trust_mounts, sandbox_pod.bazelrc_mount(), *mounts],
     )

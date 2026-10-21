@@ -4,7 +4,6 @@ shared LiteLLM deployment.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import PurePosixPath
 
 from cdk8s import ApiObjectMetadata, Size
@@ -78,8 +77,6 @@ class LlmIngress(Construct):
         litellm_url: str = "http://litellm.litellm.svc.cluster.local:4000",
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
-        service_cluster_ip: str | None = None,
-        container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
@@ -87,8 +84,6 @@ class LlmIngress(Construct):
         self.litellm_url = litellm_url
         self.placement = placement
         self.registry_secret_name = registry_secret_name
-        self.service_cluster_ip = service_cluster_ip
-        self.container_env = container_env or {}
         self.memory_limit = memory_limit
         self.service = service(env.namespace)
 
@@ -192,7 +187,6 @@ class LlmIngress(Construct):
                 )
                 .key("api-key")
                 .env_value(self, "litellm-key-secret"),
-                **self.container_env,
             },
             ports=[self.service.port.container_port()],
             readiness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
@@ -224,7 +218,6 @@ class LlmIngress(Construct):
             "service",
             metadata=ApiObjectMetadata(name=self.service.name, namespace=self.env.namespace),
             selector=deployment,
-            cluster_ip=self.service_cluster_ip,
             ports=[self.service.port.service_port()],
         )
 

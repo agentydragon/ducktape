@@ -3,8 +3,6 @@ Sandboxes' state PVC, ServiceAccount and PolicyBinding and, while running, its P
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerResources,
@@ -66,8 +64,6 @@ class SandboxController(Construct):
         gateway_control_target: str,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
-        service_cluster_ip: str | None = None,
-        container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
         """The controller quiesces runners through the Runner Gateway's proxy, at each Sandbox's own
@@ -94,8 +90,7 @@ class SandboxController(Construct):
             container="sandbox-controller",
             image=f"{_IMAGE}:unset",
             env_variables={
-                **{env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()},
-                **(container_env or {}),
+                env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()
             },
             extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
             readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
@@ -107,7 +102,6 @@ class SandboxController(Construct):
             termination_grace=Duration.seconds(30),
             placement=placement,
             registry_secret_name=registry_secret_name,
-            service_cluster_ip=service_cluster_ip,
         )
         workload.project_tokens("runner-gateway-token", _GATEWAY_TOKEN_DIR, {"token": gateway_audience})
         role_name = NAME.removeprefix("agentplane-")
