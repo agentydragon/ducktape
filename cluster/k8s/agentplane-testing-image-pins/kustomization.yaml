@@ -30,8 +30,11 @@ images:
     newTag: devel-20261021164538-8a76d7a # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20261019172302-17e2ab0 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
+  # CLEANUP(added 2026-10-21): Restore this pin's Flux image-policy marker (policy `agentplane-action-service`, field
+  #   `tag`) in the testing flip of ACTION_SERVICE_GO_PORT (stage M), which pins the Go tag with its settings, probes and
+  #   callers; until then testing keeps the Python service while the roster publishes the Go image.
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20261021205128-9f23b65 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20261021205128-9f23b65
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
     newTag: devel-20261021093121-fb3d6ca # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate

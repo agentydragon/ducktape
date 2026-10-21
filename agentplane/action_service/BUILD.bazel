@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
@@ -1508,6 +1509,23 @@ go_binary(
     name = "actions",
     embed = [":main_lib"],
     pure = "on",
+)
+
+pkg_tar(
+    name = "service_binary_layer",
+    srcs = [":actions"],
+    package_dir = "/usr/local/bin",
+)
+
+oci_image(
+    name = "service_image",
+    base = "@distroless_static_debian13_linux_amd64",
+    entrypoint = ["/usr/local/bin/actions"],
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":service_binary_layer"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+    workdir = "/",
 )
 
 go_test(
