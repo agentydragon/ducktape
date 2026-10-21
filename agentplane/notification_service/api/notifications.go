@@ -80,7 +80,7 @@ func serveOwned[Request, Response any](
 		if err != nil {
 			return nil, err
 		}
-		return handle(ctx, store.Owner{Account: account, SandboxUID: sandbox.UID}, request)
+		return handle(ctx, store.Owner{Account: account, SandboxUID: sandbox.Identity.UID}, request)
 	})
 }
 
