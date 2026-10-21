@@ -1,14 +1,14 @@
 """App-owned form presets.
 
 A Sandbox preset also names the configured session defaults the app applies when opening new Sessions.
-Kubernetes stores only the preset label, concrete Sandbox template, policy sets, and bootstrap source.
+Kubernetes stores only the preset label, concrete Sandbox template, policy sets, inbox tags, and bootstrap source.
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from agentplane.app.sandbox_models import SessionDefaults
+from agentplane.app.sandbox_models import InboxTag, SessionDefaults
 from agentplane.runner.harness import Harness
 
 
@@ -40,6 +40,7 @@ class SandboxPreset(BaseModel):
     title: str
     template: str
     policy_sets: list[str] = Field(default_factory=list, description="PolicySet names every launch is prefilled with.")
+    inbox_tags: list[InboxTag] = Field(default_factory=list, description="Inbox tags every launch is prefilled with.")
     thread_preset: str
     bootstrap: str = Field(default="", max_length=65_536)
 
@@ -51,6 +52,7 @@ class SandboxPresetView(BaseModel):
     title: str
     template: str
     policy_sets: list[str]
+    inbox_tags: list[str]
     session_defaults: SessionDefaults
     bootstrap: str
 
@@ -79,6 +81,7 @@ class PresetCatalog(BaseModel):
                 title=preset.title,
                 template=preset.template,
                 policy_sets=preset.policy_sets,
+                inbox_tags=preset.inbox_tags,
                 session_defaults=self.threads[preset.thread_preset].defaults(),
                 bootstrap=preset.bootstrap,
             )

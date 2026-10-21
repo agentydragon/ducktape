@@ -21,6 +21,8 @@ from agentplane.subjects import ServiceAccountRef
 MIN_IDLE_SUSPEND_AFTER_SECONDS = 60
 
 SandboxName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=57)]
+# The Sandbox CRD's bounds on each of `spec.inboxTags`.
+InboxTag = Annotated[str, StringConstraints(min_length=1, max_length=63)]
 
 
 class SandboxPhase(StrEnum):
@@ -69,6 +71,9 @@ class NewSandbox(BaseModel):
     template: str = Field(min_length=1, description="SandboxTemplate each of its incarnations starts from.")
     preset: str | None = Field(default=None, description="The preset the form's fields were taken from, if any.")
     policy_sets: list[str] = Field(default_factory=list, description="PolicySet names to bind.")
+    inbox_tags: list[InboxTag] = Field(
+        default_factory=list, description="Inbox tags it starts with: groups a send grant can target it by."
+    )
     bootstrap: str = Field(default="", max_length=65_536, description="Runner initialization script for this Sandbox.")
     wake_on_send: bool = Field(
         default=False, description="Whether an incoming message may resume this Sandbox after suspension."

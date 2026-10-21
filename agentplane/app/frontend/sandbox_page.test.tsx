@@ -198,6 +198,7 @@ async function render(
             title: "Test preset",
             template: "runner",
             policy_sets: [],
+            inbox_tags: [],
             session_defaults: presetDefaults,
             bootstrap: "",
           },

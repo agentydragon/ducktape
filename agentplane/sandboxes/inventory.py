@@ -150,6 +150,7 @@ class SandboxInventory(SandboxReader):
                 "template": spec.template,
                 "running": True,
                 "policySets": sorted(policy_sets),
+                **({"inboxTags": sorted(set(spec.inbox_tags))} if spec.inbox_tags else {}),
                 "wakeOnSend": spec.wake_on_send,
                 **({"bootstrap": spec.bootstrap} if spec.bootstrap else {}),
                 **(
