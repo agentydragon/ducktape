@@ -248,7 +248,7 @@ class ConnectionAuthority:
             return _original_grant(grant)
 
     async def resolve(self, grant_id: UUID, *, issuer: str, client_id: str) -> Grant:
-        """Resolve current authority from verified token claims on each admission."""
+        """Resolve current authority from verified token claims on each request."""
         async with self._sessions.begin() as db:
             grant = await self._locked_grant(db, grant_id)
             if grant.status != GrantStatus.ACTIVE or (grant.issuer, grant.client_id) != (issuer, client_id):
@@ -269,21 +269,6 @@ class ConnectionAuthority:
                 connection = await _locked_connection(db, grant.connection_id)
                 connection.version += 1
                 connection.updated_at = now
-
-    async def authorize_action(self, session: AsyncSession, grant: ExternalGrantProvenance) -> bool:
-        """Validate admission/dispatch inside the ActionStore transaction, not before it.
-
-        Connection row locking makes revocation atomic with admission and the dispatch claim.
-        The caller owns the transaction and must keep it open until its Action write commits.
-        """
-        try:
-            row = await self._locked_grant(session, grant.grant_id)
-            if row.status != GrantStatus.ACTIVE:
-                return False
-            connection = await _locked_connection(session, row.connection_id)
-            return self._effective_grant(row, connection).provenance() == grant
-        except GrantRejectedError, ConnectionNotFoundError:
-            return False
 
     def _effective_grant(self, grant: ConnectionGrantRow, connection: ConnectionRow) -> Grant:
         return _original_grant(grant).model_copy(

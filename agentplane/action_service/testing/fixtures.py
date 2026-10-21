@@ -33,7 +33,6 @@ from agentplane.action_service.service import ExecutionLease, Executor
 from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.testing.lifecycle import wait_available
-from agentplane.action_service.testing.stores import action_store
 from mcp_infra.testing.remote_server import as_remote_server
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_sync
@@ -59,7 +58,7 @@ async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
 
 @pytest.fixture
 def store(engine: AsyncEngine) -> ActionStore:
-    return action_store(make_sessionmaker(engine))
+    return ActionStore(make_sessionmaker(engine))
 
 
 @pytest.fixture(scope="session")

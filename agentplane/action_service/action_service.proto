@@ -20,9 +20,9 @@ import "google/protobuf/timestamp.proto";
 // whose ServiceAccount is not labeled; the answer does not say which. `INVALID_ARGUMENT` is a malformed request,
 // arguments that do not satisfy the Action's schema, or a group and Action this service cannot run. `NOT_FOUND` is a
 // request that does not exist or is not the caller's, or an unknown Action in `GetAction`. `ALREADY_EXISTS` is an
-// idempotency key the account already used. `PERMISSION_DENIED` is an external Connection grant that no longer
-// authorizes the call. `FAILED_PRECONDITION` is an allowed request whose dispatch is no longer pending. `UNAVAILABLE`
-// is a draining service, an ActionGroup that is temporarily unavailable, or a lost change notification.
+// idempotency key the account already used. `FAILED_PRECONDITION` is an allowed request whose dispatch is no longer
+// pending. `UNAVAILABLE` is a draining service, an ActionGroup that is temporarily unavailable, or a lost change
+// notification.
 //
 // An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT` unless its field says it stands for a default; a
 // response never carries one.

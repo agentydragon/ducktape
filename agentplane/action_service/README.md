@@ -44,18 +44,14 @@ snapshot, including the current binding version, atomically with the first reque
 A shared-ServiceAccount repeat of the key is refused; the lookup by key returns the original
 snapshot, including after rename, rebind or reconnect. Workload requests carry no snapshot.
 
-`ActionStore` validates that snapshot against the active grant and the Connection's current
-binding version and eligible ServiceAccount under the Connection row lock, both during admission
-and before the dispatch claim. The operator may rebind an active Connection to a different eligible
-ServiceAccount without issuing a new OAuth token; this increments the binding version and retains
-immutable original grant history in `original_caller`. Later requests from the existing token use
-the new account. Authority comes from `bound_caller`, history from `original_caller`.
-A revoked, missing, unlabeled or rebound original authority prevents an older unclaimed Action
-from dispatching even if another grant now acts as the same ServiceAccount: the unstarted
-Execution fails with
-`external_grant_not_authorized`, retaining the historical Decision. Already claimed work is not
-stopped. Receipt and executor projections carry the original snapshot; no credentials are stored
-in it.
+The snapshot is provenance, not authority. The grant is resolved on every MCP request and again
+after a wait, so revoking, unbinding or reconnecting a Connection refuses its token's next request,
+while requests it already submitted proceed through decision and dispatch. The operator may rebind
+an active Connection to a different eligible ServiceAccount without issuing a new OAuth token; this
+increments the binding version and retains immutable original grant history in `original_caller`.
+Later requests from the existing token use the new account. Authority comes from `bound_caller`,
+history from `original_caller`. Receipt and executor projections carry the original snapshot; no
+credentials are stored in it.
 
 Action Service/PostgreSQL owns Connection authority; the integration app owns its operator UI.
 Configurable policies and the Thread lifecycle are separate from this authority.

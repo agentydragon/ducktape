@@ -15,7 +15,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.action_service.catalog import ActionIdentity
-from agentplane.action_service.connections import ConnectionAuthority
 from agentplane.action_service.db import (
     ActionEventRow,
     ActionRequestRow,
@@ -62,10 +61,6 @@ class ActionConflictError(Exception):
     pass
 
 
-class ExternalGrantNotAuthorizedError(Exception):
-    pass
-
-
 _TERMINAL_ACTION_STATE = {
     ExecutionState.SUCCEEDED: ActionState.SUCCEEDED,
     ExecutionState.FAILED: ActionState.FAILED,
@@ -75,9 +70,8 @@ _TERMINAL_ACTION_STATE = {
 
 
 class ActionStore:
-    def __init__(self, sessions: SessionMaker, *, external_grants: ConnectionAuthority) -> None:
+    def __init__(self, sessions: SessionMaker) -> None:
         self._sessions = sessions
-        self._external_grants = external_grants
 
     async def submit(
         self,
@@ -93,15 +87,10 @@ class ActionStore:
         A decisive `vote` from admission's provider evaluation commits with the insert, so the
         request is never visible as pending: `decision_pending` only ever means waiting for a human.
 
-        A presented grant must still authorize this exact caller. Whether one was needed is settled
-        upstream, since the principal names the identity, not how it authenticated: a Connection's
-        bearer resolves only through `ActionsOAuthProxy`, which attaches its grant.
+        `external_grant` is provenance only: `CallerTokenVerifier` resolved it for this request, and
+        revoking the grant later stops new requests, not this one.
         """
         async with self._sessions.begin() as session:
-            if external_grant is not None and (
-                principal != external_grant.principal() or not await self._grant_authorized(session, external_grant)
-            ):
-                raise ExternalGrantNotAuthorizedError("external grant is not authorized")
             now = datetime.now(UTC)
             inserted_id = await session.scalar(
                 pg_insert(ActionRequestRow)
@@ -353,17 +342,7 @@ class ActionStore:
             if row.state != ActionState.ALLOWED:
                 raise ActionConflictError(f"cannot dispatch request in {row.state}")
             now = datetime.now(UTC)
-            if row.external_grant is not None and not await self._grant_authorized(session, row.external_grant):
-                # Preserve the historical Decision; the original grant no longer permits dispatch.
-                execution.state = ExecutionState.FAILED
-                execution.error = {"code": "external_grant_not_authorized"}
-                execution.completed_at = now
-                row.state = ActionState.FAILED
-                row.version += 1
-                row.updated_at = now
-                _record_event(session, row, now)
-                return None
-            # Authority is checked even during outages. Replica-local availability is not stored.
+            # Replica-local availability is not stored.
             if can_dispatch is not None and not can_dispatch(row.action):
                 return None
             lease_token = uuid4()
@@ -517,9 +496,6 @@ class ActionStore:
                 .values(executor_id=executor_id, started_at=now, heartbeat_at=now)
                 .on_conflict_do_update(index_elements=["executor_id"], set_={"heartbeat_at": now})
             )
-
-    async def _grant_authorized(self, session: AsyncSession, grant: ExternalGrantProvenance) -> bool:
-        return await self._external_grants.authorize_action(session, grant)
 
     async def _view(self, session: AsyncSession, row: ActionRequestRow) -> ActionRequestView:
         decision = await session.scalar(select(DecisionRow).where(DecisionRow.request_id == row.id))

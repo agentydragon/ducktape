@@ -37,10 +37,9 @@ from agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PRO
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService, InvalidActionArgumentsError
-from agentplane.action_service.store import ActionConflictError
+from agentplane.action_service.store import ActionConflictError, ActionStore
 from agentplane.action_service.testing.lifecycle import wait_for_state
 from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
-from agentplane.action_service.testing.stores import action_store
 from agentplane.changes import ChangeSignal
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
@@ -122,7 +121,7 @@ def body(idempotency_key: str, n: int = 1) -> ActionRequestInput:
 async def test_allow_deny_no_opinion_matrix(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
 
     async with ActionService(
         store,
@@ -163,7 +162,7 @@ async def test_allow_deny_no_opinion_matrix(
 async def test_deny_dominates_even_when_the_allow_vote_finishes_first(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     fast_allow = ScriptedProvider("fast-allow", ProviderVerdict.ALLOW, delay=0.0)
     slow_deny = ScriptedProvider("slow-deny", ProviderVerdict.DENY, delay=0.05)
     service = ActionService(
@@ -180,7 +179,7 @@ async def test_deny_dominates_even_when_the_allow_vote_finishes_first(
 async def test_provider_timeout_is_not_allow_and_does_not_block_other_providers(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
 
     async with ActionService(
         store,
@@ -212,7 +211,7 @@ async def test_provider_exception_is_not_allow_and_material_is_not_projected_or_
     caplog: pytest.LogCaptureFixture,
     echo_catalog: ActionCatalog,
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store, echo_catalog, {"agentplane": mcp_executor}, providers=[ExplodingProvider()], dispatches=ChangeSignal()
     )
@@ -227,7 +226,7 @@ async def test_provider_exception_is_not_allow_and_material_is_not_projected_or_
 async def test_human_fallback_when_no_provider_has_an_opinion(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store,
         echo_catalog,
@@ -251,7 +250,7 @@ async def test_human_fallback_when_no_provider_has_an_opinion(
 async def test_stale_human_decision_after_auto_provider_already_decided(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store,
         echo_catalog,
@@ -280,7 +279,7 @@ async def test_request_is_invisible_until_providers_finish(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
     """No reader -- the operator queue, Web Push -- may see an auto-approved request as pending."""
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     provider = GatedProvider(ProviderVerdict.ALLOW)
     service = ActionService(
         store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider], dispatches=ChangeSignal()
@@ -299,7 +298,7 @@ async def test_request_is_invisible_until_providers_finish(
 async def test_decision_context_carries_only_the_authenticated_caller(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     provider = ScriptedProvider("identity-check", ProviderVerdict.NO_OPINION)
     service = ActionService(
         store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider], dispatches=ChangeSignal()
@@ -317,7 +316,7 @@ async def test_decision_context_carries_only_the_authenticated_caller(
 async def test_provider_reason_is_projected_separately_from_human_note(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store,
         echo_catalog,
@@ -375,7 +374,7 @@ def _service(
     visibility: RepositoryVisibilityService,
 ) -> ActionService:
     return ActionService(
-        action_store(make_sessionmaker(engine)),
+        ActionStore(make_sessionmaker(engine)),
         catalog,
         {"agentplane": executor},
         providers=[PolicySetDecisionProvider(visibility=visibility)],
@@ -525,7 +524,7 @@ async def test_invalid_arguments_are_rejected_before_persistence_and_provider_ev
         "required": ["n"],
         "additionalProperties": False,
     }
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     provider = ScriptedProvider("policy", ProviderVerdict.NO_OPINION)
     service = ActionService(
         store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider], dispatches=ChangeSignal()
@@ -549,7 +548,7 @@ async def test_invalid_arguments_are_rejected_before_persistence_and_provider_ev
 async def test_history_filters_auto_allows_before_pagination(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     async with ActionService(store, echo_catalog, {"agentplane": mcp_executor}, dispatches=ChangeSignal()) as service:
         human = await service.submit(body("history-human"), CALLER)
         await service.decide(

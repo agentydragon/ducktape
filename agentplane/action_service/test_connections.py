@@ -31,7 +31,6 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.store import ActionConflictError, ActionNotFoundError, ActionStore
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from agentplane.action_service.testing.credentials import OperatorIdp
-from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.kubernetes_watch import Freshness
@@ -101,7 +100,7 @@ async def test_binding_retries_are_atomic_and_survive_authority_replacement(engi
             await replacement.resolve(request.grant_id, issuer=issuer, client_id=client_id)
 
 
-async def test_rebind_keeps_token_and_history_but_not_old_pending_action_authority(engine: AsyncEngine) -> None:
+async def test_rebind_keeps_token_and_history(engine: AsyncEngine) -> None:
     service = authority(engine)
     request = binding()
     await service.bind(request)
@@ -118,8 +117,6 @@ async def test_rebind_keeps_token_and_history_but_not_old_pending_action_authori
     assert after.principal().account == OTHER
     assert after.provenance().binding_version == snapshot.binding_version + 1
     async with make_sessionmaker(engine).begin() as db:
-        assert not await service.authorize_action(db, snapshot)
-        assert await service.authorize_action(db, after.provenance())
         stored = await db.get(ConnectionGrantRow, request.grant_id)
         assert stored is not None
         assert stored.original_caller == PERSONAL
@@ -150,7 +147,7 @@ async def test_same_service_account_shares_receipts_while_distinct_accounts_are_
     assert len({grant.connection_id for grant in submitted_grants}) == 3
     assert [grant.client_id for grant in submitted_grants] == ["client-1", "client-2", "client-3"]
 
-    store = ActionStore(make_sessionmaker(engine), external_grants=service)
+    store = ActionStore(make_sessionmaker(engine))
     body = ActionRequestInput(
         idempotency_key="same-key",
         title="test title for same-key",
@@ -272,7 +269,7 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
     service = authority(engine)
     grant = await service.bind(binding())
     catalog = ActionCatalog(groups={})
-    actions = ActionService(action_store(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
+    actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
     app = create_app(
         actions,
         Mock(spec=WorkloadPrincipalResolver),

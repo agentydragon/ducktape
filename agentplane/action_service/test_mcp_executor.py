@@ -42,9 +42,8 @@ from agentplane.action_service.models import (
     Verdict,
 )
 from agentplane.action_service.service import ActionService, ExecutionLease, ExecutionOutcomeUnknownError
-from agentplane.action_service.store import ActionConflictError
+from agentplane.action_service.store import ActionConflictError, ActionStore
 from agentplane.action_service.testing.lifecycle import wait_available, wait_for_state
-from agentplane.action_service.testing.stores import action_store
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path
@@ -165,7 +164,7 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
 
     group = _group()
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp)
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store,
         ActionCatalog(groups={GROUP_KEY: group}),
@@ -270,7 +269,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
         ),
     )
     executor = McpActionGroupExecutor.from_group("slow", group)
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store,
         ActionCatalog(groups={"slow": group}),
@@ -475,7 +474,7 @@ async def test_long_mcp_call_drains_with_live_execution_and_executor_leases(engi
 
     group = _group()
     executor = McpActionGroupExecutor(GROUP_KEY, group, server)
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store,
         ActionCatalog(groups={GROUP_KEY: group}),
@@ -546,7 +545,7 @@ async def test_approved_work_stays_unclaimed_during_outage_then_recovers(
 
     group = _group()
     executor = McpActionGroupExecutor(GROUP_KEY, group, server)
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store, ActionCatalog(groups={GROUP_KEY: group}), {GROUP_KEY: executor}, dispatches=ChangeSignal()
     )

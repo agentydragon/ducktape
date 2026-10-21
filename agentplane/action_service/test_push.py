@@ -32,7 +32,7 @@ from agentplane.action_service.push import (
     PushSubscriptionStore,
 )
 from agentplane.action_service.push_settings import WebPushSettings
-from agentplane.action_service.testing.stores import action_store
+from agentplane.action_service.store import ActionStore
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 
@@ -87,7 +87,7 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
     subscriptions = PushSubscriptionStore(sessions)
     for endpoint in ("https://push.example/a", "https://push.example/b"):
         await subscriptions.save(operator=OPERATOR, endpoint=endpoint, p256dh="test", auth="test", user_agent="test")
-    store = action_store(sessions)
+    store = ActionStore(sessions)
     request = await store.submit(
         ActionRequestInput(
             action=ActionIdentity(group="test", name="echo"),
@@ -130,7 +130,7 @@ async def test_burst_of_requests_is_one_push_per_browser(engine: AsyncEngine, db
     await PushSubscriptionStore(sessions).save(
         operator=OPERATOR, endpoint="https://push.example/a", p256dh="test", auth="test", user_agent="test"
     )
-    store = action_store(sessions)
+    store = ActionStore(sessions)
     requests = [
         await store.submit(
             ActionRequestInput(
@@ -166,7 +166,7 @@ async def test_auto_approved_request_is_never_pushed(engine: AsyncEngine, db_url
     await PushSubscriptionStore(sessions).save(
         operator=OPERATOR, endpoint="https://push.example/a", p256dh="test", auth="test", user_agent="test"
     )
-    await action_store(sessions).submit(
+    await ActionStore(sessions).submit(
         ActionRequestInput(
             action=ActionIdentity(group="test", name="echo"),
             arguments={},

@@ -3,7 +3,7 @@
 A workload token proves the ServiceAccount its Pod runs as -- the same principal an OAuth grant
 acting as that ServiceAccount resolves to, so one `PolicyBinding` covers both ways of
 arriving, and `CALLER_LABEL` on the account is what admits either. The grant path carries that
-check inside `ConnectionAuthority.resolve`, which runs on every admission; the workload path has no
+check inside `ConnectionAuthority.resolve`, which runs on every request; the workload path has no
 such authority to consult, so it asks the informer's index here.
 
 FastMCP runs this verifier on every transport request (`RequireAuthMiddleware` around `/mcp`) and

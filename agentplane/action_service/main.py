@@ -123,7 +123,7 @@ async def async_main(settings: Settings) -> None:
         # Stop dispatch/lease tasks before closing the adapters, including failed service startup.
         service = await stack.enter_async_context(
             ActionService(
-                ActionStore(make_sessionmaker(engine), external_grants=connections),
+                ActionStore(make_sessionmaker(engine)),
                 catalog,
                 executors,
                 dispatches=updates.dispatches,

@@ -184,7 +184,7 @@ async def direct(
         )
     )
     grant = await authority.activate(bound.id)
-    store = ActionStore(make_sessionmaker(engine), external_grants=authority)
+    store = ActionStore(make_sessionmaker(engine))
     catalog = _catalog()
     service = ActionService(
         store,

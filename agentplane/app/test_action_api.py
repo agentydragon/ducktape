@@ -37,10 +37,10 @@ from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
+from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
 from agentplane.action_service.testing.lifecycle import wait_available
 from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
-from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
@@ -197,7 +197,7 @@ async def review(
         policies = admitted_callers(PERSONAL)
         service = await stack.enter_async_context(
             ActionService(
-                action_store(make_sessionmaker(engine)),
+                ActionStore(make_sessionmaker(engine)),
                 catalog,
                 {"test_review": executor},
                 policies=policies,

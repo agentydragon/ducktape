@@ -36,7 +36,6 @@ from agentplane.action_service.models import (
 from agentplane.action_service.service import ActionService, ExecutionLease, Executor, ServiceDrainingError
 from agentplane.action_service.store import ActionConflictError, ActionStore
 from agentplane.action_service.testing.lifecycle import wait_for_state
-from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
@@ -184,7 +183,7 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
     the real coordinator, including the backend's own late, authenticated completion.
     """
     sessions = make_sessionmaker(engine)
-    store = action_store(sessions)
+    store = ActionStore(sessions)
     executor = SlowSilentExecutor(sleep_seconds=0.2)
     service = ActionService(
         store,

@@ -29,7 +29,6 @@ from agentplane.action_service.models import (
 )
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.store import ActionNotFoundError, ActionStore
-from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import CHANNEL, ActionUpdateBroker, UpdatesUnavailableError
 from agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
 from agentplane.changes import ChangeSignal
@@ -65,8 +64,8 @@ class Waiting:
 @pytest.fixture
 async def waiting(engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog) -> AsyncIterator[Waiting]:
     # The writer uses a separate session/store from the reader; only PostgreSQL connects them.
-    writer = action_store(make_sessionmaker(engine))
-    reader = ObservedService(action_store(make_sessionmaker(engine)), echo_catalog)
+    writer = ActionStore(make_sessionmaker(engine))
+    reader = ObservedService(ActionStore(make_sessionmaker(engine)), echo_catalog)
     request = await writer.submit(
         ActionRequestInput(
             action=ActionIdentity(group="agentplane", name="echo"),

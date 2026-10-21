@@ -22,17 +22,6 @@ aspect_py_binary(
 )
 
 py_library(
-    name = "stores",
-    srcs = ["stores.py"],
-    deps = [
-        ":callers",
-        "//agentplane/action_service:connections",
-        "//agentplane/action_service:db",
-        "//agentplane/action_service:store",
-    ],
-)
-
-py_library(
     name = "lifecycle",
     srcs = ["lifecycle.py"],
     deps = [
@@ -50,7 +39,6 @@ py_library(
     deps = [
         ":credentials",
         ":lifecycle",
-        ":stores",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:database_migrate",
         "//agentplane/action_service:db",

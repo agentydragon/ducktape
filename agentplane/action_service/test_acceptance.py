@@ -47,7 +47,6 @@ from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.callers import admitted_callers, in_sync_index
 from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
-from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
@@ -170,7 +169,7 @@ async def test_p0_allow_deny_scope_forgery_and_single_execution(
     engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     executor = CountingExecutor()
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor}, dispatches=ChangeSignal())
     async with service, await _client(service, operator_idp) as client:
         key = "submit-1"
@@ -387,7 +386,7 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
     engine: AsyncEngine, caplog: Any, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     executor = LeakyFailingExecutor()
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor}, dispatches=ChangeSignal())
     async with service, await _client(service, operator_idp) as client:
         pending = (
@@ -435,7 +434,7 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
     lease bound expires — whether that is because the old process crashed or a separate worker did.
     """
     sessions = make_sessionmaker(engine)
-    store = action_store(sessions)
+    store = ActionStore(sessions)
     executor = CountingExecutor()
 
     pending_view = await store.submit(
@@ -524,7 +523,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
             )
         }
     )
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, catalog, {"github": CountingExecutor()}, dispatches=ChangeSignal())
     async with service, await _client(service, operator_idp, catalog=catalog) as client:
         groups = await client.get("/v1/action-groups", headers=_workload("workload-a"))
@@ -608,7 +607,7 @@ async def test_operator_reads_a_named_subjects_effective_policy(
             namespace=NAMESPACE,
         )
     service = ActionService(
-        action_store(make_sessionmaker(engine)),
+        ActionStore(make_sessionmaker(engine)),
         echo_catalog,
         {"agentplane": CountingExecutor()},
         policies=index,
@@ -649,7 +648,7 @@ async def test_catalog_admission_and_group_routing(
     echo_catalog.groups["unbound"] = echo_catalog.groups["agentplane"].model_copy(deep=True)
     echo_catalog.groups["offline"] = echo_catalog.groups["agentplane"].model_copy(deep=True)
     echo_catalog.groups["offline"].available = False
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store, echo_catalog, {"agentplane": first, "other": second, "offline": first}, dispatches=ChangeSignal()
     )
@@ -748,7 +747,7 @@ async def test_action_removed_before_allow_never_dispatches(
     engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     executor = CountingExecutor()
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor}, dispatches=ChangeSignal())
     async with service, await _client(service, operator_idp, catalog=echo_catalog) as client:
         view = await service.submit(
@@ -781,7 +780,7 @@ async def test_submission_schema_error_is_http_422_and_does_not_persist(
         "properties": {"n": {"type": "integer"}},
         "required": ["n"],
     }
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     executor = CountingExecutor()
     service = ActionService(store, echo_catalog, {"agentplane": executor}, dispatches=ChangeSignal())
     async with service, await _client(service, operator_idp, catalog=echo_catalog) as client:
@@ -805,7 +804,7 @@ async def test_submission_schema_error_is_http_422_and_does_not_persist(
 async def test_every_reader_sees_the_submitted_arguments_exactly(
     engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": CountingExecutor()}, dispatches=ChangeSignal())
     arguments = {
         "text": "Authorization: Bearer literal-user-input",
@@ -845,7 +844,7 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
 ) -> None:
     executor = CountingExecutor()
     service = ActionService(
-        action_store(make_sessionmaker(engine)), echo_catalog, {"agentplane": executor}, dispatches=ChangeSignal()
+        ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": executor}, dispatches=ChangeSignal()
     )
     async with await _client(service, operator_idp) as client:
         response = await client.post(
@@ -882,7 +881,7 @@ async def test_service_reader_reads_every_owners_requests_and_holds_no_mutation_
     engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     service = ActionService(
-        action_store(make_sessionmaker(engine)),
+        ActionStore(make_sessionmaker(engine)),
         echo_catalog,
         {"agentplane": CountingExecutor()},
         dispatches=ChangeSignal(),
@@ -943,7 +942,7 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
     engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     service = ActionService(
-        action_store(make_sessionmaker(engine)),
+        ActionStore(make_sessionmaker(engine)),
         echo_catalog,
         {"agentplane": CountingExecutor()},
         dispatches=ChangeSignal(),
@@ -1061,7 +1060,7 @@ async def listening(db_url: str) -> AsyncIterator[ActionUpdateBroker]:
 async def test_receipt_read_waits_for_the_decision(
     engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp, listening: ActionUpdateBroker
 ) -> None:
-    service = ObservedService(action_store(make_sessionmaker(engine)), echo_catalog)
+    service = ObservedService(ActionStore(make_sessionmaker(engine)), echo_catalog)
     async with service, await _client(service, operator_idp, updates=listening) as client:
         pending = await _submit(client, "wait-decision")
         path = f"/v1/action-requests/{pending['id']}"
@@ -1090,7 +1089,7 @@ async def test_receipt_wait_is_bounded_owned_and_reauthorized(
     listening: ActionUpdateBroker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    service = ObservedService(action_store(make_sessionmaker(engine)), echo_catalog)
+    service = ObservedService(ActionStore(make_sessionmaker(engine)), echo_catalog)
     async with service, await _client(service, operator_idp, updates=listening) as client:
         pending = await _submit(client, "wait-guarded")
         path = f"/v1/action-requests/{pending['id']}"
@@ -1114,7 +1113,7 @@ async def test_request_list_pages_newest_first_after_the_last_seen_id(
     engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     service = ActionService(
-        action_store(make_sessionmaker(engine)),
+        ActionStore(make_sessionmaker(engine)),
         echo_catalog,
         {"agentplane": CountingExecutor()},
         dispatches=ChangeSignal(),

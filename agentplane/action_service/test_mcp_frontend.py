@@ -63,7 +63,6 @@ from agentplane.action_service.testing.credentials import WORKLOAD_CREDENTIAL_PL
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.testing.mcp_client import asgi_mcp_client, text_of
 from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
-from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionSubscription, ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
@@ -203,7 +202,7 @@ async def _serve(
         )
 
     authentication.create_token_review = AsyncMock(side_effect=review)
-    store = action_store(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine))
     policies = _policy_index()
     # Tests move requests through the store by hand (decide, claim); only the startup pass of the
     # dispatch and lease-sweep loops may run, so nothing dispatches or expires behind their back.

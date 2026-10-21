@@ -263,7 +263,7 @@ async def test_real_sdk_dcr_over_http_persists_client_metadata(
     echo_executor: Executor,
     redirect_uri: str,
 ) -> None:
-    store = ActionStore(make_sessionmaker(engine), external_grants=oauth.connections)
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": echo_executor}, dispatches=ChangeSignal())
     # Only the unrelated Kubernetes TokenReview boundary is fake. The request has
     # no workload token; OAuth routes, SDK HTTP, and PostgreSQL are real.
@@ -629,7 +629,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
     bearer = issued.json()["access_token"]
     grant = await oauth.proxy.authenticate(bearer)
     assert grant is not None
-    store = ActionStore(make_sessionmaker(engine), external_grants=oauth.connections)
+    store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": echo_executor}, dispatches=ChangeSignal())
     sandbox = _no_workload()
     app = create_app(

@@ -88,7 +88,7 @@ from agentplane.action_service.service import (
     ServiceDrainingError,
     UnsupportedActionError,
 )
-from agentplane.action_service.store import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
+from agentplane.action_service.store import ActionConflictError, ActionNotFoundError
 from agentplane.action_service.updates import ActionUpdateBroker, UpdatesUnavailableError
 from agentplane.action_service.waits import ActionWaiter, WaitLimitExceededError, WaitOptions
 from agentplane.agent_docs import mount_agent_docs
@@ -232,7 +232,6 @@ _ERRORS: dict[type[Exception], tuple[int, str | Callable[[Any], str]]] = {
         lambda error: f"unknown group/action {(error.group_key, error.action_key)!r}",
     ),
     ActionConflictError: (status.HTTP_409_CONFLICT, str),
-    ExternalGrantNotAuthorizedError: (status.HTTP_403_FORBIDDEN, "external grant is not authorized"),
     UnsupportedActionError: (
         status.HTTP_422_UNPROCESSABLE_CONTENT,
         lambda error: f"unsupported group/action {error.args[0]!r}",
