@@ -151,12 +151,13 @@ system_test(
     ],
 )
 
-# One VM Sandbox and one scripted turn per harness. The guest boots before its runner answers.
+# One VM Sandbox and one scripted turn per harness: guest bring-up, and model traffic through the
+# launcher's egress relay. The guest boots before its runner answers.
 system_test(
     name = "test_vm_sandbox",
     srcs = ["test_vm_sandbox.py"],
     live = False,
-    vm_sandboxes = True,
+    vm_sandboxes = "ci",
     deps = [
         ":agent",
         ":conftest",
@@ -178,7 +179,7 @@ system_test(
     name = "test_vm_workspace_ownership",
     timeout = "eternal",
     srcs = ["test_vm_workspace_ownership.py"],
-    vm_sandboxes = True,
+    vm_sandboxes = "manual",
     deps = [
         ":conftest",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
@@ -199,7 +200,7 @@ system_test(
     srcs = ["test_suspend_resume.py"],
     k3s = "scripted",
     live = False,
-    vm_sandboxes = True,
+    vm_sandboxes = "manual",
     deps = [
         ":agent",
         ":conftest",
@@ -521,7 +522,7 @@ system_test(
     timeout = "eternal",
     srcs = ["test_storage.py"],
     k3s = "model_free",
-    vm_sandboxes = True,
+    vm_sandboxes = "manual",
     deps = [
         ":cluster",
         ":conftest",

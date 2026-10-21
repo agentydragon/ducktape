@@ -23,15 +23,16 @@ _MCP_FIXTURE_LAYOUTS = [
 # The `_vm` target's manifest: the local model's, with VM Sandboxes.
 _VM_FIXTURE = "//agentplane/x/k3s_env:rendered/local-model-vm.json"
 
-def system_test(name, srcs, deps, k3s = None, vm_sandboxes = False, live = True, mcp_fixtures = False, size = "small", timeout = None):
-    """Generates `name` when `k3s` names its scenarios' kind, `name + "_vm"` with `vm_sandboxes`, and
-    `name + "_live"` unless `live` is False.
+def system_test(name, srcs, deps, k3s = None, vm_sandboxes = None, live = True, mcp_fixtures = False, size = "small", timeout = None):
+    """Generates `name` when `k3s` names its scenarios' kind, `name + "_vm"` when `vm_sandboxes` says
+    where it runs, and `name + "_live"` unless `live` is False.
 
     `name` starts its own k3s stack in one RBE action (`agentplane.x.k3s_env.system_test_target`) and
     runs the `scripted_model` scenarios and the unmarked ones, in PR CI like any test; `k3s` is
     `"model_free"` when none runs a turn, else `"scripted"`; `mcp_fixtures` adds Dex and the MCP
     servers to its stack. `name + "_vm"` does the same for the `vm_sandboxes` scenarios, which only it
-    runs, on a stack with KubeVirt. `name + "_live"` runs against the deployment the caller's
+    runs, on a stack with KubeVirt; `vm_sandboxes` is `"ci"` for what only a VM exercises (bring-up,
+    networking), else `"manual"`, run by hand. `name + "_live"` runs against the deployment the caller's
     environment names (`AGENTPLANE_SYSTEM_TEST_*`, testing by default) with the caller's kubeconfig and
     a real model, off RBE; a scenario with only `scripted_model` cases has nothing to run there and
     passes `live = False`. `size` and `timeout` apply to `name + "_live"`.
@@ -78,7 +79,9 @@ def system_test(name, srcs, deps, k3s = None, vm_sandboxes = False, live = True,
             layouts = _MCP_FIXTURE_LAYOUTS if mcp_fixtures else [],
             **common
         )
-    if vm_sandboxes:
+    if vm_sandboxes != None:
+        if vm_sandboxes not in ("ci", "manual"):
+            fail("vm_sandboxes is \"ci\" or \"manual\", not %r" % vm_sandboxes)
         _k3s_test(
             name = name + "_vm",
             # The guest's runner comes from the runner disk; no Sandbox runs the Pod runner image.
@@ -87,10 +90,11 @@ def system_test(name, srcs, deps, k3s = None, vm_sandboxes = False, live = True,
             layouts = [],
             data = K3S_VM_DATA,
             env = K3S_VM_ENV,
+            tags = ["manual"] if vm_sandboxes == "manual" else [],
             **common
         )
 
-def _k3s_test(name, runner_layout, fixture, layouts, main_module, deps, data = [], env = {}):
+def _k3s_test(name, runner_layout, fixture, layouts, main_module, deps, data = [], env = {}, tags = []):
     py_test(
         name = name,
         size = "enormous",
@@ -108,7 +112,7 @@ def _k3s_test(name, runner_layout, fixture, layouts, main_module, deps, data = [
             "PYTEST_PLUGINS": "agentplane.x.k3s_env.system_test_target",
         } | env,
         exec_properties = K3S_EXEC_PROPERTIES,
-        tags = K3S_TAGS,
+        tags = K3S_TAGS + tags,
         main_module = main_module,
         deps = deps + ["//agentplane/x/k3s_env:system_test_target"],
     )

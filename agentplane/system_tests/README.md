@@ -11,10 +11,11 @@ RBE action that starts its own [k3s stack](../x/k3s_env/README.md) and publishes
 `AGENTPLANE_SYSTEM_TEST_{URL,TOKEN,NAMESPACE,SERVICE_ACCOUNT}`
 ([`system_test_target.py`](../x/k3s_env/system_test_target.py)), so it needs no cluster credentials
 and runs in PR CI whenever its inputs change. That stack runs no VM Sandboxes; it deselects cases
-marked `vm_sandboxes`. `system_test(vm_sandboxes = True)` runs those cases, and only those, as
+marked `vm_sandboxes`. `system_test(vm_sandboxes = ...)` runs those cases, and only those, as
 `<scenario>_vm`, on a stack with KubeVirt emulating the guest CPU and the k3s test guest
-([VM Sandboxes](../x/k3s_env/README.md#vm-sandboxes)). `test_vm_sandbox_vm` runs a scripted turn on
-each harness in a VM Sandbox. `<scenario>_live` runs the scenario against the deployment those
+([VM Sandboxes](../x/k3s_env/README.md#vm-sandboxes)). PR CI runs only what a VM alone exercises:
+`test_vm_sandbox_vm` boots a VM Sandbox and runs a scripted turn on each harness through the
+launcher's egress relay. The other `_vm` targets are `manual`; name one to run it. `<scenario>_live` runs the scenario against the deployment those
 variables and the caller's kubeconfig name, testing by default ([Running live](#running-live)).
 
 The model backend is the target's too (`AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND`). A deployment serves a

@@ -152,7 +152,7 @@ _IMAGES = {
 ]
 
 # KubeVirt's and Kyverno's images, imported by targets that run VM Sandboxes
-# (`system_test(vm_sandboxes = True)`): a subdirectory, so `stack.py`'s glob skips them.
+# (`system_test(vm_sandboxes = ...)`): a subdirectory, so `stack.py`'s glob skips them.
 [
     oci_layout_rloc(
         name = "vm_sandboxes/" + name + "_layout",
