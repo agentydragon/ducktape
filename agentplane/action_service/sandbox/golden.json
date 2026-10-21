@@ -1,0 +1,868 @@
+{
+ "arguments": [
+  {
+   "action": "create",
+   "input": {
+    "name": "test-box",
+    "template": "test-template"
+   },
+   "name": "name and template",
+   "valid": true
+  },
+  {
+   "action": "create",
+   "input": {
+    "name": "test-box",
+    "template": "unoffered"
+   },
+   "name": "a template that is not offered",
+   "valid": true
+  },
+  {
+   "action": "create",
+   "input": {
+    "name": "test-box"
+   },
+   "name": "without a template",
+   "valid": false
+  },
+  {
+   "action": "create",
+   "input": {
+    "name": "test-box",
+    "template": null
+   },
+   "name": "null template",
+   "valid": false
+  },
+  {
+   "action": "create",
+   "input": {
+    "name": "test-box",
+    "template": 1
+   },
+   "name": "template as a number",
+   "valid": false
+  },
+  {
+   "action": "create",
+   "input": {
+    "extra": 1,
+    "name": "test-box",
+    "template": "test-template"
+   },
+   "name": "unknown field",
+   "valid": false
+  },
+  {
+   "action": "get_template",
+   "input": {
+    "template": "test-template"
+   },
+   "name": "a template",
+   "valid": true
+  },
+  {
+   "action": "get_template",
+   "input": {},
+   "name": "empty",
+   "valid": false
+  },
+  {
+   "action": "exec",
+   "input": {
+    "cwd": "/tmp",
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 60
+   },
+   "name": "every field",
+   "valid": true
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": 0,
+    "name": "test-box",
+    "script": "x",
+    "timeout_seconds": 1
+   },
+   "name": "the smallest values",
+   "valid": true
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": 1000000,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 3600
+   },
+   "name": "the largest values",
+   "valid": true
+  },
+  {
+   "action": "exec",
+   "input": {
+    "cwd": null,
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 60
+   },
+   "name": "null cwd",
+   "valid": true
+  },
+  {
+   "action": "exec",
+   "input": {
+    "cwd": "",
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 60
+   },
+   "name": "empty cwd",
+   "valid": true
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 60.0
+   },
+   "name": "timeout as an integral float",
+   "valid": true
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": "60"
+   },
+   "name": "timeout as integer text",
+   "valid": true
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": true,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 60
+   },
+   "name": "max_output_bytes as true",
+   "valid": true
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "script": "",
+    "timeout_seconds": 60
+   },
+   "name": "empty script",
+   "valid": false
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "timeout_seconds": 60
+   },
+   "name": "without a script",
+   "valid": false
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 0
+   },
+   "name": "timeout of 0",
+   "valid": false
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 3601
+   },
+   "name": "timeout above 3600",
+   "valid": false
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 1.5
+   },
+   "name": "fractional timeout",
+   "valid": false
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": -1,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 60
+   },
+   "name": "negative max_output_bytes",
+   "valid": false
+  },
+  {
+   "action": "exec",
+   "input": {
+    "max_output_bytes": 1000001,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 60
+   },
+   "name": "max_output_bytes above 1000000",
+   "valid": false
+  },
+  {
+   "action": "exec",
+   "input": {
+    "cwd": 1,
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 60
+   },
+   "name": "cwd as a number",
+   "valid": false
+  },
+  {
+   "action": "exec",
+   "input": {
+    "env": {},
+    "max_output_bytes": 1000,
+    "name": "test-box",
+    "script": "true",
+    "timeout_seconds": 60
+   },
+   "name": "unknown field",
+   "valid": false
+  },
+  {
+   "action": "list",
+   "input": {},
+   "name": "no arguments",
+   "valid": true
+  },
+  {
+   "action": "list",
+   "input": {
+    "name": "test-box"
+   },
+   "name": "unknown field",
+   "valid": false
+  },
+  {
+   "action": "get",
+   "input": {
+    "name": "a"
+   },
+   "name": "shortest name",
+   "valid": true
+  },
+  {
+   "action": "get",
+   "input": {
+    "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   },
+   "name": "longest name",
+   "valid": true
+  },
+  {
+   "action": "get",
+   "input": {
+    "name": "0-a-9"
+   },
+   "name": "name with hyphens and digits",
+   "valid": true
+  },
+  {
+   "action": "get",
+   "input": {
+    "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   },
+   "name": "name above 48 characters",
+   "valid": false
+  },
+  {
+   "action": "get",
+   "input": {
+    "name": ""
+   },
+   "name": "empty name",
+   "valid": false
+  },
+  {
+   "action": "get",
+   "input": {
+    "name": "Box"
+   },
+   "name": "uppercase name",
+   "valid": false
+  },
+  {
+   "action": "get",
+   "input": {
+    "name": "-box"
+   },
+   "name": "name starting with a hyphen",
+   "valid": false
+  },
+  {
+   "action": "get",
+   "input": {
+    "name": "box-"
+   },
+   "name": "name ending with a hyphen",
+   "valid": false
+  },
+  {
+   "action": "get",
+   "input": {
+    "name": "test.box"
+   },
+   "name": "name with a dot",
+   "valid": false
+  },
+  {
+   "action": "get",
+   "input": {
+    "name": "box\n"
+   },
+   "name": "name ending in a newline",
+   "valid": false
+  },
+  {
+   "action": "get",
+   "input": {
+    "name": 1
+   },
+   "name": "name as a number",
+   "valid": false
+  },
+  {
+   "action": "get",
+   "input": {},
+   "name": "without a name",
+   "valid": false
+  },
+  {
+   "action": "get",
+   "input": [
+    "test-box"
+   ],
+   "name": "not an object",
+   "valid": false
+  },
+  {
+   "action": "dispose",
+   "input": {
+    "name": "test-box"
+   },
+   "name": "a name",
+   "valid": true
+  },
+  {
+   "action": "dispose",
+   "input": {
+    "force": true,
+    "name": "test-box"
+   },
+   "name": "unknown field",
+   "valid": false
+  }
+ ],
+ "boxes": [
+  {
+   "box": "test-box",
+   "caller": {
+    "name": "test-caller",
+    "namespace": "test-namespace"
+   },
+   "labels": {
+    "sandbox-actions.agentplane.allegedly.works/caller": "test-caller",
+    "sandbox-actions.agentplane.allegedly.works/caller-namespace": "test-namespace",
+    "sandbox-actions.agentplane.allegedly.works/managed": "true",
+    "sandbox-actions.agentplane.allegedly.works/name": "test-box",
+    "sandbox-actions.agentplane.allegedly.works/template": "test-template"
+   },
+   "name": "a caller's box",
+   "object_name": "test-caller-test-box"
+  },
+  {
+   "box": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "caller": {
+    "name": "cccccccccccccccccccccccccccccccccccccccc",
+    "namespace": "test-namespace"
+   },
+   "labels": {
+    "sandbox-actions.agentplane.allegedly.works/caller": "cccccccccccccccccccccccccccccccccccccccc",
+    "sandbox-actions.agentplane.allegedly.works/caller-namespace": "test-namespace",
+    "sandbox-actions.agentplane.allegedly.works/managed": "true",
+    "sandbox-actions.agentplane.allegedly.works/name": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "sandbox-actions.agentplane.allegedly.works/template": "test-template"
+   },
+   "name": "a name cut at 63 characters",
+   "object_name": "cccccccccccccccccccccccccccccccccccccccc-bbbbbbbbbbbbbbbbbbbbbb"
+  },
+  {
+   "box": "box",
+   "caller": {
+    "name": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "namespace": "test-namespace"
+   },
+   "labels": {
+    "sandbox-actions.agentplane.allegedly.works/caller": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "sandbox-actions.agentplane.allegedly.works/caller-namespace": "test-namespace",
+    "sandbox-actions.agentplane.allegedly.works/managed": "true",
+    "sandbox-actions.agentplane.allegedly.works/name": "box",
+    "sandbox-actions.agentplane.allegedly.works/template": "test-template"
+   },
+   "name": "a name cut at a hyphen",
+   "object_name": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  }
+ ],
+ "roster": {
+  "defaults": {
+   "actions": {
+    "create": {
+     "annotations": {
+      "destructive_hint": false,
+      "idempotent_hint": true,
+      "open_world_hint": null,
+      "read_only_hint": false,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+       "name": {
+        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
+        "maxLength": 48,
+        "minLength": 1,
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "title": "Name",
+        "type": "string"
+       },
+       "template": {
+        "description": "Which template to create the box from. Only the templates this deployment offers can be named.",
+        "title": "Template",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name",
+       "template"
+      ],
+      "title": "CreateArgs",
+      "type": "object"
+     },
+     "title": "Create sandbox"
+    },
+    "dispose": {
+     "annotations": {
+      "destructive_hint": true,
+      "idempotent_hint": true,
+      "open_world_hint": null,
+      "read_only_hint": false,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "description": "The whole argument of an Action that names one sandbox and nothing else.",
+      "properties": {
+       "name": {
+        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
+        "maxLength": 48,
+        "minLength": 1,
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "title": "Name",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name"
+      ],
+      "title": "NameArgs",
+      "type": "object"
+     },
+     "title": "Dispose sandbox"
+    },
+    "exec": {
+     "annotations": {
+      "destructive_hint": true,
+      "idempotent_hint": false,
+      "open_world_hint": null,
+      "read_only_hint": false,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+       "cwd": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "default": null,
+        "description": "Working directory; omit to start in the container's own working directory.",
+        "title": "Cwd"
+       },
+       "max_output_bytes": {
+        "description": "Maximum bytes retained independently from stdout and stderr.",
+        "maximum": 200000,
+        "minimum": 0,
+        "title": "Max Output Bytes",
+        "type": "integer"
+       },
+       "name": {
+        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
+        "maxLength": 48,
+        "minLength": 1,
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "title": "Name",
+        "type": "string"
+       },
+       "script": {
+        "description": "Bash script text run with `bash -lc`. Pipes, redirects, globs, variable expansion and compound commands use normal Bash semantics.",
+        "minLength": 1,
+        "title": "Script",
+        "type": "string"
+       },
+       "timeout_seconds": {
+        "description": "Wall-clock ceiling for the script.",
+        "exclusiveMinimum": 0,
+        "maximum": 1800,
+        "title": "Timeout Seconds",
+        "type": "integer"
+       }
+      },
+      "required": [
+       "name",
+       "script",
+       "timeout_seconds",
+       "max_output_bytes"
+      ],
+      "title": "ExecArgs",
+      "type": "object"
+     },
+     "title": "Run script in sandbox"
+    },
+    "get": {
+     "annotations": {
+      "destructive_hint": null,
+      "idempotent_hint": null,
+      "open_world_hint": false,
+      "read_only_hint": true,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "description": "The whole argument of an Action that names one sandbox and nothing else.",
+      "properties": {
+       "name": {
+        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
+        "maxLength": 48,
+        "minLength": 1,
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "title": "Name",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name"
+      ],
+      "title": "NameArgs",
+      "type": "object"
+     },
+     "title": "Inspect sandbox"
+    },
+    "get_template": {
+     "annotations": {
+      "destructive_hint": null,
+      "idempotent_hint": null,
+      "open_world_hint": false,
+      "read_only_hint": true,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+       "template": {
+        "description": "Which template to show; only the ones `create` offers.",
+        "title": "Template",
+        "type": "string"
+       }
+      },
+      "required": [
+       "template"
+      ],
+      "title": "TemplateArgs",
+      "type": "object"
+     },
+     "title": "Show sandbox template"
+    },
+    "list": {
+     "annotations": {
+      "destructive_hint": null,
+      "idempotent_hint": null,
+      "open_world_hint": false,
+      "read_only_hint": true,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "NoArgs",
+      "type": "object"
+     },
+     "title": "List sandboxes"
+    }
+   },
+   "binding": {
+    "description": "test sandboxes",
+    "max_output_bytes": 200000,
+    "max_timeout_seconds": 1800,
+    "namespace": "test-namespace",
+    "templates": {
+     "test-template": "a test box"
+    }
+   }
+  },
+  "smallest caps": {
+   "actions": {
+    "create": {
+     "annotations": {
+      "destructive_hint": false,
+      "idempotent_hint": true,
+      "open_world_hint": null,
+      "read_only_hint": false,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+       "name": {
+        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
+        "maxLength": 48,
+        "minLength": 1,
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "title": "Name",
+        "type": "string"
+       },
+       "template": {
+        "description": "Which template to create the box from. Only the templates this deployment offers can be named.",
+        "title": "Template",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name",
+       "template"
+      ],
+      "title": "CreateArgs",
+      "type": "object"
+     },
+     "title": "Create sandbox"
+    },
+    "dispose": {
+     "annotations": {
+      "destructive_hint": true,
+      "idempotent_hint": true,
+      "open_world_hint": null,
+      "read_only_hint": false,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "description": "The whole argument of an Action that names one sandbox and nothing else.",
+      "properties": {
+       "name": {
+        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
+        "maxLength": 48,
+        "minLength": 1,
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "title": "Name",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name"
+      ],
+      "title": "NameArgs",
+      "type": "object"
+     },
+     "title": "Dispose sandbox"
+    },
+    "exec": {
+     "annotations": {
+      "destructive_hint": true,
+      "idempotent_hint": false,
+      "open_world_hint": null,
+      "read_only_hint": false,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+       "cwd": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "default": null,
+        "description": "Working directory; omit to start in the container's own working directory.",
+        "title": "Cwd"
+       },
+       "max_output_bytes": {
+        "description": "Maximum bytes retained independently from stdout and stderr.",
+        "maximum": 0,
+        "minimum": 0,
+        "title": "Max Output Bytes",
+        "type": "integer"
+       },
+       "name": {
+        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
+        "maxLength": 48,
+        "minLength": 1,
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "title": "Name",
+        "type": "string"
+       },
+       "script": {
+        "description": "Bash script text run with `bash -lc`. Pipes, redirects, globs, variable expansion and compound commands use normal Bash semantics.",
+        "minLength": 1,
+        "title": "Script",
+        "type": "string"
+       },
+       "timeout_seconds": {
+        "description": "Wall-clock ceiling for the script.",
+        "exclusiveMinimum": 0,
+        "maximum": 1,
+        "title": "Timeout Seconds",
+        "type": "integer"
+       }
+      },
+      "required": [
+       "name",
+       "script",
+       "timeout_seconds",
+       "max_output_bytes"
+      ],
+      "title": "ExecArgs",
+      "type": "object"
+     },
+     "title": "Run script in sandbox"
+    },
+    "get": {
+     "annotations": {
+      "destructive_hint": null,
+      "idempotent_hint": null,
+      "open_world_hint": false,
+      "read_only_hint": true,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "description": "The whole argument of an Action that names one sandbox and nothing else.",
+      "properties": {
+       "name": {
+        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
+        "maxLength": 48,
+        "minLength": 1,
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "title": "Name",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name"
+      ],
+      "title": "NameArgs",
+      "type": "object"
+     },
+     "title": "Inspect sandbox"
+    },
+    "get_template": {
+     "annotations": {
+      "destructive_hint": null,
+      "idempotent_hint": null,
+      "open_world_hint": false,
+      "read_only_hint": true,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+       "template": {
+        "description": "Which template to show; only the ones `create` offers.",
+        "title": "Template",
+        "type": "string"
+       }
+      },
+      "required": [
+       "template"
+      ],
+      "title": "TemplateArgs",
+      "type": "object"
+     },
+     "title": "Show sandbox template"
+    },
+    "list": {
+     "annotations": {
+      "destructive_hint": null,
+      "idempotent_hint": null,
+      "open_world_hint": false,
+      "read_only_hint": true,
+      "title": null
+     },
+     "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "NoArgs",
+      "type": "object"
+     },
+     "title": "List sandboxes"
+    }
+   },
+   "binding": {
+    "description": "test sandboxes",
+    "max_output_bytes": 0,
+    "max_timeout_seconds": 1,
+    "namespace": "test-namespace",
+    "templates": {
+     "test-template": "a test box"
+    }
+   }
+  }
+ }
+}

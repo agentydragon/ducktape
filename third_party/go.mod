@@ -293,3 +293,11 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa // indirect
 )
+
+// Indirect dependencies of client-go's tools/remotecommand, which the Action Service's sandbox Actions exec into a box
+// through
+require (
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
+	github.com/moby/spdystream v0.5.1 // indirect
+	k8s.io/streaming v0.37.0 // indirect
+)
