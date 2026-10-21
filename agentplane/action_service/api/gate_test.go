@@ -177,11 +177,16 @@ func TestAWorkloadIsUnavailableWhileTheAPIServerCannotBeReached(t *testing.T) {
 
 func TestADrainingServiceRefusesEveryCall(t *testing.T) {
 	s := serve(t)
+	request := s.submit(t, caller, "test-pending")
 	s.gate.Drain()
 	for _, token := range []string{callerToken, readerToken, s.operatorToken} {
 		_, err := s.client.ListActionRequests(as(t, token), &action_servicepb.ListActionRequestsRequest{})
-		wantCode(t, "a call while draining", err, codes.Unavailable)
+		wantCode(t, "a read while draining", err, codes.Unavailable)
 	}
+	_, err := s.cancel(t, callerToken, request)
+	wantCode(t, "a cancellation while draining", err, codes.Unavailable)
+	_, err = s.decideAs(t, s.operatorToken, decision(request, allow))
+	wantCode(t, "a Decision while draining", err, codes.Unavailable)
 }
 
 func TestAnRPCNotServedYetIsUnimplementedOnceAdmitted(t *testing.T) {

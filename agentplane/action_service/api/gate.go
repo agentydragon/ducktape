@@ -27,9 +27,12 @@ var errDraining = errors.New("Action Service is draining")
 // does not learn from the difference whether an account exists or carries the label.
 var unauthenticated = status.Error(codes.Unauthenticated, "invalid bearer")
 
-// services are the full names of the services the Gate admits callers to; it lets every other call, such as
-// the health service's, through.
-var services = []string{"/agentplane.action_service.ActionService/"}
+// The method prefixes of the services the Gate admits callers to; it lets every other call, such as the health
+// service's, through.
+const (
+	actionService   = "/agentplane.action_service.ActionService/"
+	operatorService = "/agentplane.action_service.OperatorActionService/"
+)
 
 // GateOptions are whom a Gate admits.
 type GateOptions struct {
@@ -80,21 +83,26 @@ type admissionKey struct{}
 // admitted is the principal the Gate admitted the call as.
 func admitted(ctx context.Context) admission { return ctx.Value(admissionKey{}).(admission) }
 
+// bearer is the call's one Bearer token.
+func bearer(ctx context.Context) (string, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	token, err := auth.BearerToken(md.Get("authorization"))
+	if err != nil {
+		return "", unauthenticated
+	}
+	return token, nil
+}
+
 // authenticate resolves the call's bearer. A token its unverified issuer claim names as the operators' is an
 // operator's, and only its issuer may accept it; any other token is a workload's, which the API server reviews.
 // Each path verifies the token in full, so the claim only picks the verifier.
 func (g *Gate) authenticate(ctx context.Context) (admission, error) {
-	md, _ := metadata.FromIncomingContext(ctx)
-	token, err := auth.BearerToken(md.Get("authorization"))
+	token, err := bearer(ctx)
 	if err != nil {
-		return admission{}, unauthenticated
+		return admission{}, err
 	}
 	if g.operators != nil && g.operators.issued(token) {
-		operator, err := g.operators.Verify(ctx, token)
-		if err != nil {
-			return admission{}, unauthenticated
-		}
-		return admission{principal: operator}, nil
+		return g.operator(ctx, token)
 	}
 	workload, err := g.workloads.ResolveToken(ctx, token)
 	switch {
@@ -126,21 +134,45 @@ func (g *Gate) recheck(ctx context.Context) error {
 	return nil
 }
 
-func gated(method string) bool {
-	for _, service := range services {
-		if strings.HasPrefix(method, service) {
-			return true
-		}
+// authenticateOperator resolves the bearer of a call only an operator may make: a workload's token is not
+// reviewed.
+func (g *Gate) authenticateOperator(ctx context.Context) (admission, error) {
+	token, err := bearer(ctx)
+	if err != nil {
+		return admission{}, err
 	}
-	return false
+	if g.operators == nil || !g.operators.issued(token) {
+		return admission{}, unauthenticated
+	}
+	return g.operator(ctx, token)
+}
+
+func (g *Gate) operator(ctx context.Context, token string) (admission, error) {
+	operator, err := g.operators.Verify(ctx, token)
+	if err != nil {
+		return admission{}, unauthenticated
+	}
+	return admission{principal: operator}, nil
+}
+
+// authenticator is how the Gate resolves the bearer of a call to the method, or nil for a call it lets through.
+func (g *Gate) authenticator(method string) func(context.Context) (admission, error) {
+	switch {
+	case strings.HasPrefix(method, actionService):
+		return g.authenticate
+	case strings.HasPrefix(method, operatorService):
+		return g.authenticateOperator
+	default:
+		return nil
+	}
 }
 
 // admit is the Gate's work before a gated call runs: the context it runs in, which carries its principal.
-func (g *Gate) admit(ctx context.Context) (context.Context, error) {
+func (g *Gate) admit(ctx context.Context, authenticate func(context.Context) (admission, error)) (context.Context, error) {
 	if g.draining.Err() != nil {
 		return nil, failure(ctx, errDraining)
 	}
-	admitted, err := g.authenticate(ctx)
+	admitted, err := authenticate(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -149,10 +181,11 @@ func (g *Gate) admit(ctx context.Context) (context.Context, error) {
 
 // UnaryInterceptor admits a unary call and answers its failure.
 func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	if !gated(info.FullMethod) {
+	authenticate := g.authenticator(info.FullMethod)
+	if authenticate == nil {
 		return handler(ctx, request)
 	}
-	admittedContext, err := g.admit(ctx)
+	admittedContext, err := g.admit(ctx, authenticate)
 	if err != nil {
 		return nil, err
 	}
@@ -165,10 +198,11 @@ func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.Una
 
 // StreamInterceptor admits a streaming call and answers its failure.
 func (g *Gate) StreamInterceptor(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	if !gated(info.FullMethod) {
+	authenticate := g.authenticator(info.FullMethod)
+	if authenticate == nil {
 		return handler(server, stream)
 	}
-	admittedContext, err := g.admit(stream.Context())
+	admittedContext, err := g.admit(stream.Context(), authenticate)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"slices"
@@ -359,4 +360,88 @@ func TestTheHTTPFacadeAnswersAsTheRPCs(t *testing.T) {
 			t.Errorf("%s: %d %s, want %d", name, code, body, tc.code)
 		}
 	}
+}
+
+func (s *served) cancel(t *testing.T, token string, request store.ActionRequest) (*action_servicepb.CancelActionRequestResponse, error) {
+	t.Helper()
+	return s.client.CancelActionRequest(as(t, token), &action_servicepb.CancelActionRequestRequest{RequestId: request.ID.String()})
+}
+
+// claimable is whether an executor could still claim the request's dispatch: a request cancelled while pending
+// has no Execution, and one cancelled once allowed has a cancelled one.
+func (s *served) claimable(t *testing.T, request store.ActionRequest) bool {
+	t.Helper()
+	claim, err := s.store.ClaimExecution(t.Context(), request.ID, "test-executor", time.Minute, func(store.ActionIdentity) bool { return true })
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("claim: %v", err)
+	}
+	return claim != nil
+}
+
+func TestTheOwnerCancelsARequestUntilItsDispatchIsClaimed(t *testing.T) {
+	s := serve(t)
+	pending := s.submit(t, caller, "test-pending")
+	allowed := s.decide(t, s.submit(t, caller, "test-allowed"), store.VerdictAllow)
+	denied := s.decide(t, s.submit(t, caller, "test-denied"), store.VerdictDeny)
+	claimed := s.decide(t, s.submit(t, caller, "test-claimed"), store.VerdictAllow)
+	s.claim(t, claimed)
+	for name, tc := range map[string]struct {
+		request store.ActionRequest
+		outcome action_servicepb.CancellationOutcome
+		state   action_servicepb.ActionState
+	}{
+		"a pending request":  {pending, action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_CANCELLED, action_servicepb.ActionState_ACTION_STATE_CANCELLED},
+		"an allowed request": {allowed, action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_CANCELLED, action_servicepb.ActionState_ACTION_STATE_CANCELLED},
+		"a denied request":   {denied, action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_ALREADY_FINISHED, action_servicepb.ActionState_ACTION_STATE_DENIED},
+		"a claimed request":  {claimed, action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_TOO_LATE, action_servicepb.ActionState_ACTION_STATE_DISPATCHING},
+	} {
+		got, err := s.cancel(t, callerToken, tc.request)
+		if err != nil || got.GetOutcome() != tc.outcome || got.GetActionRequest().GetState() != tc.state {
+			t.Errorf("%s: %v in %v, %v; want %v in %v", name, got.GetOutcome(), got.GetActionRequest().GetState(), err, tc.outcome, tc.state)
+		}
+	}
+	again, err := s.cancel(t, callerToken, pending)
+	if err != nil || again.GetOutcome() != action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_ALREADY_CANCELLED {
+		t.Errorf("cancelling again: %v, %v", again, err)
+	}
+	for _, request := range []store.ActionRequest{pending, allowed} {
+		if s.claimable(t, request) {
+			t.Errorf("the cancelled request %s was claimed", request.IdempotencyKey)
+		}
+	}
+}
+
+func TestOnlyTheOwnerMayCancel(t *testing.T) {
+	s := serve(t)
+	request := s.submit(t, caller, "test-pending")
+	for name, tc := range map[string]struct {
+		token string
+		code  codes.Code
+	}{
+		"another caller":   {otherToken, codes.NotFound},
+		"a service reader": {readerToken, codes.NotFound},
+		"an operator":      {s.operatorToken, codes.PermissionDenied},
+	} {
+		_, err := s.cancel(t, tc.token, request)
+		wantCode(t, name, err, tc.code)
+	}
+	if got, err := s.client.GetActionRequest(as(t, callerToken), &action_servicepb.GetActionRequestRequest{RequestId: request.ID.String()}); err != nil ||
+		got.GetActionRequest().GetVersion() != request.Version {
+		t.Errorf("the refused cancellations changed the request: %v, %v", got, err)
+	}
+}
+
+func TestACancellationThatCannotBeAnsweredFails(t *testing.T) {
+	s := serve(t)
+	_, err := s.client.CancelActionRequest(as(t, callerToken), &action_servicepb.CancelActionRequestRequest{RequestId: "test-not-a-uuid"})
+	wantCode(t, "a request ID that is not a UUID", err, codes.InvalidArgument)
+	_, err = s.cancel(t, callerToken, store.ActionRequest{ID: uuid.New()})
+	wantCode(t, "an unknown request", err, codes.NotFound)
+	// An allowed request whose Execution no longer awaits dispatch, a state no store call leaves behind.
+	stranded := s.decide(t, s.submit(t, caller, "test-stranded"), store.VerdictAllow)
+	if _, err := s.db.ExecContext(t.Context(), `UPDATE action_execution SET state = $2 WHERE request_id = $1`, stranded.ID, store.ExecutionCancelled); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.cancel(t, callerToken, stranded)
+	wantCode(t, "an allowed request with no pending dispatch", err, codes.FailedPrecondition)
 }

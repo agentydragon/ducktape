@@ -14,15 +14,17 @@ import (
 // Registration is the generated `Register<Service>HandlerFromEndpoint`.
 type Registration func(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error
 
-// NewHandler forwards each HTTP request to the gRPC server at target, a loopback address, so every
-// call passes through the servicer's own authentication and interceptors. The gateway sends the
-// `Authorization` header on as `authorization` metadata, the form the servicers read. Server-streaming
-// methods answer newline-delimited JSON, one `{"result": ...}` object per message. The connection
-// closes when ctx ends.
-func NewHandler(ctx context.Context, target string, register Registration) (http.Handler, error) {
+// NewHandler forwards each HTTP request for the registered services to the gRPC server at target, a
+// loopback address, so every call passes through the servicer's own authentication and interceptors. The
+// gateway sends the `Authorization` header on as `authorization` metadata, the form the servicers read.
+// Server-streaming methods answer newline-delimited JSON, one `{"result": ...}` object per message. The
+// connections close when ctx ends.
+func NewHandler(ctx context.Context, target string, registrations ...Registration) (http.Handler, error) {
 	mux := runtime.NewServeMux()
-	if err := register(ctx, mux, target, []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}); err != nil {
-		return nil, err
+	for _, register := range registrations {
+		if err := register(ctx, mux, target, []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}); err != nil {
+			return nil, err
+		}
 	}
 	return mux, nil
 }

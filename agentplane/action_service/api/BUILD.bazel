@@ -8,6 +8,7 @@ go_library(
         "errors.go",
         "gate.go",
         "operator_oidc.go",
+        "operator_service.go",
         "service.go",
         "views.go",
         "watch.go",
@@ -15,6 +16,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/api",
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service:operator_action_service_go_proto",
         "//agentplane/action_service/store",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:sandboxes_go_proto",
@@ -55,6 +57,7 @@ go_test(
         "gate_test.go",
         "integration_testmain_test.go",
         "issuer_test.go",
+        "operator_service_test.go",
         "service_test.go",
         "watch_test.go",
     ],
@@ -62,6 +65,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service:operator_action_service_go_proto",
         "//agentplane/action_service/migrations",
         "//agentplane/action_service/store",
         "//agentplane/grpc/facade",

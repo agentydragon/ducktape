@@ -1,7 +1,8 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
-// `ActionService`'s request reads and watches over gRPC and their HTTP facade under /v1/, the agent documentation,
-// the standard gRPC health service and the process's Prometheus metrics at /metrics, and it runs the dispatch worker.
-// The other RPCs answer UNIMPLEMENTED, and it runs no Executor.
+// `ActionService`'s request reads, watches and cancellation and `OperatorActionService`'s Decisions over gRPC and
+// their HTTP facade under /v1/, the agent documentation, the standard gRPC health service and the process's
+// Prometheus metrics at /metrics, and it runs the dispatch worker. The other RPCs answer UNIMPLEMENTED, and it runs
+// no Executor.
 package main
 
 import (
@@ -22,6 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -142,15 +144,15 @@ func gate(c config, d deps) (*api.Gate, error) {
 	return api.NewGate(options), nil
 }
 
-// newRoutes is the listener's HTTP routes: the HTTP form of `ActionService` under /v1/ (served by agentFacade), the
+// newRoutes is the listener's HTTP routes: the HTTP form of the gRPC services under /v1/ (served by httpFacade), the
 // agent documentation, which needs neither the database nor a peer, and the metrics.
-func newRoutes(agentFacade http.Handler) (http.Handler, error) {
+func newRoutes(httpFacade http.Handler) (http.Handler, error) {
 	docs, err := fs.Sub(agentDocs, "docs/agents")
 	if err != nil {
 		return nil, err
 	}
 	routes := http.NewServeMux()
-	routes.Handle("/v1/", agentFacade)
+	routes.Handle("/v1/", httpFacade)
 	routes.Handle("/metrics", promhttp.Handler())
 	facade.MountAgentDocs(routes, docs, openAPI)
 	return routes, nil
@@ -192,16 +194,21 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	)
 	healthpb.RegisterHealthServer(grpcServer, health)
 	action_servicepb.RegisterActionServiceServer(grpcServer, api.NewService(requests, hub, admission))
+	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests))
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
 	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish
 	// while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	agentFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), action_servicepb.RegisterActionServiceHandlerFromEndpoint)
+	httpFacade, err := facade.NewHandler(
+		facadeContext, listener.Addr().String(),
+		action_servicepb.RegisterActionServiceHandlerFromEndpoint,
+		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
+	)
 	if err != nil {
 		return err
 	}
-	routes, err := newRoutes(agentFacade)
+	routes, err := newRoutes(httpFacade)
 	if err != nil {
 		return err
 	}

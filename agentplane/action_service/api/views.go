@@ -43,6 +43,13 @@ var verdicts = map[store.Verdict]action_servicepb.Verdict{
 	store.VerdictDeny:  action_servicepb.Verdict_VERDICT_DENY,
 }
 
+var cancellationOutcomes = map[store.CancellationOutcome]action_servicepb.CancellationOutcome{
+	store.OutcomeCancelled:        action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_CANCELLED,
+	store.OutcomeAlreadyCancelled: action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_ALREADY_CANCELLED,
+	store.OutcomeAlreadyFinished:  action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_ALREADY_FINISHED,
+	store.OutcomeTooLate:          action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_TOO_LATE,
+}
+
 var policyKinds = map[store.PolicyKind]action_servicepb.PolicyKind{
 	store.PolicyExactActions:               action_servicepb.PolicyKind_POLICY_KIND_EXACT_ACTIONS,
 	store.PolicyArgumentSchema:             action_servicepb.PolicyKind_POLICY_KIND_ARGUMENT_SCHEMA,
@@ -230,14 +237,19 @@ func eventView(event store.Event) (*action_servicepb.ActionEvent, error) {
 	return view, nil
 }
 
-// storedStates is the store's form of each state a request may name; the reverse of actionStates.
-var storedStates = func() map[action_servicepb.ActionState]store.ActionState {
-	states := make(map[action_servicepb.ActionState]store.ActionState, len(actionStates))
-	for stored, view := range actionStates {
-		states[view] = stored
+// reversed is the store's form of each value a request may name, from the views of the stored values.
+func reversed[Stored, View comparable](views map[Stored]View) map[View]Stored {
+	stored := make(map[View]Stored, len(views))
+	for value, view := range views {
+		stored[view] = value
 	}
-	return states
-}()
+	return stored
+}
+
+var (
+	storedStates   = reversed(actionStates)
+	storedVerdicts = reversed(verdicts)
+)
 
 // requestedStates reads a request's state filter; `ACTION_STATE_UNSPECIFIED` and a number the API does not
 // define are malformed.

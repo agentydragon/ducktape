@@ -1,9 +1,9 @@
 // Package api serves the Action Service's request RPCs over its store: `ActionService`'s reads and watches of
-// requests and their events.
+// requests and their events and a caller's cancellation, and `OperatorActionService`'s Decisions.
 //
 // A Gate admits every call before it runs (agentplane/docs/grpc_services.md). The bearer picks the principal, as
-// action_service.proto says: a workload of a labeled ServiceAccount reads its own account's requests, a service
-// reader every account's, and an operator every account's.
+// action_service.proto says: a workload of a labeled ServiceAccount reads and cancels its own account's requests, a
+// service reader reads every account's, and an operator reads every account's and decides them.
 package api
 
 import (
@@ -13,6 +13,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -147,4 +149,34 @@ func (s *Service) ListActionRequestEvents(ctx context.Context, request *action_s
 		}
 	}
 	return &action_servicepb.ListActionRequestEventsResponse{Events: views}, nil
+}
+
+func (s *Service) CancelActionRequest(ctx context.Context, request *action_servicepb.CancelActionRequestRequest) (*action_servicepb.CancelActionRequestResponse, error) {
+	id, err := parseRequestID(request.GetRequestId())
+	if err != nil {
+		return nil, err
+	}
+	var owner store.CallerPrincipal
+	switch principal := admitted(ctx).principal.(type) {
+	case store.CallerPrincipal:
+		owner = principal
+	case store.OperatorPrincipal:
+		return nil, status.Error(codes.PermissionDenied, "an operator cannot cancel a request")
+	default:
+		// A service reader changes nothing, so it finds no request of its own to cancel.
+		return nil, store.ErrNotFound
+	}
+	result, err := s.store.Cancel(ctx, id, owner)
+	if err != nil {
+		return nil, err
+	}
+	outcome, err := lookup(cancellationOutcomes, "cancellation outcome", result.Outcome)
+	if err != nil {
+		return nil, err
+	}
+	view, err := requestView(result.Request)
+	if err != nil {
+		return nil, err
+	}
+	return &action_servicepb.CancelActionRequestResponse{Outcome: outcome, ActionRequest: view}, nil
 }

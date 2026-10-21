@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -51,8 +52,9 @@ func useAPIServer(server *kubeapiserver.Server) (err error) {
 
 // running is a served Action Service over a database of its own.
 type running struct {
-	health  healthpb.HealthClient
-	actions action_servicepb.ActionServiceClient
+	health    healthpb.HealthClient
+	actions   action_servicepb.ActionServiceClient
+	operators operator_action_servicepb.OperatorActionServiceClient
 	// url is the base URL of the service's HTTP routes.
 	url string
 	// store is the service's database, and updates is signalled on every Event committed to it.
@@ -113,8 +115,9 @@ func start(t *testing.T) running {
 	}
 	t.Cleanup(func() { connection.Close() })
 	return running{
-		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection), url: "http://" + listener.Addr().String(), store: store.New(db), updates: updates,
-		stop: stop,
+		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
+		operators: operator_action_servicepb.NewOperatorActionServiceClient(connection),
+		url:       "http://" + listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
 }
 
@@ -242,5 +245,33 @@ func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
 	receipt := &action_servicepb.GetActionRequestResponse{}
 	if response.StatusCode != http.StatusOK || protojson.Unmarshal(body, receipt) != nil || !proto.Equal(receipt, got) {
 		t.Errorf("HTTP receipt: %d %s", response.StatusCode, body)
+	}
+}
+
+// No operator is configured here, so the operator service refuses every bearer; refusing one shows the service is
+// served and gated, where a service that is not served would answer UNIMPLEMENTED, and a route that is not, 404.
+func TestTheServiceGatesTheOperatorServiceOverGRPCAndHTTP(t *testing.T) {
+	service := start(t)
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+	decision := &operator_action_servicepb.DecideActionRequestRequest{
+		RequestId: uuid.NewString(), Verdict: action_servicepb.Verdict_VERDICT_ALLOW, ExpectedVersion: 1, IdempotencyKey: "test-decision",
+	}
+	if _, err := service.operators.DecideActionRequest(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken), decision); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("a reader's Decision over gRPC: %v", err)
+	}
+	call, err := http.NewRequestWithContext(ctx, http.MethodPost, service.url+"/v1/operator/action-requests/"+decision.GetRequestId()+"/decision",
+		strings.NewReader(`{"verdict": "VERDICT_ALLOW", "expected_version": 1, "idempotency_key": "test-decision"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	call.Header.Set("Authorization", "Bearer "+readerToken)
+	response, err := http.DefaultClient.Do(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Errorf("a reader's Decision over HTTP: %d", response.StatusCode)
 	}
 }

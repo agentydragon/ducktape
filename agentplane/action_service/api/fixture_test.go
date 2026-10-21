@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -107,6 +108,8 @@ type served struct {
 	gate   *Gate
 	issuer *issuer
 	client action_servicepb.ActionServiceClient
+	// operators is the OperatorActionService client.
+	operators operator_action_servicepb.OperatorActionServiceClient
 	// url is the base URL of the HTTP facade.
 	url string
 	// operatorToken is a token the issuer signed for the operator.
@@ -159,11 +162,16 @@ func serveWith(t *testing.T, reviews auth.TokenReviews) *served {
 	})
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, s.gate))
+	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpFacade, err := facade.NewHandler(t.Context(), listener.Addr().String(), action_servicepb.RegisterActionServiceHandlerFromEndpoint)
+	httpFacade, err := facade.NewHandler(
+		t.Context(), listener.Addr().String(),
+		action_servicepb.RegisterActionServiceHandlerFromEndpoint,
+		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,6 +185,7 @@ func serveWith(t *testing.T, reviews auth.TokenReviews) *served {
 	}
 	t.Cleanup(func() { connection.Close() })
 	s.client = action_servicepb.NewActionServiceClient(connection)
+	s.operators = operator_action_servicepb.NewOperatorActionServiceClient(connection)
 	s.url = "http://" + listener.Addr().String()
 	return s
 }
