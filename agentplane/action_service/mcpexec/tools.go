@@ -59,7 +59,6 @@ func mirror(listed []*mcp.Tool) (map[string]tool, error) {
 			// `annotations.title` is the older spelling of the display name that `title` replaced.
 			title = cmp.Or(title, hints.Title)
 			definition.Annotations = &catalog.ToolAnnotations{
-				Title:           optional(hints.Title),
 				ReadOnlyHint:    optional(hints.ReadOnlyHint),
 				DestructiveHint: hints.DestructiveHint,
 				IdempotentHint:  optional(hints.IdempotentHint),

@@ -3,7 +3,6 @@
 package catalog
 
 import (
-	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,7 +41,6 @@ type ActionDefinition struct {
 
 // ToolAnnotations are an MCP tool's behavior hints. Each is nil where the tool does not give it.
 type ToolAnnotations struct {
-	Title           *string
 	ReadOnlyHint    *bool
 	DestructiveHint *bool
 	IdempotentHint  *bool
@@ -81,9 +79,10 @@ type Group struct {
 	Title       string
 	Description string
 	Executor    Binding
-	// Available is whether the group is offered now.
+	// Available is whether the group is offered now, as its executor reports it.
 	Available bool
-	Actions   map[string]ActionDefinition
+	// Actions are what the group's executor offers: the sandbox Actions, or the tools its MCP server lists.
+	Actions map[string]ActionDefinition
 	// DirectTools are the Actions a Connection also sees as MCP tools of its own, named
 	// `<group>__<action>`; nil when the group offers none.
 	DirectTools map[string]struct{}
@@ -180,12 +179,10 @@ func (c *Catalog) Resolve(group, action string) (*Group, ActionDefinition, error
 type Settings map[string]groupSettings
 
 type groupSettings struct {
-	Title       string                    `yaml:"title"`
-	Description string                    `yaml:"description"`
-	Executor    *executorSettings         `yaml:"executor"`
-	Available   *bool                     `yaml:"available"`
-	Actions     map[string]actionSettings `yaml:"actions"`
-	DirectTools []string                  `yaml:"direct_tools"`
+	Title       string            `yaml:"title"`
+	Description string            `yaml:"description"`
+	Executor    *executorSettings `yaml:"executor"`
+	DirectTools []string          `yaml:"direct_tools"`
 }
 
 // executorSettings holds the fields of both executor kinds; New refuses a field of the kind Kind does not name.
@@ -202,31 +199,8 @@ type executorSettings struct {
 	MaxOutputBytes    *float64 `yaml:"max_output_bytes"`
 }
 
-type actionSettings struct {
-	Description string              `yaml:"description"`
-	InputSchema map[string]any      `yaml:"input_schema"`
-	Title       *string             `yaml:"title"`
-	Annotations *annotationSettings `yaml:"annotations"`
-}
-
-// annotationSettings are an MCP tool's hints as the Python MCP SDK's model reads them: by the protocol's camel-case
-// name or by the model's own field name, the former first.
-type annotationSettings struct {
-	Title               *string `yaml:"title"`
-	ReadOnlyHint        *bool   `yaml:"readOnlyHint"`
-	ReadOnlyHintName    *bool   `yaml:"read_only_hint"`
-	DestructiveHint     *bool   `yaml:"destructiveHint"`
-	DestructiveHintName *bool   `yaml:"destructive_hint"`
-	IdempotentHint      *bool   `yaml:"idempotentHint"`
-	IdempotentHintName  *bool   `yaml:"idempotent_hint"`
-	OpenWorldHint       *bool   `yaml:"openWorldHint"`
-	OpenWorldHintName   *bool   `yaml:"open_world_hint"`
-	// Ignored takes the keys the model ignores, which KnownFields would refuse.
-	Ignored map[string]any `yaml:",inline"`
-}
-
-// New builds the catalog the settings describe, refusing what the Python service refuses but for a group's `health`,
-// which is the MCP executor's report and not configuration: Settings has no field for it.
+// New builds the catalog the settings describe, refusing what the Python service refuses and also a group's `health`,
+// `available` and `actions`, which its executor reports and are not configuration: Settings has no field for them.
 //
 // Its errors name keys and fields, never a value: an MCP server's configuration can hold a credential.
 func New(settings Settings) (*Catalog, error) {
@@ -265,21 +239,7 @@ func newGroup(key string, s groupSettings) (*Group, error) {
 			return nil, errors.New("executor.config.server_id must be the group's key")
 		}
 	}
-	g := &Group{
-		Title:       s.Title,
-		Description: s.Description,
-		Executor:    executor,
-		Available:   s.Available == nil || *s.Available,
-		Actions:     make(map[string]ActionDefinition, len(s.Actions)),
-	}
-	for _, name := range slices.Sorted(maps.Keys(s.Actions)) {
-		if !IsKey(name) {
-			return nil, fmt.Errorf("Action key %q is not a lowercase identifier of at most %d characters", name, maxKeyLength)
-		}
-		if g.Actions[name], err = newAction(s.Actions[name]); err != nil {
-			return nil, fmt.Errorf("Action %s: %w", name, err)
-		}
-	}
+	g := &Group{Title: s.Title, Description: s.Description, Executor: executor, Available: true}
 	if s.DirectTools == nil {
 		return g, nil
 	}
@@ -342,27 +302,6 @@ func newBinding(s executorSettings) (Binding, error) {
 	default:
 		return nil, errors.New("kind must be mcp or pod")
 	}
-}
-
-func newAction(s actionSettings) (ActionDefinition, error) {
-	if err := checkLength("description", s.Description, 1, 20_000); err != nil {
-		return ActionDefinition{}, err
-	}
-	schema, err := jsonObject(s.InputSchema)
-	if err != nil {
-		return ActionDefinition{}, fmt.Errorf("input_schema %w", err)
-	}
-	action := ActionDefinition{Description: s.Description, InputSchema: schema, Title: s.Title}
-	if a := s.Annotations; a != nil {
-		action.Annotations = &ToolAnnotations{
-			Title:           a.Title,
-			ReadOnlyHint:    cmp.Or(a.ReadOnlyHint, a.ReadOnlyHintName),
-			DestructiveHint: cmp.Or(a.DestructiveHint, a.DestructiveHintName),
-			IdempotentHint:  cmp.Or(a.IdempotentHint, a.IdempotentHintName),
-			OpenWorldHint:   cmp.Or(a.OpenWorldHint, a.OpenWorldHintName),
-		}
-	}
-	return action, nil
 }
 
 // jsonObject is a decoded YAML mapping as JSON; an empty object when it is absent.

@@ -116,7 +116,8 @@ def build() -> dict[str, object]:
         name: {
             "binding": binding.model_dump(mode="json", exclude={"kind"}),
             "actions": {
-                action: definition.model_dump(mode="json", exclude={"description"})
+                # The Go roster holds no annotation title, which none of these Actions gives.
+                action: definition.model_dump(mode="json", exclude={"description": True, "annotations": {"title"}})
                 for action, definition in actions(binding).items()
             },
         }

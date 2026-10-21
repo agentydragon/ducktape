@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
@@ -30,13 +31,17 @@ func (*unusedExecutor) Execute(context.Context, store.ExecutionRequest, *worker.
 
 func TestAnActionRoutesToItsGroupsExecutorWhileTheCatalogOffersIt(t *testing.T) {
 	groups := newCatalog(t, `{
-		"test-group": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
-			"actions": {"test-action": {"description": "d"}}},
-		"test-offline": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
-			"available": false, "actions": {"test-action": {"description": "d"}}},
-		"test-unbound": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
-			"actions": {"test-action": {"description": "d"}}}
+		"test-group": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"}},
+		"test-offline": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"}},
+		"test-unbound": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"}}
 	}`)
+	// Each group's executor reports test-action; test-offline's reports its server unavailable.
+	for _, key := range []string{"test-group", "test-offline", "test-unbound"} {
+		groups.Update(key, func(group *catalog.Group) {
+			group.Available = key != "test-offline"
+			group.Actions = map[string]catalog.ActionDefinition{"test-action": {Description: "d"}}
+		})
+	}
 	executor := &unusedExecutor{}
 	router := executors{catalog: groups, byGroup: map[string]worker.Executor{"test-group": executor, "test-offline": executor}}
 	for _, route := range []struct {

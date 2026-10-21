@@ -50,6 +50,7 @@ func readGolden(t *testing.T) golden {
 // pythonAcceptsOnly are the configs only the Python service accepts, with why.
 var pythonAcceptsOnly = map[string]string{
 	"http with an empty authority": "Pydantic reads `https:///mcp` as the host `mcp`; net/url reads an empty host",
+	"stdio":                        "this service runs no command, which no deployment configures",
 }
 
 func TestBindingsAreAcceptedAsPythonAcceptsThem(t *testing.T) {
@@ -76,7 +77,7 @@ func TestBindingsAreAcceptedAsPythonAcceptsThem(t *testing.T) {
 	}
 }
 
-var vocabulary = []string{"stdio", "streamable-http", "none", "oauth", "static_bearer"}
+var vocabulary = []string{"streamable-http", "none", "oauth", "static_bearer"}
 
 // stringValues are the strings a JSON document holds as values.
 func stringValues(t *testing.T, document json.RawMessage) []string {
@@ -105,11 +106,13 @@ func stringValues(t *testing.T, document json.RawMessage) []string {
 	return values
 }
 
-// falseHintsAbsent is a mirrored tool list as this executor holds it: go-sdk reads an absent read-only or idempotent
-// hint as false, which the protocol defines it to mean, so a false one is held as absent.
-func falseHintsAbsent(actions map[string]any) {
+// asHeld is a mirrored tool list as this executor holds it: go-sdk reads an absent read-only or idempotent hint as
+// false, which the protocol defines it to mean, so a false one is held as absent. Deliberate difference: the
+// annotations' title is not held; it names the Action only when the tool has no title of its own.
+func asHeld(actions map[string]any) {
 	for _, action := range actions {
 		if annotations, given := action.(map[string]any)["annotations"].(map[string]any); given {
+			delete(annotations, "title")
 			for _, hint := range []string{"read_only_hint", "idempotent_hint"} {
 				if annotations[hint] == false {
 					annotations[hint] = nil
@@ -138,7 +141,7 @@ func TestToolsAreMirroredAsPythonMirrorsThem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			falseHintsAbsent(vector.Actions)
+			asHeld(vector.Actions)
 			got := map[string]any{}
 			for name, tool := range tools {
 				got[name] = pythonAction(t, tool)
@@ -157,7 +160,7 @@ func pythonAction(t *testing.T, tool tool) any {
 	var annotations map[string]any
 	if a := d.Annotations; a != nil {
 		annotations = map[string]any{
-			"title": a.Title, "read_only_hint": a.ReadOnlyHint, "destructive_hint": a.DestructiveHint,
+			"read_only_hint": a.ReadOnlyHint, "destructive_hint": a.DestructiveHint,
 			"idempotent_hint": a.IdempotentHint, "open_world_hint": a.OpenWorldHint,
 		}
 	}

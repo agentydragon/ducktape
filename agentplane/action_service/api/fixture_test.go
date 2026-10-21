@@ -163,7 +163,7 @@ const updatesConnection = "test-action-updates"
 
 func serve(t *testing.T) *served {
 	t.Helper()
-	return serveWith(t, kube.TokenReviews(), newCatalog(t, submissionCatalog))
+	return serveWith(t, kube.TokenReviews(), submissionCatalog(t))
 }
 
 // serveWith serves the API over the groups and the linkages of the MCP servers, with workload tokens reviewed by
@@ -227,22 +227,28 @@ func eventually(t *testing.T, what string, condition func() bool) {
 
 // submissionCatalog are the ActionGroups submissions name. test-group's and test-github's Actions run and
 // test-offline's would, while no Executor runs test-unbound's; test-broken's input schema is no JSON Schema.
-const submissionCatalog = `{
-	"test-group": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"}, "actions": {
-		"test-action": {"description": "d", "input_schema": {
-			"type": "object", "properties": {"target": {"type": "string", "maxLength": 20}}, "additionalProperties": false}},
-		"test-other-action": {"description": "d"}}},
-	"test-github": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"}, "actions": {
-		"get_file_contents": {"description": "d", "input_schema": {
-			"type": "object", "properties": {"owner": {"type": "string"}, "repo": {"type": "string"}},
-			"required": ["owner", "repo"]}}}},
-	"test-offline": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
-		"available": false, "actions": {"test-action": {"description": "d"}}},
-	"test-unbound": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
-		"actions": {"test-action": {"description": "d"}}},
-	"test-broken": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
-		"actions": {"test-action": {"description": "d", "input_schema": {"type": 5}}}}
-}`
+func submissionCatalog(t *testing.T) *catalog.Catalog {
+	t.Helper()
+	const group = `{"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"}}`
+	schema := func(document string) catalog.ActionDefinition {
+		return catalog.ActionDefinition{Description: "d", InputSchema: json.RawMessage(document)}
+	}
+	return offered(t, `{"test-group": `+group+`, "test-github": `+group+`, "test-offline": `+group+`,
+		"test-unbound": `+group+`, "test-broken": `+group+`}`, map[string]offer{
+		"test-group": {actions: map[string]catalog.ActionDefinition{
+			"test-action": schema(`{"type": "object", "properties": {"target": {"type": "string", "maxLength": 20}},
+				"additionalProperties": false}`),
+			"test-other-action": described("d"),
+		}},
+		"test-github": {actions: map[string]catalog.ActionDefinition{
+			"get_file_contents": schema(`{"type": "object", "properties": {"owner": {"type": "string"}, "repo": {"type": "string"}},
+				"required": ["owner", "repo"]}`),
+		}},
+		"test-offline": {actions: map[string]catalog.ActionDefinition{"test-action": described("d")}, unavailable: true},
+		"test-unbound": {actions: map[string]catalog.ActionDefinition{"test-action": described("d")}},
+		"test-broken":  {actions: map[string]catalog.ActionDefinition{"test-action": schema(`{"type": 5}`)}},
+	})
+}
 
 // routes runs every Action of the groups it names on executor, which succeeds, and no other.
 type routes struct {

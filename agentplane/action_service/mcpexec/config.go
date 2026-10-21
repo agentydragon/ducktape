@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -19,24 +18,10 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// server is an MCP server a group's binding configures: a stdioServer or an httpServer. Its fields and their meaning
-// are the Python service's (McpServerConfig in mcp_executor.py), which reads the same settings.
-type server interface {
-	// transport reaches the server for one session. A credential it needs is read here, so that one mounted after
-	// the service started is used by the next attempt; lifecycle bounds each read of a linkage.
-	transport(linkages Linkages, lifecycle time.Duration) (mcp.Transport, error)
-}
-
-// stdioServer is a command this service runs, speaking MCP on its standard input and output.
-type stdioServer struct {
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Env     map[string]string `json:"env"`
-	Cwd     *string           `json:"cwd"`
-}
-
-// httpServer is a server reached over MCP's streamable HTTP transport.
-type httpServer struct {
+// server is the MCP server a group's binding configures, reached over MCP's streamable HTTP transport. Its fields and
+// their meaning are the Python service's (McpServerConfig in mcp_executor.py), which reads the same settings and also
+// accepts a stdio command, which no deployment configures.
+type server struct {
 	URL string `json:"url"`
 	// Headers are sent on every request beside the credential, such as the toolset selection a server keys on.
 	Headers map[string]string `json:"headers"`
@@ -44,7 +29,7 @@ type httpServer struct {
 	credential credential
 }
 
-// credential is how an httpServer is authorized: noCredential, linkedAccount or mountedBearer.
+// credential is how a server is authorized: noCredential, linkedAccount or mountedBearer.
 type credential interface{ isCredential() }
 
 type noCredential struct{}
@@ -61,11 +46,7 @@ func (mountedBearer) isCredential() {}
 
 // linkedAccountOf is the linked account that authorizes s, if one does.
 func linkedAccountOf(s server) (linkedAccount, bool) {
-	http, isHTTP := s.(httpServer)
-	if !isHTTP {
-		return linkedAccount{}, false
-	}
-	account, linked := http.credential.(linkedAccount)
+	account, linked := s.credential.(linkedAccount)
 	return account, linked
 }
 
@@ -77,65 +58,48 @@ func parseServer(config json.RawMessage) (server, error) {
 		Transport *string `json:"transport"`
 		Auth      *string `json:"auth"`
 	}
-	if err := json.Unmarshal(config, &tag); err != nil || tag.Transport == nil {
-		return nil, errors.New("transport must be stdio or streamable-http")
-	}
-	switch *tag.Transport {
-	case "stdio":
-		var fields struct {
-			stdioServer
-			Transport string `json:"transport"`
-		}
-		if err := decodeStrict(config, &fields, "cwd"); err != nil {
-			return nil, err
-		}
-		if fields.Command == "" {
-			return nil, errors.New("command is required")
-		}
-		return fields.stdioServer, nil
-	case "streamable-http":
-	default:
-		return nil, errors.New("transport must be stdio or streamable-http")
+	if err := json.Unmarshal(config, &tag); err != nil || tag.Transport == nil || *tag.Transport != "streamable-http" {
+		return server{}, errors.New("transport must be streamable-http")
 	}
 	if tag.Auth == nil {
-		return nil, errors.New("auth must be none, oauth or static_bearer")
+		return server{}, errors.New("auth must be none, oauth or static_bearer")
 	}
 	var fields struct {
-		httpServer
+		server
 		Transport  string  `json:"transport"`
 		Auth       string  `json:"auth"`
 		ServerID   *string `json:"server_id"`
 		BearerFile *string `json:"bearer_file"`
 	}
 	if err := decodeStrict(config, &fields, "server_id", "bearer_file"); err != nil {
-		return nil, err
+		return server{}, err
 	}
-	s := fields.httpServer
+	s := fields.server
 	switch *tag.Auth {
 	case "none":
 		if fields.ServerID != nil || fields.BearerFile != nil {
-			return nil, errors.New("auth none takes no server_id or bearer_file")
+			return server{}, errors.New("auth none takes no server_id or bearer_file")
 		}
 		s.credential = noCredential{}
 	case "oauth":
 		if fields.ServerID == nil || !catalog.IsKey(*fields.ServerID) || fields.BearerFile != nil {
-			return nil, errors.New("auth oauth takes a server_id that is a key, and no bearer_file")
+			return server{}, errors.New("auth oauth takes a server_id that is a key, and no bearer_file")
 		}
 		s.credential = linkedAccount{serverID: *fields.ServerID}
 	case "static_bearer":
 		if fields.BearerFile == nil || fields.ServerID != nil {
-			return nil, errors.New("auth static_bearer takes a bearer_file, and no server_id")
+			return server{}, errors.New("auth static_bearer takes a bearer_file, and no server_id")
 		}
 		s.credential = mountedBearer{path: *fields.BearerFile}
 	default:
-		return nil, errors.New("auth must be none, oauth or static_bearer")
+		return server{}, errors.New("auth must be none, oauth or static_bearer")
 	}
 	if err := checkEndpoint(s.URL); err != nil {
-		return nil, err
+		return server{}, err
 	}
 	for name := range s.Headers {
 		if strings.EqualFold(name, "Authorization") {
-			return nil, errors.New("headers must not set Authorization; that is owned by auth")
+			return server{}, errors.New("headers must not set Authorization; that is owned by auth")
 		}
 	}
 	return s, nil
@@ -160,8 +124,7 @@ func decodeStrict(config json.RawMessage, fields any, nullable ...string) error 
 		var typeError *json.UnmarshalTypeError
 		if errors.As(err, &typeError) {
 			// The field is named within the decoded struct, which embeds the server's own.
-			field := strings.TrimPrefix(strings.TrimPrefix(typeError.Field, "stdioServer."), "httpServer.")
-			return fmt.Errorf("%s has the wrong type", field)
+			return fmt.Errorf("%s has the wrong type", strings.TrimPrefix(typeError.Field, "server."))
 		}
 		return errors.New("config holds a field this transport does not take")
 	}
@@ -181,33 +144,9 @@ func checkEndpoint(endpoint string) error {
 	return nil
 }
 
-// defaultEnvironment names the variables a command inherits from this process, as the Python MCP SDK's
-// get_default_environment does: a command must not see this service's secrets.
-var defaultEnvironment = []string{"HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER"}
-
-func (s stdioServer) transport(Linkages, time.Duration) (mcp.Transport, error) {
-	command := exec.Command(s.Command, s.Args...)
-	for _, name := range defaultEnvironment {
-		// A value starting with "()" is an exported shell function, which the Python SDK leaves out too.
-		if value, set := os.LookupEnv(name); set && !strings.HasPrefix(value, "()") {
-			command.Env = append(command.Env, name+"="+value)
-		}
-	}
-	for name, value := range s.Env {
-		command.Env = append(command.Env, name+"="+value)
-	}
-	if command.Env == nil {
-		// Nil would inherit the whole environment.
-		command.Env = []string{}
-	}
-	if s.Cwd != nil {
-		command.Dir = *s.Cwd
-	}
-	command.Stderr = os.Stderr
-	return &mcp.CommandTransport{Command: command}, nil
-}
-
-func (s httpServer) transport(linkages Linkages, lifecycle time.Duration) (mcp.Transport, error) {
+// transport reaches the server for one session. A credential it needs is read here, so that one mounted after the
+// service started is used by the next attempt; lifecycle bounds each read of a linkage.
+func (s server) transport(linkages Linkages, lifecycle time.Duration) (mcp.Transport, error) {
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   s.URL,
 		HTTPClient: &http.Client{Transport: headers{values: s.Headers, next: http.DefaultTransport}},

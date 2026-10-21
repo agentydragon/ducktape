@@ -19,16 +19,24 @@ func parse(document string) (*Catalog, error) {
 	return New(settings)
 }
 
+// offering is an executor's report that the group offers one Action, test-action, described as description.
+func offering(available bool, description string) func(*Group) {
+	return func(group *Group) {
+		group.Available = available
+		group.Actions = map[string]ActionDefinition{"test-action": {Description: description}}
+	}
+}
+
 func TestResolveFindsOnlyTheActionsOfAvailableGroups(t *testing.T) {
 	c, err := parse(`{
-		"test-group": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
-			"actions": {"test-action": {"description": "the offered Action"}}},
-		"test-offline": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
-			"available": false, "actions": {"test-action": {"description": "d"}}}
+		"test-group": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"}},
+		"test-offline": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"}}
 	}`)
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.Update("test-group", offering(true, "the offered Action"))
+	c.Update("test-offline", offering(false, "d"))
 	group, action, err := c.Resolve("test-group", "test-action")
 	if err != nil || group.Title != "t" || action.Description != "the offered Action" {
 		t.Errorf("Resolve = %+v, %+v, %v", group, action, err)
@@ -74,11 +82,11 @@ func TestRefusalsDoNotEchoValues(t *testing.T) {
 }
 
 func TestAnUpdateReplacesTheGroupAndWakesTheReadersWaitingForIt(t *testing.T) {
-	c, err := parse(`{"test-group": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
-		"actions": {"test-action": {"description": "d"}}}}`)
+	c, err := parse(`{"test-group": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"}}}`)
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.Update("test-group", offering(true, "d"))
 	changed := c.Changed()
 	held, _, err := c.Resolve("test-group", "test-action")
 	if err != nil {

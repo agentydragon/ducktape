@@ -27,11 +27,6 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	// The stdio tests run this binary as their MCP server.
-	if os.Getenv(stdioServerVariable) != "" {
-		serveStdio()
-		return
-	}
 	os.Exit(runIntegrationTests(m))
 }
 

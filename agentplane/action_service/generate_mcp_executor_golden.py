@@ -33,20 +33,9 @@ def http(**fields: JsonValue) -> Json:
     return {"transport": "streamable-http", "url": URL, "auth": "none"} | fields
 
 
-def stdio(**fields: JsonValue) -> Json:
-    return {"transport": "stdio", "command": "test-mcp-server"} | fields
-
-
 def configs() -> dict[str, JsonValue]:
     return {
-        "stdio": stdio(),
-        "stdio with every field": stdio(args=["--test-flag"], env={"TEST_NAME": "test-value"}, cwd="/test/dir"),
-        "stdio with a null cwd": stdio(cwd=None),
-        "stdio with an empty command": stdio(command=""),
-        "stdio without a command": {"transport": "stdio"},
-        "stdio with null args": stdio(args=None),
-        "stdio with args that are not text": stdio(args=[1]),
-        "stdio with an unknown field": stdio(url=URL),
+        "stdio": {"transport": "stdio", "command": "test-mcp-server"},
         "http without auth": {"transport": "streamable-http", "url": URL},
         "http with no auth": http(),
         "http with no auth and null credentials": http(server_id=None, bearer_file=None),

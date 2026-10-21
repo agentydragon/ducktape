@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -26,4 +27,27 @@ func newCatalog(t *testing.T, document string) *catalog.Catalog {
 		t.Fatal(err)
 	}
 	return groups
+}
+
+// offered is the catalog of document with each group in offers offering its Actions, as its executor would report
+// them; a group without Actions stays as configured.
+func offered(t *testing.T, document string, offers map[string]offer) *catalog.Catalog {
+	t.Helper()
+	groups := newCatalog(t, document)
+	for key, offering := range offers {
+		groups.Update(key, func(group *catalog.Group) {
+			group.Available, group.Actions = !offering.unavailable, offering.actions
+		})
+	}
+	return groups
+}
+
+type offer struct {
+	actions     map[string]catalog.ActionDefinition
+	unavailable bool
+}
+
+// described is an Action with only a description, and the empty input schema of an Action that takes any arguments.
+func described(description string) catalog.ActionDefinition {
+	return catalog.ActionDefinition{Description: description, InputSchema: json.RawMessage(`{}`)}
 }

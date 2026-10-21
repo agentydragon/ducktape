@@ -21,23 +21,30 @@ import (
 
 // testCatalog holds an MCP group whose direct tools name an Action it offers and one it does not, an MCP group that
 // is unavailable, and a sandbox group.
-const testCatalog = `{
-	"test-mcp": {"title": "test MCP group", "description": "test MCP group description",
-		"executor": {"kind": "mcp", "description": "test MCP executor", "config": {"url": "https://mcp.test.example/mcp"}},
-		"actions": {
-			"test-read": {"description": "test read description", "title": "Test read",
-				"input_schema": {"type": "object", "properties": {"test-path": {"type": "string"}}, "required": ["test-path"]},
-				"annotations": {"readOnlyHint": true, "openWorldHint": false}},
-			"test-list": {"description": "test list description"},
-			"test-delete": {"description": "test delete description"}},
-		"direct_tools": ["test-read", "test-undiscovered"]},
-	"test-offline": {"title": "test offline group", "description": "test offline group description",
-		"executor": {"kind": "mcp", "description": "test offline executor"}, "available": false,
-		"actions": {"test-read": {"description": "test read description"}}, "direct_tools": ["test-read"]},
-	"test-sandbox": {"title": "test sandbox group", "description": "test sandbox group description",
-		"executor": {"kind": "pod", "description": "test pod executor", "namespace": "test-namespace",
-			"templates": {"test-template": "a test box"}}}
-}`
+func testCatalog(t *testing.T) *catalog.Catalog {
+	t.Helper()
+	return offered(t, `{
+		"test-mcp": {"title": "test MCP group", "description": "test MCP group description",
+			"executor": {"kind": "mcp", "description": "test MCP executor", "config": {"url": "https://mcp.test.example/mcp"}},
+			"direct_tools": ["test-read", "test-undiscovered"]},
+		"test-offline": {"title": "test offline group", "description": "test offline group description",
+			"executor": {"kind": "mcp", "description": "test offline executor"}, "direct_tools": ["test-read"]},
+		"test-sandbox": {"title": "test sandbox group", "description": "test sandbox group description",
+			"executor": {"kind": "pod", "description": "test pod executor", "namespace": "test-namespace",
+				"templates": {"test-template": "a test box"}}}
+	}`, map[string]offer{
+		"test-mcp": {actions: map[string]catalog.ActionDefinition{
+			"test-read": {
+				Description: "test read description", Title: new("Test read"),
+				InputSchema: json.RawMessage(`{"type": "object", "properties": {"test-path": {"type": "string"}}, "required": ["test-path"]}`),
+				Annotations: &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)},
+			},
+			"test-list":   described("test list description"),
+			"test-delete": described("test delete description"),
+		}},
+		"test-offline": {actions: map[string]catalog.ActionDefinition{"test-read": described("test read description")}, unavailable: true},
+	})
+}
 
 // offlineHealth is the test-offline group's connection as an MCP executor would report it.
 func offlineHealth(detail string) *action_servicepb.McpHealth {
@@ -109,7 +116,7 @@ func equalGroups(got, want []*action_servicepb.ActionGroup) bool {
 }
 
 func TestTheCatalogReadsTheSameForEveryPrincipalButForHealthDetail(t *testing.T) {
-	groups := newCatalog(t, testCatalog)
+	groups := testCatalog(t)
 	health := offlineHealth("test detail naming https://mcp.test.example")
 	groups.Update("test-offline", func(group *catalog.Group) { group.Health = health })
 	s := serveWith(t, kube.TokenReviews(), groups)
@@ -132,7 +139,7 @@ func TestTheCatalogReadsTheSameForEveryPrincipalButForHealthDetail(t *testing.T)
 }
 
 func TestGetActionAnswersEveryPrincipalAndRefusesWhatTheCatalogDoesNotOffer(t *testing.T) {
-	s := serveWith(t, kube.TokenReviews(), newCatalog(t, testCatalog))
+	s := serveWith(t, kube.TokenReviews(), testCatalog(t))
 	for name, token := range map[string]string{"a caller": callerToken, "a service reader": readerToken, "an operator": s.operatorToken} {
 		got, err := s.client.GetAction(as(t, token), &action_servicepb.GetActionRequest{GroupKey: "test-mcp", ActionKey: "test-read"})
 		if err != nil || !proto.Equal(got.GetAction(), testReadAction(t)) {
@@ -156,7 +163,7 @@ func TestGetActionAnswersEveryPrincipalAndRefusesWhatTheCatalogDoesNotOffer(t *t
 }
 
 func TestTheHTTPFacadeServesTheCatalogReads(t *testing.T) {
-	s := serveWith(t, kube.TokenReviews(), newCatalog(t, testCatalog))
+	s := serveWith(t, kube.TokenReviews(), testCatalog(t))
 	code, body := s.get(t, "/v1/action-groups", callerToken)
 	listed := &action_servicepb.ListActionGroupsResponse{}
 	if err := protojson.Unmarshal(body, listed); code != http.StatusOK || err != nil || !equalGroups(listed.GetActionGroups(), testCatalogViews(t, nil)) {
@@ -221,7 +228,7 @@ func wantGroupUpsert(t *testing.T, what string, stream groupStream, want *action
 }
 
 func TestAGroupWatchSendsTheMCPGroupsThenEachChangeItsPrincipalSees(t *testing.T) {
-	groups := newCatalog(t, testCatalog)
+	groups := testCatalog(t)
 	s := serveWith(t, kube.TokenReviews(), groups)
 	workload := s.watchGroups(t, as(t, callerToken))
 	operator := s.watchGroups(t, as(t, s.operatorToken))
@@ -254,7 +261,7 @@ func TestAGroupWatchSendsTheMCPGroupsThenEachChangeItsPrincipalSees(t *testing.T
 const holdDeadline = 3 * time.Second
 
 func TestAGroupWatchOfACatalogThatDoesNotChangeHoldsUntilTheClientsDeadline(t *testing.T) {
-	s := serveWith(t, kube.TokenReviews(), newCatalog(t, testCatalog))
+	s := serveWith(t, kube.TokenReviews(), testCatalog(t))
 	ctx, cancel := context.WithTimeout(as(t, callerToken), holdDeadline)
 	defer cancel()
 	stream := s.watchGroups(t, ctx)
@@ -302,7 +309,7 @@ func TestAGroupWatchSendsItsSnapshotInKeyOrderAndBoundedChunks(t *testing.T) {
 }
 
 func TestAGroupWatchRenewsOnDrainAndEndsOnceItsBearerIsRefused(t *testing.T) {
-	groups := newCatalog(t, testCatalog)
+	groups := testCatalog(t)
 	s := serveWith(t, kube.TokenReviews(), groups)
 	// An account of this test's own, so that changing it leaves the other tests' alone.
 	delabeled := auth.Account{Namespace: testNamespace, Name: "test-group-watch-delabeled-caller"}

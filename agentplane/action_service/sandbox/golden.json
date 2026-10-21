@@ -451,8 +451,7 @@
       "destructive_hint": false,
       "idempotent_hint": true,
       "open_world_hint": null,
-      "read_only_hint": false,
-      "title": null
+      "read_only_hint": false
      },
      "input_schema": {
       "additionalProperties": false,
@@ -485,8 +484,7 @@
       "destructive_hint": true,
       "idempotent_hint": true,
       "open_world_hint": null,
-      "read_only_hint": false,
-      "title": null
+      "read_only_hint": false
      },
      "input_schema": {
       "additionalProperties": false,
@@ -514,8 +512,7 @@
       "destructive_hint": true,
       "idempotent_hint": false,
       "open_world_hint": null,
-      "read_only_hint": false,
-      "title": null
+      "read_only_hint": false
      },
      "input_schema": {
       "additionalProperties": false,
@@ -578,8 +575,7 @@
       "destructive_hint": null,
       "idempotent_hint": null,
       "open_world_hint": false,
-      "read_only_hint": true,
-      "title": null
+      "read_only_hint": true
      },
      "input_schema": {
       "additionalProperties": false,
@@ -607,8 +603,7 @@
       "destructive_hint": null,
       "idempotent_hint": null,
       "open_world_hint": false,
-      "read_only_hint": true,
-      "title": null
+      "read_only_hint": true
      },
      "input_schema": {
       "additionalProperties": false,
@@ -632,8 +627,7 @@
       "destructive_hint": null,
       "idempotent_hint": null,
       "open_world_hint": false,
-      "read_only_hint": true,
-      "title": null
+      "read_only_hint": true
      },
      "input_schema": {
       "additionalProperties": false,
@@ -661,8 +655,7 @@
       "destructive_hint": false,
       "idempotent_hint": true,
       "open_world_hint": null,
-      "read_only_hint": false,
-      "title": null
+      "read_only_hint": false
      },
      "input_schema": {
       "additionalProperties": false,
@@ -695,8 +688,7 @@
       "destructive_hint": true,
       "idempotent_hint": true,
       "open_world_hint": null,
-      "read_only_hint": false,
-      "title": null
+      "read_only_hint": false
      },
      "input_schema": {
       "additionalProperties": false,
@@ -724,8 +716,7 @@
       "destructive_hint": true,
       "idempotent_hint": false,
       "open_world_hint": null,
-      "read_only_hint": false,
-      "title": null
+      "read_only_hint": false
      },
      "input_schema": {
       "additionalProperties": false,
@@ -788,8 +779,7 @@
       "destructive_hint": null,
       "idempotent_hint": null,
       "open_world_hint": false,
-      "read_only_hint": true,
-      "title": null
+      "read_only_hint": true
      },
      "input_schema": {
       "additionalProperties": false,
@@ -817,8 +807,7 @@
       "destructive_hint": null,
       "idempotent_hint": null,
       "open_world_hint": false,
-      "read_only_hint": true,
-      "title": null
+      "read_only_hint": true
      },
      "input_schema": {
       "additionalProperties": false,
@@ -842,8 +831,7 @@
       "destructive_hint": null,
       "idempotent_hint": null,
       "open_world_hint": false,
-      "read_only_hint": true,
-      "title": null
+      "read_only_hint": true
      },
      "input_schema": {
       "additionalProperties": false,

@@ -64,13 +64,6 @@ def without(document: Json, key: str) -> Json:
 
 
 def accepted_cases() -> dict[str, JsonValue]:
-    schema: Json = {
-        "type": "object",
-        "properties": {"owner": {"type": "string", "maxLength": 39}, "名前": {"type": "string"}},
-        "required": ["owner"],
-        "additionalProperties": False,
-        "examples": [{"owner": "test-owner", "count": 2**62, "ratio": 0.5, "flag": True, "none": None}],
-    }
     return {
         "no groups": {},
         "MCP group with its defaults": one(),
@@ -86,21 +79,6 @@ def accepted_cases() -> dict[str, JsonValue]:
                         "auth": "oauth",
                     }
                 ),
-                available=False,
-                actions={
-                    "get_file": action(
-                        input_schema=schema,
-                        title="Get file",
-                        annotations={
-                            "title": "Get a file",
-                            "readOnlyHint": True,
-                            "destructiveHint": False,
-                            "idempotentHint": True,
-                            "openWorldHint": False,
-                        },
-                    ),
-                    "list": action(),
-                },
                 direct_tools=["list", "get_file"],
             )
         },
@@ -113,19 +91,11 @@ def accepted_cases() -> dict[str, JsonValue]:
             direct_tools=["create", "exec"],
         ),
         "two groups": {"first": group(), "second": group(executor=pod())},
-        "keys with every allowed character": {"a-b_c9": group(actions={"z_9-y": action()})},
-        "longest keys": {"g" * 200: group(actions={"n" * 200: action()})},
-        "longest strings": one(
-            title="t" * 200,
-            description="d" * 2000,
-            executor=mcp(description="e" * 2000),
-            actions={"test-action": action(description="a" * 20_000)},
-        ),
+        "keys with every allowed character": {"a-b_c9": group()},
+        "longest keys": {"g" * 200: group()},
+        "longest strings": one(title="t" * 200, description="d" * 2000, executor=mcp(description="e" * 2000)),
         "multibyte strings at the limits": one(
-            title="é" * 200,
-            description="名" * 2000,
-            executor=pod(description="🚀" * 2000, namespace="名"),
-            actions={"test-action": action(description="名" * 20, title="")},
+            title="é" * 200, description="名" * 2000, executor=pod(description="🚀" * 2000, namespace="名")
         ),
         "smallest pod limits": one(executor=pod(max_timeout_seconds=1, max_output_bytes=0)),
         "a server_id equal to the key": one(executor=mcp(config={"server_id": GROUP})),
@@ -133,36 +103,18 @@ def accepted_cases() -> dict[str, JsonValue]:
         "the separator in a key without direct tools": {"test__group": group()},
         "a direct tool listed twice": one(direct_tools=["test-action", "test-action"]),
         "direct tools the group does not list": one(direct_tools=["discovered-later"]),
-        "explicit nulls": one(direct_tools=None, actions={"test-action": action(title=None, annotations=None)}),
-        "explicit defaults": one(available=True, actions={}, executor=mcp(config={}), direct_tools=None),
-        "an action with an empty input schema and annotations": one(
-            actions={"test-action": action(input_schema={}, annotations={})}
-        ),
-        "annotations by field name": one(
-            actions={"test-action": action(annotations={"read_only_hint": True, "open_world_hint": False})}
-        ),
-        "annotations by both names": one(
-            actions={"test-action": action(annotations={"readOnlyHint": True, "read_only_hint": False})}
-        ),
-        "annotations with an unknown key": one(
-            actions={"test-action": action(annotations={"readOnlyHint": True, "unknownHint": "ignored"})}
-        ),
-        "annotations with null hints": one(
-            actions={"test-action": action(annotations={"title": None, "readOnlyHint": None})}
-        ),
+        "explicit nulls": one(direct_tools=None),
+        "explicit defaults": one(executor=mcp(config={}), direct_tools=None),
         # Pydantic's lax mode coerces these.
-        "available as a word": one(available="off"),
-        "available as an uppercase word": one(available="YES"),
-        "available as a digit": one(available="0"),
-        "available as a number": one(available=1),
-        "available as a float": one(available=0.0),
-        "annotation hint as a word": one(actions={"test-action": action(annotations={"readOnlyHint": "y"})}),
         "limits as integer text": one(executor=pod(max_timeout_seconds="60", max_output_bytes=" +1_000 ")),
         "a limit as integer text with a zero fraction": one(executor=pod(max_timeout_seconds="60.00")),
         "limits as integral floats": one(executor=pod(max_timeout_seconds=60.0, max_output_bytes=0.0)),
         "limits as booleans": one(executor=pod(max_timeout_seconds=True, max_output_bytes=False)),
         # `health` is the MCP executor's report; Python's rendering of the setting leaves it out.
         "configured health": one(health={"state": "available"}),
+        # The executor reports a group's Actions and availability, which the Go catalog takes from no setting.
+        "configured Actions": one(actions={"test-action": action()}),
+        "configured availability": one(available=False),
     }
 
 
@@ -179,9 +131,6 @@ def refused_cases() -> dict[str, JsonValue]:
         "empty group key": {"": group()},
         "group key above 200 characters": {"g" * 201: group()},
         "group key ending in a newline": {"group\n": group()},
-        "uppercase action key": one(actions={"Test": action()}),
-        "action key with a space": one(actions={"test action": action()}),
-        "action key above 200 characters": one(actions={"n" * 201: action()}),
         "unknown group field": one(extra=1),
         "missing title": {GROUP: without(group(), "title")},
         "empty title": one(title=""),
@@ -228,29 +177,6 @@ def refused_cases() -> dict[str, JsonValue]:
         "negative max_output_bytes": one(executor=pod(max_output_bytes=-1)),
         "max_output_bytes above 1000000": one(executor=pod(max_output_bytes=1_000_001)),
         "max_output_bytes far above its limit": one(executor=pod(max_output_bytes="99999999999999999999999")),
-        "null available": one(available=None),
-        "available as 2": one(available=2),
-        "available as a fraction": one(available=0.5),
-        "available as an unknown word": one(available="maybe"),
-        "available as a padded word": one(available=" true"),
-        "available as an empty string": one(available=""),
-        "null actions": one(actions=None),
-        "actions as a list": one(actions=[]),
-        "null action": one(actions={"test-action": None}),
-        "action without a description": one(actions={"test-action": {}}),
-        "action with an empty description": one(actions={"test-action": action(description="")}),
-        "action description above 20000 characters": one(actions={"test-action": action(description="a" * 20_001)}),
-        "unknown action field": one(actions={"test-action": action(extra=1)}),
-        "null input schema": one(actions={"test-action": action(input_schema=None)}),
-        "input schema that is a list": one(actions={"test-action": action(input_schema=[])}),
-        "input schema that is true": one(actions={"test-action": action(input_schema=True)}),
-        "action title as a number": one(actions={"test-action": action(title=1)}),
-        "annotations that are a string": one(actions={"test-action": action(annotations="read-only")}),
-        "annotations that are a list": one(actions={"test-action": action(annotations=[])}),
-        "annotation hint as an unknown word": one(
-            actions={"test-action": action(annotations={"readOnlyHint": "maybe"})}
-        ),
-        "annotation title as a number": one(actions={"test-action": action(annotations={"title": 1})}),
         "empty direct_tools": one(direct_tools=[]),
         "direct_tools as a string": one(direct_tools="create"),
         "direct_tools as an object": one(direct_tools={"create": None}),

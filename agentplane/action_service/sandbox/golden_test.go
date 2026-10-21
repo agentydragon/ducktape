@@ -53,11 +53,10 @@ func readVectors(t *testing.T) vectors {
 
 // annotations is catalog.ToolAnnotations under the names the Python roster gives its fields.
 type annotations struct {
-	Title           *string `json:"title"`
-	ReadOnlyHint    *bool   `json:"read_only_hint"`
-	DestructiveHint *bool   `json:"destructive_hint"`
-	IdempotentHint  *bool   `json:"idempotent_hint"`
-	OpenWorldHint   *bool   `json:"open_world_hint"`
+	ReadOnlyHint    *bool `json:"read_only_hint"`
+	DestructiveHint *bool `json:"destructive_hint"`
+	IdempotentHint  *bool `json:"idempotent_hint"`
+	OpenWorldHint   *bool `json:"open_world_hint"`
 }
 
 // TestTheRosterIsPythons holds each Action's title, annotations and argument schema, caps included, to Python's.

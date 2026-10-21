@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -139,23 +138,4 @@ func answering(c *calls, result *mcp.CallToolResult) mcp.ToolHandler {
 
 func textResult(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
-}
-
-// stdioServerVariable makes this test binary an MCP server on its standard input and output.
-const stdioServerVariable = "MCPEXEC_TEST_STDIO_SERVER"
-
-// serveStdio serves test_environment, which answers the names of the variables of the server's environment.
-func serveStdio() {
-	server := newServer()
-	server.AddTool(&mcp.Tool{Name: "test_environment", InputSchema: objectSchema},
-		func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			var names []string
-			for _, variable := range os.Environ() {
-				name, _, _ := bytes.Cut([]byte(variable), []byte("="))
-				names = append(names, string(name))
-			}
-			return &mcp.CallToolResult{Content: []mcp.Content{}, StructuredContent: map[string]any{"names": names}}, nil
-		})
-	// Run ends when the executor closes the session, which is all a test needs of it.
-	_ = server.Run(context.Background(), &mcp.StdioTransport{})
 }

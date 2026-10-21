@@ -13,7 +13,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -39,7 +38,7 @@ func TestTheGroupOffersTheServersToolsAsItsActions(t *testing.T) {
 		t.Errorf("test_annotated is %+v", annotated)
 	}
 	sameJSON(t, annotated.InputSchema, textSchema)
-	if a := annotated.Annotations; a == nil || *a.Title != "Test annotation title" || !*a.ReadOnlyHint ||
+	if a := annotated.Annotations; a == nil || !*a.ReadOnlyHint ||
 		*a.DestructiveHint || !*a.IdempotentHint || !*a.OpenWorldHint {
 		t.Errorf("test_annotated's annotations are %+v", annotated.Annotations)
 	}
@@ -258,40 +257,4 @@ func TestAGroupReadsItsLinkageAgainWhenToldItChanged(t *testing.T) {
 	awaitGroup(t, groups, unavailableFor(linkageUnavailable, func(detail string) bool {
 		return strings.Contains(detail, "link the account again")
 	}))
-}
-
-func TestAStdioServerRunsWithoutThisProcesssEnvironment(t *testing.T) {
-	f := newFixture(t)
-	t.Setenv("MCPEXEC_TEST_SECRET", "test-secret")
-	command, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	config, err := json.Marshal(map[string]any{
-		"transport": "stdio", "command": command, "env": map[string]string{stdioServerVariable: "1"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	groups := mcpGroup(t, string(config))
-	s := supervise(t, groups, nil, executorTiming())
-	awaitGroup(t, groups, offering("test_environment"))
-	f.work(t, groups, s.Executor, workerTiming())
-
-	request := f.await(t, f.allowed(t, "test_environment", `{}`), store.StateSucceeded)
-	var result struct {
-		StructuredContent struct{ Names []string } `json:"structuredContent"`
-	}
-	if err := json.Unmarshal(request.Execution.Result, &result); err != nil {
-		t.Fatal(err)
-	}
-	allowed := append(slices.Clone(defaultEnvironment), stdioServerVariable)
-	for _, name := range result.StructuredContent.Names {
-		if !slices.Contains(allowed, name) {
-			t.Errorf("the server's environment holds %s; it may hold %v", name, allowed)
-		}
-	}
-	if !slices.Contains(result.StructuredContent.Names, stdioServerVariable) {
-		t.Errorf("the configured variable is missing from %v", result.StructuredContent.Names)
-	}
 }

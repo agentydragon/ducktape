@@ -21,6 +21,8 @@ var goldenJSON []byte
 
 const (
 	health = "health is the MCP executor's report, and Python's own rendering of the setting leaves it out"
+	// Python holds what the setting names until its executor reports; nothing configures either.
+	reported = "the group's executor reports its Actions and whether it is available"
 	// Pydantic's lax mode reads text and numbers as booleans and integers; yaml.v3 reads YAML's booleans, the YAML 1.1
 	// words among them, and YAML's numbers.
 	laxCoercion = "yaml.v3 does not coerce it as Pydantic's lax mode does"
@@ -32,22 +34,16 @@ const (
 var (
 	pythonAcceptsOnly = map[string]string{
 		"configured health":                            health,
-		"available as a digit":                         laxCoercion,
-		"available as a number":                        laxCoercion,
-		"available as a float":                         laxCoercion,
+		"configured Actions":                           reported,
+		"configured availability":                      reported,
 		"limits as integer text":                       laxCoercion,
 		"a limit as integer text with a zero fraction": laxCoercion,
 		"limits as booleans":                           laxCoercion,
 	}
 	goAcceptsOnly = map[string]string{
 		"title as a number":                         scalarText,
-		"action title as a number":                  scalarText,
-		"annotation title as a number":              scalarText,
 		"template description that is not a string": scalarText,
 		"null":                      nullAbsent,
-		"null available":            nullAbsent,
-		"null actions":              nullAbsent,
-		"null input schema":         nullAbsent,
 		"null MCP config":           nullAbsent,
 		"null max_timeout_seconds":  nullAbsent,
 		"null template description": nullAbsent,
@@ -138,20 +134,6 @@ func dump(c *Catalog) map[string]any {
 				"max_output_bytes": binding.MaxOutputBytes,
 			}
 		}
-		actions := map[string]any{}
-		for name, action := range g.Actions {
-			var annotations map[string]any
-			if a := action.Annotations; a != nil {
-				annotations = map[string]any{
-					"title": a.Title, "read_only_hint": a.ReadOnlyHint, "destructive_hint": a.DestructiveHint,
-					"idempotent_hint": a.IdempotentHint, "open_world_hint": a.OpenWorldHint,
-				}
-			}
-			actions[name] = map[string]any{
-				"description": action.Description, "input_schema": action.InputSchema, "title": action.Title,
-				"annotations": annotations,
-			}
-		}
 		var directTools []string
 		for tool := range g.DirectTools {
 			directTools = append(directTools, tool)
@@ -159,7 +141,8 @@ func dump(c *Catalog) map[string]any {
 		slices.Sort(directTools)
 		groups[key] = map[string]any{
 			"title": g.Title, "description": g.Description, "executor": executor, "available": g.Available,
-			"actions": actions, "direct_tools": directTools,
+			// The setting configures no Actions: the executor reports them.
+			"actions": map[string]any{}, "direct_tools": directTools,
 		}
 	}
 	return groups

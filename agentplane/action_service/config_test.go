@@ -72,20 +72,13 @@ const testActionGroups = `action_groups:
   test-group:
     title: Test group
     description: A group of the settings file.
-    available: yes
+    direct_tools: [test-action]
     executor:
       kind: mcp
       description: Test MCP executor.
       config:
         server_id: test-group
         headers: {X-Test-Header: test}
-    actions:
-      test-action:
-        description: Test Action.
-        input_schema:
-          type: object
-          properties: {testName: {type: string}}
-          additionalProperties: false
 `
 
 func TestActionGroupsAreReadFromTheFileWithTheirKeysAsWritten(t *testing.T) {
@@ -93,17 +86,17 @@ func TestActionGroupsAreReadFromTheFileWithTheirKeysAsWritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	group, action, err := c.ActionGroups.Resolve("test-group", "test-action")
-	if err != nil {
-		t.Fatal(err)
+	var group *catalog.Group
+	for key, held := range c.ActionGroups.Groups() {
+		if key == "test-group" {
+			group = held
+		}
+	}
+	if group == nil {
+		t.Fatal("the group is not read")
 	}
 	if binding := group.Executor.(catalog.MCPBinding); !strings.Contains(string(binding.Config), `"X-Test-Header"`) {
 		t.Errorf("the MCP configuration is read as %s", binding.Config)
-	}
-	for _, key := range []string{`"additionalProperties"`, `"testName"`} {
-		if !strings.Contains(string(action.InputSchema), key) {
-			t.Errorf("the input schema is read as %s", action.InputSchema)
-		}
 	}
 }
 
@@ -253,8 +246,8 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 `,
 		"action group":                       requiredFile + strings.Replace(testActionGroups, "server_id: test-group", "server_id: never-print-this", 1),
 		"action groups key":                  requiredFile + strings.Replace(testActionGroups, "X-Test-Header: test", "1: never-print-this", 1),
-		"action group field of another type": requiredFile + strings.Replace(testActionGroups, "available: yes", "available: never-print-this", 1),
-		"unknown action group field":         requiredFile + strings.Replace(testActionGroups, "available: yes", "health: never-print-this", 1),
+		"action group field of another type": requiredFile + strings.Replace(testActionGroups, "direct_tools: [test-action]", "direct_tools: never-print-this", 1),
+		"unknown action group field":         requiredFile + strings.Replace(testActionGroups, "direct_tools: [test-action]", "health: never-print-this", 1),
 		"web push without its key":           requiredFile + testWebPush,
 		"web push key not PEM":               requiredFile + testWebPush + "  private_key_pem: never-print-this\n",
 		"unknown web push key":               requiredFile + testWebPush + "  vapid_claims: never-print-this\n",
