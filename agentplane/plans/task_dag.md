@@ -318,9 +318,13 @@ implementation.
 
 ### `SESSION_ACCESS_RULES_DESIGN` — Session-access rule schema
 
-**Decision; the wildcard question is settled and the concrete schema remains for review. Gates
-`SESSION_ACCESS_RULES`, `THREAD_READ_POLICY_DESIGN` and `AGENT_MESSAGING_DESIGN`.** Draft the concrete
-rule schema for review, including administrative RBAC and freshness settings under the agreed
+**Decision; the wildcard question and same-namespace direct targets are settled, and [the schema
+draft](multiagent_communication.md#draft-schema-for-the-first-session-access-rule) awaits the operator's
+review. Gates `SESSION_ACCESS_RULES`, `THREAD_READ_POLICY_DESIGN` and `AGENT_MESSAGING_DESIGN`.**
+Direct targets are same-namespace in v1 (operator, 2026-10-18 UTC: he needs no way to name another
+namespace; the Notification service rejects one anyway). Approval of the draft unblocks
+`SESSION_ACCESS_RULES`. The draft covers the concrete rule schema, administrative RBAC and freshness
+settings under the agreed
 [policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness), without
 requiring an auth-engine migration. The first schema has direct Sandbox and `allSandboxes` targets
 only. Collections are tags on the Sandbox, with no membership CRs (operator, 2026-10-19 to 2026-10-20
@@ -341,8 +345,8 @@ Connection representation/storage changes are outside this work.
 direct Sandboxes and tags, for permissions like "send messages to any Sandbox" and "read
 from any Session"; a Session's scope is its Sandbox, so both are one target form. It matches every
 Sandbox in the namespace of the PolicySet holding the rule, never the whole cluster: a Sandbox
-Controller reconciles one namespace (its `namespace` setting), and a Sandbox in another namespace needs
-a direct target. It covers Sandboxes created later and needs no tags, and History matches it on the
+Controller reconciles one namespace (its `namespace` setting), and a Sandbox in another namespace is
+out of v1's reach, since direct targets are same-namespace too. It covers Sandboxes created later and needs no tags, and History matches it on the
 recorded namespace, so it keeps working after a Sandbox is deleted. Operations stay independent
 (read-any does not imply send-any) and only whoever writes PolicySets can grant it. The namespace match
 is the design's reading of "the controller's scope"; the schema draft confirms or replaces it.
@@ -351,8 +355,9 @@ is the design's reading of "the controller's scope"; the schema draft confirms o
 
 **Blocked on the reviewed schema in `SESSION_ACCESS_RULES_DESIGN`.** Extend PolicySet schemas with the
 tentative Session-access rule, whose first operation is Session-inbox append, and implement shared
-rule-reading/evaluation code for API owners; listing and transcript reads are not bundled into it and
-reuse the shared code once they have a rule. Reuse existing SA authentication and PolicyBindings. Match
+rule-reading/evaluation code for API owners as a Go package factored out of the egress policy index and
+informer, which the Notification and History services (both Go) can use; listing and transcript reads
+are not bundled into it and reuse the shared code once they have a rule. Reuse existing SA authentication and PolicyBindings. Match
 the append operation against direct Sandbox targets and an all-Sandboxes target, without changing
 recorded Session associations when a Sandbox name is reused. Implement independent watched policy views,
 initial-sync and configurable freshness checks, and asynchronous revocation under the agreed contract;
@@ -498,8 +503,9 @@ The [sender-facing receipt contract](multiagent_communication.md#sender-facing-r
 selected: the sender queries a message it sent for notice coverage and acknowledgement, and not found
 means no record. Read receipts and notice delivery stage are not v1.
 OAuth-bound SAs can be senders; v1 does not provide inboxes for externally running agents.
-Distinguish accepted, noticed, admitted, handled and task-success evidence. Define retention, limits,
-deduplication and offline/deleted-recipient behavior. Reading a transcript grants neither send nor ack.
+Distinguish accepted, noticed, admitted, handled and task-success evidence. Retention, limits and
+deduplication follow the existing inbox, and [the peer message path](multiagent_communication.md#peer-message-path)
+drafts the recipient states. Reading a transcript grants neither send nor ack.
 
 V1 retains notice batching in Notifications and wake/delivery in Dispatcher. A Sandbox's existing
 `spec.wakeOnSend` policy applies to any admitted message, including mixed-source notices; a suspended

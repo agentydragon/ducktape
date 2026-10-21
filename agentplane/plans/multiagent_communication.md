@@ -81,7 +81,8 @@ independent overlapping grants remain.
 
 **`allSandboxes` target agreed with the operator, 2026-10-17:** a rule may target every Sandbox in the
 namespace of the PolicySet holding it, never the whole cluster; the Sandbox Controller likewise
-reconciles a single namespace. A Sandbox in another namespace needs a direct target. The target
+reconciles a single namespace. A Sandbox in another namespace is out of v1's reach, since direct
+targets are same-namespace too ([draft schema](#draft-schema-for-the-first-session-access-rule)). The target
 covers later Sandboxes without tags, and the backends match it on the recorded Sandbox namespace,
 so it keeps working after a Sandbox is deleted. It grants only the operations its rule lists:
 read-any does not imply send-any.
@@ -270,7 +271,7 @@ targets:
 **Send and transcript reads are not bundled, operator direction 2026-10-18 UTC (stated as
 "probably"):** they are separate capabilities, so the first `session_access` schema carries
 `append_inbox` only. `list_sessions` and `read_transcript` join it or get their own rule type when
-the held read decisions reopen; the target matching and `PolicyWatch` code is shared
+the held read decisions reopen; the rule reading and target matching are shared
 either way.
 
 Support direct Sandbox targets as well as tags. For Sandbox-hosted Session operations, the backend
@@ -303,9 +304,59 @@ Refuse protected operations before initial sync or when required policy data exc
 freshness limit. A watch outage must not permit indefinite use of old grants. Re-evaluate
 authorization and freshness throughout transcript streams, and stop further Event emission when
 the replica observes loss of the required permission or its policy view becomes too stale.
-Independent overlapping grants still apply. Reuse the shared watch `Freshness` helper, which refuses
-a view after three missed resync cycles as Actions and egress do, and select the resync period
-during implementation; no global replica-acknowledgement barrier is required for v1.
+Independent overlapping grants still apply. The enforcing backends are Go services, so freshness
+follows the egress informer: each watched kind is held open for a configured watch period, a watch the
+server ends on schedule counts as a completed cycle, and a view is refused after three missed periods.
+Select the watch period during implementation; no global replica-acknowledgement barrier is required
+for v1.
+
+### Draft schema for the first Session-access rule
+
+**Drafted on the agreed pieces above for the operator's review; nothing here is selected until
+then.** The rule is a new `type` of the `Rule` in `policy/api/v1alpha1`, beside `egress` and
+`action_auto_approve`: snake_case `type`, camelCase fields, targets named explicitly and never
+selected. The CRD regenerates from that Go type, whose validation rules keep each type's fields off the
+others. Its one operation for now is `append_inbox`:
+
+```yaml
+type: session_access
+operations: [append_inbox]
+targets:
+  sandboxes: # direct, in the PolicySet's namespace
+    - name: coordinator
+    - name: dev-1
+      uid: 3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1 # optional: this incarnation only
+  allSandboxes: true # every Sandbox in the PolicySet's namespace
+```
+
+At least one target field is required, and the fields combine additively. Tag targets arrive with
+`SANDBOX_INBOX_TAGS` and `HISTORY_SANDBOX_RECORD` ([steps](sandbox_tags.md#steps)); there are no
+membership objects.
+
+- **Match.** A send to Sandbox S is allowed when a rule of a set bound to the caller lists
+  `append_inbox` and either lists S in `sandboxes` or sets `allSandboxes`. A `uid` that is given must
+  equal S's current UID. A reference without `uid` follows a deleted and recreated Sandbox of that
+  name; a UID-pinned one does not.
+- **Bindings.** A `PolicyBinding` names its subject by namespace and name and a reader matches the
+  caller on those two, as egress does, so a replaced same-name ServiceAccount keeps its grants. A set
+  whose `session_access` rule does not parse grants this reader nothing, and the reader reports that in
+  its own condition on each binding that names the set, as egress does with `EgressReady`.
+- **Shared reader.** Notification (sends) and History (reads, once they reopen) are Go services, so the
+  reading is a Go package. Egress already keeps an index of sets and bindings with cycle-based
+  freshness (`egress/policy`, `egress/informer`), but only for its own rules. The draft factors the
+  shared part out of that code and has egress use it, so a copy does not grow beside it.
+- **Administration.** Rule and binding writes go through ordinary RBAC on `policysets` and
+  `policybindings`. No Sandbox or agent ServiceAccount gets them, and a send grant carries none. The
+  Notification service gets a namespaced Role with `get`, `list` and `watch` on `policysets` and
+  `policybindings`, and `patch` on `policybindings/status`, as egress and the Action Service hold for
+  policy; its Role holds `get` on `sandboxes` already. The Role lands before the code that uses it.
+- **Freshness.** The Notification service refuses sends as unavailable before its first sync and once
+  any watched kind has missed three watch periods ([propagation](#policy-propagation-and-freshness)).
+  The watch period is a setting, and its default is chosen with the implementation.
+- **Namespace.** The Notification service serves the one namespace it is configured for and rejects a
+  destination elsewhere, so v1 direct targets are same-namespace, with no `namespace` field.
+  **Settled with the operator, 2026-10-18 UTC**, who needs no way to name another namespace. A field
+  can be added without changing existing rules when a service serves a second namespace.
 
 ### Alternatives if the tentative direction needs revision
 
@@ -395,7 +446,7 @@ own for every history bound to a writer, which is what the split would build on.
   CR, while history tags are archive data that History copies into its record of the Sandbox and
   keeps after the CR is deleted. A history-tag grant matches that record, never the live object.
 - How separate is open. **Separate rule type**: same PolicySets and PolicyBindings, so assignment,
-  GitOps authoring, live bundle edits and the shared `PolicyWatch` carry over. **Separate
+  GitOps authoring, live bundle edits and the shared policy watch carry over. **Separate
   authority**: History stores and administers archive grants itself, with its own API and audit;
   this alone removes History's dependency on Kubernetes policy resources, but archive grants then
   lose GitOps and the [live-bundle semantics](#live-permission-bundles) a replacement must keep.
@@ -486,6 +537,11 @@ state. Sends to an existing inbox skip it, and a Session History has not yet rec
 its first push. History reads resolve a Session to its recorded Sandbox because History owns that
 record. The operator accepts this for v1 and may revisit addressing with the planned Notification
 Service refactors.
+
+**Recipient states, drafted for the operator's review:** a send to a suspended or offline Sandbox is
+accepted and noticed per `spec.wakeOnSend`. A send to a Sandbox outside the service's namespace, a
+missing one, or one whose UID differs from a given one is refused as not found and never retargeted,
+as the subscription API does.
 
 Store the peer message with authenticated sender-SA provenance and the qualified destination.
 The inbox/messaging service prepares a platform-generated
