@@ -1,8 +1,8 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
-// `ActionService`'s request reads, watches and cancellation and `OperatorActionService`'s Decisions over gRPC and
-// their HTTP facade under /v1/, the agent documentation, the standard gRPC health service and the process's
-// Prometheus metrics at /metrics, runs the dispatch worker, and keeps its policy index equal to the API server's. The
-// other RPCs answer UNIMPLEMENTED, and it runs no Executor.
+// `ActionService`'s request reads, watches and cancellation and its catalog reads and watch, and
+// `OperatorActionService`'s Decisions, over gRPC and their HTTP facade under /v1/, the agent documentation, the
+// standard gRPC health service and the process's Prometheus metrics at /metrics, runs the dispatch worker, and keeps
+// its policy index equal to the API server's. The other RPCs answer UNIMPLEMENTED, and it runs no Executor.
 package main
 
 import (
@@ -231,7 +231,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
 	)
 	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Freshness})
-	action_servicepb.RegisterActionServiceServer(grpcServer, api.NewService(requests, hub, admission))
+	action_servicepb.RegisterActionServiceServer(grpcServer, api.NewService(requests, hub, c.ActionGroups, admission))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests))
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
 	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish

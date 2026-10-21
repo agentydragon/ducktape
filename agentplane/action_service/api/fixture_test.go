@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -121,11 +122,11 @@ const updatesConnection = "test-action-updates"
 
 func serve(t *testing.T) *served {
 	t.Helper()
-	return serveWith(t, kube.TokenReviews())
+	return serveWith(t, kube.TokenReviews(), &catalog.Catalog{})
 }
 
-// serveWith serves the API with workload tokens reviewed by reviews.
-func serveWith(t *testing.T, reviews auth.TokenReviews) *served {
+// serveWith serves the API over the groups, with workload tokens reviewed by reviews.
+func serveWith(t *testing.T, reviews auth.TokenReviews, groups *catalog.Catalog) *served {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
 	db, err := sql.Open("postgres", dsn)
@@ -161,7 +162,7 @@ func serveWith(t *testing.T, reviews auth.TokenReviews) *served {
 		Workloads: workloads, Callers: labeledAccounts{}, ReaderAccounts: []auth.Account{readerAccount}, Operators: operators,
 	})
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
-	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, s.gate))
+	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, groups, s.gate))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

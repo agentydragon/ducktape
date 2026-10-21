@@ -117,7 +117,8 @@ service ActionService {
 
   // The reviewed catalog: every ActionGroup with its Actions and their descriptions, the same for every caller but
   // for `McpHealth.detail`, which only an operator's view carries. Health is the answering replica's. It is bounded
-  // and not paged. A group that is not `available` lists no Actions.
+  // and not paged. The groups come in key order and each group's Actions in name order. A group that is not
+  // `available` lists no Actions.
   rpc ListActionGroups(ListActionGroupsRequest) returns (ListActionGroupsResponse) {
     option (google.api.http) = {get: "/v1/action-groups"};
   }

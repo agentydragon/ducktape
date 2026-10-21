@@ -3,7 +3,8 @@
 Each vector is a value of the `action_groups` setting, as the settings file's YAML parses. This service's models
 decide whether it is accepted, and for one they accept, `held` is the catalog they hold: every group with its
 defaults filled in, as `ActionCatalog` dumps it. The Go catalog must accept and refuse the same values and hold
-the same groups.
+the same groups. `views` is what a workload reads of that catalog at `/v1/action-groups`, which the Go service's
+`ListActionGroups` must answer alike.
 
 Regenerate from the checkout's root with
 `bb run //agentplane/action_service:generate_catalog_golden_bin -- "$PWD/agentplane/action_service/catalog/golden.json"`.
@@ -257,8 +258,10 @@ def build() -> dict[str, object]:
         if not accepted(ActionCatalog, {"groups": case}):
             vectors.append({"name": name, "input": case, "valid": False})
             continue
-        held = ActionCatalog.model_validate({"groups": case}).model_dump(mode="json")["groups"]
-        vectors.append({"name": name, "input": case, "valid": True, "held": held})
+        catalog = ActionCatalog.model_validate({"groups": case})
+        held = catalog.model_dump(mode="json")["groups"]
+        views = [view.model_dump(mode="json") for view in catalog.group_views(with_detail=False)]
+        vectors.append({"name": name, "input": case, "valid": True, "held": held, "views": views})
     return {"action_groups": vectors}
 
 

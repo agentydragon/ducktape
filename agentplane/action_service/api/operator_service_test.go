@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -126,7 +127,7 @@ func TestADecisionThatCannotBeRecordedFails(t *testing.T) {
 
 func TestAWorkloadsBearerNeverReachesTheOperatorService(t *testing.T) {
 	reviews := &kubeapiserver.CountedReviews{TokenReviews: kube.TokenReviews()}
-	s := serveWith(t, reviews)
+	s := serveWith(t, reviews, &catalog.Catalog{})
 	request := s.submit(t, caller, "test-pending")
 	for _, token := range []string{callerToken, readerToken} {
 		_, err := s.decideAs(t, token, decision(request, allow))

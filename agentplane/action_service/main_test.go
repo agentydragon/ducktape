@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -30,6 +31,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 )
@@ -67,10 +69,17 @@ type running struct {
 	stop func() error
 }
 
-// start serves over a database of its own, reading the policy objects of the API server policy reaches.
+// start serves no ActionGroup over a database of its own, reading the policy objects of the API server policy reaches.
 func start(t *testing.T, policy *rest.Config) running {
 	t.Helper()
+	return startWith(t, policy, &catalog.Catalog{})
+}
+
+// startWith serves groups over a database of its own, reading the policy objects of the API server policy reaches.
+func startWith(t *testing.T, policy *rest.Config, groups *catalog.Catalog) running {
+	t.Helper()
 	c := defaultConfig()
+	c.ActionGroups = groups
 	c.DatabaseURL = integrationDatabase.Clone(t)
 	c.TokenAudience = testAudience
 	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
@@ -302,5 +311,49 @@ func TestTheServiceGatesTheOperatorServiceOverGRPCAndHTTP(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Errorf("a reader's Decision over HTTP: %d", response.StatusCode)
+	}
+}
+
+func TestTheServiceAnswersItsCatalogOverGRPCAndHTTP(t *testing.T) {
+	var settings catalog.Settings
+	if err := yaml.Unmarshal([]byte(`{"test-group": {"title": "test group", "description": "test group description",
+		"executor": {"kind": "mcp", "description": "test executor"},
+		"actions": {"test-action": {"description": "test action description"}}}}`), &settings); err != nil {
+		t.Fatal(err)
+	}
+	groups, err := catalog.New(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := startWith(t, kube.Config, groups)
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken)
+	listed, err := service.actions.ListActionGroups(ctx, &action_servicepb.ListActionGroupsRequest{})
+	if err != nil || len(listed.GetActionGroups()) != 1 || len(listed.GetActionGroups()[0].GetActions()) != 1 {
+		t.Fatalf("gRPC catalog: %v, %v", listed, err)
+	}
+	got, err := service.actions.GetAction(ctx, &action_servicepb.GetActionRequest{GroupKey: "test-group", ActionKey: "test-action"})
+	if err != nil || !proto.Equal(got.GetAction(), listed.GetActionGroups()[0].GetActions()[0]) {
+		t.Errorf("gRPC Action: %v, %v", got, err)
+	}
+
+	call, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+"/v1/action-groups", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call.Header.Set("Authorization", "Bearer "+readerToken)
+	response, err := http.DefaultClient.Do(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogRead := &action_servicepb.ListActionGroupsResponse{}
+	if response.StatusCode != http.StatusOK || protojson.Unmarshal(body, catalogRead) != nil || !proto.Equal(catalogRead, listed) {
+		t.Errorf("HTTP catalog: %d %s", response.StatusCode, body)
 	}
 }

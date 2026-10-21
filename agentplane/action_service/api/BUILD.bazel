@@ -5,6 +5,7 @@ package(default_visibility = ["//agentplane/action_service:__subpackages__"])
 go_library(
     name = "api",
     srcs = [
+        "catalog.go",
         "errors.go",
         "gate.go",
         "operator_oidc.go",
@@ -17,6 +18,7 @@ go_library(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service:operator_action_service_go_proto",
+        "//agentplane/action_service/catalog",
         "//agentplane/action_service/store",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:sandboxes_go_proto",
@@ -29,6 +31,7 @@ go_library(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/emptypb",
         "@org_golang_google_protobuf//types/known/structpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
@@ -38,14 +41,21 @@ go_library(
 go_test(
     name = "unit_test",
     srcs = [
+        "catalog_golden_test.go",
+        "catalog_settings_test.go",
         "issuer_test.go",
         "operator_oidc_test.go",
     ],
+    data = ["//agentplane/action_service/catalog:golden.json"],
     embed = [":api"],
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/catalog",
         "//agentplane/action_service/store",
         "@com_github_go_jose_go_jose_v4//:go-jose",
         "@com_github_go_jose_go_jose_v4//jwt",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_bazel_rules_go//go/runfiles",
     ],
 )
 
@@ -53,6 +63,8 @@ go_test(
     name = "integration_test",
     size = "medium",
     srcs = [
+        "catalog_settings_test.go",
+        "catalog_test.go",
         "fixture_test.go",
         "gate_test.go",
         "integration_testmain_test.go",
@@ -66,6 +78,7 @@ go_test(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service:operator_action_service_go_proto",
+        "//agentplane/action_service/catalog",
         "//agentplane/action_service/migrations",
         "//agentplane/action_service/store",
         "//agentplane/grpc/facade",
@@ -78,6 +91,7 @@ go_test(
         "@com_github_go_jose_go_jose_v4//jwt",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
+        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/types",
         "@org_golang_google_grpc//:grpc",

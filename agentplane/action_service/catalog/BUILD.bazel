@@ -6,6 +6,7 @@ go_library(
     name = "catalog",
     srcs = ["catalog.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/catalog",
+    deps = ["//agentplane/action_service:action_service_go_proto"],
 )
 
 go_test(
@@ -21,5 +22,8 @@ go_test(
 
 exports_files(
     ["golden.json"],
-    visibility = ["//agentplane/action_service:__pkg__"],
+    visibility = [
+        "//agentplane/action_service:__pkg__",
+        "//agentplane/action_service/api:__pkg__",
+    ],
 )

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc/codes"
@@ -44,6 +45,10 @@ func failure(ctx context.Context, err error) error {
 		return status.Error(codes.NotFound, store.ErrNotFound.Error())
 	case errors.Is(err, store.ErrInvalid):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, catalog.ErrUnknownAction):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, catalog.ErrUnavailable):
+		return status.Error(codes.Unavailable, catalog.ErrUnavailable.Error())
 	case errors.As(err, &conflict) && conflictCodes[conflict.Reason] != codes.OK:
 		return status.Error(conflictCodes[conflict.Reason], conflict.Message)
 	case errors.Is(err, errDraining):
@@ -58,6 +63,9 @@ func failure(ctx context.Context, err error) error {
 	case errors.Is(err, errStoredRequest):
 		slog.ErrorContext(ctx, "stored action request cannot be shown", "error", err)
 		return status.Error(codes.Internal, errStoredRequest.Error())
+	case errors.Is(err, errCatalogAction):
+		slog.ErrorContext(ctx, "catalog Action cannot be shown", "error", err)
+		return status.Error(codes.Internal, errCatalogAction.Error())
 	default:
 		slog.WarnContext(ctx, "action request failed", "error", err)
 		return status.Error(codes.Unavailable, "the Action Service is temporarily unavailable")
