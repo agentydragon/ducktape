@@ -15,7 +15,6 @@ import (
 const (
 	ProviderName      = "action_policy_set"
 	AutoApproveReason = "policy_set_auto_approve"
-	NoMatchReason     = "no_auto_approve_match"
 	// descriptionLimit is the stored bound on a reason description, in code points; object names alone can approach
 	// it.
 	descriptionLimit = 500
@@ -46,7 +45,7 @@ type Decision interface{ isDecision() }
 type Allow struct{ Vote store.ProviderVote }
 
 // NoOpinion leaves the request to a human. ReasonDescription says why each policy listing the Action did not match, or
-// that none lists it; its reason code is NoMatchReason.
+// that none lists it.
 type NoOpinion struct{ ReasonDescription string }
 
 func (Allow) isDecision()     {}

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Set
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.action_service.catalog import ActionGroup, Key
@@ -19,19 +19,6 @@ from util.yaml_file_settings import YamlFileSettings
 
 DEFAULT_MAX_WAIT_SECONDS = 30.0
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
-
-
-class GitHubVisibilitySettings(BaseModel):
-    """Go runtime settings for its unauthenticated GitHub repository visibility lookup."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    api_base_url: str = "https://api.github.com"
-    cache_ttl_seconds: float = Field(
-        default=86400.0,
-        ge=0,
-        description="How long one repository's confirmed visibility is reused before GitHub is asked again.",
-    )
 
 
 class Settings(YamlFileSettings):
@@ -71,16 +58,12 @@ class Settings(YamlFileSettings):
         allow_inf_nan=False,
         description="How long a direct tool call waits before returning its Action request ID.",
     )
-    policy_resync_seconds: int = Field(
-        default=300, gt=0, description="Policy watch lifetime; every watched kind is relisted this often."
-    )
     max_wait_seconds: float = Field(
         default=DEFAULT_MAX_WAIT_SECONDS,
         ge=0,
         allow_inf_nan=False,
         description="Maximum caller-requested wait on an Action receipt or result.",
     )
-    github_visibility: GitHubVisibilitySettings = Field(default_factory=GitHubVisibilitySettings)
     operator_oidc: OperatorOidcSettings | None = None
     oauth: OAuthSettings | None = None
     integrated_connection_service: bool = Field(
