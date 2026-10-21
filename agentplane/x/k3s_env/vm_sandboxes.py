@@ -1,15 +1,17 @@
 """What VM Sandboxes need on the k3s stack besides our own objects: KubeVirt, emulating the guest CPU
 (QEMU TCG; the RBE executor has no `/dev/kvm`), and Kyverno's admission controller, which adds the egress
 relay to each VM's launcher Pod (cluster/cdk8s/agentplane/launcher_relay.py). Both are the releases
-production runs, from their release manifests; their images are pulled when the stack starts.
+production runs, from their release manifests, with their images from Bazel-pulled layouts.
 """
 
 import os
 import subprocess
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import yaml
+from more_itertools import one
 
 from util.bazel.runfiles import get_required_path
 
@@ -20,6 +22,10 @@ KUBEVIRT_NAMESPACE = "kubevirt"
 KYVERNO_NAMESPACE = "kyverno"
 _KYVERNO_ADMISSION = "kyverno-admission-controller"
 READY_SECONDS = 600
+# What virt-operator deploys, besides itself, at its own registry and version. Launcher Pods run
+# virt-launcher.
+_KUBEVIRT_COMPONENTS = ("virt-api", "virt-controller", "virt-handler", "virt-launcher")
+_LAYOUTS = "_main/agentplane/x/k3s_env/vm_sandboxes"
 
 
 def _manifest(variable: str) -> list[dict[str, Any]]:
@@ -67,22 +73,46 @@ def _kyverno() -> list[dict[str, Any]]:
     return objects
 
 
-def install(kubectl: Kubectl) -> None:
-    """Start installing both. Their images pull while the stack's own import."""
+def releases() -> list[dict[str, Any]]:
+    """KubeVirt's operator and Kyverno's admission controller, as `install` applies them."""
+    return _kubevirt_operator() + _kyverno()
+
+
+def images(objects: list[dict[str, Any]]) -> dict[str, Path]:
+    """The `.rloc` of each image the `releases` objects run, by the reference they run it by."""
+    references = {
+        container["image"]
+        for doc in objects
+        if doc["kind"] == "Deployment"
+        for container in doc["spec"]["template"]["spec"].get("initContainers", [])
+        + doc["spec"]["template"]["spec"]["containers"]
+    }
+    registry, version = one(image for image in references if "/virt-operator:" in image).split("/virt-operator:")
+    references |= {f"{registry}/{component}:{version}" for component in _KUBEVIRT_COMPONENTS}
+    return {
+        reference: get_required_path(
+            f"{_LAYOUTS}/{reference.rsplit('/', 1)[1].split(':')[0].replace('-', '_')}_layout.rloc"
+        )
+        for reference in references
+    }
+
+
+def install(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
+    """Start installing the `releases` objects, once their `images` are in containerd."""
     # virt-handler mounts the kubelet's Pod directory Bidirectional, which needs a shared root mount.
     subprocess.run(["mount", "--make-rshared", "/"], check=True)
     # Server-side: Kyverno's CRDs exceed the client-side apply annotation limit.
-    kubectl("apply", "--server-side", "-f", "-", input_text=yaml.safe_dump_all(_kubevirt_operator() + _kyverno()))
+    kubectl("apply", "--server-side", "-f", "-", input_text=yaml.safe_dump_all(objects))
     kubectl("wait", "--for=condition=Established", "crd/kubevirts.kubevirt.io", "--timeout=60s")
     kubectl("apply", "-f", "-", input_text=yaml.safe_dump(_kubevirt()))
 
 
 def wait_for_apis(kubectl: Kubectl) -> None:
     """KubeVirt's operator creates the VirtualMachine API; the Sandbox Controller looks for it once, at start."""
-    kubectl(
-        "wait", "--for=condition=Established", "crd/virtualmachines.kubevirt.io", "crd/clusterpolicies.kyverno.io",
-        f"--timeout={READY_SECONDS}s",
-    )  # fmt: skip
+    crds = ["crd/virtualmachines.kubevirt.io", "crd/clusterpolicies.kyverno.io"]
+    # `condition=Established` fails at once on a CRD that does not exist yet.
+    kubectl("wait", "--for=create", *crds, f"--timeout={READY_SECONDS}s")
+    kubectl("wait", "--for=condition=Established", *crds, f"--timeout={READY_SECONDS}s")
 
 
 def wait_until_ready(kubectl: Kubectl) -> None:
@@ -99,8 +129,12 @@ def wait_until_ready(kubectl: Kubectl) -> None:
 
 
 def report(kubectl: Kubectl, namespace: str) -> str:
-    """KubeVirt's and Kyverno's view of the VMs, and each guest's serial console."""
-    parts = [kubectl("get", "kubevirt,vm,vmi,clusterpolicy", "-A", "-o", "yaml", check=False)]
+    """KubeVirt's and Kyverno's view of the VMs, each guest's serial console, and what Pods pulled from
+    registries rather than from the imported layouts."""
+    parts = [
+        kubectl("get", "kubevirt,vm,vmi,clusterpolicy", "-A", "-o", "yaml", check=False),
+        kubectl("get", "events", "-A", "--field-selector=reason=Pulling", check=False),
+    ]
     launchers = kubectl("get", "pods", "-n", namespace, "-l", "kubevirt.io=virt-launcher", "-o", "name", check=False)
     for launcher in launchers.split():
         parts.append(f"--- {launcher} guest console")

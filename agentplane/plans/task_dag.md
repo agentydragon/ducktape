@@ -1997,17 +1997,12 @@ The `test_egress` probe's `_k3s_real` target binds a fixture-only credential Pol
 guest has no KVM, so the k3s stack's VM rendering runs KubeVirt with `useEmulation` and boots the
 Bazel-built test guest (`agentplane/x/k3s_env/guest`), not production's NixOS image.
 `//agentplane/x/k3s_env:test_vm_lifecycle` boots a `runner-vm` Sandbox to Ready, suspends and resumes
-it ([timings](../x/k3s_env/README.md#vm-lifecycle-timings-2026-10-21)): KubeVirt's image pulls take
-about 3 minutes, the VM itself under 2.
+it in PR CI, KubeVirt's and Kyverno's images imported from Bazel-pulled layouts
+([timings](../x/k3s_env/README.md#vm-lifecycle-timings-2026-10-21)).
 
-Remaining:
-
-- Load KubeVirt's and Kyverno's images from Bazel-pulled layouts, as the stack does for its own
-  services, in place of runtime pulls from their registries; then `test_vm_lifecycle` loses its
-  `manual` tag and runs in PR CI.
-- Give the VM cases (`test_vm_sandbox`, `test_vm_workspace_ownership`, the `test_suspend_resume` and
-  `test_storage_deployed` VM cases) `_k3s` targets on the VM rendering, in PR CI like the other
-  `_k3s` targets; then delete `test_vm_lifecycle`.
+Remaining: give the VM cases (`test_vm_sandbox`, `test_vm_workspace_ownership`, the
+`test_suspend_resume` and `test_storage_deployed` VM cases) `_k3s` targets on the VM rendering, in PR
+CI like the other `_k3s` targets; then delete `test_vm_lifecycle`.
 
 Exit: the VM cases pass on k3s in PR CI.
 

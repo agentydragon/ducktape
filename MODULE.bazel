@@ -303,6 +303,59 @@ oci.pull(
     platforms = ["linux/amd64"],
 )
 
+# Bare-k3s fixture: the KubeVirt and Kyverno images that `@kubevirt_operator_bundle` and
+# `@kyverno_install` run with VM Sandboxes (agentplane/x/k3s_env/vm_sandboxes.py); keep the tags
+# equal to those releases.
+oci.pull(
+    name = "kubevirt_virt_operator",
+    digest = "sha256:3596b23097e0e2709d7ea744d018a9b40990735fab04aa5a415bca034b22f68a",
+    image = "quay.io/kubevirt/virt-operator",
+    platforms = ["linux/amd64"],
+    tag = "v1.8.2",
+)
+oci.pull(
+    name = "kubevirt_virt_api",
+    digest = "sha256:3f5ed85fc6563a5a2d27dcf282bcceec6ff00a38f43b572a1f33f5d819c713b4",
+    image = "quay.io/kubevirt/virt-api",
+    platforms = ["linux/amd64"],
+    tag = "v1.8.2",
+)
+oci.pull(
+    name = "kubevirt_virt_controller",
+    digest = "sha256:76669dbe9f1c4a7635406050738480770fe0e50eca8a532692c48f40ee087b68",
+    image = "quay.io/kubevirt/virt-controller",
+    platforms = ["linux/amd64"],
+    tag = "v1.8.2",
+)
+oci.pull(
+    name = "kubevirt_virt_handler",
+    digest = "sha256:1a9b89a11bc90d536ec78c8462cf83592ce1429a7acd1d31af5359fa094303f6",
+    image = "quay.io/kubevirt/virt-handler",
+    platforms = ["linux/amd64"],
+    tag = "v1.8.2",
+)
+oci.pull(
+    name = "kubevirt_virt_launcher",
+    digest = "sha256:574fabe0ff9719fa1e3800dcca8530fa4e02fd71ef74109508e59800e13e8b5d",
+    image = "quay.io/kubevirt/virt-launcher",
+    platforms = ["linux/amd64"],
+    tag = "v1.8.2",
+)
+oci.pull(
+    name = "kyverno_kyverno",
+    digest = "sha256:b31d8511ae5fd6010e2a01ea72ebae08eb82fa51d91af14a1d9fe989949b4edb",
+    image = "ghcr.io/kyverno/kyverno",
+    platforms = ["linux/amd64"],
+    tag = "v1.19.1",
+)
+oci.pull(
+    name = "kyverno_kyvernopre",
+    digest = "sha256:c25c47461f06f2845a48c319ae86fbbc1730a7b9ed5b701889c9dc1f9ee94b09",
+    image = "ghcr.io/kyverno/kyvernopre",
+    platforms = ["linux/amd64"],
+    tag = "v1.19.1",
+)
+
 # Test infrastructure: PostgreSQL with pgvector, for //agentplane/indexing and //haku/console
 # tests. The stock postgres image ships no `vector` extension, and the index's search is only
 # testable against the real operator.
@@ -401,7 +454,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.22",
 )
-use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "dex", "dex_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_static_debian13", "distroless_static_debian13_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "mcp_everything", "mcp_everything_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "postgres_18_minimal", "postgres_18_minimal_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "tf_runner", "tf_runner_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "dex", "dex_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_static_debian13", "distroless_static_debian13_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "kubevirt_virt_api", "kubevirt_virt_api_linux_amd64", "kubevirt_virt_controller", "kubevirt_virt_controller_linux_amd64", "kubevirt_virt_handler", "kubevirt_virt_handler_linux_amd64", "kubevirt_virt_launcher", "kubevirt_virt_launcher_linux_amd64", "kubevirt_virt_operator", "kubevirt_virt_operator_linux_amd64", "kyverno_kyverno", "kyverno_kyverno_linux_amd64", "kyverno_kyvernopre", "kyverno_kyvernopre_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "mcp_everything", "mcp_everything_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "postgres_18_minimal", "postgres_18_minimal_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "tf_runner", "tf_runner_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -1349,7 +1402,8 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_cleanuppolicies.yaml"],
 )
 
-# The k3s fixture's Kyverno (agentplane/x/k3s_env/vm_sandboxes.py).
+# The k3s fixture's Kyverno (agentplane/x/k3s_env/vm_sandboxes.py); keep the `kyverno_*` images'
+# tags equal.
 http_file(
     name = "kyverno_install",
     downloaded_file_path = "install.yaml",
@@ -1389,8 +1443,8 @@ http_file(
     urls = ["https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/charts/redis-operator/crds/crds.yaml"],
 )
 
-# The release assets cluster/cdk8s/kubevirt/operators.py installs; keep the URLs equal. The
-# bindings BUILD extracts the operator CRs' CRDs.
+# The release assets cluster/cdk8s/kubevirt/operators.py installs; keep the URLs, and the
+# `kubevirt_*` images' tags, equal. The bindings BUILD extracts the operator CRs' CRDs.
 http_file(
     name = "kubevirt_operator_bundle",
     downloaded_file_path = "kubevirt-operator.yaml",

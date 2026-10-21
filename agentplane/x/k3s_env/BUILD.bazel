@@ -140,6 +140,27 @@ _IMAGES = {
     }.items()
 ]
 
+# KubeVirt's and Kyverno's images, imported by targets that run VM Sandboxes. `vm_sandboxes.py` finds
+# each by its repository's name; the subdirectory keeps them out of `stack.py`'s glob.
+_VM_SANDBOX_IMAGES = {
+    "kyverno": "@kyverno_kyverno_linux_amd64",
+    "kyvernopre": "@kyverno_kyvernopre_linux_amd64",
+    "virt_api": "@kubevirt_virt_api_linux_amd64",
+    "virt_controller": "@kubevirt_virt_controller_linux_amd64",
+    "virt_handler": "@kubevirt_virt_handler_linux_amd64",
+    "virt_launcher": "@kubevirt_virt_launcher_linux_amd64",
+    "virt_operator": "@kubevirt_virt_operator_linux_amd64",
+}
+
+[
+    oci_layout_rloc(
+        name = "vm_sandboxes/" + name + "_layout",
+        testonly = True,
+        image = image,
+    )
+    for name, image in _VM_SANDBOX_IMAGES.items()
+]
+
 py_test(
     name = "test_render",
     # cdk8s/jsii startup dominates this one-case test on RBE; see debug/render_startup.md.
@@ -278,7 +299,7 @@ py_test(
         "@kubevirt_operator_bundle//file",
         "@kyverno_install//file",
         K3S_BINARY,
-    ],
+    ] + [":vm_sandboxes/" + name + "_layout" for name in _VM_SANDBOX_IMAGES],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/none-vm.json)",
@@ -287,9 +308,7 @@ py_test(
         "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
     },
     exec_properties = K3S_EXEC_PROPERTIES,
-    # Runs only by name: KubeVirt's and Kyverno's images come from their registries at run time, about
-    # half of its 7 minutes, so PR CI would pay that and their availability on every change here.
-    tags = K3S_TAGS + ["manual"],
+    tags = K3S_TAGS,
     deps = [
         ":stack",
         ":vm_sandboxes",
@@ -429,6 +448,7 @@ py_library(
     srcs = ["vm_sandboxes.py"],
     deps = [
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pyyaml",
     ],
 )

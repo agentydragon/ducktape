@@ -161,28 +161,20 @@ class K3s:
             raise
         return process
 
-    def import_images(self, references: list[Path], *, required_images: set[str]) -> None:
-        """Stream Bazel OCI layouts to containerd, preserving blob digests and sharing duplicate blobs."""
-        if not references:
-            raise ValueError("No Bazel OCI layouts found in runfiles")
+    def import_images(self, images: dict[str, Path]) -> None:
+        """Stream Bazel OCI layouts (`.rloc` files, keyed by the image reference each loads as) to
+        containerd, preserving blob digests and sharing duplicate blobs."""
         manifests = []
         blobs: dict[str, Path] = {}
-        imported_tags: set[str] = set()
-        for reference in references:
-            layout = get_required_path(reference.read_text().strip())
-            name = reference.stem.removesuffix("_layout")
-            repository = "runner" if name == "runner" else "agentplane-" + name.replace("_", "-")
-            tag = f"git.allegedly.works/ducktape-ci/{repository}:unset"
-            imported_tags.add(tag)
+        for image, rloc in images.items():
+            layout = get_required_path(rloc.read_text().strip())
             index = json.loads((layout / "index.json").read_text())
             for descriptor in index["manifests"]:
-                descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = tag
+                descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = image
                 manifests.append(descriptor)
             for blob in (layout / "blobs").glob("*/*"):
                 blobs.setdefault(blob.relative_to(layout).as_posix(), blob)
-        if missing := required_images - imported_tags:
-            raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
-        print(f"importing {len(references)} OCI layouts with {len(blobs)} distinct blobs")
+        print(f"importing {len(images)} OCI layouts with {len(blobs)} distinct blobs")
         with tempfile.TemporaryFile() as output:
             with subprocess.Popen(
                 [
@@ -336,6 +328,13 @@ def _resolve_on_node(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> Non
             hosts.write(f"{address} {service.host} {service.fqdn}\n")
 
 
+def _ci_image(rloc: Path) -> str:
+    """The reference fixture workloads use for a Bazel-built image, named by its layout's `.rloc`."""
+    name = rloc.stem.removesuffix("_layout")
+    repository = "runner" if name == "runner" else "agentplane-" + name.replace("_", "-")
+    return f"git.allegedly.works/ducktape-ci/{repository}:unset"
+
+
 def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
     return {
         container["image"]
@@ -383,9 +382,17 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
             mcp,
         )
         if fixture.vm_sandboxes:
-            vm_sandboxes.install(k3s.kubectl)
             layouts += sorted(get_required_path("_main/agentplane/x/k3s_env/guest").glob("*_layout.rloc"))
-        k3s.import_images(layouts, required_images=_deployment_images(fixture.objects))
+        images = {_ci_image(rloc): rloc for rloc in layouts}
+        if missing := _deployment_images(fixture.objects) - images.keys():
+            raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
+        if fixture.vm_sandboxes:
+            releases = vm_sandboxes.releases()
+            # Their images first, so they roll out while the stack's own import; a Pod that starts before
+            # its image is in containerd pulls it from the registry.
+            k3s.import_images(vm_sandboxes.images(releases))
+            vm_sandboxes.install(k3s.kubectl, releases)
+        k3s.import_images(images)
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
         if fixture.vm_sandboxes:

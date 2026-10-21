@@ -121,17 +121,33 @@ directly, a busybox initramfs that mounts an erofs root under a tmpfs overlay, a
 the runner what [`vm.nix`](../../runner/vm.nix) does. The runner comes from the production runner disk,
 as in a Pod; Codex is pinned in the root disk.
 
-**Gotcha:** KubeVirt's and Kyverno's images are pulled from quay.io and ghcr.io when the stack starts,
-so `test_vm_lifecycle` is `manual`: PR CI does not run it.
+KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
+imported before their releases are applied, so no Pod pulls them; the releases roll out while the
+stack's own images import.
 
 ### VM lifecycle timings, 2026-10-21
 
-One passing run ([invocation](https://app.buildbuddy.io/invocation/989d9e78-957b-4e0c-8f54-717e5f679e59)):
-405 s of action time, 368 s of it in pytest. KubeVirt was Available 3 min 23 s after it was applied,
-4 min 2 s after k3s started; that wait gates the test. Create, Ready, suspend, resume and Ready again
-took under 2 minutes; the resumed VM was running 14 s after its VMI was created. In the preceding
-run, a Sandbox's VM was scheduled 18 s after creation and running 3 s later; the emulated guest
-reached `/init` at 6 s, and the runner started about 14 s after the VM was running.
+With those images imported ([invocation](https://app.buildbuddy.io/invocation/0929e52f-9074-4bf7-8565-7ee4c7720432)),
+the test took 350 s of action time; pulling them at run time, 405 s and 429 s. Temporary markers in
+`stack.py`, not committed, timed the stack from k3s's start:
+
+| Seconds after k3s starts                                       |   s |
+| -------------------------------------------------------------- | --: |
+| k3s up                                                         |  19 |
+| KubeVirt's and Kyverno's images imported, 1.15 GB of blobs     |  81 |
+| Their releases applied                                         |  89 |
+| The stack's own images imported, 1.52 GB                       | 167 |
+| Every Deployment Available, KubeVirt and Kyverno already ready | 202 |
+
+Importing the two sets at once took 169 s and 202 s, against 58 s and 78 s one after the other
+([invocation](https://app.buildbuddy.io/invocation/a7f1a8e7-b891-4495-9252-a4327412d10b); that worker
+was slower throughout, k3s up at 47 s).
+
+In the run with pulls ([invocation](https://app.buildbuddy.io/invocation/989d9e78-957b-4e0c-8f54-717e5f679e59)),
+create, Ready, suspend, resume and Ready again took under 2 minutes; the resumed VM was running 14 s
+after its VMI was created. In the run before it, a Sandbox's VM was scheduled 18 s after creation and
+running 3 s later; the emulated guest reached `/init` at 6 s, and the runner started about 14 s after
+the VM was running.
 
 ## Lifecycle measurements
 

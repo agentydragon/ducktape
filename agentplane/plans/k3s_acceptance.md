@@ -54,7 +54,7 @@ Ordered by what unblocks what. Speed work runs alongside and shortens PR CI, whi
      change, and fork PRs never get the key.
 2. **`K3S_VM_ACCEPTANCE`**: VM-Sandbox acceptance on k3s.
    - KubeVirt with software emulation (`useEmulation`) inside the RBE k3s boots the Bazel-built
-     test guest; `test_vm_lifecycle` starts, suspends and resumes a VM Sandbox in one 405 s action
+     test guest; `test_vm_lifecycle` starts, suspends and resumes a VM Sandbox in one 350 s action
      ([timings](../x/k3s_env/README.md#vm-lifecycle-timings-2026-10-21)).
    - Left: `_k3s` targets for the VM cases on the stack's VM rendering.
 3. **`TESTING_ROLLOUT_ROLE`** (decision). Testing is also the stage that risky rollouts hit before
