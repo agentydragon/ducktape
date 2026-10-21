@@ -151,9 +151,9 @@ def _cursor(frame: Frame) -> int:
 
 def _ordered(frames: list[Frame]) -> None:
     """Each frame's id is its entry's cursor, and they only rise."""
-    ids = [frame.id for frame in frames]
-    assert ids == [_cursor(frame) for frame in frames]
-    assert ids == sorted(set(ids)), ids
+    cursors = [_cursor(frame) for frame in frames]
+    assert [frame.id for frame in frames] == cursors
+    assert cursors == sorted(set(cursors)), cursors
 
 
 def _same_log(one: list[Frame], other: list[Frame]) -> None:
