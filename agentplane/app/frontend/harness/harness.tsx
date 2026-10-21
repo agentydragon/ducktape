@@ -2391,6 +2391,7 @@ routes.push(
         title: "Test coder",
         template: "runner",
         policy_sets: [...TEST_CODER_POLICY_SETS],
+        inbox_tags: [],
         session_defaults: {
           harness: "HARNESS_CODEX",
           model: "harness-codex-model",

@@ -8,6 +8,7 @@ import {
   Select,
   Stack,
   Table,
+  TagsInput,
   Text,
   Textarea,
   TextInput,
@@ -34,6 +35,7 @@ const EMPTY_FORM: NewSandbox = {
   name: "",
   template: "",
   policy_sets: [],
+  inbox_tags: [],
   bootstrap: "",
   wake_on_send: false,
 };
@@ -78,6 +80,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         ...current,
         template: "",
         policy_sets: [],
+        inbox_tags: [],
         bootstrap: "",
       }));
       return;
@@ -86,6 +89,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       ...current,
       template: preset.template,
       policy_sets: preset.policy_sets,
+      inbox_tags: preset.inbox_tags,
       bootstrap: preset.bootstrap,
     }));
   }
@@ -164,7 +168,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Select
           clearable
           label="Preset"
-          description="Fills the template, policy sets, and bootstrap below; session defaults stay in app configuration"
+          description="Fills the template, policy sets, inbox tags, and bootstrap below; session defaults stay in app configuration"
           data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
           value={selectedPreset}
           onChange={(name) => {
@@ -204,6 +208,14 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         data={policySets}
         value={form.policy_sets ?? []}
         onChange={(picked) => setForm({ ...form, policy_sets: picked })}
+        w="100%"
+      />
+      <TagsInput
+        label="Inbox tags"
+        description="Groups a send grant can name this sandbox by"
+        value={form.inbox_tags ?? []}
+        onChange={(tags) => setForm({ ...form, inbox_tags: tags })}
+        maxLength={63}
         w="100%"
       />
       <Group align="flex-end" gap="sm">

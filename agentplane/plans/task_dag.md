@@ -304,7 +304,6 @@ the remaining contracts below still require review before implementation.
 flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
     THREAD_READ_POLICY_DESIGN[Held decision: remaining history read contract]
-    SANDBOX_INBOX_TAGS[Candidate: app presets set a launch's inbox tags]
     HISTORY_SANDBOX_RECORD[Blocked: History's Sandbox record and history tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SESSION_KEY_DESIGN[Decision: record the Sandbox UID in History, and key Sessions by it]
@@ -352,11 +351,6 @@ This gates `THREAD_CREATE_POLICY` and `AGENT_LAUNCH_POLICY_DESIGN`. Messaging ne
 history reads only their own rule type, so creator, manager and parent semantics do not hold them up. The app's existing auth path may remain a special case for v1. Reducing that
 special handling is optional, separately reviewed follow-up work and does not gate multiagent
 implementation.
-
-### `SANDBOX_INBOX_TAGS` — inbox tags on the Sandbox
-
-**Candidate.** [Design](sandbox_tags.md#tags). `spec.inboxTags` and the rule's `inboxTags` target are
-implemented. Remaining: app presets supply a launch's initial tags, and the app shows a Sandbox's tags.
 
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
@@ -533,7 +527,7 @@ it messages, at least when it requests that (if not by default)". A hand-written
 Sandbox that does not exist yet, so the launch would create the grant: a PolicySet and PolicyBinding
 owned by the new Sandbox, whose `session_inbox_access` rule has a UID-pinned direct target, deleted with it.
 An explicit launch option keeps "launch alone does not grant messaging"; whether it is the default is
-the operator's to choose. Once `SANDBOX_INBOX_TAGS` lands, stamping an inbox tag at launch is the
+the operator's to choose. Stamping an inbox tag at launch, which presets already do, is the
 alternative. Spend limits: see `THREAD_CREATE_POLICY`.
 
 ### `AGENT_SANDBOX_LAUNCH` — constrained agent-requested launch

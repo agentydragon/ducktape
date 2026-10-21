@@ -54,6 +54,7 @@ async function render(
     title: "Test preset",
     template: "test-template",
     policy_sets: ["test-basic"],
+    inbox_tags: ["test-group"],
     session_defaults: { harness: "HARNESS_CODEX", model: "test-codex-b" },
     bootstrap: "mkdir -p /state/workspaces",
   };
@@ -128,9 +129,10 @@ it("keeps session defaults in the app config instead of writing them onto a Sand
   expect(container.textContent).not.toContain("Session launch defaults");
 });
 
-it("pre-fills the preset's policy sets, hides picked sets, and sends the picks", async () => {
+it("pre-fills the preset's policy sets and inbox tags, hides picked sets, and sends the picks", async () => {
   const { container, onOpen } = await render();
   expect(container.textContent).toContain("test-basic");
+  expect(container.textContent).toContain("test-group");
   await act(async () => input(container, "Policy sets").click());
   expect(options(container, "Policy sets").map((node) => node.textContent)).toEqual(["test-packages"]);
   await act(async () => input(container, "Policy sets").click());
@@ -146,6 +148,7 @@ it("pre-fills the preset's policy sets, hides picked sets, and sends the picks",
       template: "test-template",
       preset: "test-preset",
       policy_sets: ["test-basic", "test-packages"],
+      inbox_tags: ["test-group"],
       bootstrap: "mkdir -p /state/workspaces",
       wake_on_send: false,
     },

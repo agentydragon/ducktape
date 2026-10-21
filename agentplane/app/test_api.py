@@ -94,6 +94,7 @@ TEST_PRESETS = PresetCatalog(
             title="Test coder",
             template=TEMPLATE,
             policy_sets=["test-basic"],
+            inbox_tags=["test-group"],
             thread_preset="test-coder-codex",
             bootstrap="mkdir -p /state/workspaces",
         )
@@ -263,6 +264,7 @@ async def test_create_records_preset_label_and_bootstrap_without_per_sandbox_ses
             "name": "coder",
             "template": TEMPLATE,
             "policy_sets": ["test-packages"],
+            "inbox_tags": ["test-other-group", "test-group"],
             "preset": "test-coder",
             "bootstrap": "mkdir -p /state/workspaces",
             "wake_on_send": True,
@@ -279,6 +281,7 @@ async def test_create_records_preset_label_and_bootstrap_without_per_sandbox_ses
         "template": TEMPLATE,
         "running": True,
         "policySets": ["test-packages"],
+        "inboxTags": ["test-group", "test-other-group"],
         "bootstrap": "mkdir -p /state/workspaces",
         "wakeOnSend": True,
         "wakeGeneration": 0,
@@ -943,6 +946,7 @@ async def test_presets_publish_editable_sandbox_and_session_defaults(client: htt
             "title": "Test coder",
             "template": TEMPLATE,
             "policy_sets": ["test-basic"],
+            "inbox_tags": ["test-group"],
             "session_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "test-codex-model",

@@ -38,6 +38,8 @@ message CreateSandboxRequest {
   bool wake_on_send = 10;
   // How long its runner must stay idle before the controller suspends the Sandbox; absent, never.
   google.protobuf.Duration idle_suspend_after = 11;
+  // The Sandbox's initial `spec.inboxTags`.
+  repeated string inbox_tags = 12;
 }
 
 message SandboxBinding {
