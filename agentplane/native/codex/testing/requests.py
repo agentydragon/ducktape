@@ -64,12 +64,9 @@ class CustomToolCall(BaseModel):
 class CustomToolCallOutput(BaseModel):
     type: Literal["custom_tool_call_output"]
     call_id: str
-    # Code mode returns a script's result as content items: a status header, then what the script emitted.
+    # Code mode returns a script's result as content items: a status header, then what the script emitted. A
+    # call Codex fails before running gets plain text.
     output: str | list[InputText]
-
-    @property
-    def text(self) -> str:
-        return self.output if isinstance(self.output, str) else "".join(part.text for part in self.output)
 
 
 class SummaryText(BaseModel):

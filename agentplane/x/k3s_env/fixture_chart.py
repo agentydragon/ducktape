@@ -164,11 +164,6 @@ def objects(
             oauth_secret_items=(*testing.ENV.actions.oauth_secret_items, *oauth_files),
         ),
     )
-    if isinstance(models, LocalModel):
-        # The scripted model has no catalog entry, as in the runner tests: Codex then uses the metadata it
-        # falls back to for an unknown slug and calls the function tools the scripted model answers. A
-        # bundled model's entry would switch it to code mode.
-        env = replace(env, llm_ingress=replace(env.llm_ingress, codex_routes=()))
     sandbox_sidecar_resources = k8s.ResourceRequirements(
         requests={
             "cpu": k8s.Quantity.from_string(Cpu.millis(10).amount),

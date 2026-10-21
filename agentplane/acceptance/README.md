@@ -18,8 +18,8 @@ real model. On the k3s stack, LLM ingress forwards to the scenario itself, which
 ([`scripted_upstream.py`](scripted_upstream.py)): the `scripted` fixture hands a scenario the
 `ScriptedModel` of its own Sandbox's Pod, and the scenario answers each request and asserts what
 the harness sent. A case marked `real_model` or `scripted_model` runs only where that backend is;
-only cases whose evidence is what a model does are `real_model`. The scripted stack serves Codex no
-model catalog, so Codex calls the function tools the scripted model answers, as in the runner tests.
+only cases whose evidence is what a model does are `real_model`. LLM ingress serves Codex testing's
+catalog there too, so a ChatGPT route puts Codex in code mode, which the scripted model answers.
 Every request the scripted model receives is kept in the target's `test.outputs/scripted_upstream/`.
 
 ```bash
