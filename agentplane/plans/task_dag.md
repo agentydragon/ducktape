@@ -1758,8 +1758,11 @@ suspended Sandbox, a delivery it cannot confirm) with the queue's own reasons; n
 needs the queue. Image first: the database URL becomes optional and the immediate path lands; then a manifest
 renders the service without the queue database, Secret and migrator Job, and the K3s fixture drops the
 Gateway's PostgreSQL. Exit: tests of both modes over the same command states, and a queue-off deployment refusing
-a send to a suspended Sandbox. Open before scheduling (operator, 06:21 UTC): the same request may be queued in one
-mode and refused in the other without the caller declaring it accepts queuing.
+a send to a suspended Sandbox. Each command request carries a caller-declared flag, deliver now or fail versus may queue, accepted in both modes
+(operator, 06:28 UTC), so the same request no longer means different things silently. With the queue on, deliver now
+or fail refuses instead of queuing and may queue queues. With the queue off, both deliver now when the runner can
+take the command; one that would need the queue is refused, and for a may-queue request the error says the queue
+is required and off.
 
 ### `CNPG_FREE_K3S_INTEGRATION_TIER` — add a narrow database-independent integration tier
 
