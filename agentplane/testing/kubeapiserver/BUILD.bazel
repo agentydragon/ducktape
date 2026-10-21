@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "kubeapiserver",
+    testonly = True,
+    srcs = [
+        "kubeapiserver.go",
+        "reviews.go",
+    ],
+    data = [
+        "//agentplane/crds",
+        "@envtest_kubernetes_linux_amd64//:assets",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/workload_auth/go/auth",
+        "@io_bazel_rules_go//go/runfiles",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/util/wait",
+        "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_sigs_controller_runtime//pkg/envtest",
+    ],
+)

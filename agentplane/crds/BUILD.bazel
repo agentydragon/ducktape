@@ -25,6 +25,7 @@ filegroup(
         "//agentplane/policy_controller:__pkg__",
         "//agentplane/sandbox_controller:__pkg__",
         "//agentplane/testing:__pkg__",
+        "//agentplane/testing/kubeapiserver:__pkg__",
         "//agentplane/x/k3s_env:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/validation:__pkg__",
