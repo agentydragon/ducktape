@@ -160,8 +160,8 @@ Decided 2026-10-21 05:38 (operator).
   - It keeps one queue per Sandbox Pod and dialect. The Pod is the one LLM ingress names in the
     `x-litellm-spend-logs-metadata` header it adds.
   - The k3s plugin starts it on the node IP before rendering the chart, and points LLM ingress's
-    upstream at it. The fixture's app catalog and Codex catalog offer one scripted route per
-    harness.
+    upstream at it in place of LiteLLM. The catalogs stay as they are: whichever model a session
+    opens on, the script answers.
   - LLM ingress stays in the path, so its workload auth, its catalog and its identity stamping are
     under test too.
 - **Targets** stay where #11330 put them: the environment variables in `conftest.py`, the k3s

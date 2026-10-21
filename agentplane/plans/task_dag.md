@@ -2028,7 +2028,7 @@ have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-b
 
 - `agentplane/acceptance/scripted_upstream.py` serves the runner tests' `ScriptedModel` in both
   dialects, one queue per Sandbox Pod, as LLM ingress's upstream at the node IP.
-- The fixture's app catalog and Codex catalog offer one scripted route per harness.
+- It stands in for LiteLLM; the catalogs stay as they are.
 - Scripted targets need a runner image with both harnesses; the fixture has a Claude-only one
   (`claude/runner_layout`), and the model-free targets keep the harness-free one.
 - Scenario functions carry `real_model` or `scripted_model`, and each target deselects what it
