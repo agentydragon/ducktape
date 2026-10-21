@@ -14,7 +14,13 @@ import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn, runner_startup_retries
-from agentplane.acceptance.conftest import POD_TEMPLATE, Sandboxes, wait_until_running
+from agentplane.acceptance.conftest import (
+    POD_TEMPLATE,
+    VM_TEMPLATE,
+    VM_WORKING_DIRECTORY,
+    Sandboxes,
+    wait_until_running,
+)
 from agentplane.acceptance.scripted_upstream import ScriptedUpstream
 from agentplane.app.sandbox_models import SandboxView
 from agentplane.app.testing.client import Client
@@ -97,7 +103,7 @@ async def _wait_until_suspended_without_pod(client: Client, name: str) -> None:
 class _ResumeRun:
     """One Sandbox's Threads through a suspend/resume, checked and recorded at each step.
 
-    The model turns stay with each test: a real model answers them, or the test answers them itself.
+    Each test plays the model itself.
     """
 
     client: Client
@@ -131,7 +137,7 @@ class _ResumeRun:
 
     @property
     def pod_name(self) -> str:
-        """The Sandbox's Pod, by the name every incarnation keeps."""
+        """The Sandbox's current Pod: a Pod Sandbox's every incarnation keeps its name, a VM's launcher does not."""
         assert self.view.pod is not None
         return self.view.pod.name
 
@@ -195,6 +201,7 @@ class _ResumeRun:
         assert resumed.pod is not None
         assert resumed.pod.uid != self.original_incarnation
         assert _storage_volumes(self.view.namespace, self.view.uid) == self.storage_volumes
+        self.view = resumed
         self.resumed_incarnation = resumed.pod.uid
         self.checks.append("same_sandbox_new_incarnation_same_volumes")
         async for attempt in runner_startup_retries():
@@ -264,15 +271,22 @@ def _marker(harness: runner_pb2.Harness) -> str:
 
 
 @pytest.mark.scripted_model
+@pytest.mark.parametrize(
+    ("template", "cwd"),
+    [
+        (POD_TEMPLATE, WORKING_DIRECTORY),
+        pytest.param(VM_TEMPLATE, VM_WORKING_DIRECTORY, marks=pytest.mark.vm_sandboxes),
+    ],
+)
 async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
+    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, template: str, cwd: str
 ) -> None:
-    """One Pod replacement exercises both native stores."""
-    run = await _ResumeRun.start(client, sandbox, template=POD_TEMPLATE)
+    """One replacement of the Sandbox's Pod, or of a VM's launcher, exercises both native stores."""
+    run = await _ResumeRun.start(client, sandbox, template=template)
     markers = {harness: _marker(harness) for harness in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX)}
     models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
     for harness, marker in markers.items():
-        agent = await run.open(harness, cwd=WORKING_DIRECTORY)
+        agent = await run.open(harness, cwd=cwd)
         async with asyncio.TaskGroup() as turns:
             seed = turns.create_task(agent.run(SEED_PROMPT.format(marker=marker)))
             await models[harness].reply(await models[harness].request(), Text("ACK"))
@@ -280,6 +294,8 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
 
     await run.suspend_and_resume()
 
+    # A VM's new launcher Pod has a name of its own.
+    models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
     for harness, agent in run.agents.items():
         async with asyncio.TaskGroup() as turns:
             recall = turns.create_task(agent.run(RECALL_PROMPT))
@@ -290,23 +306,6 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
             assert not [other for other in markers.values() if other != markers[harness] and other in context]
             await models[harness].reply(request, Text(markers[harness]))
         await run.continued(harness, recall.result())
-    run.passed = True
-    run.save()
-
-
-@pytest.mark.real_model
-@pytest.mark.vm_sandboxes
-async def test_vm_codex_keeps_its_journal_and_context_after_suspend_resume(client: Client, sandbox: Sandboxes) -> None:
-    run = await _ResumeRun.start(client, sandbox, template="runner-vm")
-    marker = _marker(runner_pb2.HARNESS_CODEX)
-    agent = await run.open(runner_pb2.HARNESS_CODEX, cwd="/state/workspaces/accept")
-    await run.seeded(runner_pb2.HARNESS_CODEX, await agent.run(SEED_PROMPT.format(marker=marker)))
-
-    await run.suspend_and_resume()
-
-    turn = await agent.run(RECALL_PROMPT)
-    await run.continued(runner_pb2.HARNESS_CODEX, turn)
-    assert marker in turn.answer, f"Codex did not return the test code:\n{turn.transcript}"
     run.passed = True
     run.save()
 

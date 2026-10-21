@@ -55,8 +55,11 @@ TESTING_NAMESPACE = "agentplane-testing"
 TESTING_SERVICE_ACCOUNT = "agentplane-agent"
 AUDIENCE = "agentplane"
 
-# The Pod SandboxTemplate every deployment offers; testing also offers a VM one, so the default is named.
+# The Pod SandboxTemplate every deployment offers, and the VM one of a deployment that runs VM Sandboxes.
 POD_TEMPLATE = "runner"
+VM_TEMPLATE = "runner-vm"
+# A VM Sandbox's working directory: the guest's runner takes only a child of its workspace root.
+VM_WORKING_DIRECTORY = "/state/workspaces/accept"
 
 # A sandbox's first Pod has to be scheduled and pull the runner image.
 SANDBOX_READY_SECONDS = 300.0

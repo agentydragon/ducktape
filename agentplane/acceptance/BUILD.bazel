@@ -10,6 +10,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:exclude test_storage_deployed.py
 # gazelle:exclude test_suspend_resume.py
 # gazelle:exclude test_thread_stream.py
+# gazelle:exclude test_vm_sandbox.py
+# gazelle:exclude test_vm_workspace_ownership.py
 
 package(
     default_testonly = True,
@@ -123,65 +125,55 @@ acceptance_test(
     ],
 )
 
-# Live, like `test_session_instructions`: one VM Sandbox and one turn per harness, `eternal` because a VM
-# guest boots before its runner answers.
-py_test(
+# One VM Sandbox and one scripted turn per harness. The guest boots before its runner answers.
+acceptance_test(
     name = "test_vm_sandbox",
-    timeout = "eternal",
     srcs = ["test_vm_sandbox.py"],
-    env_inherit = [
-        "HOME",
-        "KUBECONFIG",
-    ],
-    tags = [
-        "manual",
-        "no-remote-exec",
-    ],
+    deployed = False,
+    vm_sandboxes = True,
     deps = [
         ":agent",
         ":conftest",
-        "//:conftest",
+        ":scripted_upstream",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/testing:scripted_model",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
 
-# Live, one testing VM Sandbox and two model-free Codex setup Sessions. The second opens a fresh
-# workspace, then Git init/rev-parse verifies the normal runner path used the harness UID/GID.
-py_test(
+# One VM Sandbox and two model-free Codex setup Sessions. The second opens a fresh workspace, then Git
+# init/rev-parse verifies the normal runner path used the harness UID/GID. `eternal` because a VM
+# guest boots before its runner answers.
+acceptance_test(
     name = "test_vm_workspace_ownership",
     timeout = "eternal",
     srcs = ["test_vm_workspace_ownership.py"],
-    env_inherit = [
-        "HOME",
-        "KUBECONFIG",
-    ],
-    tags = [
-        "manual",
-        "no-remote-exec",
-    ],
+    vm_sandboxes = True,
     deps = [
         ":conftest",
-        "//:conftest",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
 
-# Two Threads, one per harness, share a fixture Sandbox so a single Pod replacement exercises both
-# native stores; the old Pod is gone before the same Sandbox resumes. `eternal` as for
-# `test_session_instructions`.
+# Two Threads, one per harness, share a fixture Sandbox so a single Pod (or VM launcher) replacement
+# exercises both native stores; the old Pod is gone before the same Sandbox resumes.
 acceptance_test(
     name = "test_suspend_resume",
-    timeout = "eternal",
     srcs = ["test_suspend_resume.py"],
+    deployed = False,
     k3s = "scripted",
+    vm_sandboxes = True,
     deps = [
         ":agent",
         ":conftest",
@@ -497,13 +489,13 @@ acceptance_test(
     ],
 )
 
-# Two bounded fresh fixtures; the VM case exercises guest boot and normal stop/start, so the k3s
-# target, which runs no VM Sandboxes, deselects it.
+# Two bounded fresh fixtures; the VM case exercises guest boot and normal stop/start.
 acceptance_test(
     name = "test_storage_deployed",
     timeout = "eternal",
     srcs = ["test_storage_deployed.py"],
     k3s = "model_free",
+    vm_sandboxes = True,
     deps = [
         ":cluster",
         ":conftest",

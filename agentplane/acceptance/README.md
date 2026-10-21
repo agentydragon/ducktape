@@ -12,7 +12,10 @@ and the caller's kubeconfig, testing by default. A scenario declared with
 RBE action that starts its own [k3s stack](../x/k3s_env/README.md) and publishes it through the same
 variables ([`acceptance_target.py`](../x/k3s_env/acceptance_target.py)), so it needs no cluster
 credentials and runs in PR CI whenever its inputs change. That stack runs no VM Sandboxes; it
-deselects cases marked `vm_sandboxes`.
+deselects cases marked `vm_sandboxes`. `acceptance_test(vm_sandboxes = True)` runs those cases, and
+only those, as `<scenario>_k3s_vm`, on a stack with KubeVirt emulating the guest CPU and the k3s
+test guest ([VM Sandboxes](../x/k3s_env/README.md#vm-sandboxes)). `test_vm_sandbox_k3s_vm` runs a
+scripted turn on each harness in a VM Sandbox.
 
 The model backend is the target's too (`AGENTPLANE_ACCEPTANCE_MODEL_BACKEND`). A deployment serves a
 real model. On the k3s stack, LLM ingress forwards to the scenario itself, which plays the model
@@ -60,19 +63,18 @@ interval. Each run writes its timings to
 
 ## VM workspace ownership
 
-`//agentplane/acceptance:test_vm_workspace_ownership` creates one uniquely named testing VM
-Sandbox and opens two Codex Sessions without sending a model turn. The first setup checks that the
+`//agentplane/acceptance:test_vm_workspace_ownership` creates one uniquely named VM Sandbox and
+opens two Codex Sessions without sending a model turn. The first setup checks that the
 second Session's workspace path is absent; the second exercises normal runner setup, checks UID/GID
 107 ownership, then runs `git init` and `git rev-parse` with global and system Git config disabled.
-Fixture teardown suspends and deletes only the Sandbox created by that invocation. Run it after the
-testing `runner-vm` template points at an image built with the pinned ownership-fix wheel:
+Fixture teardown suspends and deletes only the Sandbox created by that invocation.
+`test_vm_workspace_ownership_k3s_vm` runs it on a stack of its own; against a deployment:
 
 ```bash
 bazelisk test //agentplane/acceptance:test_vm_workspace_ownership --test_output=streamed
 ```
 
-The result is written to
-`bazel-testlogs/agentplane/acceptance/test_vm_workspace_ownership/test.outputs/vm-workspace-ownership.json`.
+The result is written to the target's `test.outputs/vm-workspace-ownership.json`.
 
 ## Workspace storage layout acceptance
 
@@ -82,7 +84,8 @@ PVC identity and layout records, marker bytes across suspend/resume, refusal of 
 claim before workload start, and retained data after VM replacement. It creates only its own
 Sandbox, template and workload, then removes them through UID-preconditioned lifecycle operations.
 It refuses a deployment that already has Sandboxes, so on testing it runs only while no one else
-uses it; `test_storage_deployed_k3s` runs the Pod case on a stack of its own.
+uses it; `test_storage_deployed_k3s` and `test_storage_deployed_k3s_vm` run the Pod and VM cases on
+stacks of their own.
 
 ```bash
 bazelisk test //agentplane/acceptance:test_storage_deployed --test_output=streamed
@@ -93,33 +96,22 @@ The target writes `test.outputs/storage-{pod-directory,vm-raw}.json`. The deploy
 
 ## Suspend and resume
 
-`//agentplane/acceptance:test_suspend_resume` tests two Threads (Claude and Codex) in one Pod Sandbox
-with the scripted model, and a separate Codex Thread in a VM Sandbox with a real one. It suspends
-until the old launcher or Pod is gone, then resumes the original Threads by sending their next input.
+`test_suspend_resume_k3s` and `test_suspend_resume_k3s_vm` test two Threads (Claude and Codex) in one
+Sandbox with the scripted model, a Pod Sandbox and a VM Sandbox respectively. Each suspends until the
+old Pod or launcher is gone, then resumes the original Threads by sending their next input.
 Each case verifies all Sandbox-owned state and workspace PVC UIDs and bound PVs survive, the
 incarnation changes, the sealed archived history remains byte-for-byte unchanged, and one
 `JournalReopened` continues its source sequence before the resumed native turn. It also checks that
 Open reserves a Session without a harness process, that a completed turn has a ready process
 assignment, and that the new runner retains dormant Sessions and their native IDs before the next
 input. While the Sandbox is suspended, an exact retry of each seed input is answered from the archive. The
-resumed Pod Threads must send the model their own seeded token and not the other's; the
-VM Thread's model must recall its token. Intentional delta settlement may leave gaps in archive
-cursors; retained entries remain ordered and unique.
-
-`test_suspend_resume_k3s` runs the Pod case on a stack of its own. The deployed target runs the VM
-case: run it only after the app, controller and runner changes have reached testing. Check the VM
-image's embedded wheel release provenance: its runner must include Session setup reporting before
-testing suspend, even when the container runner already has it. Run one VM case at a time within the
-testing storage quota.
-
-```bash
-bazelisk test //agentplane/acceptance:test_suspend_resume --test_output=streamed
-```
+resumed Threads must send the model their own seeded token and not the other's. Intentional delta
+settlement may leave gaps in archive cursors; retained entries remain ordered and unique.
 
 Successful cases write PVC/PV identities, old/new incarnation UIDs, Session IDs and seal/reopen/
 continuation cursors to the target's `test.outputs/{runner,runner-vm}-resume.json`. Checkpoints are
 saved during the run, with `passed: false` until all assertions succeed, so partial evidence survives
-a model refusal or later failure. The memory code is explicitly synthetic and non-secret. The scenario creates uniquely named
+a later failure. The memory code is explicitly synthetic and non-secret. The scenario creates uniquely named
 Sandboxes, and fixture teardown suspends and deletes only the Sandboxes that invocation created.
 It does not delete an existing Sandbox. This completed-turn scenario does not cover a crash at a
 command checkpoint or interrupted setup; deterministic coverage for those boundaries lives in

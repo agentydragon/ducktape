@@ -1,6 +1,6 @@
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/x/k3s_env:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_TAGS")
+load("//agentplane/x/k3s_env:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_TAGS", "K3S_VM_IMAGES")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -35,6 +35,7 @@ pkg_tar(
     mode = "0755",
     package_dir = "/opt/harnesses",
     strip_prefix = ".",
+    visibility = ["//agentplane/x/k3s_env/guest:__pkg__"],
 )
 
 # The base image's /bin is a symlink to usr/bin.
@@ -140,25 +141,16 @@ _IMAGES = {
     }.items()
 ]
 
-# KubeVirt's and Kyverno's images, imported by targets that run VM Sandboxes. `vm_sandboxes.py` finds
-# each by its repository's name; the subdirectory keeps them out of `stack.py`'s glob.
-_VM_SANDBOX_IMAGES = {
-    "kyverno": "@kyverno_kyverno_linux_amd64",
-    "kyvernopre": "@kyverno_kyvernopre_linux_amd64",
-    "virt_api": "@kubevirt_virt_api_linux_amd64",
-    "virt_controller": "@kubevirt_virt_controller_linux_amd64",
-    "virt_handler": "@kubevirt_virt_handler_linux_amd64",
-    "virt_launcher": "@kubevirt_virt_launcher_linux_amd64",
-    "virt_operator": "@kubevirt_virt_operator_linux_amd64",
-}
-
+# KubeVirt's and Kyverno's images, imported by targets that run VM Sandboxes
+# (`acceptance_test(vm_sandboxes = True)`): a subdirectory, so `stack.py`'s glob skips them.
 [
     oci_layout_rloc(
         name = "vm_sandboxes/" + name + "_layout",
         testonly = True,
         image = image,
+        visibility = ["//agentplane/acceptance:__pkg__"],
     )
-    for name, image in _VM_SANDBOX_IMAGES.items()
+    for name, image in K3S_VM_IMAGES.items()
 ]
 
 py_test(
@@ -194,6 +186,7 @@ py_library(
         "//agentplane/acceptance:conftest",
         "//agentplane/acceptance:operator_login",
         "//agentplane/acceptance:scripted_upstream",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
     ],
 )
@@ -218,6 +211,7 @@ py_library(
         "//agentplane/acceptance:conftest",
         "//agentplane/testing:tls",
         "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
         "@pypi//pyyaml",
     ],
 )
@@ -281,43 +275,6 @@ py_test(
         "//agentplane/app:sandbox_models",
         "//agentplane/app/testing:client",
         "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//tenacity",
-    ],
-)
-
-py_test(
-    name = "test_vm_lifecycle",
-    size = "enormous",
-    srcs = ["test_vm_lifecycle.py"],
-    data = [
-        ":lifecycle/runner_layout",
-        ":rendered/none-vm.json",
-        "//agentplane/x/k3s_env/guest:vm_guest_boot_layout",
-        "//agentplane/x/k3s_env/guest:vm_guest_root_layout",
-        "@kubevirt_operator_bundle//file",
-        "@kyverno_install//file",
-        K3S_BINARY,
-    ] + [":vm_sandboxes/" + name + "_layout" for name in _VM_SANDBOX_IMAGES],
-    env = {
-        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/none-vm.json)",
-        "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath :lifecycle/runner_layout)",
-        "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
-        "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
-    },
-    exec_properties = K3S_EXEC_PROPERTIES,
-    tags = K3S_TAGS,
-    deps = [
-        ":stack",
-        ":vm_sandboxes",
-        "//:conftest",
-        "//agentplane:sandbox_resource",
-        "//agentplane/acceptance:conftest",
-        "//agentplane/app:sandbox_models",
-        "//agentplane/app/testing:client",
-        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
@@ -400,17 +357,17 @@ py_binary(
 )
 
 # The fixture chart for each model backend, and for the local model with the MCP fixtures (Dex and the
-# MCP servers of `acceptance_test(mcp_fixtures = True)` targets), rendered once per build so no test
-# action starts Node or compiles the chart code. The values only the test action knows are
-# placeholders it fills in.
+# MCP servers of `acceptance_test(mcp_fixtures = True)` targets) and with VM Sandboxes, rendered once
+# per build so no test action starts Node or compiles the chart code. The values only the test action
+# knows are placeholders it fills in.
 genrule(
     name = "rendered",
     testonly = True,
     outs = [
         "rendered/local-model.json",
         "rendered/local-model-mcp-fixtures.json",
+        "rendered/local-model-vm.json",
         "rendered/none.json",
-        "rendered/none-vm.json",
         "rendered/public-litellm.json",
     ],
     cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",

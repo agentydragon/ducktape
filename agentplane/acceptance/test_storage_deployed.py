@@ -15,7 +15,7 @@ import yaml
 from kubernetes_asyncio import client as k8s
 
 from agentplane.acceptance.cluster import api_client, kubectl
-from agentplane.acceptance.conftest import namespace
+from agentplane.acceptance.conftest import POD_TEMPLATE, VM_TEMPLATE, namespace
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
@@ -228,7 +228,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, case
     existing = json.loads(await kubectl("get", f"sandboxes.{GROUP}", "-o", "json"))["items"]
     assert not existing, "serialize this acceptance with the deployment's other Sandbox users"
     vm = case.startswith("vm")
-    base = await _object(f"sandboxtemplates.{GROUP}", "runner-vm" if vm else "runner")
+    base = await _object(f"sandboxtemplates.{GROUP}", VM_TEMPLATE if vm else POD_TEMPLATE)
     name = f"accept-storage-{case}-{uuid4().hex[:8]}"
     template = name
     spec = copy.deepcopy(base["spec"])

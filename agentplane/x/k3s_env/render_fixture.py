@@ -1,6 +1,6 @@
 """Render the fixture chart into `$K3S_FIXTURE_DIR`, at build time: `<backend>.json` for each model
 backend, `local-model-mcp-fixtures.json` with Dex, the MCP servers `test_mcp` calls and the Action
-Service's OAuth server `test_dcr` registers with, and `none-vm.json` with VM Sandboxes.
+Service's OAuth server `test_dcr` registers with, and `local-model-vm.json` with VM Sandboxes.
 
 Takes no arguments: the app's `Settings`, which the chart code builds, parses `sys.argv` as its own.
 """
@@ -66,7 +66,7 @@ def main() -> None:
     for backend in Backend:
         _render(output, backend, None, vm_sandboxes=False)
     _render(output, Backend.LOCAL_MODEL, MCP_PLACEHOLDERS, vm_sandboxes=False)
-    _render(output, Backend.NONE, None, vm_sandboxes=True)
+    _render(output, Backend.LOCAL_MODEL, None, vm_sandboxes=True)
 
 
 if __name__ == "__main__":

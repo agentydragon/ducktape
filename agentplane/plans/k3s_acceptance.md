@@ -19,15 +19,15 @@ built from the tree under test.
 
 ## What `agentplane-testing` covers today
 
-| Scenario                                                                                                         | Needs                                                                                                 | On k3s                                                             |
-| ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `test_dispatcher_deployed` (queue, replicas, wake)                                                               | kubectl, Pod-bound tokens, two Gateway replicas                                                       | runs on k3s (#11330)                                               |
-| `test_storage_deployed`, Pod case                                                                                | Sandbox-owned PVCs                                                                                    | runs on k3s (#11330)                                               |
-| `test_egress`, `test_session_instructions`, `test_launch_presets`, `test_suspend_resume` Pod case                | turns on both harnesses, the egress ring, kubectl                                                     | scripted (no key); the real-model set needs a key                  |
-| `test_mcp`, `test_dcr`                                                                                           | Dex operator login, `mcp-everything`, the Dex-backed `example` OAuth server, a browser for Dex's form | runs on k3s with the MCP fixtures                                  |
-| VM cases: `test_vm_sandbox`, `test_vm_workspace_ownership`, `test_suspend_resume` VM, `test_storage_deployed` VM | KubeVirt, KVM                                                                                         | emulated KubeVirt on the test guest; no `_k3s` targets yet         |
-| `test_thread_latency`                                                                                            | browser, Electric, frontend; ceilings for the deployed system                                         | no Electric in the fixture; RBE timings are not deployment latency |
-| `test_ollama_routes`                                                                                             | the GPU Ollama                                                                                        | not reachable from RBE                                             |
+| Scenario                                                                                                         | Needs                                                                                                 | On k3s                                                                 |
+| ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `test_dispatcher_deployed` (queue, replicas, wake)                                                               | kubectl, Pod-bound tokens, two Gateway replicas                                                       | runs on k3s (#11330)                                                   |
+| `test_storage_deployed`, Pod case                                                                                | Sandbox-owned PVCs                                                                                    | runs on k3s (#11330)                                                   |
+| `test_egress`, `test_session_instructions`, `test_launch_presets`, `test_suspend_resume` Pod case                | turns on both harnesses, the egress ring, kubectl                                                     | scripted (no key); the real-model set needs a key                      |
+| `test_mcp`, `test_dcr`                                                                                           | Dex operator login, `mcp-everything`, the Dex-backed `example` OAuth server, a browser for Dex's form | runs on k3s with the MCP fixtures                                      |
+| VM cases: `test_vm_sandbox`, `test_vm_workspace_ownership`, `test_suspend_resume` VM, `test_storage_deployed` VM | KubeVirt, KVM                                                                                         | `_k3s_vm` targets: emulated KubeVirt on the test guest, scripted model |
+| `test_thread_latency`                                                                                            | browser, Electric, frontend; ceilings for the deployed system                                         | no Electric in the fixture; RBE timings are not deployment latency     |
+| `test_ollama_routes`                                                                                             | the GPU Ollama                                                                                        | not reachable from RBE                                                 |
 
 What testing proves that no test names: Flux reconciling the generated manifests, Cilium policies,
 CNPG, External Secrets, cert-manager, Gateway API routes, Kyverno, real image
@@ -52,19 +52,14 @@ Ordered by what unblocks what. Speed work runs alongside and shortens PR CI, whi
    - Recommended: the `_k3s_real` targets run post-merge on `devel`, not on PRs. They judge
      Agentplane's instructions against a model, a signal to watch rather than a gate for a code
      change, and fork PRs never get the key.
-2. **`K3S_VM_ACCEPTANCE`**: VM-Sandbox acceptance on k3s.
-   - KubeVirt with software emulation (`useEmulation`) inside the RBE k3s boots the Bazel-built
-     test guest; `test_vm_lifecycle` starts, suspends and resumes a VM Sandbox in one 350 s action
-     ([timings](../x/k3s_env/README.md#vm-lifecycle-timings-2026-10-21)).
-   - Left: `_k3s` targets for the VM cases on the stack's VM rendering.
-3. **`TESTING_ROLLOUT_ROLE`** (decision). Testing is also the stage that risky rollouts hit before
+2. **`TESTING_ROLLOUT_ROLE`** (decision). Testing is also the stage that risky rollouts hit before
    staging.
    - Recommended: the k3s acceptance suite on the exact commit gates the staging image pins, and
      staging is the first real cluster.
    - The real-model suite runs against staging after a rollout.
    - Flux, Cilium and CNPG-level changes then land on staging directly, with a rollback plan in
      the PR.
-4. **`TESTING_ENVIRONMENT_RETIRE`** (existing node, moved). Three PRs:
+3. **`TESTING_ENVIRONMENT_RETIRE`** (existing node, moved). Three PRs:
    - The recipes, memories and RBAC roles that name testing.
    - The Flux kustomization, generated manifests, DNS and routes.
    - The testing databases and volumes. This is a data drop, so it is its own PR and lands only on

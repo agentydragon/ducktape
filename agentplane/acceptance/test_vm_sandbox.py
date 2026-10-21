@@ -1,34 +1,38 @@
-"""A Sandbox on the `runner-vm` template runs a turn, checked against a deployed Agentplane.
-
-The guest's runner only accepts a working directory below its workspace root, which a Pod's
-runner does not enforce, so the Session opens in a child of its workspace root.
-"""
+"""A Sandbox on the VM template runs a turn on each harness, with the scripted model."""
 
 from __future__ import annotations
 
+import asyncio
+
+import pytest
 import pytest_bazel
 
 from agentplane.acceptance.agent import Agent
-from agentplane.acceptance.conftest import Sandboxes
+from agentplane.acceptance.conftest import VM_TEMPLATE, VM_WORKING_DIRECTORY, Sandboxes
+from agentplane.acceptance.scripted_upstream import ScriptedUpstream
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
+from agentplane.testing.scripted_model import Text
 
 # gazelle:include_dep @pypi//protobuf
 
-VM_TEMPLATE = "runner-vm"
-# A child of the guest runner's workspace root (`/state/workspaces`); test code talks to the deployed
-# Go runner over its public protocol.
-GUEST_WORKSPACE = "/state/workspaces/accept"
 PING = "Say exactly the word PING and nothing else. Do not use any tool."
 
 
+@pytest.mark.vm_sandboxes
+@pytest.mark.scripted_model
 async def test_a_vm_sandbox_runs_a_turn(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
+    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     view = await sandbox(f"accept-vm-{harness}", template=VM_TEMPLATE)
-    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model, cwd=GUEST_WORKSPACE)
-    turn = await agent.run(PING)
-    assert "PING" in turn.answer, turn.transcript
+    assert view.pod is not None
+    model = scripted.model(view.pod.name, harness)
+    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered_model, cwd=VM_WORKING_DIRECTORY)
+    async with asyncio.TaskGroup() as turns:
+        turn = turns.create_task(agent.run(PING))
+        await model.reply(await model.request(), Text("PING"))
+    # The scripted reply is the thread's answer: the guest's model traffic came back through the launcher.
+    assert "PING" in turn.result().answer, turn.result().transcript
 
 
 if __name__ == "__main__":

@@ -7,16 +7,16 @@ import json
 import shlex
 from uuid import UUID, uuid4
 
+import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
-from agentplane.acceptance.conftest import Sandboxes
+from agentplane.acceptance.conftest import VM_TEMPLATE, Sandboxes
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-VM_TEMPLATE = "runner-vm"
 WORKSPACE_ROOT = "/state/workspaces"
 AGENT_UID = 107
 AGENT_GID = 107
@@ -36,6 +36,8 @@ async def _run_setup(
     spec = runner_pb2.SessionSpec(harness=harness, cwd=cwd, model=model, reasoning_effort="low")
     await client.create_session(sandbox_name, session_id, overrides=MessageToDict(spec), setup_script=setup_script)
     thread_id = session_id
+    # Runner admission precedes History's Thread projection, which owns the event stream.
+    await client.wait_for_thread_projection(thread_id, timeout_s=BOUND_SECONDS)
 
     stdout, stderr = bytearray(), bytearray()
     async with asyncio.timeout(BOUND_SECONDS):
@@ -57,6 +59,7 @@ async def _run_setup(
     raise AssertionError(f"setup for Session {session_id} emitted no finished event")
 
 
+@pytest.mark.vm_sandboxes
 async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client: Client, sandbox: Sandboxes) -> None:
     """Check absence before opening, then use the ordinary Session setup and Git paths."""
     view = await sandbox(f"accept-vm-workspace-{uuid4().hex[:10]}", template=VM_TEMPLATE)

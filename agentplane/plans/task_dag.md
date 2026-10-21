@@ -37,7 +37,6 @@ flowchart LR
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
     end
     subgraph K3S_TRACK[k3s acceptance, retiring agentplane-testing]
-        K3S_VM_ACCEPTANCE[Candidate: VM scenarios on the emulated k3s stack]
         K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
         TESTING_ROLLOUT_ROLE[Decision: what replaces testing]
         TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
@@ -53,8 +52,7 @@ flowchart LR
     ACTION_SERVICE_GO_PORT --> ACTION_MCP_EDGE_SPLIT
     K3S_TRACK --> K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
     K3S_MODEL_SCENARIOS --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
-    K3S_VM_ACCEPTANCE --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
-    RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE
+    RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
     MESSAGING_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
     K3S_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
@@ -1950,8 +1948,8 @@ old paths.
 
 **Approved 2026-10-21 UTC ([the plan](k3s_acceptance.md)).** Acceptance scenarios take a target (testing, staging or
 the disposable k3s stack in [`x/k3s_env`](../x/k3s_env/README.md)) and a model backend (real or scripted), and every
-`_k3s` target runs in PR CI ([acceptance README](../acceptance/README.md)). What remains: the model key and the
-real-model set on k3s, VM acceptance, and retiring `agentplane-testing`.
+`_k3s` and `_k3s_vm` target runs in PR CI ([acceptance README](../acceptance/README.md)). What remains: the model key
+and the real-model set on k3s, and retiring `agentplane-testing`.
 
 The [K3s startup experiment constraints](#k3s-startup-experiment-constraints) still apply to fixture
 changes.
@@ -1960,11 +1958,9 @@ changes.
 flowchart LR
     K3S_MODEL_CREDENTIALS[Decision: model key for k3s acceptance]
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
-    K3S_VM_ACCEPTANCE[Candidate: VM scenarios on the emulated k3s stack]
     TESTING_ROLLOUT_ROLE[Decision: what replaces testing before staging]
     TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
     K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
-    K3S_VM_ACCEPTANCE --> TESTING_ENVIRONMENT_RETIRE
     TESTING_ROLLOUT_ROLE --> TESTING_ENVIRONMENT_RETIRE
 ```
 
@@ -1991,21 +1987,6 @@ have a real-model version. Their
 The `test_egress` probe's `_k3s_real` target binds a fixture-only credential PolicySet, not staging's
 `github-agentydragon-agent`.
 
-### `K3S_VM_ACCEPTANCE` — VM acceptance on k3s
-
-**Candidate; VM acceptance runs on k3s (operator, 2026-10-21 06:42 and 08:31).** The RBE Firecracker
-guest has no KVM, so the k3s stack's VM rendering runs KubeVirt with `useEmulation` and boots the
-Bazel-built test guest (`agentplane/x/k3s_env/guest`), not production's NixOS image.
-`//agentplane/x/k3s_env:test_vm_lifecycle` boots a `runner-vm` Sandbox to Ready, suspends and resumes
-it in PR CI, KubeVirt's and Kyverno's images imported from Bazel-pulled layouts
-([timings](../x/k3s_env/README.md#vm-lifecycle-timings-2026-10-21)).
-
-Remaining: give the VM cases (`test_vm_sandbox`, `test_vm_workspace_ownership`, the
-`test_suspend_resume` and `test_storage_deployed` VM cases) `_k3s` targets on the VM rendering, in PR
-CI like the other `_k3s` targets; then delete `test_vm_lifecycle`.
-
-Exit: the VM cases pass on k3s in PR CI.
-
 ### `TESTING_ROLLOUT_ROLE` — what replaces testing as the stage before staging
 
 **Decision.** Testing is where risky rollouts land before staging (operator, 2026-10-12: testing
@@ -2018,7 +1999,7 @@ down is better than staging down). Recommendation:
 
 ### `TESTING_ENVIRONMENT_RETIRE` — retire `agentplane-testing`
 
-**Blocked on `K3S_VM_ACCEPTANCE`, `TESTING_ROLLOUT_ROLE` and the first model backend on k3s.**
+**Blocked on `TESTING_ROLLOUT_ROLE` and the first model backend on k3s.**
 Three PRs: recipes, docs and RBAC that name testing; the Flux kustomization, generated manifests,
 DNS and routes; the testing databases and volumes, a data drop that waits for the operator's word.
 `test_thread_latency` and `test_ollama_routes` remain staging-only manual checks. Preserve staging.
@@ -2039,8 +2020,7 @@ flowchart LR
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s, section 14] --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
     K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
-    K3S_VM_ACCEPTANCE[Candidate: VM scenarios on the emulated k3s stack, section 14] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
-    RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE
+    RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
 ```
 
 ### `FAKE_CLIENTS_TO_ENVTEST` — the remaining fake API clients move to envtest
@@ -2086,7 +2066,7 @@ targets, docs, workflows).
 
 ### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
-**Blocked on `K3S_VM_ACCEPTANCE` and `RUNNER_LAYERING_VM`.** The KubeVirt emulation work adds a Bazel-built test
-guest under `x/k3s_env/guest`, a second copy of `runner/vm.nix`'s guest contract (disks by serial, workspace format,
-cgroup delegation, Codex path). Delete it once the production guest is Bazel-built and boots in seconds under
+**Blocked on `RUNNER_LAYERING_VM`.** The `_k3s_vm` targets boot a Bazel-built test guest under `x/k3s_env/guest`, a
+second copy of `runner/vm.nix`'s guest contract (disks by serial, workspace format, cgroup delegation, harness and
+tool paths). Delete it once the production guest is Bazel-built and boots in seconds under
 emulation, and point the k3s VM scenarios at that guest.

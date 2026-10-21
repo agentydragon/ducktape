@@ -108,28 +108,30 @@ or expensive rerun were needed. New quiesce behavior still needs its own focused
 
 ## VM Sandboxes
 
-[`test_vm_lifecycle`](test_vm_lifecycle.py) creates a Sandbox on the `runner-vm` template, waits for
-Ready, suspends it and resumes it. Its stack is rendered with VM Sandboxes (`rendered/none-vm.json`), so
-[`vm_sandboxes.py`](vm_sandboxes.py) installs production's KubeVirt release with `useEmulation` (QEMU
-TCG; the executor has no `/dev/kvm`) and Kyverno's admission controller, which adds the egress relay to
-each launcher Pod as in production. The fixture applies once KubeVirt's VirtualMachine API is served:
-the Sandbox Controller looks for it only at start.
+An acceptance scenario's `_k3s_vm` target ([acceptance README](../../acceptance/README.md)) runs on a
+stack rendered with VM Sandboxes (`rendered/local-model-vm.json`), so [`vm_sandboxes.py`](vm_sandboxes.py)
+installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
+and Kyverno's admission controller, which adds the egress relay to each launcher Pod as in
+production. The fixture applies once KubeVirt's VirtualMachine API is served: the Sandbox Controller
+looks for it only at start. The stack writes KubeVirt's and Kyverno's view of the VMs, each guest's
+serial console and any image a Pod pulled from a registry to `test.outputs/vm-sandboxes.txt`.
 
 The template boots the [test guest](guest/BUILD.bazel) instead of production's NixOS image, which sits
 in a private registry and would boot for minutes without KVM: a Debian cloud kernel that KubeVirt boots
 directly, a busybox initramfs that mounts an erofs root under a tmpfs overlay, and an init that gives
 the runner what [`vm.nix`](../../runner/vm.nix) does. The runner comes from the production runner disk,
-as in a Pod; Codex is pinned in the root disk.
+as in a Pod; both harnesses, Git and `findmnt` are pinned in the root disk.
 
 KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
 imported before their releases are applied, so no Pod pulls them; the releases roll out while the
 stack's own images import.
 
-### VM lifecycle timings, 2026-10-21
+### VM stack timings, 2026-10-21
 
-With those images imported ([invocation](https://app.buildbuddy.io/invocation/0929e52f-9074-4bf7-8565-7ee4c7720432)),
-the test took 350 s of action time; pulling them at run time, 405 s and 429 s. Temporary markers in
-`stack.py`, not committed, timed the stack from k3s's start:
+Booting, suspending and resuming one VM Sandbox with those images imported
+([invocation](https://app.buildbuddy.io/invocation/0929e52f-9074-4bf7-8565-7ee4c7720432)) took 350 s
+of action time; pulling them at run time, 405 s and 429 s. Temporary markers in `stack.py`, not
+committed, timed the stack from k3s's start:
 
 | Seconds after k3s starts                                       |   s |
 | -------------------------------------------------------------- | --: |
@@ -143,7 +145,12 @@ Importing the two sets at once took 169 s and 202 s, against 58 s and 78 s one a
 ([invocation](https://app.buildbuddy.io/invocation/a7f1a8e7-b891-4495-9252-a4327412d10b); that worker
 was slower throughout, k3s up at 47 s).
 
-In the run with pulls ([invocation](https://app.buildbuddy.io/invocation/989d9e78-957b-4e0c-8f54-717e5f679e59)),
+The `_k3s_vm` targets in one invocation ([invocation](https://app.buildbuddy.io/invocation/b1635c1d-db13-4262-842f-cf07b912d07b)),
+each on its own worker: `test_vm_sandbox_k3s_vm` (two VM Sandboxes, a turn on each) 483 s,
+`test_storage_deployed_k3s_vm` 492 s, `test_suspend_resume_k3s_vm` 597 s; the Pod case,
+`test_suspend_resume_k3s`, 216 s.
+
+In a run with pulls ([invocation](https://app.buildbuddy.io/invocation/989d9e78-957b-4e0c-8f54-717e5f679e59)),
 create, Ready, suspend, resume and Ready again took under 2 minutes; the resumed VM was running 14 s
 after its VMI was created. In the run before it, a Sandbox's VM was scheduled 18 s after creation and
 running 3 s later; the emulated guest reached `/init` at 6 s, and the runner started about 14 s after
@@ -716,7 +723,7 @@ remaining OCI/containerd import and unpack cost, while keeping lifecycle asserti
 unchanged. Do not use this one pair to justify moving the expensive workflow into general CI.
 
 The separate workflow runs only the model-free lifecycle target. Its bare-cluster fixtures do not
-provide Cilium or OIDC/Dex coverage (KubeVirt runs only in `test_vm_lifecycle`), and this target is not
+provide Cilium or OIDC/Dex coverage (KubeVirt runs only in the `_k3s_vm` targets), and this target is not
 Dispatcher multi-replica acceptance. Keep the `agentplane-testing` environment and fixture/spike
 cleanup as separate future work until those coverage gaps have an explicit owner and replacement.
 

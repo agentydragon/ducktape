@@ -6,7 +6,7 @@ load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # The k3s fixture's VM guest: a Debian cloud kernel booted directly by KubeVirt with a busybox
-# initramfs, and an erofs root disk holding Codex and the init that gives the runner what
+# initramfs, and an erofs root disk holding both harnesses and the init that gives the runner what
 # agentplane/runner/vm.nix does. The runner itself comes from the fixture's runner disk.
 
 package(default_visibility = ["//agentplane/x/k3s_env:__subpackages__"])
@@ -110,6 +110,7 @@ pkg_tar(
     deps = [
         ":root_etc",
         ":root_init",
+        "//agentplane/x/k3s_env:runner_claude_harness",
         "//agentplane/x/k3s_env:runner_codex_harness",
         "@trixie_vm_guest//:flat",
     ],
@@ -144,10 +145,12 @@ oci_layout_rloc(
     name = "vm_guest_boot_layout",
     testonly = True,
     image = ":boot_image",
+    visibility = ["//agentplane/acceptance:__pkg__"],
 )
 
 oci_layout_rloc(
     name = "vm_guest_root_layout",
     testonly = True,
     image = ":root_image",
+    visibility = ["//agentplane/acceptance:__pkg__"],
 )

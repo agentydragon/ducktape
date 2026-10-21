@@ -611,14 +611,17 @@ apt.install(
     ],
 )
 
-# The k3s fixture's VM test guest (agentplane/x/k3s_env/guest): busybox for its init, and what the init
-# runs to format and hand over the workspace.
+# The k3s fixture's VM test guest (agentplane/x/k3s_env/guest): busybox for its init, what the init
+# runs to format and hand over the workspace, and Git and `findmnt` (util-linux), which VM acceptance
+# scenarios run in Session setup.
 apt.install(
     dependency_set = "trixie_vm_guest",
     packages = [
         "acl",
         "busybox-static",
         "e2fsprogs",
+        "git",
+        "util-linux",
     ],
     suites = [
         "trixie",

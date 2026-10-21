@@ -36,6 +36,7 @@ from agentplane.testing import tls
 from agentplane.x.k3s_env import rendered_fixture, vm_sandboxes
 from agentplane.x.k3s_env.bootstrap import Bootstrap
 from util.bazel.runfiles import get_required_path
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
 
@@ -445,3 +446,7 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
         print("memory:", run("free", "-m"))
         yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         print(k3s.report(fixture.namespace))
+        if fixture.vm_sandboxes:
+            (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(
+                vm_sandboxes.report(k3s.kubectl, fixture.namespace)
+            )

@@ -1,17 +1,19 @@
 #!/usr/bin/busybox sh
 # The test guest's init on its root disk. It gives the runner what agentplane/runner/vm.nix does, without
 # systemd: the disks vm.nix mounts by serial, the workspace formatted on first use, masquerade networking,
-# busybox's tools and Codex in the NixOS system profile the runner puts on PATH, and the cgroup systemd
-# delegates to `agentplane-runner.service` with the runner in its `runner` subgroup. It restarts the
-# runner when it exits. vm.nix's sandboxing of the runner unit (capability bounding set, read-only system)
-# is absent.
+# busybox's tools, both harnesses, Git and `findmnt` in the NixOS system profile the runner puts on PATH,
+# and the cgroup systemd delegates to `agentplane-runner.service` with the runner in its `runner`
+# subgroup. It restarts the runner when it exits. vm.nix's sandboxing of the runner unit (capability
+# bounding set, read-only system) is absent.
 set -eux
 profile=/run/current-system/sw/bin
 export PATH=$profile:/usr/sbin:/usr/bin
 busybox mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
 busybox mkdir -p $profile
 busybox --install -s $profile
+ln -s /opt/harnesses/external/+http_archive+claude_code_cli_linux_x64/claude $profile/claude
 ln -s /opt/harnesses/external/+http_archive+agentplane_codex_cli_linux_x64/bin/codex $profile/codex
+ln -s /usr/bin/git /usr/bin/findmnt $profile/
 mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /tmp
 mount -t tmpfs -o mode=0700 tmpfs /root
 mount -t cgroup2 cgroup2 /sys/fs/cgroup
