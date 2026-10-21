@@ -18,17 +18,25 @@ _SPIKE_TAGS = K3S_TAGS + [
 # The runner Pod's tools image. It keeps Debian's shell utilities for bootstrap and process-lifecycle
 # fixtures, plus curl and git (the `trixie_e2e` package set) for scripted commands; the Nix-built
 # production image supplies the full toolset. As in production, the runner is not in it: the Pod runs
-# it from the volume of the production runner disk image, whose bin ends PATH so the harnesses find
-# `agentplane` (agentplane/runner/image.nix).
+# it from the volume of the production runner disk image.
 oci_image(
     name = "runner_image",
     base = "@debian_trixie_slim_linux_amd64",
-    env = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/run/agentplane/runner/bin"},
     tars = [
         "//third_party/debian_slim:cacerts",
         "@trixie_e2e//:flat",
+        ":runner_cli_link",
     ],
     user = "1000:1000",
+)
+
+# **Deviation:** production appends the runner disk's bin to PATH (agentplane/runner/image.nix). Here
+# `agentplane` is linked into /usr/bin instead, because Codex runs commands in a login shell and
+# Debian's /etc/profile resets PATH.
+pkg_tar(
+    name = "runner_cli_link",
+    package_dir = "/usr/bin",
+    symlinks = {"agentplane": "/run/agentplane/runner/bin/agentplane"},
 )
 
 pkg_tar(
