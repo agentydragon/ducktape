@@ -173,8 +173,19 @@ class _ResumeRun:
         for harness, agent in self.agents.items():
             self.suspended_history[harness] = await _history(self.client, agent.thread_id, completed_turns=None)
             _assert_prefix(self.seeded_history[harness], self.suspended_history[harness])
+            # A lost response is retried from the archive: no runner answers while the Sandbox is suspended.
+            (seed,) = [entry for entry in self.seeded_history[harness] if entry.event.HasField("command_admitted")]
+            command = seed.event.command_admitted.command
+            assert (
+                await self.client.submit_input(agent.thread_id, command.command_id, command.submit_input.text) == seed
+            )
         self.checks.extend(
-            ["seed_turns_completed", "storage_volumes_retained_during_suspend", "seed_history_prefix_retained"]
+            [
+                "seed_turns_completed",
+                "storage_volumes_retained_during_suspend",
+                "seed_history_prefix_retained",
+                "seed_input_retry_answered_from_archive",
+            ]
         )
         self.save()
         await self.client.resume_sandbox(self.view.name)

@@ -7,6 +7,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:exclude test_session_instructions.py
 # gazelle:exclude test_storage_deployed.py
 # gazelle:exclude test_suspend_resume.py
+# gazelle:exclude test_thread_stream.py
 
 package(
     default_testonly = True,
@@ -192,6 +193,33 @@ acceptance_test(
         "//agentplane/runner:harness",
         "//agentplane/testing:scripted_model",
         "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+# A browser's view of a Thread: two Sandboxes and four turns per harness, `eternal` as for
+# `test_session_instructions`.
+acceptance_test(
+    name = "test_thread_stream",
+    timeout = "eternal",
+    srcs = ["test_thread_stream.py"],
+    k3s = "scripted",
+    deps = [
+        ":agent",
+        ":conftest",
+        ":scripted_upstream",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
+        "//agentplane/app:sandbox_models",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/testing:scripted_model",
+        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -42,6 +42,13 @@ model only. The k3s fixture configures that preset (`launch_preset.py`) in place
 Initial session Open uses a 120-second retry budget for HTTP 503, retaining the same session id;
 refusals and other server failures are not startup readiness signals.
 
+## Thread stream
+
+`test_thread_stream` is a browser's view of a Thread with the scripted model: every tab follows one
+archived log by event id, a reconnect resumes after its `Last-Event-ID`, a command id answers only
+the command it first named, and turns nobody watches are archived, a failed one included, with the
+next input its own turn. Its scripted cases run as `test_thread_stream_k3s`.
+
 ## Thread latency
 
 `test_thread_latency` times a one-word turn at low reasoning effort and holds what agentplane adds
@@ -93,7 +100,8 @@ incarnation changes, the sealed archived history remains byte-for-byte unchanged
 `JournalReopened` continues its source sequence before the resumed native turn. It also checks that
 Open reserves a Session without a harness process, that a completed turn has a ready process
 assignment, and that the new runner retains dormant Sessions and their native IDs before the next
-input. The resumed Pod Threads must send the model their own seeded token and not the other's; the
+input. While the Sandbox is suspended, an exact retry of each seed input is answered from the archive. The
+resumed Pod Threads must send the model their own seeded token and not the other's; the
 VM Thread's model must recall its token. Intentional delta settlement may leave gaps in archive
 cursors; retained entries remain ordered and unique.
 
