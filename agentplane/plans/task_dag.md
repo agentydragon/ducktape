@@ -250,8 +250,7 @@ the remaining contracts below still require review before implementation.
 ```mermaid
 flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
-    SESSION_ACCESS_RULES_DESIGN[Decision: Session-access rule schema]
-    SESSION_ACCESS_RULES[Blocked: shared Session-access rules]
+    SESSION_ACCESS_RULES[Candidate: shared Session-access rules]
     THREAD_READ_POLICY_DESIGN[Held decision: remaining history read contract]
     SANDBOX_INBOX_TAGS[Blocked: inbox tags on the Sandbox]
     HISTORY_SANDBOX_RECORD[Blocked: History's Sandbox record and history tags]
@@ -270,9 +269,6 @@ flowchart TD
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
     MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
-    SESSION_ACCESS_RULES_DESIGN --> SESSION_ACCESS_RULES
-    SESSION_ACCESS_RULES_DESIGN --> THREAD_READ_POLICY_DESIGN
-    SESSION_ACCESS_RULES_DESIGN --> AGENT_MESSAGING_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     SESSION_ACCESS_RULES --> SANDBOX_INBOX_TAGS
     SESSION_ACCESS_RULES --> THREAD_READ_POLICY
@@ -311,60 +307,35 @@ and which controls must remain unavailable. Native integration itself stays froz
 native children from the messaging and access model.
 
 This gates `THREAD_CREATE_POLICY` and `AGENT_LAUNCH_POLICY_DESIGN`. Messaging and history reads
-need only the rule schema in `SESSION_ACCESS_RULES_DESIGN`, so creator, manager and parent semantics
-do not hold them up. The app's existing auth path may remain a special case for v1. Reducing that
+need only the [Session-access rule schema](multiagent_communication.md#schema-for-the-first-session-access-rule),
+so creator, manager and parent semantics do not hold them up. The app's existing auth path may remain a special case for v1. Reducing that
 special handling is optional, separately reviewed follow-up work and does not gate multiagent
 implementation.
 
-### `SESSION_ACCESS_RULES_DESIGN` — Session-access rule schema
+### `SESSION_ACCESS_RULES` — shared Session-access rule support
 
-**Decision; the wildcard question and same-namespace direct targets are settled, and [the schema
-draft](multiagent_communication.md#draft-schema-for-the-first-session-access-rule) awaits the operator's
-review. Gates `SESSION_ACCESS_RULES`, `THREAD_READ_POLICY_DESIGN` and `AGENT_MESSAGING_DESIGN`.**
-Direct targets are same-namespace in v1 (operator, 2026-10-18 UTC: he needs no way to name another
-namespace; the Notification service rejects one anyway). Approval of the draft unblocks
-`SESSION_ACCESS_RULES`. The draft covers the concrete rule schema, administrative RBAC and freshness
-settings under the agreed
-[policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness), without
-requiring an auth-engine migration. The first schema has direct Sandbox and `allSandboxes` targets
-only. Collections are tags on the Sandbox, with no membership CRs (operator, 2026-10-19 to 2026-10-20
-UTC; [design](sandbox_tags.md)); their target forms arrive with `SANDBOX_INBOX_TAGS` and
-`HISTORY_SANDBOX_RECORD`.
-
-**Reads not bundled with send (operator, 2026-10-18 UTC, "probably"):** the first schema's rule carries
-`append_inbox` only. `list_sessions` and `read_transcript` join it or get their own rule type when
-`THREAD_READ_POLICY_DESIGN` reopens, and the target and watch code is shared either way.
+**Candidate; the [rule schema](multiagent_communication.md#schema-for-the-first-session-access-rule) is
+reviewed (operator, 2026-10-21 UTC).** Add the `session_access` rule type to the Go `Rule` in
+`policy/api/v1alpha1`, whose first operation is Session-inbox append, and implement shared
+rule-reading/evaluation code for API owners. Factor that code out of the egress policy index and informer
+when a service other than egress needs it (operator, 2026-10-21 UTC: "that refactor sounds good to me when
+they end up needing it"); the Notification service, which is Go, is the first. Listing and transcript reads
+are not bundled into the rule (operator, 2026-10-18 UTC, "probably"): they join it or get their own rule
+type when `THREAD_READ_POLICY_DESIGN` reopens, and reuse the shared code. Reuse existing SA
+authentication and PolicyBindings. Match the append operation against direct Sandbox targets and an
+all-Sandboxes target, without changing recorded Session associations when a Sandbox name is reused.
+Implement independent watched policy views, initial-sync and configurable freshness checks, and
+asynchronous revocation under the agreed contract; no global replica acknowledgement is required.
+Preserve live bundle updates, existing binding lifecycle and additive overlapping grants. Cover mixed
+static/runtime SAs, allowed/denied operations and targets, overlap, initial sync, stale watches,
+independently advancing replicas and Sandbox recreation under the same name. Backend enforcement and
+retained-history semantics remain in their respective nodes.
 
 Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads. OAuth
 callers reach the backends from an Action box whose egress substitutes the SA's projected
 token ([agreed route](multiagent_communication.md#oauth-callers)); no OAuth admission path is added to
 other backends. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and
 Connection representation/storage changes are outside this work.
-
-**Wildcard target agreed (operator, 2026-10-17 UTC):** v1 includes an `allSandboxes` target beside
-direct Sandboxes and tags, for permissions like "send messages to any Sandbox" and "read
-from any Session"; a Session's scope is its Sandbox, so both are one target form. It matches every
-Sandbox in the namespace of the PolicySet holding the rule, never the whole cluster: a Sandbox
-Controller reconciles one namespace (its `namespace` setting), and a Sandbox in another namespace is
-out of v1's reach, since direct targets are same-namespace too. It covers Sandboxes created later and needs no tags, and History matches it on the
-recorded namespace, so it keeps working after a Sandbox is deleted. Operations stay independent
-(read-any does not imply send-any) and only whoever writes PolicySets can grant it. The namespace match
-is the design's reading of "the controller's scope"; the schema draft confirms or replaces it.
-
-### `SESSION_ACCESS_RULES` — shared Session-access rule support
-
-**Blocked on the reviewed schema in `SESSION_ACCESS_RULES_DESIGN`.** Extend PolicySet schemas with the
-tentative Session-access rule, whose first operation is Session-inbox append, and implement shared
-rule-reading/evaluation code for API owners as a Go package factored out of the egress policy index and
-informer, which the Notification and History services (both Go) can use; listing and transcript reads
-are not bundled into it and reuse the shared code once they have a rule. Reuse existing SA authentication and PolicyBindings. Match
-the append operation against direct Sandbox targets and an all-Sandboxes target, without changing
-recorded Session associations when a Sandbox name is reused. Implement independent watched policy views,
-initial-sync and configurable freshness checks, and asynchronous revocation under the agreed contract;
-no global replica acknowledgement is required. Preserve live bundle updates, existing binding lifecycle
-and additive overlapping grants. Cover mixed static/runtime SAs, allowed/denied operations and targets,
-overlap, initial sync, stale watches, independently advancing replicas and Sandbox recreation under the
-same name. Backend enforcement and retained-history semantics remain in their respective nodes.
 
 ### `SANDBOX_INBOX_TAGS` — inbox tags on the Sandbox
 
@@ -505,7 +476,7 @@ means no record. Read receipts and notice delivery stage are not v1.
 OAuth-bound SAs can be senders; v1 does not provide inboxes for externally running agents.
 Distinguish accepted, noticed, admitted, handled and task-success evidence. Retention, limits and
 deduplication follow the existing inbox, and [the peer message path](multiagent_communication.md#peer-message-path)
-drafts the recipient states. Reading a transcript grants neither send nor ack.
+sets the recipient states. Reading a transcript grants neither send nor ack.
 
 V1 retains notice batching in Notifications and wake/delivery in Dispatcher. A Sandbox's existing
 `spec.wakeOnSend` policy applies to any admitted message, including mixed-source notices; a suspended

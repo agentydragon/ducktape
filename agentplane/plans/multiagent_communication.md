@@ -82,7 +82,7 @@ independent overlapping grants remain.
 **`allSandboxes` target agreed with the operator, 2026-10-17:** a rule may target every Sandbox in the
 namespace of the PolicySet holding it, never the whole cluster; the Sandbox Controller likewise
 reconciles a single namespace. A Sandbox in another namespace is out of v1's reach, since direct
-targets are same-namespace too ([draft schema](#draft-schema-for-the-first-session-access-rule)). The target
+targets are same-namespace too ([schema](#schema-for-the-first-session-access-rule)). The target
 covers later Sandboxes without tags, and the backends match it on the recorded Sandbox namespace,
 so it keeps working after a Sandbox is deleted. It grants only the operations its rule lists:
 read-any does not imply send-any.
@@ -310,10 +310,9 @@ server ends on schedule counts as a completed cycle, and a view is refused after
 Select the watch period during implementation; no global replica-acknowledgement barrier is required
 for v1.
 
-### Draft schema for the first Session-access rule
+### Schema for the first Session-access rule
 
-**Drafted on the agreed pieces above for the operator's review; nothing here is selected until
-then.** The rule is a new `type` of the `Rule` in `policy/api/v1alpha1`, beside `egress` and
+**Reviewed with the operator, 2026-10-21 UTC.** The rule is a new `type` of the `Rule` in `policy/api/v1alpha1`, beside `egress` and
 `action_auto_approve`: snake_case `type`, camelCase fields, targets named explicitly and never
 selected. The CRD regenerates from that Go type, whose validation rules keep each type's fields off the
 others. Its one operation for now is `append_inbox`:
@@ -343,8 +342,9 @@ membership objects.
   its own condition on each binding that names the set, as egress does with `EgressReady`.
 - **Shared reader.** Notification (sends) and History (reads, once they reopen) are Go services, so the
   reading is a Go package. Egress already keeps an index of sets and bindings with cycle-based
-  freshness (`egress/policy`, `egress/informer`), but only for its own rules. The draft factors the
-  shared part out of that code and has egress use it, so a copy does not grow beside it.
+  freshness (`egress/policy`, `egress/informer`), but only for its own rules. The shared part is
+  factored out of that code, with egress using the result, when the first other service needs it
+  (operator, 2026-10-21 UTC), so a copy does not grow beside it.
 - **Administration.** Rule and binding writes go through ordinary RBAC on `policysets` and
   `policybindings`. No Sandbox or agent ServiceAccount gets them, and a send grant carries none. The
   Notification service gets a namespaced Role with `get`, `list` and `watch` on `policysets` and
@@ -538,7 +538,7 @@ its first push. History reads resolve a Session to its recorded Sandbox because 
 record. The operator accepts this for v1 and may revisit addressing with the planned Notification
 Service refactors.
 
-**Recipient states, drafted for the operator's review:** a send to a suspended or offline Sandbox is
+**Recipient states, reviewed with the operator, 2026-10-21 UTC:** a send to a suspended or offline Sandbox is
 accepted and noticed per `spec.wakeOnSend`. A send to a Sandbox outside the service's namespace, a
 missing one, or one whose UID differs from a given one is refused as not found and never retargeted,
 as the subscription API does.

@@ -83,7 +83,7 @@ stopped instead, with `spec.wakeOnSend: false`, and stays a CR.
 ## Steps
 
 1. The first `session_access` schema has direct and `allSandboxes` targets only, with no membership
-   CR (`SESSION_ACCESS_RULES_DESIGN`, then `SESSION_ACCESS_RULES`).
+   CR (`SESSION_ACCESS_RULES`).
 2. Inbox tags and their send target (`SANDBOX_INBOX_TAGS`).
 3. After `HISTORY_SANDBOX_UID`, in the Go History Service: history tags and History's record
    (`HISTORY_SANDBOX_RECORD`).
