@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import json
 
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.model import MODEL
@@ -28,17 +29,29 @@ class CodexModel(ScriptedModel[ResponsesRequest]):
             _exchange=exchange,
             model=request.model,
             effort=(request.reasoning_config or {}).get("effort"),
-            system_text="\n".join([request.instructions, *(message.text for message in request.messages("developer"))]),
+            system_text="\n".join(
+                text
+                for text in [request.instructions, *(message.text for message in request.messages("developer"))]
+                if text is not None
+            ),
             user_texts=[message.text for message in request.messages("user")],
             assistant_texts=[message.text for message in request.messages("assistant")],
             reasoning_texts=[part.text for item in request.reasoning for part in item.summary],
-            tool_outputs=[ToolOutput(output.call_id, output.output) for output in request.function_call_outputs],
-            tool_calls=[call.call_id for call in request.function_calls],
+            tool_outputs=[
+                *(ToolOutput(output.call_id, output.output) for output in request.function_call_outputs),
+                *(ToolOutput(output.call_id, output.text) for output in request.custom_tool_call_outputs),
+            ],
+            tool_calls=[
+                *(call.call_id for call in request.function_calls),
+                *(call.call_id for call in request.custom_tool_calls),
+            ],
             streaming=request.stream,
         )
 
-    def stream(self, items: list[Item]) -> tuple[SseEvent, ...]:
-        return responses_sse.response_stream([_item(item) for item in items], model=self.model).events
+    def stream(self, request: ModelRequest[ResponsesRequest], items: list[Item]) -> tuple[SseEvent, ...]:
+        return responses_sse.response_stream(
+            [_item(item, code_mode=request.native.code_mode) for item in items], model=self.model
+        ).events
 
     def opened_stream(self) -> tuple[SseEvent, ...]:
         return (
@@ -48,11 +61,15 @@ class CodexModel(ScriptedModel[ResponsesRequest]):
         )
 
 
-def _item(item: Item) -> responses_sse.Item:
+def _item(item: Item, *, code_mode: bool) -> responses_sse.Item:
     match item:
         case Text(text):
             return responses_sse.Message(text)
         case Reasoning(text):
             return responses_sse.Reasoning(text, next(_encrypted))
+        case ShellCall(call_id, command) if code_mode:
+            # Code mode offers no shell tool of its own: a script runs the nested one and emits its output.
+            script = f"const result = await tools.exec_command({json.dumps({'cmd': command})});\ntext(result.output);"
+            return responses_sse.CustomToolCall(call_id, "exec", script)
         case ShellCall(call_id, command):
             return responses_sse.FunctionCall(call_id, "exec_command", {"cmd": command})

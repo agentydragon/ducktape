@@ -254,6 +254,8 @@ the scenario under test; a bridge that turns any of these on must widen the rost
   Claude `--tools` omits `WebSearch`, `WebFetch`.
 - **Code mode**: avoided by using a model id outside Codex's catalog (`MODEL = "agentplane-test-model"`);
   a catalog id would replace the function-call tools with one JS `exec` tool.
+  [Runner code mode](../../runner/test_codex_code_mode.py) serves GPT-6 Luna's bundled entry instead,
+  and the scripted Codex model answers a shell call there with an `exec` script.
 - **Session title generation**: Claude `--name` preset suppresses the separate title model call;
   Codex threads start `ephemeral` unless a test resumes.
 - **Prompt suggestions**: Claude `--prompt-suggestions=false` suppresses the post-turn model call.

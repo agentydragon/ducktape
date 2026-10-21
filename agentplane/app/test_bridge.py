@@ -761,7 +761,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
                 recovered_tool.state["recovery"] == event_pb2.RECOVERY_DISPOSITION_RETAINED
             )
             assert marker.read_text().splitlines() == [token]
-            await exchange.send(*model.stream([Text("COMPLETED_TOOL_RECOVERY_DONE")]))
+            await exchange.send(*model.stream(request, [Text("COMPLETED_TOOL_RECOVERY_DONE")]))
         await _stored_events(
             http,
             thread_id,

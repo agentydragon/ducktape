@@ -30,7 +30,16 @@ class FunctionCall:
     namespace: str | None = None
 
 
-Item = Reasoning | Message | FunctionCall
+@dataclass(frozen=True)
+class CustomToolCall:
+    """A freeform tool call: `input` is the raw text the tool takes, such as code mode's `exec` JavaScript."""
+
+    call_id: str
+    name: str
+    input: str
+
+
+Item = Reasoning | Message | FunctionCall | CustomToolCall
 
 # Codex keys items and responses by id, so every scripted one needs a fresh id.
 _ids = itertools.count(1)
@@ -80,6 +89,15 @@ def _completed_item(item: Item) -> dict[str, Any]:
                 "name": name,
                 "arguments": json.dumps(arguments),
                 **({"namespace": namespace} if namespace is not None else {}),
+            }
+        case CustomToolCall(call_id, name, input_text):
+            return {
+                "id": f"ctc_test_{next(_ids)}",
+                "type": "custom_tool_call",
+                "status": "completed",
+                "call_id": call_id,
+                "name": name,
+                "input": input_text,
             }
 
 
@@ -193,6 +211,32 @@ def _item_packets(emitter: _Emitter, index: int, item: Item) -> dict[str, Any]:
                     "item_id": item_id,
                     "output_index": index,
                     "arguments": json.dumps(arguments),
+                }
+            )
+        case CustomToolCall(call_id, _, input_text):
+            emitter.emit(
+                {
+                    "type": "response.output_item.added",
+                    "output_index": index,
+                    "item": {**done, "status": "in_progress", "input": ""},
+                }
+            )
+            emitter.emit(
+                {
+                    "type": "response.custom_tool_call_input.delta",
+                    "item_id": item_id,
+                    "call_id": call_id,
+                    "output_index": index,
+                    "delta": input_text,
+                }
+            )
+            emitter.emit(
+                {
+                    "type": "response.custom_tool_call_input.done",
+                    "item_id": item_id,
+                    "call_id": call_id,
+                    "output_index": index,
+                    "input": input_text,
                 }
             )
     emitter.emit({"type": "response.output_item.done", "output_index": index, "item": done})

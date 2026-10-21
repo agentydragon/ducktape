@@ -53,7 +53,7 @@ class ClaudeModel(ScriptedModel[MessagesRequest]):
             streaming=request.stream,
         )
 
-    def stream(self, items: list[Item]) -> tuple[SseEvent, ...]:
+    def stream(self, request: ModelRequest[MessagesRequest], items: list[Item]) -> tuple[SseEvent, ...]:
         return anthropic_sse.message_stream([_block(item) for item in items], model=self.model).events
 
     def opened_stream(self) -> tuple[SseEvent, ...]:

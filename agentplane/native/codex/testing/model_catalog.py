@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
+
+from more_itertools import one
+
+from util.bazel.runfiles import get_required_path
+
+# The pinned Codex's own catalog (`codex debug models --bundled`), which LLM ingress serves ChatGPT routes from.
+_BUNDLED = "_main/cluster/cdk8s/agentplane/codex_upstream_models.json"
 
 
 def usable_window(context_window: int) -> int:
@@ -14,7 +22,7 @@ def entry(slug: str, *, context_window: int) -> dict[str, Any]:
     """The `ModelInfo` Codex uses for a slug it has no entry for, with `context_window`.
 
     Codex refuses a whole catalog when an entry lacks instruction text, and a bundled model's entry switches
-    it to code mode; this keeps the classic function-call tools the scripted models answer.
+    it to code mode; this keeps the classic function-call tools.
     """
     return {
         "slug": slug,
@@ -32,3 +40,9 @@ def entry(slug: str, *, context_window: int) -> dict[str, Any]:
         "max_context_window": context_window,
         "experimental_supported_tools": [],
     }
+
+
+def bundled(model: str, *, slug: str) -> dict[str, Any]:
+    """The pinned Codex's bundled entry for `model`, served as `slug` the way LLM ingress serves a ChatGPT route."""
+    models = json.loads(get_required_path(_BUNDLED).read_text())["models"]
+    return {**one(entry for entry in models if entry["slug"] == model), "slug": slug}

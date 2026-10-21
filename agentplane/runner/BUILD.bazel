@@ -190,6 +190,36 @@ py_test(
 )
 
 py_test(
+    name = "test_codex_code_mode",
+    size = "medium",
+    srcs = ["test_codex_code_mode.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harness the runner drives
+    ],
+    exec_properties = NATIVE_RUNNER_EXEC_PROPERTIES,
+    target_compatible_with = [
+        # keep: the pinned native harness is Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:model_catalog",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner/testing:driver",
+        "//agentplane/runner/testing:events",
+        "//agentplane/testing:scripted_model",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_codex_catalog",
     size = "medium",
     srcs = ["test_codex_catalog.py"],

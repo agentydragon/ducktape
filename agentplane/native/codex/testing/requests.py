@@ -52,6 +52,26 @@ class FunctionCallOutput(BaseModel):
     output: str
 
 
+class CustomToolCall(BaseModel):
+    """A freeform tool call, such as code mode's `exec`, whose input is raw text."""
+
+    type: Literal["custom_tool_call"]
+    call_id: str
+    name: str
+    input: str
+
+
+class CustomToolCallOutput(BaseModel):
+    type: Literal["custom_tool_call_output"]
+    call_id: str
+    # Code mode returns a script's result as content items: a status header, then what the script emitted.
+    output: str | list[InputText]
+
+    @property
+    def text(self) -> str:
+        return self.output if isinstance(self.output, str) else "".join(part.text for part in self.output)
+
+
 class SummaryText(BaseModel):
     type: Literal["summary_text"]
     text: str
@@ -63,15 +83,33 @@ class Reasoning(BaseModel):
     encrypted_content: str | None = None
 
 
-InputItem = Annotated[
-    InputMessage | AgentMessage | FunctionCall | FunctionCallOutput | Reasoning, Field(discriminator="type")
-]
-
-
 class Tool(BaseModel):
     type: str
-    # Built-in tools (`web_search`) carry only a type; function tools carry a name.
+    # Built-in tools (`web_search`) carry only a type; function, custom and namespace tools carry a name.
     name: str | None = None
+    # A `namespace` tool's members.
+    tools: list[Tool] | None = None
+
+
+class AdditionalTools(BaseModel):
+    """The tools a Responses Lite request declares as its first input item, in place of the top-level `tools`."""
+
+    type: Literal["additional_tools"]
+    role: Literal["developer"]
+    tools: list[Tool]
+
+
+InputItem = Annotated[
+    AdditionalTools
+    | InputMessage
+    | AgentMessage
+    | FunctionCall
+    | FunctionCallOutput
+    | CustomToolCall
+    | CustomToolCallOutput
+    | Reasoning,
+    Field(discriminator="type"),
+]
 
 
 class ClientMetadata(BaseModel):
@@ -81,18 +119,39 @@ class ClientMetadata(BaseModel):
 
 
 class ResponsesRequest(BaseModel):
+    """A Responses request. A catalog entry with `use_responses_lite` (the bundled GPT-6 ones) moves the base
+    instructions into a developer message and the tools into an `additional_tools` item, so the request carries
+    neither top-level `instructions` nor `tools`."""
+
     reasoning_config: dict[str, str] | None = Field(default=None, alias="reasoning")
     model: str
-    instructions: str
+    instructions: str | None = None
     input: list[InputItem]
-    tools: list[Tool]
+    tools: list[Tool] | None = None
     stream: bool
     prompt_cache_key: str
     client_metadata: ClientMetadata
 
     @property
+    def declared_tools(self) -> list[Tool]:
+        return [
+            *(self.tools or []),
+            *(tool for item in self.input if isinstance(item, AdditionalTools) for tool in item.tools),
+        ]
+
+    @property
     def tool_names(self) -> list[str]:
-        return [tool.name or tool.type for tool in self.tools]
+        return [tool.name or tool.type for tool in self.declared_tools]
+
+    @property
+    def code_mode(self) -> bool:
+        """Whether Codex offers code mode's `exec`: one freeform tool running model-written JavaScript that calls
+        the other tools (`await tools.exec_command(...)`)."""
+        return any(
+            member.type == "custom" and member.name == "exec"
+            for tool in self.declared_tools
+            for member in tool.tools or [tool]
+        )
 
     def messages(self, role: str) -> list[InputMessage]:
         return [item for item in self.input if isinstance(item, InputMessage) and item.role == role]
@@ -108,6 +167,14 @@ class ResponsesRequest(BaseModel):
     @property
     def function_call_outputs(self) -> list[FunctionCallOutput]:
         return [item for item in self.input if isinstance(item, FunctionCallOutput)]
+
+    @property
+    def custom_tool_calls(self) -> list[CustomToolCall]:
+        return [item for item in self.input if isinstance(item, CustomToolCall)]
+
+    @property
+    def custom_tool_call_outputs(self) -> list[CustomToolCallOutput]:
+        return [item for item in self.input if isinstance(item, CustomToolCallOutput)]
 
     @property
     def item_kinds(self) -> list[str]:

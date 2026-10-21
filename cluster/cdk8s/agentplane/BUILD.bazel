@@ -236,12 +236,17 @@ py_library(
 )
 
 # The catalog Codex ships with, for the pinned Codex (the Bazel test pin, not the runner image's nixpkgs
-# `codex`); `codex_models` takes the entries of ChatGPT routes from it.
+# `codex`); `codex_models` takes the entries of ChatGPT routes from it, and runner tests serve its code-mode ones.
 genrule(
     name = "codex_upstream_models",
     outs = ["codex_upstream_models.json"],
     cmd = 'CODEX_HOME="$$(mktemp -d)" $(location @agentplane_codex_cli_linux_x64//:codex_binary) debug models --bundled > "$@"',
     tools = ["@agentplane_codex_cli_linux_x64//:codex_binary"],
+    visibility = [
+        "//agentplane/native/codex/testing:__pkg__",
+        "//agentplane/x/k3s_env:__pkg__",
+        "//cluster/cdk8s:__pkg__",
+    ],
 )
 
 py_library(

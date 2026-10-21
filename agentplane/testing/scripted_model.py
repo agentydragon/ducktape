@@ -57,6 +57,11 @@ class ModelRequest[RequestT: StreamableRequest]:
     tool_calls: list[str]
     streaming: bool
 
+    @property
+    def native(self) -> RequestT:
+        """The request in the harness's own wire dialect."""
+        return self._exchange.request
+
 
 class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
     def __init__(self, *, model: str) -> None:
@@ -71,7 +76,7 @@ class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
 
     async def reply(self, request: ModelRequest[RequestT], *items: Item) -> None:
         async with request._exchange as exchange:
-            await exchange.send(*self.stream(list(items)))
+            await exchange.send(*self.stream(request, list(items)))
 
     async def http_error(self, request: ModelRequest[RequestT], *, status: int = 502) -> None:
         """Return an HTTP error before streaming any model content."""
@@ -87,7 +92,7 @@ class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
         """Break a model response before content or after its first visible text delta."""
         async with request._exchange as exchange:
             if after_text is not None:
-                stream = self.stream([Text(after_text)])
+                stream = self.stream(request, [Text(after_text)])
                 delta = next(
                     i for i, event in enumerate(stream) if event.kind in ("text_delta", "response.output_text.delta")
                 )
@@ -107,7 +112,7 @@ class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
         self, request: ModelRequest[RequestT], items: list[Item], stop: Callable[[SseEvent], bool]
     ) -> None:
         """Send the answer through its first event matching `stop`, then leave it open until the client closes."""
-        events = self.stream(items)
+        events = self.stream(request, items)
         end = next(index for index, event in enumerate(events) if stop(event))
         await request._exchange.send(*events[: end + 1])
         self._hold_until_client_closes(request)
@@ -124,7 +129,8 @@ class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
     def parse(self, exchange: ModelExchange[RequestT]) -> ModelRequest[RequestT]: ...
 
     @abc.abstractmethod
-    def stream(self, items: list[Item]) -> tuple[SseEvent, ...]: ...
+    def stream(self, request: ModelRequest[RequestT], items: list[Item]) -> tuple[SseEvent, ...]:
+        """The answer to `request`, in the tools it offers: Codex offers its shell directly or through code mode."""
 
     @abc.abstractmethod
     def opened_stream(self) -> tuple[SseEvent, ...]: ...

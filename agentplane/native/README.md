@@ -81,7 +81,7 @@ are scenario steps for parent-process death and keep their distinct semantics.
 Gotchas: every scripted message, item and response needs a fresh id because both harnesses key
 transcripts by id and silently merge repeats. Codex turns on code mode (one JavaScript `exec` tool)
 for ids in its built-in catalog; the tests use an unknown id to exercise the classic function-call
-shape. Claude's `--name` fixture option suppresses a separate title-generation request, and its
+shape, and `runner/test_codex_code_mode.py` serves GPT-6 Luna's entry to cover code mode. Claude's `--name` fixture option suppresses a separate title-generation request, and its
 retry after a lost stream is non-streaming, so the retry step answers with `message_body`, not
 `message_stream`.
 
