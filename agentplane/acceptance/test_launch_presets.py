@@ -74,7 +74,7 @@ async def test_a_preset_launches_an_initialized_editable_codex_thread(
         await model.reply(request, ShellCall(call_id="read-ready-marker", command=f"cat {launch_preset.READY_MARKER}"))
         request = await model.request()
         # The bootstrap ran in the Sandbox before the session's first command.
-        assert [o.text for o in request.tool_outputs if launch_preset.READY_TEXT in o.text], request.tool_outputs
+        assert any(output.contains(launch_preset.READY_TEXT) for output in request.tool_outputs), request.tool_outputs
         await model.reply(request, Text("The workspace is initialized."))
     assert launch_preset.READY_TEXT in turn.result().transcript
 

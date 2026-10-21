@@ -108,10 +108,12 @@ class ScriptedAgent:
             request = await self.model.request()
             await self.model.reply(request, ShellCall(call_id=call_id, command=command))
             request = await self.model.request()
-            output = one(reported.text for reported in request.tool_outputs if reported.call_id == call_id)
+            reported = one(output for output in request.tool_outputs if output.call_id == call_id)
             await self.model.reply(request, Text("Done."))
         # A harness frames the command's output with its own lines; `--json` prints the receipt as one.
-        return ActionRequestView.model_validate_json(one(line for line in output.splitlines() if line.startswith("{")))
+        return ActionRequestView.model_validate_json(
+            one(line for block in reported.blocks for line in block.splitlines() if line.startswith("{"))
+        )
 
     async def submit_echo(self, group: str, message: str, *, wait: bool) -> ActionRequestView:
         return await self.run(
