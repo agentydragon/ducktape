@@ -13,7 +13,7 @@
 # disks, mounted under /run/agentplane and linked to the paths the runner reads.
 #
 # The runner and the `agentplane` command are not in this closure. They arrive on the read-only
-# runner disk (runner-disk.nix), a second containerDisk mounted at /run/agentplane/runner, so a new
+# runner disk (//agentplane/runner:disk_image), a second containerDisk mounted at /run/agentplane/runner, so a new
 # runner release republishes that small disk and not this guest. The harnesses and tools stay here.
 {
   lib,
@@ -26,7 +26,7 @@ let
   workspaceDir = "/state/workspaces";
   runtimeDir = "/run/agentplane";
   # The runner disk's mount point. The Go runner puts its bin directory on the harness PATH
-  # (guest.go), and agentplane-runner-disk-image.yml builds the disk.
+  # (guest.go), and //agentplane/runner:disk_image builds the disk.
   runnerDir = "${runtimeDir}/runner";
   # The Go runner reads these files from runtimeDir. Each lives on
   # the KubeVirt ConfigMap disk of serial `agentplane-<disk>`, mounted at `${runtimeDir}/<disk>`.

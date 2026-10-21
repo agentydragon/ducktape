@@ -114,15 +114,10 @@ ducktapePkgs
     inherit pkgs;
     agentplaneCli = self.packages.${system}.agentplane-cli;
   };
-  # The released static `agentplane` command that the sandbox and build images and the runner disk
-  # carry.
+  # The released static `agentplane` command that the sandbox and build images carry.
   agentplane-cli = import ../../agentplane/cli/package.nix {
     inherit pkgs;
     binary = artifacts.agentplane-cli;
-  };
-  agentplane-runner = import ../../agentplane/runner/package.nix {
-    inherit pkgs;
-    binary = artifacts.agentplane-runner;
   };
   # agentplane's runner image: the sandbox image plus nixpkgs' Claude Code and Codex
   # (agentplane/runner/image.nix). The runner and CLI come from the runner disk image.
@@ -151,13 +146,6 @@ ducktapePkgs
   # KubeVirt's NixOS guest packaged as a containerDisk; publish through the dedicated workflow.
   agentplane-runner-vm-container-disk = import ../../agentplane/runner/container-disk.nix {
     inherit pkgs self;
-  };
-  # The runner and `agentplane` CLI as an erofs containerDisk, attached to the guest above as its
-  # second disk; publish through the dedicated workflow.
-  agentplane-runner-disk-container-disk = import ../../agentplane/runner/runner-disk.nix {
-    inherit pkgs;
-    agentplaneRunner = self.packages.${system}.agentplane-runner;
-    agentplaneCli = self.packages.${system}.agentplane-cli;
   };
   # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake
   # output retained; see x/codex_pod_image/deploy/README.md for status.

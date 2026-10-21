@@ -1347,7 +1347,7 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 **Decision; operator, 2026-10-13 and 2026-10-15 PDT.** The 2026-10-15 framing names the property wanted: independent updates and RAM headroom. Today one artifact still carries the harnesses and tools:
 `agentplane/runner/container-disk.nix` bakes both harnesses and the tools into the NixOS qcow2 that
 KubeVirt boots, and `agentplane/runner/image.nix` bakes them into the Pod image. The runner and
-`agentplane` command are already split out onto `agentplane/runner/runner-disk.nix`, a read-only disk
+`agentplane` command are already split out onto the Bazel-built `//agentplane/runner:disk_image`, a read-only disk
 the VM attaches and an image the Pod mounts, so a runner bump no longer republishes either; bumping a
 harness or a template's installed tools still rebuilds the whole artifact. Separate the concerns so a platform user supplies an image or definition with
 no runner and no harnesses and the runner side layers them in, and nobody bumps build versions to move a
@@ -1442,7 +1442,7 @@ squashfs-disk and split-`containerDisk` shapes in the decision node beside it. K
 Firecracker stays open; what must not change is that the state volume and its ownership rules survive
 (`STATE_VOLUME_BLOCK`, and the `107:107` virtiofs constraint). Halted containerDisk replacement already
 works, so the update path exists. Landed: the runner and CLI are published as their own `containerDisk`
-(`runner/runner-disk.nix`), the `runner-vm` template attaches it as a second read-only disk, and the guest
+(`//agentplane/runner:disk_image`), the `runner-vm` template attaches it as a second read-only disk, and the guest
 mounts it at `/run/agentplane/runner`, runs the runner from it and no longer carries the runner or CLI
 (a Sandbox on `agentplane-testing` booted this way). Remaining: the tools disk is not split yet.
 The in-guest budgets (`VM_GUEST_BUDGET_DERIVE`) are the other half of the same story — stage 1 owns the

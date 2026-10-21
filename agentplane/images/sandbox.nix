@@ -14,7 +14,7 @@
 {
   pkgs,
   # The released `agentplane` command (<../cli/package.nix>), for an image that carries its own.
-  # The runner image takes it from the runner disk instead (<../runner/runner-disk.nix>).
+  # The runner image takes it from the runner disk instead (//agentplane/runner:disk_image).
   agentplaneCli ? null,
   name ? "agentplane-sandbox",
   # What an image built on this one adds: packages linked into /bin beside the tools, directories

@@ -57,7 +57,7 @@ lost.
   `/run/agentplane`. A file keeps its ConfigMap's mode, which must stay world-readable: harnesses
   run as uid 107 and read the CA bundle and kubeconfig.
 - The runner and the `agentplane` command are not in the guest image. They arrive on the runner disk,
-  a read-only erofs on a second `containerDisk` ([`runner/runner-disk.nix`](../runner/runner-disk.nix)),
+  a read-only erofs on a second `containerDisk` (`//agentplane/runner:disk_image`, [`runner/BUILD.bazel`](../runner/BUILD.bazel)),
   mounted at `/run/agentplane/runner`, and the harness `PATH` lists its `bin` after the system
   profile. A runner or CLI release republishes only that small disk. The harnesses and tools are
   still in the guest image.

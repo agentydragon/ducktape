@@ -13,9 +13,9 @@ CPAP gateway and Agentplane runner images:
   SandboxTemplate in <../cdk8s/agentplane/staging.py>.
 
 The Agentplane runner VM attaches two: the guest root and a small read-only erofs disk with the
-runner and the `agentplane` command (<../../agentplane/runner/runner-disk.nix>, published by
-<../../.github/workflows/agentplane-runner-disk-image.yml>), so a runner release does not
-republish the guest.
+runner and the `agentplane` command (`//agentplane/runner:disk_image`, built by Bazel and published
+by the `push-images` workflow from <../../devinfra/ci/image_targets.json>), so a runner release does
+not republish the guest.
 
 Use `containerDisk` for disposable roots. Put state that must survive VM restarts
 on a PVC or another durable store. Updating an OCI tag does not replace the disk

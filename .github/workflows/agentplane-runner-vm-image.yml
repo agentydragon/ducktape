@@ -2,7 +2,7 @@
 name: Agentplane Runner VM Image
 
 # The runner and `agentplane` command are not in this image: they ship on the runner disk
-# (agentplane-runner-disk-image.yml), so their artifact pins do not trigger this build.
+# (//agentplane/runner:disk_image), so their artifact pins do not trigger this build.
 # Keep automatic triggers on Nix/image inputs.
 on:
   push:

@@ -47,7 +47,7 @@ _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
 # SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
-# The runner disk image's `bin/` (agentplane/runner/runner-disk.nix): the runner and the `agentplane`
+# The runner disk image's `bin/` (//agentplane/runner:disk_image): the runner and the `agentplane`
 # command, mounted read-only the way the VM guest mounts the same image's erofs. The container's
 # command is the runner here, not the tools image's entrypoint.
 _RUNNER_VOLUME_NAME = "runner"

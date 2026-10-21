@@ -44,7 +44,7 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   configuration. `go/cmd/main.go` dispatches internal process modes before service startup.
   `agentplane-runner-vm` is a symlink to this same executable.
 
-The production build and release target is `//agentplane/runner:runner_release`.
+The production build target is `//agentplane/runner/go/cmd:agentplane-runner`, shipped in `//agentplane/runner:disk_image`.
 The binary includes the supervisor and SQLite; the native Claude/Codex executables,
 workspace tools and CA certificates are supplied by the runtime image.
 
@@ -73,18 +73,14 @@ same Go process.
 
 ## Release and image inputs
 
-`package.nix` installs the released executable from the `agentplane-runner` artifact pin.
-Image builds use this pin through the normal artifact publication and pin synchronization
-flow. The VM guest does not embed the runner: `runner-disk.nix` packs it and the `agentplane`
-command into the read-only runner disk that the `runner-vm` template attaches beside the guest; the
-same image also carries them as plain files under `bin/`, which the runner Pod templates mount at
-`/run/agentplane/runner` and start the runner from, so the Pod's tools image (`image.nix`) holds neither.
-A bump of the `agentplane-runner` or `agentplane-cli` pin therefore republishes the runner disk image
-but not the `runner` tools image; `runner-ducktape` and the Action sandbox images also rebuild on any
-pin bump.
-The first Go binary release must be published and synced before the images can build;
-a previous wheel pin fails the package's ELF check instead of being installed as an
-executable. No existing Session files are deleted during this transition.
+Bazel builds the runner disk image (`//agentplane/runner:disk_image`) from source at the same commit
+as the runner. The VM guest does not embed the runner: the image packs it and the `agentplane`
+command into a read-only erofs (`disk/runner.img`) that the `runner-vm` template attaches beside the
+guest; the same image also carries them as plain files under `bin/`, which the runner Pod templates
+mount at `/run/agentplane/runner` and start the runner from, so the Pod's tools image (`image.nix`)
+holds neither. The k3s fixture mounts the same image. A runner or CLI change therefore republishes
+the runner disk image but not the `runner` tools image. The `agentplane-cli` artifact pin still
+feeds the Action sandbox images, which rebuild on any pin bump.
 
 ## VM workspace disk
 
