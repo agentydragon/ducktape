@@ -16,7 +16,7 @@ var scripts embed.FS
 
 // Up applies authored SQL with Goose in a dedicated init container, never while serving traffic.
 func Up(ctx context.Context, db *sql.DB) error {
-	// The advisory lock key of the Alembic runner (`database_migrate.py`): the two migrators never run at once.
+	// The advisory lock key the retired Alembic runner took, kept so that no two migrators run at once.
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(0x4E4F_5446))
 	if err != nil {
 		return err

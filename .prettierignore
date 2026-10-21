@@ -36,7 +36,7 @@ cluster/k8s/ssh-mcp/kustomization.yaml
 # The retired Python thread fold generated these golden vectors; threadfold/golden_test.go holds the Go fold to them.
 agentplane/history_service/threadfold/golden.json
 
-# The Python Notification Service generates these golden vectors; test_golden checks exact output.
+# The retired Python Notification Service generated these golden vectors; the Go store tests hold the store to them.
 agentplane/notification_service/store/golden.json
 
 # controller-gen owns these Agentplane CRD snapshots; test_generate checks exact output.

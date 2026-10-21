@@ -38,7 +38,7 @@ func DefaultSettings() Settings {
 	}
 }
 
-// Validate checks the bounds the Python service's settings enforce.
+// Validate checks the bounds of the settings.
 func (s Settings) Validate() error {
 	var failures []error
 	if s.NoticeDebounce.QuietSeconds < 0 || s.NoticeDebounce.QuietSeconds > 3600 {

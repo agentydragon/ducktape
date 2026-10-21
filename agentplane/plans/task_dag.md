@@ -85,8 +85,7 @@ point.** The service (`agentplane/notification_service/`) has grown to several r
 
 Decide which stay, which move to other services, and what the remaining service is called. The inbox
 messaging nodes of section 3 (`AGENT_MESSAGING_DESIGN` and the nodes it feeds) record the service name as
-open and keep v1 in one deployment; this node is the later restructuring, not a prerequisite for them or
-for the Go port (`NOTIFICATION_SERVICE_GO_PORT`).
+open and keep v1 in one deployment; this node is the later restructuring, not a prerequisite for them.
 Related: whether notice delivery belongs with the Dispatcher
 ([freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership)),
 and the history-free notice outcome (`NOTIFICATION_COMMAND_OUTCOME_DESIGN`), which bears on the notice
@@ -1905,13 +1904,10 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 ```mermaid
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
-    NOTIFICATION_SERVICE_GO_PORT[Candidate: port the Notification Service to Go]
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
     ACTION_API_MERGE[Decision, unscheduled: merge parts of the operator and agent-facing Action APIs]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
-    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
-    NOTIFICATION_SERVICE_GO_PORT -. related .-> NOTIFICATION_SERVICE_SPLIT
     ACTION_SERVICE_GO_PORT -. related .-> ACTION_API_MERGE
     ACTION_SERVICE_GO_PORT -. related .-> WEB_PUSH_SERVICE
 ```
@@ -1923,16 +1919,6 @@ reads and replace the app's mirror models (`app/threads/view/content.py`,
 `app/threads/events/debug.py`) with the generic proxy. `WatchSessionSummaries` says only that something
 changed, so a browser-facing watch gets frames that carry state. Decide on purpose whether the app's Thread
 check on `thread_observations` (404 for a Session no Thread links) is kept or dropped.
-
-### `NOTIFICATION_SERVICE_GO_PORT` — port the Notification Service to Go
-
-**Candidate; operator, 2026-10-19 PDT: the possible `NOTIFICATION_SERVICE_SPLIT` does not hold the port.**
-Port the service as it is; a later split moves responsibilities between Go services as it would between
-Python ones. Proto and generated facade for subscriptions, inboxes and the operator streams, replacing the
-app's Notification proxy and the hand-written `docs/agents/http_api.md`. The signed GitHub webhook stays
-hand-written HTTP. Stages, stored-data risks and cutover: [Notification Service Go port](notification_service_go_port.md).
-The Go service reads the Action Service through a small hand-written HTTP client that
-`ACTION_SERVICE_GO_PORT` deletes.
 
 ### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
 

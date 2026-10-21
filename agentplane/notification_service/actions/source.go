@@ -24,9 +24,8 @@ var _ worker.Provider = (*Source)(nil)
 // request, and otherwise fails with a *worker.ProviderError of kind access denied. The Action Service lets the
 // service read every account's requests, which must not become authority to follow another account's.
 //
-// Stage H's servicer calls it when a subscription is created, as the Python service does, and shows an access
-// denied failure as PERMISSION_DENIED: authorization precedes persistence even when replay starts after the
-// last event.
+// The subscription servicer calls it when a subscription is created and shows an access denied failure as
+// PERMISSION_DENIED: authorization precedes persistence even when replay starts after the last event.
 func (s *Source) Events(ctx context.Context, owner store.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
 	caller, err := s.Service.Caller(ctx, requestID)
 	if err != nil {
@@ -39,8 +38,7 @@ func (s *Source) Events(ctx context.Context, owner store.ServiceAccount, request
 }
 
 // Reconcile reads the next page of events of the subscription's Action request, and records the ones it has not
-// recorded yet. The Python service reads a page of 128 each time and reads again five seconds later, so a long
-// log takes several reads.
+// recorded yet, so a long log takes several reads.
 func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
 	request, ok := due.Source.(store.ActionsSource)
 	if !ok || due.ActionsAfterSequence == nil {

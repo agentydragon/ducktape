@@ -560,7 +560,6 @@ func TestStaleDestinationRetiresTheInboxOnTheObservationAfterTheConfirmationWait
 	subscription := f.subscribe(t, body("first"))
 	claim := f.claim(t)
 
-	// These strings are stored for the Python service, which reads them while it is still deployed.
 	before := time.Now()
 	retired, err := f.ObserveStale(t.Context(), claim, "not_found", 30*time.Second)
 	if err != nil || retired {

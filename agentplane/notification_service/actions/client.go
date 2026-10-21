@@ -87,9 +87,8 @@ func (c *Client) Events(ctx context.Context, requestID uuid.UUID, afterSequence 
 	return events, nil
 }
 
-// get reads target into into. The failures it names, and no others, are *worker.ProviderError, with the kinds
-// the Python service's `source_failure_kind` gives them; a token file that cannot be read is not, as in Python
-// where it stops the worker.
+// get reads target into into. The failures it names, and no others, are *worker.ProviderError; a token file
+// that cannot be read is not one, and stops the worker.
 func (c *Client) get(ctx context.Context, target *url.URL, into any) error {
 	token, err := os.ReadFile(c.tokenFile)
 	if err != nil {
@@ -118,7 +117,7 @@ func (c *Client) get(ctx context.Context, target *url.URL, into any) error {
 	return nil
 }
 
-// The messages are the ones the Python service shows on a subscription: a status, or the name of the failure.
+// The messages are what a subscription shows: a status, or the name of the failure.
 
 func transportFailure(ctx context.Context, err error) error {
 	if ctx.Err() != nil {

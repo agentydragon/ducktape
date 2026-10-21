@@ -73,8 +73,8 @@ keep their original text on retries.
 
 ## Persistence and recovery
 
-The service has its own PostgreSQL database and role on the shared cluster. Migrations use the shared
-image-coupled Alembic runner and advisory migration lock.
+The service has its own PostgreSQL database and role on the shared cluster. Migrations are Goose files run by an
+image-coupled migrator under an advisory migration lock.
 
 A short inbox row lock serializes cursor allocation, payload insertion, overlapping subscription
 matches and source-checkpoint advancement. Provider identities are deduplicated per inbox. Reads
@@ -119,7 +119,7 @@ a new explicit subscription can establish a fresh inbox epoch; there is no impli
 
 ## Resource quotas
 
-The Notifications Service Pydantic settings accept these deployment-configurable defaults:
+The Notification Service settings accept these deployment-configurable defaults:
 
 ```yaml
 quotas:
@@ -170,9 +170,8 @@ never returned to agents. Installation lifecycle payloads are retained internall
 HTTP 400/401 rejection logs include a parsed delivery UUID (or null for a malformed/missing ID),
 a JSON-escaped event header capped at 64 characters, and a stable reason: `invalid_delivery_id`,
 `invalid_signature`, `unsupported_event`, `missing_repository`, `payload_validation`, or the
-fallback `invalid_delivery`. Validation logs include the total error count and at most eight
-Pydantic error codes with known top-level schema fields. Nested locations, input values, error
-messages/context, raw payloads and signatures are omitted. Event headers are untrusted labels,
+fallback `invalid_delivery`. A payload validation log carries `problem`, which names the fields and array positions of the schema
+that failed and quotes nothing of the body. The raw payload, the signature and the secret are never logged. Event headers are untrusted labels,
 not evidence of signature verification. Rejections return generic HTTP responses and do not create durable receipts or inbox entries.
 
 GitHub does not automatically retry failed webhook requests: failures/timeouts require redelivery.

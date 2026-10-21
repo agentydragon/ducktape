@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// These tests write rows the way the Python service does, from the golden vectors it produced, and hold the
+// These tests write rows the way the retired Python service did, from the golden vectors it produced, and hold the
 // store to finding and reading them: the store takes over a database that Python filled.
 
 func (f fixture) insertInbox(t *testing.T, key string, ref DestinationRef, sessionID string) uuid.UUID {

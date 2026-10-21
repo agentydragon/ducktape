@@ -1,34 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
-
-filegroup(
-    name = "files",
-    srcs = [
-        "env.py",
-        "//agentplane/notification_service/migrations/versions:0001_notifications.py",
-        "//agentplane/notification_service/migrations/versions:0002_idempotency_key.py",
-        "//agentplane/notification_service/migrations/versions:0003_remove_pause.py",
-        "//agentplane/notification_service/migrations/versions:0004_source_union.py",
-        "//agentplane/notification_service/migrations/versions:0005_github.py",
-        "//agentplane/notification_service/migrations/versions:0006_stale_inbox.py",
-        "//agentplane/notification_service/migrations/versions:0007_subscription_health.py",
-        "//agentplane/notification_service/migrations/versions:0008_github_entities.py",
-        "//agentplane/notification_service/migrations/versions:0009_github_issue_subject.py",
-        "//agentplane/notification_service/migrations/versions:0010_drop_write_only_columns.py",
-    ],
-    visibility = ["//agentplane/notification_service:__pkg__"],
-)
-
-py_library(
-    name = "env",
-    srcs = ["env.py"],
-    deps = [
-        "//agentplane/notification_service:db",
-        "@pypi//alembic",
-    ],
-)
 
 pkg_tar(
     name = "binary_layer",
@@ -56,24 +28,5 @@ go_library(
     deps = [
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
-    ],
-)
-
-py_test(
-    name = "test_migrations",
-    size = "medium",
-    srcs = ["test_migrations.py"],
-    data = ["//agentplane/notification_service/migrations/cmd:notifications-migrate"],
-    requires_docker = True,
-    deps = [
-        "//:conftest",
-        "//agentplane/notification_service:conftest",
-        "//agentplane/notification_service:database_migrate",
-        "//util/bazel:runfiles",
-        "//util/testing:postgres",
-        "//util/testing:postgres_schema",
-        "@pypi//psycopg",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )

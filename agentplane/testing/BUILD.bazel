@@ -11,7 +11,6 @@ package(
         "//agentplane/egress/testing:__pkg__",
         "//agentplane/history_service/testing:__pkg__",
         "//agentplane/llm_ingress:__pkg__",
-        "//agentplane/notification_service:__pkg__",
         "//agentplane/runner_gateway:__subpackages__",
         "//agentplane/sandboxes:__subpackages__",
     ],

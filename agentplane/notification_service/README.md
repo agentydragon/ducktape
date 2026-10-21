@@ -10,7 +10,7 @@ payloads when notified. Reads are non-destructive; acknowledgement explicitly ad
 contiguous prefix. Unacknowledged entries do not cause repeated reminders.
 For UID-pinned destinations, workers retire an inbox only after two Sandbox lookups
 confirm that its managed Sandbox is missing or has a different UID, separated by the
-Pydantic-configured `stale_inbox_confirmation_s` grace period. Matching UIDs (including
+configured `stale_inbox_confirmation_s` grace period. Matching UIDs (including
 suspended Sandboxes) resume delivery; owner mismatches and transport failures never
 confirm retirement. Retirement cancels subscriptions and stops retries but retains entries
 and notices for normal retention and inspection; it never acknowledges them or rebinds
@@ -31,27 +31,21 @@ History Service lags the runner's journal, so a retry never precedes an admissio
 
 ## Running and deployment
 
-Bazel targets: `:server`, `:migrate`, `:image`, `:migration_image`. The service needs its own PostgreSQL
-database, Actions, Runner Gateway, History Service and Session Dispatcher endpoints, projected
-service-account tokens, and Kubernetes read access to Sandboxes.
+`:service_image` (binary `:notification-service`) is the service, and `//agentplane/notification_service/migrations:image`
+its Goose migrator, which the Deployment's init container runs before the service starts. The service needs its own
+PostgreSQL database, Actions, Runner Gateway, History Service and Session Dispatcher endpoints, projected
+service-account tokens, and Kubernetes read access to Sandboxes. Preserve existing staging data. Verify an Action
+subscription through a newly opened harness after rollout. Existing sessions retain their original prompt.
 
-Run the image-coupled migration before starting workers. Use published server/migration image tags
-and preserve existing staging data. `/healthz` reports process liveness; `/readyz` checks workers and
-PostgreSQL and the LISTEN connection. Verify an Action subscription through a newly opened harness after rollout. Existing
-sessions retain their original prompt.
+A schema change is a Goose file in `migrations/notifications/`. The baseline, `00001_baseline.sql`, takes over a
+database that the retired Alembic history left at revision `0010_drop_write_only_columns` and refuses one behind it;
+the migrator keeps the advisory lock key the Alembic runner took.
 
-## Go image
-
-`:service_image` (binary `:notification-service`) is the Go service. `agentplane-testing` runs it; staging runs
-the Python service above until the [cutover](docs/cutover.md) reaches it. It reads the settings file and environment
-variables of [Configuration](#configuration), with these differences:
-
-- It takes no flags, and no `log_levels`; logs are JSON on stderr.
-- `request_timeout_s` (default 15) bounds a call's backend work, and `watch_lease_s` (default 300) is how long a
-  watch lasts before it ends with `reconnect_required`.
-- GitHub is on when any `github.*` setting is set, so a Secret without `github.app_id`, or the reverse, fails
-  startup instead of leaving the source off.
-- A setting that fails validation stops startup without printing its value.
+The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
+flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
+and `watch_lease_s` (default 300) is how long a watch lasts before it ends with `reconnect_required`. GitHub is on
+when any `github.*` setting is set, so a Secret without `github.app_id`, or the reverse, fails startup. A setting
+that fails validation stops startup without printing its value.
 
 One listener (`host`, `port`) serves gRPC (`Notifications`, `NotificationsOperator` and `grpc.health.v1`), the HTTP
 form of `Notifications` (the routes of [`notifications.proto`](notifications.proto); the operator service has none),
@@ -63,9 +57,9 @@ its error and never its message.
 
 ## Configuration
 
-Set `AGENTPLANE_NOTIFICATIONS_CONFIG_FILE` to a Pydantic-validated YAML file; explicit missing files and
-unknown keys fail startup. Environment variables override YAML using `__` for nested fields.
-[settings.py](settings.py) defines the configuration fields and their descriptions.
+Set `AGENTPLANE_NOTIFICATIONS_CONFIG_FILE` to a YAML file; a missing file and unknown keys fail startup.
+Environment variables override YAML using `__` for nested fields. [settings.py](settings.py) defines the fields the
+manifests render and their descriptions, and `config.go` with the settings of its packages reads them.
 Configuration changes require a service restart.
 
 `actions` contains `url` and `token_file`; `runner_gateway` uses `control_target` and `token_file`
@@ -79,7 +73,7 @@ The service persists a notice's stable command ID before calling `SubmitInput`. 
 the Dispatcher owns the retry; it is not a runner-admission receipt. The service reads admission and
 confirmation from History Service, and a Dispatcher error never falls back to a direct Runner Gateway send.
 
-The deployment mounts validated settings from its ConfigMap. Roll the application image and configuration
+The deployment mounts the settings from its ConfigMap. Roll the application image and configuration
 together because their structure is versioned with the code.
 
 ### Runner notice debounce
@@ -108,9 +102,9 @@ GitHub is disabled when `github` is absent from both YAML and environment. To en
 - `AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY`: PEM App private key.
 - `AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET`: random webhook signing secret, at least 16 characters.
 
-The secrets are `SecretStr` fields and are validated before HTTP startup. Nested environment settings
-contribute configuration even if YAML has `github: null`; remove both to disable the source. No fixed
-installation ID or OAuth client secret is needed.
+The private key and the webhook secret are validated at startup and never printed. Environment settings turn the
+source on even if YAML has no `github`; remove both to disable it. No fixed installation ID or OAuth client secret
+is needed.
 
 Staging is enabled and the operator has installed the App; see the
 [live acceptance record](docs/staging_github_acceptance.md). Testing remains disabled.
@@ -127,7 +121,7 @@ are opt-in; ordinary issue subscriptions default to lifecycle events and comment
 
 ### GitHub API transport overrides
 
-The optional `github` Pydantic settings also own `api_url` (default `https://api.github.com`),
+The optional `github` settings also own `api_url` (default `https://api.github.com`),
 `request_timeout_s` (default 5, positive and finite), and `api_version` (default `2022-11-28`).
 Set them in deployment YAML or override them with
 `AGENTPLANE_NOTIFICATIONS_GITHUB__API_URL`, `AGENTPLANE_NOTIFICATIONS_GITHUB__REQUEST_TIMEOUT_S`,
@@ -138,9 +132,7 @@ The configured endpoint receives App JWTs and installation tokens: only use trus
 and use fixture credentials for local mock services. These are deployment-owned settings,
 not subscription-controlled destinations, and do not alter egress authorization.
 
-`GitHubClient` in `sources/github/client.py` owns the async HTTP lifetime, configured endpoint,
-App JWTs, installation-token cache and typed REST resource methods. The notification provider
-owns webhook verification, durable access/subject observations, leases, backoff scheduling and
-matching. Client calls surface rate limits immediately; they do not sleep/retry inside a lease.
-The client can accept an injected `httpx.AsyncClient` for transport tests; deployment startup
-uses `GitHubClient.open(settings.github)` to validate the key and close the configured transport.
+`github.Client` in `github/client.go` owns the configured endpoint, App JWTs, the installation-token cache and
+typed REST resource methods. The notification provider owns webhook verification, durable access/subject
+observations, leases, backoff scheduling and matching. Client calls surface rate limits immediately; they do not
+sleep/retry inside a lease. `github.New` validates the settings and the App private key and makes no request.

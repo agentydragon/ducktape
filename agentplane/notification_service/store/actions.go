@@ -60,7 +60,7 @@ type OperatorActor struct{ Issuer, Subject string }
 func (CallerActor) isActionActor()   {}
 func (OperatorActor) isActionActor() {}
 
-// The JSON forms below are the ones the Action Service writes and the Python service stores.
+// The JSON forms below are the ones the Action Service writes and the rows already in the database hold.
 
 func (a ServiceAccount) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {

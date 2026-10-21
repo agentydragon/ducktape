@@ -89,7 +89,7 @@ checks the requested UID and owner ServiceAccount, then calls live `ListSessions
 membership. Separately, it checks source access through the Action Service or GitHub client before
 storing the subscription. These are subscription/source checks; they do not by themselves define a
 separate per-message send grant. See
-[`notification_service/service.py`](../notification_service/service.py).
+[`notification_service/api/notifications.go`](../notification_service/api/notifications.go).
 
 When a notification is delivered, the service submits a command to Dispatcher. Dispatcher checks
 its caller account, resolves the Sandbox and stores its UID with the opening or command; its worker

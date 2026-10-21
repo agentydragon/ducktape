@@ -13,11 +13,14 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// golden.json holds what the Python service writes and accepts: the destination key of an inbox, the creation
-// JSON of a subscription and the event JSON of an entry, each from the Python code that produces it, with the
-// creations Python's models refuse and the pairs it tells apart. It also holds the webhook deliveries Python
-// accepts and refuses, with what its ingest stores for each, and the key it indexes each subject by.
-// `generate_golden.py` writes it and `test_golden.py` checks it is current.
+// golden.json holds what the retired Python service wrote and accepted: the destination key of an inbox, the creation
+// JSON of a subscription and the event JSON of an entry, each from the Python code that produced it, with the
+// creations Python's models refused and the pairs it told apart. It also holds the webhook deliveries Python
+// accepted and refused, with what its ingest stored for each, and the key it indexed each subject by.
+//
+// The Python service and the generator that wrote this file (`generate_golden.py`) are in git history at commit
+// 180ae8a62d. The file is now a fixture: a deliberate change to what the store writes changes the
+// expectations it makes.
 //
 //go:embed golden.json
 var goldenJSON []byte

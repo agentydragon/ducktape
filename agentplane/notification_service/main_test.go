@@ -267,7 +267,7 @@ func TestAWorkerThatStopsEndsTheServiceWithoutSayingWhy(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A token the Action Service cannot be read with is no failure of the source to show on the subscription: it
-	// stops the worker, as it stopped the Python service's.
+	// stops the worker.
 	if err := os.Remove(service.actionsToken); err != nil {
 		t.Fatal(err)
 	}

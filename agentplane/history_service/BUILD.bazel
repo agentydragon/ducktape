@@ -15,7 +15,6 @@ py_library(
     visibility = [
         "//agentplane/app:__pkg__",
         "//agentplane/history_service:__subpackages__",
-        "//agentplane/notification_service:__pkg__",
     ],
     deps = [
         "//agentplane/postgres:wakeups",
@@ -29,7 +28,6 @@ py_library(
     visibility = [
         "//agentplane/app:__subpackages__",
         "//agentplane/history_service:__subpackages__",
-        "//agentplane/notification_service:__subpackages__",
     ],
     deps = [
         "//agentplane/grpc:calls",

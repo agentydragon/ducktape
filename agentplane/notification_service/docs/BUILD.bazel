@@ -1,7 +1,6 @@
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-# The Python service's `api` serves the same guides from its runfiles.
 filegroup(
     name = "agents",
     srcs = glob(["agents/**"]),

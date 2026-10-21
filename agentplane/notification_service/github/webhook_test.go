@@ -15,8 +15,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 )
 
-// The vectors are what the Python service stores for the webhook bodies it accepts, and why it refuses the others
-// (`store/golden.json`, written by `generate_golden.py`).
+// The vectors are what the retired Python service stored for the webhook bodies it accepted, and why it refused the
+// others (`store/golden.json`, written by `generate_golden.py` at commit 180ae8a62d).
 type deliveryVectors struct {
 	Deliveries []struct {
 		Name       string    `json:"name"`

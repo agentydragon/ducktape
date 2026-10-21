@@ -52,7 +52,7 @@ const (
 	// readHeaderTimeout bounds a request's headers. There is no other server timeout: the operator's watches
 	// stream for their lease, and the webhook handler bounds itself.
 	readHeaderTimeout = 10 * time.Second
-	// workers is how many goroutines claim inboxes; the Python service ran four tasks.
+	// workers is how many goroutines claim inboxes.
 	workers = 4
 	// databaseConnections bounds the pool the workers, the servicers and the webhook handler share.
 	databaseConnections = 16

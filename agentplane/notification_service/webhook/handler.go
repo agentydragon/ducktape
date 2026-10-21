@@ -110,7 +110,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respond(ctx, w, status, body)
 }
 
-// receive checks and stores one delivery, in the order the Python service did: the delivery ID, then the signature
+// receive checks and stores one delivery, in this order: the delivery ID, then the signature
 // (so that nothing about an unsigned body is learned from its refusal), a ping, and last the payload.
 func (h *Handler) receive(ctx context.Context, header http.Header, raw []byte) (int, any) {
 	event := header.Get("X-GitHub-Event")

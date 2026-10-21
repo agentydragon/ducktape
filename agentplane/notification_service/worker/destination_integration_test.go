@@ -67,7 +67,6 @@ func TestStaleDestinationRetiresTheInboxAfterThePersistedRecheck(t *testing.T) {
 					h.sandboxes.serve(replacement)
 				}
 
-				// These strings are stored for the Python service, which reads them while it is still deployed.
 				h.step(t)
 				pending := requireNotRetired(t, h, subscription)
 				if pending.staleCheckAt == nil || pending.nextAttempt == nil || !pending.nextAttempt.Equal(*pending.staleCheckAt) {

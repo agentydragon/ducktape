@@ -44,7 +44,7 @@ func (e *ProviderDeferred) Error() string {
 }
 
 // UnclassifiedProviderError is a Provider failure that is none of the above. The inbox is released first, then
-// Run returns it: the process stops, as the Python service's worker does, rather than hide a bug as a retry.
+// Run returns it: the process stops rather than hide a bug as a retry.
 type UnclassifiedProviderError struct {
 	SubscriptionID uuid.UUID
 	Err            error
