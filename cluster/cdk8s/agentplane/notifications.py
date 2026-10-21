@@ -2,14 +2,12 @@
 receipts are read from the History Service."""
 
 from collections.abc import Mapping
-from dataclasses import replace
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
-    DeploymentStrategy,
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
@@ -158,10 +156,6 @@ class Notifications(Construct):
                 memory=MemoryResources(request=Size.mebibytes(128), limit=memory_limit),
             ),
             termination_grace=Duration.seconds(30),
-            # CLEANUP(added 2026-10-20): Remove once staging's service flip has landed (stage K of
-            #   NOTIFICATION_SERVICE_GO_PORT): until then a rolling update would run the Python and the Go
-            #   service's workers at once. Testing already recreates.
-            replica_profile=replace(env.replicas, strategy=DeploymentStrategy.recreate()),
             migrate=migrate_init_container(
                 f"{_IMAGE}-migrate:unset",
                 name="migrate",
