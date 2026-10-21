@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,7 +15,7 @@ import (
 	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,7 +24,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 // watchPeriod is short so a few cycles fit in a test; the staleness bound is StaleAfterCycles of it.
@@ -50,47 +48,16 @@ var (
 
 // TestMain runs one API server for every test; each test works in namespaces of its own.
 func TestMain(m *testing.M) {
-	os.Exit(runWithAPIServer(m))
-}
-
-func runWithAPIServer(m *testing.M) int {
-	asset, err := runfiles.Rlocation("envtest_kubernetes_linux_amd64/kube-apiserver")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	crd, err := runfiles.Rlocation("ducktape/agentplane/crds/manifests/crd-policybindings.yaml")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	existing := false
-	environment := &envtest.Environment{
-		BinaryAssetsDirectory: filepath.Dir(asset),
-		CRDDirectoryPaths:     []string{filepath.Dir(crd)},
-		ErrorIfCRDPathMissing: true,
-		UseExistingCluster:    &existing,
-	}
-	if apiConfig, err = environment.Start(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer func() {
-		if err := environment.Stop(); err != nil {
-			fmt.Fprintln(os.Stderr, "stop API server:", err)
+	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) (err error) {
+		apiConfig = server.Config
+		for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, policyapi.AddToScheme} {
+			if err := add(apiScheme); err != nil {
+				return err
+			}
 		}
-	}()
-	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, policyapi.AddToScheme} {
-		if err := add(apiScheme); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-	}
-	if apiClient, err = client.New(apiConfig, client.Options{Scheme: apiScheme}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return m.Run()
+		apiClient, err = client.New(apiConfig, client.Options{Scheme: apiScheme})
+		return err
+	}))
 }
 
 // faults is a transport under the informer's own, where a test can hold back a kind's requests, cut

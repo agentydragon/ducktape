@@ -40,14 +40,10 @@ go_test(
         "readiness_test.go",
         "rules_test.go",
     ],
-    data = [
-        "//agentplane/crds",
-        "@envtest_kubernetes_linux_amd64//:assets",
-    ],
     embed = [":reader"],
     deps = [
         "//agentplane/policy/api/v1alpha1",
-        "@io_bazel_rules_go//go/runfiles",
+        "//agentplane/testing/kubeapiserver",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -56,6 +52,5 @@ go_test(
         "@io_k8s_client_go//kubernetes/scheme",
         "@io_k8s_client_go//rest",
         "@io_k8s_sigs_controller_runtime//pkg/client",
-        "@io_k8s_sigs_controller_runtime//pkg/envtest",
     ],
 )

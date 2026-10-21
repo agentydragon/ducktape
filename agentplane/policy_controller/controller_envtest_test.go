@@ -3,13 +3,12 @@ package policycontroller
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,7 +19,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -251,31 +249,16 @@ func TestAPIServerApplyDriftRevocationIdentityAndForeignCollision(t *testing.T) 
 
 func startPolicyAPIServer(t *testing.T) (client.Client, client.Client, *Reconciler) {
 	t.Helper()
-	assetPath, err := runfiles.Rlocation("envtest_kubernetes_linux_amd64/kube-apiserver")
-	if err != nil {
-		t.Fatal(err)
-	}
-	crdPath, err := runfiles.Rlocation("ducktape/agentplane/crds/manifests/crd-policybindings.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	useExistingCluster := false
-	environment := &envtest.Environment{
-		BinaryAssetsDirectory: filepath.Dir(assetPath),
-		CRDDirectoryPaths:     []string{filepath.Dir(crdPath)},
-		DownloadBinaryAssets:  false,
-		ErrorIfCRDPathMissing: true,
-		UseExistingCluster:    &useExistingCluster,
-	}
-	config, err := environment.Start()
+	kube, err := kubeapiserver.Start()
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := environment.Stop(); err != nil {
-			t.Errorf("stop API server: %v", err)
+		if err := kube.Stop(); err != nil {
+			t.Error(err)
 		}
 	})
+	config := kube.Config
 
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {

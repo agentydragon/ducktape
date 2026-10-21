@@ -25,10 +25,6 @@ go_test(
         "fixture_test.go",
         "informer_test.go",
     ],
-    data = [
-        "//agentplane/crds",
-        "@envtest_kubernetes_linux_amd64//:assets",
-    ],
     embed = [":informer"],
     deps = [
         "//agentplane/egress/api/v1alpha1",
@@ -38,7 +34,7 @@ go_test(
         "//agentplane/egress/resources",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
-        "@io_bazel_rules_go//go/runfiles",
+        "//agentplane/testing/kubeapiserver",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
@@ -46,6 +42,5 @@ go_test(
         "@io_k8s_client_go//kubernetes/scheme",
         "@io_k8s_client_go//rest",
         "@io_k8s_sigs_controller_runtime//pkg/client",
-        "@io_k8s_sigs_controller_runtime//pkg/envtest",
     ],
 )

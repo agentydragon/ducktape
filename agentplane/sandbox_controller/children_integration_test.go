@@ -4,12 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -26,7 +25,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -43,27 +41,18 @@ func eventually(t *testing.T, check func() bool) {
 // Exercise a real API server without KubeVirt and real SSA field ownership and manager watches.
 func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	ctrl.SetLogger(logr.FromSlogHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	asset, err := runfiles.Rlocation("envtest_kubernetes_linux_amd64/kube-apiserver")
-	if err != nil {
-		t.Fatal(err)
-	}
-	crds, err := runfiles.Rlocation("_main/agentplane/crds/manifests")
-	if err != nil {
-		t.Fatal(err)
-	}
-	environment := &envtest.Environment{BinaryAssetsDirectory: filepath.Dir(asset), CRDDirectoryPaths: []string{crds}, ErrorIfCRDPathMissing: true}
 	// Kubernetes defaults selector-less headless Services to dual-stack. Configure both
 	// families so their defaulted fields also pass validation on later drift updates.
-	environment.ControlPlane.GetAPIServer().Configure().Set("service-cluster-ip-range", "10.0.0.0/24,fd00::/108")
-	config, err := environment.Start()
+	kube, err := kubeapiserver.Start(kubeapiserver.WithAPIServerFlag("service-cluster-ip-range", "10.0.0.0/24,fd00::/108"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := environment.Stop(); err != nil {
+		if err := kube.Stop(); err != nil {
 			t.Error(err)
 		}
 	})
+	config := kube.Config
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
 		t.Fatal(err)

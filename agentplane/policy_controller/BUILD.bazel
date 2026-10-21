@@ -39,14 +39,10 @@ go_test(
         "controller_envtest_test.go",
         "controller_test.go",
     ],
-    data = [
-        "//agentplane/crds",
-        "@envtest_kubernetes_linux_amd64//:assets",
-    ],
     embed = [":policy_controller"],
     deps = [
         "//agentplane/policy/api/v1alpha1",
-        "@io_bazel_rules_go//go/runfiles",
+        "//agentplane/testing/kubeapiserver",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",
         "@io_k8s_apimachinery//pkg/api/errors",
@@ -60,7 +56,6 @@ go_test(
         "@io_k8s_sigs_controller_runtime//pkg/cache",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/client/fake",
-        "@io_k8s_sigs_controller_runtime//pkg/envtest",
         "@io_k8s_sigs_controller_runtime//pkg/metrics/server",
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
         "@io_k8s_sigs_controller_runtime//pkg/webhook",

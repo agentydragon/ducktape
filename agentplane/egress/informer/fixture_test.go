@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sync/atomic"
 	"testing"
@@ -17,7 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -25,7 +24,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 const (
@@ -46,47 +44,16 @@ var (
 
 // TestMain runs one API server for every test; each test works in namespaces of its own.
 func TestMain(m *testing.M) {
-	os.Exit(runWithAPIServer(m))
-}
-
-func runWithAPIServer(m *testing.M) int {
-	asset, err := runfiles.Rlocation("envtest_kubernetes_linux_amd64/kube-apiserver")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	crd, err := runfiles.Rlocation("ducktape/agentplane/crds/manifests/crd-policybindings.yaml")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	existing := false
-	environment := &envtest.Environment{
-		BinaryAssetsDirectory: filepath.Dir(asset),
-		CRDDirectoryPaths:     []string{filepath.Dir(crd)},
-		ErrorIfCRDPathMissing: true,
-		UseExistingCluster:    &existing,
-	}
-	if apiConfig, err = environment.Start(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer func() {
-		if err := environment.Stop(); err != nil {
-			fmt.Fprintln(os.Stderr, "stop API server:", err)
+	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) (err error) {
+		apiConfig = server.Config
+		for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, policyapi.AddToScheme, egressapi.AddToScheme} {
+			if err := add(apiScheme); err != nil {
+				return err
+			}
 		}
-	}()
-	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, policyapi.AddToScheme, egressapi.AddToScheme} {
-		if err := add(apiScheme); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-	}
-	if apiClient, err = client.New(apiConfig, client.Options{Scheme: apiScheme}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return m.Run()
+		apiClient, err = client.New(apiConfig, client.Options{Scheme: apiScheme})
+		return err
+	}))
 }
 
 // fixture is one test's namespaces, its Index, and an Informer against the shared API server.
