@@ -126,4 +126,8 @@ common:ci --announce_rc
 # Live targets remain part of CI builds so their remote lint/typecheck actions
 # stay covered. Only their credentialed test processes are excluded.
 test:ci --test_tag_filters=-live_openai_api,-manual
+# Opt in to credentialed, real-model tests with `--config=ci --config=live-openai`.
+test:live-openai --test_tag_filters=live_openai_api,-manual,-ollama
+test:live-openai --test_env=OPENAI_BASE_URL=https://litellm.allegedly.works/v1
+test:live-openai --test_env=OPENAI_MODEL=mistral/oai-chat/mistral-small-latest
 common:ai_agent --config=quiet

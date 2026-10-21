@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - keys-tf.k8s.yaml
   - litellm-clients-sops-age-key.sops.yaml
+  - buildbuddy-org-admin-api-key.sops.yaml

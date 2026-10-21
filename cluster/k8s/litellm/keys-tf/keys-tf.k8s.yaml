@@ -27,6 +27,11 @@ spec:
             secretKeyRef:
               key: key
               name: litellm-clients-sops-age-key
+        - name: TF_VAR_buildbuddy_api_key
+          valueFrom:
+            secretKeyRef:
+              key: api-key
+              name: buildbuddy-org-admin-api-key
       resources:
         requests:
           cpu: 250m

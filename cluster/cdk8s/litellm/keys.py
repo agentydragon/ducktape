@@ -43,7 +43,7 @@ class KeysVars(BaseModel):
 
 
 def keys_chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
-    """Mints the agent and laptop-client LiteLLM virtual keys (tf/gitops/litellm-keys).
+    """Mints the agent and laptop-client LiteLLM keys and the BuildBuddy live-test key.
     Needs the SOPS-managed master key and a serving LiteLLM with its virtual-key DB;
     tofu-controller retries on its interval until LiteLLM is up.
     """
@@ -59,7 +59,13 @@ def keys_chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
             # its `sops_file` data sources -- single-purpose, not the broad cluster key.
             terraform.secret_env(
                 "SOPS_AGE_KEY", SecretRef(namespace=terraform.NAMESPACE, name="litellm-clients-sops-age-key").key("key")
-            )
+            ),
+            # Dedicated BuildBuddy org-admin key used only to provision the
+            # cheap-model API secret for opted-in live tests.
+            terraform.secret_env(
+                "TF_VAR_buildbuddy_api_key",
+                SecretRef(namespace=terraform.NAMESPACE, name="buildbuddy-org-admin-api-key").key("api-key"),
+            ),
         ],
     )
     return chart

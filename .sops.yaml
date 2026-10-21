@@ -125,13 +125,14 @@ creation_rules:
           - *haku
 
   # BuildBuddy org-admin API key for managing encrypted BuildBuddy secrets.
-  # Keep this local-operator-only; it is not the shared RBE key and is not
-  # available to CI or the cluster. Decryptable by admin and personal machine
-  # user keys derived from ~/.ssh/id_ed25519.
-  - path_regex: secrets/buildbuddy-org-admin-api-key\.sops\.yaml$
+  # Flux applies it only for the litellm-keys Terraform runner; admin and
+  # personal machine user keys derived from ~/.ssh/id_ed25519 can also decrypt it.
+  - path_regex: cluster/k8s/litellm/keys-tf/buildbuddy-org-admin-api-key\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:
           - *admin
+          - *cluster-secrets
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon

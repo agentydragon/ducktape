@@ -1555,7 +1555,7 @@ def generate_manifests(root: Path) -> None:
             root,
             litellm_keys_tf_artifact,
             functools.partial(litellm_keys.keys_chart, module=litellm_keys_module),
-            siblings=["litellm-clients-sops-age-key.sops.yaml"],
+            siblings=["litellm-clients-sops-age-key.sops.yaml", "buildbuddy-org-admin-api-key.sops.yaml"],
         ),
         tofu_controller_kustomization,
     )

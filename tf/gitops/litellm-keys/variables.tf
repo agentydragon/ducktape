@@ -12,3 +12,9 @@ variable "model_lanes" {
     fallback_models = list(string)
   }))
 }
+
+variable "buildbuddy_api_key" {
+  description = "BuildBuddy org-admin key used only by the litellm-keys runner to manage encrypted BuildBuddy secrets."
+  type        = string
+  sensitive   = true
+}

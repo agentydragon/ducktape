@@ -2,12 +2,11 @@
 
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-_DEFAULT_LIVE_ENV = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"]
+_DEFAULT_LIVE_ENV = ["OPENAI_BASE_URL", "OPENAI_MODEL"]
 
-def _live_tags(base_tags, requires_docker):
+def _live_tags(base_tags):
     """Append live-only tags to base tags."""
-    live_tags = base_tags + ["live_openai_api"]
-    return live_tags if requires_docker else live_tags + ["no-remote-exec"]
+    return base_tags + ["live_openai_api"]
 
 def live_openai_py_test(name, srcs, deps, tags = None, requires_docker = False, **kwargs):
     """py_test that generates .mock and .live targets from one declaration.
@@ -22,13 +21,12 @@ def live_openai_py_test(name, srcs, deps, tags = None, requires_docker = False, 
         deps: Dependencies (owned by the hidden _lib target).
         tags: Base tags applied to both targets. The .live target
             additionally gets "live_openai_api".
-        requires_docker: Whether both variants require Docker. Docker tests run
-            entirely on RBE; other live variants run only TestRunner locally.
+        requires_docker: Whether both variants require Docker.
         **kwargs: Passed through to py_test (size, exec_properties, data, env,
             timeout, etc).
     """
     base_tags = tags or []
-    ltags = _live_tags(base_tags, requires_docker)
+    ltags = _live_tags(base_tags)
 
     # Hidden library owns the source — compiled once, no .pyc collision.
     py_library(
@@ -46,6 +44,16 @@ def live_openai_py_test(name, srcs, deps, tags = None, requires_docker = False, 
     }
     common_kwargs.update(kwargs)
 
+    # BuildBuddy injects only the key into the test action, never the test
+    # binary's build action. Preserve caller properties such as Docker setup.
+    live_exec_properties = dict(kwargs.get("exec_properties") or {})
+    env_secrets = [secret for secret in live_exec_properties.get("test.env-secrets", "").split(",") if secret]
+    if "OPENAI_API_KEY" not in env_secrets:
+        env_secrets.append("OPENAI_API_KEY")
+    live_exec_properties["test.env-secrets"] = ",".join(sorted(env_secrets))
+    live_kwargs = dict(common_kwargs)
+    live_kwargs["exec_properties"] = live_exec_properties
+
     # .mock — runs only non-live tests
     py_test(
         name = name + ".mock",
@@ -54,11 +62,11 @@ def live_openai_py_test(name, srcs, deps, tags = None, requires_docker = False, 
         **common_kwargs
     )
 
-    # .live — runs only live tests, with API key passthrough
+    # .live — runs only live tests; BuildBuddy injects OPENAI_API_KEY at execution time.
     py_test(
         name = name + ".live",
         args = ["-m", "live_openai_api"],
         env_inherit = _DEFAULT_LIVE_ENV,
         tags = ltags,
-        **common_kwargs
+        **live_kwargs
     )

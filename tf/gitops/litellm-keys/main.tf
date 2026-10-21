@@ -2,6 +2,10 @@ terraform {
   required_version = ">= 1.0"
 
   required_providers {
+    external = {
+      source  = "hashicorp/external"
+      version = "~> 2.3"
+    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 3.0"
@@ -84,6 +88,48 @@ resource "kubernetes_secret" "cheap_experiments" {
 
   data = {
     api-key = litellm_key.cheap_experiments.key
+  }
+}
+
+# ==========================================================================
+# BuildBuddy live OpenAI tests — dedicated key with the same cheap-model lane
+# ==========================================================================
+resource "litellm_key" "buildbuddy_live_tests" {
+  key_alias       = "buildbuddy-live-tests"
+  models          = var.model_lanes.cheap_experiments_models.allowed_models
+  max_budget      = 50
+  budget_duration = "30d"
+  metadata = {
+    consumer = "buildbuddy-live-openai-tests"
+  }
+}
+
+# BuildBuddy Secrets only accepts sealed-box ciphertext. The helper is packaged
+# in the dedicated tf-runner image; it reads the org key from TF_VAR_ and the
+# LiteLLM key from the provisioner environment, then sends only ciphertext to
+# BuildBuddy. This terraform_data state stores the LiteLLM key hash and the
+# BuildBuddy public-key ID, never the plaintext key or ciphertext.
+data "external" "buildbuddy_public_key" {
+  program = ["/usr/local/bin/buildbuddy-secret-sync", "public-key-id"]
+}
+
+resource "terraform_data" "buildbuddy_live_tests_secret" {
+  triggers_replace = [
+    sha256(litellm_key.buildbuddy_live_tests.key),
+    data.external.buildbuddy_public_key.result.key_id,
+  ]
+
+  provisioner "local-exec" {
+    command = "/usr/local/bin/buildbuddy-secret-sync set"
+    environment = {
+      TF_VAR_buildbuddy_api_key = var.buildbuddy_api_key
+      LITELLM_API_KEY           = litellm_key.buildbuddy_live_tests.key
+    }
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "/usr/local/bin/buildbuddy-secret-sync delete"
   }
 }
 

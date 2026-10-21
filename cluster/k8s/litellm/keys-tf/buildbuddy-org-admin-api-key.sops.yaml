@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: buildbuddy-org-admin-api-key
+    namespace: flux-system
+    annotations:
+        description: BuildBuddy org-admin API key used only by the litellm-keys Terraform runner to manage BuildBuddy Secrets API entries.
+type: Opaque
+stringData:
+    api-key: ENC[AES256_GCM,data:fXyM0n3HCUV8q7ZZJmrZRevLDWA=,iv:hz6V3OgRT7fmRMdDGMSpkLs6rY4tNsSWQibDY80p7VA=,tag:DyAFHcxz2f7UBkvxt+EE2Q==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCMlBFRndkNFpoa1FoZnFs
+            MmxiQU9kZ0xYenBvWVNwcS82UUlwRkgvT2dBClpvYWRVK3QxSFdaY1UycUkyQkNE
+            Y2NxdHV6aVR5c2owNFlRcytnVGpKYXMKLS0tIDNlQU1HTDArRjNJYkRnMktjQUF2
+            Nk1uUk9HejR4ZmVRckdCdm51anNwT1UKtsen6/jHDjLTaDojeSAtNYEY7K3w8jJ1
+            j8CB5ggeUcDXqICfUbDXvAYHJNm8Tx/OHp+lMGJp5fkBdjXBNkI8Vw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAzS0ZoNHMreHY5WnExVGgv
+            NUJJYys0K2xZSmI5YTdoaXlpbEJIbEJCU0FjCmlDemhhWHNtcTlacFRNNHBJTC9X
+            UUsvWWFqcTFaMTNzOFhRUC81czBSQ3MKLS0tIFVmVmQxZ2U2QjVtNmdtdEMybDNS
+            OXRHWk55amVGL1RSYWovZ3R5YWZPaDAK+VVjNf8UPeciJv/jDv+d+n4q2a5tCi01
+            9QPALCG6ib1qBM8JUYpJVbbWBN+5F3buTXoU76OJZW6/xF8UC5+QDw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBQRFlQeFMvaHRZdW1CZk5l
+            TGMvNkpLK3VBR055aFZNOUE4bjdqMVN1QnlVCnAvSEE1ODNmN3dVbGZHcUFoeHVD
+            Q2dJQzUzYSt4U1JnYmRrN0ZadldidkUKLS0tIE83VXZZT1FabzdHemg3UEJjL1NV
+            OVFZTWVCT2NhL3BZQ0owRzJGZTA1YVUKtooc/ZXpFoxZ7P/VmuB5HRQR/Ccq4tT/
+            64duoBXwjr5I/Dz11p5joG4uqNbrWCFy4cQRUtnIO6eLnjSWwV7yIA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age12c2ef6ayydzvmz6k49pyyhtgu2g00nyynmht8y3laqvxn3wya4wselpc4s
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBXaWJaOTZuenU0REhmNE01
+            MWh3UGZmRnVsVTRVSy9kMFRoeWdMb3NLTUdFCmJQTi9TYlpBdllxL3N0b3Z1Y1NR
+            Rk9xTmY2TVhCRUpiWWpkRDYvUlNoSTgKLS0tIHlwbE9TTmp5eS9STkphRHEyOUtW
+            YllrTy9zN1VLL3p0dDM4VUl1RnBOVDQKlW/2YBm0JwRs/rsV5CiMPXyMaNDnSRKM
+            hC4S0OTTycJMW6txnv+VDhAIuNJFPi7JayyhLxQI2dolNKM8G3wbDg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1qdgn0k59t7ghg3t4gg02g2ppnzp7uz0ddplup38y84hqslcsgsxq3v9tkz
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBFYVB2M1VMUGwvWS9WY0Jr
+            eDQwQlhrc0hwQ2luOENFZ01qVWpTbGk2NUNBCnFNYkE3VzM3Y1FOM1IybDBGMTdT
+            UjRhdkVvc3ZQejZqQjQwTGM0K0FRRDgKLS0tIG9MYTlKcnVkbjN0N1lvaVZ1Z3J3
+            WEVMYmtsZTQvc2RvUFNjclhXTXpMODQKLZr8VUF3AZ0QuGxa5Mmq5GVrF1r+3+Nc
+            TOWQU9ptkUUorlmkXzFL6jiPV2yQLYEJnGMYGyA+pjCnkVlWSgeHmw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age15hfg4r2zfc2zl6zarecpvykxjktw4zu3grlahz4397rstmhqpvtqjgf6yy
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB0bmtGTDB0SXBMWTNCKzcr
+            QlhEZVYwYWhUbzN5cS9NWm9QdFc1bEo0OUZZCkh6T2E2c29iNHdMNnZIQlpPRmQv
+            Z0R1L1hQUnFwdnpqRjA3Q3V0M3pJSTQKLS0tIGRkQVZuaGpndUtLQXMrUXZnR21J
+            d0xwZ1FWMkdYcHJxSVdtQ240MW1MRXcKBJiAtf4n5KkXf2tFP7XiFo0x24mz5X4y
+            BBs9SFXflB35tv2mGKLydL4ycxDOwx5DCEaAM5MxGCwtrYdH3jqoQQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1l325yz3v2mev3t896mzvmmkaatjc7z4d9kukvnjuslgwwd8zg9ss9pnsc7
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBjMEpVdVRnV3V1NWtOTTVY
+            TDBkeEZLN0o4Z0tQV2dLend4dytDNDlxODNRCjRXRkc3amFwWmkvRFZWcGZzWWl6
+            Y2l2U3N6MVVaMUhkZHJtNGRIWkl3bm8KLS0tIEpoaE5zZXlmL2laT1poQy9sekRH
+            dWN5aTJQNFRDMi9tK285a2JiRzlJSUkKZ1yrQ9vP7rJmj1Vg5MfmLZSFXUvIBRVp
+            L+ceV0ywduQRIRgiiX+H2SQ5X8STGHlrbFDdsg98ssL5uw98Kc6jkQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1wjv755gsh9l02wm3wet48kjl6ju5ckk3jgllfpe8xmfauqqardgq7pt7ud
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-10-21T22:59:44Z"
+    mac: ENC[AES256_GCM,data:DPlQXaYn1tKZlGEGv4lMmKcljMUGf/4YOajBooshgsnbpMEiBwI6zHXZ/4iwrU8gJWmdSKX4OApPlJxtjmY07ixFWOYYoUIZhg1/IsnztuW0ewuD/kccCCB07/05Uj7vZOZxtZT40zhQKT+m9wTFmcMExlv0AHB8Gn9tNA8foZg=,iv:4Wf3kT0DrC5DRFDZlxeWEx+IWBXvfVeYVM7GNubOwGw=,tag:rtTivZ+HZ39iDX9+yYICjA==,type:str]
+    version: 3.13.3
