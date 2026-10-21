@@ -267,30 +267,43 @@ func blockUntilDone(ended chan<- struct{}, frames ...*pb.ActionRequest) func(*pb
 	}
 }
 
+// sendThenFail sends the given frames, then ends the watch with code.
+func sendThenFail(code codes.Code, frames ...*pb.ActionRequest) func(*pb.WatchActionRequestRequest, grpc.ServerStreamingServer[pb.WatchActionRequestResponse]) error {
+	return func(_ *pb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[pb.WatchActionRequestResponse]) error {
+		for _, frame := range frames {
+			if err := stream.Send(&pb.WatchActionRequestResponse{ActionRequest: frame}); err != nil {
+				return err
+			}
+		}
+		return status.Error(code, "test watch ended")
+	}
+}
+
 func TestAWaitDeadlineAnswersTheCurrentReceipt(t *testing.T) {
-	t.Run("the last frame", func(t *testing.T) {
-		ended := make(chan struct{})
-		recorder := &recordingCore{}
-		session := newHarness(t, recorder.core(nil, blockUntilDone(ended, testRequest(pb.ActionState_ACTION_STATE_RUNNING))), 30).
-			connect(t, callerToken)
-		result := callTool(t, session, "get_action_request", `{"request_id": "`+testRequestID+`", "wait": {"wait_seconds": 1}}`)
-		if got := receiptState(t, result); got != "running" {
-			t.Errorf("state = %q, want running", got)
-		}
-		// The deadline ends the watch.
-		<-ended
-	})
-	t.Run("a read when no frame came", func(t *testing.T) {
-		recorder := &recordingCore{}
-		session := newHarness(t, recorder.core(map[string]proto.Message{
-			"GetActionRequest": &pb.GetActionRequestResponse{ActionRequest: testRequest(pb.ActionState_ACTION_STATE_DECISION_PENDING)},
-		}, blockUntilDone(make(chan struct{}))), 30).connect(t, callerToken)
-		result := callTool(t, session, "get_action_request", `{"request_id": "`+testRequestID+`", "wait": {"wait_seconds": 0.001}}`)
+	running := testRequest(pb.ActionState_ACTION_STATE_RUNNING)
+	for _, tc := range []struct {
+		name  string
+		wait  string
+		watch func(*pb.WatchActionRequestRequest, grpc.ServerStreamingServer[pb.WatchActionRequestResponse]) error
+		want  string
+	}{
+		{"the last frame at the deadline", "1", blockUntilDone(make(chan struct{}), running), "running"},
+		// The core sees the deadline as grpc-timeout and can end the watch before this side's clock does.
+		{"the last frame when the core ends the wait", "10", sendThenFail(codes.DeadlineExceeded, running), "running"},
 		// Only the read answers decision_pending.
-		if got := receiptState(t, result); got != "decision_pending" {
-			t.Errorf("state = %q, want decision_pending", got)
-		}
-	})
+		{"a read when no frame came", "0.001", blockUntilDone(make(chan struct{})), "decision_pending"},
+		{"a read when the core ends the wait first", "10", sendThenFail(codes.DeadlineExceeded), "decision_pending"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			session := newHarness(t, (&recordingCore{}).core(map[string]proto.Message{
+				"GetActionRequest": &pb.GetActionRequestResponse{ActionRequest: testRequest(pb.ActionState_ACTION_STATE_DECISION_PENDING)},
+			}, tc.watch), 30).connect(t, callerToken)
+			result := callTool(t, session, "get_action_request", `{"request_id": "`+testRequestID+`", "wait": {"wait_seconds": `+tc.wait+`}}`)
+			if got := receiptState(t, result); got != tc.want {
+				t.Errorf("state = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }
 
 func TestAWatchTheCoreEndsEarlyAnswersAsPythonDid(t *testing.T) {

@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 )
 
@@ -59,14 +62,17 @@ func (t *tools) read(ctx context.Context, requestID string, wait waitOptions) (*
 			last = frame.GetActionRequest()
 		}
 	}
+	// The deadline travels to the core as grpc-timeout, so the core can end the stream DEADLINE_EXCEEDED before this
+	// side's clock reaches it.
+	deadline := errors.Is(watchCtx.Err(), context.DeadlineExceeded) || status.Code(err) == codes.DeadlineExceeded
 	switch {
 	case errors.Is(err, io.EOF) && last != nil:
 		return last, nil
 	case transport.Err() != nil:
 		return nil, errDisconnected
-	case errors.Is(watchCtx.Err(), context.DeadlineExceeded) && last != nil:
+	case deadline && last != nil:
 		return last, nil
-	case errors.Is(watchCtx.Err(), context.DeadlineExceeded):
+	case deadline:
 		// Nothing arrived before the deadline: the receipt as it stands.
 		return t.read(ctx, requestID, waitOptions{})
 	case errors.Is(err, io.EOF):
