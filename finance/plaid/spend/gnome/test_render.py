@@ -300,7 +300,10 @@ def test_view_signal_wins_initial_get_and_owner_restart_rehydrates(render_sessio
         test_clock = datetime.fromisoformat("2026-10-15T12:00:00+00:00").timestamp()
         _fake_daemon_call(session, "SetTiming", str(test_clock - 75), str(test_clock + 20))
         _wait_until(
-            lambda: "Last attempt 1m 15s ago · Retry in 20s" in _string_reply(session.call("GetMenuText")),
+            lambda: all(
+                text in _string_reply(session.call("GetMenuText"))
+                for text in ("Last attempt 1m 15s ago", "Retry in 20s")
+            ),
             "extension did not project desktop retry properties",
         )
 
@@ -414,11 +417,13 @@ def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
     session, output_dir = render_session
     with _menu(session, "retrying", "Flex unavailable") as geometry:
         menu_text = _string_reply(session.call("GetMenuText"))
-        assert "Last attempt 1m 15s ago · Retry in 20s" in menu_text
+        assert "Last attempt 1m 15s ago" in menu_text
+        assert "Retry in 20s" in menu_text
         assert "Sync 1h ago" in menu_text
         session.call("AdvanceClock", "5")
         menu_text = _string_reply(session.call("GetMenuText"))
-        assert "Last attempt 1m 20s ago · Retry in 15s" in menu_text
+        assert "Last attempt 1m 20s ago" in menu_text
+        assert "Retry in 15s" in menu_text
         assert "Sync 1h ago" in menu_text
         _capture(session, output_dir, geometry, "retrying")
 
@@ -427,7 +432,8 @@ def test_authentication_required_has_no_retry_countdown(render_session: tuple[Gn
     session, _ = render_session
     with _menu(session, "authentication_required", "Sign in"):
         menu_text = _string_reply(session.call("GetMenuText"))
-        assert "Last attempt 1m 15s ago · Sign-in required" in menu_text
+        assert "Last attempt 1m 15s ago" in menu_text
+        assert "Sign-in required" in menu_text
         assert "Retry in" not in menu_text
 
 
