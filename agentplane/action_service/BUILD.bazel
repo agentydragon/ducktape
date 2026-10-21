@@ -1458,20 +1458,28 @@ go_library(
     name = "main_lib",
     srcs = [
         "config.go",
+        "docs.go",
         "main.go",
     ],
+    embedsrcs = glob(["docs/agents/**"]) + [":action_service_openapi"],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service",
     deps = [
+        ":action_service_go_proto",
+        "//agentplane/action_service/api",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
         "//agentplane/grpc/facade",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
+        "//agentplane/workload_auth/go/auth",
+        "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@com_github_spf13_viper//:viper",
         "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//rest",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//health/grpc_health_v1",
     ],
@@ -1487,7 +1495,18 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":main_lib"],
-    deps = ["//agentplane/action_service/catalog"],
+    deps = [
+        "//agentplane/action_service/api",
+        "//agentplane/action_service/catalog",
+        "//agentplane/workload_auth/go/auth",
+    ],
+)
+
+go_test(
+    name = "docs_test",
+    srcs = ["docs_test.go"],
+    embed = [":main_lib"],
+    deps = ["//agentplane/testing/agentdocs"],
 )
 
 go_test(
@@ -1512,18 +1531,24 @@ go_test(
     embed = [":main_lib"],
     tags = ["requires_docker"],
     deps = [
+        ":action_service_go_proto",
         "//agentplane/action_service/migrations",
         "//agentplane/action_service/store",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/testing/postgres",
+        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/go/authtest",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

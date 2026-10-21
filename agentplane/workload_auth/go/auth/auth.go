@@ -155,14 +155,25 @@ func (r *Resolver) Resolve(ctx context.Context) (Principal, error) {
 // ResolveAuthorization accepts exactly one Bearer value and requires the reviewed audience,
 // ServiceAccount UID and singular Pod binding claims.
 func (r *Resolver) ResolveAuthorization(ctx context.Context, values []string) (Principal, error) {
+	token, err := BearerToken(values)
+	if err != nil {
+		return Principal{}, err
+	}
+	return r.ResolveToken(ctx, token)
+}
+
+// BearerToken is the token of the one `authorization` value, which must be `Bearer <token>`; anything else is
+// ErrInvalidBearer. A door that admits more than workload tokens reads the bearer with it before choosing who
+// verifies the token.
+func BearerToken(values []string) (string, error) {
 	if len(values) != 1 {
-		return Principal{}, ErrInvalidBearer
+		return "", ErrInvalidBearer
 	}
 	value := values[0]
 	if !strings.HasPrefix(value, "Bearer ") || strings.TrimSpace(value[7:]) == "" || strings.ContainsAny(value[7:], " \t\r\n") {
-		return Principal{}, ErrInvalidBearer
+		return "", ErrInvalidBearer
 	}
-	return r.ResolveToken(ctx, value[7:])
+	return value[7:], nil
 }
 
 // ResolveToken reviews one bearer token, however the caller received it. It fails with

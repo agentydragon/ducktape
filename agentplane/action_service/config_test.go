@@ -4,13 +4,21 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
 
 const databaseURLEnv = settingPrefix + "DATABASE_URL=postgres://test-user:never-print-this@test-database/actions"
+
+// requiredFile is a deployment's settings file with every setting that has no default.
+const requiredFile = `token_audience: test-actions
+caller_service_account_namespaces: [test-agentplane]
+`
 
 func loadTestConfig(t *testing.T, file string, environ ...string) (config, error) {
 	t.Helper()
@@ -32,17 +40,17 @@ func loadTestConfig(t *testing.T, file string, environ ...string) (config, error
 }
 
 func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
-	c, err := loadTestConfig(t, "")
+	c, err := loadTestConfig(t, requiredFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DatabaseURL == "" || c.Host != "0.0.0.0" || c.Port != 8080 {
+	if c.DatabaseURL == "" || c.Host != "0.0.0.0" || c.Port != 8080 || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() {
 		t.Errorf("settings: %+v", c)
 	}
 }
 
 func TestAnEnvironmentVariableOverridesTheFile(t *testing.T) {
-	c, err := loadTestConfig(t, "host: 127.0.0.1\nport: 9000\n", settingPrefix+"PORT=9001")
+	c, err := loadTestConfig(t, requiredFile+"host: 127.0.0.1\nport: 9000\n", settingPrefix+"PORT=9001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +81,7 @@ const testActionGroups = `action_groups:
 `
 
 func TestActionGroupsAreReadFromTheFileWithTheirKeysAsWritten(t *testing.T) {
-	c, err := loadTestConfig(t, testActionGroups)
+	c, err := loadTestConfig(t, requiredFile+testActionGroups)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +100,7 @@ func TestActionGroupsAreReadFromTheFileWithTheirKeysAsWritten(t *testing.T) {
 }
 
 func TestWithoutActionGroupsNoActionResolves(t *testing.T) {
-	c, err := loadTestConfig(t, "")
+	c, err := loadTestConfig(t, requiredFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,17 +109,55 @@ func TestWithoutActionGroupsNoActionResolves(t *testing.T) {
 	}
 }
 
+func TestReaderAccountsAndTheOperatorIssuerAreRead(t *testing.T) {
+	c, err := loadTestConfig(t, requiredFile+`reader_accounts:
+  - {namespace: test-agentplane, name: test-notifications}
+  - test-agentplane/test-other-reader
+operator_oidc:
+  issuer: https://issuer.test.example/
+  jwks_uri: https://issuer.test.example/jwks/
+`, settingPrefix+"OPERATOR_OIDC__AUDIENCE=test-actions-audience")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantReaders := []auth.Account{{Namespace: "test-agentplane", Name: "test-notifications"}, {Namespace: "test-agentplane", Name: "test-other-reader"}}
+	wantOperators := api.OperatorOIDCSettings{
+		Issuer: "https://issuer.test.example/", Audience: "test-actions-audience", JWKSURI: "https://issuer.test.example/jwks/",
+		TokenProfile: api.ProfileAuthentik,
+	}
+	if !slices.Equal(c.ReaderAccounts, wantReaders) || c.OperatorOIDC != wantOperators || !c.operatorsEnabled() {
+		t.Errorf("settings: %+v", c)
+	}
+}
+
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
-		// A key of the Python service's settings that this service does not read yet is refused like any other.
-		"unknown key":                        "token_audience: never-print-this\n",
-		"port of a word":                     "port: never-print-this\n",
-		"port out of range":                  "port: 70000\n",
-		"empty host":                         "host: \"\"\n",
-		"action group":                       strings.Replace(testActionGroups, "server_id: test-group", "server_id: never-print-this", 1),
-		"action groups key":                  strings.Replace(testActionGroups, "X-Test-Header: test", "1: never-print-this", 1),
-		"action group field of another type": strings.Replace(testActionGroups, "available: yes", "available: never-print-this", 1),
-		"unknown action group field":         strings.Replace(testActionGroups, "available: yes", "health: never-print-this", 1),
+		"unknown key":          requiredFile + "test_unknown_setting: never-print-this\n",
+		"port of a word":       requiredFile + "port: never-print-this\n",
+		"port out of range":    requiredFile + "port: 70000\n",
+		"empty host":           requiredFile + "host: \"\"\n",
+		"no audience":          strings.Replace(requiredFile, "token_audience: test-actions\n", "", 1),
+		"no caller namespaces": strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
+		"reader of a word":     requiredFile + "reader_accounts: [never-print-this]\n",
+		"operator issuer without its audience": requiredFile + `operator_oidc:
+  issuer: https://never-print-this.test.example/
+  jwks_uri: https://issuer.test.example/jwks/
+`,
+		"operator keys over plain http": requiredFile + `operator_oidc:
+  issuer: https://issuer.test.example/
+  audience: test-actions-audience
+  jwks_uri: http://never-print-this.test.example/jwks/
+`,
+		"unknown token profile": requiredFile + `operator_oidc:
+  issuer: https://issuer.test.example/
+  audience: test-actions-audience
+  jwks_uri: https://issuer.test.example/jwks/
+  token_profile: never-print-this
+`,
+		"action group":                       requiredFile + strings.Replace(testActionGroups, "server_id: test-group", "server_id: never-print-this", 1),
+		"action groups key":                  requiredFile + strings.Replace(testActionGroups, "X-Test-Header: test", "1: never-print-this", 1),
+		"action group field of another type": requiredFile + strings.Replace(testActionGroups, "available: yes", "available: never-print-this", 1),
+		"unknown action group field":         requiredFile + strings.Replace(testActionGroups, "available: yes", "health: never-print-this", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadTestConfig(t, file)
@@ -124,11 +170,11 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 			}
 		})
 	}
-	if _, err := loadTestConfig(t, "", settingPrefix+"DATABASE_URL="); err == nil {
+	if _, err := loadTestConfig(t, requiredFile, settingPrefix+"DATABASE_URL="); err == nil {
 		t.Error("accepted without a database URL")
 	}
 	for _, variable := range []string{"ACTION_GROUPS={}", "ACTION_GROUPS__TEST_GROUP__AVAILABLE=false"} {
-		if _, err := loadTestConfig(t, testActionGroups, settingPrefix+variable); err == nil {
+		if _, err := loadTestConfig(t, requiredFile+testActionGroups, settingPrefix+variable); err == nil {
 			t.Errorf("accepted %s, which only the file sets", variable)
 		}
 	}

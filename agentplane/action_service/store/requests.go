@@ -329,43 +329,30 @@ func (s *Store) List(ctx context.Context, principal ReadPrincipal, filter ListFi
 	}
 	var requests []ActionRequest
 	err := s.read(ctx, func(tx *sql.Tx) error {
-		var conditions []string
-		var args []any
-		// arg numbers a value as the next placeholder; calls evaluate left to right, so a condition keeps its order.
-		arg := func(value any) string {
-			args = append(args, value)
-			return fmt.Sprintf("$%d", len(args))
-		}
-		if caller, ok := principal.(CallerPrincipal); ok {
-			conditions = append(conditions,
-				"caller_namespace = "+arg(caller.Account.Namespace)+" AND caller_name = "+arg(caller.Account.Name))
-		}
+		var q query
+		conditions := q.readableBy(principal)
 		if len(filter.States) > 0 {
 			states := make(pq.StringArray, len(filter.States))
 			for i, state := range filter.States {
 				states[i] = string(state)
 			}
-			conditions = append(conditions, "state = ANY("+arg(states)+")")
+			conditions = append(conditions, "state = ANY("+q.arg(states)+")")
 		}
 		if filter.IdempotencyKey != nil {
-			conditions = append(conditions, "idempotency_key = "+arg(*filter.IdempotencyKey))
+			conditions = append(conditions, "idempotency_key = "+q.arg(*filter.IdempotencyKey))
 		}
 		if filter.AfterID != nil {
 			anchor, err := readable(ctx, tx, *filter.AfterID, principal)
 			if err != nil {
 				return err
 			}
-			conditions = append(conditions, "(created_at, id) < ("+arg(anchor.CreatedAt)+", "+arg(anchor.ID)+")")
+			conditions = append(conditions, "(created_at, id) < ("+q.arg(anchor.CreatedAt)+", "+q.arg(anchor.ID)+")")
 		}
-		query := `SELECT ` + requestColumns + ` FROM action_request`
-		if len(conditions) > 0 {
-			query += ` WHERE ` + strings.Join(conditions, ` AND `)
-		}
-		query += ` ORDER BY created_at DESC, id DESC`
+		statement := `SELECT ` + requestColumns + ` FROM action_request` + where(conditions) + ` ORDER BY created_at DESC, id DESC`
 		if filter.Limit != nil {
-			query += ` LIMIT ` + arg(*filter.Limit)
+			statement += ` LIMIT ` + q.arg(*filter.Limit)
 		}
-		rows, err := scanRequests(ctx, tx, query, args...)
+		rows, err := scanRequests(ctx, tx, statement, q.args...)
 		if err != nil {
 			return err
 		}
@@ -373,6 +360,35 @@ func (s *Store) List(ctx context.Context, principal ReadPrincipal, filter ListFi
 		return err
 	})
 	return requests, err
+}
+
+// query collects the parameters of a statement built from conditions.
+type query struct{ args []any }
+
+// arg numbers a value as the next placeholder; calls evaluate left to right, so a condition keeps its order.
+func (q *query) arg(value any) string {
+	q.args = append(q.args, value)
+	return fmt.Sprintf("$%d", len(q.args))
+}
+
+// readableBy is the condition mayBeReadBy applies: a caller reads its own requests, an operator and a service
+// reader every owner's.
+func (q *query) readableBy(principal ReadPrincipal) []string {
+	switch principal := principal.(type) {
+	case CallerPrincipal:
+		return []string{"caller_namespace = " + q.arg(principal.Account.Namespace) + " AND caller_name = " + q.arg(principal.Account.Name)}
+	case OperatorPrincipal, ServiceReaderPrincipal:
+		return nil
+	default:
+		return []string{"FALSE"}
+	}
+}
+
+func where(conditions []string) string {
+	if len(conditions) == 0 {
+		return ""
+	}
+	return ` WHERE ` + strings.Join(conditions, ` AND `)
 }
 
 func scanRequests(ctx context.Context, q querier, query string, args ...any) ([]requestRow, error) {
@@ -401,9 +417,9 @@ type HistoryPage struct {
 	ExcludeAutoAllowed bool
 }
 
-// History returns the requests that left the pending state, newest transition first, and the cursor of the next
-// page, which is nil on the last.
-func (s *Store) History(ctx context.Context, page HistoryPage) ([]ActionRequest, *string, error) {
+// History returns the requests the reader may see that left the pending state, newest transition first, and the
+// cursor of the next page, which is nil on the last.
+func (s *Store) History(ctx context.Context, principal ReadPrincipal, page HistoryPage) ([]ActionRequest, *string, error) {
 	if page.Limit < 1 {
 		return nil, nil, invalid("limit must be at least 1")
 	}
@@ -418,17 +434,18 @@ func (s *Store) History(ctx context.Context, page HistoryPage) ([]ActionRequest,
 	var requests []ActionRequest
 	var next *string
 	err := s.read(ctx, func(tx *sql.Tx) error {
-		query := `SELECT ` + requestColumns + ` FROM action_request WHERE history_at IS NOT NULL`
-		args := []any{page.Limit + 1}
+		var q query
+		conditions := append(q.readableBy(principal), "history_at IS NOT NULL")
 		if page.ExcludeAutoAllowed {
-			query += ` AND NOT EXISTS (SELECT 1 FROM action_decision d WHERE d.request_id = action_request.id
-				AND d.verdict = 'allow' AND d.operator_issuer IS NULL)`
+			conditions = append(conditions, `NOT EXISTS (SELECT 1 FROM action_decision d WHERE d.request_id = action_request.id
+				AND d.verdict = 'allow' AND d.operator_issuer IS NULL)`)
 		}
 		if after != nil {
-			query += ` AND (history_at, id) < ($2, $3)`
-			args = append(args, after.At, after.ID)
+			conditions = append(conditions, "(history_at, id) < ("+q.arg(after.At)+", "+q.arg(after.ID)+")")
 		}
-		rows, err := scanRequests(ctx, tx, query+` ORDER BY history_at DESC, id DESC LIMIT $1`, args...)
+		statement := `SELECT ` + requestColumns + ` FROM action_request` + where(conditions) +
+			` ORDER BY history_at DESC, id DESC LIMIT ` + q.arg(page.Limit+1)
+		rows, err := scanRequests(ctx, tx, statement, q.args...)
 		if err != nil {
 			return err
 		}

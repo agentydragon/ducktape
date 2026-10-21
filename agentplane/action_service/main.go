@@ -1,6 +1,7 @@
-// Command actions is the Go Action Service, over the Action Service's PostgreSQL database. It serves the standard
-// gRPC health service and the process's Prometheus metrics at /metrics on one listener, and runs the dispatch
-// worker. It does not yet serve the Action RPCs, and runs no Executor.
+// Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
+// `ActionService`'s request reads over gRPC and their HTTP facade under /v1/, the agent documentation, the standard
+// gRPC health service and the process's Prometheus metrics at /metrics, and it runs the dispatch worker. The other
+// RPCs answer UNIMPLEMENTED, and it runs no Executor.
 package main
 
 import (
@@ -8,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,16 +19,21 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -40,14 +47,47 @@ const (
 	idleConnections = 4
 )
 
-// run serves on the configured address until ctx ends.
+// deps is who the service asks about a caller: the API server, which reviews a workload's bearer, and the view of
+// which ServiceAccounts carry the caller label.
+type deps struct {
+	Reviews auth.TokenReviews
+	Callers api.Callers
+}
+
+// noCallers admits no workload, as if no ServiceAccount carried the caller label: the label's index is not ported
+// yet. Service readers and operators are admitted.
+type noCallers struct{}
+
+func (noCallers) Admits(auth.Account) bool { return false }
+
+func inClusterDeps() (deps, error) {
+	kubeConfig, err := rest.InClusterConfig()
+	if err != nil {
+		return deps{}, err
+	}
+	// Every call is a TokenReview; client-go's default of 5 requests per second (burst 10) would queue them
+	// client-side. API Priority and Fairness bounds the load on the server.
+	kubeConfig.QPS = -1
+	kube, err := kubernetes.NewForConfig(kubeConfig)
+	if err != nil {
+		return deps{}, err
+	}
+	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Callers: noCallers{}}, nil
+}
+
+// run serves on the configured address until ctx ends, authenticating workloads with the cluster's TokenReview
+// API.
 func run(ctx context.Context, c config) error {
+	cluster, err := inClusterDeps()
+	if err != nil {
+		return err
+	}
 	listener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
-	return serve(ctx, c, listener)
+	return serve(ctx, c, cluster, listener)
 }
 
 func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
@@ -87,10 +127,43 @@ func (e executors) Route(action store.ActionIdentity) (worker.Executor, bool) {
 	return executor, true
 }
 
+// gate admits the callers of the service's RPCs.
+func gate(c config, d deps) (*api.Gate, error) {
+	workloads, err := auth.NewResolver(d.Reviews, c.TokenAudience, c.CallerServiceAccountNamespaces)
+	if err != nil {
+		return nil, err
+	}
+	options := api.GateOptions{Workloads: workloads, Callers: d.Callers, ReaderAccounts: c.ReaderAccounts}
+	if c.operatorsEnabled() {
+		if options.Operators, err = api.NewOperatorVerifier(c.OperatorOIDC); err != nil {
+			return nil, err
+		}
+	}
+	return api.NewGate(options), nil
+}
+
+// newRoutes is the listener's HTTP routes: the HTTP form of `ActionService` under /v1/ (served by agentFacade), the
+// agent documentation, which needs neither the database nor a peer, and the metrics.
+func newRoutes(agentFacade http.Handler) (http.Handler, error) {
+	docs, err := fs.Sub(agentDocs, "docs/agents")
+	if err != nil {
+		return nil, err
+	}
+	routes := http.NewServeMux()
+	routes.Handle("/v1/", agentFacade)
+	routes.Handle("/metrics", promhttp.Handler())
+	facade.MountAgentDocs(routes, docs, openAPI)
+	return routes, nil
+}
+
 // serve answers on listener and runs the dispatch worker until ctx ends or the listener fails. gRPC and the HTTP
 // routes share the listener. The worker drains from then on, beside the listener's shutdown, and serve returns
 // once it has.
-func serve(ctx context.Context, c config, listener net.Listener) error {
+func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
+	admission, err := gate(c, d)
+	if err != nil {
+		return err
+	}
 	db, err := openDatabase(ctx, c.DatabaseURL)
 	if err != nil {
 		return err
@@ -107,16 +180,31 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 		return err
 	}
 	defer unsubscribe()
-	dispatcher, err := worker.New(store.New(db), executors{catalog: c.ActionGroups}, worker.DefaultTiming())
+	requests := store.New(db)
+	dispatcher, err := worker.New(requests, executors{catalog: c.ActionGroups}, worker.DefaultTiming())
 	if err != nil {
 		return err
 	}
 
 	health := probes.New(db, hub)
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
+	)
 	healthpb.RegisterHealthServer(grpcServer, health)
-	routes := http.NewServeMux()
-	routes.Handle("/metrics", promhttp.Handler())
+	action_servicepb.RegisterActionServiceServer(grpcServer, api.NewService(requests))
+	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
+	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish
+	// while draining.
+	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopFacade()
+	agentFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), action_servicepb.RegisterActionServiceHandlerFromEndpoint)
+	if err != nil {
+		return err
+	}
+	routes, err := newRoutes(agentFacade)
+	if err != nil {
+		return err
+	}
 	server := &http.Server{Handler: routes, ReadHeaderTimeout: readHeaderTimeout}
 	facade.MountGRPC(server, grpcServer)
 
@@ -135,6 +223,7 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 		result = ctx.Err()
 	}
 	health.Drain()
+	admission.Drain()
 	drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
