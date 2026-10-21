@@ -8,7 +8,11 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/testing/envtest",
     visibility = ["//visibility:private"],
     deps = [
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/envtest",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

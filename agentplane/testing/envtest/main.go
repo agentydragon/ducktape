@@ -11,6 +11,10 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"golang.org/x/sync/errgroup"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
@@ -68,6 +72,9 @@ func run() (resultErr error) {
 		}
 	}()
 
+	if err := listEveryCRD(ctx, environment); err != nil && ctx.Err() == nil {
+		return fmt.Errorf("list every installed CRD: %w", err)
+	}
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -77,6 +84,38 @@ func run() (resultErr error) {
 
 	<-ctx.Done()
 	return nil
+}
+
+// listEveryCRD lists each served version of each installed CRD once. The API server builds a CRD's
+// storage at the first request for it and answers lists 429 "storage is (re)initializing" until
+// that storage's watch cache has synced. client-go waits that out; the Python client the fixtures
+// hand to tests does not, so the server is ready only once every CRD has listed.
+func listEveryCRD(ctx context.Context, environment *envtest.Environment) error {
+	cluster, err := client.New(environment.Config, client.Options{})
+	if err != nil {
+		return fmt.Errorf("create client: %w", err)
+	}
+	lists, ctx := errgroup.WithContext(ctx)
+	for _, crd := range environment.CRDs {
+		for _, version := range crd.Spec.Versions {
+			if !version.Served {
+				continue
+			}
+			lists.Go(func() error {
+				list := &unstructured.UnstructuredList{}
+				list.SetGroupVersionKind(schema.GroupVersionKind{
+					Group:   crd.Spec.Group,
+					Version: version.Name,
+					Kind:    crd.Spec.Names.Kind + "List",
+				})
+				if err := cluster.List(ctx, list, client.Limit(1)); err != nil {
+					return fmt.Errorf("list %s %s: %w", crd.Name, version.Name, err)
+				}
+				return nil
+			})
+		}
+	}
+	return lists.Wait()
 }
 
 func writeKubeConfig(path string, data []byte) error {
