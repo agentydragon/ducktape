@@ -252,6 +252,26 @@
       ],
       "transformations": [
         {
+          "id": "configFromData",
+          "options": {
+            "configRefId": "MaxDisk",
+            "mappings": [
+              {
+                "fieldName": "Value",
+                "handlerKey": "max"
+              },
+              {
+                "fieldName": "Time",
+                "handlerKey": "__ignore"
+              }
+            ],
+            "applyTo": {
+              "id": "byType",
+              "options": "number"
+            }
+          }
+        },
+        {
           "id": "groupingToMatrix",
           "options": {
             "columnField": "component",
@@ -279,26 +299,6 @@
             "indexByName": {},
             "renameByName": {
               "disk\\component": "Disk"
-            }
-          }
-        },
-        {
-          "id": "configFromData",
-          "options": {
-            "configRefId": "MaxDisk",
-            "mappings": [
-              {
-                "fieldName": "Value",
-                "handlerKey": "max"
-              },
-              {
-                "fieldName": "Time",
-                "handlerKey": "__ignore"
-              }
-            ],
-            "applyTo": {
-              "id": "byType",
-              "options": "number"
             }
           }
         }
