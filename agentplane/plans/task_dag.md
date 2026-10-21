@@ -1965,7 +1965,6 @@ flowchart LR
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     TESTING_ROLLOUT_ROLE[Decision: what replaces testing before staging]
     TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
-    K3S_MIGRATOR_CONNECT_RETRY[Proposed: migrators retry their first connection]
     K3S_CI_TIER[Decision: which k3s targets run in CI]
     APP_BRIDGE_TEST_SPLIT[Candidate: app bridge tests split by tier]
     FAKE_APISERVERS_TO_ENVTEST[Candidate: envtest in place of fake API servers]
@@ -1975,7 +1974,6 @@ flowchart LR
     K3S_VM_ACCEPTANCE --> TESTING_ENVIRONMENT_RETIRE
     TESTING_ROLLOUT_ROLE --> TESTING_ENVIRONMENT_RETIRE
     K3S_CI_TIER -. if the k3s suite gates staging pins .-> TESTING_ENVIRONMENT_RETIRE
-    K3S_MIGRATOR_CONNECT_RETRY -. faster on slow workers .-> K3S_CI_TIER
 ```
 
 ### `K3S_MODEL_CREDENTIALS` — model key for k3s acceptance
@@ -2065,15 +2063,6 @@ model backend on k3s.** Three PRs:
 recipes, docs and RBAC that name testing; the Flux kustomization, generated manifests, DNS and
 routes; the testing databases and volumes, a data drop that waits for the operator's word.
 `test_thread_latency` and `test_ollama_routes` remain staging-only manual checks. Preserve staging.
-
-### `K3S_MIGRATOR_CONNECT_RETRY` — migrators retry their first connection
-
-**Proposed.** Migration init containers that start before PostgreSQL exit and back off 10, 20,
-then 40 s; on a slow worker that kept services unavailable about a minute after PostgreSQL was
-Ready ([ffa9564c](https://app.buildbuddy.io/invocation/ffa9564c-3c9d-4937-b091-9fc8b191104d)).
-Every fresh run on 2026-10-21 paid one 10 s back-off per migrating service. Retry the first
-connection in process for a bounded time instead. Exit: no migrator restarts in a fresh lifecycle
-run, with time to all Deployments Available measured before and after.
 
 ### `K3S_CI_TIER` — which k3s targets run in CI
 

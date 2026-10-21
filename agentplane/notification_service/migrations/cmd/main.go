@@ -3,12 +3,12 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
-	_ "github.com/lib/pq"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 )
 
 const databaseURLEnv = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
@@ -19,12 +19,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, databaseURLEnv+" is required")
 		os.Exit(2)
 	}
-	db, err := sql.Open("postgres", databaseURL)
-	if err == nil {
-		defer db.Close()
-		err = migrations.Up(context.Background(), db)
-	}
-	if err != nil {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	if err := migrate.Run(context.Background(), databaseURL, migrations.Up); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

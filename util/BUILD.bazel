@@ -254,6 +254,7 @@ py_library(
         "@pypi//alembic",
         "@pypi//psycopg",
         "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
 

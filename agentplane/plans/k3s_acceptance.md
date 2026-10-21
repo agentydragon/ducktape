@@ -35,7 +35,7 @@ The reshuffle this implies:
   admission, where the Go Dispatcher answers at enqueue.
 - **`FAKE_APISERVERS_TO_ENVTEST`.** Hand-written API servers and TokenReview stubs give way to
   envtest.
-- **`K3S_VM_ACCEPTANCE`.** VM Sandboxes need KubeVirt on k3s without KVM (finding 4).
+- **`K3S_VM_ACCEPTANCE`.** VM Sandboxes need KubeVirt on k3s without KVM (finding 3).
 
 ## Where the k3s tests are
 
@@ -71,15 +71,12 @@ layer (−40%) and the harness-free runner image (−35%).
 1. **Worker speed dominates the variance.** On 2026-10-21 the same fixture took 98 s and 318 s
    pytest on different workers (131 s against 421 s of action, 166 against 586 CPU-seconds). Any
    CI budget has to hold on the slow workers, not the median.
-2. **Migration crash-loop back-off.** Every service with a migration init container fails its
-   first connection while PostgreSQL starts and waits a 10 s back-off; on a slow worker the
-   back-offs reached 40 s, a minute of the run.
-3. **Python compiles its imports in every action.** Rules_python's precompile
+2. **Python compiles its imports in every action.** Rules_python's precompile
    (`pyc_collection = "include_pyc"`) fails on RBE: the exec interpreter does not find its
    standard library. So each action compiles bytecode as it imports, about three quarters of import
    time. With the fixture chart rendered at build time, imports still take 10–13 s before pytest
    starts ([measurements](../x/k3s_env/README.md#fixture-chart-rendered-at-build-time-2026-10-21)).
-4. **What the RBE executor can run** (probed 2026-10-21 with `bb execute`, the k3s target's
+3. **What the RBE executor can run** (probed 2026-10-21 with `bb execute`, the k3s target's
    isolation properties): kernel 5.15.0, no `/dev/kvm` (`CONFIG_KVM` unset, only
    `CONFIG_KVM_GUEST`), no BPF JIT. So no KubeVirt with hardware virtualization and no Cilium.
    kube-proxy runs, and the fixture uses ClusterIP Services.
@@ -92,7 +89,7 @@ layer (−40%) and the harness-free runner image (−35%).
 | `test_storage_deployed`, Pod case                                                                                | Sandbox-owned PVCs                                                                                    | runs on k3s (#11330)                                               |
 | `test_egress`, `test_session_instructions`, `test_launch_presets`, `test_suspend_resume` Pod case                | turns on both harnesses, the egress ring, kubectl                                                     | scripted (no key); the real-model set needs a key                  |
 | `test_mcp`, `test_dcr`                                                                                           | Dex operator login, `mcp-everything`, the Dex-backed `example` OAuth server, a browser for Dex's form | needs Dex and both MCP fixtures in the chart                       |
-| VM cases: `test_vm_sandbox`, `test_vm_workspace_ownership`, `test_suspend_resume` VM, `test_storage_deployed` VM | KubeVirt, KVM                                                                                         | no KVM on RBE (finding 4)                                          |
+| VM cases: `test_vm_sandbox`, `test_vm_workspace_ownership`, `test_suspend_resume` VM, `test_storage_deployed` VM | KubeVirt, KVM                                                                                         | no KVM on RBE (finding 3)                                          |
 | `test_thread_latency`                                                                                            | browser, Electric, frontend; ceilings for the deployed system                                         | no Electric in the fixture; RBE timings are not deployment latency |
 | `test_ollama_routes`                                                                                             | the GPU Ollama                                                                                        | not reachable from RBE                                             |
 
@@ -222,12 +219,8 @@ Ordered by what unblocks what. Speed work runs alongside and blocks only the CI 
 
 Speed, in parallel:
 
-- **Precompiled bytecode**: up to 10 s of the remaining imports (finding 3). Measured here only; no
+- **Precompiled bytecode**: up to 10 s of the remaining imports (finding 2). Measured here only; no
   node until the operator wants one.
-- **`K3S_MIGRATOR_CONNECT_RETRY`**: the migrators retry their first database connection in process
-  for a bounded time, instead of exiting into `CrashLoopBackOff` (finding 2).
-  - The back-off costs 10 s on a typical run and about a minute on a slow one.
-  - This is a retry, not a start gate, and adds no ordering to the test harness.
 - **Python removal**: 43% of the bytes, 9–14% of the action. The Action Service port is paused
   behind service boundaries, and the app has no port plan. This program schedules neither.
 - **Go image bytes**: 313 MiB over eight images that share nothing. Measured here only; no node

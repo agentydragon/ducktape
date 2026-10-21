@@ -3,13 +3,13 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"
-	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -22,12 +22,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Dispatcher database URL is required")
 		os.Exit(2)
 	}
-	db, err := sql.Open("postgres", *databaseURL)
-	if err == nil {
-		defer db.Close()
-		err = migrations.Up(context.Background(), db)
-	}
-	if err != nil {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	if err := migrate.Run(context.Background(), *databaseURL, migrations.Up); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

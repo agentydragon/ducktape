@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//agentplane/history_service/migrations",
-        "@com_github_lib_pq//:pq",
+        "//agentplane/postgres/go/migrate",
     ],
 )
 

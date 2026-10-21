@@ -154,12 +154,28 @@ Three fresh `test_lifecycle` runs each, with temporary wall-clock markers
 | Manifest ready in the fixture (render / load) | 1.5, 1.3, 0.9    | 0.1, 0.1, 0.1    |
 
 What is left before pytest is 5–10 s of VM and workspace setup and the remaining imports, mostly
-bytecode compilation ([plan finding 3](../../plans/k3s_acceptance.md#findings-that-shape-the-plan)).
+bytecode compilation ([plan finding 2](../../plans/k3s_acceptance.md#findings-that-shape-the-plan)).
 
 The test process no longer builds the app's `Settings`, which parses argv, so pytest flags such as
 `--test_arg=-s` work on `test_lifecycle` and the `_k3s` acceptance targets
 ([run](https://app.buildbuddy.io/invocation/93bfc317-4354-46fd-b19b-fac04650fb20)). `test_render`
 still renders the chart in process and rejects them.
+
+### Migrators retrying their first connection, 2026-10-21
+
+The Goose and Alembic migrators retry their first PostgreSQL connection in process
+([`migrate`](../../postgres/go/migrate/migrate.go), [`db_migrations`](../../../util/db_migrations.py)).
+Three fresh lifecycle runs each, on `devel` and with the change, with temporary uncommitted markers
+in `stack.py`:
+
+| Three fresh runs                              | Before ([0f6663f7](https://app.buildbuddy.io/invocation/0f6663f7-3cca-458b-b7f2-0cbfdb095df7)) | After ([6c7624c6](https://app.buildbuddy.io/invocation/6c7624c6-272c-4006-b012-250c6ab0cbbd)) |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------: | --------------------------------------------------------------------------------------------: |
+| Migration init container restarts, per run    |                                                                                      10, 10, 9 |                                                                                       0, 0, 0 |
+| Manifests applied to Deployments Available, s |                                                                               61.8, 51.6, 36.2 |                                                                              39.7, 36.1, 30.8 |
+| Last migrator done after PostgreSQL Ready, s  |                                                                                     14, 17, 15 |                                                                                       2, 3, 3 |
+
+What is left of that phase is mostly the services' readiness probes: a 3 s initial delay and a
+10 s period, so a service that is not ready at its first probe waits 10 s more.
 
 ### Published PostgreSQL minimal image, 2026-10-17
 
