@@ -48,6 +48,7 @@ IMAGES = {
     ),
     "policy_controller": ("//agentplane/policy_controller:image", "agentplane/policy_controller/image"),
     "runner": ("//agentplane/x/k3s_env:runner_image", "agentplane/x/k3s_env/runner_image"),
+    "runner_disk": ("//agentplane/x/k3s_env:runner_disk_image", "agentplane/x/k3s_env/runner_disk_image"),
     "runner_gateway": ("//agentplane/runner_gateway:image", "agentplane/runner_gateway/image"),
     "runner_gateway_queue_migrate": (
         "//agentplane/runner_gateway/migrations:image",

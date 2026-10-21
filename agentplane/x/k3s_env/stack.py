@@ -115,6 +115,11 @@ class K3s:
                 self.node_ip,
                 "--kubelet-arg",
                 f"cluster-dns={self.node_ip}",
+                # The runner Pod mounts the runner disk image as an image volume (beta, off by default in 1.34).
+                "--kube-apiserver-arg",
+                "feature-gates=ImageVolume=true",
+                "--kubelet-arg",
+                "feature-gates=ImageVolume=true",
             ],
             stdout=log,
             stderr=subprocess.STDOUT,

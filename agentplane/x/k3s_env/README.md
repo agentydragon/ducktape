@@ -48,12 +48,15 @@ The importer consumes the `oci_image` targets through `oci_layout_rloc`, combine
 descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
 Docker-format `oci_load` tarballs.
 
-The lifecycle target supplies `:runner_image`, with the real runner and no native harnesses. The
-model smoke supplies `:runner_claude_image`, which adds only pinned Claude Code to the same base.
-Each target carries its own `runner_layout.rloc` through `K3S_RUNNER_LAYOUT_RLOCATION`; the shared
-stack library carries only service layouts. Both variants import as the existing `runner:unset`
-tag, so templates, registration and lifecycle behavior stay the same. This fixture split does
-not select a deployment-wide harness-delivery mechanism.
+The runner Pod is laid out as in production: the real runner comes from the `:runner_disk_image` image
+volume at `/run/agentplane/runner`, and the tools image holds the rest. The lifecycle target supplies
+`:runner_image`, with no native harnesses. The model smoke supplies `:runner_claude_image`, which adds only
+pinned Claude Code to the same base. Each target carries its own `runner_layout.rloc` through
+`K3S_RUNNER_LAYOUT_RLOCATION`; the shared stack library carries only service layouts, among them the runner
+disk image (`agentplane-runner-disk:unset`). Both variants import as the existing `runner:unset` tag, so
+templates, registration and lifecycle behavior stay the same. Image volumes need containerd 2.1 or later
+and the `ImageVolume` feature gate, which `stack.py` turns on in the API server and kubelet. This fixture
+split does not select a deployment-wide harness-delivery mechanism.
 
 ## Lifecycle coverage
 
