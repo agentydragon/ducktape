@@ -9,7 +9,6 @@ import IconCamera from "@tabler/icons-react/dist/esm/icons/IconCamera.mjs";
 import IconChecklist from "@tabler/icons-react/dist/esm/icons/IconChecklist.mjs";
 import IconCircleCheck from "@tabler/icons-react/dist/esm/icons/IconCircleCheck.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
-import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconHome from "@tabler/icons-react/dist/esm/icons/IconHome.mjs";
 import IconList from "@tabler/icons-react/dist/esm/icons/IconList.mjs";
 import IconListDetails from "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs";
@@ -25,7 +24,7 @@ import { GMAIL_ICON_DATA_URI, GOOGLE_CALENDAR_ICON_DATA_URI } from "./brand_icon
 
 type TablerIconProps = ComponentProps<typeof IconChecklist>;
 
-/** Checklist — the shell's approvals-queue toggle. */
+/** Checklist — the shell's capability-request toggle. */
 export function ChecklistIcon(props: TablerIconProps): JSX.Element {
   return <IconChecklist size={20} {...props} />;
 }
@@ -35,12 +34,12 @@ export function HomeIcon(props: TablerIconProps): JSX.Element {
   return <IconHome size={20} {...props} />;
 }
 
-/** Check in a circle — approvals are connected and current. */
+/** Check in a circle — a tool call that finished OK. */
 export function SyncCurrentIcon(props: TablerIconProps): JSX.Element {
   return <IconCircleCheck size={20} {...props} />;
 }
 
-/** Warning triangle — approvals sync is unhealthy. */
+/** Warning triangle — a tool call that failed. */
 export function SyncErrorIcon(props: TablerIconProps): JSX.Element {
   return <IconAlertTriangle size={20} {...props} />;
 }
@@ -48,11 +47,6 @@ export function SyncErrorIcon(props: TablerIconProps): JSX.Element {
 /** Close — dismisses a shell drawer or popover. */
 export function CloseIcon(props: TablerIconProps): JSX.Element {
   return <IconX size={20} {...props} />;
-}
-
-/** Clock-with-rewind — links to the past-tool-calls history view. */
-export function HistoryIcon(props: TablerIconProps): JSX.Element {
-  return <IconHistory size={20} {...props} />;
 }
 
 /** Gear — links to the settings view. */
@@ -70,7 +64,7 @@ export function CameraIcon(props: TablerIconProps): JSX.Element {
   return <IconCamera size={20} {...props} />;
 }
 
-/** Clock — a calendar event's when/time field. */
+/** Clock — the shell's session-expiry control, and a calendar event's when/time field. */
 export function ClockIcon(props: TablerIconProps): JSX.Element {
   return <IconClock size={20} {...props} />;
 }

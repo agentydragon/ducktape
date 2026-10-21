@@ -8,9 +8,8 @@ the bearer from the `haku-routine-launch-token` secret. The fire itself lives in
 `haku/docs/security.md` → enforcement inventory,
 "Console privileged-action tier".
 
-The `haku_routine` MCP wrapper was removed with the retired Console protocol endpoint. Keep this
-capability route until haku-ui can launch routines through a replacement path; then retire the
-endpoint, request model, Agent UI bridge action, and shell confirmation together.
+Keep this capability route until haku-ui can launch routines through a replacement path; then
+retire the endpoint, request model, Agent UI bridge action, and shell confirmation together.
 """
 
 from __future__ import annotations

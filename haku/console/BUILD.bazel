@@ -21,17 +21,6 @@ py_library(
 )
 
 py_library(
-    name = "mcp_config",
-    srcs = ["mcp_config.py"],
-    deps = [
-        ":tool_call_actor",
-        "//haku/console/identity:naming",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "models",
     srcs = ["models.py"],
     deps = ["@pypi//pydantic"],
@@ -64,11 +53,6 @@ py_library(
         ":settings",
         "@pypi//fastapi",
     ],
-)
-
-py_library(
-    name = "tool_call_actor",
-    srcs = ["tool_call_actor.py"],
 )
 
 py_library(
@@ -112,20 +96,6 @@ py_library(
 )
 
 py_test(
-    name = "test_tool_calls",
-    srcs = ["@ducktape_haku//haku/console:test_tool_calls.py"],
-    args = ["$(location @ducktape_haku//haku/console:test_tool_calls.py)"],
-    precompile = "disabled",  # the source lives in the shared module beside its implementation
-    deps = [
-        "//:conftest",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_agent_authority_schema",
     size = "medium",
     srcs = ["test_agent_authority_schema.py"],
@@ -155,17 +125,15 @@ py_library(
         ":capabilities",
         ":database_migrate",
         ":deployment",
-        ":mcp_config",
         ":models",
         ":settings",
         "//haku/console/identity:agent_routes",
         "//haku/console/identity:authorization",
+        "//haku/console/identity:config",
         "//haku/console/identity:operator_auth",
         "//haku/console/identity:operator_identity",
         "//haku/console/identity:operator_identity_store",
         "//haku/console/identity:operator_login_flow",
-        "//haku/console/mcp:approval",
-        "//haku/console/mcp:tool_call_service",
         "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//itsdangerous",
@@ -202,6 +170,22 @@ py_binary(
 )
 
 py_library(
+    name = "export_tool_call_schema",
+    srcs = ["export_tool_call_schema.py"],
+    deps = [
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//pydantic",  # keep: the shared module leaves pydantic to its consumers
+    ],
+)
+
+# Prints the ToolCallRecord JSON Schema; the frontend's js_json_schema runs it to generate types.
+py_binary(
+    name = "export_tool_call_schema_bin",
+    main_module = "haku.console.export_tool_call_schema",
+    deps = [":export_tool_call_schema"],
+)
+
+py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
@@ -215,7 +199,6 @@ py_library(
         "//haku/console/identity:operator_identity_store",
         "//third_party/containers:pgvector_pg18",
         "//util:oci",
-        ":tool_call_actor",
         "//haku/console/identity:authorization",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
@@ -381,7 +364,7 @@ py_library(
     srcs = ["settings.py"],
     deps = [
         ":config",
-        ":mcp_config",
+        "//haku/console/identity:config",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
@@ -394,19 +377,6 @@ py_test(
         ":conftest",
         ":database_migrate",
         "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_mcp_config",
-    srcs = ["test_mcp_config.py"],
-    deps = [
-        ":conftest",
-        ":mcp_config",
-        "//:conftest",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

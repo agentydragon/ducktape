@@ -1,65 +1,37 @@
-import { ActionIcon, Badge, Button, Group, Indicator, Loader, Stack, Text, Tooltip } from "@mantine/core";
-import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ActionIcon, Badge, Button, Group, Indicator, Stack, Text, Tooltip } from "@mantine/core";
+import { type JSX, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import {
-  approvalDisplayFields,
-  approvalQueueItems,
+  capabilityRequestItems,
   geolocationApprovalBody,
   geolocationApprovalTitle,
-  recentToolCallCountdown,
   SCREENSHOT_APPROVAL_BODY,
   SCREENSHOT_APPROVAL_TITLE,
   type GeolocationApproval,
-  type RecentToolCall,
   type ScreenshotApproval,
 } from "./approval_state";
-import type { ToolCallRecord } from "./client";
 import { CodeBlock } from "./code_block";
 import { Field } from "./field";
-import {
-  CameraIcon,
-  ChecklistIcon,
-  ClockIcon,
-  CloseIcon,
-  HistoryIcon,
-  HomeIcon,
-  MapPinIcon,
-  SettingsIcon,
-  SyncCurrentIcon,
-  SyncErrorIcon,
-} from "./icons";
-import { PendingToolCallActions } from "./pending_tool_call_actions";
+import { CameraIcon, ChecklistIcon, ClockIcon, CloseIcon, HomeIcon, MapPinIcon, SettingsIcon } from "./icons";
 import type { ConsoleNavigationView, ConsoleView } from "./routing";
 import { SUCCESS_COLOR } from "./theme";
-import { formatClockTime, formatTimestamp } from "./time";
-import { ToolCallCard } from "./tool_call_card";
+import { formatTimestamp } from "./time";
 import { useVariant, VariantControl } from "./variant_control";
 
 export interface ShellChromeProps {
-  // Approvals panel open-state, parent-controlled so a newly-arrived geolocation approval can
+  // Capability request panel open-state, parent-controlled so a new bridge request can
   // force it open.
-  approvalsOpen: boolean;
-  focusedToolCallId?: string | null;
-  onApprovalsOpenChange: (open: boolean) => void;
-  pendingApprovals: ToolCallRecord[];
+  capabilityRequestsOpen: boolean;
+  onCapabilityRequestsOpenChange: (open: boolean) => void;
   geolocationApprovals: GeolocationApproval[];
   screenshotApprovals: ScreenshotApproval[];
-  decidingApprovalIds: readonly string[];
-  recentToolCalls: RecentToolCall[];
-  onApproveTool: (approval: ToolCallRecord, decisionNote?: string) => void;
-  onDenyTool: (approval: ToolCallRecord, decisionNote?: string) => void;
+  decidingCapabilityRequestIds: readonly string[];
   onApproveGeolocation: (approval: GeolocationApproval) => void;
   onDenyGeolocation: (approval: GeolocationApproval) => void;
   onApproveScreenshot: (approval: ScreenshotApproval) => void;
   onDenyScreenshot: (approval: ScreenshotApproval) => void;
-  onDismissRecentToolCall: (toolCallId: string) => void;
   view: ConsoleView;
   onNavigate: (view: ConsoleNavigationView) => void;
-  // Error message from the last REST fetch of pending approvals, or null on success. Shown in the
-  // sync-status panel and turns the icon orange, so load errors are visible without a toast flood.
-  syncError: string | null;
-  syncing: boolean;
-  lastSyncAt: Date | null;
   // Location-sharing chrome (rendered only while the standing grant is held): a map-pin toggle
   // with a live indicator while a watch is actively reading, opening a stop/withdraw panel.
   geoGranted: boolean;
@@ -98,23 +70,9 @@ function useArmed(identity: string | null): boolean {
   return armed;
 }
 
-function RecentCountdown({ recent, nowMs }: { recent: RecentToolCall; nowMs: number }) {
-  const countdown = recentToolCallCountdown(recent, nowMs);
-  return (
-    <div className="haku-shell-countdown" aria-label={countdown.label}>
-      <Text size="xs" c="dimmed">
-        {countdown.label}
-      </Text>
-      <div className="haku-shell-countdown-track" aria-hidden="true">
-        <div className="haku-shell-countdown-fill" style={{ width: `${countdown.progressPercent}%` }} />
-      </div>
-    </div>
-  );
-}
-
 // The location-sharing panel: opened from the map-pin toggle, shown only while the shell holds the
 // standing grant. Carries the current state and the stop/withdraw kill switch, and occupies the
-// shell's one shared panel slot like approvals and screenshot capture.
+// shell's one shared panel slot like capability requests and screenshot capture.
 function LocationPanel({ tracking, onWithdraw }: { tracking: boolean; onWithdraw: () => void }) {
   return (
     <section className="haku-shell-card haku-shell-side-panel" aria-label="Location sharing">
@@ -196,118 +154,6 @@ function SessionPanel({ expiresAt, onReauthenticate }: { expiresAt: Date; onReau
         </Button>
       </Stack>
     </section>
-  );
-}
-
-// Sync-status panel: always accessible via the sync icon in the toolbar. Shows the latest REST
-// fetch outcome, so the operator can tell whether the approval list loaded successfully.
-export type SyncState = "current" | "syncing" | "error";
-
-export function syncState(syncError: string | null, syncing: boolean, lastSyncAt: Date | null): SyncState {
-  if (syncError !== null) return "error";
-  if (syncing || lastSyncAt === null) return "syncing";
-  return "current";
-}
-
-// Also the sync rail button's aria-labels, which the screenshot scenes select on.
-const SYNC_STATE_LABEL: Record<SyncState, string> = {
-  error: "Sync error",
-  syncing: "Syncing",
-  current: "Up to date",
-};
-
-const SYNC_BADGE_COLOR: Record<SyncState, string> = { error: "orange", syncing: "yellow", current: "teal" };
-
-// The rail leaves `syncing` uncolored so the inline Loader carries that state on its own.
-const SYNC_RAIL_COLOR: Record<SyncState, string | undefined> = {
-  error: "orange",
-  syncing: undefined,
-  current: "teal",
-};
-
-function SyncStatusPanel({
-  syncError,
-  syncing,
-  lastSyncAt,
-}: {
-  syncError: string | null;
-  syncing: boolean;
-  lastSyncAt: Date | null;
-}) {
-  const state = syncState(syncError, syncing, lastSyncAt);
-  return (
-    <section className="haku-shell-card haku-shell-side-panel" aria-label="Sync status">
-      <Stack gap="xs">
-        <Group justify="space-between" align="center" wrap="nowrap">
-          <Text fw={600} size="sm">
-            Sync status
-          </Text>
-          <Badge color={SYNC_BADGE_COLOR[state]} variant="light">
-            {syncError !== null ? "Fetch error" : SYNC_STATE_LABEL[state]}
-          </Badge>
-        </Group>
-        {syncError !== null && (
-          <Text size="xs" c="dimmed">
-            Failed to load pending approvals: {syncError}
-          </Text>
-        )}
-        {state === "syncing" && syncError === null && (
-          <Text size="xs" c="dimmed">
-            Refreshing pending approvals…
-          </Text>
-        )}
-        {state === "current" && (
-          <Text size="xs" c="dimmed">
-            Pending approvals refresh every 30 seconds.
-          </Text>
-        )}
-        {lastSyncAt && (
-          <Text size="xs" c="dimmed">
-            Last refreshed {formatClockTime(lastSyncAt)}
-          </Text>
-        )}
-      </Stack>
-    </section>
-  );
-}
-
-// Each queue card renders compact by default and expands **in place** via its own Details toggle
-// (the same control as the history page) — no separate detail panel, no overlay. An always-visible
-// operator-note field keeps either decision able to carry a note from the same control.
-function ToolApprovalCard({
-  approval,
-  deciding,
-  onApprove,
-  onDeny,
-  focused = false,
-}: {
-  approval: ToolCallRecord;
-  deciding: boolean;
-  onApprove: (decisionNote?: string) => void;
-  onDeny: (decisionNote?: string) => void;
-  /** This card is the one a deep link (a push notification's Details, or the URL the MCP server
-   * advertised) named: it opens expanded and scrolls itself into view. */
-  focused?: boolean;
-}) {
-  // A deep-linked call opens detailed, because the operator followed a one-line notification here
-  // precisely to see the arguments they could not see there.
-  const [variant, setVariant] = useVariant(focused ? "detailed" : "compact");
-  const cardRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (focused) cardRef.current?.scrollIntoView({ block: "center" });
-  }, [focused]);
-  const fields = approvalDisplayFields(approval);
-  const armed = useArmed(`card:${approval.tool_call_id}`);
-  return (
-    <ToolCallCard
-      fields={fields}
-      args={approval.arguments}
-      variant={variant}
-      onVariantChange={setVariant}
-      containerRef={cardRef}
-      status={deciding ? "running" : "pending_approval"}
-      footer={<PendingToolCallActions busy={deciding} armed={armed} onApprove={onApprove} onDeny={onDeny} />}
-    />
   );
 }
 
@@ -418,185 +264,84 @@ function ScreenshotApprovalCard({
   );
 }
 
-function RecentToolCallCard({
-  recent,
-  nowMs,
-  onDismiss,
-}: {
-  recent: RecentToolCall;
-  nowMs: number;
-  onDismiss: () => void;
-}) {
-  const [variant, setVariant] = useVariant("compact");
-  const record = recent.record;
-  const fields = approvalDisplayFields(record);
-  return (
-    <ToolCallCard
-      fields={fields}
-      args={record.arguments}
-      variant={variant}
-      onVariantChange={setVariant}
-      status={record.status}
-      error={record.error}
-      result={record.result}
-      footer={
-        <>
-          <RecentCountdown recent={recent} nowMs={nowMs} />
-          <Group justify="flex-end" gap="xs">
-            <Button size="compact-xs" variant="subtle" color="gray" onClick={onDismiss}>
-              Dismiss
-            </Button>
-          </Group>
-        </>
-      }
-    />
-  );
-}
-
-export function ApprovalsTab({
-  pendingApprovals,
+export function CapabilityRequests({
   geolocationApprovals,
   screenshotApprovals,
-  decidingApprovalIds,
-  recentToolCalls,
-  onApproveTool,
-  onDenyTool,
+  decidingCapabilityRequestIds,
   onApproveGeolocation,
   onDenyGeolocation,
   onApproveScreenshot,
   onDenyScreenshot,
-  onDismissRecentToolCall,
-  focusedToolCallId,
 }: Pick<
   ShellChromeProps,
-  | "pendingApprovals"
   | "geolocationApprovals"
   | "screenshotApprovals"
-  | "decidingApprovalIds"
-  | "recentToolCalls"
-  | "onApproveTool"
-  | "onDenyTool"
+  | "decidingCapabilityRequestIds"
   | "onApproveGeolocation"
   | "onDenyGeolocation"
   | "onApproveScreenshot"
   | "onDenyScreenshot"
-  | "onDismissRecentToolCall"
-> & { focusedToolCallId?: string | null }): JSX.Element {
+>): JSX.Element {
   const items = useMemo(
-    () => approvalQueueItems(pendingApprovals, geolocationApprovals, screenshotApprovals),
-    [geolocationApprovals, pendingApprovals, screenshotApprovals]
+    () => capabilityRequestItems(geolocationApprovals, screenshotApprovals),
+    [geolocationApprovals, screenshotApprovals]
   );
-  const deciding = new Set(decidingApprovalIds);
-  const hasPending = items.length > 0;
-  const hasRecent = recentToolCalls.length > 0;
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (recentToolCalls.length === 0) return;
-    const t = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, [recentToolCalls.length]);
+  const deciding = new Set(decidingCapabilityRequestIds);
 
   return (
     <Stack gap="md">
-      {!hasPending && !hasRecent && (
+      {items.length === 0 && (
         <Text size="sm" c="dimmed">
-          No approvals pending.
+          No capability requests pending.
         </Text>
       )}
-      {hasPending && (
-        <Stack gap="xs">
-          <Text fw={600} size="sm">
-            Pending
-          </Text>
-          {items.map((item) => {
-            if (item.kind === "tool") {
-              return (
-                <ToolApprovalCard
-                  key={item.id}
-                  approval={item.approval}
-                  deciding={deciding.has(item.id)}
-                  onApprove={(decisionNote) => onApproveTool(item.approval, decisionNote)}
-                  onDeny={(decisionNote) => onDenyTool(item.approval, decisionNote)}
-                  focused={item.approval.tool_call_id === focusedToolCallId}
-                />
-              );
-            }
-            if (item.kind === "geolocation") {
-              return (
-                <GeolocationApprovalCard
-                  key={item.id}
-                  approval={item.approval}
-                  deciding={deciding.has(item.id)}
-                  onApprove={() => onApproveGeolocation(item.approval)}
-                  onDeny={() => onDenyGeolocation(item.approval)}
-                />
-              );
-            }
-            return (
-              <ScreenshotApprovalCard
-                key={item.id}
-                approval={item.approval}
-                deciding={deciding.has(item.id)}
-                onApprove={() => onApproveScreenshot(item.approval)}
-                onDeny={() => onDenyScreenshot(item.approval)}
-              />
-            );
-          })}
-        </Stack>
-      )}
-      {hasRecent && (
-        <Stack gap="xs">
-          <Text fw={600} size="sm">
-            Recent
-          </Text>
-          {recentToolCalls.map((recent) => (
-            <RecentToolCallCard
-              key={recent.record.tool_call_id}
-              recent={recent}
-              nowMs={nowMs}
-              onDismiss={() => onDismissRecentToolCall(recent.record.tool_call_id)}
+      {items.map((item) => {
+        if (item.kind === "geolocation") {
+          return (
+            <GeolocationApprovalCard
+              key={item.id}
+              approval={item.approval}
+              deciding={deciding.has(item.id)}
+              onApprove={() => onApproveGeolocation(item.approval)}
+              onDeny={() => onDenyGeolocation(item.approval)}
             />
-          ))}
-        </Stack>
-      )}
+          );
+        }
+        return (
+          <ScreenshotApprovalCard
+            key={item.id}
+            approval={item.approval}
+            deciding={deciding.has(item.id)}
+            onApprove={() => onApproveScreenshot(item.approval)}
+            onDeny={() => onDenyScreenshot(item.approval)}
+          />
+        );
+      })}
     </Stack>
   );
 }
 
-// The approvals panel — the primary chrome surface. It occupies the shared panel slot below the
+// The capability request panel occupies the shared panel slot below the
 // toolbar, follows its content up to the available height, and then scrolls its own list.
-function ApprovalsPanel(props: ShellChromeProps & { onClose: () => void }) {
-  const pendingCount =
-    props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
+function CapabilityRequestsPanel(props: ShellChromeProps & { onClose: () => void }) {
+  const pendingCount = props.geolocationApprovals.length + props.screenshotApprovals.length;
   return (
-    <aside className="haku-shell-card haku-shell-approvals" aria-label="Approvals">
+    <aside className="haku-shell-card haku-shell-capability-requests" aria-label="Capability requests">
       <section className="haku-shell-panel-nav">
         <Group justify="space-between" align="center" wrap="nowrap" className="haku-shell-header">
           <Group gap="xs" align="center">
-            <Text fw={700}>Approvals</Text>
+            <Text fw={700}>Capability requests</Text>
             <Badge color={pendingCount > 0 ? "yellow" : "gray"} variant="light">
               {pendingCount}
             </Badge>
           </Group>
-          <Group gap={2} wrap="nowrap">
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              aria-label="Past tool calls"
-              title="Past tool calls"
-              onClick={() => props.onNavigate("toolCalls")}
-            >
-              <HistoryIcon />
-            </ActionIcon>
-            <ActionIcon variant="subtle" color="gray" aria-label="Close approvals" onClick={props.onClose}>
-              <CloseIcon />
-            </ActionIcon>
-          </Group>
+          <ActionIcon variant="subtle" color="gray" aria-label="Close capability requests" onClick={props.onClose}>
+            <CloseIcon />
+          </ActionIcon>
         </Group>
       </section>
       <div className="haku-shell-scroll">
-        <ApprovalsTab {...props} />
+        <CapabilityRequests {...props} />
       </div>
     </aside>
   );
@@ -632,15 +377,14 @@ function RailButton({
   );
 }
 
-export type IndicatorPanel = "location" | "screenshot" | "sync-status" | "session";
+export type IndicatorPanel = "location" | "screenshot" | "session";
 
-// Trusted chrome lives in a real left-hand layout rail. Page navigation is independent from the
-// approvals drawer, while the three compact indicator popovers are mutually exclusive.
+// Trusted chrome lives in a real left-hand layout rail. Page navigation is independent from
+// bridge capability requests, while the compact indicator popovers are mutually exclusive.
 export function ShellChrome(props: ShellChromeProps): JSX.Element {
   const {
-    approvalsOpen,
-    onApprovalsOpenChange,
-    syncError,
+    capabilityRequestsOpen,
+    onCapabilityRequestsOpenChange,
     geoGranted,
     tracking,
     onWithdrawGeolocation,
@@ -652,9 +396,7 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
     onReauthenticate,
   } = props;
   const [openIndicator, setOpenIndicator] = useState<IndicatorPanel | null>(null);
-  const pendingCount =
-    props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
-  const currentSyncState = syncState(syncError, props.syncing, props.lastSyncAt);
+  const pendingCount = props.geolocationApprovals.length + props.screenshotApprovals.length;
 
   useEffect(() => {
     if (
@@ -670,11 +412,11 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (openIndicator) setOpenIndicator(null);
-      else if (approvalsOpen) onApprovalsOpenChange(false);
+      else if (capabilityRequestsOpen) onCapabilityRequestsOpenChange(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [approvalsOpen, onApprovalsOpenChange, openIndicator]);
+  }, [capabilityRequestsOpen, onCapabilityRequestsOpenChange, openIndicator]);
 
   const toggleIndicator = (panel: IndicatorPanel) => setOpenIndicator((open) => (open === panel ? null : panel));
 
@@ -682,18 +424,11 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
     <>
       <nav className="haku-shell-rail" aria-label="Haku Console" style={{ zIndex: PANEL_Z }}>
         <div className="haku-shell-rail-top">
-          <Indicator
-            color="red"
-            size={16}
-            offset={5}
-            processing
-            disabled={pendingCount === 0}
-            label={pendingCount || undefined}
-          >
+          <Indicator color="blue" size={16} offset={5} disabled={pendingCount === 0} label={pendingCount || undefined}>
             <RailButton
-              open={approvalsOpen}
-              label={approvalsOpen ? "Close approvals" : "Open approvals"}
-              onClick={() => onApprovalsOpenChange(!approvalsOpen)}
+              open={capabilityRequestsOpen}
+              label={capabilityRequestsOpen ? "Close capability requests" : "Open capability requests"}
+              onClick={() => onCapabilityRequestsOpenChange(!capabilityRequestsOpen)}
             >
               <ChecklistIcon />
             </RailButton>
@@ -705,29 +440,8 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
           <RailButton open={props.view === "settings"} label="Settings" onClick={() => props.onNavigate("settings")}>
             <SettingsIcon />
           </RailButton>
-          <RailButton
-            open={props.view === "toolCalls"}
-            label="Past tool calls"
-            onClick={() => props.onNavigate("toolCalls")}
-          >
-            <HistoryIcon />
-          </RailButton>
         </div>
         <div className="haku-shell-rail-bottom">
-          <RailButton
-            open={openIndicator === "sync-status"}
-            label={SYNC_STATE_LABEL[currentSyncState]}
-            color={SYNC_RAIL_COLOR[currentSyncState]}
-            onClick={() => toggleIndicator("sync-status")}
-          >
-            {currentSyncState === "error" ? (
-              <SyncErrorIcon />
-            ) : currentSyncState === "syncing" ? (
-              <Loader size={20} color="gray" />
-            ) : (
-              <SyncCurrentIcon />
-            )}
-          </RailButton>
           {geoGranted && (
             <Indicator color="green" size={10} offset={5} processing disabled={!tracking} withBorder>
               <RailButton
@@ -763,9 +477,6 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
         </div>
         {openIndicator && (
           <div className="haku-shell-indicator-popover">
-            {openIndicator === "sync-status" && (
-              <SyncStatusPanel syncError={syncError} syncing={props.syncing} lastSyncAt={props.lastSyncAt} />
-            )}
             {openIndicator === "location" && geoGranted && (
               <LocationPanel tracking={tracking} onWithdraw={onWithdrawGeolocation} />
             )}
@@ -778,9 +489,9 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
           </div>
         )}
       </nav>
-      {approvalsOpen && (
+      {capabilityRequestsOpen && (
         <div className="haku-shell-drawer haku-shell-panels" style={{ zIndex: PANEL_Z - 1 }}>
-          <ApprovalsPanel {...props} onClose={() => onApprovalsOpenChange(false)} />
+          <CapabilityRequestsPanel {...props} onClose={() => onCapabilityRequestsOpenChange(false)} />
         </div>
       )}
     </>

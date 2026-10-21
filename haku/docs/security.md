@@ -107,24 +107,10 @@ Haku-specific warm pool. It is absent from the deployed catalog, and its Haku-sp
 template, pool, janitor, and Console Role/RoleBinding are no longer active. The generic
 Agent Sandbox constructs remain active for other workspace users.
 
-### Agent-facing `withdraw_tool_call` (`/mcp`)
-
-An Agent may retract **its own** still-pending call to the terminal `withdrawn` status —
-the one console-native mutation on the `/mcp` surface, and it strictly narrows what a
-call can do: pending → terminal, never toward execution, only for calls that Agent
-itself queued, and there is still no decision tool an OAuth caller could self-approve
-with. Withdrawal is an audit fact, not a delete: a prompt-injected Agent can pull an
-attempt out of the operator's approval queue before it is scrutinised, but cannot erase
-the record of it, and approval and withdrawal serialise under the row lock, so a
-withdrawal cannot cancel a call the operator already approved. Detail:
-<../console/README.md> § _MCP approval queue_.
-Source of truth: <../console/mcp/server.py>, <../console/mcp/tool_call_service.py>,
-<../console/README.md>.
-
 ### Operator-owned base vs. canonical autonomous-write inventory
 
 Haku's hard rules live in `haku-state`, which Haku writes, so **the rules are not the
-enforcement** — RBAC, the egress fence and the approval queue are. ducktape no longer
+enforcement** — RBAC and the egress fence are. ducktape no longer
 carries a copy: it holds Haku's runtime entrypoints and deploy config, not its
 definition.
 Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
@@ -154,12 +140,10 @@ Source of truth: <../console/docs/containment.md>.
 
 ### Console privileged-action tier
 
-Agent-originated privileged actions (`launch-routine`, approval-gated MCP calls) require
+Agent-originated privileged actions (`launch-routine`) require
 a genuine Operator gesture on trusted chrome: exact-Origin admission + server-side
 secrets/API token + **top-layer `<dialog>` confirm**, audited and result-owned in
 `haku-console` (a namespace Haku cannot read). Agent UI/backend can only _request_.
-Trusted console code may also issue direct, no-ledger MCP calls under the DB-revalidated
-Operator session; exact Origin keeps that authority out of the framed agent UI.
 Source of truth: <../console/README.md>.
 
 ### CiliumNetworkPolicy `ingress` in `haku-sandbox`
@@ -270,7 +254,7 @@ bulk channels.
    litmus test for console code: _does it hold a secret, perform a privileged action, or
    define the trust boundary?_ If not, it belongs to Haku.
 4. Consent moments happen on trusted top-level/top-layer shell surfaces only (the capability
-   confirm, the approval drawer for MCP tool calls and geolocation grants, and the `openLink`
+   confirm, the geolocation grants drawer, and the `openLink`
    off-whitelist confirm). Never move a confirm into agent-embeddable chrome; a persistent "trust
    badge" is not a control — and the console panel that withdraws a grant is not one either (it only
    reduces privilege).

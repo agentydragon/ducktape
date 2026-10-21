@@ -26,7 +26,3 @@ export function formatTimestamp(value: string, nowMs: number = Date.now()): Time
     isFresh: Math.abs(differenceInMilliseconds(date, now)) < FRESHNESS_WINDOW_MS,
   };
 }
-
-export function formatClockTime(value: Date): string {
-  return format(value, "p");
-}

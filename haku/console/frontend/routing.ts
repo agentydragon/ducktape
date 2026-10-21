@@ -4,34 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 // cross-origin Haku UI frame.
 export const CONSOLE_ROOT_PATH = "/_console";
 export const SETTINGS_PATH: string = `${CONSOLE_ROOT_PATH}/settings`;
-export const APPROVALS_EMBED_PATH: string = `${CONSOLE_ROOT_PATH}/approvals-embed`;
-export const TOOL_CALLS_PATH: string = `${CONSOLE_ROOT_PATH}/tool-calls`;
 export const HOME_PATH = "/";
 const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 
-export type ConsoleNavigationView = "embed" | "settings" | "toolCalls";
-export type ConsoleView = ConsoleNavigationView | "approvalsEmbed" | "notFound";
-
-// A single call, deep-linked — what the MCP server advertises to an agent whose call is waiting. It resolves to the ordinary embed view with the
-// approvals drawer opened on that call rather than to the history page, since a pending call is
-// decided in the drawer. Tool call ids are `tc_` + 24 hex (mcp/approval.py), not UUIDs like the
-// other id-bearing routes here.
-const TOOL_CALL_PATH = new RegExp(`^${TOOL_CALLS_PATH}/(tc_[0-9a-f]{24})$`, "i");
-
-export function toolCallPath(toolCallId: string): string {
-  return `${TOOL_CALLS_PATH}/${toolCallId}`;
-}
-
-export function toolCallIdForPathname(pathname: string): string | null {
-  return TOOL_CALL_PATH.exec(pathname)?.[1] ?? null;
-}
+export type ConsoleNavigationView = "embed" | "settings";
+export type ConsoleView = ConsoleNavigationView | "notFound";
 
 export function viewForPathname(pathname: string): ConsoleView {
   if (pathname === CONSOLE_ROOT_PATH || pathname === `${CONSOLE_ROOT_PATH}/`) return "embed";
-  if (pathname === APPROVALS_EMBED_PATH) return "approvalsEmbed";
   if (pathname === SETTINGS_PATH) return "settings";
-  if (pathname === TOOL_CALLS_PATH) return "toolCalls";
-  if (toolCallIdForPathname(pathname) !== null) return "embed";
   if (pathname.startsWith(`${CONSOLE_ROOT_PATH}/`)) return "notFound";
   return "embed";
 }
@@ -65,13 +46,11 @@ export function rememberEmbedPath(path: string): void {
 
 function pathForView(view: ConsoleNavigationView): string {
   if (view === "settings") return SETTINGS_PATH;
-  if (view === "toolCalls") return TOOL_CALLS_PATH;
   return rememberedEmbedPath();
 }
 
 export function useConsoleView(): {
   view: ConsoleView;
-  toolCallId: string | null;
   navigate: (view: ConsoleNavigationView) => void;
 } {
   const [pathname, setPathname] = useState(() => window.location.pathname);
@@ -102,7 +81,6 @@ export function useConsoleView(): {
 
   return {
     view: viewForPathname(pathname),
-    toolCallId: toolCallIdForPathname(pathname),
     navigate,
   };
 }

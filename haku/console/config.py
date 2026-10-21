@@ -62,13 +62,12 @@ class OperatorOidcConfig(BaseModel):
 
 
 class OperatorIdentityConfig(BaseModel):
-    """The stable Authentik user-id namespace shared by Haku's OIDC clients.
+    """The stable Authentik user-id namespace for Console browser login.
 
     Haku deliberately does not equate bare OIDC ``sub`` values. A subject becomes a stable external
-    user key only when it came from one of the exact configured browser/MCP issuers, both of which
-    are provisioned with Authentik ``sub_mode=user_id``. ``trust_domain`` names that deployment
-    contract; the issuer allowlist itself is derived from the two role-specific OIDC settings so it
-    cannot drift from the clients actually doing verification.
+    user key only when it came from the exact configured browser issuer, which is provisioned with
+    Authentik ``sub_mode=user_id``. ``trust_domain`` names that deployment contract; the issuer
+    allowlist is derived from the OIDC setting so it cannot drift from the client doing verification.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -120,16 +119,14 @@ class ConsoleProcessConfig(BaseModel):
     # single-underscore environment name while ordinary settings use HAKU_CONSOLE__*.
     config_file: Path = Field(validation_alias=AliasChoices("config_file", CONFIG_FILE_ENV))
 
-    # Shared haku-console Postgres database. Required: it holds the MCP approval audit/result
-    # ledger and the operator OAuth token stores — the console does not run without them. Both
-    # stores are always constructed; migrations are applied once at startup (see app.main).
+    # Shared haku-console Postgres database. Required: it holds canonical Operator identity and
+    # pending browser login flow state — the console does not run without them. Both stores are
+    # always constructed; migrations are applied once at startup (see app.main). Historical
+    # tool-call and grant tables remain mapped for schema verification and data retention, but the
+    # application has no data readers or writers for them.
     database_url: SecretStr = Field(
         description="PostgreSQL connection URI, normally postgresql://; the API and migrations select their own drivers."
     )
-
-    # Maximum synchronous wait an Agent may request for an approval-gated MCP call. Required
-    # deployment wiring: it must leave margin below the deployment's own request timeout.
-    max_wait_for_result_ms: int = Field(ge=5_000)
 
     # Operator browser login (Authentik OIDC), replacing the proxy outpost. Required in every
     # harness, including development; tests use the repo's hermetic OIDC fixture.

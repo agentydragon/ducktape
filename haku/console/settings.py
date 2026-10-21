@@ -7,7 +7,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from haku.console.config import CONFIG_FILE_ENV, ConsoleProcessConfig
-from haku.console.mcp_config import ConsoleConfigFile
+from haku.console.identity.config import ConsoleConfigFile
 
 
 class _ConfigFileSettings(BaseSettings):

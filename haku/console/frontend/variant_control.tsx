@@ -4,9 +4,9 @@ import { type JSX, useState } from "react";
 import { ListDetailsIcon, ListIcon } from "./icons";
 import type { PreviewVariant } from "./tool_rendering/vocabulary";
 
-// The per-view compact/detailed selection, shared by the history page's per-row control and the
-// approvals panel's cards. The owner holds the state, threading `variant` down (to
-// ToolArgumentsField and to gate the detail-only fields) and `setVariant` up to the control.
+// The per-view compact/detailed selection, shared by capability-request cards and tool-call cards.
+// The owner holds the state, threading `variant` down (to ToolArgumentsField and to gate the
+// detail-only fields) and `setVariant` up to the control.
 export function useVariant(initial: PreviewVariant): [PreviewVariant, (v: PreviewVariant) => void] {
   return useState(initial);
 }

@@ -1,51 +1,37 @@
-// Full-page screenshot harness for Haku Console. The production shell is rendered with mocked
-// API data; the test's request fence answers the real iframe request with an unmistakable striped
-// Haku UI document (mock_haku_ui.html) so layout overlap is visible in the resulting image.
+// Full-page screenshot harness for Haku Console. The shell is rendered with mocked API data;
+// the test's request fence answers the real iframe request with a striped Haku UI document.
 import "./mock_api";
 
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
+import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
-import { AgentNamesProvider } from "../agent_names";
-import { ApprovalsEmbedPage } from "../approvals_embed_page";
 import { HakuUiEmbed } from "../haku_ui_embed";
 import type { ConsoleNavigationView, ConsoleView } from "../routing";
 import { ShellChrome, type ShellChromeProps } from "../shell_chrome";
 import { hakuTheme } from "../theme";
-import { SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data";
 
 const noop = () => {};
 const noopNavigate = (_view: ConsoleNavigationView) => {};
+const UI_ORIGIN = "https://haku-ui.test";
 
 function ConsoleFixture({ view }: { view: ConsoleView }) {
-  return (
-    <AgentNamesProvider>
-      <HakuUiEmbed uiUrl="https://haku-ui.test/" launchAvailable view={view} onNavigate={noopNavigate} />
-    </AgentNamesProvider>
-  );
+  return <HakuUiEmbed uiUrl={`${UI_ORIGIN}/`} launchAvailable view={view} onNavigate={noopNavigate} />;
 }
 
 const chromeProps: ShellChromeProps = {
   view: "embed",
   onNavigate: noopNavigate,
-  approvalsOpen: false,
-  onApprovalsOpenChange: noop,
-  pendingApprovals: SAMPLE_PENDING,
+  capabilityRequestsOpen: false,
+  onCapabilityRequestsOpenChange: noop,
   geolocationApprovals: [],
   screenshotApprovals: [],
-  decidingApprovalIds: [],
-  recentToolCalls: sampleRecentToolCalls(Date.now()),
-  onApproveTool: noop,
-  onDenyTool: noop,
+  decidingCapabilityRequestIds: [],
   onApproveGeolocation: noop,
   onDenyGeolocation: noop,
   onApproveScreenshot: noop,
   onDenyScreenshot: noop,
-  onDismissRecentToolCall: noop,
-  syncError: null,
-  syncing: false,
-  lastSyncAt: new Date("2026-07-20T12:34:56-07:00"),
   geoGranted: true,
   tracking: true,
   onWithdrawGeolocation: noop,
@@ -57,17 +43,19 @@ const chromeProps: ShellChromeProps = {
   onReauthenticate: noop,
 };
 
-function IndicatorFixture({ state }: { state: "current" | "syncing" | "error" }) {
-  return (
-    <div className="haku-console-shell">
-      <ShellChrome
-        {...chromeProps}
-        syncError={state === "error" ? "Unauthorized" : null}
-        syncing={state === "syncing"}
-      />
-      <main className="haku-shell-content" />
-    </div>
-  );
+function CapabilityRequestFixture() {
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          origin: UI_ORIGIN,
+          data: { type: "requestGeolocation", id: "visual-geolocation", options: { enableHighAccuracy: true } },
+        })
+      );
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, []);
+  return <ConsoleFixture view="embed" />;
 }
 
 // The rail's session warning, which only appears inside the last few minutes of the session.
@@ -82,19 +70,10 @@ function SessionExpiringFixture() {
 
 function fixtureElement(fixture: string) {
   switch (fixture) {
-    case "approvals-embed":
-      return <ApprovalsEmbedPage />;
     case "settings":
       return <ConsoleFixture view="settings" />;
-    case "history":
-    case "history-paged":
-      return <ConsoleFixture view="toolCalls" />;
-    case "sync-current":
-      return <IndicatorFixture state="current" />;
-    case "sync-syncing":
-      return <IndicatorFixture state="syncing" />;
-    case "sync-error":
-      return <IndicatorFixture state="error" />;
+    case "capability-request":
+      return <CapabilityRequestFixture />;
     case "session-expiring":
       return <SessionExpiringFixture />;
     case "not-found":

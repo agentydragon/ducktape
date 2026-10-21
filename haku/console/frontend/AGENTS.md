@@ -1,18 +1,16 @@
 @README.md
 
-## Visual changes: render and look before hand-off
+## Visual changes: render and inspect before hand-off
 
 ```bash
-bbr test //haku/console/frontend:screenshots [--test_filter=settings]
+bbr test //haku/console/frontend:screenshots
 bbr test //haku/console/frontend/tool_rendering/<server>:previews [--test_filter=<tool name>]
 ```
 
-- `:screenshots` renders the production shell (`harness/harness.tsx`) in light and dark to
-  undeclared outputs: Haku UI (mock iframe) with drawer open/closed, narrow viewport, Settings,
-  history, each sync-indicator state. Fetch PNGs with the `buildbuddy_api` skill and inspect every
-  image. It fails only on a blank/crashed scene, never on visual change.
-- New surface → new scene in `harness/harness.tsx` plus a test in `test_visual.py` that reaches and
-  captures it.
+- `:screenshots` captures the production shell, bridge capability-request drawer, Settings, not-found,
+  and session-expiry surfaces in light and dark themes. Browser rendering runs on RBE. Review the
+  captured images, not only the pass result.
+- A new shell surface needs a matching scene in `harness/harness.tsx` and capture in `test_visual.py`.
 - Tool-call preview cards: one `:previews` target per server under `tool_rendering/<server>/`
   (`preview_fixtures.ts` mounted by `preview_harness.tsx`; shared harness in
   `tool_rendering/screenshot/`, `preview_screenshots` macro in `screenshot_test.bzl`), each
@@ -24,11 +22,10 @@ bbr test //haku/console/frontend/tool_rendering/<server>:previews [--test_filter
 
 ## Tool-call rendering
 
-Approvals-panel cards (`shell_chrome.tsx`) and history rows (`tool_calls_page.tsx`) share
-`tool_call_card.tsx`; only status badge and footer actions differ. Each item toggles **compact** /
-**detailed**. Arguments: `tool_rendering/<server>/requests.tsx` widget or raw-JSON
-`tool_arguments_field.tsx`; results: `responses.tsx` or `tool_result_field.tsx` (raw result is
-detailed-only, so compact shows a result only via a widget).
+`tool_call_card.tsx` renders one tool call; status badge and footer actions come in as props. Each
+card toggles **compact** / **detailed**. Arguments: `tool_rendering/<server>/requests.tsx` widget or
+raw-JSON `tool_arguments_field.tsx`; results: `responses.tsx` or `tool_result_field.tsx` (raw result
+is detailed-only, so compact shows a result only via a widget).
 
 **Combined widget** (`tool_rendering/<server>/calls.tsx`, `defineCallPreview` in
 `call_entry.tsx`, dispatched via `toolCallPreview`) only when the result mostly restates the

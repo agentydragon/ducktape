@@ -13,6 +13,10 @@ py_library(
         "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
+    deps = [
+        "//haku/console/identity:config",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -53,8 +57,8 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "//haku/console:config",
-        "//haku/console:mcp_config",
         "//haku/console:settings",
+        "//haku/console/identity:config",
         "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

@@ -53,37 +53,6 @@
   }
 }
 
-.haku-approval-embed {
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  background: var(--haku-page-bg);
-  color: var(--mantine-color-text);
-}
-
-.haku-approval-embed-header {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.85rem 1rem;
-  border-bottom: 1px solid var(--haku-border);
-  background: var(--haku-panel-bg);
-}
-
-.haku-approval-embed-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: 0.85rem;
-}
-
-.haku-approval-embed-list {
-  width: min(32rem, 100%);
-  margin: 0 auto;
-}
-
 /* Rendered item markdown (marked → sanitized HTML). Tailwind's typography plugin
    isn't vendored, so the prose elements are styled explicitly here; the container
    carries the `md` class (the inner tags come from dangerouslySetInnerHTML, which
@@ -234,7 +203,7 @@
   width: min(32rem, calc(100vw - 72px));
 }
 
-.haku-shell-approvals {
+.haku-shell-capability-requests {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -492,88 +461,6 @@
   width: min(100%, 46rem);
 }
 
-/* No card of its own: while folded a call is one plain line, so consecutive calls read as a run of
- * working notes rather than a stack of boxes. The negative margins pull adjacent working lines
- * back through the list's gap. */
-.haku-conversation-tool-call {
-  align-self: flex-start;
-  width: min(100%, 46rem);
-}
-
-.haku-conversation-tool-call + .haku-conversation-tool-call,
-.haku-conversation-thinking + .haku-conversation-tool-call,
-.haku-conversation-tool-call + .haku-conversation-thinking {
-  margin-top: -0.55rem;
-}
-
-.haku-conversation-tool-call-name {
-  font-size: var(--mantine-font-size-sm);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.haku-conversation-tool-call-summary {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  cursor: pointer;
-  list-style: none;
-}
-
-.haku-conversation-tool-call-summary::-webkit-details-marker {
-  display: none;
-}
-
-.haku-conversation-tool-call-summary::before {
-  content: "▸";
-  color: var(--mantine-color-dimmed);
-  flex: 0 0 auto;
-}
-
-.haku-conversation-tool-call[open] > .haku-conversation-tool-call-summary::before {
-  content: "▾";
-}
-
-/* One line while folded: the snippet takes what the status marker leaves and ellipsizes. */
-.haku-conversation-tool-call-snippet {
-  color: var(--mantine-color-dimmed);
-  font-size: var(--mantine-font-size-xs);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* Code identifies itself as code — a command, a path, a pattern — while a prose description reads
- * as prose. */
-.haku-conversation-tool-call-snippet-mono {
-  font-family: var(--mantine-font-family-monospace);
-}
-
-.haku-conversation-tool-call-status,
-.haku-tool-call-status {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-}
-
-.haku-conversation-tool-call-status svg,
-.haku-tool-call-status svg {
-  display: block;
-}
-
-/* Expanded content indents under the chevron so it visibly belongs to its line, since there is no
- * box to group it. */
-.haku-conversation-tool-call-body {
-  margin-top: 0.5rem;
-  margin-left: 0.35rem;
-  padding-left: 0.75rem;
-  border-left: 2px solid var(--haku-border);
-}
-
 .haku-conversation-markdown {
   font-size: var(--mantine-font-size-sm);
   line-height: 1.45;
@@ -717,61 +604,15 @@
   flex: 0 0 auto;
 }
 
-.haku-mcp-server-name,
-.haku-mcp-server-name-text {
-  min-width: 0;
-}
-
-.haku-status-dot {
-  display: block;
+.haku-tool-call-status {
+  display: inline-flex;
   flex: 0 0 auto;
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px var(--haku-panel-bg);
+  align-items: center;
+  justify-content: center;
 }
 
-.haku-status-dot[data-color="teal"] {
-  background: var(--mantine-color-teal-5);
-}
-
-.haku-status-dot[data-color="red"] {
-  background: var(--mantine-color-red-5);
-}
-
-.haku-status-dot[data-color="orange"] {
-  background: var(--mantine-color-orange-5);
-}
-
-.haku-status-dot[data-color="gray"] {
-  background: var(--mantine-color-gray-5);
-}
-
-.haku-status-dot[data-color="blue"] {
-  background: var(--mantine-color-blue-5);
-}
-
-.haku-status-dot[data-color="yellow"] {
-  background: var(--mantine-color-yellow-5);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .haku-status-dot[data-status="busy"] {
-    animation: haku-status-dot-pulse 1.6s ease-in-out infinite;
-  }
-}
-
-@keyframes haku-status-dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: 0.45;
-    transform: scale(0.8);
-  }
+.haku-tool-call-status svg {
+  display: block;
 }
 
 /* Provisioning is a live resource read, so its useful shape is a compact status table. The age

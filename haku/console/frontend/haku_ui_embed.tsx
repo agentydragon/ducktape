@@ -2,17 +2,14 @@ import { type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import {
   geolocationApprovalQueueId,
-  makeRecentToolCall,
   screenshotApprovalQueueId,
-  toolApprovalQueueId,
   type GeolocationApproval,
-  type RecentToolCall,
   type ScreenshotApproval,
 } from "./approval_state";
 import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
 
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge";
-import { displayableError, fetchPendingApprovals, fetchToolCall, launchRoutine, type ToolCallRecord } from "./client";
+import { launchRoutine } from "./client";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog";
 import { ShellChrome } from "./shell_chrome";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation";
@@ -31,11 +28,8 @@ import { ScreenshotSession } from "./screenshot_capture";
 import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant";
 import { SettingsPanel } from "./settings_panel";
 import { toastError, toastSuccess } from "./toast";
-import { useToolCallDecision } from "./tool_call_decision";
 import { redirectToOperatorLogin } from "./operator_login";
 import { useOperatorSessionDeadline, useSessionExpiringSoon } from "./operator_session";
-import { usePeriodicRefresh } from "./periodic_refresh";
-import { ToolCallsPage } from "./tool_calls_page";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox — embedded as
 // a sandboxed cross-origin iframe (the backend CSP frame-src permits the embed). The console never
@@ -74,26 +68,15 @@ export function routeFromLocation(loc: { pathname: string; hash: string }): stri
     : rememberedEmbedPath();
 }
 
-/** Whether an approvals drawer opened by an incoming approval should close after the queue drains. */
-export function shouldCloseAutoOpenedApprovalQueue(
-  approvalsOpen: boolean,
-  openedAutomatically: boolean,
-  pendingApprovalCount: number
-): boolean {
-  return approvalsOpen && openedAutomatically && pendingApprovalCount === 0;
-}
-
 export function HakuUiEmbed({
   uiUrl,
   launchAvailable,
   view,
-  toolCallId,
   onNavigate,
 }: {
   uiUrl: string;
   launchAvailable: boolean;
   view: ConsoleView;
-  toolCallId?: string | null;
   onNavigate: (view: ConsoleNavigationView) => void;
 }): JSX.Element {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -103,41 +86,18 @@ export function HakuUiEmbed({
   // The single escalation awaiting the operator's trusted confirm (a link to open or a run
   // to launch). One typed action, dispatched on its `kind` — see ConfirmDialog's Escalation.
   const [pending, setPending] = useState<Escalation | null>(null);
-  const [toolApprovals, setToolApprovals] = useState<ToolCallRecord[]>([]);
-  const toolApprovalsRef = useRef<ToolCallRecord[]>([]);
-  const knownToolApprovalIdsRef = useRef<Set<string> | null>(null);
   const [geolocationApprovals, setGeolocationApprovals] = useState<GeolocationApproval[]>([]);
   const geolocationApprovalsRef = useRef<GeolocationApproval[]>([]);
   const [screenshotApprovals, setScreenshotApprovals] = useState<ScreenshotApproval[]>([]);
   const screenshotApprovalsRef = useRef<ScreenshotApproval[]>([]);
-  const [approvalsOpen, setApprovalsOpen] = useState(false);
-  const approvalsOpenedAutomaticallyRef = useRef(false);
-  // A deep-linked call opens the drawer on arrival — following the link *is* the request to
-  // decide it. Keyed on the id so navigating to a different call re-opens a drawer the operator
-  // closed, while closing it on the same call leaves it closed.
-  useEffect(() => {
-    if (!toolCallId) return;
-    // Following a deep link is an explicit operator gesture, so keep the drawer open even when the
-    // pending queue is empty (a provenance link commonly points at an already-finished call).
-    approvalsOpenedAutomaticallyRef.current = false;
-    setApprovalsOpen(true);
-    // A notification normally points at a pending call already in the queue. Audit/provenance links
-    // may point at an older terminal call instead; fetch that exact record so the same canonical
-    // deep link can render it in Recent after a reload rather than opening an empty drawer.
-    void fetchToolCall(toolCallId).then(
-      (record) => {
-        if (record.status !== "pending_approval") addRecentToolCall(record);
-      },
-      (e: unknown) => toastError("Couldn't load tool call", e)
-    );
-  }, [toolCallId]);
+  const [capabilityRequestsOpen, setCapabilityRequestsOpen] = useState(false);
+  const capabilityRequestsOpenedAutomaticallyRef = useRef(false);
 
-  function setApprovalsOpenFromUser(open: boolean) {
-    approvalsOpenedAutomaticallyRef.current = false;
-    setApprovalsOpen(open);
+  function setCapabilityRequestsOpenFromUser(open: boolean) {
+    capabilityRequestsOpenedAutomaticallyRef.current = false;
+    setCapabilityRequestsOpen(open);
   }
-  const [decidingNonToolApprovalIds, setDecidingNonToolApprovalIds] = useState<string[]>([]);
-  const [recentToolCalls, setRecentToolCalls] = useState<RecentToolCall[]>([]);
+  const [decidingCapabilityRequestIds, setDecidingCapabilityRequestIds] = useState<string[]>([]);
   // Computed once: later routeChanged mirroring must not rewrite `src` (that would
   // reload the frame); the iframe navigates itself, the console only reflects.
   const [frameSrc] = useState(() => initialFrameSrc(uiUrl, routeFromLocation(window.location)));
@@ -211,9 +171,6 @@ export function HakuUiEmbed({
   // tab-capture stream (mirrors geoGranted/tracking above).
   const [screenshotGranted, setScreenshotGranted] = useState(() => hasScreenshotGrant());
   const [sharingScreen, setSharingScreen] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const [syncsInFlight, setSyncsInFlight] = useState(0);
-  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
 
   // The shell (never the iframe) holds the one live getDisplayMedia stream, reused across
   // requests so only the first capture (or the first after the operator's browser-native "Stop
@@ -244,52 +201,17 @@ export function HakuUiEmbed({
     setScreenshotGranted(false);
   }
 
-  function openApprovalQueue() {
-    setApprovalsOpen((open) => {
-      if (!open) approvalsOpenedAutomaticallyRef.current = true;
+  function openCapabilityRequestQueue() {
+    setCapabilityRequestsOpen((open) => {
+      if (!open) capabilityRequestsOpenedAutomaticallyRef.current = true;
       return true;
     });
   }
 
-  function setNonToolDeciding(id: string, deciding: boolean) {
-    setDecidingNonToolApprovalIds((ids) =>
+  function setCapabilityRequestDeciding(id: string, deciding: boolean) {
+    setDecidingCapabilityRequestIds((ids) =>
       deciding ? (ids.includes(id) ? ids : [...ids, id]) : ids.filter((existing) => existing !== id)
     );
-  }
-
-  function applyToolApprovals(approvals: ToolCallRecord[]) {
-    const incomingIds = new Set(approvals.map((approval) => approval.tool_call_id));
-    const previousIds = knownToolApprovalIdsRef.current;
-    const newApprovals =
-      previousIds === null ? approvals : approvals.filter((approval) => !previousIds.has(approval.tool_call_id));
-    knownToolApprovalIdsRef.current = incomingIds;
-    toolApprovalsRef.current = approvals;
-    setToolApprovals(approvals);
-    if (newApprovals.length > 0) {
-      openApprovalQueue();
-    }
-  }
-
-  function removeToolApproval(toolCallId: string): ToolCallRecord[] {
-    const remaining = toolApprovalsRef.current.filter((approval) => approval.tool_call_id !== toolCallId);
-    toolApprovalsRef.current = remaining;
-    knownToolApprovalIdsRef.current = new Set(remaining.map((approval) => approval.tool_call_id));
-    setToolApprovals(remaining);
-    return remaining;
-  }
-
-  function addRecentToolCall(record: ToolCallRecord) {
-    const recent = makeRecentToolCall(record, Date.now());
-    if (!recent) return;
-    setRecentToolCalls((records) => [
-      recent,
-      ...records.filter((existing) => existing.record.tool_call_id !== record.tool_call_id),
-    ]);
-  }
-
-  function finishToolDecision(record: ToolCallRecord) {
-    removeToolApproval(record.tool_call_id);
-    addRecentToolCall(record);
   }
 
   function addGeolocationApproval(mode: GeolocationApproval["mode"], id: string, options?: GeolocationOptions) {
@@ -297,7 +219,7 @@ export function HakuUiEmbed({
     const remaining = [approval, ...geolocationApprovalsRef.current.filter((existing) => existing.id !== id)];
     geolocationApprovalsRef.current = remaining;
     setGeolocationApprovals(remaining);
-    openApprovalQueue();
+    openCapabilityRequestQueue();
   }
 
   function removeGeolocationApproval(id: string): GeolocationApproval[] {
@@ -316,7 +238,7 @@ export function HakuUiEmbed({
     const remaining = [approval, ...screenshotApprovalsRef.current.filter((existing) => existing.id !== id)];
     screenshotApprovalsRef.current = remaining;
     setScreenshotApprovals(remaining);
-    openApprovalQueue();
+    openCapabilityRequestQueue();
   }
 
   function removeScreenshotApproval(id: string): ScreenshotApproval[] {
@@ -330,41 +252,17 @@ export function HakuUiEmbed({
     removeScreenshotApproval(id);
   }
 
-  function refreshToolApprovals() {
-    setSyncsInFlight((count) => count + 1);
-    void fetchPendingApprovals()
-      .then(
-        (approvals) => {
-          setSyncError(null);
-          setLastSyncAt(new Date());
-          applyToolApprovals(approvals);
-        },
-        (e: unknown) => setSyncError(displayableError(e))
-      )
-      .finally(() => setSyncsInFlight((count) => count - 1));
-  }
-
-  const toolDecisions = useToolCallDecision({
-    onSuccess: finishToolDecision,
-    onSettled: refreshToolApprovals,
-  });
-  const decidingApprovalIds = [
-    ...decidingNonToolApprovalIds,
-    ...Array.from(toolDecisions.decidingToolCallIds, toolApprovalQueueId),
-  ];
-
-  // Fetch approvals on mount and periodically; operator actions update this tab immediately.
-  usePeriodicRefresh(refreshToolApprovals);
-
-  const pendingApprovalCount = toolApprovals.length + geolocationApprovals.length + screenshotApprovals.length;
+  const pendingCapabilityRequestCount = geolocationApprovals.length + screenshotApprovals.length;
   useEffect(() => {
     if (
-      shouldCloseAutoOpenedApprovalQueue(approvalsOpen, approvalsOpenedAutomaticallyRef.current, pendingApprovalCount)
+      capabilityRequestsOpen &&
+      capabilityRequestsOpenedAutomaticallyRef.current &&
+      pendingCapabilityRequestCount === 0
     ) {
-      approvalsOpenedAutomaticallyRef.current = false;
-      setApprovalsOpen(false);
+      capabilityRequestsOpenedAutomaticallyRef.current = false;
+      setCapabilityRequestsOpen(false);
     }
-  }, [approvalsOpen, pendingApprovalCount]);
+  }, [capabilityRequestsOpen, pendingCapabilityRequestCount]);
 
   // The session's absolute deadline, surfaced in the rail once it is near. Expiry is otherwise
   // invisible until a background request 401s and navigates the tab away mid-task.
@@ -377,13 +275,7 @@ export function HakuUiEmbed({
 
   useEffect(() => {
     document.title =
-      view === "embed"
-        ? frameTitleRef.current
-        : view === "settings"
-          ? "Settings · Haku"
-          : view === "toolCalls"
-            ? "Past tool calls · Haku"
-            : "Not found · Haku";
+      view === "embed" ? frameTitleRef.current : view === "settings" ? "Settings · Haku" : "Not found · Haku";
   }, [view]);
 
   // Keep one bridge subscription for the tab's lifetime while reading current render values.
@@ -404,7 +296,7 @@ export function HakuUiEmbed({
     if (msg.type === "requestGeolocation") {
       // The iframe can only ask; the shell owns the standing grant. With consent already
       // given ("allow until withdrawn"), serve directly; otherwise queue a trusted shell
-      // approval in the non-modal approvals panel so Haku's UI remains usable.
+      // capability approval in the non-modal request panel so Haku's UI remains usable.
       if (hasGeolocationGrant()) geolocateAndReply(msg.id, msg.options);
       else addGeolocationApproval("geolocation", msg.id, msg.options);
       return;
@@ -437,7 +329,7 @@ export function HakuUiEmbed({
       // Mirror the route into the console's own pathname so refresh/deep-links restore the view.
       // replaceState, not pushState: the iframe's own history navigations already create
       // joint-session-history entries, so Back works via the frame. Skip while a console-own view
-      // (e.g. /_console/tool-calls) holds the pathname — just remember the route for the return
+      // (e.g. /_console/settings) holds the pathname — just remember the route for the return
       // trip.
       rememberEmbedPath(msg.path);
       if (viewForPathname(window.location.pathname) === "embed") {
@@ -473,29 +365,12 @@ export function HakuUiEmbed({
   }, []);
 
   useEffect(() => {
-    toolApprovalsRef.current = toolApprovals;
-  }, [toolApprovals]);
-
-  useEffect(() => {
     geolocationApprovalsRef.current = geolocationApprovals;
   }, [geolocationApprovals]);
 
   useEffect(() => {
     screenshotApprovalsRef.current = screenshotApprovals;
   }, [screenshotApprovals]);
-
-  useEffect(() => {
-    if (recentToolCalls.length === 0) return;
-    const nextHideAtMs = Math.min(...recentToolCalls.map((recent) => recent.hideAtMs));
-    const t = window.setTimeout(
-      () => {
-        const now = Date.now();
-        setRecentToolCalls((records) => records.filter((recent) => recent.hideAtMs > now));
-      },
-      Math.max(0, nextHideAtMs - Date.now()) + 50
-    );
-    return () => window.clearTimeout(t);
-  }, [recentToolCalls]);
 
   // The operator approved against trusted-rendered chrome — now actually perform the action
   // (open the link / fire the capability) and report the outcome back over the Agent UI bridge.
@@ -529,36 +404,28 @@ export function HakuUiEmbed({
     }
   }
 
-  function approveToolApproval(approval: ToolCallRecord, decisionNote?: string) {
-    void toolDecisions.approve(approval, decisionNote);
-  }
-
-  function denyToolApproval(approval: ToolCallRecord, decisionNote?: string) {
-    void toolDecisions.deny(approval, decisionNote);
-  }
-
   function approveGeolocationApproval(approval: GeolocationApproval) {
     const approvalId = geolocationApprovalQueueId(approval.id);
-    setNonToolDeciding(approvalId, true);
+    setCapabilityRequestDeciding(approvalId, true);
     setGeolocationGrant(true);
     setGeoGranted(true);
     if (approval.mode === "geolocationWatch") startWatch(approval.id, approval.options);
     else geolocateAndReply(approval.id, approval.options);
-    setNonToolDeciding(approvalId, false);
+    setCapabilityRequestDeciding(approvalId, false);
     advanceAfterGeolocation(approval.id);
   }
 
   function denyGeolocationApproval(approval: GeolocationApproval) {
     const approvalId = geolocationApprovalQueueId(approval.id);
-    setNonToolDeciding(approvalId, true);
+    setCapabilityRequestDeciding(approvalId, true);
     reply({ type: "geolocationResult", id: approval.id, ok: false, code: GEO_PERMISSION_DENIED, reason: "declined" });
-    setNonToolDeciding(approvalId, false);
+    setCapabilityRequestDeciding(approvalId, false);
     advanceAfterGeolocation(approval.id);
   }
 
   function approveScreenshotApproval(approval: ScreenshotApproval) {
     const approvalId = screenshotApprovalQueueId(approval.id);
-    setNonToolDeciding(approvalId, true);
+    setCapabilityRequestDeciding(approvalId, true);
     // The Approve click IS the user gesture getDisplayMedia needs — this must run directly from
     // here, never from the requestScreenshot message handler.
     void screenshotSession.start().then((r) => {
@@ -570,21 +437,17 @@ export function HakuUiEmbed({
       } else {
         reply({ type: "screenshotResult", id: approval.id, ok: false, reason: r.reason });
       }
-      setNonToolDeciding(approvalId, false);
+      setCapabilityRequestDeciding(approvalId, false);
       advanceAfterScreenshot(approval.id);
     });
   }
 
   function denyScreenshotApproval(approval: ScreenshotApproval) {
     const approvalId = screenshotApprovalQueueId(approval.id);
-    setNonToolDeciding(approvalId, true);
+    setCapabilityRequestDeciding(approvalId, true);
     reply({ type: "screenshotResult", id: approval.id, ok: false, reason: "declined" });
-    setNonToolDeciding(approvalId, false);
+    setCapabilityRequestDeciding(approvalId, false);
     advanceAfterScreenshot(approval.id);
-  }
-
-  function dismissRecentToolCall(toolCallId: string) {
-    setRecentToolCalls((records) => records.filter((recent) => recent.record.tool_call_id !== toolCallId));
   }
 
   return (
@@ -592,12 +455,8 @@ export function HakuUiEmbed({
       <ShellChrome
         view={view}
         onNavigate={onNavigate}
-        approvalsOpen={approvalsOpen}
-        focusedToolCallId={toolCallId ?? null}
-        onApprovalsOpenChange={setApprovalsOpenFromUser}
-        syncError={syncError}
-        syncing={syncsInFlight > 0}
-        lastSyncAt={lastSyncAt}
+        capabilityRequestsOpen={capabilityRequestsOpen}
+        onCapabilityRequestsOpenChange={setCapabilityRequestsOpenFromUser}
         geoGranted={geoGranted}
         tracking={tracking}
         onWithdrawGeolocation={withdrawGeolocation}
@@ -607,18 +466,13 @@ export function HakuUiEmbed({
         sessionExpiresAt={sessionExpiresAt}
         sessionExpiringSoon={sessionExpiringSoon}
         onReauthenticate={() => redirectToOperatorLogin()}
-        pendingApprovals={toolApprovals}
         geolocationApprovals={geolocationApprovals}
         screenshotApprovals={screenshotApprovals}
-        decidingApprovalIds={decidingApprovalIds}
-        recentToolCalls={recentToolCalls}
-        onApproveTool={approveToolApproval}
-        onDenyTool={denyToolApproval}
+        decidingCapabilityRequestIds={decidingCapabilityRequestIds}
         onApproveGeolocation={approveGeolocationApproval}
         onDenyGeolocation={denyGeolocationApproval}
         onApproveScreenshot={approveScreenshotApproval}
         onDenyScreenshot={denyScreenshotApproval}
-        onDismissRecentToolCall={dismissRecentToolCall}
       />
       <main className="haku-shell-content">
         <iframe
@@ -631,7 +485,6 @@ export function HakuUiEmbed({
           className={`haku-ui-frame ${view === "embed" ? "" : "haku-ui-frame-hidden"}`}
         />
         {view === "settings" && <SettingsPanel />}
-        {view === "toolCalls" && <ToolCallsPage />}
         {view === "notFound" && (
           <section className="haku-page" aria-label="Not found">
             <div className="haku-page-list">

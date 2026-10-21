@@ -34,15 +34,9 @@ from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.identity import agent_routes, operator_auth, operator_login_flow
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
+from haku.console.identity.config import LoadedStaticAgent, load_static_agents
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.mcp import approval, tool_call_service
-from haku.console.mcp_config import (
-    InProcessServers,
-    LoadedStaticAgent,
-    load_static_agents,
-    validate_in_process_server_bindings,
-)
 from haku.console.models import ConfigResponse
 from haku.console.settings import Settings
 
@@ -109,13 +103,11 @@ def create_app(
     *,
     loaded_static_agents: list[LoadedStaticAgent] | None = None,
     static_agent_definitions: tuple[StaticAgentDefinition, ...] | None = None,
-    in_process_servers: InProcessServers | None = None,
 ) -> FastAPI:
-    # Deploy-time console config file (non-secret): in-process tool policy and static agents.
+    # Deploy-time Console config file (non-secret): Agent profiles and static identities.
     console_config = settings
-    # Postgres is required: it backs the approval ledger and the operator OAuth token stores, all
-    # always constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
-    # the test fixture), not here.
+    # Postgres is required for operator identity and login-flow state. Construction is lazy (no
+    # connect); migrations run once at startup (app.main / the test fixture), not here.
     # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
     # process holds a single connection pool rather than one per store.
     # Configuration accepts a driver-neutral URI and existing explicit PostgreSQL driver schemes.
@@ -126,7 +118,6 @@ def create_app(
     db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
-    tool_call_ledger = approval.PostgresToolCallLedger(db_sessions)
     agent_authority = PostgresAgentAuthority(
         db_sessions,
         operator_identity_store=operator_identity_store,
@@ -160,18 +151,6 @@ def create_app(
 
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
-    if in_process_servers is None:
-        # The retired grants backend is no longer available. Keep existing call rows in the ledger
-        # for audit; any pending call that depended on that backend will fail closed on dispatch.
-        in_process_servers = {}
-    validate_in_process_server_bindings(console_config, in_process_servers)
-    # The dispatcher remains so the approval ledger can keep its durable audit and decision APIs;
-    # this deployment currently has no configured MCP execution backend.
-    dispatcher = approval.McpServerDispatcher(in_process_servers)
-    tool_calls = tool_call_service.ToolCallApplicationService(
-        settings=settings, repository=tool_call_ledger, executor=dispatcher, in_process_servers=in_process_servers
-    )
-
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as stack:
@@ -184,8 +163,6 @@ def create_app(
             )
             await agent_authority.reconcile_static_agents(static_definitions)
             await stack.enter_async_context(agent_authority.expiry_maintenance())
-            # Cancel in-flight approved-call executions before expiry maintenance is torn down.
-            stack.push_async_callback(tool_calls.aclose)
             yield
 
     app = FastAPI(title="Haku console", lifespan=_lifespan)
@@ -198,9 +175,6 @@ def create_app(
     app.state.agent_enrollment_service = agent_authority
     app.state.operator_identity_store = operator_identity_store
     app.state.operator_login_flows = operator_login_flows
-    app.state.tool_call_service = tool_calls
-    app.state.in_process_servers = in_process_servers
-    app.state.mcp_dispatcher = dispatcher
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -235,7 +209,6 @@ def create_app(
     # The browser API is operator-only and recognizes the Operator session.
     operator_only = [Depends(operator_auth.require_operator), Depends(operator_auth.require_operator_mutation_origin)]
     app.include_router(capabilities.router, dependencies=operator_only)
-    app.include_router(approval.router, dependencies=operator_only)
     app.include_router(agent_routes.router, dependencies=operator_only)
 
     @app.get("/api/deployment", dependencies=operator_only)

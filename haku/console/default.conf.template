@@ -18,9 +18,7 @@ server {
   index index.html;
 
   # Compress both what nginx serves itself and what it proxies from FastAPI (`gzip_proxied any`;
-  # nginx otherwise leaves upstream responses alone). Neither side was compressed before, so a cold
-  # load pulled the ~1.8 MB SPA bundle in full and a page of the tool-call audit ledger — whole
-  # arguments and result payloads, so hundreds of KB — went over the wire as raw JSON. Both are
+  # nginx otherwise leaves upstream responses alone). Both the SPA bundle and backend JSON are
   # highly compressible text.
   # text/html needs no listing — nginx always compresses it when gzip is on.
   gzip on;

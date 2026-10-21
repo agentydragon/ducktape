@@ -75,6 +75,14 @@ ts_library(
     ],
 )
 
+# The shared ToolCallRecord wire model. No Console route serves it, so it is not in :schema; the
+# tool-call card and the renderer previews still take its type through :client.
+js_json_schema(
+    name = "tool_call_record",
+    out = "api/tool_call_record.d.ts",
+    generator = "//haku/console:export_tool_call_schema_bin",
+)
+
 ts_library(
     name = "client",
     srcs = ["client.ts"],
@@ -83,6 +91,7 @@ ts_library(
     deps = [
         ":operator_login",
         ":schema",
+        ":tool_call_record",
         "//:node_modules/openapi-fetch",
     ],
 )
@@ -228,17 +237,6 @@ ts_library(
 )
 
 ts_library(
-    name = "coalesced_refresh",
-    srcs = ["coalesced_refresh.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "periodic_refresh",
     srcs = ["periodic_refresh.ts"],
     isolated_typecheck = True,
@@ -259,21 +257,6 @@ ts_library(
         ":time",
         "//:node_modules/@types/react",
         "//:node_modules/date-fns",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "tool_call_decision",
-    srcs = ["tool_call_decision.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":agent_names",
-        ":approval_state",
-        ":client",
-        ":toast",
-        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
@@ -503,19 +486,6 @@ ts_library(
 )
 
 ts_library(
-    name = "pending_tool_call_actions",
-    srcs = ["pending_tool_call_actions.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":theme",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "variant_control",
     srcs = ["variant_control.tsx"],
     isolated_typecheck = True,
@@ -536,51 +506,16 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
-        ":client",
         ":code_block",
         ":field",
         ":icons",
-        ":pending_tool_call_actions",
         ":routing",
         ":theme",
         ":time",
-        ":tool_call_card",
         ":variant_control",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "tool_calls_page",
-    srcs = ["tool_calls_page.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":approval_state",
-        ":client",
-        ":coalesced_refresh",
-        ":pending_tool_call_actions",
-        ":periodic_refresh",
-        ":toast",
-        ":tool_call_card",
-        ":tool_call_decision",
-        ":variant_control",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-haku_vitest_test(
-    name = "tool_calls_page_test",
-    srcs = ["tool_calls_page.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":client",
-        ":tool_calls_page",
-        "//:node_modules/vitest",
     ],
 )
 
@@ -625,26 +560,7 @@ ts_library(
         ":settings_panel",
         ":shell_chrome",
         ":toast",
-        ":tool_call_decision",
-        ":tool_calls_page",
         "//:node_modules/@haku/console-bridge",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "approvals_embed_page",
-    srcs = ["approvals_embed_page.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":approval_state",
-        ":client",
-        ":periodic_refresh",
-        ":shell_chrome",
-        ":tool_call_decision",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -656,8 +572,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":agent_names",
-        ":approvals_embed_page",
         ":client",
         ":haku_ui_embed",
         ":routing",
@@ -691,7 +605,6 @@ filegroup(
     srcs = [
         "app.tsx",
         "approval_state.ts",
-        "approvals_embed_page.tsx",
         "calendar_client.ts",
         "client.ts",
         "confirm_dialog.tsx",
@@ -703,7 +616,6 @@ filegroup(
         "index.html",
         "main.tsx",
         "open_external.ts",
-        "pending_tool_call_actions.tsx",
         "routing.ts",
         "settings_panel.tsx",
         "shell_chrome.tsx",
@@ -712,9 +624,7 @@ filegroup(
         "toast.ts",
         "tool_arguments_field.tsx",
         "tool_call_card.tsx",
-        "tool_call_decision.ts",
         "tool_call_meta.tsx",
-        "tool_calls_page.tsx",
         "tool_result_field.tsx",
         "variant_control.tsx",
         "//haku/console/frontend/tool_rendering:tailwind_srcs",
@@ -791,27 +701,17 @@ ts_library(
     tags = ["no-lint"],
     tsconfig = TSCONFIG,
     deps = [
-        ":agent_names",
-        ":approval_state",
-        ":approvals_embed_page",
         ":client",
         ":haku_ui_embed",
         ":routing",
-        ":settings_panel",
         ":shell_chrome",
         ":theme",
-        ":tool_calls_page",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/notifications",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
-        "//haku/console/frontend/tool_rendering",
-        "//haku/console/frontend/tool_rendering/google_calendar:fixtures",
-        "//haku/console/frontend/tool_rendering/grocy:fixtures",
-        "//haku/console/frontend/tool_rendering/screenshot:mcp_mock",
-        "//haku/console/frontend/tool_rendering/screenshot:visual_network_ledger",
     ],
 )
 
@@ -1091,36 +991,11 @@ haku_vitest_test(
 )
 
 haku_vitest_test(
-    name = "shell_chrome_test",
-    srcs = ["shell_chrome.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":shell_chrome",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
     name = "tana_client_test",
     srcs = ["tana_client.test.ts"],
     isolated_typecheck = True,
     deps = [
         ":tana_client",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
-    name = "tool_call_decision_test",
-    srcs = ["tool_call_decision.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":client",
-        ":tool_call_decision",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
     ],
 )

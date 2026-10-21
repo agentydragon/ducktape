@@ -103,7 +103,7 @@ def test_spa_route_deep_link_serves_index(make_client, tmp_path: Path) -> None:
     (static_dir / "index.html").write_text("<!doctype html><div id='root'></div>", encoding="utf-8")
 
     with make_client(static_dir=static_dir) as c:
-        for path in ("/_console/settings", "/_console/tool-calls", "/tool-calls", "/garden/a.md"):
+        for path in ("/_console/settings", "/garden/a.md"):
             resp = c.get(path)
             assert resp.status_code == 200
             assert "id='root'" in resp.text
@@ -124,7 +124,7 @@ def test_server_startup_checks_schema_without_applying_migrations(monkeypatch: p
     class DatabaseUrl:
         @staticmethod
         def get_secret_value() -> str:
-            return "postgresql+asyncpg://approval_store:secret@db.example/approval_store"
+            return "postgresql+asyncpg://haku_console:secret@db.example/haku_console"
 
     class TestSettings:
         database_url = DatabaseUrl()
@@ -144,7 +144,7 @@ def test_server_startup_checks_schema_without_applying_migrations(monkeypatch: p
 
     app.main()
 
-    assert checked == ["postgresql+asyncpg://approval_store:secret@db.example/approval_store"]
+    assert checked == ["postgresql+asyncpg://haku_console:secret@db.example/haku_console"]
 
 
 def test_duplicate_static_agent_tokens_fail_startup(migrated_db_url: str, tmp_path: Path) -> None:
@@ -160,8 +160,7 @@ def test_duplicate_static_agent_tokens_fail_startup(migrated_db_url: str, tmp_pa
     config_file = write_config(
         tmp_path / "duplicate-token.yaml",
         {
-            "auto_approval_policies": [{"id": "manual", "type": "never"}],
-            "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
+            "access_profiles": [{"id": "manual"}],
             "default_access_profile_id": "manual",
             "static_agents": {
                 "first": static_agent(1, "First Agent", "operator-a"),

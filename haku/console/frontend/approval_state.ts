@@ -14,15 +14,42 @@ export interface ScreenshotApproval {
   createdAt: string;
 }
 
-interface ApprovalQueueItemBase {
-  id: string;
-  createdAt: string;
+export type CapabilityRequestItem =
+  | { kind: "geolocation"; id: string; createdAt: string; approval: GeolocationApproval }
+  | { kind: "screenshot"; id: string; createdAt: string; approval: ScreenshotApproval };
+
+function createdAtMs(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-export type ApprovalQueueItem =
-  | (ApprovalQueueItemBase & { kind: "tool"; approval: ToolCallRecord })
-  | (ApprovalQueueItemBase & { kind: "geolocation"; approval: GeolocationApproval })
-  | (ApprovalQueueItemBase & { kind: "screenshot"; approval: ScreenshotApproval });
+export function geolocationApprovalQueueId(id: string): string {
+  return `geolocation:${id}`;
+}
+
+export function screenshotApprovalQueueId(id: string): string {
+  return `screenshot:${id}`;
+}
+
+export function capabilityRequestItems(
+  geolocationRequests: readonly GeolocationApproval[],
+  screenshotRequests: readonly ScreenshotApproval[]
+): CapabilityRequestItem[] {
+  return [
+    ...geolocationRequests.map((approval): CapabilityRequestItem => ({
+      kind: "geolocation",
+      id: geolocationApprovalQueueId(approval.id),
+      createdAt: approval.createdAt,
+      approval,
+    })),
+    ...screenshotRequests.map((approval): CapabilityRequestItem => ({
+      kind: "screenshot",
+      id: screenshotApprovalQueueId(approval.id),
+      createdAt: approval.createdAt,
+      approval,
+    })),
+  ].sort((a, b) => createdAtMs(b.createdAt) - createdAtMs(a.createdAt));
+}
 
 export interface ApprovalDisplayFields {
   title: string;
@@ -38,65 +65,6 @@ export interface ApprovalDisplayFields {
   withdrawalReason: string | null;
   approvalPolicyId: string | null;
   autoApprovalEvaluation: string | null;
-}
-
-export interface RecentToolCall {
-  record: ToolCallRecord;
-  hideAtMs: number;
-}
-
-export interface RecentToolCallCountdown {
-  label: string;
-  progressPercent: number;
-  remainingSeconds: number;
-}
-
-const RECENT_OK_TTL_MS = 15_000;
-const RECENT_ERROR_TTL_MS = 60_000;
-
-function createdAtMs(value: string | undefined): number {
-  if (!value) return 0;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-export function toolApprovalQueueId(toolCallId: string): string {
-  return `tool:${toolCallId}`;
-}
-
-export function geolocationApprovalQueueId(id: string): string {
-  return `geolocation:${id}`;
-}
-
-export function screenshotApprovalQueueId(id: string): string {
-  return `screenshot:${id}`;
-}
-
-export function approvalQueueItems(
-  toolApprovals: readonly ToolCallRecord[],
-  geolocationApprovals: readonly GeolocationApproval[],
-  screenshotApprovals: readonly ScreenshotApproval[]
-): ApprovalQueueItem[] {
-  return [
-    ...toolApprovals.map((approval): ApprovalQueueItem => ({
-      kind: "tool",
-      id: toolApprovalQueueId(approval.tool_call_id),
-      createdAt: approval.created_at,
-      approval,
-    })),
-    ...geolocationApprovals.map((approval): ApprovalQueueItem => ({
-      kind: "geolocation",
-      id: geolocationApprovalQueueId(approval.id),
-      createdAt: approval.createdAt,
-      approval,
-    })),
-    ...screenshotApprovals.map((approval): ApprovalQueueItem => ({
-      kind: "screenshot",
-      id: screenshotApprovalQueueId(approval.id),
-      createdAt: approval.createdAt,
-      approval,
-    })),
-  ].sort((a, b) => createdAtMs(b.createdAt) - createdAtMs(a.createdAt));
 }
 
 export function approvalDisplayFields(approval: ToolCallRecord): ApprovalDisplayFields {
@@ -116,31 +84,6 @@ export function approvalDisplayFields(approval: ToolCallRecord): ApprovalDisplay
     withdrawalReason: approval.withdrawal_reason ?? null,
     approvalPolicyId: approval.approval_policy_id ?? null,
     autoApprovalEvaluation: approval.auto_approval_evaluation ?? null,
-  };
-}
-
-// The "Recent" list is fed only by the operator's own decisions (`finishToolDecision` in
-// haku_ui_embed.tsx), so `withdrawn` — an agent retraction — never enters it and gets no TTL.
-export function recentToolCallTtlMs(status: ToolCallRecord["status"]): number | null {
-  if (status === "ok" || status === "denied") return RECENT_OK_TTL_MS;
-  if (status === "error") return RECENT_ERROR_TTL_MS;
-  return null;
-}
-
-export function makeRecentToolCall(record: ToolCallRecord, nowMs: number): RecentToolCall | null {
-  const ttlMs = recentToolCallTtlMs(record.status);
-  return ttlMs === null ? null : { record, hideAtMs: nowMs + ttlMs };
-}
-
-export function recentToolCallCountdown(recent: RecentToolCall, nowMs: number): RecentToolCallCountdown {
-  const ttlMs = recentToolCallTtlMs(recent.record.status) ?? 0;
-  const remainingMs = Math.max(0, recent.hideAtMs - nowMs);
-  const remainingSeconds = Math.ceil(remainingMs / 1000);
-  const progressPercent = ttlMs === 0 ? 0 : Math.max(0, Math.min(100, (remainingMs / ttlMs) * 100));
-  return {
-    label: remainingSeconds === 0 ? "Auto-hides now" : `Auto-hides in ${remainingSeconds}s`,
-    progressPercent,
-    remainingSeconds,
   };
 }
 
@@ -197,8 +140,6 @@ export function geolocationApprovalBody(approval: GeolocationApproval): string {
     : "Haku is asking to read your current device location once.";
 }
 
-// Same wording for a first grant and for a resume after the operator stopped sharing: either way
-// approving opens the browser's own tab-share picker.
 export const SCREENSHOT_APPROVAL_TITLE = "Allow screen capture for a screenshot?";
 export const SCREENSHOT_APPROVAL_BODY: string =
   "Haku is asking to capture a screenshot of this page. Approving opens your browser's own " +

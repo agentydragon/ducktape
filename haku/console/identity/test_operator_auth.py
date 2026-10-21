@@ -113,12 +113,11 @@ def _static_agent_config(tmp_path: Path) -> Path:
                         "display_name": "Haku",
                         "token": AGENT_TOKEN,
                         "operator_subject": _OPERATOR_SUBJECT,
-                        "access_profile_id": "no_auto_approval",
+                        "access_profile_id": "default",
                     }
                 },
-                "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
-                "access_profiles": [{"id": "no_auto_approval", "auto_approval_policy": "no_auto_approval"}],
-                "default_access_profile_id": "no_auto_approval",
+                "access_profiles": [{"id": "default"}],
+                "default_access_profile_id": "default",
             }
         ),
         encoding="utf-8",
@@ -127,7 +126,7 @@ def _static_agent_config(tmp_path: Path) -> Path:
 
 
 async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path: Path) -> None:
-    """The browser API requires an Operator session; a static Agent bearer is MCP-only."""
+    """The browser API requires an Operator session; a static Agent bearer is not browser auth."""
     private_key, public_key = generate_rsa_keypair()
     idp_sock, console_sock = bind_free_port(), bind_free_port()
     idp_url, console_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, console_sock))
@@ -152,14 +151,11 @@ async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path
     async with serve_app(idp, sock=idp_sock), serve_app(app, sock=console_sock):
         # No credential: every `/api/*` route rejects; the health probe stays open.
         async with httpx.AsyncClient(base_url=console_url) as anon:
-            assert (await anon.get("/api/tool-calls")).status_code == 401
             assert (await anon.get("/api/config")).status_code == 401
             assert (await anon.get("/healthz")).status_code == 200
 
-        # A static Agent bearer grants no browser API access. The retired submission route is absent.
+        # A static Agent bearer grants no browser API access.
         async with httpx.AsyncClient(base_url=console_url, headers={"Authorization": f"Bearer {AGENT_TOKEN}"}) as agent:
-            assert (await agent.get("/api/tool-calls")).status_code == 401
-            assert (await agent.post("/api/tool-calls", json={})).status_code == 405
             assert (await agent.get("/api/config")).status_code == 401
 
         # A real operator login (authorization-code flow through the mock IdP) reaches everything.
@@ -168,9 +164,8 @@ async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path
             me = await operator.get("/auth/me")
             assert me.status_code == 200, me.text
             assert me.json()["username"] == _OPERATOR_USERNAME
-            assert (await operator.get("/api/tool-calls")).status_code == 200
-            assert (await operator.post("/api/tool-calls", json={})).status_code == 405
             assert (await operator.get("/api/config")).status_code == 200
+            assert (await operator.get("/api/tool-calls")).status_code == 404
 
 
 async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_path: Path) -> None:
@@ -206,12 +201,12 @@ async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_pat
         # from the same snapshot of it.
         httpx.AsyncClient(base_url=console_url) as browser,
     ):
-        settings_tab, history_tab = await asyncio.gather(
+        settings_tab, home_tab = await asyncio.gather(
             browser.get("/auth/login", params={"return_to": "/_console/settings"}),
-            browser.get("/auth/login", params={"return_to": "/_console/tool-calls"}),
+            browser.get("/auth/login", params={"return_to": "/"}),
         )
 
-        for tab, expected_return_to in ((settings_tab, "/_console/settings"), (history_tab, "/_console/tool-calls")):
+        for tab, expected_return_to in ((settings_tab, "/_console/settings"), (home_tab, "/")):
             landed = await browser.get(tab.headers["location"], follow_redirects=False)
             finished = await browser.get(landed.headers["location"], follow_redirects=False)
             assert finished.status_code == 303, finished.text
@@ -315,7 +310,7 @@ def _seed_login_flow(client, *, return_to: str | None, binding: str = "test-brow
     return state
 
 
-@pytest.mark.parametrize("return_to", ["/_console/tool-calls"])
+@pytest.mark.parametrize("return_to", ["/_console/settings"])
 def test_callback_returns_to_the_page_the_login_started_from(make_operator_client, return_to: str) -> None:
     with make_operator_client() as client:
         state = _seed_login_flow(client, return_to=return_to)
@@ -419,7 +414,7 @@ async def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
         assert (await connection.scalar(select(func.count()).select_from(OidcIdentity))) == 0
 
 
-@pytest.mark.parametrize("path", ["/api/tool-calls", "/api/config"])
+@pytest.mark.parametrize("path", ["/api/config"])
 def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client, path: str) -> None:
     """The app-owned OIDC session is the only operator identity boundary.
 

@@ -10,9 +10,9 @@ describe("redirectToOperatorLogin", () => {
     const { redirectToOperatorLogin: redirect } = await import("./operator_login");
     const replace = vi.fn();
 
-    redirect({ pathname: "/_console/tool-calls", search: "?show=all", replace });
+    redirect({ pathname: "/_console/settings", search: "?tab=system", replace });
 
-    expect(replace).toHaveBeenCalledWith("/auth/login?return_to=%2F_console%2Ftool-calls%3Fshow%3Dall");
+    expect(replace).toHaveBeenCalledWith("/auth/login?return_to=%2F_console%2Fsettings%3Ftab%3Dsystem");
   });
 
   it("reports that the document is leaving, so surfaces can hold their error state", async () => {

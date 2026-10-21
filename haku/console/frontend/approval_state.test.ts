@@ -2,16 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   approvalDisplayFields,
-  approvalQueueItems,
+  capabilityRequestItems,
   geolocationApprovalQueueId,
-  makeRecentToolCall,
-  recentToolCallCountdown,
-  recentToolCallTtlMs,
   screenshotApprovalQueueId,
   showsAutoApprovalEvaluation,
-  toolApprovalQueueId,
-  type GeolocationApproval,
-  type ScreenshotApproval,
 } from "./approval_state";
 import type { ToolCallRecord } from "./client";
 
@@ -37,62 +31,21 @@ function pendingApproval(overrides: Partial<ToolCallRecord> = {}): ToolCallRecor
   };
 }
 
-function geolocationApproval(overrides: Partial<GeolocationApproval> = {}): GeolocationApproval {
-  return {
-    id: "geo_1",
-    mode: "geolocation",
-    createdAt: "2026-07-07T10:01:00Z",
-    ...overrides,
-  };
-}
-
-function screenshotApproval(overrides: Partial<ScreenshotApproval> = {}): ScreenshotApproval {
-  return {
-    id: "shot_1",
-    createdAt: "2026-07-12T10:01:00Z",
-    ...overrides,
-  };
-}
-
-function toolCallRecord(overrides: Partial<ToolCallRecord> = {}): ToolCallRecord {
-  return {
-    tool_call_id: "tc_1",
-    server_id: "grocy-sf",
-    tool_name: "shopping_list_items_remove",
-    caller: { kind: "operator" },
-    status: "ok",
-    created_at: "2026-07-07T10:00:00Z",
-    updated_at: "2026-07-07T10:00:10Z",
-    arguments: { ids: [1, 2, 3] },
-    rationale: "already in stock",
-    title: "Remove bought items",
-    result: { removed: 3 },
-    error: null,
-    ...overrides,
-  };
-}
-
-describe("approval queue state", () => {
-  it("orders mixed tool and geolocation approvals newest first", () => {
-    const items = approvalQueueItems(
-      [pendingApproval({ tool_call_id: "tc_old", created_at: "2026-07-07T10:00:00Z" })],
-      [geolocationApproval({ id: "geo_new", createdAt: "2026-07-07T10:02:00Z" })],
-      []
+describe("capability request state", () => {
+  it("orders mixed geolocation and screenshot requests newest first", () => {
+    const items = capabilityRequestItems(
+      [{ id: "geo_old", mode: "geolocation", createdAt: "2026-07-07T10:00:00Z" }],
+      [{ id: "shot_new", createdAt: "2026-07-12T10:01:00Z" }]
     );
 
     expect(items.map((item) => item.id)).toEqual([
-      geolocationApprovalQueueId("geo_new"),
-      toolApprovalQueueId("tc_old"),
+      screenshotApprovalQueueId("shot_new"),
+      geolocationApprovalQueueId("geo_old"),
     ]);
   });
+});
 
-  it("mixes in screenshot approvals alongside tool and geolocation ones", () => {
-    const items = approvalQueueItems([], [], [screenshotApproval({ id: "shot_1", createdAt: "2026-07-12T10:01:00Z" })]);
-
-    expect(items.map((item) => item.id)).toEqual([screenshotApprovalQueueId("shot_1")]);
-    expect(items[0].kind).toBe("screenshot");
-  });
-
+describe("tool call display", () => {
   it("hides a declined policy's evaluation in compact but keeps an auto-approval's", () => {
     const declined = { autoApprovalEvaluation: "manual: not a read-only tool", approvalPolicyId: null };
     const approved = { autoApprovalEvaluation: "approved: allowlisted read", approvalPolicyId: "unconditional_v1" };
@@ -106,37 +59,6 @@ describe("approval queue state", () => {
     expect(showsAutoApprovalEvaluation({ autoApprovalEvaluation: null, approvalPolicyId: null }, true)).toBe(false);
   });
 
-  it("never shows a withdrawal as recent operator feedback", () => {
-    // The Recent list is fed only by the operator's own decisions, and a withdrawal is not one.
-    expect(recentToolCallTtlMs("withdrawn")).toBeNull();
-    expect(makeRecentToolCall(pendingApproval({ status: "withdrawn" }), 1_000)).toBeNull();
-  });
-
-  it("keeps terminal results only as short-lived recent feedback", () => {
-    const recent = makeRecentToolCall(toolCallRecord(), 1_000);
-
-    expect(recent?.hideAtMs).toBe(16_000);
-    expect(recent ? recentToolCallCountdown(recent, 6_500) : null).toMatchObject({
-      label: "Auto-hides in 10s",
-      remainingSeconds: 10,
-    });
-    expect(recent ? recentToolCallCountdown(recent, 6_500).progressPercent : null).toBeCloseTo(63.33, 1);
-    expect(makeRecentToolCall(toolCallRecord({ status: "pending_approval" }), 1_000)).toBeNull();
-  });
-
-  it("uses a longer countdown for errored tool calls", () => {
-    const recent = makeRecentToolCall(toolCallRecord({ status: "error" }), 1_000);
-
-    expect(recent?.hideAtMs).toBe(61_000);
-    expect(recent ? recentToolCallCountdown(recent, 70_000) : null).toMatchObject({
-      label: "Auto-hides now",
-      progressPercent: 0,
-      remainingSeconds: 0,
-    });
-  });
-});
-
-describe("approvalDisplayFields", () => {
   it("attributes a call to the agent that made it, or to the operator", () => {
     expect(approvalDisplayFields(pendingApproval()).callerDisplayName).toBe("Haku agent");
     expect(approvalDisplayFields(pendingApproval({ caller: { kind: "operator" } })).callerDisplayName).toBe("Operator");

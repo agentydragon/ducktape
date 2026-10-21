@@ -1,7 +1,7 @@
 """Shared fixtures for haku/console tests: a real Postgres (testcontainer) and a TestClient
 over the console app wired to it.
 
-Postgres is required by the console (approval ledger + operator OAuth store), so every test that
+Postgres is required by the console (operator identity + browser login flow), so every test that
 builds the app runs against a fresh per-test database. `db_url` is a pristine empty database (used by
 the migration tests, which drive alembic themselves); `migrated_db_url` is a fresh clone of a
 session-scoped database upgraded to head (used by everything else, including `make_client`).
@@ -38,7 +38,7 @@ from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import Agent, CredentialBinding, StaticCredential
 from haku.console.identity.authorization import fingerprint_static_token
-from haku.console.identity.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
+from haku.console.identity.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY, OperatorActor
 from haku.console.identity.operator_identity import (
     OperatorIdentityTrust,
     ResolvedOperatorIdentity,
@@ -46,7 +46,6 @@ from haku.console.identity.operator_identity import (
 )
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.settings import Settings
-from haku.console.tool_call_actor import OperatorActor
 from third_party.containers import pgvector_pg18
 from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
@@ -138,8 +137,7 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
     catalog_defaults: dict[str, Any] = {}
     if not has_catalog:
         catalog_defaults = {
-            "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
-            "access_profiles": [{"id": DEFAULT_ACCESS_PROFILE_ID, "auto_approval_policy": "no_auto_approval"}],
+            "access_profiles": [{"id": DEFAULT_ACCESS_PROFILE_ID}],
             "default_access_profile_id": DEFAULT_ACCESS_PROFILE_ID,
         }
     return Settings(
@@ -153,7 +151,6 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
             # Unit tests that construct Settings directly still exercise the YAML source;
             # app-composition tests override this with their real temporary catalog.
             "config_file": _empty_config_file(),
-            "max_wait_for_result_ms": 60_000,
             **catalog_defaults,
             **overrides,
         }
@@ -280,13 +277,12 @@ def migrated_identity_store(migrated_sessions: async_sessionmaker[AsyncSession])
 @pytest.fixture
 def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Any]:
     """Factory: a TestClient over the console app on a fresh migrated database, with optional
-    ``Settings`` overrides (e.g. ``config_file=...``, ``mcp_oauth=...``)."""
+    ``Settings`` overrides (e.g. ``config_file=...``)."""
     default_config = write_config(
         tmp_path / "console_default.yaml",
         {
             "static_agents": _DEFAULT_STATIC_AGENTS,
-            "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
-            "access_profiles": [{"id": DEFAULT_ACCESS_PROFILE_ID, "auto_approval_policy": "no_auto_approval"}],
+            "access_profiles": [{"id": DEFAULT_ACCESS_PROFILE_ID}],
             "default_access_profile_id": DEFAULT_ACCESS_PROFILE_ID,
         },
     )
@@ -294,7 +290,6 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
     @contextmanager
     def _make(
         *,
-        in_process_servers: Any | None = None,
         config_file: Path | None = None,
         operator: bool = False,
         operator_external_user_key: str = "operator-sub",
@@ -311,7 +306,7 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             config_file=config_file if config_file is not None else default_config,
             **settings_overrides,
         )
-        app = create_app(settings, in_process_servers=in_process_servers)
+        app = create_app(settings)
         # When the session cookie is Secure (https public_base_url → https_only), drive the client
         # over https so the middleware's re-signed cookie is retained and resent across requests.
         https = settings.public_base_url.startswith("https://")

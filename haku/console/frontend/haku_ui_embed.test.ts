@@ -2,8 +2,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant";
-import { initialFrameSrc, routeFromLocation, shouldCloseAutoOpenedApprovalQueue } from "./haku_ui_embed";
-import { APPROVALS_EMBED_PATH, rememberEmbedPath, SETTINGS_PATH, TOOL_CALLS_PATH } from "./routing";
+import { initialFrameSrc, routeFromLocation } from "./haku_ui_embed";
+import { CONSOLE_ROOT_PATH, rememberEmbedPath, SETTINGS_PATH } from "./routing";
 import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant";
 
 describe("initialFrameSrc", () => {
@@ -28,20 +28,6 @@ describe("initialFrameSrc", () => {
   });
 });
 
-describe("shouldCloseAutoOpenedApprovalQueue", () => {
-  it("closes an automatically opened drawer when the pending queue drains", () => {
-    expect(shouldCloseAutoOpenedApprovalQueue(true, true, 0)).toBe(true);
-  });
-
-  it("keeps a manually opened drawer open", () => {
-    expect(shouldCloseAutoOpenedApprovalQueue(true, false, 0)).toBe(false);
-  });
-
-  it("keeps an automatically opened drawer open while approvals remain", () => {
-    expect(shouldCloseAutoOpenedApprovalQueue(true, true, 1)).toBe(false);
-  });
-});
-
 describe("routeFromLocation", () => {
   beforeEach(() => sessionStorage.clear());
 
@@ -53,9 +39,8 @@ describe("routeFromLocation", () => {
 
   it("carries no frame route for console-own views", () => {
     rememberEmbedPath("/garden/remembered.md");
-    expect(routeFromLocation({ pathname: TOOL_CALLS_PATH, hash: "" })).toBe("/garden/remembered.md");
     expect(routeFromLocation({ pathname: SETTINGS_PATH, hash: "" })).toBe("/garden/remembered.md");
-    expect(routeFromLocation({ pathname: APPROVALS_EMBED_PATH, hash: "" })).toBe("/garden/remembered.md");
+    expect(routeFromLocation({ pathname: `${CONSOLE_ROOT_PATH}/unknown`, hash: "" })).toBe("/garden/remembered.md");
   });
 });
 

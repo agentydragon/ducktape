@@ -56,7 +56,7 @@ from haku.console.identity.enrollment import (
     ReconnectAgentDecision,
 )
 from haku.console.identity.naming import InvalidAgentNameError, NormalizedAgentName, normalize_agent_name
-from haku.console.identity.operator_identity import InactiveOperatorError, OperatorStatus
+from haku.console.identity.operator_identity import InactiveOperatorError
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 
 _ACTIVATION_LIFETIME = datetime.timedelta(minutes=15)
@@ -105,50 +105,6 @@ class StaticAgentDefinitionError(ValueError):
     """Static Agent configuration contradicts durable authority state."""
 
 
-@dataclass(frozen=True, slots=True)
-class LockedActiveAgentBinding:
-    """The active identity rows held for one transaction in canonical order."""
-
-    binding: CredentialBinding
-    agent: Agent
-    operator: Operator
-    display_name: str
-
-
-async def lock_active_agent_binding(
-    session: AsyncSession,
-    *,
-    binding_id: UUID,
-    agent_id: UUID | None = None,
-    operator_id: UUID | None = None,
-    lock: bool,
-) -> LockedActiveAgentBinding | None:
-    """Revalidate an active binding while locking binding, Agent, then Operator.
-
-    Tool-call service paths revalidate these rows under lock. Keeping their lock order here
-    prevents PostgreSQL from choosing conflicting orders for joined ``FOR UPDATE`` plans.
-    """
-    binding = await session.get(CredentialBinding, binding_id, with_for_update=lock)
-    if binding is None or (agent_id is not None and binding.agent_id != agent_id):
-        return None
-    agent = await session.get(Agent, binding.agent_id, with_for_update=lock)
-    if (
-        agent is None
-        or agent.status is not AgentStatus.ACTIVE
-        or (operator_id is not None and agent.owner_operator_id != operator_id)
-    ):
-        return None
-    operator = await session.get(Operator, agent.owner_operator_id, with_for_update=lock)
-    if operator is None or operator.status is not OperatorStatus.ACTIVE:
-        return None
-    reservation = await session.get(AgentNameReservation, agent.current_name_reservation_id)
-    if reservation is None or reservation.agent_id != agent.agent_id:
-        return None
-    return LockedActiveAgentBinding(
-        binding=binding, agent=agent, operator=operator, display_name=reservation.display_name
-    )
-
-
 def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
@@ -189,8 +145,7 @@ class PostgresAgentAuthority:
     """Own the transactional Agent/name/binding aggregate and enrollment state.
 
     Construction is side-effect free; startup owns the database migration. Synchronous
-    SQLAlchemy work runs in a worker thread so FastMCP and FastAPI event loops
-    are never blocked on PostgreSQL.
+    SQLAlchemy work runs in a worker thread so FastAPI's event loop is never blocked on PostgreSQL.
     """
 
     def __init__(
