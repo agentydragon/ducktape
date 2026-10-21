@@ -21,8 +21,8 @@ _MIGRATOR = get_required_path(
     own_repo_rlocation("agentplane/action_service/migrations/cmd/actions-migrate_/actions-migrate")
 )
 _GOOSE_VERSION = "action_service_goose_version"
-_ALEMBIC_HEAD = "0027_drop_reconciliation_audit"
-_ALEMBIC_BEFORE_HEAD = "0026_drop_retired_policy_source"
+_ALEMBIC_HEAD = "0028_drop_external_grant"
+_ALEMBIC_BEFORE_HEAD = "0027_drop_reconciliation_audit"
 _MIGRATOR_TABLES = ("alembic_version", _GOOSE_VERSION)
 
 # One row in each kind of table whose shape a migrator could change: JSONB with partial indexes, a composite

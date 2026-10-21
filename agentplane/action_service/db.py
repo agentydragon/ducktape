@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from types import MappingProxyType
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
 from sqlalchemy import (
     CheckConstraint,
-    Column,
     DateTime,
     ForeignKey,
     Index,
@@ -113,9 +111,6 @@ def _notify_connection(_mapper: Mapper[object], connection: Connection, _row: ob
 class ActionRequestRow(Base):
     __tablename__ = "action_request"
     __table_args__ = (
-        # CLEANUP(added 2026-10-21): Drop this column and `exclude_properties` below with a migration, in its own
-        #   data-deletion PR, once every deployed Action Service image is this one or later: earlier ones select it.
-        Column("external_grant", JSONB),
         UniqueConstraint("caller_namespace", "caller_name", "idempotency_key"),
         Index("ix_action_request_caller_created", "caller_namespace", "caller_name", "created_at"),
         Index("ix_action_request_state_created", "state", "created_at"),
@@ -132,8 +127,6 @@ class ActionRequestRow(Base):
             postgresql_where=text("state = 'decision_pending'"),
         ),
     )
-
-    __mapper_args__ = MappingProxyType({"exclude_properties": ["external_grant"]})
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     idempotency_key: Mapped[str] = mapped_column(Text)

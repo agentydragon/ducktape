@@ -5,7 +5,7 @@ records it, and the operator said to port it (2026-10-19 PDT) and approved the d
 The plan burns down: a stage leaves when its work lands, and the file goes with the Python retirement.
 
 The port moves the service into one Go binary shaped by its destination, on the same PostgreSQL database and schema
-(Alembic head `0027_drop_reconciliation_audit`):
+(Alembic head `0028_drop_external_grant`):
 
 - **`actions`**, the core, admits a caller by one path, a workload token of a labeled ServiceAccount, and knows
   nothing of Connections: no grant check at submit or claim, and no grant provenance on requests. Revoking a
@@ -17,8 +17,7 @@ The port moves the service into one Go binary shaped by its destination, on the 
   approvals from the lifecycle, and the executors use the lease protocol.
 
 Out of scope: any schema change, dropping DCR, a watch resume cursor, `SERVICE_SETTINGS_RETHINK`, renaming a table,
-channel or setting key, `WEB_PUSH_SERVICE`, and dropping the `action_request.external_grant` column (its own data
-change).
+channel or setting key, and `WEB_PUSH_SERVICE`.
 
 ## What moves
 

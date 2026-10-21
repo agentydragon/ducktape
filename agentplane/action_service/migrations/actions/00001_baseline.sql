@@ -1,5 +1,5 @@
 -- +goose Up
--- The schema Alembic revision 0027_drop_reconciliation_audit left, with columns in the order that history
+-- The schema Alembic revision 0028_drop_external_grant left, with columns in the order that history
 -- added them. A database that revision built already holds everything below, so every statement is
 -- idempotent; that same database must not be behind it, or `IF NOT EXISTS` would pass over a table of an
 -- older shape.
@@ -7,8 +7,8 @@
 DO $$
 BEGIN
     IF to_regclass('alembic_version') IS NOT NULL THEN
-        IF (SELECT version_num FROM alembic_version) IS DISTINCT FROM '0027_drop_reconciliation_audit' THEN
-            RAISE EXCEPTION 'alembic_version is behind 0027_drop_reconciliation_audit: run the Python migration image first';
+        IF (SELECT version_num FROM alembic_version) IS DISTINCT FROM '0028_drop_external_grant' THEN
+            RAISE EXCEPTION 'alembic_version is behind 0028_drop_external_grant: run the Python migration image first';
         END IF;
     END IF;
 END $$;
@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS action_request (
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     action JSONB NOT NULL,
-    external_grant JSONB,
     title TEXT NOT NULL,
     description TEXT,
     caller_namespace TEXT NOT NULL,

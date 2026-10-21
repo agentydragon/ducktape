@@ -82,38 +82,6 @@ func TestRequestsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 	}
 }
 
-// legacyExternalGrant is the `action_request.external_grant` document the Python service writes for a request a
-// Connection's grant submitted. The store neither reads nor writes the column.
-const legacyExternalGrant = `{
-	"caller": {"namespace": "test-namespace", "name": "test-caller"}, "issuer": "https://issuer.test.example",
-	"client_id": "test-client", "connection_id": "6c0a2b3f-4d5e-4f60-9b7c-8d9e0f1a2b3c",
-	"grant_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f", "revision": 1, "binding_version": 0}`
-
-func TestARowWithTheLegacyExternalGrantColumnSetStillReadsAndKeepsIt(t *testing.T) {
-	f := newFixture(t)
-	id := f.insertMinimalRequest(t, caller.Account, "python-legacy-column")
-	f.exec(t, `UPDATE action_request SET external_grant = $2::jsonb WHERE id = $1`, id, legacyExternalGrant)
-
-	read := f.get(t, id)
-	if read.ID != id || read.IdempotencyKey != "python-legacy-column" || read.Caller != caller.Account ||
-		read.Action != (ActionIdentity{Group: "test-group", Name: "test-action"}) || read.Title != minimalRequest.Title ||
-		read.State != StateDecisionPending || read.Version != 1 || read.Decision != nil || read.Execution != nil {
-		t.Errorf("read %+v", read)
-	}
-
-	// Python reads the column until the cutover, so a rollback must find the document as it left it.
-	allowed := f.decide(t, read, VerdictAllow)
-	f.finish(t, id, f.claim(t, id).Lease, ExecutionSucceeded)
-	if got := f.get(t, id); got.State != StateSucceeded || got.Version != allowed.Version+2 {
-		t.Errorf("request %+v after the store took it through its Execution", got)
-	}
-	sameJSON(t, f.document(t, `SELECT external_grant FROM action_request WHERE id = $1`, id), []byte(legacyExternalGrant))
-
-	if submitted := f.submit(t, caller, "go-submitted"); f.count(t, `SELECT count(*) FROM action_request WHERE id = $1 AND external_grant IS NULL`, submitted.ID) != 1 {
-		t.Error("a request the store submitted has the column set")
-	}
-}
-
 // decideAsPython records a Decision on the pending request the way Python does, with the document as its policy
 // evidence.
 func (f fixture) decideAsPython(t *testing.T, id uuid.UUID, evidence json.RawMessage) {
