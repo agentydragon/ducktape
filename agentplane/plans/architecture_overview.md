@@ -441,7 +441,8 @@ Held until one is chosen:
   `SandboxCollectionMembership` CRs and #10990's membership rows.
 - **Session-access grants** (who may send to, or read, which Sandbox's Sessions). History's
   configured `reader_accounts` are the only gate on reads, and the Dispatcher trusts the app and
-  Notification to authorize their users. Proposed: `session_access` rules in `PolicySet`s, assigned by
+  Notification to authorize their users. Proposed: `session_inbox_access` rules for sends and a rule
+  type of their own for reads, in `PolicySet`s, assigned by
   `PolicyBinding`s and enforced by the owning service
   ([plan](multiagent_communication.md#tentative-implementation-direction)). Operator: sending and
   reading transcripts are "really separate capabilities" (2026-10-18 22:46); archive permissions maybe
@@ -458,7 +459,7 @@ Held until one is chosen:
 | 2026-10-17 05:58 | `allSandboxes` in v1, "under some kind of scope of the controller"                                                            | Bounded to the PolicySet's namespace                            |
 | 2026-10-17 10:56 | Keep read-permission decisions held "for now"                                                                                 | Read grants stay held                                           |
 | 2026-10-18 22:39 | Agent traces and archives should not go into the control-plane etcd                                                           | Per-Session data stays out of Kubernetes records                |
-| 2026-10-18 22:46 | Sending and reading transcripts are "really separate capabilities we probably don't need to bundle"                           | First `session_access` schema carries sending only              |
+| 2026-10-18 22:46 | Sending and reading transcripts are "really separate capabilities we probably don't need to bundle"                           | The send rule carries sending only                              |
 | 2026-10-18 23:19 | No need to name a different namespace                                                                                         | Direct targets are same-namespace                               |
 | 2026-10-18 23:33 | Collections keep covering Sandboxes no longer alive                                                                           | Rules out live-members-only collections for reads               |
 | 2026-10-19 01:37 | Python and Go ports can be sequenced in any order relative to the other things                                                | Ports are not part of this map                                  |
@@ -481,6 +482,8 @@ Held until one is chosen:
 | 2026-10-20 01:29 | No webhook for tag writes; Sandbox RBAC is enough                                                                             | No admission rule                                               |
 | 2026-10-20 04:04 | Name each tag kind after its service: "inbox tags" and "history tags"                                                         | `spec.inboxTags` and `spec.historyTags`                         |
 | 2026-10-20 04:05 | Consider "transcript tags", with History renamed to a transcript service                                                      | `HISTORY_SERVICE_RENAME` on the task DAG                        |
+| 2026-10-21 03:36 | Accepted the 30-day payload expiry, the cap of 128 unacknowledged messages per sender and inbox, and the idempotency key      | The peer message contract is agreed                             |
+| 2026-10-21 03:43 | Send rule `session_inbox_access` with `send_message`; reads take "a different kind of rule", like their tags                  | Reads get a rule type of their own                              |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
@@ -493,18 +496,9 @@ something like a tag" (09:58).
 
 ## Assumed by a lane and never confirmed
 
-| Assumption                                                                                             | Where it lives                              | What the operator said                                                                   |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `session_access` rule shape and `targets` union                                                        | #10987, plan                                | Only the two target decisions above; tags instead of membership CRs                      |
-| Resync of 300 s, refusal after three missed cycles, `policy_resync_seconds`                            | #10987                                      | Asked "Shouldn't freshness just come from a k8s watch?" The number is not the operator's |
-| Payloads expire at 30 days, 128 unacknowledged per sender per inbox, idempotency key, recipient states | [plan](multiagent_communication.md), #10987 | Never answered that batch; later asked for one question at a time                        |
-| Records stay in the outer cluster's Kubernetes API                                                     | #10990 "Take" (closed)                      | Treated as open (2026-10-19 01:58); D1 and D2 keep it                                    |
-
-## Open PRs that encode unconfirmed defaults
-
-| PR     | Encodes                                                                                                      | Handling                                          |
-| ------ | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
-| #11323 | The draft session access rules, trimmed to direct and `allSandboxes` targets, in Go (replaces closed #10987) | Review against the [steps](sandbox_tags.md#steps) |
+| Assumption                                         | Where it lives         | What the operator said                                |
+| -------------------------------------------------- | ---------------------- | ----------------------------------------------------- |
+| Records stay in the outer cluster's Kubernetes API | #10990 "Take" (closed) | Treated as open (2026-10-19 01:58); D1 and D2 keep it |
 
 ## Parked
 

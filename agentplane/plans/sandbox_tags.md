@@ -42,19 +42,20 @@ with History renamed to a transcript service, is a candidate (04:05, `HISTORY_SE
 
 ## Grants
 
-`session_access` rule targets gain a tag form per kind, beside direct Sandboxes and `allSandboxes`
-([rule direction](multiagent_communication.md#tentative-implementation-direction)):
+Each tag kind is a target of its own rule type, beside direct Sandboxes and `allSandboxes`
+([rule direction](multiagent_communication.md#tentative-implementation-direction)). Sends:
 
 ```yaml
-type: session_access
-operations: [append_inbox]
+type: session_inbox_access
+operations: [send_message]
 targets:
   inboxTags: [developers]
 ```
 
-The read operations' rule shape is held with `THREAD_READ_POLICY_DESIGN`. Whatever its shape, a read
-grant matches history tags on History's record, never on the live CR, so a read is checked the same
-way before and after the Sandbox is deleted.
+Reads take a different kind of rule, as they take a different kind of tag (2026-10-21 03:43). Its
+shape is held with `THREAD_READ_POLICY_DESIGN`. Whatever its shape, a read grant matches history tags
+on History's record, never on the live CR, so a read is checked the same way before and after the
+Sandbox is deleted.
 
 ## History's record of a Sandbox
 
@@ -82,8 +83,8 @@ stopped instead, with `spec.wakeOnSend: false`, and stays a CR.
 
 ## Steps
 
-1. The first `session_access` schema has direct and `allSandboxes` targets only, with no membership
-   CR (`SESSION_ACCESS_RULES`).
+1. The `session_inbox_access` rule with direct and `allSandboxes` targets only, and no membership
+   CR (`SESSION_INBOX_ACCESS_RULES`).
 2. Inbox tags and their send target (`SANDBOX_INBOX_TAGS`).
 3. After `HISTORY_SANDBOX_UID`, in the Go History Service: history tags and History's record
    (`HISTORY_SANDBOX_RECORD`).

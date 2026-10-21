@@ -14,8 +14,10 @@ subscriptions follow sources and produce other entries. A batched notice tells t
 inspect its inbox. Peer messaging must work with Actions/GitHub sources disabled.
 
 Peer sends follow the [tentative Session-access rule direction](multiagent_communication.md#tentative-implementation-direction):
-existing PolicySets/Bindings grant a Session-inbox append operation on Sandbox or collection scopes,
-enforced by this service using shared rule evaluation. Exact rule and API schemas remain open.
+existing PolicySets/Bindings grant the `send_message` operation of a
+[`session_inbox_access` rule](multiagent_communication.md#schema-for-the-session-inbox-access-rule) on
+Sandbox or tag targets, enforced by this service using shared rule evaluation. The API schema remains
+open.
 
 Use `subscription` for source-following and `notice` for the inbox prompt. The service keeps its
 name for now and a rename is a separate mechanical change; this plan uses Notification Service for

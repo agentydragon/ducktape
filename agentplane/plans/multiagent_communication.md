@@ -82,7 +82,7 @@ independent overlapping grants remain.
 **`allSandboxes` target agreed with the operator, 2026-10-17:** a rule may target every Sandbox in the
 namespace of the PolicySet holding it, never the whole cluster; the Sandbox Controller likewise
 reconciles a single namespace. A Sandbox in another namespace is out of v1's reach, since direct
-targets are same-namespace too ([schema](#schema-for-the-first-session-access-rule)). The target
+targets are same-namespace too ([schema](#schema-for-the-session-inbox-access-rule)). The target
 covers later Sandboxes without tags, and the backends match it on the recorded Sandbox namespace,
 so it keeps working after a Sandbox is deleted. It grants only the operations its rule lists:
 read-any does not imply send-any.
@@ -262,17 +262,18 @@ of the policy resources and Sandbox tags; the resource-owning services enforce S
 Illustrative rule syntax, not a selected CRD schema or an implemented rule type:
 
 ```yaml
-type: session_access
-operations: [append_inbox]
+type: session_inbox_access
+operations: [send_message]
 targets:
   inboxTags: [developers]
 ```
 
-**Send and transcript reads are not bundled, operator direction 2026-10-18 UTC (stated as
-"probably"):** they are separate capabilities, so the first `session_access` schema carries
-`append_inbox` only. `list_sessions` and `read_transcript` join it or get their own rule type when
-the held read decisions reopen; the rule reading and target matching are shared
-either way.
+**Send and transcript reads are separate rule types (operator, 2026-10-18 and 2026-10-21 UTC):**
+they are separate capabilities, and transcript reads "should probably go through a different kind of
+rule, just like they'll go through a different kind of tag" (2026-10-21 03:43). The send rule is
+`session_inbox_access`, whose one operation is `send_message`. `list_sessions` and `read_transcript`
+get a rule type of their own when the held read decisions reopen; the rule reading and target
+matching are shared.
 
 Support direct Sandbox targets as well as tags. For Sandbox-hosted Session operations, the backend
 authenticates the SA, takes the Sandbox from the request (or, in History, which owns the record of
@@ -310,16 +311,18 @@ server ends on schedule counts as a completed cycle, and a view is refused after
 Select the watch period during implementation; no global replica-acknowledgement barrier is required
 for v1.
 
-### Schema for the first Session-access rule
+### Schema for the Session inbox access rule
 
-**Reviewed with the operator, 2026-10-21 UTC.** The rule is a new `type` of the `Rule` in `policy/api/v1alpha1`, beside `egress` and
-`action_auto_approve`: snake_case `type`, camelCase fields, targets named explicitly and never
-selected. The CRD regenerates from that Go type, whose validation rules keep each type's fields off the
-others. Its one operation for now is `append_inbox`:
+**Reviewed with the operator, 2026-10-21 UTC**, who named the type `session_inbox_access` and its
+operation `send_message` (03:43), since transcript reads take a different kind of rule. The rule is a
+new `type` of the `Rule` in `policy/api/v1alpha1`, beside `egress` and `action_auto_approve`:
+snake_case `type`, camelCase fields, targets named explicitly and never selected. The CRD regenerates
+from that Go type, whose validation rules keep each type's fields off the others. Its one operation
+for now is `send_message`:
 
 ```yaml
-type: session_access
-operations: [append_inbox]
+type: session_inbox_access
+operations: [send_message]
 targets:
   sandboxes: # direct, in the PolicySet's namespace
     - name: coordinator
@@ -328,17 +331,17 @@ targets:
   allSandboxes: true # every Sandbox in the PolicySet's namespace
 ```
 
-At least one target field is required, and the fields combine additively. Tag targets arrive with
-`SANDBOX_INBOX_TAGS` and `HISTORY_SANDBOX_RECORD` ([steps](sandbox_tags.md#steps)); there are no
-membership objects.
+At least one target field is required, and the fields combine additively. An inbox-tag target
+arrives with `SANDBOX_INBOX_TAGS` ([steps](sandbox_tags.md#steps)); history tags belong to the read
+rule. There are no membership objects.
 
 - **Match.** A send to Sandbox S is allowed when a rule of a set bound to the caller lists
-  `append_inbox` and either lists S in `sandboxes` or sets `allSandboxes`. A `uid` that is given must
+  `send_message` and either lists S in `sandboxes` or sets `allSandboxes`. A `uid` that is given must
   equal S's current UID. A reference without `uid` follows a deleted and recreated Sandbox of that
   name; a UID-pinned one does not.
 - **Bindings.** A `PolicyBinding` names its subject by namespace and name and a reader matches the
   caller on those two, as egress does, so a replaced same-name ServiceAccount keeps its grants. A set
-  whose `session_access` rule does not parse grants this reader nothing, and the reader reports that in
+  whose `session_inbox_access` rule does not parse grants this reader nothing, and the reader reports that in
   its own condition on each binding that names the set, as egress does with `EgressReady`.
 - **Shared reader.** Notification (sends) and History (reads, once they reopen) are Go services, so the
   reading is a Go package. Egress already keeps an index of sets and bindings with cycle-based
@@ -419,12 +422,12 @@ reading of the idea. The archive here is not [`SANDBOX_ARCHIVE`](task_dag.md#san
 a suspended Sandbox's storage.
 
 **Where the line falls.** History is the only way into retained history, so every transcript read,
-including one of a running Sandbox's Session, is an archive read. The tentative `session_access`
-operations already divide by the service that enforces them:
+including one of a running Sandbox's Session, is an archive read. The tentative Session operations
+already divide by the service that enforces them:
 
 | Aspect               | Live objects                                        | Archive                                                                          |
 | -------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Operations           | `append_inbox`; control, when designed              | `list_sessions`, `read_transcript`                                               |
+| Operations           | `send_message`; control, when designed              | `list_sessions`, `read_transcript`                                               |
 | Enforced by          | the inbox owner, the Dispatcher, the Runner Gateway | History, on its own API                                                          |
 | Targets are named as | live Sandboxes: direct, inbox tags, `allSandboxes`  | the Sandbox as History recorded it: namespace, name, UID once kept, history tags |
 | Lasts as long as     | the Sandbox                                         | the history                                                                      |
@@ -450,7 +453,8 @@ own for every history bound to a writer, which is what the split would build on.
   authority**: History stores and administers archive grants itself, with its own API and audit;
   this alone removes History's dependency on Kubernetes policy resources, but archive grants then
   lose GitOps and the [live-bundle semantics](#live-permission-bundles) a replacement must keep.
-  The first fits the tentative direction.
+  The first fits the tentative direction. Either way, reads get a rule type of their own (operator,
+  2026-10-21 UTC).
 
 **What it decouples.**
 
@@ -483,10 +487,10 @@ own for every history bound to a writer, which is what the split would build on.
   re-key once recorded values exist. A `(sandbox_uid, session_id)` key would make a scoped read a
   lookup inside one owner's keys, but a grant can match the recorded column without it, so the
   split does not force the re-key.
-- The send path is unaffected. `AGENT_MESSAGE_INGRESS` needs `append_inbox` against live Sandboxes
-  and History's recorded namespace and name. The first `session_access` schema carries
-  `append_inbox` alone ([reads are not bundled](#tentative-implementation-direction)); with the split
-  the archive operations get their own rule type, and without it they join `session_access` later.
+- The send path is unaffected. `AGENT_MESSAGE_INGRESS` needs `send_message` against live Sandboxes
+  and History's recorded namespace and name. `session_inbox_access` carries `send_message` alone,
+  and the archive operations get their own rule type with or without the split
+  ([separate rule types](#tentative-implementation-direction)).
 
 ## Message storage, delivery and agent tools
 
