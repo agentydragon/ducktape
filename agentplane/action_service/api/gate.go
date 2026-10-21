@@ -50,7 +50,7 @@ type Gate struct {
 	callers   Callers
 	readers   map[auth.Account]struct{}
 	operators *OperatorVerifier
-	// draining ends when the service stops accepting work.
+	// draining ends when the service stops accepting work; open watches end with it.
 	draining context.Context
 	drain    context.CancelFunc
 }
@@ -67,7 +67,7 @@ func NewGate(options GateOptions) *Gate {
 	}
 }
 
-// Drain refuses every call from now on.
+// Drain refuses every call from now on and ends the open watches.
 func (g *Gate) Drain() { g.drain() }
 
 // admission is the principal a bearer proved.
@@ -111,6 +111,19 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 		return admission{}, unauthenticated
 	}
 	return admission{principal: store.CallerPrincipal{Account: account}}, nil
+}
+
+// recheck verifies the call's bearer again, as a watch does before every frame: it fails once the bearer is no
+// longer accepted as the principal the call was admitted as.
+func (g *Gate) recheck(ctx context.Context) error {
+	current, err := g.authenticate(ctx)
+	if err != nil {
+		return err
+	}
+	if current.principal != admitted(ctx).principal {
+		return unauthenticated
+	}
+	return nil
 }
 
 func gated(method string) bool {

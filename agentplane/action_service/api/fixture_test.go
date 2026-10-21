@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
@@ -111,6 +113,9 @@ type served struct {
 	operatorToken string
 }
 
+// updatesConnection is the application name of the LISTEN connection that wakes the watches.
+const updatesConnection = "test-action-updates"
+
 func serve(t *testing.T) *served {
 	t.Helper()
 	return serveWith(t, kube.TokenReviews())
@@ -119,11 +124,25 @@ func serve(t *testing.T) *served {
 // serveWith serves the API with workload tokens reviewed by reviews.
 func serveWith(t *testing.T, reviews auth.TokenReviews) *served {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
+	dsn := integrationDatabase.Clone(t)
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
+	// The LISTEN connection is named so a test can drop it.
+	listening, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := listening.Query()
+	query.Set("application_name", updatesConnection)
+	listening.RawQuery = query.Encode()
+	updates, err := wakeups.Listen(t.Context(), listening.String(), store.UpdatesChannel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { updates.Close() })
 	s := &served{store: store.New(db), db: db, issuer: newIssuer(t)}
 	s.operatorToken = s.issuer.token(t, nil)
 	// Every call asks the TokenReview API again, so a revoked token is refused once the API server refuses it.
@@ -139,7 +158,7 @@ func serveWith(t *testing.T, reviews auth.TokenReviews) *served {
 		Workloads: workloads, Callers: labeledAccounts{}, ReaderAccounts: []auth.Account{readerAccount}, Operators: operators,
 	})
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
-	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store))
+	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, s.gate))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

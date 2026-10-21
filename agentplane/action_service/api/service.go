@@ -1,5 +1,5 @@
-// Package api serves the Action Service's request RPCs over its store: `ActionService`'s reads of requests and
-// their events.
+// Package api serves the Action Service's request RPCs over its store: `ActionService`'s reads and watches of
+// requests and their events.
 //
 // A Gate admits every call before it runs (agentplane/docs/grpc_services.md). The bearer picks the principal, as
 // action_service.proto says: a workload of a labeled ServiceAccount reads its own account's requests, a service
@@ -11,6 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/google/uuid"
 )
 
@@ -26,9 +27,15 @@ const (
 type Service struct {
 	action_servicepb.UnimplementedActionServiceServer
 	store *store.Store
+	// updates wakes a watch on each commit to a request.
+	updates *wakeups.Hub
+	// gate admitted each call; a watch asks it again before every frame.
+	gate *Gate
 }
 
-func NewService(requests *store.Store) *Service { return &Service{store: requests} }
+func NewService(requests *store.Store, updates *wakeups.Hub, gate *Gate) *Service {
+	return &Service{store: requests, updates: updates, gate: gate}
+}
 
 func parseRequestID(value string) (uuid.UUID, error) {
 	id, err := uuid.Parse(value)

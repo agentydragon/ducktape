@@ -27,8 +27,8 @@ import "google/protobuf/timestamp.proto";
 // Action this service cannot run. `NOT_FOUND` is a request that does not exist or that the caller may not read, or an
 // unknown Action in `GetAction`. `ALREADY_EXISTS` is an idempotency key the account already used. `PERMISSION_DENIED`
 // is a `decided_only` submission no policy decides, or an operator submitting or cancelling. `FAILED_PRECONDITION` is
-// an allowed request whose dispatch is no longer pending. `UNAVAILABLE` is a draining service, an ActionGroup that is
-// temporarily unavailable, or a lost change notification.
+// an allowed request whose dispatch is no longer pending. `UNAVAILABLE` is a draining service or an ActionGroup that is
+// temporarily unavailable.
 //
 // An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT` unless its field says it stands for a default; a
 // response never carries one.
@@ -86,8 +86,8 @@ service ActionService {
   //
   // The wait ends at the client's deadline too, with the last frame received as the current receipt. A deadline is
   // not a failure and ending a watch never cancels the request. The bearer is checked again before every frame: a
-  // watch whose bearer stops being accepted ends `UNAUTHENTICATED`. A lost change notification fails the watch
-  // `UNAVAILABLE`; a plain read still works.
+  // watch whose bearer stops being accepted ends `UNAUTHENTICATED`. A dropped change-notification connection delays the
+  // next frame until it reconnects and does not end the watch.
   rpc WatchActionRequest(WatchActionRequestRequest) returns (stream WatchActionRequestResponse) {
     option (google.api.http) = {get: "/v1/action-requests/{request_id}:watch"};
   }

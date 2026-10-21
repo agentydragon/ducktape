@@ -19,7 +19,7 @@ import "google/protobuf/timestamp.proto";
 // request or MCP server that does not exist. `ALREADY_EXISTS` is a decision key already used for another decision.
 // `ABORTED` is an `expected_version` that is no longer current. `FAILED_PRECONDITION` is a state that refuses the
 // call: a request already decided, or an MCP server whose OAuth metadata cannot be used. `UNAVAILABLE` is a draining
-// service or a lost change notification.
+// service.
 //
 // An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT`; a response never carries one.
 //

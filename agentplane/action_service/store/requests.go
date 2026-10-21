@@ -362,6 +362,58 @@ func (s *Store) List(ctx context.Context, principal ReadPrincipal, filter ListFi
 	return requests, err
 }
 
+// Versions returns the version of each request the reader may see in one of states, or in any state when states is
+// empty. Every visible change to a request advances its version, so a watch compares them to find what changed.
+func (s *Store) Versions(ctx context.Context, principal ReadPrincipal, states []ActionState) (map[uuid.UUID]int64, error) {
+	var q query
+	conditions := q.readableBy(principal)
+	if len(states) > 0 {
+		values := make(pq.StringArray, len(states))
+		for i, state := range states {
+			if !state.valid() {
+				return nil, invalid("unknown state %q", state)
+			}
+			values[i] = string(state)
+		}
+		conditions = append(conditions, "state = ANY("+q.arg(values)+")")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, version FROM action_request`+where(conditions), q.args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	versions := map[uuid.UUID]int64{}
+	for rows.Next() {
+		var id uuid.UUID
+		var version int64
+		if err := rows.Scan(&id, &version); err != nil {
+			return nil, err
+		}
+		versions[id] = version
+	}
+	return versions, rows.Err()
+}
+
+// Find returns the requests among ids that the reader may see, in no particular order; the others are left out.
+func (s *Store) Find(ctx context.Context, principal ReadPrincipal, ids []uuid.UUID) ([]ActionRequest, error) {
+	var requests []ActionRequest
+	err := s.read(ctx, func(tx *sql.Tx) error {
+		var q query
+		values := make(pq.StringArray, len(ids))
+		for i, id := range ids {
+			values[i] = id.String()
+		}
+		conditions := append(q.readableBy(principal), "id = ANY("+q.arg(values)+"::uuid[])")
+		rows, err := scanRequests(ctx, tx, `SELECT `+requestColumns+` FROM action_request`+where(conditions), q.args...)
+		if err != nil {
+			return err
+		}
+		requests, err = attach(ctx, tx, rows)
+		return err
+	})
+	return requests, err
+}
+
 // query collects the parameters of a statement built from conditions.
 type query struct{ args []any }
 

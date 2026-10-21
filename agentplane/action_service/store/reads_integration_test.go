@@ -394,3 +394,54 @@ func TestEventsPageBySequence(t *testing.T) {
 		}
 	}
 }
+
+func TestVersionsHoldTheReadableRequestsInTheStates(t *testing.T) {
+	f := newFixture(t)
+	pending := f.submit(t, caller, "versions-pending")
+	denied := f.decide(t, f.submit(t, caller, "versions-denied"), VerdictDeny)
+	foreign := f.submit(t, otherCaller, "versions-foreign")
+	for name, tc := range map[string]struct {
+		principal ReadPrincipal
+		states    []ActionState
+		want      map[uuid.UUID]int64
+	}{
+		"a caller's every state":    {caller, nil, map[uuid.UUID]int64{pending.ID: pending.Version, denied.ID: denied.Version}},
+		"a caller's pending":        {caller, []ActionState{StateDecisionPending}, map[uuid.UUID]int64{pending.ID: pending.Version}},
+		"a reader's pending":        {reader, []ActionState{StateDecisionPending}, map[uuid.UUID]int64{pending.ID: pending.Version, foreign.ID: foreign.Version}},
+		"an operator's every state": {operator, nil, map[uuid.UUID]int64{pending.ID: pending.Version, denied.ID: denied.Version, foreign.ID: foreign.Version}},
+	} {
+		got, err := f.Versions(t.Context(), tc.principal, tc.states)
+		if err != nil || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: %v, %v; want %v", name, got, err, tc.want)
+		}
+	}
+	if _, err := f.Versions(t.Context(), operator, []ActionState{"test-unknown-state"}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("an unknown state: %v", err)
+	}
+}
+
+func TestFindReturnsTheRequestsTheReaderMaySee(t *testing.T) {
+	f := newFixture(t)
+	mine := f.decide(t, f.submit(t, caller, "find-mine"), VerdictAllow)
+	foreign := f.submit(t, otherCaller, "find-foreign")
+	sorted := func(ids []uuid.UUID) []uuid.UUID {
+		return slices.SortedFunc(slices.Values(ids), func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
+	}
+	asked := []uuid.UUID{mine.ID, foreign.ID, uuid.New()}
+	for name, tc := range map[string]struct {
+		principal ReadPrincipal
+		want      []uuid.UUID
+	}{
+		"the owner":   {caller, []uuid.UUID{mine.ID}},
+		"an operator": {operator, []uuid.UUID{mine.ID, foreign.ID}},
+	} {
+		found, err := f.Find(t.Context(), tc.principal, asked)
+		if err != nil || !slices.Equal(sorted(ids(found)), sorted(tc.want)) {
+			t.Errorf("%s finds %v, %v; want %v", name, ids(found), err, tc.want)
+		}
+	}
+	found, err := f.Find(t.Context(), caller, []uuid.UUID{mine.ID})
+	if err != nil || len(found) != 1 || !reflect.DeepEqual(found[0], f.get(t, mine.ID)) {
+		t.Errorf("found %+v, %v; want the request as Get reads it", found, err)
+	}
+}
