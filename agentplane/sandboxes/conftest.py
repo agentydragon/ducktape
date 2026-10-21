@@ -1,47 +1,26 @@
-"""Shared in-memory Kubernetes fixtures for Sandbox readers and inventory tests."""
-
-from collections.abc import AsyncIterator
-from typing import cast
+"""Sandbox readers and the inventory over a real API server, each test in a namespace of its own."""
 
 import pytest
-from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandboxes.egress_views import EgressReader
 from agentplane.sandboxes.inventory import SandboxInventory
-from agentplane.sandboxes.testing.fake_inventory import (
-    NAMESPACE,
-    FakeCoreV1Api,
-    FakeCustomObjectsApi,
-    close_fake_api_clients,
-)
-from util.kubernetes import CustomObjectsClient
-
-
-@pytest.fixture(autouse=True)
-async def close_fake_clients() -> AsyncIterator[None]:
-    yield
-    await close_fake_api_clients()
+from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
+from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 
 
 @pytest.fixture
-def custom_objects() -> FakeCustomObjectsApi:
-    return FakeCustomObjectsApi()
+async def namespace(api_server: KubernetesApiServer) -> SandboxNamespace:
+    return await SandboxNamespace.new(api_server)
 
 
 @pytest.fixture
-def core_v1() -> FakeCoreV1Api:
-    return FakeCoreV1Api()
+def egress(namespace: SandboxNamespace) -> EgressReader:
+    return EgressReader(namespace=namespace.name, custom_objects=namespace.custom_objects)
 
 
 @pytest.fixture
-def egress(custom_objects: FakeCustomObjectsApi) -> EgressReader:
-    return EgressReader(namespace=NAMESPACE, custom_objects=cast(CustomObjectsClient, custom_objects))
-
-
-@pytest.fixture
-def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> SandboxInventory:
+def inventory(namespace: SandboxNamespace) -> SandboxInventory:
     return SandboxInventory(
-        namespace=NAMESPACE,
-        custom_objects=cast(CustomObjectsClient, custom_objects),
-        core_v1=cast(k8s_client.CoreV1Api, core_v1),
+        namespace=namespace.name, custom_objects=namespace.custom_objects, core_v1=namespace.core_v1
     )

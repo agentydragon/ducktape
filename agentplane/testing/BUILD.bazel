@@ -101,3 +101,12 @@ py_library(
     srcs = ["tls.py"],
     deps = ["@pypi//cryptography"],
 )
+
+py_library(
+    name = "kubernetes_apiserver_fixtures",
+    srcs = ["kubernetes_apiserver_fixtures.py"],
+    deps = [
+        ":kubernetes_apiserver",
+        "@pypi//pytest",
+    ],
+)

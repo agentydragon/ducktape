@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import pytest
 import pytest_bazel
 
-from agentplane.egress.resources import TargetMethod
+from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod
 from agentplane.policy_sets import ConditionStatus
 from agentplane.sandboxes.egress_views import (
     BindingProvenance,
@@ -16,28 +16,23 @@ from agentplane.sandboxes.egress_views import (
     EgressReader,
     EgressRuleView,
     OtherRuleView,
+    matching_bindings,
 )
-from agentplane.sandboxes.testing.fake_inventory import (
-    NAMESPACE,
-    FakeCustomObjectsApi,
-    egress_credential,
-    egress_policy_set,
-    policy_binding,
-    policy_set,
-)
+from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//types_protobuf
 
-LIVE = ServiceAccountRef(namespace=NAMESPACE, name="live")
-OTHER = ServiceAccountRef(namespace=NAMESPACE, name="other")
+LIVE = ServiceAccountRef(namespace="test-sandboxes", name="live")
+OTHER = ServiceAccountRef(namespace="test-sandboxes", name="other")
 GITHUB_RULE = {
     "hosts": ["api.github.com", "*.githubusercontent.com"],
     "methods": ["GET", "POST"],
     "credentialRef": {"name": "test-github-pat"},
 }
 CREDENTIAL_DESCRIPTION = "a token for the test bot account"
+GITHUB_PAT = {"secretRef": {"name": "test-github-pat-secret", "key": "token"}}
 
 
 def only_egress_rule(binding: BindingView) -> EgressRuleView:
@@ -48,32 +43,25 @@ def only_egress_rule(binding: BindingView) -> EgressRuleView:
 
 
 @pytest.fixture
-def seeded(custom_objects: FakeCustomObjectsApi) -> None:
-    custom_objects.objects[("egresscredentials", "test-github-pat")] = egress_credential(
+async def seeded(namespace: SandboxNamespace) -> None:
+    await namespace.egress_credential(
         "test-github-pat",
-        secret="test-github-pat-secret",
-        key="token",
+        source=GITHUB_PAT,
         description=CREDENTIAL_DESCRIPTION,
         targets=[{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}],
     )
-    custom_objects.objects[("policysets", "github")] = egress_policy_set("github", [GITHUB_RULE])
-    custom_objects.objects[("policysets", "pypi")] = egress_policy_set("pypi", [{"hosts": ["pypi.org"]}])
-    custom_objects.objects[("policybindings", "live-seeded")] = policy_binding(
-        "live-seeded", subject=LIVE.model_dump(), policy_sets=["github"]
-    )
-    custom_objects.objects[("policybindings", "live-expiring")] = policy_binding(
+    await namespace.egress_policy_set("github", [GITHUB_RULE])
+    await namespace.egress_policy_set("pypi", [{"hosts": ["pypi.org"]}])
+    await namespace.policy_binding("live-seeded", subject=LIVE, policy_sets=["github"])
+    await namespace.policy_binding(
         "live-expiring",
-        subject=LIVE.model_dump(),
+        subject=LIVE,
         policy_sets=["pypi", "vanished"],
         from_git=False,
         expires_at="2026-12-01T00:00:00Z",
     )
-    custom_objects.objects[("policybindings", "live-granted")] = policy_binding(
-        "live-granted", subject=LIVE.model_dump(), policy_sets=["pypi"], from_git=False
-    )
-    custom_objects.objects[("policybindings", "other-only")] = policy_binding(
-        "other-only", subject=OTHER.model_dump(), policy_sets=["pypi"]
-    )
+    await namespace.policy_binding("live-granted", subject=LIVE, policy_sets=["pypi"], from_git=False)
+    await namespace.policy_binding("other-only", subject=OTHER, policy_sets=["pypi"])
 
 
 @pytest.mark.usefixtures("seeded")
@@ -84,12 +72,12 @@ async def test_bindings_for_lists_the_bindings_naming_the_subject(egress: Egress
 
 @pytest.mark.usefixtures("seeded")
 async def test_a_like_named_account_in_another_namespace_is_a_different_subject(
-    egress: EgressReader, custom_objects: FakeCustomObjectsApi
+    egress: EgressReader, namespace: SandboxNamespace
 ) -> None:
     """A subject is a namespace and a name together: an account called "live" somewhere else is not
     this sandbox."""
-    custom_objects.objects[("policybindings", "elsewhere-only")] = policy_binding(
-        "elsewhere-only", subject={"namespace": "agentplane-elsewhere", "name": "live"}, policy_sets=["pypi"]
+    await namespace.policy_binding(
+        "elsewhere-only", subject=ServiceAccountRef(namespace="test-elsewhere", name="live"), policy_sets=["pypi"]
     )
 
     assert "elsewhere-only" not in [view.name for view in await egress.bindings_for(LIVE)]
@@ -128,10 +116,10 @@ async def test_a_binding_view_carries_provenance_expiry_and_its_egress_rules(egr
 
 @pytest.mark.usefixtures("seeded")
 async def test_provenance_tells_git_from_the_sandboxs_own_from_an_operators_grant(
-    egress: EgressReader, custom_objects: FakeCustomObjectsApi
+    egress: EgressReader, namespace: SandboxNamespace
 ) -> None:
-    custom_objects.objects[("policybindings", "live-own")] = policy_binding(
-        "live-own", subject=LIVE.model_dump(), policy_sets=["pypi"], from_git=False, sandbox_controlled="live"
+    await namespace.policy_binding(
+        "live-own", subject=LIVE, policy_sets=["pypi"], from_git=False, sandbox_controlled="live"
     )
 
     assert {view.name: view.provenance for view in await egress.bindings_for(LIVE)} == {
@@ -143,12 +131,9 @@ async def test_provenance_tells_git_from_the_sandboxs_own_from_an_operators_gran
 
 
 @pytest.mark.usefixtures("seeded")
-async def test_a_set_shows_every_rule_of_every_type_and_a_refused_one_says_why(
-    egress: EgressReader, custom_objects: FakeCustomObjectsApi
-) -> None:
-    """Rules another reader enforces are shown as the set states them, not hidden; a set whose egress
-    rule does not parse grants the egress proxy nothing, which the binding reports rather than hides."""
-    custom_objects.objects[("policysets", "mixed")] = policy_set(
+async def test_a_set_shows_every_rule_of_every_type(egress: EgressReader, namespace: SandboxNamespace) -> None:
+    """Rules another reader enforces are shown as the set states them, not hidden."""
+    await namespace.policy_set(
         "mixed",
         [
             {
@@ -158,14 +143,11 @@ async def test_a_set_shows_every_rule_of_every_type_and_a_refused_one_says_why(
             {"type": "egress", "hosts": ["pypi.org"]},
         ],
     )
-    custom_objects.objects[("policysets", "broken")] = egress_policy_set("broken", [{"hosts": []}])
-    custom_objects.objects[("policybindings", "live-mixed")] = policy_binding(
-        "live-mixed", subject=LIVE.model_dump(), policy_sets=["mixed", "broken", "vanished"], from_git=False
-    )
+    await namespace.policy_binding("live-mixed", subject=LIVE, policy_sets=["mixed", "vanished"], from_git=False)
 
     mixed = next(view for view in await egress.bindings_for(LIVE) if view.name == "live-mixed")
 
-    assert [policy_set.name for policy_set in mixed.policy_sets] == ["mixed", "broken"]
+    assert [policy_set.name for policy_set in mixed.policy_sets] == ["mixed"]
     assert mixed.missing_policy_sets == ["vanished"]
     action, egress_rule = mixed.policy_sets[0].rules
     assert isinstance(action, OtherRuleView)
@@ -176,13 +158,28 @@ async def test_a_set_shows_every_rule_of_every_type_and_a_refused_one_says_why(
     )
     assert isinstance(egress_rule, EgressRuleView)
     assert (egress_rule.number, egress_rule.hosts) == (1, ["pypi.org"])
-    broken = mixed.policy_sets[1]
-    assert (broken.rules, broken.refused is not None) == ([], True)
+
+
+def test_a_set_whose_egress_rule_does_not_parse_is_refused_and_says_why() -> None:
+    """It grants the egress proxy nothing, which the binding reports rather than hides. The CRD admits
+    no such rule, so only a set stored under an older schema reaches a reader with one: the projection
+    is given that object directly."""
+    metadata = {"namespace": "test-sandboxes", "uid": "test-uid", "generation": 1, "resourceVersion": "1"}
+    broken = {"metadata": {"name": "broken", **metadata}, "spec": {"rules": [{"type": "egress", "hosts": []}]}}
+    binding = {
+        "metadata": {"name": "live-broken", **metadata},
+        "spec": {"subject": LIVE.model_dump(), "policySets": ["broken"]},
+    }
+
+    (view,) = matching_bindings([binding], [broken], [], subject=LIVE)
+
+    (refused,) = view.policy_sets
+    assert (refused.name, refused.rules, refused.refused is not None) == ("broken", [], True)
 
 
 @pytest.mark.usefixtures("seeded")
 async def test_a_binding_view_carries_each_readers_verdict_by_type(
-    egress: EgressReader, custom_objects: FakeCustomObjectsApi
+    egress: EgressReader, namespace: SandboxNamespace
 ) -> None:
     def verdict(condition_type: str, *, status: str, generation: int) -> dict[str, object]:
         return {
@@ -194,9 +191,9 @@ async def test_a_binding_view_carries_each_readers_verdict_by_type(
             "lastTransitionTime": "2026-09-01T12:00:00Z",
         }
 
-    custom_objects.objects[("policybindings", "live-judged")] = policy_binding(
+    await namespace.policy_binding(
         "live-judged",
-        subject=LIVE.model_dump(),
+        subject=LIVE,
         policy_sets=["pypi"],
         conditions=[
             verdict("EgressReady", status="False", generation=1),
@@ -216,24 +213,18 @@ async def test_a_binding_view_carries_each_readers_verdict_by_type(
 
 
 async def test_authenticated_workload_source_projects_no_token_or_secret_reference(
-    egress: EgressReader, custom_objects: FakeCustomObjectsApi
+    egress: EgressReader, namespace: SandboxNamespace
 ) -> None:
-    custom_objects.objects[("egresscredentials", "workload")] = {
-        "apiVersion": "agentplane.allegedly.works/v1alpha1",
-        "kind": "EgressCredential",
-        "metadata": {"name": "workload"},
-        "spec": {
-            "source": {"authenticatedWorkloadToken": {}},
-            "description": "the authenticated caller",
-            "targets": [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}],
-        },
-    }
-    custom_objects.objects[("policysets", "workload")] = egress_policy_set(
+    await namespace.egress_credential(
+        "workload",
+        source={"authenticatedWorkloadToken": {}},
+        description="the authenticated caller",
+        targets=[{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}],
+    )
+    await namespace.egress_policy_set(
         "workload", [{"hosts": ["agentplane.internal"], "credentialRef": {"name": "workload"}}]
     )
-    custom_objects.objects[("policybindings", "live-workload")] = policy_binding(
-        "live-workload", subject=LIVE.model_dump(), policy_sets=["workload"]
-    )
+    await namespace.policy_binding("live-workload", subject=LIVE, policy_sets=["workload"])
 
     (binding,) = await egress.bindings_for(LIVE)
     credential = only_egress_rule(binding).credential
@@ -243,15 +234,11 @@ async def test_authenticated_workload_source_projects_no_token_or_secret_referen
 
 
 async def test_a_rule_naming_a_credential_the_namespace_does_not_hold_says_which_name_dangles(
-    egress: EgressReader, custom_objects: FakeCustomObjectsApi
+    egress: EgressReader, namespace: SandboxNamespace
 ) -> None:
     """The proxy substitutes nothing for it, so the page must not read as a rule that wanted none."""
-    custom_objects.objects[("policysets", "orphan")] = egress_policy_set(
-        "orphan", [{"hosts": ["api.github.com"], "credentialRef": {"name": "gone"}}]
-    )
-    custom_objects.objects[("policybindings", "live-orphan")] = policy_binding(
-        "live-orphan", subject=LIVE.model_dump(), policy_sets=["orphan"]
-    )
+    await namespace.egress_policy_set("orphan", [{"hosts": ["api.github.com"], "credentialRef": {"name": "gone"}}])
+    await namespace.policy_binding("live-orphan", subject=LIVE, policy_sets=["orphan"])
 
     (binding,) = await egress.bindings_for(LIVE)
     rule = only_egress_rule(binding)
@@ -262,16 +249,10 @@ async def test_a_rule_naming_a_credential_the_namespace_does_not_hold_says_which
 
 @pytest.mark.usefixtures("seeded")
 async def test_operator_json_target_has_no_nullable_header_or_scheme(
-    egress: EgressReader, custom_objects: FakeCustomObjectsApi
+    egress: EgressReader, namespace: SandboxNamespace
 ) -> None:
     target = {"method": "jsonField", "field": "password"}
-    custom_objects.objects[("egresscredentials", "test-github-pat")] = egress_credential(
-        "test-github-pat",
-        secret="test-github-pat-secret",
-        key="token",
-        description=CREDENTIAL_DESCRIPTION,
-        targets=[target],
-    )
+    await namespace.patch(CREDENTIALS_PLURAL, "test-github-pat", {"spec": {"targets": [target]}})
     views = await egress.bindings_for(LIVE)
     credential = only_egress_rule(next(view for view in views if view.name == "live-seeded")).credential
     assert credential is not None

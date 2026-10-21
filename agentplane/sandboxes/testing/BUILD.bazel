@@ -33,3 +33,19 @@ py_library(
         "@pypi//kubernetes_asyncio",
     ],
 )
+
+py_library(
+    name = "sandbox_namespace",
+    srcs = ["sandbox_namespace.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane:policy_sets",
+        "//agentplane:sandbox_resource",
+        "//agentplane:subjects",
+        "//agentplane/egress:resources",
+        "//agentplane/sandboxes:egress_views",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+    ],
+)

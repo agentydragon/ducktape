@@ -1,7 +1,6 @@
 """The inventory reads Sandboxes and their Pods without an app or app database."""
 
-from collections.abc import AsyncIterator, Iterator
-from pathlib import Path
+from collections.abc import AsyncIterator
 
 import pytest
 import pytest_bazel
@@ -12,21 +11,15 @@ from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxPhase
 from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandboxes.errors import SandboxNotFoundError
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster, sandbox_cluster
-from agentplane.testing.kubernetes_apiserver import control_plane, kubernetes_api
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 # gazelle:include_dep @pypi//protobuf
 
 
-@pytest.fixture(scope="session")
-def kubeconfig() -> Iterator[Path]:
-    """One control plane for the whole test target; each test's cluster is a namespace of its own."""
-    with control_plane() as path:
-        yield path
-
-
 @pytest.fixture
-async def cluster(kubeconfig: Path) -> AsyncIterator[SandboxCluster]:
-    async with kubernetes_api(kubeconfig) as server, sandbox_cluster(server) as started:
+async def cluster(api_server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
+    """A namespace of its own on the target's control plane, which the conftest starts once."""
+    async with sandbox_cluster(api_server) as started:
         yield started
 
 
