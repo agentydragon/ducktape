@@ -14,4 +14,5 @@ first reconciles a new Sandbox, so readers expose a nullable mode and `Unspecifi
 deriving actual state from `spec.running`. Deletion requires an explicitly reported `Suspended` mode;
 send-triggered wake work stays queued without a wake deadline until a mode is reported.
 
-`testing/kubernetes.py` provides a local API server and a seeded `SandboxCluster` for integration tests.
+`testing/kubernetes.py` seeds a running Sandbox and its Pod (`SandboxCluster`) on an envtest API
+server for integration tests.

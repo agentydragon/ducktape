@@ -2050,8 +2050,6 @@ cannot.
 tests use envtest (Python: [`kubernetes_apiserver.py`](../testing/kubernetes_apiserver.py), which
 mints Pod-bound tokens; Go: [`testing/envtest`](../testing/envtest)) in place of:
 
-- `agentplane/testing/fake_apiserver.py`, behind the egress, Action Service, Sandbox inventory and
-  app History gateway tests;
 - `agentplane/sandboxes/testing/fake_inventory.py`, behind the app tests;
 - TokenReview stubs in Go tests, such as `runner_gateway/gateway/control_test.go`'s.
 

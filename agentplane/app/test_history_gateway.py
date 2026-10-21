@@ -24,9 +24,8 @@ from agentplane.runner.testing import launches
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.testing.runner_peer import runner_peer
-from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster, sandbox_cluster
-from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.scripted_model import ScriptedModel, Text
 
 # gazelle:include_dep @pypi//protobuf
@@ -35,8 +34,8 @@ from agentplane.testing.scripted_model import ScriptedModel, Text
 
 
 @pytest.fixture
-async def cluster() -> AsyncIterator[SandboxCluster]:
-    async with sandbox_cluster() as started:
+async def cluster(history_api: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
+    async with sandbox_cluster(history_api) as started:
         yield started
 
 
@@ -48,8 +47,10 @@ def register_attached_sessions() -> bool:
 
 @pytest.fixture(autouse=True)
 async def discover(cluster: SandboxCluster, live_index: LiveIndex) -> None:
-    live_index.sandboxes[SANDBOX] = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
-    live_index.pods[SANDBOX] = await k8s_client.CoreV1Api(cluster.api).read_namespaced_pod(SANDBOX, SANDBOX_NAMESPACE)
+    live_index.sandboxes[SANDBOX] = await cluster.sandbox()
+    live_index.pods[SANDBOX] = await k8s_client.CoreV1Api(cluster.server.api).read_namespaced_pod(
+        SANDBOX, cluster.namespace
+    )
 
 
 async def test_production_bridge_archives_native_evidence_across_bounded_service_copies(

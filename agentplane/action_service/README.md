@@ -475,7 +475,7 @@ The deployed proof is `//agentplane/acceptance:test_mcp`, which creates the set 
 for the Sandbox it launches through the Kubernetes API (see [the acceptance README](../acceptance/README.md))
 against the upstream `mcp-everything` image described in
 [the fixture guide](testing/README.md); `test_runtime` drives the same production
-composition against a fake API server.
+composition against an envtest API server.
 
 ## Authentication boundaries
 

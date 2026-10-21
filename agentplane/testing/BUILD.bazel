@@ -20,20 +20,6 @@ package(
 )
 
 py_library(
-    name = "fake_apiserver",
-    srcs = ["fake_apiserver.py"],
-    deps = [
-        "//agentplane:crd_group",
-        "//agentplane:policy_sets",
-        "//agentplane:sandbox_resource",
-        "//agentplane/egress:resources",
-        "//agentplane/workload_auth:principal",
-        "@pypi//aiohttp",
-        "@pypi//more_itertools",
-    ],
-)
-
-py_library(
     name = "electric_role",
     srcs = ["electric_role.py"],
     deps = [

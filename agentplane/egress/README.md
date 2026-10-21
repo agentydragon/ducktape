@@ -59,8 +59,8 @@ Also here:
 - `decisions_client.py` and `decisions.py`: the integration app's authenticated gRPC decisions
   stream client and browser projection, served by `EgressAdmin.WatchDecisions` on the admin listener.
 - `testing/`: the throwaway CAs and process launchers `test_proxy.py` runs the built binaries with.
-  It drives the real binaries against the fake API server (<../testing/fake_apiserver.py>) and a
-  PostgreSQL container; the package tests beside the code cover the decision itself.
+  It drives the real binaries against envtest API servers (<../testing/kubernetes_apiserver.py>) and
+  a PostgreSQL container; the package tests beside the code cover the decision itself.
 
 The versioned Kubernetes types live in `api/v1alpha1/` and `../policy/api/v1alpha1/`.
 Their `+genclient` markers drive the pinned Kubernetes `client-gen`, `lister-gen` and `informer-gen`

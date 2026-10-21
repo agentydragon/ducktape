@@ -14,7 +14,6 @@ from agentplane.sandboxes.testing.fake_inventory import (
     FakeCustomObjectsApi,
     close_fake_api_clients,
 )
-from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from util.kubernetes import CustomObjectsClient
 
 
@@ -22,12 +21,6 @@ from util.kubernetes import CustomObjectsClient
 async def close_fake_clients() -> AsyncIterator[None]:
     yield
     await close_fake_api_clients()
-
-
-@pytest.fixture
-async def cluster() -> AsyncIterator[SandboxCluster]:
-    async with sandbox_cluster() as started:
-        yield started
 
 
 @pytest.fixture

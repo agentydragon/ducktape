@@ -8,7 +8,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from textwrap import dedent
 
 from sqlalchemy.engine import make_url
 
@@ -21,28 +20,6 @@ _MIGRATOR = get_required_path(
     own_repo_rlocation("agentplane/egress/history_migrations/cmd/egress-history-migrate_/egress-history-migrate")
 )
 _GRACE_SECONDS = 55
-
-
-def kubeconfig(path: Path, api_port: int) -> Path:
-    path.write_text(
-        dedent(f"""apiVersion: v1
-kind: Config
-clusters:
-- name: test
-  cluster:
-    server: http://127.0.0.1:{api_port}
-contexts:
-- name: test
-  context:
-    cluster: test
-    user: test
-current-context: test
-users:
-- name: test
-  user: {{}}
-""")
-    )
-    return path
 
 
 @dataclass

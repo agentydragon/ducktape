@@ -41,7 +41,6 @@ from agentplane.action_service.models import (
     OperatorPrincipal,
     Verdict,
 )
-from agentplane.action_service.policies.resources import SERVICE_ACCOUNTS_PLURAL
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.runtime import running_executor
@@ -54,10 +53,12 @@ from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.kubernetes_watch import Freshness
+from agentplane.service_process import kubernetes_configuration
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.fake_apiserver import fake_apiserver
+from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.bazel.runfiles import get_required_path
+from util.kubernetes import CustomObjectsClient
 
 OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
 TOKEN_AUDIENCE = "action-service-test-audience"
@@ -375,7 +376,7 @@ async def test_main_failure_disposes_engine_after_owned_resources(failure: str) 
 async def test_main_auto_approves_the_bound_service_account_from_watched_policy_objects(
     db_url: str, echo_mcp_url: str
 ) -> None:
-    """Real production composition + fixture HTTP + the fake API server the informer watches; only
+    """Real production composition + fixture HTTP + a real API server the informer watches; only
     the in-cluster client configuration and the uvicorn loop are replaced."""
     namespace = "agentplane-runtime-test"
     bound = ServiceAccountRef(namespace=namespace, name="fixture-caller")
@@ -432,19 +433,20 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
             assert pending.state is ActionState.DECISION_PENDING
             assert pending.execution is None
 
-    async with fake_apiserver(
-        namespace_of={
-            SERVICE_ACCOUNTS_PLURAL: namespace,
-            policy_sets.POLICY_SETS_PLURAL: namespace,
-            policy_sets.POLICY_BINDINGS_PLURAL: namespace,
-        }
-    ) as fake:
-        fake.put(
+    async with kubernetes_apiserver() as api:
+        await k8s_client.CoreV1Api(api.api).create_namespace(
+            k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=namespace))
+        )
+        custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api.api))
+        await custom.create_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            namespace,
             policy_sets.POLICY_SETS_PLURAL,
             {
                 "apiVersion": f"{GROUP}/{VERSION}",
                 "kind": "PolicySet",
-                "metadata": {"name": "bounded-echo", "namespace": namespace},
+                "metadata": {"name": "bounded-echo"},
                 "spec": {
                     "rules": [
                         {
@@ -464,21 +466,23 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
                 },
             },
         )
-        fake.put(
+        await custom.create_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            namespace,
             policy_sets.POLICY_BINDINGS_PLURAL,
             {
                 "apiVersion": f"{GROUP}/{VERSION}",
                 "kind": "PolicyBinding",
-                "metadata": {"name": "fixture-echo", "namespace": namespace},
+                "metadata": {"name": "fixture-echo"},
                 "spec": {"subject": {"namespace": bound.namespace, "name": bound.name}, "policySets": ["bounded-echo"]},
             },
         )
-
-        def in_cluster(client_configuration: k8s_client.Configuration) -> None:
-            client_configuration.host = f"http://127.0.0.1:{fake.port}"
-
         with (
-            patch("agentplane.service_process.k8s_config.load_incluster_config", side_effect=in_cluster),
+            patch(
+                "agentplane.action_service.main.kubernetes_configuration",
+                return_value=await kubernetes_configuration(api.kubeconfig),
+            ),
             patch("agentplane.action_service.main.PolicyIndex", return_value=index),
             patch.object(uvicorn.Server, "serve", serve),
         ):

@@ -1,65 +1,98 @@
 """The inventory reads Sandboxes and their Pods without an app or app database."""
 
-from copy import deepcopy
+from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import pytest
 import pytest_bazel
+from kubernetes_asyncio import client as k8s_client
 
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxPhase
 from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandboxes.errors import SandboxNotFoundError
-from agentplane.sandboxes.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, SandboxCluster
-from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
+from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster, sandbox_cluster
+from agentplane.testing.kubernetes_apiserver import control_plane, kubernetes_api
 
 # gazelle:include_dep @pypi//protobuf
 
 
+@pytest.fixture(scope="session")
+def kubeconfig() -> Iterator[Path]:
+    """One control plane for the whole test target; each test's cluster is a namespace of its own."""
+    with control_plane() as path:
+        yield path
+
+
+@pytest.fixture
+async def cluster(kubeconfig: Path) -> AsyncIterator[SandboxCluster]:
+    async with kubernetes_api(kubeconfig) as server, sandbox_cluster(server) as started:
+        yield started
+
+
+async def stored(cluster: SandboxCluster) -> set[tuple[str, str, str]]:
+    """Every Sandbox and Pod in the cluster's namespace at its resourceVersion, which any write to it moves."""
+    sandboxes = await cluster.custom_objects.list_namespaced_custom_object(
+        GROUP, VERSION, cluster.namespace, SANDBOXES_PLURAL
+    )
+    pods = await k8s_client.CoreV1Api(cluster.server.api).list_namespaced_pod(cluster.namespace)
+    return {
+        *(
+            (SANDBOXES_PLURAL, item["metadata"]["name"], item["metadata"]["resourceVersion"])
+            for item in sandboxes["items"]
+        ),
+        *(("pods", pod.metadata.name, pod.metadata.resource_version) for pod in pods.items),
+    }
+
+
 async def test_read_sandbox_without_mutation(cluster: SandboxCluster) -> None:
-    before = deepcopy(cluster.fake.objects)
+    before = await stored(cluster)
     view = await cluster.inventory.get(SANDBOX)
-    assert view.uid == SANDBOX_UID
-    assert view.service_account.namespace == SANDBOX_NAMESPACE
-    assert view.service_account.name == ACCOUNT
+    assert view.uid == cluster.uid
+    assert view.service_account.namespace == cluster.namespace
+    assert view.service_account.name == SANDBOX
     assert view.operating_mode == OperatingMode.RUNNING
     assert view.HasField("pod")
     assert view.pod.name == SANDBOX
-    assert view.pod.namespace == SANDBOX_NAMESPACE
-    assert view.pod.uid == "test-pod-uid"
-    assert cluster.fake.objects == before
+    assert view.pod.namespace == cluster.namespace
+    assert view.pod.uid == cluster.pod_uid
+    assert await stored(cluster) == before
 
 
 async def test_sandbox_is_read_without_its_pod(cluster: SandboxCluster) -> None:
     view = await cluster.inventory.get_without_pod(SANDBOX)
-    assert view.uid == SANDBOX_UID
-    assert view.service_account.name == ACCOUNT
+    assert view.uid == cluster.uid
+    assert view.service_account.name == SANDBOX
     assert not view.HasField("pod")
     with pytest.raises(SandboxNotFoundError):
         await cluster.inventory.get_without_pod("test-missing")
 
 
 async def test_sandbox_is_read_with_its_bootstrap(cluster: SandboxCluster) -> None:
-    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"]["bootstrap"] = "printf boot"
+    await cluster.patch_sandbox({"spec": {"bootstrap": "printf boot"}})
     view = await cluster.inventory.get(SANDBOX)
     assert view.binding == SandboxBinding(bootstrap="printf boot")
     assert [sandbox.name for sandbox in await cluster.inventory.list_sandboxes()] == [SANDBOX]
 
 
 async def test_suspended_sandbox_is_not_resumed(cluster: SandboxCluster) -> None:
-    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"]["running"] = False
-    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["status"]["operatingMode"] = "Suspended"
-    cluster.fake.pods.clear()
-    before = deepcopy(cluster.fake.objects)
+    await cluster.patch_sandbox({"spec": {"running": False}})
+    await cluster.patch_sandbox_status({"status": {"operatingMode": OperatingMode.SUSPENDED.value}})
+    await k8s_client.CoreV1Api(cluster.server.api).delete_namespaced_pod(
+        SANDBOX, cluster.namespace, body=k8s_client.V1DeleteOptions(grace_period_seconds=0)
+    )
+    before = await stored(cluster)
     view = await cluster.inventory.get(SANDBOX)
     assert view.operating_mode == OperatingMode.SUSPENDED
-    assert view.uid == SANDBOX_UID
-    assert cluster.fake.objects == before
+    assert view.uid == cluster.uid
+    assert await stored(cluster) == before
 
 
 async def test_missing_sandbox_is_not_created(cluster: SandboxCluster) -> None:
-    before = deepcopy(cluster.fake.objects)
+    before = await stored(cluster)
     with pytest.raises(SandboxNotFoundError):
         await cluster.inventory.get("test-missing")
-    assert cluster.fake.objects == before
+    assert await stored(cluster) == before
 
 
 SEALED = [
@@ -99,22 +132,27 @@ async def test_phase_follows_what_the_controller_records(
     phase: SandboxPhase,
 ) -> None:
     """While it seals before deletion it takes no new work but its Sessions stay readable; once sealed it is going."""
-    stored = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
-    stored["spec"]["running"] = running
-    stored["status"]["operatingMode"] = "Running" if running else "Suspended"
-    if not incarnated:
-        del stored["status"]["incarnation"]
+    await cluster.patch_sandbox({"spec": {"running": running}})
+    await cluster.patch_sandbox_status(
+        {
+            "status": {
+                "operatingMode": (OperatingMode.RUNNING if running else OperatingMode.SUSPENDED).value,
+                "conditions": conditions,
+                **({} if incarnated else {"incarnation": None}),
+            }
+        }
+    )
     if deletion:
-        stored["metadata"] |= {"deletionTimestamp": "2026-09-01T12:00:00Z", "finalizers": ["test-finalizer"]}
-    stored["status"]["conditions"] = conditions
+        # The finalizer holds the deleted Sandbox, as the Sandbox Controller's does while it seals.
+        await cluster.patch_sandbox({"metadata": {"finalizers": ["test.invalid/hold"]}})
+        await cluster.custom_objects.delete_namespaced_custom_object(
+            GROUP, VERSION, cluster.namespace, SANDBOXES_PLURAL, SANDBOX, body=k8s_client.V1DeleteOptions()
+        )
     assert (await cluster.inventory.get(SANDBOX)).phase == phase
 
 
 async def test_initial_sandbox_without_controller_status_is_unknown(cluster: SandboxCluster) -> None:
-    stored = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
-    stored["spec"]["running"] = True
-    stored["status"].pop("operatingMode")
-    stored["status"].pop("incarnation", None)
+    await cluster.patch_sandbox_status({"status": {"operatingMode": None, "incarnation": None}})
     view = await cluster.inventory.get(SANDBOX)
 
     assert not view.HasField("operating_mode")

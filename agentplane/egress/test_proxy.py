@@ -2,9 +2,8 @@
 
 A real client goes through the binary to a scripted upstream. The proxy intercepts with a throwaway
 CA the client trusts, verifies the upstream's certificate against a second throwaway CA, takes its
-identity and policy from a real envtest API server, and appends decisions to PostgreSQL.
-The replica-divergence fault injection uses scripted API servers. Every assertion
-is on what the client and the upstream actually saw.
+identity and policy from a real envtest API server, and appends decisions to PostgreSQL. Every
+assertion is on what the client and the upstream actually saw.
 """
 
 from __future__ import annotations
@@ -15,13 +14,14 @@ from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from ipaddress import ip_network
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from uuid import UUID
 
 import aiohttp
 import grpc
 import pytest
 import pytest_bazel
+import yaml
 from aiohttp import web
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
@@ -29,10 +29,9 @@ from sqlalchemy import create_engine, text
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.egress.conftest import AUDIENCE, GITHUB_POLICY, SANDBOX_A, SUBJECT_A, TOKEN_A, UPSTREAM_HOST, seed
-from agentplane.egress.resources import TargetMethod, placeholder_of
+from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
-from agentplane.egress.testing.go_replica import go_replica, kubeconfig
+from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.egress.testing.tls import (
     CertificateAuthority,
@@ -44,18 +43,18 @@ from agentplane.egress.testing.tls import (
 )
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.fake_apiserver import (
-    CREDENTIALS_NAMESPACE,
-    CREDENTIALS_PLURAL,
-    NAMESPACE,
-    SANDBOX_NAMESPACE,
-    credential,
-    egress_policy_set,
-    fake_apiserver,
-    policy_binding,
-)
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
 from util.kubernetes import CustomObjectsClient
+
+# Three namespaces, all different, so that a proxy reading one from the wrong one fails.
+NAMESPACE = "agentplane-egress-test"
+SANDBOX_NAMESPACE = "agentplane-egress-test-sandboxes"
+CREDENTIALS_NAMESPACE = "agentplane-egress-test-credentials"
+AUDIENCE = "agentplane-egress-test"
+UPSTREAM_HOST = "localhost"
+SANDBOX_A = "sb-a"
+# Every sandbox runs as a ServiceAccount of its own, named after it: that account is the subject.
+SUBJECT_A = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_A)
 
 
 @dataclass
@@ -130,12 +129,15 @@ def replica_settings(
     )
 
 
-BINDING = f"{SANDBOX_A}-{GITHUB_POLICY}"
 _CONTRACT_CREDENTIAL = "transport-contract"
 _CONTRACT_PATH = "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream"
+BINDING = f"{SANDBOX_A}-{_CONTRACT_CREDENTIAL}"
+_API_VERSION = f"{GROUP}/{VERSION}"
 
 
-async def seed_transport_contract(server: KubernetesApiServer) -> str:
+async def seed(server: KubernetesApiServer) -> str:
+    """Workload A's Pod and a token of it for the proxy's audience. A is bound to a policy that
+    substitutes the contract credential on the contract paths and admits `/public/**` as is."""
     core = k8s_client.CoreV1Api(server.api)
     for namespace in (NAMESPACE, SANDBOX_NAMESPACE, CREDENTIALS_NAMESPACE):
         await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=namespace)))
@@ -159,49 +161,66 @@ async def seed_transport_contract(server: KubernetesApiServer) -> str:
         ),
     )
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(server.api))
-    for plural, body in (
-        (
-            CREDENTIALS_PLURAL,
-            credential(
-                _CONTRACT_CREDENTIAL,
-                secret_name=_CONTRACT_CREDENTIAL,
-                key="key",
-                targets=[{"header": "x-buildbuddy-api-key", "method": TargetMethod.WHOLE_VALUE}],
-            ),
-        ),
-        (
-            POLICY_SETS_PLURAL,
-            egress_policy_set(
-                _CONTRACT_CREDENTIAL,
-                [
+    bodies: dict[str, dict[str, Any]] = {
+        CREDENTIALS_PLURAL: {
+            "apiVersion": _API_VERSION,
+            "kind": "EgressCredential",
+            "metadata": {"name": _CONTRACT_CREDENTIAL},
+            "spec": {
+                "source": {"secretRef": {"name": _CONTRACT_CREDENTIAL, "key": "key"}},
+                "description": "a test credential",
+                "targets": [{"header": "x-buildbuddy-api-key", "method": TargetMethod.WHOLE_VALUE}],
+            },
+        },
+        POLICY_SETS_PLURAL: {
+            "apiVersion": _API_VERSION,
+            "kind": "PolicySet",
+            "metadata": {"name": _CONTRACT_CREDENTIAL},
+            "spec": {
+                "rules": [
                     {
+                        "type": "egress",
                         "hosts": [UPSTREAM_HOST],
                         "paths": ["/contract", "/contract-sse", "/contract-ws", _CONTRACT_PATH],
                         "credentialRef": {"name": _CONTRACT_CREDENTIAL},
-                    }
-                ],
-            ),
-        ),
-        (
-            POLICY_BINDINGS_PLURAL,
-            policy_binding(BINDING, subject=SUBJECT_A.model_dump(), policy_sets=[_CONTRACT_CREDENTIAL]),
-        ),
-    ):
+                    },
+                    {"type": "egress", "hosts": [UPSTREAM_HOST], "paths": ["/public/**"]},
+                ]
+            },
+        },
+        POLICY_BINDINGS_PLURAL: {
+            "apiVersion": _API_VERSION,
+            "kind": "PolicyBinding",
+            "metadata": {"name": BINDING},
+            "spec": {"subject": SUBJECT_A.model_dump(), "policySets": [_CONTRACT_CREDENTIAL]},
+        },
+    }
+    for plural, body in bodies.items():
         await custom.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body)
     return await server.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, [AUDIENCE])
+
+
+async def revoke_binding(server: KubernetesApiServer) -> None:
+    await cast(CustomObjectsClient, k8s_client.CustomObjectsApi(server.api)).delete_namespaced_custom_object(
+        GROUP, VERSION, NAMESPACE, POLICY_BINDINGS_PLURAL, BINDING, body=k8s_client.V1DeleteOptions()
+    )
 
 
 @dataclass(frozen=True)
 class Egress:
     """The running proxy and the scripted world around it."""
 
-    proxy_port: int
+    replica: GoReplica
     token: str
     api: KubernetesApiServer
     interception_ca: CertificateAuthority
     upstream_ca: CertificateAuthority
     upstream: RecordingUpstream
     tmp_path: Path
+
+    @property
+    def proxy_port(self) -> int:
+        return self.replica.proxy_port
 
     def url(self, path: str) -> str:
         return f"https://{UPSTREAM_HOST}:{self.upstream.port}{path}"
@@ -217,7 +236,7 @@ async def egress(
         kubernetes_apiserver() as api,
         recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
     ):
-        token = await seed_transport_contract(api)
+        token = await seed(api)
         settings = replica_settings(
             api_config=api.kubeconfig,
             ca=write_ca(interception_ca, tmp_path, "interception"),
@@ -227,9 +246,9 @@ async def egress(
         )
         async with go_replica(settings, directory=tmp_path) as running:
             yield Egress(
+                replica=running,
                 token=token,
                 api=api,
-                proxy_port=running.proxy_port,
                 interception_ca=interception_ca,
                 upstream_ca=upstream_ca,
                 upstream=upstream,
@@ -283,23 +302,11 @@ def read_keypair(cert_path: Path, key_path: Path) -> tuple[bytes, bytes]:
     return cert_path.read_bytes(), key_path.read_bytes()
 
 
-async def test_health_reports_ready_only_once_the_tunnel_accepts(
-    tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
-) -> None:
+async def test_health_reports_ready_only_once_the_tunnel_accepts(egress: Egress) -> None:
     """Readiness gates every Service this Pod backs, and the tunnel is the one that carries traffic."""
-    ca = write_ca(make_ca("test-readiness-ca"), tmp_path, "readiness")
-    async with fake_apiserver() as api:
-        seed(api)
-        settings = replica_settings(
-            api_config=kubeconfig(tmp_path / "fake-api.yaml", api.port),
-            ca=ca,
-            database_url=history_db_url,
-            port_factory=unused_tcp_port_factory,
-        )
-        async with go_replica(settings, directory=tmp_path) as running:
-            _, writer = await asyncio.open_connection("127.0.0.1", running.proxy_port)
-            writer.close()
-            await writer.wait_closed()
+    _, writer = await asyncio.open_connection("127.0.0.1", egress.proxy_port)
+    writer.close()
+    await writer.wait_closed()
 
 
 # SQLAlchemy loads this URL dialect dynamically.
@@ -322,26 +329,79 @@ def _decisions_of(database_url: str, subject: ServiceAccountRef) -> list[tuple[U
             ]
 
 
+# The second replica reads as this user. Taking its grant in the rules namespace makes that replica's
+# API server refuse its lists and watches there, so its view goes stale while it still reviews tokens.
+_REPLICA_USER = "test-egress-replica"
+_RBAC = "rbac.authorization.k8s.io"
+
+
+async def grant_replica(server: KubernetesApiServer, namespace: str) -> None:
+    await k8s_client.RbacAuthorizationV1Api(server.api).create_namespaced_role_binding(
+        namespace,
+        k8s_client.V1RoleBinding(
+            metadata=k8s_client.V1ObjectMeta(name=_REPLICA_USER),
+            role_ref=k8s_client.V1RoleRef(api_group=_RBAC, kind="ClusterRole", name=_REPLICA_USER),
+            subjects=[k8s_client.RbacV1Subject(api_group=_RBAC, kind="User", name=_REPLICA_USER)],
+        ),
+    )
+
+
+async def revocable_kubeconfig(server: KubernetesApiServer, path: Path) -> Path:
+    """`server`'s kubeconfig acting as `_REPLICA_USER`, who may review tokens and read what the proxy reads."""
+    rbac = k8s_client.RbacAuthorizationV1Api(server.api)
+    await rbac.create_cluster_role(
+        k8s_client.V1ClusterRole(
+            metadata=k8s_client.V1ObjectMeta(name=_REPLICA_USER),
+            rules=[
+                k8s_client.V1PolicyRule(api_groups=[""], resources=["secrets"], verbs=["get", "list", "watch"]),
+                k8s_client.V1PolicyRule(
+                    api_groups=[GROUP],
+                    resources=[CREDENTIALS_PLURAL, POLICY_SETS_PLURAL, POLICY_BINDINGS_PLURAL],
+                    verbs=["get", "list", "watch"],
+                ),
+                k8s_client.V1PolicyRule(
+                    api_groups=[GROUP], resources=[f"{POLICY_BINDINGS_PLURAL}/status"], verbs=["patch"]
+                ),
+            ],
+        )
+    )
+    await rbac.create_cluster_role_binding(
+        k8s_client.V1ClusterRoleBinding(
+            metadata=k8s_client.V1ObjectMeta(name=_REPLICA_USER),
+            role_ref=k8s_client.V1RoleRef(api_group=_RBAC, kind="ClusterRole", name="system:auth-delegator"),
+            subjects=[k8s_client.RbacV1Subject(api_group=_RBAC, kind="User", name=_REPLICA_USER)],
+        )
+    )
+    for namespace in (NAMESPACE, CREDENTIALS_NAMESPACE):
+        await grant_replica(server, namespace)
+    config = yaml.safe_load(await asyncio.to_thread(server.kubeconfig.read_text))
+    for entry in config["users"]:
+        entry["user"]["as"] = _REPLICA_USER
+    await asyncio.to_thread(path.write_text, yaml.safe_dump(config))
+    return path
+
+
 async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
     tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
 ) -> None:
     ca = make_ca("test-replica-ca")
     cert, key = write_ca(ca, tmp_path, "replica")
     async with (
-        fake_apiserver() as first_api,
-        fake_apiserver() as second_api,
+        kubernetes_apiserver() as first_api,
+        kubernetes_apiserver() as second_api,
         recording_upstream(*issue_leaf(ca, UPSTREAM_HOST, tmp_path)) as upstream,
     ):
-        seed(first_api)
-        seed(second_api)
+        # Each replica reviews tokens with its own API server, so each is sent one that server issued.
+        first_token = await seed(first_api)
+        second_token = await seed(second_api)
         settings = [
             replica_settings(
-                api_config=kubeconfig(tmp_path / f"fake-api-{i}.yaml", fake.port),
-                ca=(cert, key),
-                database_url=history_db_url,
-                port_factory=unused_tcp_port_factory,
+                api_config=api_config, ca=(cert, key), database_url=history_db_url, port_factory=unused_tcp_port_factory
             )
-            for i, fake in enumerate([first_api, second_api])
+            for api_config in (
+                first_api.kubeconfig,
+                await revocable_kubeconfig(second_api, tmp_path / "second-replica-kubeconfig.yaml"),
+            )
         ]
         async with (
             go_replica(settings[0], directory=tmp_path) as first,
@@ -349,33 +409,35 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             aiohttp.ClientSession() as client,
         ):
 
-            async def get(port: int, path: str, expected: int) -> None:
+            async def get(replica: GoReplica, token: str, path: str, expected: int) -> None:
                 async with client.get(
                     f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/{path}",
-                    proxy=f"http://127.0.0.1:{port}",
-                    headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                    proxy=f"http://127.0.0.1:{replica.proxy_port}",
+                    headers={"Proxy-Authorization": f"Bearer {token}"},
                 ) as response:
                     await response.read()
                     assert response.status == expected, dict(response.headers)
 
-            await get(first.proxy_port, "first", 200)
-            await get(second.proxy_port, "second", 200)
+            await get(first, first_token, "first", 200)
+            await get(second, second_token, "second", 200)
             # Only one watch source observes revocation. No replica can acknowledge the other.
-            first_api.delete(POLICY_BINDINGS_PLURAL, BINDING)
+            await revoke_binding(first_api)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
-                    await get(first.proxy_port, "revoked", 403)
-            await get(second.proxy_port, "still-current", 200)
-            second_api.watch_available = False
-            second_api.close_watches()
+                    await get(first, first_token, "revoked", 403)
+            await get(second, second_token, "still-current", 200)
+            # Its API server now refuses the second replica's relists of the rules namespace.
+            await k8s_client.RbacAuthorizationV1Api(second_api.api).delete_namespaced_role_binding(
+                _REPLICA_USER, NAMESPACE
+            )
             await second.health(serving=False)
             before = len(upstream.requests)
-            await get(second.proxy_port, "stale-existing-connection", 502)
+            await get(second, second_token, "stale-existing-connection", 502)
             assert len(upstream.requests) == before
-            second_api.watch_available = True
-            second_api.delete(POLICY_BINDINGS_PLURAL, BINDING)
+            await revoke_binding(second_api)
+            await grant_replica(second_api, NAMESPACE)
             await second.health(serving=True)
-            await get(second.proxy_port, "recovered-revocation", 403)
+            await get(second, second_token, "recovered-revocation", 403)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
                     rows = await asyncio.to_thread(_decisions_of, history_db_url, SUBJECT_A)
@@ -388,52 +450,37 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                     assert any(reason == "unavailable" for _, _, reason in rows)
 
 
-async def test_go_proxy_finishes_an_admitted_request_after_sigterm(
-    tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
-) -> None:
+async def test_go_proxy_finishes_an_admitted_request_after_sigterm(egress: Egress) -> None:
     """Termination takes the Pod out of rotation at once, yet lets the request already admitted finish."""
-    ca = make_ca("test-sigterm-ca")
-    cert, key = write_ca(ca, tmp_path, "sigterm")
-    async with (
-        fake_apiserver() as api,
-        recording_upstream(*issue_leaf(ca, UPSTREAM_HOST, tmp_path)) as upstream,
-        aiohttp.ClientSession() as client,
-    ):
-        seed(api)
-        settings = replica_settings(
-            api_config=kubeconfig(tmp_path / "fake-api.yaml", api.port),
-            ca=(cert, key),
-            database_url=history_db_url,
-            port_factory=unused_tcp_port_factory,
-        )
-        async with go_replica(settings, directory=tmp_path) as running:
+    upstream = egress.upstream
+    async with aiohttp.ClientSession() as client:
 
-            async def slow_status() -> int:
-                async with client.get(
-                    f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/slow",
-                    proxy=f"http://127.0.0.1:{running.proxy_port}",
-                    headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
-                ) as response:
-                    await response.read()
-                    return response.status
+        async def slow_status() -> int:
+            async with client.get(
+                f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/slow",
+                proxy=f"http://127.0.0.1:{egress.proxy_port}",
+                headers={"Proxy-Authorization": f"Bearer {egress.token}"},
+            ) as response:
+                await response.read()
+                return response.status
 
-            pending = asyncio.create_task(slow_status())
-            await asyncio.wait_for(upstream.slow_started.wait(), 10)
-            running.terminate()
-            await running.health(serving=False)
-            # Readiness turns NOT_SERVING before the proxy listener finishes shutting down.
-            async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
-                with attempt:
-                    try:
-                        _, writer = await asyncio.open_connection("127.0.0.1", running.proxy_port)
-                    except ConnectionRefusedError:
-                        break
-                    writer.close()
-                    await writer.wait_closed()
-                    raise AssertionError("proxy listener still accepts connections while draining")
-            assert not pending.done()
-            upstream.slow_release.set()
-            assert await asyncio.wait_for(pending, 10) == 200
+        pending = asyncio.create_task(slow_status())
+        await asyncio.wait_for(upstream.slow_started.wait(), 10)
+        egress.replica.terminate()
+        await egress.replica.health(serving=False)
+        # Readiness turns NOT_SERVING before the proxy listener finishes shutting down.
+        async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
+            with attempt:
+                try:
+                    _, writer = await asyncio.open_connection("127.0.0.1", egress.proxy_port)
+                except ConnectionRefusedError:
+                    break
+                writer.close()
+                await writer.wait_closed()
+                raise AssertionError("proxy listener still accepts connections while draining")
+        assert not pending.done()
+        upstream.slow_release.set()
+        assert await asyncio.wait_for(pending, 10) == 200
     assert len(upstream.requests) == 1
 
 
@@ -455,7 +502,6 @@ async def test_header_substitution(egress: Egress) -> None:
 
 
 async def test_real_binding_revocation_denies_the_next_connection(egress: Egress) -> None:
-    custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api))
     async with aiohttp.ClientSession() as client:
 
         async def request_status() -> int:
@@ -473,9 +519,7 @@ async def test_real_binding_revocation_denies_the_next_connection(egress: Egress
                 return error.status
 
         assert await request_status() == 200
-        await custom.delete_namespaced_custom_object(
-            GROUP, VERSION, NAMESPACE, POLICY_BINDINGS_PLURAL, BINDING, body=k8s_client.V1DeleteOptions()
-        )
+        await revoke_binding(egress.api)
         async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
             with attempt:
                 assert await request_status() == 403
