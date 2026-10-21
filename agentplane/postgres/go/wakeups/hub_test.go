@@ -139,6 +139,39 @@ func TestEverySubscriberWakesAfterTheConnectionIsLostAndListeningContinues(t *te
 	awaitWakeup(t, onA)
 }
 
+func assertOpen(t *testing.T, signal <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-signal:
+		t.Fatal("closed")
+	default:
+	}
+}
+
+func TestTheLossSignalClosesWhenTheConnectionIsLostAndTheNextConnectionHasItsOwn(t *testing.T) {
+	db, hub := openDB(t), listen(t, "test-wakeups-loss", "test_wakeups_a")
+	onA, _ := subscribe(t, hub, "test_wakeups_a")
+	lost := hub.Lost()
+	assertOpen(t, lost)
+	if _, err := db.ExecContext(t.Context(),
+		"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = 'test-wakeups-loss'"); err != nil {
+		t.Fatal(err)
+	}
+	awaitWakeup(t, lost)
+	// The reconnection wakes every subscriber once the new connection listens.
+	awaitWakeup(t, onA)
+	assertOpen(t, hub.Lost())
+}
+
+func TestAClosedHubIsLost(t *testing.T) {
+	hub := listen(t, "test-wakeups-closed", "test_wakeups_a")
+	lost := hub.Lost()
+	if err := hub.Close(); err != nil {
+		t.Fatal(err)
+	}
+	awaitWakeup(t, lost)
+}
+
 func TestPingSucceedsOnALiveConnectionAndFailsOnceTheHubIsClosed(t *testing.T) {
 	hub := listen(t, "test-wakeups-ping", "test_wakeups_a")
 	if err := hub.Ping(); err != nil {

@@ -2,7 +2,8 @@
 //
 // A NOTIFY carries nothing and the committed rows stay the authority: a woken reader re-reads what it follows,
 // so commits on any replica, and commits made while the LISTEN connection was down, are read from the tables.
-// Re-establishing the connection wakes every channel for the same reason.
+// Re-establishing the connection wakes every channel for the same reason. A reader that must not answer from a
+// state it was not woken for while the connection was down follows Lost.
 package wakeups
 
 import (
@@ -21,16 +22,27 @@ type Hub struct {
 	mu       sync.Mutex
 	// subscribers holds each listened channel's subscribers' signals.
 	subscribers map[string]map[chan struct{}]struct{}
+	// lost is closed while the LISTEN connection is down; each connection has a fresh one.
+	lost chan struct{}
 }
 
 // Listen opens the LISTEN connection to dsn and returns once it listens to every channel, or fails when ctx
 // ends first. It reconnects by itself after that; Close ends it.
 func Listen(ctx context.Context, dsn string, channels ...string) (*Hub, error) {
-	hub := &Hub{subscribers: make(map[string]map[chan struct{}]struct{}, len(channels))}
+	hub := &Hub{subscribers: make(map[string]map[chan struct{}]struct{}, len(channels)), lost: make(chan struct{})}
 	for _, channel := range channels {
 		hub.subscribers[channel] = map[chan struct{}]struct{}{}
 	}
 	hub.listener = pq.NewListener(dsn, time.Second, 30*time.Second, func(event pq.ListenerEventType, err error) {
+		switch event {
+		case pq.ListenerEventDisconnected:
+			hub.markLost()
+		case pq.ListenerEventReconnected:
+			// The listener has listened to every channel again, and wakes every subscriber next.
+			hub.mu.Lock()
+			hub.lost = make(chan struct{})
+			hub.mu.Unlock()
+		}
 		if err != nil {
 			// The error text can carry the connection string; the type and SQLSTATE name the failure.
 			slog.Warn("PostgreSQL listener event failed", "event", event, "error_type", fmt.Sprintf("%T", err), "sqlstate", sqlState(err))
@@ -92,6 +104,25 @@ func (h *Hub) Subscribe(channels ...string) (<-chan struct{}, func(), error) {
 	}, nil
 }
 
+// Lost returns a signal that is closed once the LISTEN connection is lost, already closed while it is down or the
+// hub is closed: a notification may have been missed since the call. The connection that replaces a lost one
+// does not reopen the signal; a reader calls Lost again before it reads the tables anew.
+func (h *Hub) Lost() <-chan struct{} {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.lost
+}
+
+func (h *Hub) markLost() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	select {
+	case <-h.lost:
+	default:
+		close(h.lost)
+	}
+}
+
 // Close ends the LISTEN connection.
 func (h *Hub) Close() error { return h.listener.Close() }
 
@@ -100,6 +131,8 @@ func (h *Hub) Close() error { return h.listener.Close() }
 func (h *Hub) Ping() error { return h.listener.Ping() }
 
 func (h *Hub) fanOut() {
+	// The listener closes Notify once it is closed.
+	defer h.markLost()
 	for notification := range h.listener.Notify {
 		// The listener sends nil after it reconnected: notifications in between were lost.
 		if notification == nil {
