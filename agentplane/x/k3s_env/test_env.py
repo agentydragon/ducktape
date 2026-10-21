@@ -25,7 +25,7 @@ SANDBOX = "smoke"
 
 @pytest.fixture(scope="module")
 def stack() -> Iterator[Stack]:
-    with running_stack(litellm_key=os.environ["LITELLM_QWEN_KEY"]) as running:
+    with running_stack(models=fixture_chart.PublicLiteLLM(key=os.environ["LITELLM_QWEN_KEY"])) as running:
         yield running
 
 

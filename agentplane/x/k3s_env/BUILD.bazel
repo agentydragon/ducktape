@@ -41,6 +41,30 @@ oci_image(
     ],
 )
 
+pkg_tar(
+    name = "runner_codex_harness",
+    srcs = ["@agentplane_codex_cli_linux_x64//:files"],
+    mode = "0755",
+    package_dir = "/opt/harnesses",
+    strip_prefix = ".",
+)
+
+pkg_tar(
+    name = "runner_codex_link",
+    package_dir = "/usr/bin",
+    symlinks = {"codex": "/opt/harnesses/external/+http_archive+agentplane_codex_cli_linux_x64/bin/codex"},
+)
+
+# Both harnesses, for scenarios whose model a test scripts.
+oci_image(
+    name = "runner_harnesses_image",
+    base = ":runner_claude_image",
+    tars = [
+        ":runner_codex_harness",
+        ":runner_codex_link",
+    ],
+)
+
 # Each test carries exactly one runner layout with the same basename/tag.
 [
     oci_layout_rloc(
@@ -52,6 +76,7 @@ oci_image(
     for variant, image in {
         "lifecycle": ":runner_image",
         "claude": ":runner_claude_image",
+        "harnesses": ":runner_harnesses_image",
     }.items()
 ]
 
@@ -113,6 +138,7 @@ py_library(
         ":fixture_chart",
         ":stack",
         "//agentplane/acceptance:conftest",
+        "//agentplane/acceptance:scripted_upstream",
         "@pypi//pytest",
     ],
 )

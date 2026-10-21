@@ -232,7 +232,7 @@ class ModelEndpoint[RequestT: StreamableRequest]:
     async def start(self) -> None:
         app = web.Application()
         self._add_routes(app)
-        app.router.add_post("/{tail:.*}", self._post)
+        app.router.add_post("/{tail:.*}", self.serve)
         self._runner = web.AppRunner(app, handler_cancellation=True)
         await self._runner.setup()
         site = web.TCPSite(self._runner, "127.0.0.1", 0)
@@ -269,7 +269,9 @@ class ModelEndpoint[RequestT: StreamableRequest]:
         del request
         return web.json_response(None)
 
-    async def _post(self, request: web.Request) -> web.StreamResponse:
+    async def serve(self, request: web.Request) -> web.StreamResponse:
+        """Answer one model request through this endpoint's queue. `start` routes every POST here; a
+        server that routes requests itself calls it without starting this endpoint."""
         try:
             exchange = ModelExchange(
                 self._parse_request(await request.json()), _HttpExchange(request, self._response_headers())

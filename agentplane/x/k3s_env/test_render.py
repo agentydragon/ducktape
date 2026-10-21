@@ -24,7 +24,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         ca_key="fixture-key\n",
         system_roots="system-roots\n",
         cluster_ca="cluster-ca\n",
-        litellm_key=None,
+        models=None,
     )
     assert all(
         doc["kind"]

@@ -4,6 +4,9 @@ sandboxes that clean up after themselves.
 Which instance is under test comes from the environment; the shipped default is the isolated
 testing deployment. Staging remains available for explicit ad hoc runs, and a scenario's `_k3s`
 target publishes a k3s stack of its own the same way (`agentplane.x.k3s_env.acceptance_target`).
+
+So does the model backend (`MODEL_BACKEND`): a real model, the default, or one the scenario scripts
+(`scripted_upstream`). A scenario that needs one marks it, and the other target deselects it.
 """
 
 from __future__ import annotations
@@ -13,12 +16,14 @@ import os
 import subprocess
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import aclosing
+from enum import StrEnum
 from typing import cast
 from uuid import UUID
 
 import pytest
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
+from agentplane.acceptance import scripted_upstream
 from agentplane.acceptance.ollama_warmup import warm_ollama
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, sandbox_is_ready
 from agentplane.app.testing.client import Client
@@ -33,6 +38,15 @@ BASE_URL = "AGENTPLANE_ACCEPTANCE_URL"
 TOKEN = "AGENTPLANE_ACCEPTANCE_TOKEN"
 NAMESPACE = "AGENTPLANE_ACCEPTANCE_NAMESPACE"
 SERVICE_ACCOUNT = "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT"
+MODEL_BACKEND = "AGENTPLANE_ACCEPTANCE_MODEL_BACKEND"
+
+
+class ModelBackend(StrEnum):
+    """Also the marker a scenario names its backend with."""
+
+    REAL_MODEL = "real_model"
+    SCRIPTED_MODEL = "scripted_model"
+
 
 TESTING_URL = "https://agentplane-testing.allegedly.works"
 TESTING_NAMESPACE = "agentplane-testing"
@@ -86,6 +100,16 @@ def mint_token(*, namespace: str, service_account: str, audience: str, lifetime:
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "vm_sandboxes: needs a deployment that runs VM Sandboxes")
+    config.addinivalue_line("markers", "real_model: its evidence is what a real model does")
+    config.addinivalue_line("markers", "scripted_model: the scenario plays the model (`scripted` fixture)")
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Keep the scenarios this target's model backend serves; unmarked ones need no model."""
+    backend = ModelBackend(os.environ.get(MODEL_BACKEND, ModelBackend.REAL_MODEL))
+    other = [item for item in items if any(item.get_closest_marker(b) for b in ModelBackend if b is not backend)]
+    config.hook.pytest_deselected(items=other)
+    items[:] = [item for item in items if item not in other]
 
 
 def namespace() -> str:
@@ -123,14 +147,30 @@ def harness(request: pytest.FixtureRequest) -> runner_pb2.Harness:
 
 
 @pytest.fixture
-async def model(client: Client, harness: runner_pb2.Harness) -> str:
+async def offered_model(client: Client, harness: runner_pb2.Harness) -> str:
     """A model this deployment offers for this harness, asked of the app rather than hardcoded."""
     catalog = await client.models()
     config_harness = Harness(runner_pb2.Harness.Name(harness))
     offered = catalog.harnesses[config_harness]
     assert offered, f"the deployment offers no model for {harness}"
-    await warm_ollama(offered[0])
     return offered[0]
+
+
+@pytest.fixture
+async def model(offered_model: str) -> str:
+    """`offered_model`, loaded first if Ollama serves it: a real model's turn does not wait out a cold load."""
+    await warm_ollama(offered_model)
+    return offered_model
+
+
+@pytest.fixture
+async def scripted() -> AsyncIterator[scripted_upstream.ScriptedUpstream]:
+    """The model behind this target's LLM ingress, played by the scenario. One per test, so a request
+    a scenario leaves unanswered fails that scenario."""
+    host, port = os.environ[scripted_upstream.ADDRESS].rsplit(":", 1)
+    upstream = scripted_upstream.ScriptedUpstream()
+    async with upstream.serving(host=host, port=int(port)):
+        yield upstream
 
 
 async def wait_until_running(client: Client, name: str) -> SandboxView:

@@ -3,15 +3,21 @@
 load("//agentplane/x/k3s_env:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_TAGS")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-_RUNNER_LAYOUT = "//agentplane/x/k3s_env:lifecycle/runner_layout"
+# The `_k3s` target's runner image, by what its scenarios run.
+_RUNNER_LAYOUTS = {
+    # No harness, so the image imports faster.
+    "model_free": "//agentplane/x/k3s_env:lifecycle/runner_layout",
+    "scripted": "//agentplane/x/k3s_env:harnesses/runner_layout",
+}
 
-def acceptance_test(name, srcs, deps, k3s = False, size = "small", timeout = None):
-    """Generates `name`, and `name + "_k3s"` when `k3s` is set.
+def acceptance_test(name, srcs, deps, k3s = None, size = "small", timeout = None):
+    """Generates `name`, and `name + "_k3s"` when `k3s` names its scenarios' kind.
 
     `name` runs against the deployment the caller's environment names (`AGENTPLANE_ACCEPTANCE_*`,
-    testing by default) with the caller's kubeconfig, off RBE. `name + "_k3s"` starts its own stack
-    in one RBE action (`agentplane.x.k3s_env.acceptance_target`); its runner image has no harness, so
-    only model-free scenarios opt in. `size` and `timeout` apply to `name`.
+    testing by default) with the caller's kubeconfig and a real model, off RBE. `name + "_k3s"`
+    starts its own stack in one RBE action (`agentplane.x.k3s_env.acceptance_target`) and runs the
+    `scripted_model` scenarios and the unmarked ones; `k3s` is `"model_free"` when none runs a turn,
+    else `"scripted"`. `size` and `timeout` apply to `name`.
 
     A hidden library owns the source, so both targets share one compiled copy. Gazelle does not
     manage macro rules: exclude the source in the BUILD file and keep `deps` by hand.
@@ -46,20 +52,22 @@ def acceptance_test(name, srcs, deps, k3s = False, size = "small", timeout = Non
         ],
         **common
     )
-    if not k3s:
+    if k3s == None:
         return
+    runner_layout = _RUNNER_LAYOUTS[k3s]
     py_test(
         name = name + "_k3s",
         size = "enormous",
         data = [
-            _RUNNER_LAYOUT,
+            runner_layout,
             "@nodejs_linux_amd64//:bin/node",
             K3S_BINARY,
         ],
         env = {
             "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
             "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
-            "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath " + _RUNNER_LAYOUT + ")",
+            "AGENTPLANE_ACCEPTANCE_MODEL_BACKEND": "scripted_model",
+            "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath " + runner_layout + ")",
             # Loaded by name, not argv: the fixture chart parses argv as app settings.
             "PYTEST_PLUGINS": "agentplane.x.k3s_env.acceptance_target",
         },

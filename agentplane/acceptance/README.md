@@ -8,13 +8,22 @@ session's standing instructions reach the model that serves it.
 
 The deployment under test is whatever the environment names: `AGENTPLANE_ACCEPTANCE_{URL,TOKEN,NAMESPACE,SERVICE_ACCOUNT}`
 and the caller's kubeconfig, testing by default. A scenario declared with
-`acceptance_test(k3s = True)` ([`defs.bzl`](defs.bzl)) also gets a `<scenario>_k3s` target: one
+`acceptance_test(k3s = ...)` ([`defs.bzl`](defs.bzl)) also gets a `<scenario>_k3s` target: one
 RBE action that starts its own [k3s stack](../x/k3s_env/README.md) and publishes it through the same
 variables ([`acceptance_target.py`](../x/k3s_env/acceptance_target.py)), so it needs no cluster
-credentials. That stack runs no model and no VM Sandboxes; it deselects cases marked `vm_sandboxes`.
+credentials. That stack runs no VM Sandboxes; it deselects cases marked `vm_sandboxes`.
+
+The model backend is the target's too (`AGENTPLANE_ACCEPTANCE_MODEL_BACKEND`). A deployment serves a
+real model. On the k3s stack, LLM ingress forwards to the scenario itself, which plays the model
+([`scripted_upstream.py`](scripted_upstream.py)): the `scripted` fixture hands a scenario the
+`ScriptedModel` of its own Sandbox's Pod, and the scenario answers each request and asserts what
+the harness sent. A case marked `real_model` or `scripted_model` runs only where that backend is;
+only cases whose evidence is what a model does are `real_model`. The scripted stack serves Codex no
+model catalog, so Codex calls the function tools the scripted model answers, as in the runner tests.
+Every request the scripted model receives is kept in the target's `test.outputs/scripted_upstream/`.
 
 ```bash
-bbr test //agentplane/acceptance:test_dispatcher_deployed_k3s //agentplane/acceptance:test_storage_deployed_k3s
+bbr test //agentplane/acceptance:test_dispatcher_deployed_k3s //agentplane/acceptance:test_storage_deployed_k3s //agentplane/acceptance:test_session_instructions_k3s
 ```
 
 Fast offline driver tests cover login choreography (`test_operator_login`), startup retries and
@@ -26,7 +35,7 @@ with the turn id, status and quoted runner diagnostic, before scenario assertion
 It does not dump prompts, tool output or native frames, or automatically resend the admitted input.
 
 The general egress and instruction scenarios run on **both harnesses**. The runner protocol is the
-same for Claude and Codex, so one parametrized harness case covers both; `model` asks the deployment
+same for Claude and Codex, so one parametrized harness case covers both; `offered_model` asks the deployment
 which models it offers for that harness rather than hardcoding one. `test_launch_presets` instead exercises the configured `public-coder` preset's
 intentional Codex default, Sandbox binding, bootstrap marker, inherited fields, and local override.
 Initial session Open uses a 120-second retry budget for HTTP 503, retaining the same session id;
@@ -250,7 +259,7 @@ bazelisk test //agentplane/acceptance:test_egress --test_output=streamed --test_
 ```
 
 Run the other live scenarios by their explicit targets: `:test_launch_presets`,
-`:test_instructions`, `:test_mcp`, and `:test_thread_latency`.
+`:test_session_instructions`, `:test_mcp`, and `:test_thread_latency`.
 
 `//agentplane/acceptance:test_ollama_routes` exercises every configured Ollama chat
 route offered by the committed testing app ConfigMap, on each harness that offers it,
@@ -390,7 +399,8 @@ This suite exists because the last gap of that shape — a runner that dropped t
 variables, so every call bypassed the proxy and hung with an empty history — sat behind a fully green
 unit suite until someone drove the deployed app by hand.
 
-`test_instructions` is the one scenario that cannot follow the rule: no part of the system records
-that a system prompt arrived, so the model obeying the instruction is the only evidence there is.
-Its answer to that is a marker token no model emits on its own plus a control session, opened with
-no instructions on the same sandbox and given the same prompt, that must not produce it.
+The real-model case of `test_session_instructions` is the one scenario that cannot follow the rule:
+whether a model obeys the instruction is what it tests, so the model's reply is its evidence. Its
+answer to that is a marker token no model emits on its own plus a control session, opened with no
+instructions on the same sandbox and given the same prompt, that must not produce it. Its scripted
+case asserts what each session sends the model instead.

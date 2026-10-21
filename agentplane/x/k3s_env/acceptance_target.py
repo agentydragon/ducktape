@@ -3,19 +3,22 @@
 An acceptance scenario's `_k3s` target loads it by name (`PYTEST_PLUGINS`). Before any scenario
 fixture runs, it starts the stack and publishes it the way an operator names a deployment: the
 `AGENTPLANE_ACCEPTANCE_*` variables the acceptance `conftest` reads, `KUBECONFIG`, and `kubectl` on
-`PATH`.
+`PATH`. LLM ingress forwards to the scenario's scripted model on the node, which the scenario starts
+on the published address (`scripted_upstream`).
 """
 
 import os
+import socket
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
+from agentplane.acceptance import scripted_upstream
 from agentplane.acceptance.conftest import BASE_URL, NAMESPACE, TOKEN
 from agentplane.x.k3s_env import fixture_chart
-from agentplane.x.k3s_env.stack import running_stack
+from agentplane.x.k3s_env.stack import node_ip, running_stack
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -27,8 +30,13 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 @pytest.fixture(scope="session", autouse=True)
 def k3s_deployment() -> Iterator[None]:
+    host = node_ip()
+    # A free port now; each scenario listens on it while it runs. Nothing else binds ports in this action.
+    with socket.socket() as probe:
+        probe.bind((host, 0))
+        port = probe.getsockname()[1]
     with (
-        running_stack(litellm_key=None) as stack,
+        running_stack(models=fixture_chart.LocalModel(url=f"http://{host}:{port}")) as stack,
         tempfile.TemporaryDirectory() as tools,
         pytest.MonkeyPatch.context() as environment,
     ):
@@ -39,4 +47,5 @@ def k3s_deployment() -> Iterator[None]:
         environment.setenv(BASE_URL, stack.base_url)
         environment.setenv(TOKEN, stack.token)
         environment.setenv(NAMESPACE, fixture_chart.NAMESPACE)
+        environment.setenv(scripted_upstream.ADDRESS, f"{host}:{port}")
         yield

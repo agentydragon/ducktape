@@ -24,7 +24,7 @@ STATE_FILE = "/state/lifecycle-marker"
 
 @pytest.fixture(scope="module")
 def stack() -> Iterator[Stack]:
-    with running_stack(litellm_key=None) as running:
+    with running_stack(models=None) as running:
         yield running
 
 

@@ -3,6 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 package(
     default_testonly = True,
     default_visibility = [
+        "//agentplane/acceptance:__pkg__",
         "//agentplane/action_service:__pkg__",
         "//agentplane/app:__pkg__",
         "//agentplane/app/threads:__pkg__",

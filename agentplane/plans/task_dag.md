@@ -1979,7 +1979,7 @@ changes.
 flowchart LR
     K3S_MODEL_CREDENTIALS[Decision: model key for k3s acceptance]
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
-    ACCEPTANCE_SCRIPTED_MODEL[Proposed: scripted-model scenarios on k3s]
+    ACCEPTANCE_SCRIPTED_MODEL[In flight: scripted-model scenarios on k3s]
     K3S_FIXTURE_IDENTITY[Proposed: Dex and MCP fixtures in the k3s chart]
     K3S_VM_ACCEPTANCE[Decision: where VM acceptance runs]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
@@ -2019,25 +2019,17 @@ Question: which models, what budget, and is a BuildBuddy secret acceptable?
 have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-backend)). Their
 `_k3s_real` targets pass on both harnesses:
 
-- `test_instructions`
+- `test_session_instructions`
 - The `test_egress` probe
 
 ### `ACCEPTANCE_SCRIPTED_MODEL` — scripted-model scenarios on k3s
 
-**Proposed; the first model backend (operator, 2026-10-21 05:23).** Laid out as in the plan's
-[Test layout](k3s_acceptance.md#test-layout).
+**In flight; the first model backend (operator, 2026-10-21 05:23).** Laid out as in the plan's
+[Test layout](k3s_acceptance.md#test-layout). The scripted backend and `test_session_instructions`'s
+scripted case are in place ([acceptance README](../acceptance/README.md)); each remaining scenario
+gets its scripted version, and loses its real one, in its own PR.
 
-- First, `scripted_model.py`, `claude_model.py` and `codex_model.py` move from `runner/testing/` to
-  `agentplane/testing/`, every caller updated in the same PR.
-- `agentplane/acceptance/scripted_upstream.py` serves them in both dialects, one queue per Sandbox
-  Pod, as LLM ingress's upstream at the node IP.
-- It stands in for LiteLLM; the catalogs stay as they are.
-- Scripted targets need a runner image with both harnesses; the fixture has a Claude-only one
-  (`claude/runner_layout`), and the model-free targets keep the harness-free one.
-- Scenario functions carry `real_model` or `scripted_model`, and each target deselects what it
-  cannot serve.
-
-Exit: scripted versions of `test_instructions`, `test_launch_presets`, the Pod case of
+Exit: scripted versions of `test_session_instructions`, `test_launch_presets`, the Pod case of
 `test_suspend_resume` and the `test_egress` cases that need no outside credential pass on k3s on
 both harnesses. The plumbing scenarios' real versions are deleted in the same PRs, so against
 staging only the real-model set and the model-free scenarios run.

@@ -70,7 +70,7 @@ layer (−40%) and the harness-free runner image (−35%).
 | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `test_dispatcher_deployed` (queue, replicas, wake)                                                               | kubectl, Pod-bound tokens, two Gateway replicas                                                       | runs on k3s (#11330)                                               |
 | `test_storage_deployed`, Pod case                                                                                | Sandbox-owned PVCs                                                                                    | runs on k3s (#11330)                                               |
-| `test_egress`, `test_instructions`, `test_launch_presets`, `test_suspend_resume` Pod case                        | turns on both harnesses, the egress ring, kubectl                                                     | scripted (no key); the real-model set needs a key                  |
+| `test_egress`, `test_session_instructions`, `test_launch_presets`, `test_suspend_resume` Pod case                | turns on both harnesses, the egress ring, kubectl                                                     | scripted (no key); the real-model set needs a key                  |
 | `test_mcp`, `test_dcr`                                                                                           | Dex operator login, `mcp-everything`, the Dex-backed `example` OAuth server, a browser for Dex's form | needs Dex and both MCP fixtures in the chart                       |
 | VM cases: `test_vm_sandbox`, `test_vm_workspace_ownership`, `test_suspend_resume` VM, `test_storage_deployed` VM | KubeVirt, KVM                                                                                         | no KVM on RBE (finding 4)                                          |
 | `test_thread_latency`                                                                                            | browser, Electric, frontend; ceilings for the deployed system                                         | no Electric in the fixture; RBE timings are not deployment latency |
@@ -96,11 +96,11 @@ the steps below give k3s what they need.
 
 - **Real model.** This is what the model scenarios use now: the deployment's catalog model.
   - It tests the plumbing, and also that Agentplane's instructions get a model to do the job.
-    `test_instructions` already works this way: its only evidence is the model doing what the
-    instruction says.
+    The real case of `test_session_instructions` works this way: its evidence is the model doing
+    what the instruction says.
   - It is non-deterministic and costs money.
   - On k3s it needs a key (`K3S_MODEL_CREDENTIALS`).
-- **Scripted model.** The runner tests' `ScriptedModel` ([`scripted_model.py`](../runner/testing/scripted_model.py),
+- **Scripted model.** The runner tests' `ScriptedModel` ([`scripted_model.py`](../testing/scripted_model.py),
   in both the Responses and Messages dialects), served as LLM ingress's upstream.
   - The test scripts each model step (text, shell call) and asserts what the model was sent: the
     system text, the tool outputs.
@@ -114,7 +114,7 @@ the steps below give k3s what they need.
 Most scenarios need only the scripted backend (operator, 2026-10-21 05:38). A real model runs only
 where the model's behavior is what is under test:
 
-- `test_instructions`: the model obeys the instructions its session was opened with.
+- `test_session_instructions`: the model obeys the instructions its session was opened with.
 - The `test_egress` probe: the model works out from the rules endpoint how to present a credential
   it does not hold.
 - Later, a model uses the `agentplane` CLI unprompted.
@@ -139,9 +139,10 @@ Decided 2026-10-21 05:38 (operator).
   - A scripted function takes a `scripted` fixture: the `ScriptedModel` for its Sandbox and
     harness. It runs the turn with `Agent.run` and answers each model request with `reply`
     (`Text`, `ShellCall`). Its evidence is the system's record, plus what the harness sent.
-  - Example, `test_instructions`. The real version checks that the model's answer carries the
-    marker the instructions ask for. The scripted version checks that the instructions reach the
-    model's system text, for Claude, or its developer instructions, for Codex.
+  - Example, `test_session_instructions` (renamed from `test_instructions`, operator 2026-10-21
+    05:57). The real version checks that the model's answer carries the marker the instructions ask
+    for. The scripted version checks that the instructions reach the model's system text, for
+    Claude, or its developer instructions, for Codex, and only in their own session.
 - **Bazel targets.** `acceptance_test` makes one target for each (target, backend) pair the
   scenario has:
 
@@ -152,19 +153,8 @@ Decided 2026-10-21 05:38 (operator).
   | k3s                                   | real     | `<scenario>_k3s_real`, after `K3S_MODEL_CREDENTIALS`                      |
   | Deployed                              | scripted | not scheduled                                                             |
 
-- **The scripted upstream** is `agentplane/acceptance/scripted_upstream.py`.
-  - It is one HTTP server for both dialects: `/v1/messages` goes to `ClaudeModel` and
-    `/v1/responses` to `CodexModel`.
-  - It reuses the runner tests' `ScriptedModel`, `ClaudeModel` and `CodexModel`, which first move
-    from `runner/testing/` to `agentplane/testing/` (operator, 2026-10-21 05:42), and
-    `ModelEndpoint`, which gains a bind address.
-  - It keeps one queue per Sandbox Pod and dialect. The Pod is the one LLM ingress names in the
-    `x-litellm-spend-logs-metadata` header it adds.
-  - The k3s plugin starts it on the node IP before rendering the chart, and points LLM ingress's
-    upstream at it in place of LiteLLM. The catalogs stay as they are: whichever model a session
-    opens on, the script answers.
-  - LLM ingress stays in the path, so its workload auth, its catalog and its identity stamping are
-    under test too.
+- **The scripted upstream** is [`scripted_upstream.py`](../acceptance/scripted_upstream.py), in place
+  of LiteLLM behind LLM ingress on the k3s stack ([acceptance README](../acceptance/README.md)).
 - **Targets** stay where #11330 put them: the environment variables in `conftest.py`, the k3s
   plugin in `x/k3s_env/acceptance_target.py`.
 
@@ -175,7 +165,7 @@ Ordered by what unblocks what. Speed work runs alongside and blocks only the CI 
 1. **`ACCEPTANCE_SCRIPTED_MODEL`**: the scripted backend on k3s, laid out as in
    [Test layout](#test-layout). It goes first: the operator is fine with either order, and it needs
    no key (2026-10-21 05:23).
-   - Scripted versions of `test_instructions`, `test_launch_presets`, the Pod case of
+   - Scripted versions of `test_session_instructions`, `test_launch_presets`, the Pod case of
      `test_suspend_resume` and the `test_egress` cases that need no outside credential run on both
      harnesses.
 2. **`K3S_MODEL_CREDENTIALS`** (decision), then **`K3S_MODEL_SCENARIOS`**: the real-model set on

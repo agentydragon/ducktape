@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import secrets
 import string
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from cdk8s import ApiObjectMetadata, Chart, Size, Testing
@@ -62,6 +62,24 @@ EGRESS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset"
 EGRESS_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate:unset"
 
 
+@dataclass(frozen=True)
+class PublicLiteLLM:
+    """LLM ingress forwards to the public LiteLLM with this virtual key."""
+
+    key: str
+
+
+@dataclass(frozen=True)
+class LocalModel:
+    """LLM ingress forwards, keyless, to a process on the node: the test's scripted model."""
+
+    url: str
+
+
+# None leaves LLM ingress at the cluster-internal LiteLLM Service, which does not exist here, so no turn can run.
+Models = PublicLiteLLM | LocalModel | None
+
+
 def _password(length: int = 40) -> str:
     return "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(length))
 
@@ -79,10 +97,15 @@ def _secret(
 
 
 def objects(
-    *, node_ip: str, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, litellm_key: str | None
+    *, node_ip: str, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models
 ) -> list[dict[str, Any]]:
     """Synthesize only the objects the one-node, operator-light k3s fixture deploys."""
     env = replace(testing.ENV, vm_sandboxes=False)
+    if isinstance(models, LocalModel):
+        # The scripted model has no catalog entry, as in the runner tests: Codex then uses the metadata it
+        # falls back to for an unknown slug and calls the function tools the scripted model answers. A
+        # bundled model's entry would switch it to code mode.
+        env = replace(env, llm_ingress=replace(env.llm_ingress, codex_routes=()))
     sandbox_api_env = (
         k8s.EnvVar(name="KUBERNETES_SERVICE_HOST", value=node_ip),
         k8s.EnvVar(name="KUBERNETES_SERVICE_PORT", value="6443"),
@@ -129,11 +152,7 @@ def objects(
         chart,
         "llm-ingress",
         env,
-        litellm_url=(
-            "https://litellm.allegedly.works"
-            if litellm_key is not None
-            else "http://litellm.litellm.svc.cluster.local:4000"
-        ),
+        litellm_url=_litellm_url(models),
         placement=None,
         registry_secret_name=None,
         service_cluster_ip="None",
@@ -150,8 +169,8 @@ def objects(
         runners=runner_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],
         agent_api_service=agent_api,
-        litellm_host="litellm.allegedly.works" if litellm_key is not None else None,
-        litellm_cluster_internal=litellm_key is None,
+        litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
+        litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
         placement=None,
         registry_secret_name=None,
         service_cluster_ip="None",
@@ -333,14 +352,13 @@ def objects(
         metadata=k8s.ObjectMeta(name="agentplane-testing-egress-upstream-ca", namespace=NAMESPACE),
         data={"ca-certificates.crt": system_roots + cluster_ca},
     )
-    _secret(chart, "litellm-key-cheap-experiments", {"api-key": litellm_key or "unused-without-model"})
+    key = models.key if isinstance(models, PublicLiteLLM) else "unused-without-litellm"
+    _secret(chart, "litellm-key-cheap-experiments", {"api-key": key})
     EgressCredentials(
         chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=NAMESPACE
     )
-    if litellm_key is not None:
-        _secret(
-            chart, "litellm-key-cheap-experiments", {"api-key": litellm_key}, namespace=env.egress.credentials_namespace
-        )
+    if isinstance(models, PublicLiteLLM):
+        _secret(chart, "litellm-key-cheap-experiments", {"api-key": key}, namespace=env.egress.credentials_namespace)
     tool_config_grant = sandbox_pod.tool_config_grant(NAMESPACE)
     PolicySet(
         chart,
@@ -362,3 +380,13 @@ def objects(
         chart, "policy-controller-rbac", env, account=controller.account, assignable_grants=[tool_config_grant]
     )
     return list(Testing.synth(chart))
+
+
+def _litellm_url(models: Models) -> str:
+    match models:
+        case PublicLiteLLM():
+            return "https://litellm.allegedly.works"
+        case LocalModel(url=url):
+            return url
+        case None:
+            return "http://litellm.litellm.svc.cluster.local:4000"

@@ -74,16 +74,21 @@ def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
     archive.addfile(entry, io.BytesIO(encoded))
 
 
+def node_ip() -> str:
+    """The address Pods use to reach host-side processes: the apiserver, the cluster DNS, a test's
+    scripted model."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.connect(("192.0.2.1", 9))
+        return str(probe.getsockname()[0])
+
+
 class K3s:
     def __init__(self, work: Path, binary: Path) -> None:
         self.work = work
         self.binary = binary
         self.kubeconfig = work / "kubeconfig"
         self.data_dir = Path("/var/lib/k3s-env")
-        # The address Pods use to reach host-side processes: the apiserver and the cluster DNS.
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-            probe.connect(("192.0.2.1", 9))
-            self.node_ip: str = probe.getsockname()[0]
+        self.node_ip = node_ip()
 
     def kubectl(self, *args: str, check: bool = True, input_text: str | None = None) -> str:
         return run(
@@ -307,9 +312,8 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
 
 
 @contextlib.contextmanager
-def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
-    """The stack with every Deployment Available. `litellm_key` points LLM traffic at the public LiteLLM;
-    None leaves it at the cluster-internal Service, which does not exist here, so no turn can run."""
+def running_stack(*, models: fixture_chart.Models) -> Iterator[Stack]:
+    """The stack with every Deployment Available, LLM ingress forwarding to `models`."""
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     layouts = sorted(get_required_path("_main/agentplane/x/k3s_env").glob("*_layout.rloc"))
     layouts.append(get_required_path(os.environ["K3S_RUNNER_LAYOUT_RLOCATION"]))
@@ -326,7 +330,7 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
             ca_key=ca_key,
             system_roots=Path("/etc/ssl/certs/ca-certificates.crt").read_text(),
             cluster_ca=cluster_ca,
-            litellm_key=litellm_key,
+            models=models,
         )
         k3s.import_images(layouts, required_images=_deployment_images(everything))
         for crd in crds:

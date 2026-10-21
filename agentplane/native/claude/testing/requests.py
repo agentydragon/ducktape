@@ -10,9 +10,13 @@ from agentplane.native.claude.blocks import TextBlock, ThinkingBlock, ToolResult
 
 ContentBlock = Annotated[TextBlock | ThinkingBlock | ToolUseBlock | ToolResultBlock, Field(discriminator="type")]
 
+# Claude Code can send harness context as a system message after the user's: in a k3s acceptance run,
+# the agent types its Agent tool can start.
+Role = Literal["user", "assistant", "system"]
+
 
 class Message(BaseModel):
-    role: Literal["user", "assistant"]
+    role: Role
     content: str | list[ContentBlock]
 
     @property
@@ -45,7 +49,7 @@ class MessagesRequest(BaseModel):
     def system_text(self) -> str:
         return self.system if isinstance(self.system, str) else "\n".join(block.text for block in self.system)
 
-    def texts(self, role: Literal["user", "assistant"]) -> list[str]:
+    def texts(self, role: Role) -> list[str]:
         return [
             block.text
             for message in self.messages
