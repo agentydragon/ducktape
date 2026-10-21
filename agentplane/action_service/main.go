@@ -1,8 +1,8 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
 // `ActionService`'s request reads, watches and cancellation and `OperatorActionService`'s Decisions over gRPC and
 // their HTTP facade under /v1/, the agent documentation, the standard gRPC health service and the process's
-// Prometheus metrics at /metrics, runs the dispatch worker, which runs the sandbox groups' Actions, and keeps its policy
-// index equal to the API server's. The other RPCs answer UNIMPLEMENTED.
+// Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the sandbox groups and of the MCP
+// groups, and keeps its policy index equal to the API server's. The other RPCs answer UNIMPLEMENTED.
 package main
 
 import (
@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"slices"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
+	"github.com/agentydragon/ducktape/agentplane/action_service/mcpexec"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -117,8 +119,7 @@ func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
 // waits for it to come back.
 type executors struct {
 	catalog *catalog.Catalog
-	// byGroup holds the Executor of each group that has one, by key: the sandbox groups'. No MCP Executor is ported
-	// yet.
+	// byGroup holds the Executor of each group, by key.
 	byGroup map[string]worker.Executor
 }
 
@@ -196,6 +197,25 @@ func sandboxExecutors(ctx context.Context, groups *catalog.Catalog, kube *rest.C
 	return byGroup, nil
 }
 
+// mcpExecutors builds the Executor of each MCP group, which withdraws the group's Actions until its server lists them:
+// a server that is down leaves its group unavailable, not the service stopped. linkages read the tokens of the
+// OAuth-backed groups.
+func mcpExecutors(groups *catalog.Catalog, linkages mcpexec.Linkages) (map[string]*mcpexec.Executor, error) {
+	byGroup := map[string]*mcpexec.Executor{}
+	for key, group := range groups.Groups() {
+		binding, isMCP := group.Executor.(catalog.MCPBinding)
+		if !isMCP {
+			continue
+		}
+		executor, err := mcpexec.New(groups, key, binding, linkages, mcpexec.DefaultTiming())
+		if err != nil {
+			return nil, err
+		}
+		byGroup[key] = executor
+	}
+	return byGroup, nil
+}
+
 // gate admits the callers of the service's RPCs.
 func gate(c config, d deps) (*api.Gate, error) {
 	workloads, err := auth.NewResolver(d.Reviews, c.TokenAudience, c.CallerServiceAccountNamespaces)
@@ -225,9 +245,10 @@ func newRoutes(httpFacade http.Handler) (http.Handler, error) {
 	return routes, nil
 }
 
-// serve answers on listener, runs the dispatch worker and keeps the policy index until ctx ends or the listener fails.
-// gRPC and the HTTP routes share the listener. The worker drains from then on, beside the listener's shutdown, and
-// serve returns once it has and the policy watches have stopped.
+// serve answers on listener, runs the dispatch worker, supervises the MCP groups' sessions and keeps the policy index
+// until ctx ends or the listener fails. gRPC and the HTTP routes share the listener. The worker and the MCP groups
+// drain from then on, beside the listener's shutdown, and serve returns once they have and the policy watches have
+// stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	admission, err := gate(c, d)
 	if err != nil {
@@ -254,6 +275,13 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		return err
 	}
 	requests := store.New(db)
+	supervisors, err := mcpExecutors(c.ActionGroups, requests)
+	if err != nil {
+		return err
+	}
+	for key, executor := range supervisors {
+		byGroup[key] = executor
+	}
 	dispatcher, err := worker.New(requests, executors{catalog: c.ActionGroups, byGroup: byGroup}, worker.DefaultTiming())
 	if err != nil {
 		return err
@@ -305,10 +333,33 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	facade.MountGRPC(server, grpcServer)
 
 	working, drain := context.WithCancel(ctx)
+	var supervising sync.WaitGroup
+	for _, executor := range supervisors {
+		supervising.Go(func() { executor.Run(working) })
+	}
+	// The worker reads the pending dispatches again on a dispatch and whenever a group changes, which can make its
+	// Executor ready.
+	wakeups := make(chan struct{}, 1)
+	go func() {
+		changed := c.ActionGroups.Changed()
+		for {
+			select {
+			case <-working.Done():
+				return
+			case <-dispatches:
+			case <-changed:
+				changed = c.ActionGroups.Changed()
+			}
+			select {
+			case wakeups <- struct{}{}:
+			default:
+			}
+		}
+	}()
 	worked := make(chan struct{})
 	go func() {
 		defer close(worked)
-		dispatcher.Run(working, dispatches)
+		dispatcher.Run(working, wakeups)
 	}()
 	failed := make(chan error, 1)
 	go func() { failed <- fmt.Errorf("listener: %w", server.Serve(listener)) }()
@@ -327,6 +378,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		server.Close()
 	}
 	<-worked
+	supervising.Wait()
 	return result
 }
 

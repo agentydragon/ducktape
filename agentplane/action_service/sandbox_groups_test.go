@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"sync/atomic"
 	"testing"
 
@@ -52,14 +53,20 @@ func sandboxNamespace(t *testing.T, kube *kubeapiserver.Server, sidecar bool) st
 	return namespace
 }
 
-// sandboxGroups is a sandbox group over namespace offering directTools, beside an MCP group.
+// sandboxGroups is a sandbox group over namespace offering directTools, beside an MCP group whose server refuses
+// every connection.
 func sandboxGroups(t *testing.T, namespace, directTools string) *catalog.Catalog {
 	t.Helper()
+	refusing, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refusing.Close()
 	return newCatalog(t, `{
 		"test-sandbox": {"title": "t", "description": "d", "direct_tools": `+directTools+`,
 			"executor": {"kind": "pod", "description": "e", "namespace": "`+namespace+`",
 				"templates": {"test-template": "the test box"}}},
-		"test-mcp": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
-			"actions": {"test-action": {"description": "d"}}}
+		"test-mcp": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e",
+			"config": {"transport": "streamable-http", "url": "http://`+refusing.Addr().String()+`/mcp", "auth": "none"}}}
 	}`)
 }

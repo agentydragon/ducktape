@@ -6,6 +6,7 @@ go_library(
     name = "catalog",
     srcs = ["catalog.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/catalog",
+    deps = ["//agentplane/action_service:action_service_go_proto"],
 )
 
 go_test(

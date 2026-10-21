@@ -72,3 +72,33 @@ func TestRefusalsDoNotEchoValues(t *testing.T) {
 		})
 	}
 }
+
+func TestAnUpdateReplacesTheGroupAndWakesTheReadersWaitingForIt(t *testing.T) {
+	c, err := parse(`{"test-group": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e"},
+		"actions": {"test-action": {"description": "d"}}}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := c.Changed()
+	held, _, err := c.Resolve("test-group", "test-action")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Update("test-group", func(group *Group) { group.Available = false })
+	select {
+	case <-changed:
+	default:
+		t.Error("the Update woke no reader")
+	}
+	if !held.Available {
+		t.Error("the group a reader held changed under it")
+	}
+	if _, _, err := c.Resolve("test-group", "test-action"); !errors.Is(err, ErrUnavailable) {
+		t.Errorf("Resolve after the Update = %v, want %v", err, ErrUnavailable)
+	}
+	select {
+	case <-c.Changed():
+		t.Error("a reader waiting from now on is woken before the next Update")
+	default:
+	}
+}

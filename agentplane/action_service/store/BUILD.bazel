@@ -8,6 +8,7 @@ go_library(
         "cancel.go",
         "decisions.go",
         "executions.go",
+        "mcp_linkage.go",
         "models.go",
         "requests.go",
         "store.go",

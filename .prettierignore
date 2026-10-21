@@ -43,6 +43,8 @@ agentplane/notification_service/store/golden.json
 agentplane/action_service/store/golden.json
 # The Python Action Service generates these golden vectors; test_catalog_golden checks exact output.
 agentplane/action_service/catalog/golden.json
+# The Python Action Service generates these golden vectors; test_mcp_executor_golden checks exact output.
+agentplane/action_service/mcpexec/golden.json
 # The Python Action Service generates these golden vectors as its generator writes them; regenerating leaves no diff.
 agentplane/action_service/policies/golden.json
 

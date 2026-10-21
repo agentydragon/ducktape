@@ -8,8 +8,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -199,10 +202,11 @@ func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {
 	}
 }
 
-// run submits action as caller, allows it, and returns the request once its Execution has ended.
-func (r running) run(t *testing.T, caller store.ServiceAccount, action store.ActionIdentity, arguments string) store.ActionRequest {
+var testOperator = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
+
+// allow submits action as caller and allows it.
+func (r running) allow(t *testing.T, caller store.ServiceAccount, action store.ActionIdentity, arguments string) uuid.UUID {
 	t.Helper()
-	operator := store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 	pending, err := r.store.Submit(t.Context(), store.CallerPrincipal{Account: caller}, store.ActionRequestInput{
 		IdempotencyKey: "test-dispatched", Action: action, Arguments: json.RawMessage(arguments), Title: "test title",
 	}, store.Admission{RequestID: uuid.New()})
@@ -211,12 +215,24 @@ func (r running) run(t *testing.T, caller store.ServiceAccount, action store.Act
 	}
 	if _, _, err := r.store.Decide(t.Context(), pending.ID, store.DecisionInput{
 		Verdict: store.VerdictAllow, ExpectedVersion: pending.Version, IdempotencyKey: "test-allow",
-	}, operator); err != nil {
+	}, testOperator); err != nil {
 		t.Fatal(err)
 	}
+	return pending.ID
+}
+
+// run submits action as caller, allows it, and returns the request once its Execution has ended.
+func (r running) run(t *testing.T, caller store.ServiceAccount, action store.ActionIdentity, arguments string) store.ActionRequest {
+	t.Helper()
+	return r.ended(t, r.allow(t, caller, action, arguments))
+}
+
+// ended returns the request once its Execution has ended.
+func (r running) ended(t *testing.T, id uuid.UUID) store.ActionRequest {
+	t.Helper()
 	deadline := time.After(callDeadline)
 	for {
-		request, err := r.store.Get(t.Context(), pending.ID, operator)
+		request, err := r.store.Get(t.Context(), id, testOperator)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -258,6 +274,75 @@ func TestTheServiceRunsASandboxGroupsActions(t *testing.T) {
 	pods, err := kube.Clientset.CoreV1().Pods(namespace).List(t.Context(), metav1.ListOptions{})
 	if err != nil || len(pods.Items) != 1 || pods.Items[0].Spec.ServiceAccountName != caller.Name {
 		t.Errorf("the namespace holds %v, %v; want one box running as the caller", pods, err)
+	}
+}
+
+// awaitMCPHealth waits until the health of the MCP group key satisfies condition.
+func awaitMCPHealth(t *testing.T, groups *catalog.Catalog, key string, condition func(*action_servicepb.McpHealth) bool) {
+	t.Helper()
+	deadline := time.After(callDeadline)
+	for {
+		changed := groups.Changed()
+		for k, g := range groups.Groups() {
+			if k == key && condition(g.Health) {
+				return
+			}
+		}
+		select {
+		case <-changed:
+		case <-deadline:
+			t.Fatal("the MCP group never reached the health awaited")
+		}
+	}
+}
+
+// An MCP group whose server is down leaves the service serving, and an allowed request of the group waiting for it:
+// once the server is back the group offers its tools, and the request runs.
+func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
+	server := mcp.NewServer(&mcp.Implementation{Name: "test-upstream", Version: "v0.0.1"}, nil)
+	server.AddTool(&mcp.Tool{Name: "test_echo", InputSchema: json.RawMessage(`{"type": "object"}`)},
+		func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "test text"}}}, nil
+		})
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	var down atomic.Bool
+	down.Store(true)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if down.Load() {
+			http.Error(w, "the test upstream is down", http.StatusServiceUnavailable)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(upstream.Close)
+	groups := newCatalog(t, `{"test-mcp": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e",
+		"config": {"transport": "streamable-http", "url": "`+upstream.URL+`/mcp", "auth": "none"}}}}`)
+	service := start(t, kube.Config, groups)
+	err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
+		got, err := checkHealth(t, service.health, "")
+		return got == healthpb.HealthCheckResponse_SERVING, err
+	})
+	if err != nil {
+		t.Fatalf("the service never turned ready: %v", err)
+	}
+
+	id := service.allow(t, store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
+		store.ActionIdentity{Group: "test-mcp", Name: "test_echo"}, `{}`)
+	var failures int32
+	awaitMCPHealth(t, groups, "test-mcp", func(h *action_servicepb.McpHealth) bool {
+		failures = h.GetFailures()
+		return failures > 0
+	})
+	// Another attempt fails after the dispatch was committed: the request still waits.
+	awaitMCPHealth(t, groups, "test-mcp", func(h *action_servicepb.McpHealth) bool { return h.GetFailures() > failures })
+	if request, err := service.store.Get(t.Context(), id, testOperator); err != nil || request.State != store.StateAllowed {
+		t.Fatalf("while the server is down the request is %s, %v", request.State, err)
+	}
+
+	down.Store(false)
+	request := service.ended(t, id)
+	if request.State != store.StateSucceeded {
+		t.Fatalf("the request is %s with execution error %s", request.State, request.Execution.Error)
 	}
 }
 

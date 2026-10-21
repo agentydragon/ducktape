@@ -132,8 +132,7 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 | D     | Workload auth, catalog, decision providers and policy kinds with the GitHub visibility lookup, `ActionService`, the receipt stream, `docs/agents/`, `/openapi.json`.                                                          |
 | E     | Operator JWT as `ActionService`'s second principal with its wider reads, the set watches, the decision RPC.                                                                                                                   |
 | F     | Connections and enrollments: a package owning its tables, which the core store never imports; `ConnectionService`.                                                                                                            |
-| G     | Executors: MCP supervisor and Sandbox exec; executor liveness.                                                                                                                                                                |
-| H     | Outbound linkage, its callback and the CIMD document; MCP-server RPCs.                                                                                                                                                        |
+| H     | Outbound linkage, its callback and the CIMD document; MCP-server RPCs; refreshing linked tokens, and waking an MCP group's supervisor when its linkage changes.                                                               |
 | I     | Web Push: package `push` behind one interface to the lifecycle; `WebPushService`.                                                                                                                                             |
 | J     | `/mcp` on `go-sdk` and the resource-server `TokenVerifier`, calling the core only through the `ActionService` interface.                                                                                                      |
 | K     | Authorization server: spike, then authorize, consent redirect, token, refresh, revoke, metadata.                                                                                                                              |
@@ -143,8 +142,9 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 | O     | Python retirement: delete the Python service, tests, Alembic directory, migration image, `agentplane_oauth_kv` (a migration), the `fastmcp` pin and CI roster entries.                                                        |
 
 Stage O also deletes the Python-parity golden generators and tests (`generate_golden.py`, `generate_mcp_golden.py`,
-`generate_catalog_golden.py`, `policies/generate_golden.py` and their `test_*golden.py`) and the Go golden tests' lists of
-deliberate differences; a `golden.json` stays only where its Go test still earns it without the Python reference.
+`generate_mcp_executor_golden.py`, `generate_catalog_golden.py`, `policies/generate_golden.py` and their
+`test_*golden.py`) and the Go golden tests' lists of deliberate differences; a `golden.json` stays only where its Go
+test still earns it without the Python reference.
 
 ## Cutover
 

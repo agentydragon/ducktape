@@ -1354,6 +1354,12 @@ py_binary(
     deps = [":generate_mcp_golden"],
 )
 
+py_binary(
+    name = "generate_mcp_executor_golden_bin",
+    main_module = "agentplane.action_service.generate_mcp_executor_golden",
+    deps = [":generate_mcp_executor_golden"],
+)
+
 py_test(
     name = "test_mcp_golden",
     srcs = ["test_mcp_golden.py"],
@@ -1469,6 +1475,7 @@ go_library(
         "//agentplane/action_service/api",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/informer",
+        "//agentplane/action_service/mcpexec",
         "//agentplane/action_service/policies",
         "//agentplane/action_service/sandbox",
         "//agentplane/action_service/store",
@@ -1558,6 +1565,7 @@ go_test(
         "//agentplane/workload_auth/go/auth",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
+        "@com_github_modelcontextprotocol_go_sdk//mcp",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -1592,5 +1600,34 @@ py_library(
         "@pypi//mcp",
         "@pypi//mcp_types",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "generate_mcp_executor_golden",
+    srcs = ["generate_mcp_executor_golden.py"],
+    deps = [
+        ":catalog",
+        ":generate_golden",
+        ":mcp_executor",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_mcp_executor_golden",
+    srcs = ["test_mcp_executor_golden.py"],
+    # Pure synchronous test; no conftest fixture is needed.
+    args = ["--noconftest"],
+    data = ["//agentplane/action_service/mcpexec:golden.json"],
+    deps = [
+        ":conftest",
+        ":generate_golden",
+        ":generate_mcp_executor_golden",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -80,6 +80,9 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.4
 )
 
+// Direct dependencies for agentplane/action_service/mcpexec (bearer tokens sent to MCP servers)
+require golang.org/x/oauth2 v0.36.0
+
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
@@ -249,7 +252,6 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect

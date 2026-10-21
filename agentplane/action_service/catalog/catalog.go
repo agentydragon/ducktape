@@ -13,7 +13,10 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"unicode/utf8"
+
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 )
 
 // keyPattern is what a group or Action key matches: a stable lowercase identifier.
@@ -84,23 +87,65 @@ type Group struct {
 	// DirectTools are the Actions a Connection also sees as MCP tools of its own, named
 	// `<group>__<action>`; nil when the group offers none.
 	DirectTools map[string]struct{}
+	// Health is this replica's view of an MCP group's connection, as its executor reports it; nil for a group without
+	// one.
+	Health *action_servicepb.McpHealth
 }
 
 // Catalog is the groups this process was started with, by key. The zero Catalog holds none.
+//
+// While the catalog serves, a group changes only through Update, which replaces it: a group read from the catalog
+// never changes under its reader.
 type Catalog struct {
+	// mu guards which group each key holds, and changed.
+	mu     sync.RWMutex
 	groups map[string]*Group
+	// changed is closed by the next Update; nil in the zero Catalog, which never changes.
+	changed chan struct{}
 }
 
-// Groups are the catalog's groups in key order. A group whose executor declares its Actions rather than reading them
-// from settings has them set here, before the catalog serves.
+// Groups are the catalog's groups in key order, as they stood when the iteration began.
 func (c *Catalog) Groups() iter.Seq2[string, *Group] {
 	return func(yield func(string, *Group) bool) {
-		for _, key := range slices.Sorted(maps.Keys(c.groups)) {
-			if !yield(key, c.groups[key]) {
+		c.mu.RLock()
+		keys := slices.Sorted(maps.Keys(c.groups))
+		groups := make([]*Group, len(keys))
+		for i, key := range keys {
+			groups[i] = c.groups[key]
+		}
+		c.mu.RUnlock()
+		for i, key := range keys {
+			if !yield(key, groups[i]) {
 				return
 			}
 		}
 	}
+}
+
+// Changed is closed by the next Update. A reader takes it before it reads the groups, so that a change made while it
+// reads still wakes it.
+func (c *Catalog) Changed() <-chan struct{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.changed
+}
+
+// Update changes the group under key while the catalog serves, as the group's executor learns its backend's Actions
+// and health, and wakes the readers waiting on Changed. change gets a copy of the group, must not read the catalog,
+// and replaces the Actions or health it changes rather than modifying them, as a reader may still hold the group as
+// it was. A key the catalog does not hold panics: an executor serves one of the catalog's groups.
+func (c *Catalog) Update(key string, change func(*Group)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	current, held := c.groups[key]
+	if !held {
+		panic(fmt.Sprintf("catalog: no ActionGroup %q to update", key))
+	}
+	next := *current
+	change(&next)
+	c.groups[key] = &next
+	close(c.changed)
+	c.changed = make(chan struct{})
 }
 
 var (
@@ -113,7 +158,9 @@ var (
 // Resolve returns the Action and its group. An unavailable group's Actions are ErrUnavailable whether or not it
 // lists them, as it lists none while it is unavailable.
 func (c *Catalog) Resolve(group, action string) (*Group, ActionDefinition, error) {
+	c.mu.RLock()
 	g, known := c.groups[group]
+	c.mu.RUnlock()
 	if known && !g.Available {
 		return nil, ActionDefinition{}, ErrUnavailable
 	}
@@ -183,9 +230,9 @@ type annotationSettings struct {
 //
 // Its errors name keys and fields, never a value: an MCP server's configuration can hold a credential.
 func New(settings Settings) (*Catalog, error) {
-	c := &Catalog{groups: make(map[string]*Group, len(settings))}
+	c := &Catalog{groups: make(map[string]*Group, len(settings)), changed: make(chan struct{})}
 	for _, key := range slices.Sorted(maps.Keys(settings)) {
-		if !isKey(key) {
+		if !IsKey(key) {
 			return nil, fmt.Errorf("group key %q is not a lowercase identifier of at most %d characters", key, maxKeyLength)
 		}
 		group, err := newGroup(key, settings[key])
@@ -226,7 +273,7 @@ func newGroup(key string, s groupSettings) (*Group, error) {
 		Actions:     make(map[string]ActionDefinition, len(s.Actions)),
 	}
 	for _, name := range slices.Sorted(maps.Keys(s.Actions)) {
-		if !isKey(name) {
+		if !IsKey(name) {
 			return nil, fmt.Errorf("Action key %q is not a lowercase identifier of at most %d characters", name, maxKeyLength)
 		}
 		if g.Actions[name], err = newAction(s.Actions[name]); err != nil {
@@ -245,7 +292,7 @@ func newGroup(key string, s groupSettings) (*Group, error) {
 	}
 	g.DirectTools = make(map[string]struct{}, len(s.DirectTools))
 	for _, tool := range s.DirectTools {
-		if !isKey(tool) {
+		if !IsKey(tool) {
 			return nil, errors.New("direct_tools must be a list of Action keys")
 		}
 		g.DirectTools[tool] = struct{}{}
@@ -349,6 +396,7 @@ func checkLength(name, value string, minimum, maximum int) error {
 	return nil
 }
 
-func isKey(s string) bool {
+// IsKey is whether s is a group or Action key: a lowercase identifier of at most 200 characters.
+func IsKey(s string) bool {
 	return utf8.RuneCountInString(s) <= maxKeyLength && keyPattern.MatchString(s)
 }
