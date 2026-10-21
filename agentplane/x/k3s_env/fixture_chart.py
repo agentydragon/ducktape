@@ -429,7 +429,7 @@ def objects(
         metadata=ApiObjectMetadata(name=runtime_grant.POLICY_SET, namespace=NAMESPACE),
         rules=[
             Rule.egress(
-                hosts=[notifications.service(NAMESPACE).fqdn],
+                hosts=[egress.agent_api(NAMESPACE).fqdn],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/test-runtime-grant"],

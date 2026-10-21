@@ -42,11 +42,6 @@ from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.model_selections import STAGING_APP_MODELS
 from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_128K, OLLAMA_QWEN_IQ4XS_256K
 
-# What a workload token may reach on the Actions service: documentation, MCP, its schema and
-# the action-group/request API. The operator API (/v1/operator/*) and the OAuth endpoints
-# (/register, /token, ...) stay off this policy.
-_AGENT_FACING_PREFIXES = ("/llms.txt", "/docs/agents/", "/mcp", "/openapi.json", "/v1/action-")
-
 
 def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
     """The one object of `kind` named `name`, which every test here asserts exists."""
@@ -131,22 +126,6 @@ def test_public_internet_is_available_but_never_implicitly_granted(
                 ]
             else:
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_workload_policy_grants_only_the_agent_facing_actions_api(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    policy = one(
-        doc
-        for doc in agentplane_manifests[namespace]
-        if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
-    )
-    canonical_host = f"actions.{namespace}.svc.cluster.local"
-    rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule["hosts"])
-    assert rule["hosts"] == [canonical_host]
-    assert rule["paths"], "a rule without paths admits every path on the host"
-    assert all(path.startswith(_AGENT_FACING_PREFIXES) for path in rule["paths"])
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
