@@ -2,9 +2,11 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -27,65 +30,141 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/watch"
-	kubernetesfake "k8s.io/client-go/kubernetes/fake"
-	ktesting "k8s.io/client-go/testing"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
-	testNamespace  = "testing"
-	testSandbox    = "sandbox-a"
-	testSandboxUID = "sandbox-uid-a"
-	testPod        = "runner-pod-a"
-	testPodUID     = "runner-pod-uid-a"
+	testAudience = "test-gateway"
+	testSandbox  = "test-sandbox-a"
+	testPod      = "test-runner-pod-a"
 )
 
-type gatewayTestTokenReviews struct{}
+var (
+	// api is the API server the binary's tests share; each test's Sandbox is in a namespace of its own.
+	api        *kubeapiserver.Server
+	namespaces atomic.Int32
 
-func newSandboxClient(t *testing.T, sandbox *sandboxapi.Sandbox) client.Client {
-	t.Helper()
-	scheme := runtime.NewScheme()
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	return clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox).Build()
+	appAccount        = auth.Account{Namespace: "test-apps", Name: "test-app"}
+	controllerAccount = auth.Account{Namespace: "test-system", Name: "test-sandbox-controller"}
+)
+
+func useAPIServer(server *kubeapiserver.Server) error {
+	api = server
+	return nil
 }
 
-func (gatewayTestTokenReviews) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	accounts := map[string]auth.Account{
-		"runner-token":     {Namespace: testNamespace, Name: testSandbox},
-		"app-token":        {Namespace: "apps", Name: "app"},
-		"controller-token": {Namespace: "system", Name: "sandbox-controller"},
+// sandboxFixture is a Running Sandbox whose runner Pod is Ready, in a namespace of the test's own, with
+// tokens for that runner and for the Gateway's callers, and resolvers that review them.
+type sandboxFixture struct {
+	namespace                              string
+	sandbox                                *sandboxapi.Sandbox
+	pod                                    *corev1.Pod
+	objects                                client.Client
+	runnerToken, appToken, controllerToken string
+	callerAuth, runnerAuth                 *auth.Resolver
+}
+
+func newSandboxFixture(t *testing.T) *sandboxFixture {
+	t.Helper()
+	ctx := t.Context()
+	f := &sandboxFixture{namespace: fmt.Sprintf("test-sandboxes-%d", namespaces.Add(1))}
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sandboxapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
 	}
-	account, ok := accounts[request.Spec.Token]
-	if !ok {
-		return &authenticationv1.TokenReview{}, nil
+	var err error
+	if f.objects, err = client.New(api.Config, client.Options{Scheme: scheme}); err != nil {
+		t.Fatal(err)
 	}
-	extra := map[string]authenticationv1.ExtraValue{}
-	if request.Spec.Token == "runner-token" {
-		extra["authentication.kubernetes.io/pod-name"] = authenticationv1.ExtraValue{testPod}
-		extra["authentication.kubernetes.io/pod-uid"] = authenticationv1.ExtraValue{testPodUID}
-	} else {
-		extra["authentication.kubernetes.io/pod-name"] = authenticationv1.ExtraValue{"caller-pod"}
-		extra["authentication.kubernetes.io/pod-uid"] = authenticationv1.ExtraValue{"caller-pod-uid"}
+	if _, err := api.ServiceAccount(ctx, auth.Account{Namespace: f.namespace, Name: testSandbox}); err != nil {
+		t.Fatal(err)
 	}
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true,
-		Audiences:     []string{"agentplane-test"},
-		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:" + account.Namespace + ":" + account.Name,
-			UID:      "service-account-uid",
-			Extra:    extra,
+	f.sandbox = &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Name: testSandbox, Namespace: f.namespace},
+		Spec:       sandboxapi.SandboxSpec{Template: "test-template"},
+	}
+	if err := f.objects.Create(ctx, f.sandbox); err != nil {
+		t.Fatal(err)
+	}
+	controller := true
+	pods := api.Clientset.CoreV1().Pods(f.namespace)
+	f.pod, err = pods.Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testPod, Namespace: f.namespace,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: testSandbox,
+				UID: f.sandbox.UID, Controller: &controller,
+			}},
 		},
-	}}, nil
+		Spec: corev1.PodSpec{
+			ServiceAccountName: testSandbox,
+			Containers:         []corev1.Container{{Name: "runner", Image: "registry.test/unused"}},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.pod.Status = corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{
+		Type: corev1.PodReady, Status: corev1.ConditionTrue,
+	}}}
+	if f.pod, err = pods.UpdateStatus(ctx, f.pod, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	f.sandbox.Status = sandboxapi.SandboxStatus{
+		OperatingMode: sandboxapi.OperatingModeRunning,
+		Incarnation:   &sandboxapi.Incarnation{Name: f.pod.Name, UID: string(f.pod.UID)},
+		Conditions: []metav1.Condition{{
+			Type: sandboxapi.ConditionRunning, Status: metav1.ConditionTrue, Reason: "Ready", LastTransitionTime: metav1.Now(),
+		}},
+	}
+	if err := f.objects.Status().Update(ctx, f.sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if f.runnerToken, err = api.PodToken(ctx, f.pod, testAudience); err != nil {
+		t.Fatal(err)
+	}
+	if f.appToken, err = api.WorkloadToken(ctx, appAccount, testAudience); err != nil {
+		t.Fatal(err)
+	}
+	if f.controllerToken, err = api.WorkloadToken(ctx, controllerAccount, testAudience); err != nil {
+		t.Fatal(err)
+	}
+	if f.callerAuth, err = auth.NewResolver(api.TokenReviews(), testAudience, []string{appAccount.Namespace, controllerAccount.Namespace}); err != nil {
+		t.Fatal(err)
+	}
+	if f.runnerAuth, err = auth.NewResolver(api.TokenReviews(), testAudience, []string{f.namespace}); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+// newGateway is a Gateway replica serving the fixture's namespace that names itself holderName at
+// holderIP in the control routes it writes.
+func (f *sandboxFixture) newGateway(t *testing.T, holderName, holderIP string) *Gateway {
+	t.Helper()
+	gateway, err := New(Config{
+		Namespace:                f.namespace,
+		CallerAccounts:           []auth.Account{appAccount},
+		SandboxControllerAccount: &controllerAccount,
+		HolderName:               holderName, HolderIP: holderIP, ProxyPort: sandboxapi.ControlServicePort,
+		ControlTiming: ControlTiming{
+			HeartbeatInterval:  time.Second,
+			LivenessTimeout:    10 * time.Second,
+			LeaseTouchInterval: 5 * time.Second,
+			MaximumAge:         time.Minute,
+		},
+	}, f.callerAuth, f.runnerAuth, f.objects, api.Clientset.CoreV1(), api.Clientset.CoordinationV1(), api.Clientset.DiscoveryV1())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return gateway
 }
 
 type serviceFrameReader interface {
@@ -93,79 +172,27 @@ type serviceFrameReader interface {
 }
 
 func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
-	reviews := gatewayTestTokenReviews{}
-	callerAuth, err := auth.NewResolver(reviews, "agentplane-test", []string{"apps", "system"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	runnerAuth, err := auth.NewResolver(reviews, "agentplane-test", []string{testNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sandbox := &sandboxapi.Sandbox{
-		ObjectMeta: metav1.ObjectMeta{Name: testSandbox, Namespace: testNamespace, UID: testSandboxUID},
-		Status: sandboxapi.SandboxStatus{
-			OperatingMode: sandboxapi.OperatingModeRunning,
-			Incarnation:   &sandboxapi.Incarnation{Name: testPod, UID: testPodUID},
-			Conditions:    []metav1.Condition{{Type: sandboxapi.ConditionRunning, Status: metav1.ConditionTrue, Reason: "Ready"}},
-		},
-	}
-	controller := true
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: testPod, Namespace: testNamespace, UID: testPodUID,
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: testSandbox,
-				UID: testSandboxUID, Controller: &controller,
-			}},
-		},
-		Spec: corev1.PodSpec{ServiceAccountName: testSandbox},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{
-			Type: corev1.PodReady, Status: corev1.ConditionTrue,
-		}}},
-	}
-	objects := newSandboxClient(t, sandbox)
-	kube := kubernetesfake.NewSimpleClientset(pod)
-	controllerAccount := auth.Account{Namespace: "system", Name: "sandbox-controller"}
-	gateway, err := New(Config{
-		Namespace:                testNamespace,
-		CallerAccounts:           []auth.Account{{Namespace: "apps", Name: "app"}},
-		SandboxControllerAccount: &controllerAccount,
-		HolderName:               "runner-gateway-0", HolderIP: "127.0.0.1", ProxyPort: sandboxapi.ControlServicePort,
-		ControlTiming: ControlTiming{
-			HeartbeatInterval:  time.Second,
-			LivenessTimeout:    10 * time.Second,
-			LeaseTouchInterval: 5 * time.Second,
-			MaximumAge:         time.Minute,
-		},
-	}, callerAuth, runnerAuth, objects, kube.CoreV1(), kube.CoordinationV1(), kube.DiscoveryV1())
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := newSandboxFixture(t)
+	sandboxUID, podUID := string(f.sandbox.UID), string(f.pod.UID)
+	// Each replica is reached on a listener of its own; its holder address is only what the control
+	// route it writes names.
+	gateway := f.newGateway(t, "test-runner-gateway-0", "192.0.2.10")
 	view, err := gateway.sandboxes.get(context.Background(), testSandbox)
 	if err != nil {
 		t.Fatalf("test Sandbox fixture is not readable: %v", err)
 	}
-	runnerPod, err := kube.CoreV1().Pods(testNamespace).Get(context.Background(), testPod, metav1.GetOptions{})
+	runnerPrincipal, err := f.runnerAuth.Resolve(metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+f.runnerToken)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.identity.Name != testSandbox || view.identity.UID != testSandboxUID || len(runnerPod.OwnerReferences) != 1 || runnerPod.OwnerReferences[0].APIVersion != sandboxapi.GroupVersion.String() || runnerPod.OwnerReferences[0].Kind != sandboxapi.SandboxKind || runnerPod.OwnerReferences[0].UID != testSandboxUID {
-		t.Fatalf("test runner ownership fixture is malformed: sandbox=%#v owner=%#v", view.identity, runnerPod.OwnerReferences)
-	}
-	runnerPrincipal, err := runnerAuth.Resolve(metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer runner-token")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if runnerPrincipal.Account != (auth.Account{Namespace: testNamespace, Name: testSandbox}) || runnerPrincipal.PodName != testPod || runnerPrincipal.PodUID != testPodUID {
+	if runnerPrincipal.Account != (auth.Account{Namespace: f.namespace, Name: testSandbox}) || runnerPrincipal.PodName != testPod || runnerPrincipal.PodUID != podUID {
 		t.Fatalf("TokenReview returned the wrong runner principal: %#v", runnerPrincipal)
 	}
 	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), runnerPrincipal); err != nil {
 		t.Fatalf("runner peer resolution rejected the test Sandbox Pod: %v", err)
 	}
 	wrongRunner := runnerPrincipal
-	wrongRunner.Account.Name = "other-sandbox"
+	wrongRunner.Account.Name = "test-other-sandbox"
 	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), wrongRunner); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("a runner token for another ServiceAccount was accepted: %v", err)
 	}
@@ -174,17 +201,23 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), missingRunnerPodUID); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("a runner principal without its Pod UID was accepted: %v", err)
 	}
-	wrongOwnerPod := runnerPod.DeepCopy()
-	wrongOwnerPod.OwnerReferences[0].UID = types.UID("replacement-sandbox-uid")
-	if _, err := kube.CoreV1().Pods(testNamespace).Update(context.Background(), wrongOwnerPod, metav1.UpdateOptions{}); err != nil {
-		t.Fatalf("update runner Pod owner for denial case: %v", err)
+	setOwnerUID := func(uid types.UID) {
+		t.Helper()
+		pods := api.Clientset.CoreV1().Pods(f.namespace)
+		pod, err := pods.Get(context.Background(), testPod, metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pod.OwnerReferences[0].UID = uid
+		if _, err := pods.Update(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
+			t.Fatalf("set the runner Pod's owner UID: %v", err)
+		}
 	}
+	setOwnerUID("test-replacement-sandbox-uid")
 	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), runnerPrincipal); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("a runner Pod owned by another Sandbox incarnation was accepted: %v", err)
 	}
-	if _, err := kube.CoreV1().Pods(testNamespace).Update(context.Background(), runnerPod, metav1.UpdateOptions{}); err != nil {
-		t.Fatalf("restore runner Pod owner after denial case: %v", err)
-	}
+	setOwnerUID(f.sandbox.UID)
 
 	listener := newBufconnListener()
 	server := grpc.NewServer()
@@ -202,7 +235,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = connection.Close() })
 
-	streamContext, stopStream := context.WithCancel(metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer runner-token")))
+	streamContext, stopStream := context.WithCancel(metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+f.runnerToken)))
 	t.Cleanup(stopStream)
 	runnerStream, err := runnercontrolpb.NewRunnerControlClient(connection).Connect(streamContext)
 	if err != nil {
@@ -217,22 +250,22 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if welcomeFrame.GetWelcome() == nil || welcomeFrame.GetWelcome().GetConnectionEpoch() != 1 || welcomeFrame.GetWelcome().GetIncarnationUid() != testPodUID {
+	if welcomeFrame.GetWelcome() == nil || welcomeFrame.GetWelcome().GetConnectionEpoch() != 1 || welcomeFrame.GetWelcome().GetIncarnationUid() != podUID {
 		t.Fatalf("unexpected Welcome frame: %v", welcomeFrame)
 	}
 
-	lease, err := kube.CoordinationV1().Leases(testNamespace).Get(context.Background(), testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
+	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(context.Background(), testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease.Annotations[sandboxlease.PodUIDAnnotation] != testPodUID || lease.Annotations[sandboxlease.RunnerBootIDAnnotation] != "runner-boot-a" {
+	if lease.Annotations[sandboxlease.PodUIDAnnotation] != podUID || lease.Annotations[sandboxlease.RunnerBootIDAnnotation] != "runner-boot-a" {
 		t.Fatalf("Lease does not identify the authenticated runner: %#v", lease.Annotations)
 	}
-	endpoints, err := kube.DiscoveryV1().EndpointSlices(testNamespace).Get(context.Background(), testSandbox+sandboxapi.ControlServiceSuffix, metav1.GetOptions{})
+	endpoints, err := api.Clientset.DiscoveryV1().EndpointSlices(f.namespace).Get(context.Background(), testSandbox+sandboxapi.ControlServiceSuffix, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(endpoints.Endpoints) != 1 || endpoints.Endpoints[0].Addresses[0] != "127.0.0.1" {
+	if len(endpoints.Endpoints) != 1 || endpoints.Endpoints[0].Addresses[0] != "192.0.2.10" {
 		t.Fatalf("control route does not point at the connection holder: %#v", endpoints.Endpoints)
 	}
 
@@ -240,7 +273,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	request := &runnerservicepb.OpenSessionRequest{SessionId: "session-a"}
 	callDone := make(chan error, 1)
 	go func() {
-		ctx, cancel := context.WithTimeout(callerContext("app-token"), 5*time.Second)
+		ctx, cancel := context.WithTimeout(f.callerContext(f.appToken), 5*time.Second)
 		defer cancel()
 		response, callErr := client.OpenSession(ctx, request)
 		if callErr == nil && response.GetAttached().GetSessionId() != "session-a" {
@@ -280,7 +313,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	// runner tunnel. It carries the full destination fence and returns the
 	// runner's admission rather than a proxy receipt.
 	tokenFile := filepath.Join(t.TempDir(), "gateway-token")
-	if err := os.WriteFile(tokenFile, []byte("app-token"), 0o600); err != nil {
+	if err := os.WriteFile(tokenFile, []byte(f.appToken), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	proxyListener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -293,7 +326,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	t.Cleanup(proxyServer.Stop)
 	t.Cleanup(func() { _ = proxyListener.Close() })
 	deliveryRunner := &dispatcher.ProxyRunner{
-		Namespace: testNamespace, TokenFile: tokenFile, Timeout: 5 * time.Second,
+		Namespace: f.namespace, TokenFile: tokenFile, Timeout: 5 * time.Second,
 		TargetTemplate: proxyListener.Addr().String(),
 	}
 	deliveryDone := make(chan struct {
@@ -302,7 +335,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	}, 1)
 	go func() {
 		entry, callErr := deliveryRunner.Deliver(context.Background(), dispatcher.SandboxSnapshot{
-			Name: testSandbox, Namespace: testNamespace, UID: testSandboxUID,
+			Name: testSandbox, Namespace: f.namespace, UID: sandboxUID,
 		}, "session-a", &commandpb.Command{CommandId: "command-a", Operation: &commandpb.Command_SubmitInput{
 			SubmitInput: &commandpb.SubmitInput{Text: "hello"},
 		}})
@@ -339,7 +372,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	var trailers metadata.MD
 	statusDone := make(chan error, 1)
 	go func() {
-		ctx, cancel := context.WithTimeout(callerContext("app-token"), 5*time.Second)
+		ctx, cancel := context.WithTimeout(f.callerContext(f.appToken), 5*time.Second)
 		defer cancel()
 		_, callErr := client.GetStatus(ctx, &runnerpb.GetStatusRequest{}, grpc.Trailer(&trailers))
 		statusDone <- callErr
@@ -364,10 +397,10 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	}
 
 	wrongIncarnation := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
-		"authorization", "Bearer app-token",
+		"authorization", "Bearer "+f.appToken,
 		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
-		sandboxapi.RunnerProxySandboxUIDMetadataKey, "sandbox-uid-old",
-		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, testNamespace,
+		sandboxapi.RunnerProxySandboxUIDMetadataKey, "test-sandbox-uid-old",
+		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, f.namespace,
 		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,
 	))
 	_, err = client.ListSessions(wrongIncarnation, &runnerpb.ListSessionsRequest{})
@@ -376,11 +409,11 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	}
 
 	wrongOwner := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
-		"authorization", "Bearer app-token",
+		"authorization", "Bearer "+f.appToken,
 		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
-		sandboxapi.RunnerProxySandboxUIDMetadataKey, testSandboxUID,
-		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, testNamespace,
-		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, "another-sandbox",
+		sandboxapi.RunnerProxySandboxUIDMetadataKey, sandboxUID,
+		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, f.namespace,
+		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, "test-another-sandbox",
 	))
 	_, err = client.ListSessions(wrongOwner, &runnerpb.ListSessionsRequest{})
 	if status.Code(err) != codes.NotFound {
@@ -388,9 +421,9 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	}
 
 	incompleteIdentity := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
-		"authorization", "Bearer app-token",
+		"authorization", "Bearer "+f.appToken,
 		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
-		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, testNamespace,
+		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, f.namespace,
 		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,
 	))
 	_, err = client.ListSessions(incompleteIdentity, &runnerpb.ListSessionsRequest{})
@@ -398,21 +431,21 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		t.Fatalf("a proxy request without the Sandbox UID should be rejected: %v", err)
 	}
 
-	_, err = client.Quiesce(callerContext("app-token"), &runnerpb.QuiesceRequest{})
+	_, err = client.Quiesce(f.callerContext(f.appToken), &runnerpb.QuiesceRequest{})
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("ordinary caller must not Quiesce the runner: %v", err)
 	}
 
 	controllerTokenFile := filepath.Join(t.TempDir(), "controller-token")
-	if err := os.WriteFile(controllerTokenFile, []byte("controller-token\n"), 0o600); err != nil {
+	if err := os.WriteFile(controllerTokenFile, []byte(f.controllerToken+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	quiescer := sandboxcontroller.GatewayQuiescer{Target: proxyListener.Addr().String(), TokenFile: controllerTokenFile}
 	destination := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
-		Name: testSandbox, Namespace: testNamespace, UID: types.UID(testSandboxUID),
+		Name: testSandbox, Namespace: f.namespace, UID: f.sandbox.UID,
 	}}
 	staleDestination := destination.DeepCopy()
-	staleDestination.UID = types.UID("replaced-sandbox-uid")
+	staleDestination.UID = "test-replaced-sandbox-uid"
 	staleCtx, cancelStale := context.WithTimeout(context.Background(), 5*time.Second)
 	_, staleErr := quiescer.Quiesce(staleCtx, staleDestination, nil)
 	cancelStale()
@@ -489,7 +522,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		}
 		break
 	}
-	lease, err = kube.CoordinationV1().Leases(testNamespace).Get(context.Background(), testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
+	lease, err = api.Clientset.CoordinationV1().Leases(f.namespace).Get(context.Background(), testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,68 +533,13 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	// A replacement runner stream can land on another Gateway replica. Both replicas
 	// observe the same Lease; the original must stop serving proxy calls as soon as
 	// the newer epoch appears, while the control Service moves to the new holder.
-	// The fake tracker does not implement the API server's sendInitialEvents bookmark,
-	// which client-go's informer requires before its initial cache can sync. Bridge
-	// tracker events into a watch with the initial Lease and bookmark.
-	kube.PrependWatchReactor("leases", func(action ktesting.Action) (bool, watch.Interface, error) {
-		source, err := kube.Tracker().Watch(action.GetResource(), action.GetNamespace())
-		if err != nil {
-			return true, nil, err
-		}
-		events := make(chan watch.Event, 16)
-		proxy := watch.NewProxyWatcher(events)
-		go func() {
-			defer source.Stop()
-			defer close(events)
-			send := func(event watch.Event) bool {
-				select {
-				case events <- event:
-					return true
-				case <-proxy.StopChan():
-					return false
-				}
-			}
-			initial, getErr := kube.Tracker().Get(action.GetResource(), action.GetNamespace(), testSandbox+sandboxlease.RunnerLeaseSuffix)
-			if getErr == nil && !send(watch.Event{Type: watch.Added, Object: initial}) {
-				return
-			}
-			if !send(watch.Event{Type: watch.Bookmark, Object: &coordinationv1.Lease{
-				ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"k8s.io/initial-events-end": "true"}},
-			}}) {
-				return
-			}
-			for {
-				select {
-				case event, ok := <-source.ResultChan():
-					if !ok || !send(event) {
-						return
-					}
-				case <-proxy.StopChan():
-					return
-				}
-			}
-		}()
-		return true, proxy, nil
-	})
 	watchContext, stopWatching := context.WithCancel(context.Background())
 	t.Cleanup(stopWatching)
-	if err := gateway.WatchConnectionLeases(watchContext, kube); err != nil {
+	if err := gateway.WatchConnectionLeases(watchContext, api.Clientset); err != nil {
 		t.Fatal(err)
 	}
-	other, err := New(Config{
-		Namespace:                testNamespace,
-		CallerAccounts:           []auth.Account{{Namespace: "apps", Name: "app"}},
-		SandboxControllerAccount: &controllerAccount,
-		HolderName:               "runner-gateway-1", HolderIP: "127.0.0.2", ProxyPort: sandboxapi.ControlServicePort,
-		ControlTiming: ControlTiming{
-			HeartbeatInterval: time.Second, LivenessTimeout: 10 * time.Second,
-			LeaseTouchInterval: 5 * time.Second, MaximumAge: time.Minute,
-		},
-	}, callerAuth, runnerAuth, objects, kube.CoreV1(), kube.CoordinationV1(), kube.DiscoveryV1())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := other.WatchConnectionLeases(watchContext, kube); err != nil {
+	other := f.newGateway(t, "test-runner-gateway-1", "192.0.2.11")
+	if err := other.WatchConnectionLeases(watchContext, api.Clientset); err != nil {
 		t.Fatal(err)
 	}
 	otherListener := newBufconnListener()
@@ -598,7 +576,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	deadline := time.After(5 * time.Second)
 	for {
 		gateway.connections.mu.RLock()
-		observed := gateway.connections.leaseEpochs[testSandboxUID]
+		observed := gateway.connections.leaseEpochs[sandboxUID]
 		gateway.connections.mu.RUnlock()
 		if observed >= 2 {
 			break
@@ -609,25 +587,25 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
-	_, err = client.ListSessions(callerContext("app-token"), &runnerpb.ListSessionsRequest{})
+	_, err = client.ListSessions(f.callerContext(f.appToken), &runnerpb.ListSessionsRequest{})
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("superseded Gateway still proxied to old runner: %v", err)
 	}
 	if err := gateway.records.pointControlEndpoints(context.Background(), view.identity, 1); err != nil {
 		t.Fatal(err)
 	}
-	endpoints, err = kube.DiscoveryV1().EndpointSlices(testNamespace).Get(context.Background(), testSandbox+sandboxapi.ControlServiceSuffix, metav1.GetOptions{})
+	endpoints, err = api.Clientset.DiscoveryV1().EndpointSlices(f.namespace).Get(context.Background(), testSandbox+sandboxapi.ControlServiceSuffix, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(endpoints.Endpoints) != 1 || endpoints.Endpoints[0].Addresses[0] != "127.0.0.2" ||
+	if len(endpoints.Endpoints) != 1 || endpoints.Endpoints[0].Addresses[0] != "192.0.2.11" ||
 		endpoints.Annotations[sandboxlease.ConnectionEpochAnnotation] != "2" {
 		t.Fatalf("old epoch overwrote successor control route: %#v", endpoints)
 	}
 	otherClient := runnerservicepb.NewRunnerClient(otherConnection)
 	otherCall := make(chan error, 1)
 	go func() {
-		ctx, cancel := context.WithTimeout(callerContext("app-token"), 5*time.Second)
+		ctx, cancel := context.WithTimeout(f.callerContext(f.appToken), 5*time.Second)
 		defer cancel()
 		_, callErr := otherClient.ListSessions(ctx, &runnerpb.ListSessionsRequest{})
 		otherCall <- callErr
@@ -647,12 +625,13 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	}
 }
 
-func callerContext(token string) context.Context {
+// callerContext is a call bearing token to the fixture's Sandbox.
+func (f *sandboxFixture) callerContext(token string) context.Context {
 	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
 		"authorization", "Bearer "+token,
 		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
-		sandboxapi.RunnerProxySandboxUIDMetadataKey, testSandboxUID,
-		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, testNamespace,
+		sandboxapi.RunnerProxySandboxUIDMetadataKey, string(f.sandbox.UID),
+		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, f.namespace,
 		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,
 	))
 }

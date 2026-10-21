@@ -15,6 +15,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -22,28 +23,35 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	authenticationv1 "k8s.io/api/authentication/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/util/workqueue"
 )
 
 const sandboxUID = "00000000-0000-4000-8000-000000000001"
 
-type reviewedCaller struct{}
+const testAudience = "test-dispatcher"
 
-func (reviewedCaller) Create(context.Context, *authenticationv1.TokenReview, metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true, Audiences: []string{"dispatcher-audience"},
-		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:agentplane:app", UID: "sa-uid",
-			Extra: map[string]authenticationv1.ExtraValue{
-				"authentication.kubernetes.io/pod-name": {"app-0"},
-				"authentication.kubernetes.io/pod-uid":  {"pod-uid"},
-			},
-		},
-	}}, nil
+var (
+	api    *kubeapiserver.Server
+	caller = auth.Account{Namespace: "test-callers", Name: "test-app"}
+	// callerToken proves caller to the Service's resolver.
+	callerToken string
+)
+
+func useAPIServer(server *kubeapiserver.Server) (err error) {
+	api = server
+	callerToken, err = server.WorkloadToken(context.Background(), caller, testAudience)
+	return err
+}
+
+func callerResolver(t *testing.T) *auth.Resolver {
+	t.Helper()
+	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{caller.Namespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolver
 }
 
 type oneSandbox struct{}
@@ -389,16 +397,12 @@ func TestTerminalPayloadRoundTripForWatchers(t *testing.T) {
 
 func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
 	store := testStore(t, 3)
-	resolver, err := auth.NewResolver(reviewedCaller{}, "dispatcher-audience", []string{"agentplane"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	account := auth.Account{Namespace: "agentplane", Name: "app"}
+	resolver := callerResolver(t)
 	service := &Service{
-		Store: store, Auth: resolver, Callers: map[auth.Account]struct{}{account: {}},
-		WakeCallers: map[auth.Account]struct{}{account: {}}, Sandboxes: oneSandbox{},
+		Store: store, Auth: resolver, Callers: map[auth.Account]struct{}{caller: {}},
+		WakeCallers: map[auth.Account]struct{}{caller: {}}, Sandboxes: oneSandbox{},
 	}
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer caller-token"))
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
 	request := &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Sandbox: "sandbox-api", Text: "hello"}
 	first, err := service.SubmitInput(ctx, request)
 	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
@@ -432,25 +436,21 @@ func (w *collectedWatch) Send(frame *dispatcherpb.WatchDispatchesResponse) error
 }
 
 func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer caller-token"))
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
 	store := testStore(t, 5)
 	for _, id := range []string{"watch-a", "watch-b", "watch-c"} {
 		if _, err := store.Enqueue(ctx, "watch-session", "sandbox-api", sandboxUID, input(id, "x"), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	resolver, err := auth.NewResolver(reviewedCaller{}, "dispatcher-audience", []string{"agentplane"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	account := auth.Account{Namespace: "agentplane", Name: "app"}
+	resolver := callerResolver(t)
 	service := &Service{
-		Store: store, Auth: resolver, Callers: map[auth.Account]struct{}{account: {}},
+		Store: store, Auth: resolver, Callers: map[auth.Account]struct{}{caller: {}},
 		Hub:        &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
 		WatchLease: 100 * time.Millisecond,
 	}
 	watch := &collectedWatch{ctx: ctx}
-	err = service.WatchDispatches(&dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
+	err := service.WatchDispatches(&dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
 		Scope:      &dispatcherpb.DispatchFilter_SessionId{SessionId: "watch-session"},
 		CommandIds: []string{"watch-a", "watch-c", "watch-absent"},
 	}}, watch)
@@ -472,18 +472,14 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 }
 
 func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
-	resolver, err := auth.NewResolver(reviewedCaller{}, "dispatcher-audience", []string{"agentplane"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	account := auth.Account{Namespace: "agentplane", Name: "app"}
-	callers := map[auth.Account]struct{}{account: {}}
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer caller-token"))
+	resolver := callerResolver(t)
+	callers := map[auth.Account]struct{}{caller: {}}
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
 
 	blocked := &Service{
 		Auth: resolver, Callers: callers, WakeCallers: callers, Sandboxes: blockedSandbox{},
 	}
-	_, err = blocked.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
+	_, err := blocked.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
 		CommandId: "interrupt-empty-turn", SessionId: "api-session", Sandbox: "sandbox-api",
 	})
 	if status.Code(err) != codes.InvalidArgument {

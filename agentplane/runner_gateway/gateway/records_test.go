@@ -16,6 +16,12 @@ import (
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
 )
 
+const (
+	testNamespace  = "test-sandboxes"
+	testSandboxUID = "test-sandbox-uid-a"
+	testPodUID     = "test-runner-pod-uid-a"
+)
+
 func TestConnectionRecordsRejectForeignObjects(t *testing.T) {
 	sandbox := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
 	owner := sandboxOwnerReference(sandbox)

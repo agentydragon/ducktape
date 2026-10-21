@@ -16,20 +16,12 @@ import (
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	kubernetesfake "k8s.io/client-go/kubernetes/fake"
 )
-
-const queueSandboxUID = "00000000-0000-4000-8000-000000000121"
 
 type queueCatalog struct{ sandbox dispatcher.SandboxSnapshot }
 
@@ -78,55 +70,14 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 	command := &commandpb.Command{CommandId: "queue-tunnel-command", Operation: &commandpb.Command_SubmitInput{
 		SubmitInput: &commandpb.SubmitInput{Text: "persisted input"},
 	}}
-	queued, err := store.Enqueue(ctx, "session-queue", testSandbox, queueSandboxUID, command, nil)
+	f := newSandboxFixture(t)
+	sandboxUID := string(f.sandbox.UID)
+	queued, err := store.Enqueue(ctx, "session-queue", testSandbox, sandboxUID, command, nil)
 	if err != nil || queued.State != dispatcher.QueueState {
 		t.Fatalf("queue receipt: %+v %v", queued, err)
 	}
 
-	reviews := gatewayTestTokenReviews{}
-	callerAuth, err := auth.NewResolver(reviews, "agentplane-test", []string{"apps", "system"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	runnerAuth, err := auth.NewResolver(reviews, "agentplane-test", []string{testNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sandbox := &sandboxapi.Sandbox{
-		ObjectMeta: metav1.ObjectMeta{Name: testSandbox, Namespace: testNamespace, UID: queueSandboxUID},
-		Status: sandboxapi.SandboxStatus{
-			OperatingMode: sandboxapi.OperatingModeRunning,
-			Incarnation:   &sandboxapi.Incarnation{Name: testPod, UID: testPodUID},
-			Conditions:    []metav1.Condition{{Type: sandboxapi.ConditionRunning, Status: metav1.ConditionTrue, Reason: "Ready"}},
-		},
-	}
-	controller := true
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: testPod, Namespace: testNamespace, UID: types.UID(testPodUID),
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind,
-				Name: testSandbox, UID: types.UID(queueSandboxUID), Controller: &controller,
-			}},
-		},
-		Spec: corev1.PodSpec{ServiceAccountName: testSandbox},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{
-			Type: corev1.PodReady, Status: corev1.ConditionTrue,
-		}}},
-	}
-	objects := newSandboxClient(t, sandbox)
-	kube := kubernetesfake.NewSimpleClientset(pod)
-	gateway, err := New(Config{
-		Namespace: testNamespace, CallerAccounts: []auth.Account{{Namespace: "apps", Name: "app"}},
-		HolderName: "runner-gateway-0", HolderIP: "127.0.0.1", ProxyPort: sandboxapi.ControlServicePort,
-		ControlTiming: ControlTiming{
-			HeartbeatInterval: time.Second, LivenessTimeout: 10 * time.Second,
-			LeaseTouchInterval: 5 * time.Second, MaximumAge: time.Minute,
-		},
-	}, callerAuth, runnerAuth, objects, kube.CoreV1(), kube.CoordinationV1(), kube.DiscoveryV1())
-	if err != nil {
-		t.Fatal(err)
-	}
+	gateway := f.newGateway(t, "test-runner-gateway-0", "192.0.2.10")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +93,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer connection.Close()
-	streamCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer runner-token"))
+	streamCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+f.runnerToken))
 	stream, err := runnercontrolpb.NewRunnerControlClient(connection).Connect(streamCtx)
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +108,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 	}
 
 	tokenFile := filepath.Join(t.TempDir(), "caller-token")
-	if err := os.WriteFile(tokenFile, []byte("app-token"), 0o600); err != nil {
+	if err := os.WriteFile(tokenFile, []byte(f.appToken), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	hub := dispatcher.NewWatchHub(integrationDatabase.URL)
@@ -171,10 +122,10 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 	}
 	worker := &dispatcher.DeliveryWorker{
 		Store: store, Catalog: queueCatalog{dispatcher.SandboxSnapshot{
-			Name: testSandbox, Namespace: testNamespace, UID: queueSandboxUID, Incarnation: testPodUID,
+			Name: testSandbox, Namespace: f.namespace, UID: sandboxUID, Incarnation: string(f.pod.UID),
 		}}, Wake: queueWake{}, Leases: queueLease{store: store},
 		Runner: &dispatcher.ProxyRunner{
-			Namespace: testNamespace, TokenFile: tokenFile, Timeout: 5 * time.Second,
+			Namespace: f.namespace, TokenFile: tokenFile, Timeout: 5 * time.Second,
 			TargetTemplate: listener.Addr().String(),
 		},
 		Hub: hub, Ready: make(chan struct{}),
