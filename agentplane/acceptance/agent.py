@@ -17,7 +17,7 @@ import time
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from http import HTTPStatus
-from typing import TypeVar
+from typing import Any, TypeVar
 from uuid import UUID, uuid4
 
 import httpx
@@ -27,6 +27,7 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_f
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import event_pb2, runner_pb2
+from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 
 # A turn on the cheap model with a few tool calls. A harness that stops making progress should fail
 # its scenario rather than hold the suite until Bazel's clock runs out.
@@ -152,12 +153,28 @@ class Agent:
         after = self._cursor
         command_id = f"input-{uuid4().hex[:8]}"
         await self._client.submit_input(self._thread_id, command_id, prompt)
+        return await self._collect(after=after, awaiting_command_id=command_id)
+
+    async def run_shell(self, model: ScriptedModel[Any], command: str) -> Turn:
+        """A turn in which the scripted `model` runs `command` in the Sandbox's shell, then answers."""
+        async with asyncio.TaskGroup() as turns:
+            turn = turns.create_task(self.run(f"Run: {command}"))
+            await model.reply(await model.request(), ShellCall(call_id=f"call-{uuid4().hex[:8]}", command=command))
+            await model.reply(await model.request(), Text("Done."))
+        return turn.result()
+
+    async def next_turn(self) -> Turn:
+        """Collect the next turn after the last one collected, whatever started it: an inbox notice
+        the platform delivered, for one. `accepted` is when collecting began."""
+        return await self._collect(after=self._cursor, awaiting_command_id=None)
+
+    async def _collect(self, *, after: int, awaiting_command_id: str | None) -> Turn:
         turn = Turn(accepted=time.monotonic())
         async with (
             asyncio.timeout(TURN_SECONDS),
             aclosing(
                 self._client.events(
-                    self._thread_id, after=after, read_seconds=TURN_SECONDS, awaiting_command_id=command_id
+                    self._thread_id, after=after, read_seconds=TURN_SECONDS, awaiting_command_id=awaiting_command_id
                 )
             ) as entries,
         ):

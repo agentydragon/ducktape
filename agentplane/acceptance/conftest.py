@@ -14,10 +14,10 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import aclosing
 from enum import StrEnum
-from typing import cast
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
@@ -62,7 +62,7 @@ POD_TEMPLATE = "runner"
 SANDBOX_READY_SECONDS = 300.0
 
 # What the `sandbox` fixture yields: create a sandbox by name and wait until it runs.
-Sandboxes = Callable[..., Awaitable[SandboxView]]
+Sandboxes = Callable[..., Coroutine[Any, Any, SandboxView]]
 
 
 class TokenNotMintedError(Exception):
@@ -222,11 +222,19 @@ async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
         policies: list[str] | None = None,
         preset: str | None = None,
         bootstrap: str = "",
+        inbox_tags: Sequence[str] = (),
     ) -> SandboxView:
         if template is None:
             template = POD_TEMPLATE
         view = await client.create_sandbox(
-            NewSandbox(name=name, template=template, preset=preset, policy_sets=policies or [], bootstrap=bootstrap)
+            NewSandbox(
+                name=name,
+                template=template,
+                preset=preset,
+                policy_sets=policies or [],
+                inbox_tags=list(inbox_tags),
+                bootstrap=bootstrap,
+            )
         )
         created.append((view.name, view.uid))
         return await wait_until_running(client, view.name)

@@ -125,6 +125,15 @@ It does not delete an existing Sandbox. This completed-turn scenario does not co
 command checkpoint or interrupted setup; deterministic coverage for those boundaries lives in
 `//agentplane/runner:test_restart` and `//agentplane/runner:test_seal`.
 
+## Agent messaging
+
+`test_agent_messaging_k3s` has one agent message another, each in its own Sandbox, on each harness. The
+sender holds the fixture's [`send_grant`](send_grant.py) PolicySet, a `session_inbox_access` rule to an
+inbox tag the recipient carries, and runs `agentplane notifications send`; the recipient reads and
+acknowledges its inbox when the platform's notice starts its turn. It asserts the entry's authenticated
+sender and the sender's view of its message: covered while the recipient holds the notice, acknowledged
+after. Most of its run is the Notification Service's notice debounce.
+
 ## Dispatcher queue and replica acceptance
 
 These probes target the Runner Gateway. The Dispatcher

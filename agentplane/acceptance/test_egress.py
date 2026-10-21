@@ -28,8 +28,6 @@ import os
 import subprocess
 import textwrap
 from datetime import UTC, datetime
-from typing import Any
-from uuid import uuid4
 
 import pytest
 import pytest_bazel
@@ -37,7 +35,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.acceptance import runtime_grant
-from agentplane.acceptance.agent import Agent, Turn
+from agentplane.acceptance.agent import Agent
 from agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
 from agentplane.acceptance.scripted_upstream import ScriptedUpstream
 from agentplane.app.sandbox_models import SandboxView
@@ -46,7 +44,7 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision, Outcome
 from agentplane.proto import runner_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
-from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
+from agentplane.testing.scripted_model import Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -115,14 +113,6 @@ class Probe(BaseModel):
     refs_ok: bool = Field(description="Whether the public repository's refs came back.")
     username: str | None = Field(description="The login GitHub reported for the substituted credential.")
     unlisted_refused: bool = Field(description="Whether the host no policy names was refused.")
-
-
-async def _scripted_shell_turn(agent: Agent, model: ScriptedModel[Any], command: str) -> Turn:
-    async with asyncio.TaskGroup() as turns:
-        turn = turns.create_task(agent.run(f"Run: {command}"))
-        await model.reply(await model.request(), ShellCall(call_id=f"call-{uuid4().hex[:8]}", command=command))
-        await model.reply(await model.request(), Text("Done."))
-    return turn.result()
 
 
 async def _decision_for(client: Client, sandbox: str, host: str, *, after: datetime | None = None) -> Decision:
@@ -250,7 +240,7 @@ async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered_model)
     command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}{path}"
 
-    await _scripted_shell_turn(agent, model, command)
+    await agent.run_shell(model, command)
     refused = await _decision_for(client, view.name, host)
     assert refused.outcome is Outcome.DENY, f"an unbound sandbox was admitted: {refused!r}"
 
@@ -261,7 +251,7 @@ async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
     async for attempt in AsyncRetrying(stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True):
         with attempt:
             after = datetime.now(UTC)
-            turn = await _scripted_shell_turn(agent, model, command)
+            turn = await agent.run_shell(model, command)
             admitted = await _decision_for(client, view.name, host, after=after)
             assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}\n{turn.transcript}"
             assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"

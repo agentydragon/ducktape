@@ -33,7 +33,6 @@ flowchart LR
         ACTION_MCP_EDGE_SPLIT[Blocked: split mcp-edge out after the flip]
     end
     subgraph MESSAGING_TRACK[Agent messaging]
-        AGENT_MESSAGING[Capstone: end-to-end agent messaging]
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
     end
     subgraph K3S_TRACK[k3s acceptance, retiring agentplane-testing]
@@ -126,9 +125,8 @@ point.** The service (`agentplane/notification_service/`) has grown to several r
   history so no second notice goes out before the Session has started executing tools or reasoning
   since the last notice or acknowledgement.
 
-Decide which stay, which move to other services, and what the remaining service is called. The inbox
-messaging nodes of section 3 (`AGENT_MESSAGING` and the nodes after it) record the service name as
-open and keep v1 in one deployment; this node is the later restructuring, not a prerequisite for them.
+Decide which stay, which move to other services, and what the remaining service is called. Inbox
+messaging v1 shipped in one deployment under the current name; this node is the later restructuring.
 Related: whether notice delivery belongs with the Dispatcher
 ([freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership)),
 and the history-free notice outcome (`NOTIFICATION_COMMAND_OUTCOME_DESIGN`), which bears on the notice
@@ -309,7 +307,6 @@ flowchart TD
     HISTORY_SANDBOX_UID[Blocked: History records and checks the Sandbox UID]
     APP_THREAD_SANDBOX_UID[Blocked: the app stores each Thread's Sandbox UID]
     HISTORY_SESSION_REKEY[Blocked: key History by Sandbox UID and Session ID]
-    AGENT_MESSAGING[Capstone: end-to-end agent messaging]
     THREAD_CREATE_POLICY[Decision: opening a session in an existing Sandbox]
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
@@ -324,7 +321,6 @@ flowchart TD
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
     HISTORY_SANDBOX_UID --> APP_THREAD_SANDBOX_UID
     APP_THREAD_SANDBOX_UID --> HISTORY_SESSION_REKEY
-    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities, section 2] -. related .-> AGENT_MESSAGING
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
@@ -460,19 +456,6 @@ fixed predicates filter on it; each RPC that names a Session takes the Sandbox U
 announces the pair; the app and Notifications pass the UID they hold. The ingress looks the pusher's
 Sandbox UID up as part of the key. Electric shape handles reset, so verify a browser reconnects. Rows of
 deleted Sandboxes follow the review's answer.
-
-### `AGENT_MESSAGING` — integrated messaging capstone
-
-**Candidate.** Demonstrate an authorized pair exchanging a message through
-the selected API, with correct provenance and distinct receipt/ack states. Security-negative and
-multi-replica retry cases belong in automated tests; no real provider outage requirement.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-V1 keeps explicit suspend/resume and wake-setting edits as operator controls, preserving existing
-trusted backend automation. Agent lifecycle delegation is
-[deferred](task_freezer.md#sandbox_lifecycle_authorization_design--delegated-lifecycle-controls),
-not a messaging prerequisite; see the [agreed scope](multiagent_communication.md#batching-and-wake-behavior).
 
 ### `THREAD_CREATE_POLICY` — authorize session creation separately
 

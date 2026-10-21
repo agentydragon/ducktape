@@ -40,7 +40,7 @@ from constructs import Construct
 from cryptography.fernet import Fernet
 from more_itertools import one
 
-from agentplane.acceptance import launch_preset, mcp_servers, runtime_grant
+from agentplane.acceptance import launch_preset, mcp_servers, runtime_grant, send_grant
 from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.settings import Settings
@@ -435,6 +435,12 @@ def objects(
                 paths=["/test-runtime-grant"],
             )
         ],
+    )
+    PolicySet(
+        chart,
+        f"policy-set-{send_grant.POLICY_SET}",
+        metadata=ApiObjectMetadata(name=send_grant.POLICY_SET, namespace=NAMESPACE),
+        rules=[Rule.send_message(inbox_tags=[send_grant.INBOX_TAG])],
     )
     controller = policy_controller.PolicyController(
         chart, "policy-controller", env, placement=None, registry_secret_name=None, memory_limit=None
