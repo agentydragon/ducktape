@@ -52,9 +52,7 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DatabaseURL == "" || c.Host != "0.0.0.0" || c.Port != 8080 || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() ||
-		c.PolicyResyncSeconds != 300 ||
-		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "https://api.github.com", CacheTTLSeconds: 86400}) {
+	if c.DatabaseURL == "" || c.Host != "0.0.0.0" || c.Port != 8080 || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() {
 		t.Errorf("settings: %+v", c)
 	}
 }
@@ -144,16 +142,11 @@ func TestThePolicySettingsAreRead(t *testing.T) {
 	c, err := loadTestConfig(t, `token_audience: test-actions
 policy_namespace: test-policies
 caller_service_account_namespaces: [test-callers, test-more-callers]
-policy_resync_seconds: 60
-github_visibility:
-  api_base_url: http://github.test.invalid/api
-`, settingPrefix+"GITHUB_VISIBILITY__CACHE_TTL_SECONDS=0.5")
+`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.PolicyNamespace != "test-policies" || !slices.Equal(c.CallerServiceAccountNamespaces, []string{"test-callers", "test-more-callers"}) ||
-		c.PolicyResyncSeconds != 60 ||
-		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "http://github.test.invalid/api", CacheTTLSeconds: 0.5}) {
+	if c.PolicyNamespace != "test-policies" || !slices.Equal(c.CallerServiceAccountNamespaces, []string{"test-callers", "test-more-callers"}) {
 		t.Errorf("settings: %+v", c)
 	}
 }
@@ -235,17 +228,14 @@ mcp_servers:
 
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
-		"unknown key":             requiredFile + "test_unknown_setting: never-print-this\n",
-		"port of a word":          requiredFile + "port: never-print-this\n",
-		"port out of range":       requiredFile + "port: 70000\n",
-		"empty host":              requiredFile + "host: \"\"\n",
-		"no audience":             strings.Replace(requiredFile, "token_audience: test-actions\n", "", 1),
-		"no caller namespaces":    strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
-		"no policy namespace":     strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
-		"policy resync too short": requiredFile + "policy_resync_seconds: 1\n",
-		"negative visibility TTL": requiredFile + "github_visibility: {cache_ttl_seconds: -1}\n",
-		"unknown visibility key":  requiredFile + "github_visibility: {token: never-print-this}\n",
-		"reader of a word":        requiredFile + "reader_accounts: [never-print-this]\n",
+		"unknown key":          requiredFile + "test_unknown_setting: never-print-this\n",
+		"port of a word":       requiredFile + "port: never-print-this\n",
+		"port out of range":    requiredFile + "port: 70000\n",
+		"empty host":           requiredFile + "host: \"\"\n",
+		"no audience":          strings.Replace(requiredFile, "token_audience: test-actions\n", "", 1),
+		"no caller namespaces": strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
+		"no policy namespace":  strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
+		"reader of a word":     requiredFile + "reader_accounts: [never-print-this]\n",
 		"operator issuer without its audience": requiredFile + `operator_oidc:
   issuer: https://never-print-this.test.example/
   jwks_uri: https://issuer.test.example/jwks/

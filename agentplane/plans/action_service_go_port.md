@@ -35,7 +35,7 @@ writing ([below](#stored-data-the-port-must-read-and-write-exactly)).
 | `mcp_executor.py`, `mcp_linkage.py`                                        |   1446 | supervisor on the go-sdk client; linkage on `oauthex` and `golang.org/x/oauth2` |
 | `sandbox/`                                                                 |    988 | inventory and template logic; exec on client-go `remotecommand`                 |
 | `push.py`, `push_settings.py`                                              |    318 | `push` package on `SherClockHolmes/webpush-go`; sends outside any transaction   |
-| `settings.py`, `main.py`, `runtime.py`                                     |    344 | `config.go` (Viper, file plus environment, no flags, same keys), `main.go`      |
+| `settings.py`, `main.py`, `runtime.py`                                     |    344 | `config.go` (Viper, file plus environment, no flags, fewer keys), `main.go`     |
 | Python tests (including `sandbox/` and `policies/` tests)                  | ~11600 | Go tests on real PostgreSQL in the stage that ports their subject               |
 
 ## What the Go service uses
@@ -115,7 +115,8 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 Stage O also deletes the Python-parity golden generators and tests (`generate_golden.py`, `generate_mcp_golden.py`,
 `generate_mcp_executor_golden.py`, `generate_catalog_golden.py`, `policies/generate_golden.py` and their
 `test_*golden.py`) and the Go golden tests' lists of deliberate differences; a `golden.json` stays only where its Go
-test still earns it without the Python reference.
+test still earns it without the Python reference. Its migration drops `action_execution.heartbeat_at`, which only
+Python writes and nothing reads.
 
 ## Cutover
 

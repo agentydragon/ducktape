@@ -99,16 +99,11 @@ func (s *Store) ClaimExecution(ctx context.Context, id uuid.UUID, executorID str
 			return nil
 		}
 		at := now()
-		started := &ExecutionClaim{
-			RequestID: id,
-			Lease:     Lease{ExecutorID: executorID, Token: uuid.New()},
-			ExpiresAt: at.Add(leaseDuration).Truncate(time.Microsecond),
-		}
+		started := &ExecutionClaim{RequestID: id, Lease: Lease{ExecutorID: executorID, Token: uuid.New()}}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE action_execution
-			SET state = $2, executor_id = $3, lease_token = $4, lease_expires_at = $5, heartbeat_at = $6
+			UPDATE action_execution SET state = $2, executor_id = $3, lease_token = $4, lease_expires_at = $5
 			WHERE request_id = $1`,
-			id, ExecutionDispatching, executorID, started.Token, started.ExpiresAt, at); err != nil {
+			id, ExecutionDispatching, executorID, started.Token, at.Add(leaseDuration).Truncate(time.Microsecond)); err != nil {
 			return err
 		}
 		if err := advance(ctx, tx, &row, StateDispatching, at, nil); err != nil {
@@ -135,10 +130,8 @@ func (s *Store) HeartbeatExecution(ctx context.Context, id uuid.UUID, lease Leas
 		if !execution.ownedBy(lease) || execution.State != ExecutionDispatching && execution.State != ExecutionRunning {
 			return nil
 		}
-		at := now()
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE action_execution SET lease_expires_at = $2, heartbeat_at = $3 WHERE request_id = $1`,
-			id, at.Add(leaseDuration).Truncate(time.Microsecond), at); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE action_execution SET lease_expires_at = $2 WHERE request_id = $1`,
+			id, now().Add(leaseDuration).Truncate(time.Microsecond)); err != nil {
 			return err
 		}
 		renewed = true
@@ -175,7 +168,7 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 		if err := advance(ctx, tx, &row, StateRunning, at, nil); err != nil {
 			return err
 		}
-		payload = ExecutionRequest{RequestID: row.ID, Action: row.Action, Arguments: row.Arguments, Caller: row.Caller}
+		payload = ExecutionRequest{Action: row.Action, Arguments: row.Arguments, Caller: row.Caller}
 		return nil
 	})
 	return payload, err

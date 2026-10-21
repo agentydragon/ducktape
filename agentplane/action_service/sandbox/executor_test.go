@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,7 +27,7 @@ func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, argu
 		t.Fatal(err)
 	}
 	outcome, err := executor.attempt(t.Context(), store.ExecutionRequest{
-		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: action},
+		Action:    store.ActionIdentity{Group: "sandbox", Name: action},
 		Arguments: json.RawMessage(arguments), Caller: caller,
 	})
 	return attempted{t, outcome, err}
@@ -108,7 +107,7 @@ func TestACallerFromAnotherNamespaceIsRefused(t *testing.T) {
 	}
 	// The refusal comes before any lease is held, so it needs none.
 	outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
-		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: actionCreate},
+		Action:    store.ActionIdentity{Group: "sandbox", Name: actionCreate},
 		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: elsewhere,
 	}, nil)
 	if kind := (attempted{t, outcome, err}).failure(); kind != "caller_not_local" {
