@@ -10,6 +10,7 @@ import {
   isEligibleCaller,
   listConnections,
   rebindConnection,
+  renameConnection,
   serviceAccountKey,
   type CallerServiceAccount,
   type CallerGrantReader,
@@ -19,6 +20,7 @@ import {
 } from "../client";
 
 import { CallerGrants } from "../caller_grants";
+import { InlineName } from "../inline_name";
 
 type Grant = Connection["grants"][number];
 
@@ -65,6 +67,41 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
     void refresh();
   }, [refresh]);
 
+  function replaceRow(updated: Connection): void {
+    setRows((current) => current?.map((row) => (row.id === updated.id ? updated : row)) ?? null);
+  }
+
+  /** After a 409, the Connection having changed since it was read: load its latest state and say so
+   * with `advice`. The change is never retried. */
+  async function reloadAfterConflict(advice: string): Promise<void> {
+    try {
+      await load();
+      setError(`Connection changed elsewhere. ${advice} Nothing was retried.`);
+    } catch (refreshFailure) {
+      setError(
+        `Connection changed elsewhere. Refresh failed: ${displayableError(refreshFailure)}. Nothing was retried.`
+      );
+    }
+  }
+
+  async function rename(row: Connection, name: string | null): Promise<void> {
+    // A Connection always has a name: a blank one leaves the stored name standing.
+    if (name === null) return;
+    setBusy(true);
+    try {
+      replaceRow(await renameConnection(row, name));
+      setError(null);
+    } catch (failure) {
+      if (failure instanceof HttpError && failure.status === 409) {
+        await reloadAfterConflict("Latest state loaded; review it before renaming again.");
+      } else {
+        setError(displayableError(failure));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function confirmRebind(): Promise<void> {
     if (rebinding === null) return;
     const target = accounts.find((account) => serviceAccountKey(account) === rebinding.target);
@@ -74,21 +111,13 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
     }
     setBusy(true);
     try {
-      const updated = await rebindConnection(rebinding.row, target);
-      setRows((current) => current?.map((row) => (row.id === updated.id ? updated : row)) ?? null);
+      replaceRow(await rebindConnection(rebinding.row, target));
       setRebinding(null);
       setError(null);
     } catch (failure) {
       if (failure instanceof HttpError && failure.status === 409) {
         setRebinding(null);
-        try {
-          await load();
-          setError("Connection changed elsewhere. Review its new binding before trying again. Nothing was retried.");
-        } catch (refreshFailure) {
-          setError(
-            `Connection changed elsewhere. Refresh failed: ${displayableError(refreshFailure)}. Nothing was retried.`
-          );
-        }
+        await reloadAfterConflict("Review its new binding before trying again.");
       } else {
         setError(displayableError(failure));
       }
@@ -101,23 +130,13 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
     if (unlinking === null) return;
     setBusy(true);
     try {
-      const updated = await unbindConnection(unlinking);
-      setRows((current) => current?.map((row) => (row.id === updated.id ? updated : row)) ?? null);
+      replaceRow(await unbindConnection(unlinking));
       setUnlinking(null);
       setError(null);
     } catch (failure) {
       if (failure instanceof HttpError && failure.status === 409) {
         setUnlinking(null);
-        try {
-          await load();
-          setError(
-            "Connection changed elsewhere. Latest state loaded; review it before trying again. Nothing was retried."
-          );
-        } catch (refreshFailure) {
-          setError(
-            `Connection changed elsewhere. Refresh failed: ${displayableError(refreshFailure)}. Nothing was retried.`
-          );
-        }
+        await reloadAfterConflict("Latest state loaded; review it before trying again.");
       } else {
         setError(displayableError(failure));
       }
@@ -161,9 +180,14 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
                 <Fragment key={row.id}>
                   <Table.Tr data-connection-id={row.id}>
                     <Table.Td>
-                      <Text fw={600} style={{ overflowWrap: "anywhere" }}>
-                        {row.display_name}
-                      </Text>
+                      <InlineName
+                        label="Client name"
+                        name={row.display_name}
+                        maxLength={200}
+                        disabled={busy}
+                        className="agentplane-connection-name"
+                        onCommit={(name) => void rename(row, name)}
+                      />
                       <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
                         Client ID · {grant?.client_id ?? "—"}
                       </Text>

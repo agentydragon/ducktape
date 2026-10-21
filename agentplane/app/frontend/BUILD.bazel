@@ -299,6 +299,27 @@ js_library(
 )
 
 ts_library(
+    name = "inline_name",
+    srcs = [
+        "css.d.ts",
+        "inline_name.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":inline_name_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+# inline_name.tsx imports this stylesheet for the bundler.
+js_library(
+    name = "inline_name_css",
+    srcs = ["inline_name.css"],
+)
+
+ts_library(
     name = "caller_grants",
     srcs = ["caller_grants.tsx"],
     tsconfig = TSCONFIG,
@@ -339,6 +360,7 @@ ts_library(
         ":caller_grants",
         ":client",
         ":connections_css",
+        ":inline_name",
         ":live_stream",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

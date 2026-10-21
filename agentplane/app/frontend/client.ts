@@ -206,6 +206,15 @@ export async function connectionServiceAccounts(): Promise<CallerServiceAccount[
   return ok(await api.GET("/connection-service-accounts"));
 }
 
+export async function renameConnection(connection: Connection, displayName: string): Promise<Connection> {
+  return ok(
+    await api.PATCH("/connections/{connection_id}", {
+      params: { path: { connection_id: connection.id } },
+      body: { expected_version: connection.version, display_name: displayName },
+    })
+  );
+}
+
 export async function rebindConnection(connection: Connection, caller: CallerServiceAccount): Promise<Connection> {
   return ok(
     await api.POST("/connections/{connection_id}/rebind", {

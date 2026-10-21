@@ -7,6 +7,12 @@
   display: none;
 }
 
+/* The name field pads its text for the hover background; reaching into the cell's own padding lines
+   the name up with the IDs beneath it. */
+.agentplane-connection-name {
+  margin-inline-start: calc(-1 * var(--mantine-spacing-xs));
+}
+
 /* A three-column table leaves neither a readable client nor a tappable account picker on phones. */
 @media (max-width: 48em) {
   .agentplane-connections,

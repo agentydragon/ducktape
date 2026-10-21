@@ -17,7 +17,7 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _select_reconnect,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture, Flag, Scene
+from agentplane.app.frontend.visual_app import BOUND_CONNECTION, IDLE_THREAD, AgentplaneFixture, Flag, Scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
@@ -759,7 +759,7 @@ async def test_connection_sa_rebind_confirmation(view: VisualPage, app: Agentpla
     confirm = page.get_by_role("button", name="Confirm change")
     await expect(confirm).to_be_visible()
     await expect(page.get_by_text("Existing client tokens will act as", exact=False)).to_be_visible()
-    row = page.locator("[data-connection-id]").filter(has_text="Claude desktop")
+    row = page.locator(f'[data-connection-id="{BOUND_CONNECTION}"]')
     await expect(row.get_by_role("button", name="Confirm change")).to_be_visible()
     await expect(row.get_by_role("button", name="Apply")).to_have_count(0)
     if page.viewport_size and page.viewport_size["width"] < 600:
@@ -774,7 +774,7 @@ async def test_connection_unlink_confirmation(view: VisualPage, app: AgentplaneF
     await view.check(context="fixture ready")
     page = view.page
     await _open_settings(page)
-    row = page.locator("[data-connection-id]").filter(has_text="Claude desktop")
+    row = page.locator(f'[data-connection-id="{BOUND_CONNECTION}"]')
     await row.get_by_role("button", name="Unlink", exact=True).click()
     confirm = row.get_by_role("button", name="Confirm unlink")
     await expect(confirm).to_be_visible()
@@ -786,13 +786,29 @@ async def test_connection_unlink_confirmation(view: VisualPage, app: AgentplaneF
     await view.capture()
 
 
+@DESKTOP_AND_MOBILE
+async def test_connection_rename_editing(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/")
+    await view.check(context="fixture ready")
+    page = view.page
+    await _open_settings(page)
+    name = page.locator(f'[data-connection-id="{BOUND_CONNECTION}"]').get_by_role("textbox", name="Client name")
+    await expect(name).to_have_value("Claude desktop")
+    await name.fill("Name being typed")
+    await expect(name).to_be_focused()
+    if page.viewport_size and page.viewport_size["width"] < 600:
+        assert await page.locator(".mantine-Modal-content").evaluate("el => el.scrollWidth <= el.clientWidth")
+    await view.capture()
+
+
 async def test_oauth_clients_update_while_settings_stays_open(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     page = view.page
     await _open_settings(page)
-    await expect(page.get_by_text("Claude desktop")).to_be_visible()
+    name = page.locator(f'[data-connection-id="{BOUND_CONNECTION}"]').get_by_role("textbox", name="Client name")
+    await expect(name).to_have_value("Claude desktop")
     await app.publish(Flag.CONNECTION_RENAMED, "/connections/stream")
-    await expect(page.get_by_text("Updated OAuth client")).to_be_visible()
+    await expect(name).to_have_value("Updated OAuth client")
     await view.capture(name="oauth_clients_live_rename")
 
 

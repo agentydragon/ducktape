@@ -504,25 +504,14 @@ ts_library(
 
 ts_library(
     name = "thread_title",
-    srcs = [
-        "thread_title.tsx",
-        # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
-    ],
+    srcs = ["thread_title.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":thread_title_css",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:inline_name",
     ],
-)
-
-# thread_title.tsx imports this stylesheet for the bundler.
-js_library(
-    name = "thread_title_css",
-    srcs = ["thread_title.css"],
 )
 
 agentplane_vitest_test(

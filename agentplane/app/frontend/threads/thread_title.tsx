@@ -1,17 +1,9 @@
-import { TextInput } from "@mantine/core";
-import { type JSX, useState } from "react";
+import type { JSX } from "react";
 
 import { displayableError, renameThread, type ThreadView } from "../client";
-import "./thread_title.css";
+import { InlineName } from "../inline_name";
 
-/**
- * The thread's title, edited where it is read: the field is the title, styled as one, and a hover
- * is the only hint that it takes typing. Enter commits and Escape puts the stored name back; moving
- * away commits too, so a rename is never lost by clicking elsewhere -- renaming again is one edit,
- * where losing what was typed is not recoverable at all.
- *
- * The placeholder is the thread id; a blank name clears it back to that.
- */
+/** The thread's title. The placeholder is the thread id; a blank name clears it back to that. */
 export function ThreadTitle({
   threadId,
   thread,
@@ -23,15 +15,8 @@ export function ThreadTitle({
   onRenamed: (thread: ThreadView) => void;
   onError: (message: string) => void;
 }): JSX.Element {
-  const [draft, setDraft] = useState<string | null>(null);
-  // The stored name while nothing is being typed, so a rename that arrives from elsewhere shows.
-  const shown = draft ?? thread?.name ?? "";
-
-  async function commit(): Promise<void> {
-    if (draft === null || thread === null) return;
-    const name = draft.trim() || null;
-    setDraft(null);
-    if (name === thread.name) return;
+  async function rename(name: string | null): Promise<void> {
+    if (thread === null) return;
     try {
       onRenamed(await renameThread(thread.id, name));
     } catch (reason: unknown) {
@@ -40,21 +25,13 @@ export function ThreadTitle({
   }
 
   return (
-    <TextInput
-      aria-label="Thread name"
-      disabled={thread === null}
-      variant="unstyled"
-      size="sm"
-      value={shown}
+    <InlineName
+      label="Thread name"
+      name={thread?.name ?? null}
       placeholder={threadId}
       maxLength={200}
-      classNames={{ input: "agentplane-thread-name-input" }}
-      onChange={(event) => setDraft(event.currentTarget.value)}
-      onBlur={() => void commit()}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
-        if (event.key === "Escape") setDraft(null);
-      }}
+      disabled={thread === null}
+      onCommit={(name) => void rename(name)}
     />
   );
 }

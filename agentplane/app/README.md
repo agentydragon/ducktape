@@ -476,7 +476,8 @@ ServiceAccount and explicitly confirm rebinding: the existing client token remai
 future Actions act as the new account. The version-checked update never silently retries a stale
 choice. Unlink instead revokes active/pending authority without deleting history or stopping
 already claimed executions. An ineligible current account is flagged separately from the grant's
-lifecycle status. The tab does not offer renaming a Connection.
+lifecycle status. A Connection's name is edited in place, like a Thread's title: Enter or moving
+away commits, Escape restores, and a blank name keeps the stored one.
 
 Each current account has a **View grants** disclosure, reusing the Sandbox bindings list and Action-policy
 renderer. The operator-only `GET /caller-grants/{namespace}/{name}` composes existing account-scoped
