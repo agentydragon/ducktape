@@ -1,7 +1,7 @@
 # Action Service Go port
 
-Status: **in progress.** `ACTION_SERVICE_GO_PORT` in the [task DAG](task_dag.md) is a Candidate and the operator
-said to port it (2026-10-19 PDT). Read at `devel` 5cfb6498. The plan burns down: a stage leaves when its work
+Status: **paused pending the Greenfield service boundaries plan.** `ACTION_SERVICE_GO_PORT` in the [task DAG](task_dag.md)
+records it, and the operator said to port it (2026-10-19 PDT). Read at `devel` 5cfb6498. The plan burns down: a stage leaves when its work
 lands, and the file goes with the Python retirement.
 
 The port moves the service as it is: the same responsibilities, the same PostgreSQL database and schema (Alembic
@@ -69,9 +69,9 @@ Defaults inside it:
 
 ## Contract
 
-`action_service/action_service.proto` (`ActionService`, for workloads) and `operator_action_service.proto`
-(`OperatorActionService`, for the integration app alone) hold the RPCs, shapes and error codes, in two files so the
-OpenAPI document `proto_openapi` renders from the first describes only what an agent may call. What the servicers
+`action_service/action_service.proto` (`ActionService`, for workloads) holds its RPCs, shapes and error codes, and an
+`operator_action_service.proto` (`OperatorActionService`, for the integration app alone, not written yet) will hold the
+operator's, in two files so the OpenAPI document `proto_openapi` renders from the first describes only what an agent may call. What the servicers
 and callers still owe it:
 
 - The rendered document is served at `/openapi.json`, linked from `/llms.txt`, and replaces
@@ -111,7 +111,6 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 
 | Stage | Change                                                                                                                                                                                                                        |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A     | Goose migrator and baseline over `0027`, the image target (not deployed).                                                                                                                                                     |
 | B     | The protos, workload then operator: the contract to review before any servicer exists.                                                                                                                                        |
 | C     | Go service skeleton (`config.go`, `main.go`, health, metrics, drain) and the lifecycle store with golden vectors; claim, lease, sweep and heartbeat loops.                                                                    |
 | D     | Workload auth, catalog, decision providers and policy kinds with the GitHub visibility lookup, `ActionService`, the receipt stream, `docs/agents/`, `/openapi.json`.                                                          |

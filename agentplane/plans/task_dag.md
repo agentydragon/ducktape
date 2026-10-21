@@ -1382,8 +1382,8 @@ Related to `SANDBOX_GENERIC_SPLIT`: that separates the resource, this separates 
 - **Kubernetes image volumes.** An `image` volume mounts an OCI image's filesystem into a Pod. The
   API server is v1.35.1, where `ImageVolume` is beta and on by default (GA in 1.36), and every node
   reports containerd 2.3.x. This is the direct answer to "this container should mount these 2 images",
-  and beats an init-container copy on every incarnation. Whether the mount can be executed from is
-  untested on this stack.
+  and beats an init-container copy on every incarnation. The runner already runs from such a mount in
+  production Pods; whether the harnesses can is open.
 - **Init container into a shared volume.** Today's portable form: copy the runner and harnesses from image
   X into an `emptyDir`. Works everywhere; pays copy time and disk each start.
 - **Firecracker instead of KubeVirt.** The runtime the operator raised as acceptable if it helps: fast
@@ -1434,7 +1434,7 @@ package, kernel pin, and child fence; do not leave the experiment as an implicit
 
 ### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
 
-**In flight; operator chose to split the disks on KubeVirt first (2026-10-20 PDT); Firecracker and a runtime-class abstraction stay later, and whether harnesses become a separate disk stays open in `RUNNER_IMAGE_LAYERING_DESIGN`. Pursuable independently of the Pod half.**
+**In flight; operator chose to split the disks on KubeVirt first (2026-10-20 PDT); Firecracker and a runtime-class abstraction stay later, and whether harnesses become a separate disk stays open in `RUNNER_IMAGE_LAYERING_DESIGN`.**
 Split the guest so a runner bump or a template's tool list does not rebuild and repush the whole VM. The
 two-stage shape the operator named — lean stage 1 booting the runner and mounting a stage 2 filesystem,
 with the runner jailing a forked child into stage 2 to exec Claude/Codex — is one option, with the
@@ -1618,7 +1618,7 @@ History Service. This is a naming cleanup, not permission to recreate or drop th
 the database and role in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`) and have the CNPG
 `Database` and managed role adopt the new names; recreating the database under a new name would copy
 the log. Verify the History Service and Electric reconnect with no data movement. Update the
-`storage/migrate.py` and `cluster/cdk8s/agentplane/history_service.py` docstrings.
+`history_service/migrations/migrations.go` and `cluster/cdk8s/agentplane/history_service.py` docstrings.
 
 ### `ACTION_BOX_IDLE_REAPER` — delete Action boxes nobody uses
 
@@ -1672,7 +1672,7 @@ optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; th
 `agentplane/README.md` showing exactly the deployed services and the traffic between them in
 `cluster/cdk8s/agentplane`. Known now: the test-only `PostgresListener.wait_until_disconnected`
 (`connected` turns false before the termination callback runs, so its tests cannot wait on
-`connected` instead); egress and app test support each build a throwaway CA; `history_service/test_evidence.py` and `test_summaries.py` still say "folded by the shadow"; `docs/operator_federation.md` says "Event & Notification Hub"; `cluster/cdk8s/agentplane/test_sandbox_service.py` is named for the retired Sandbox Service. Findings are fixed in
+`connected` instead); egress and app test support each build a throwaway CA; `docs/operator_federation.md` says "Event & Notification Hub"; `cluster/cdk8s/agentplane/test_sandbox_service.py` is named for the retired Sandbox Service. Findings are fixed in
 PRs of their own; this node leaves with the last of them.
 
 ## 10. Runner ingress and control split
@@ -1768,7 +1768,7 @@ gRPC-Gateway for the generated HTTP/JSON facade, and an ergonomic CLI, adopted i
 service and interface. Use JSON server streams for watches/waits and native gRPC for full duplex.
 Individual service migrations and the CLI rollout remain separate work items below, and the
 HTTP/JSON facade is built per service inside each migration; this direction authorizes no runtime change
-beyond the transport track nodes marked in flight, which the operator dispatched.
+beyond the transport track nodes the operator dispatched.
 
 ```mermaid
 flowchart LR
@@ -1904,7 +1904,7 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 ```mermaid
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
-    ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
+    ACTION_SERVICE_GO_PORT[Paused: port the Action Service to Go]
     ACTION_API_MERGE[Decision, unscheduled: merge parts of the operator and agent-facing Action APIs]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
@@ -1922,7 +1922,7 @@ check on `thread_observations` (404 for a Session no Thread links) is kept or dr
 
 ### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
 
-**Candidate; operator, 2026-10-19 PDT: port it, with the OAuth authorization server on `zitadel/oidc`.** Serve its operator and
+**Paused pending the Greenfield service boundaries plan; operator, 2026-10-19 PDT: port it, with the OAuth authorization server on `zitadel/oidc`.** Landed: the Goose migrator and the workload proto `action_service/action_service.proto`; the operator proto is not written. Serve its operator and
 workload APIs as generated facades and delete `OperatorActionServiceClient`, the app's Action routes and
 relays, and the Go Notification Service's hand-written HTTP client for the two request reads it makes. The request watch sends delta frames from the start: its first frame
 is the whole history (megabytes, #7922) and it ends every minute with the exchanged token. The MCP
@@ -1941,8 +1941,8 @@ ServiceAccount token), the route prefix (`/v1/operator/`) and which requests the
 keep two services, as the merged contract has them; or serve the shared reads once and let the bearer pick the
 principal, keeping the operator-only RPCs (decisions, Connections, enrollments, MCP linkage, Web Push) in
 `OperatorActionService`. Deciding before the servicers of `ACTION_SERVICE_GO_PORT` are written lets them be
-implemented once. The contract is `action_service.proto` and `operator_action_service.proto` in
-`agentplane/action_service/`.
+implemented once. The workload contract is `action_service.proto` in `agentplane/action_service/`; the operator proto
+is not written yet.
 
 ### `WEB_PUSH_SERVICE` — Web Push as its own sender
 
