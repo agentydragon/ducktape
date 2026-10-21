@@ -129,7 +129,8 @@ type harness struct {
 	server *httptest.Server
 }
 
-func newHarness(t *testing.T, core *fakeCore, maxWaitSeconds float64) *harness {
+// newHarness serves options, with the test's resource metadata URL and logger.
+func newHarness(t *testing.T, core *fakeCore, options Options) *harness {
 	t.Helper()
 	listener := bufconn.Listen(1 << 20)
 	grpcServer := grpc.NewServer()
@@ -155,11 +156,9 @@ func newHarness(t *testing.T, core *fakeCore, maxWaitSeconds float64) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	handler := NewHandler(pb.NewActionServiceClient(connection), verifyTestBearer, Options{
-		MaxWaitSeconds:      maxWaitSeconds,
-		ResourceMetadataURL: "https://test-actions.example/.well-known/oauth-protected-resource/mcp",
-		Logger:              slog.New(slog.NewTextHandler(t.Output(), nil)),
-	})
+	options.ResourceMetadataURL = "https://test-actions.example/.well-known/oauth-protected-resource/mcp"
+	options.Logger = slog.New(slog.NewTextHandler(t.Output(), nil))
+	handler := NewHandler(pb.NewActionServiceClient(connection), verifyTestBearer, options)
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", handler)
 	server := httptest.NewServer(mux)

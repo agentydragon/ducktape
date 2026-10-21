@@ -22,7 +22,9 @@
     "executorDescription": "test-down-executor",
     "available": false,
     "actions": [],
-    "directTools": []
+    "directTools": [
+     "test-gone"
+    ]
    },
    {
     "key": "test-mcp",
@@ -67,7 +69,10 @@
       }
      }
     ],
-    "directTools": []
+    "directTools": [
+     "alpha",
+     "beta"
+    ]
    },
    {
     "key": "test-sandbox",
@@ -86,10 +91,130 @@
       }
      }
     ],
-    "directTools": []
+    "directTools": [
+     "exec"
+    ]
    }
   ]
  },
+ "direct_listings": [
+  {
+   "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 2.5,
+   "core": [
+    {
+     "rpc": "GetActionPolicy",
+     "request": {},
+     "response": {
+      "actionPolicy": {
+       "subject": {
+        "namespace": "test-namespace",
+        "name": "test-caller"
+       },
+       "synced": true,
+       "autoApprovable": [
+        {
+         "group": "test-down",
+         "name": "test-gone"
+        },
+        {
+         "group": "test-mcp",
+         "name": "beta"
+        },
+        {
+         "group": "test-other",
+         "name": "test-unconfigured"
+        },
+        {
+         "group": "test-sandbox",
+         "name": "exec"
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "tools": [
+    {
+     "name": "test-mcp__beta",
+     "title": "Test MCP: Beta",
+     "description": "test-beta-description\n\nRuns as an Agentplane Action under your policy: a call it does not approve automatically is refused without running, and one still running after 2.5s answers with a request id to wait on with get_action_result.",
+     "inputSchema": {
+      "type": "object"
+     },
+     "annotations": {
+      "readOnlyHint": true
+     }
+    },
+    {
+     "name": "test-sandbox__exec",
+     "title": "Test Sandbox  Exec",
+     "description": "test-exec\n\nRuns as an Agentplane Action under your policy: a call it does not approve automatically is refused without running, and one still running after 2.5s answers with a request id to wait on with get_action_result.",
+     "inputSchema": {
+      "type": "object"
+     }
+    }
+   ]
+  },
+  {
+   "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 60.0,
+   "core": [
+    {
+     "rpc": "GetActionPolicy",
+     "request": {},
+     "response": {
+      "actionPolicy": {
+       "subject": {
+        "namespace": "test-namespace",
+        "name": "test-caller"
+       },
+       "synced": true,
+       "autoApprovable": [
+        {
+         "group": "test-down",
+         "name": "test-gone"
+        },
+        {
+         "group": "test-mcp",
+         "name": "beta"
+        },
+        {
+         "group": "test-other",
+         "name": "test-unconfigured"
+        },
+        {
+         "group": "test-sandbox",
+         "name": "exec"
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "tools": [
+    {
+     "name": "test-mcp__beta",
+     "title": "Test MCP: Beta",
+     "description": "test-beta-description\n\nRuns as an Agentplane Action under your policy: a call it does not approve automatically is refused without running, and one still running after 30s answers with a request id to wait on with get_action_result.",
+     "inputSchema": {
+      "type": "object"
+     },
+     "annotations": {
+      "readOnlyHint": true
+     }
+    },
+    {
+     "name": "test-sandbox__exec",
+     "title": "Test Sandbox  Exec",
+     "description": "test-exec\n\nRuns as an Agentplane Action under your policy: a call it does not approve automatically is refused without running, and one still running after 30s answers with a request id to wait on with get_action_result.",
+     "inputSchema": {
+      "type": "object"
+     }
+    }
+   ]
+  }
+ ],
  "calls": [
   {
    "name": "decision pending: full receipt",
@@ -109,6 +234,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -252,6 +378,7 @@
     "request_id": "00000000-0000-0000-0000-000000000001"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -350,6 +477,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -463,6 +591,7 @@
     "request_id": "00000000-0000-0000-0000-000000000002"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -544,6 +673,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -652,6 +782,7 @@
     "request_id": "00000000-0000-0000-0000-000000000003"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -730,6 +861,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -879,6 +1011,7 @@
     "request_id": "00000000-0000-0000-0000-000000000004"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -978,6 +1111,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -1156,6 +1290,7 @@
     "request_id": "00000000-0000-0000-0000-000000000005"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -1285,6 +1420,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -1404,6 +1540,7 @@
     "request_id": "00000000-0000-0000-0000-000000000006"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -1498,6 +1635,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -1617,6 +1755,7 @@
     "request_id": "00000000-0000-0000-0000-000000000007"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -1702,6 +1841,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -1820,6 +1960,7 @@
     "request_id": "00000000-0000-0000-0000-000000000008"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -1905,6 +2046,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2000,6 +2142,7 @@
     "request_id": "00000000-0000-0000-0000-000000000009"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2073,6 +2216,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2208,6 +2352,7 @@
     "request_id": "00000000-0000-0000-0000-00000000000a"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2301,6 +2446,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2395,6 +2541,7 @@
     "request_id": "00000000-0000-0000-0000-00000000000b"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2467,6 +2614,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2536,6 +2684,7 @@
     "request_id": "00000000-0000-0000-0000-00000000000c"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2586,6 +2735,7 @@
     "request_id": "00000000-0000-0000-0000-000000000001"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2680,6 +2830,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2770,6 +2921,7 @@
     "include_fields": []
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2883,6 +3035,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -2998,6 +3151,7 @@
     "idempotency_key": "test-key-4"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "ListActionRequests",
@@ -3155,6 +3309,7 @@
     "idempotency_key": "test-key-7"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "ListActionRequests",
@@ -3281,6 +3436,7 @@
     "request_id": "00000000-0000-0000-0000-00000000ffff"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -3308,6 +3464,7 @@
     "idempotency_key": "test-unknown-key"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "ListActionRequests",
@@ -3337,6 +3494,7 @@
     "request_id": "00000000-0000-0000-0000-00000000ffff"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -3362,6 +3520,7 @@
    "tool": "get_action_request",
    "arguments": {},
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -3382,6 +3541,7 @@
     "idempotency_key": "test-key-1"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -3401,6 +3561,7 @@
     "request_id": "00000000-0000-0000-0000-00000000000d"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -3454,6 +3615,7 @@
     "request_id": "00000000-0000-0000-0000-000000000004"
    },
    "max_wait_seconds": 2.5,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionRequest",
@@ -3545,6 +3707,7 @@
     }
    },
    "max_wait_seconds": 2.5,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -3575,6 +3738,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "CancelActionRequest",
@@ -3659,6 +3823,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "CancelActionRequest",
@@ -3743,6 +3908,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "CancelActionRequest",
@@ -3893,6 +4059,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "CancelActionRequest",
@@ -4005,6 +4172,7 @@
     "request_id": "00000000-0000-0000-0000-00000000000c"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "CancelActionRequest",
@@ -4062,6 +4230,7 @@
     "request_id": "00000000-0000-0000-0000-00000000ffff"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "CancelActionRequest",
@@ -4089,6 +4258,7 @@
     "request_id": "00000000-0000-0000-0000-000000000001"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "ListActionRequestEvents",
@@ -4187,6 +4357,7 @@
     "limit": 2
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "ListActionRequestEvents",
@@ -4256,6 +4427,7 @@
     "limit": 2
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "ListActionRequestEvents",
@@ -4334,6 +4506,7 @@
     "request_id": "00000000-0000-0000-0000-00000000ffff"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "ListActionRequestEvents",
@@ -4407,6 +4580,7 @@
     }
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "SubmitActionRequest",
@@ -4583,6 +4757,7 @@
     }
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "SubmitActionRequest",
@@ -4756,6 +4931,7 @@
     "respond_with": "receipt"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "SubmitActionRequest",
@@ -4946,6 +5122,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "SubmitActionRequest",
@@ -5150,6 +5327,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -5217,6 +5395,7 @@
     }
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -5281,6 +5460,7 @@
     }
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "SubmitActionRequest",
@@ -5397,6 +5577,7 @@
     }
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "SubmitActionRequest",
@@ -5513,6 +5694,7 @@
     }
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "SubmitActionRequest",
@@ -5629,6 +5811,7 @@
     }
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "SubmitActionRequest",
@@ -5694,10 +5877,839 @@
    }
   },
   {
+   "name": "direct call answered as its MCP tool did",
+   "tool": "test-mcp__alpha",
+   "arguments": {
+    "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
+    "int": 42,
+    "negative": -7,
+    "zero": 0,
+    "fraction": 1.5,
+    "negative fraction": -0.25,
+    "small": 1.5e-07,
+    "tiny": 0.0001,
+    "large": 1e+20,
+    "precise": 123.456789012345,
+    "true": true,
+    "false": false,
+    "null": null,
+    "empty object": {},
+    "empty list": [],
+    "list": [
+     1,
+     "two",
+     null,
+     {
+      "three": [
+       3.5
+      ]
+     }
+    ],
+    "nested": {
+     "b": {
+      "aa": [
+       {
+        "c": "d"
+       }
+      ],
+      "a": 1
+     }
+    },
+    "": "empty key"
+   },
+   "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
+   "core": [
+    {
+     "rpc": "SubmitActionRequest",
+     "request": {
+      "idempotencyKey": "direct-<uuid4>",
+      "action": {
+       "group": "test-mcp",
+       "name": "alpha"
+      },
+      "arguments": {
+       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
+       "int": 42,
+       "negative": -7,
+       "zero": 0,
+       "fraction": 1.5,
+       "negative fraction": -0.25,
+       "small": 1.5e-07,
+       "tiny": 0.0001,
+       "large": 1e+20,
+       "precise": 123.456789012345,
+       "true": true,
+       "false": false,
+       "null": null,
+       "empty object": {},
+       "empty list": [],
+       "list": [
+        1,
+        "two",
+        null,
+        {
+         "three": [
+          3.5
+         ]
+        }
+       ],
+       "nested": {
+        "b": {
+         "aa": [
+          {
+           "c": "d"
+          }
+         ],
+         "a": 1
+        }
+       },
+       "": "empty key"
+      },
+      "title": "Direct tool call",
+      "decidedOnly": true
+     },
+     "response": {
+      "actionRequest": {
+       "id": "00000000-0000-0000-0000-000000000005",
+       "idempotencyKey": "test-key-5",
+       "action": {
+        "group": "test-mcp",
+        "name": "alpha"
+       },
+       "arguments": {},
+       "title": "test title 5",
+       "caller": {
+        "namespace": "test-namespace",
+        "name": "test-caller"
+       },
+       "state": "ACTION_STATE_SUCCEEDED",
+       "version": "5",
+       "createdAt": "2026-01-02T03:04:05Z",
+       "updatedAt": "2026-01-02T03:05:00.999999Z",
+       "decision": {
+        "id": "00000000-0000-0000-0000-0000000000d2",
+        "verdict": "VERDICT_ALLOW",
+        "provider": "action_policy_set",
+        "reasonCode": "test_reason_code",
+        "reasonDescription": "test allowed",
+        "policyEvidence": {
+         "bindings": [
+          {
+           "namespace": "test-namespace",
+           "name": "test-binding",
+           "resourceVersion": "7"
+          }
+         ],
+         "policySets": [
+          {
+           "namespace": "test-namespace",
+           "name": "test-set",
+           "generation": "4"
+          }
+         ],
+         "matched": {
+          "namespace": "test-namespace",
+          "policySet": "test-set",
+          "source": "POLICY_SOURCE_RULES",
+          "index": 2,
+          "type": "POLICY_KIND_GITHUB_REPOSITORY",
+          "repository": {
+           "owner": "test-owner",
+           "repository": "test-repo",
+           "confirmedPublic": false
+          }
+         }
+        },
+        "idempotencyKey": "test-policy-decision-key",
+        "decidedAt": "2026-01-02T03:04:06.120000Z"
+       },
+       "execution": {
+        "id": "00000000-0000-0000-0000-0000000000e1",
+        "state": "EXECUTION_STATE_SUCCEEDED",
+        "result": {
+         "content": [
+          {
+           "type": "text",
+           "text": "test caption é"
+          },
+          {
+           "type": "image",
+           "data": "dGVzdC1pbWFnZS1ieXRlcw==",
+           "mimeType": "image/png"
+          }
+         ],
+         "structuredContent": {
+          "width": 1,
+          "height": 2.5
+         },
+         "isError": true,
+         "resultType": "complete"
+        },
+        "createdAt": "2026-01-02T03:04:06.120000Z",
+        "startedAt": "2026-01-02T03:04:07.000005Z",
+        "completedAt": "2026-01-02T03:05:00.999999Z"
+       }
+      }
+     }
+    },
+    {
+     "rpc": "GetActionRequest",
+     "request": {
+      "requestId": "00000000-0000-0000-0000-000000000005"
+     },
+     "response": {
+      "actionRequest": {
+       "id": "00000000-0000-0000-0000-000000000005",
+       "idempotencyKey": "test-key-5",
+       "action": {
+        "group": "test-mcp",
+        "name": "alpha"
+       },
+       "arguments": {},
+       "title": "test title 5",
+       "caller": {
+        "namespace": "test-namespace",
+        "name": "test-caller"
+       },
+       "state": "ACTION_STATE_SUCCEEDED",
+       "version": "5",
+       "createdAt": "2026-01-02T03:04:05Z",
+       "updatedAt": "2026-01-02T03:05:00.999999Z",
+       "decision": {
+        "id": "00000000-0000-0000-0000-0000000000d2",
+        "verdict": "VERDICT_ALLOW",
+        "provider": "action_policy_set",
+        "reasonCode": "test_reason_code",
+        "reasonDescription": "test allowed",
+        "policyEvidence": {
+         "bindings": [
+          {
+           "namespace": "test-namespace",
+           "name": "test-binding",
+           "resourceVersion": "7"
+          }
+         ],
+         "policySets": [
+          {
+           "namespace": "test-namespace",
+           "name": "test-set",
+           "generation": "4"
+          }
+         ],
+         "matched": {
+          "namespace": "test-namespace",
+          "policySet": "test-set",
+          "source": "POLICY_SOURCE_RULES",
+          "index": 2,
+          "type": "POLICY_KIND_GITHUB_REPOSITORY",
+          "repository": {
+           "owner": "test-owner",
+           "repository": "test-repo",
+           "confirmedPublic": false
+          }
+         }
+        },
+        "idempotencyKey": "test-policy-decision-key",
+        "decidedAt": "2026-01-02T03:04:06.120000Z"
+       },
+       "execution": {
+        "id": "00000000-0000-0000-0000-0000000000e1",
+        "state": "EXECUTION_STATE_SUCCEEDED",
+        "result": {
+         "content": [
+          {
+           "type": "text",
+           "text": "test caption é"
+          },
+          {
+           "type": "image",
+           "data": "dGVzdC1pbWFnZS1ieXRlcw==",
+           "mimeType": "image/png"
+          }
+         ],
+         "structuredContent": {
+          "width": 1,
+          "height": 2.5
+         },
+         "isError": true,
+         "resultType": "complete"
+        },
+        "createdAt": "2026-01-02T03:04:06.120000Z",
+        "startedAt": "2026-01-02T03:04:07.000005Z",
+        "completedAt": "2026-01-02T03:05:00.999999Z"
+       }
+      }
+     }
+    }
+   ],
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "test caption é"
+     },
+     {
+      "type": "image",
+      "data": "dGVzdC1pbWFnZS1ieXRlcw==",
+      "mimeType": "image/png"
+     }
+    ],
+    "structuredContent": {
+     "width": 1,
+     "height": 2.5
+    },
+    "isError": true,
+    "resultType": "complete"
+   }
+  },
+  {
+   "name": "direct call answered with its sandbox result",
+   "tool": "test-sandbox__exec",
+   "arguments": {},
+   "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
+   "core": [
+    {
+     "rpc": "SubmitActionRequest",
+     "request": {
+      "idempotencyKey": "direct-<uuid4>",
+      "action": {
+       "group": "test-sandbox",
+       "name": "exec"
+      },
+      "arguments": {},
+      "title": "Direct tool call",
+      "decidedOnly": true
+     },
+     "response": {
+      "actionRequest": {
+       "id": "00000000-0000-0000-0000-000000000006",
+       "idempotencyKey": "test-key-6",
+       "action": {
+        "group": "test-sandbox",
+        "name": "exec"
+       },
+       "arguments": {},
+       "title": "test title 6",
+       "caller": {
+        "namespace": "test-namespace",
+        "name": "test-caller"
+       },
+       "state": "ACTION_STATE_SUCCEEDED",
+       "version": "6",
+       "createdAt": "2026-01-02T03:04:05Z",
+       "updatedAt": "2026-01-02T03:05:00.999999Z",
+       "decision": {
+        "id": "00000000-0000-0000-0000-0000000000d1",
+        "verdict": "VERDICT_ALLOW",
+        "provider": "human_operator",
+        "operator": {
+         "issuer": "https://test-issuer.example",
+         "subject": "test-operator"
+        },
+        "decisionNote": "test note é",
+        "idempotencyKey": "test-decision-key",
+        "decidedAt": "2026-01-02T03:04:06.120000Z"
+       },
+       "execution": {
+        "id": "00000000-0000-0000-0000-0000000000e1",
+        "state": "EXECUTION_STATE_SUCCEEDED",
+        "result": {
+         "exit": {
+          "kind": "exited",
+          "exit_code": 1
+         },
+         "stdout": "test output é\n",
+         "stderr": "test-missing-file",
+         "duration_seconds": 0.5
+        },
+        "createdAt": "2026-01-02T03:04:06.120000Z",
+        "startedAt": "2026-01-02T03:04:07.000005Z",
+        "completedAt": "2026-01-02T03:05:00.999999Z"
+       }
+      }
+     }
+    },
+    {
+     "rpc": "GetActionRequest",
+     "request": {
+      "requestId": "00000000-0000-0000-0000-000000000006"
+     },
+     "response": {
+      "actionRequest": {
+       "id": "00000000-0000-0000-0000-000000000006",
+       "idempotencyKey": "test-key-6",
+       "action": {
+        "group": "test-sandbox",
+        "name": "exec"
+       },
+       "arguments": {},
+       "title": "test title 6",
+       "caller": {
+        "namespace": "test-namespace",
+        "name": "test-caller"
+       },
+       "state": "ACTION_STATE_SUCCEEDED",
+       "version": "6",
+       "createdAt": "2026-01-02T03:04:05Z",
+       "updatedAt": "2026-01-02T03:05:00.999999Z",
+       "decision": {
+        "id": "00000000-0000-0000-0000-0000000000d1",
+        "verdict": "VERDICT_ALLOW",
+        "provider": "human_operator",
+        "operator": {
+         "issuer": "https://test-issuer.example",
+         "subject": "test-operator"
+        },
+        "decisionNote": "test note é",
+        "idempotencyKey": "test-decision-key",
+        "decidedAt": "2026-01-02T03:04:06.120000Z"
+       },
+       "execution": {
+        "id": "00000000-0000-0000-0000-0000000000e1",
+        "state": "EXECUTION_STATE_SUCCEEDED",
+        "result": {
+         "exit": {
+          "kind": "exited",
+          "exit_code": 1
+         },
+         "stdout": "test output é\n",
+         "stderr": "test-missing-file",
+         "duration_seconds": 0.5
+        },
+        "createdAt": "2026-01-02T03:04:06.120000Z",
+        "startedAt": "2026-01-02T03:04:07.000005Z",
+        "completedAt": "2026-01-02T03:05:00.999999Z"
+       }
+      }
+     }
+    }
+   ],
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"exit\":{\"kind\":\"exited\",\"exit_code\":1},\"stdout\":\"test output é\\n\",\"stderr\":\"test-missing-file\",\"duration_seconds\":0.5}"
+     }
+    ],
+    "structuredContent": {
+     "exit": {
+      "kind": "exited",
+      "exit_code": 1
+     },
+     "stdout": "test output é\n",
+     "stderr": "test-missing-file",
+     "duration_seconds": 0.5
+    },
+    "isError": false,
+    "resultType": "complete"
+   }
+  },
+  {
+   "name": "direct call still running",
+   "tool": "test-sandbox__exec",
+   "arguments": {},
+   "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
+   "core": [
+    {
+     "rpc": "SubmitActionRequest",
+     "request": {
+      "idempotencyKey": "direct-<uuid4>",
+      "action": {
+       "group": "test-sandbox",
+       "name": "exec"
+      },
+      "arguments": {},
+      "title": "Direct tool call",
+      "decidedOnly": true
+     },
+     "response": {
+      "actionRequest": {
+       "id": "00000000-0000-0000-0000-000000000004",
+       "idempotencyKey": "test-key-4",
+       "action": {
+        "group": "test-sandbox",
+        "name": "exec"
+       },
+       "arguments": {},
+       "title": "test title 4",
+       "caller": {
+        "namespace": "test-namespace",
+        "name": "test-caller"
+       },
+       "state": "ACTION_STATE_RUNNING",
+       "version": "4",
+       "createdAt": "2026-01-02T03:04:05Z",
+       "updatedAt": "2026-01-02T03:04:06.120000Z",
+       "decision": {
+        "id": "00000000-0000-0000-0000-0000000000d2",
+        "verdict": "VERDICT_ALLOW",
+        "provider": "action_policy_set",
+        "reasonCode": "test_reason_code",
+        "reasonDescription": "test allowed",
+        "policyEvidence": {
+         "bindings": [
+          {
+           "namespace": "test-namespace",
+           "name": "test-binding",
+           "resourceVersion": "7"
+          }
+         ],
+         "policySets": [
+          {
+           "namespace": "test-namespace",
+           "name": "test-set",
+           "generation": "4"
+          }
+         ],
+         "matched": {
+          "namespace": "test-namespace",
+          "policySet": "test-set",
+          "source": "POLICY_SOURCE_RULES",
+          "index": 2,
+          "type": "POLICY_KIND_EXACT_ACTIONS"
+         }
+        },
+        "idempotencyKey": "test-policy-decision-key",
+        "decidedAt": "2026-01-02T03:04:06.120000Z"
+       },
+       "execution": {
+        "id": "00000000-0000-0000-0000-0000000000e1",
+        "state": "EXECUTION_STATE_RUNNING",
+        "createdAt": "2026-01-02T03:04:06.120000Z",
+        "startedAt": "2026-01-02T03:04:07.000005Z"
+       }
+      }
+     }
+    },
+    {
+     "rpc": "GetActionRequest",
+     "request": {
+      "requestId": "00000000-0000-0000-0000-000000000004"
+     },
+     "response": {
+      "actionRequest": {
+       "id": "00000000-0000-0000-0000-000000000004",
+       "idempotencyKey": "test-key-4",
+       "action": {
+        "group": "test-sandbox",
+        "name": "exec"
+       },
+       "arguments": {},
+       "title": "test title 4",
+       "caller": {
+        "namespace": "test-namespace",
+        "name": "test-caller"
+       },
+       "state": "ACTION_STATE_RUNNING",
+       "version": "4",
+       "createdAt": "2026-01-02T03:04:05Z",
+       "updatedAt": "2026-01-02T03:04:06.120000Z",
+       "decision": {
+        "id": "00000000-0000-0000-0000-0000000000d2",
+        "verdict": "VERDICT_ALLOW",
+        "provider": "action_policy_set",
+        "reasonCode": "test_reason_code",
+        "reasonDescription": "test allowed",
+        "policyEvidence": {
+         "bindings": [
+          {
+           "namespace": "test-namespace",
+           "name": "test-binding",
+           "resourceVersion": "7"
+          }
+         ],
+         "policySets": [
+          {
+           "namespace": "test-namespace",
+           "name": "test-set",
+           "generation": "4"
+          }
+         ],
+         "matched": {
+          "namespace": "test-namespace",
+          "policySet": "test-set",
+          "source": "POLICY_SOURCE_RULES",
+          "index": 2,
+          "type": "POLICY_KIND_EXACT_ACTIONS"
+         }
+        },
+        "idempotencyKey": "test-policy-decision-key",
+        "decidedAt": "2026-01-02T03:04:06.120000Z"
+       },
+       "execution": {
+        "id": "00000000-0000-0000-0000-0000000000e1",
+        "state": "EXECUTION_STATE_RUNNING",
+        "createdAt": "2026-01-02T03:04:06.120000Z",
+        "startedAt": "2026-01-02T03:04:07.000005Z"
+       }
+      }
+     }
+    }
+   ],
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Action request 00000000-0000-0000-0000-000000000004 was approved and has not finished (running). This is not its result: call get_action_result(request_id='00000000-0000-0000-0000-000000000004', wait={'wait_seconds': 30}) to keep waiting."
+     }
+    ],
+    "structuredContent": {
+     "request_id": "00000000-0000-0000-0000-000000000004",
+     "state": "running"
+    },
+    "isError": false,
+    "resultType": "complete"
+   }
+  },
+  {
+   "name": "direct call that failed",
+   "tool": "test-sandbox__exec",
+   "arguments": {},
+   "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
+   "core": [
+    {
+     "rpc": "SubmitActionRequest",
+     "request": {
+      "idempotencyKey": "direct-<uuid4>",
+      "action": {
+       "group": "test-sandbox",
+       "name": "exec"
+      },
+      "arguments": {},
+      "title": "Direct tool call",
+      "decidedOnly": true
+     },
+     "response": {
+      "actionRequest": {
+       "id": "00000000-0000-0000-0000-000000000007",
+       "idempotencyKey": "test-key-7",
+       "action": {
+        "group": "test-sandbox",
+        "name": "exec"
+       },
+       "arguments": {},
+       "title": "test title 7",
+       "caller": {
+        "namespace": "test-namespace",
+        "name": "test-caller"
+       },
+       "state": "ACTION_STATE_FAILED",
+       "version": "7",
+       "createdAt": "2026-01-02T03:04:05Z",
+       "updatedAt": "2026-01-02T03:05:00.999999Z",
+       "decision": {
+        "id": "00000000-0000-0000-0000-0000000000d1",
+        "verdict": "VERDICT_ALLOW",
+        "provider": "human_operator",
+        "operator": {
+         "issuer": "https://test-issuer.example",
+         "subject": "test-operator"
+        },
+        "decisionNote": "test note é",
+        "idempotencyKey": "test-decision-key",
+        "decidedAt": "2026-01-02T03:04:06.120000Z"
+       },
+       "execution": {
+        "id": "00000000-0000-0000-0000-0000000000e1",
+        "state": "EXECUTION_STATE_FAILED",
+        "error": {
+         "kind": "sandbox_unavailable",
+         "message": "test box é 🚀 \"not\" ready\n",
+         "retry": 1.5
+        },
+        "createdAt": "2026-01-02T03:04:06.120000Z",
+        "startedAt": "2026-01-02T03:04:07.000005Z",
+        "completedAt": "2026-01-02T03:05:00.999999Z"
+       }
+      }
+     }
+    },
+    {
+     "rpc": "GetActionRequest",
+     "request": {
+      "requestId": "00000000-0000-0000-0000-000000000007"
+     },
+     "response": {
+      "actionRequest": {
+       "id": "00000000-0000-0000-0000-000000000007",
+       "idempotencyKey": "test-key-7",
+       "action": {
+        "group": "test-sandbox",
+        "name": "exec"
+       },
+       "arguments": {},
+       "title": "test title 7",
+       "caller": {
+        "namespace": "test-namespace",
+        "name": "test-caller"
+       },
+       "state": "ACTION_STATE_FAILED",
+       "version": "7",
+       "createdAt": "2026-01-02T03:04:05Z",
+       "updatedAt": "2026-01-02T03:05:00.999999Z",
+       "decision": {
+        "id": "00000000-0000-0000-0000-0000000000d1",
+        "verdict": "VERDICT_ALLOW",
+        "provider": "human_operator",
+        "operator": {
+         "issuer": "https://test-issuer.example",
+         "subject": "test-operator"
+        },
+        "decisionNote": "test note é",
+        "idempotencyKey": "test-decision-key",
+        "decidedAt": "2026-01-02T03:04:06.120000Z"
+       },
+       "execution": {
+        "id": "00000000-0000-0000-0000-0000000000e1",
+        "state": "EXECUTION_STATE_FAILED",
+        "error": {
+         "kind": "sandbox_unavailable",
+         "message": "test box é 🚀 \"not\" ready\n",
+         "retry": 1.5
+        },
+        "createdAt": "2026-01-02T03:04:06.120000Z",
+        "startedAt": "2026-01-02T03:04:07.000005Z",
+        "completedAt": "2026-01-02T03:05:00.999999Z"
+       }
+      }
+     }
+    }
+   ],
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\": \"sandbox_unavailable\", \"message\": \"test box \\u00e9 \\ud83d\\ude80 \\\"not\\\" ready\\n\", \"retry\": 1.5}"
+     }
+    ],
+    "structuredContent": {
+     "request_id": "00000000-0000-0000-0000-000000000007",
+     "state": "failed"
+    },
+    "isError": true,
+    "resultType": "complete"
+   }
+  },
+  {
+   "name": "direct call no policy approves",
+   "tool": "test-mcp__beta",
+   "arguments": {},
+   "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
+   "core": [
+    {
+     "rpc": "SubmitActionRequest",
+     "request": {
+      "idempotencyKey": "direct-<uuid4>",
+      "action": {
+       "group": "test-mcp",
+       "name": "beta"
+      },
+      "arguments": {},
+      "title": "Direct tool call",
+      "decidedOnly": true
+     },
+     "code": "PERMISSION_DENIED",
+     "message": "test-binding: lists test-mcp/alpha only; test reason é"
+    }
+   ],
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Not run, and nothing was submitted: no policy of yours approves this call automatically (test-binding: lists test-mcp/alpha only; test reason é). To ask the operator instead, call request_action with action {\"group\": \"test-mcp\", \"name\": \"beta\"}, these arguments, a title and a fresh idempotency_key."
+     }
+    ],
+    "isError": true,
+    "resultType": "complete"
+   }
+  },
+  {
+   "name": "direct call with arguments outside the schema",
+   "tool": "test-mcp__alpha",
+   "arguments": {
+    "count": 11
+   },
+   "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
+   "core": [
+    {
+     "rpc": "SubmitActionRequest",
+     "request": {
+      "idempotencyKey": "direct-<uuid4>",
+      "action": {
+       "group": "test-mcp",
+       "name": "alpha"
+      },
+      "arguments": {
+       "count": 11
+      },
+      "title": "Direct tool call",
+      "decidedOnly": true
+     },
+     "code": "INVALID_ARGUMENT",
+     "message": "arguments do not match the advertised Action schema"
+    }
+   ],
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "arguments do not match the advertised Action schema"
+     }
+    ],
+    "isError": true,
+    "resultType": "complete"
+   }
+  },
+  {
+   "name": "direct call to an unavailable group",
+   "tool": "test-mcp__alpha",
+   "arguments": {
+    "message": "test"
+   },
+   "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
+   "core": [
+    {
+     "rpc": "SubmitActionRequest",
+     "request": {
+      "idempotencyKey": "direct-<uuid4>",
+      "action": {
+       "group": "test-mcp",
+       "name": "alpha"
+      },
+      "arguments": {
+       "message": "test"
+      },
+      "title": "Direct tool call",
+      "decidedOnly": true
+     },
+     "code": "UNAVAILABLE",
+     "message": "ActionGroup is temporarily unavailable"
+    }
+   ],
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "ActionGroup is temporarily unavailable"
+     }
+    ],
+    "isError": true,
+    "resultType": "complete"
+   }
+  },
+  {
    "name": "every Action",
    "tool": "list_actions",
    "arguments": {},
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -5736,6 +6748,7 @@
     "limit": 1
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -5772,6 +6785,7 @@
     }
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -5804,6 +6818,7 @@
     "group": "test-sandbox"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -5832,6 +6847,7 @@
     "group": "test-down"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -5857,6 +6873,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -5921,6 +6938,7 @@
     "group": "test-unknown"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -5944,6 +6962,7 @@
     }
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -5964,6 +6983,7 @@
     "name": "alpha"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -5993,6 +7013,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -6041,6 +7062,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -6067,6 +7089,7 @@
     "name": "test-unknown"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -6087,6 +7110,7 @@
     "name": "test-gone"
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [],
    "result": {
     "content": [
@@ -6104,6 +7128,7 @@
    "tool": "get_action_policy",
    "arguments": {},
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionPolicy",
@@ -6301,6 +7326,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionPolicy",
@@ -6592,6 +7618,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionPolicy",
@@ -6871,6 +7898,7 @@
     ]
    },
    "max_wait_seconds": 30.0,
+   "direct_wait_seconds": 0,
    "core": [
     {
      "rpc": "GetActionPolicy",

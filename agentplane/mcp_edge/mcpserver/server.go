@@ -1,5 +1,6 @@
 // Package mcpserver serves the Action Service's MCP endpoint, /mcp, to callers on an external Connection: the Action
-// tools over stateless Streamable HTTP. It reaches the Action Service only through its workload API.
+// tools and the caller's direct tools over stateless Streamable HTTP. It reaches the Action Service only through its
+// workload API.
 package mcpserver
 
 import (
@@ -35,6 +36,9 @@ type toolDefinition struct {
 type Options struct {
 	// MaxWaitSeconds bounds wait.wait_seconds.
 	MaxWaitSeconds float64
+	// DirectWaitSeconds is how long a direct tool call waits for its Action to finish before answering with the
+	// request to wait on; at most MaxWaitSeconds.
+	DirectWaitSeconds float64
 	// ResourceMetadataURL is the protected resource metadata a refused request's challenge names; empty names none.
 	ResourceMetadataURL string
 	Logger              *slog.Logger
@@ -44,7 +48,11 @@ type Options struct {
 // context, which carries the verified auth.TokenInfo, and attach no credential of their own. Cross-origin browser
 // requests are refused, and go-sdk's DNS-rebinding protection guards a loopback listener.
 func NewHandler(core pb.ActionServiceClient, verifier auth.TokenVerifier, options Options) http.Handler {
-	server := newServer(&tools{core: core, maxWaitSeconds: options.MaxWaitSeconds}, options)
+	server := newServer(&tools{
+		core:              core,
+		maxWaitSeconds:    options.MaxWaitSeconds,
+		directWaitSeconds: min(options.DirectWaitSeconds, options.MaxWaitSeconds),
+	}, options)
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
 		Stateless: true,
 		Logger:    options.Logger,
@@ -83,12 +91,12 @@ func newServer(t *tools, options Options) *mcp.Server {
 	addTool(server, known["get_action_result"], logger, t.getActionResult)
 	addTool(server, known["cancel_action_request"], logger, t.cancelActionRequest)
 	addTool(server, known["list_action_request_events"], logger, t.listActionRequestEvents)
+	server.AddReceivingMiddleware(t.directTools(logger))
 	return server
 }
 
-// addTool registers one tool. A toolError reaches the caller as written; any other failure is logged and masked.
-// The tool runs on a context a disconnect does not cancel, so a call that changes state finishes: only a wait ends
-// with its caller.
+// addTool registers one tool. The tool runs on a context a disconnect does not cancel, so a call that changes state
+// finishes: only a wait ends with its caller.
 func addTool[In any](server *mcp.Server, definition toolDefinition, logger *slog.Logger,
 	handle func(context.Context, In) (*mcp.CallToolResult, error),
 ) {
@@ -101,17 +109,24 @@ func addTool[In any](server *mcp.Server, definition toolDefinition, logger *slog
 	}
 	mcp.AddTool(server, tool, func(ctx context.Context, _ *mcp.CallToolRequest, input In) (*mcp.CallToolResult, any, error) {
 		result, err := handle(context.WithoutCancel(ctx), input)
-		var refusal toolError
-		switch {
-		case err == nil:
-			return result, nil, nil
-		case errors.As(err, &refusal):
-			return nil, nil, refusal
-		case errors.Is(err, errDisconnected):
-			logger.InfoContext(ctx, "caller disconnected during a wait", "tool", definition.Name)
-		default:
-			logger.ErrorContext(ctx, "tool call failed", "tool", definition.Name, "error", err)
+		if err != nil {
+			return nil, nil, toolFailure(ctx, logger, definition.Name, err)
 		}
-		return nil, nil, maskedError(definition.Name)
+		return result, nil, nil
 	})
+}
+
+// toolFailure is what the caller reads of a failed tool call: a toolError as written, and any other failure masked
+// after it is logged.
+func toolFailure(ctx context.Context, logger *slog.Logger, tool string, err error) error {
+	var refusal toolError
+	switch {
+	case errors.As(err, &refusal):
+		return refusal
+	case errors.Is(err, errDisconnected):
+		logger.InfoContext(ctx, "caller disconnected during a wait", "tool", tool)
+	default:
+		logger.ErrorContext(ctx, "tool call failed", "tool", tool, "error", err)
+	}
+	return maskedError(tool)
 }

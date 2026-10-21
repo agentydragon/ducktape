@@ -17,11 +17,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
-// tools are the generic Action tools. Each reaches the core with the tool call's context, which carries the
-// caller's auth.TokenInfo; the core decides who the caller is.
+// tools are the generic Action tools and the direct tools. Each reaches the core with the tool call's context, which
+// carries the caller's auth.TokenInfo; the core decides who the caller is.
 type tools struct {
-	core           pb.ActionServiceClient
-	maxWaitSeconds float64
+	core              pb.ActionServiceClient
+	maxWaitSeconds    float64
+	directWaitSeconds float64
 }
 
 type actionIdentity struct {

@@ -4,14 +4,16 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
-	"maps"
+	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 	"unicode"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -36,18 +38,31 @@ type goldenVectors struct {
 			Text           string  `json:"text"`
 		} `json:"instructions"`
 	} `json:"server"`
-	Catalog json.RawMessage `json:"catalog"`
-	Calls   []goldenCall    `json:"calls"`
+	Catalog        json.RawMessage `json:"catalog"`
+	DirectListings []goldenListing `json:"direct_listings"`
+	Calls          []goldenCall    `json:"calls"`
+}
+
+// goldenListing is the direct tools Python lists for a caller, after the generic tools.
+type goldenListing struct {
+	MaxWaitSeconds    float64           `json:"max_wait_seconds"`
+	DirectWaitSeconds float64           `json:"direct_wait_seconds"`
+	Core              []goldenExchange  `json:"core"`
+	Tools             []json.RawMessage `json:"tools"`
 }
 
 type goldenCall struct {
-	Name           string           `json:"name"`
-	Tool           string           `json:"tool"`
-	Arguments      json.RawMessage  `json:"arguments"`
-	MaxWaitSeconds float64          `json:"max_wait_seconds"`
-	Core           []goldenExchange `json:"core"`
-	Result         json.RawMessage  `json:"result"`
+	Name              string           `json:"name"`
+	Tool              string           `json:"tool"`
+	Arguments         json.RawMessage  `json:"arguments"`
+	MaxWaitSeconds    float64          `json:"max_wait_seconds"`
+	DirectWaitSeconds float64          `json:"direct_wait_seconds"`
+	Core              []goldenExchange `json:"core"`
+	Result            json.RawMessage  `json:"result"`
 }
+
+// freshDirectKey is how a vector names a direct call's idempotency key, a fresh `direct-` UUID each call.
+const freshDirectKey = "direct-<uuid4>"
 
 // goldenExchange is one core RPC a call makes: its request, and its response or the status it fails with.
 type goldenExchange struct {
@@ -147,6 +162,16 @@ func scriptedCore(t *testing.T, catalog *pb.ListActionGroupsResponse, script []g
 			if err := protojson.Unmarshal(exchange.Request, want); err != nil {
 				t.Fatal(err)
 			}
+			if submitted, ok := request.(*pb.SubmitActionRequestRequest); ok &&
+				want.(*pb.SubmitActionRequestRequest).GetIdempotencyKey() == freshDirectKey {
+				fresh, found := strings.CutPrefix(submitted.GetIdempotencyKey(), "direct-")
+				if id, err := uuid.Parse(fresh); !found || err != nil || id.Version() != 4 {
+					t.Errorf("direct call key = %q, want direct- and a random UUID", submitted.GetIdempotencyKey())
+				}
+				submitted = proto.CloneOf(submitted)
+				submitted.IdempotencyKey = freshDirectKey
+				request = submitted
+			}
 			if !proto.Equal(request, want) {
 				t.Errorf("%s request = %v, want %v", rpc, request, want)
 			}
@@ -219,23 +244,32 @@ func answerValue(t *testing.T, answer any, fromPython bool) map[string]any {
 }
 
 // textValue is a text block as the value it encodes: JSON as a JSON value, and prose as its words and the JSON
-// value it ends in, if any.
+// values it quotes after a space.
 func textValue(text string, fromPython bool) any {
-	var value any
-	if json.Unmarshal([]byte(text), &value) == nil {
-		return jsonValue(value)
+	var whole any
+	if json.Unmarshal([]byte(text), &whole) == nil {
+		return jsonValue(whole)
 	}
-	prose, tail := text, any(nil)
-	for i := 1; i < len(text); i++ {
-		if text[i-1] == ' ' && (text[i] == '{' || text[i] == '[') && json.Unmarshal([]byte(text[i:]), &value) == nil {
-			prose, tail = text[:i], jsonValue(value)
-			break
+	var words strings.Builder
+	quoted := []any{}
+	for i := 0; i < len(text); i++ {
+		if i > 0 && text[i-1] == ' ' && (text[i] == '{' || text[i] == '[') {
+			var value any
+			decoder := json.NewDecoder(strings.NewReader(text[i:]))
+			if decoder.Decode(&value) == nil {
+				quoted = append(quoted, jsonValue(value))
+				words.WriteString("<json>")
+				i += int(decoder.InputOffset()) - 1
+				continue
+			}
 		}
+		words.WriteByte(text[i])
 	}
+	prose := words.String()
 	if fromPython {
 		prose = goQuotes(prose)
 	}
-	return []any{prose, tail}
+	return []any{prose, quoted}
 }
 
 // goQuotes reads Python's repr quotes as %q's: a ' between two letters is an apostrophe, any other one a quote.
@@ -283,7 +317,10 @@ func TestToolCallsAnswerAsThePythonToolsDo(t *testing.T) {
 	for _, vector := range vectors.Calls {
 		t.Run(vector.Name, func(t *testing.T) {
 			core, arrived := scriptedCore(t, catalog, vector.Core)
-			session := newHarness(t, core, vector.MaxWaitSeconds).connect(t, callerToken)
+			session := newHarness(t, core, Options{
+				MaxWaitSeconds:    vector.MaxWaitSeconds,
+				DirectWaitSeconds: vector.DirectWaitSeconds,
+			}).connect(t, callerToken)
 			result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: vector.Tool, Arguments: vector.Arguments})
 			if err != nil {
 				t.Fatal(err)
@@ -301,60 +338,86 @@ func TestToolCallsAnswerAsThePythonToolsDo(t *testing.T) {
 
 func TestToolsAreListedAsFastMCPListsThem(t *testing.T) {
 	vectors := loadGolden(t)
-	session := newHarness(t, &fakeCore{}, vectors.Server.Instructions[0].MaxWaitSeconds).connect(t, callerToken)
-	if got := session.InitializeResult().ServerInfo.Name; got != vectors.Server.Name {
-		t.Errorf("server name = %q, want %q", got, vectors.Server.Name)
-	}
-	if got := session.InitializeResult().Instructions; got != vectors.Server.Instructions[0].Text {
-		t.Errorf("instructions = %q, want %q", got, vectors.Server.Instructions[0].Text)
-	}
-	listed, err := session.ListTools(t.Context(), nil)
-	if err != nil {
+	catalog := vectors.catalog(t)
+	var generic []map[string]any
+	if err := json.Unmarshal(toolsJSON, &generic); err != nil {
 		t.Fatal(err)
 	}
-	var definitions []map[string]any
-	if err := json.Unmarshal(toolsJSON, &definitions); err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]map[string]any{}
-	for _, definition := range definitions {
-		want[definition["name"].(string)] = definition
-	}
-	if len(listed.Tools) != len(want) {
-		t.Errorf("listed %d tools, want %d", len(listed.Tools), len(want))
-	}
-	for _, tool := range listed.Tools {
-		got := decoded(t, tool)
-		definition := want[tool.Name]
-		// The SDK spells out a false hint FastMCP leaves out; both mean the same.
-		if gotHints, wantHints := annotations(t, got), annotations(t, definition); gotHints != wantHints {
-			t.Errorf("%s annotations = %+v, want %+v", tool.Name, gotHints, wantHints)
+	titles := map[string]string{}
+	for _, group := range catalog.GetActionGroups() {
+		for _, action := range group.GetActions() {
+			if action.Title == nil {
+				titles[group.GetKey()+directSeparator+action.GetName()] = group.GetTitle() + ": " + action.GetName()
+			}
 		}
-		delete(got, "annotations")
-		definition = maps.Clone(definition)
-		delete(definition, "annotations")
-		if !reflect.DeepEqual(got, definition) {
-			t.Errorf("%s =\n%s\nwant\n%s", tool.Name, indented(t, got), indented(t, definition))
-		}
+	}
+	for _, listing := range vectors.DirectListings {
+		t.Run(fmt.Sprintf("direct wait %vs", listing.DirectWaitSeconds), func(t *testing.T) {
+			core, arrived := scriptedCore(t, catalog, listing.Core)
+			session := newHarness(t, core, Options{
+				MaxWaitSeconds:    listing.MaxWaitSeconds,
+				DirectWaitSeconds: listing.DirectWaitSeconds,
+			}).connect(t, callerToken)
+			if got := session.InitializeResult().ServerInfo.Name; got != vectors.Server.Name {
+				t.Errorf("server name = %q, want %q", got, vectors.Server.Name)
+			}
+			listed, err := session.ListTools(t.Context(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if arrived() != len(listing.Core) {
+				t.Errorf("%d of the script's %d RPCs arrived", arrived(), len(listing.Core))
+			}
+			// The SDK sorts the generic tools by name; the direct tools follow in Python's order.
+			want := map[string]any{}
+			for _, definition := range generic {
+				want[definition["name"].(string)] = toolValue(t, definition)
+			}
+			direct := []any{}
+			for _, tool := range listing.Tools {
+				definition := decoded(t, tool)
+				// Deliberate difference: FastMCP titles an untitled tool after its name, Go after its group's title
+				// and the Action's name.
+				if title, ok := titles[definition["name"].(string)]; ok {
+					definition["title"] = title
+				}
+				direct = append(direct, toolValue(t, definition))
+			}
+			got, gotDirect := map[string]any{}, []any{}
+			for _, tool := range listed.Tools {
+				if strings.Contains(tool.Name, directSeparator) {
+					gotDirect = append(gotDirect, toolValue(t, tool))
+				} else {
+					got[tool.Name] = toolValue(t, tool)
+				}
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("generic tools =\n%s\nwant\n%s", indented(t, got), indented(t, want))
+			}
+			if !reflect.DeepEqual(gotDirect, direct) {
+				t.Errorf("direct tools =\n%s\nwant\n%s", indented(t, gotDirect), indented(t, direct))
+			}
+		})
 	}
 }
 
-type hints struct {
-	readOnly, idempotent   bool
-	destructive, openWorld *bool
-}
-
-func annotations(t *testing.T, tool map[string]any) hints {
+// toolValue is a listed tool as the comparison reads it: the SDK spells out a false hint FastMCP leaves out, and
+// both mean the same.
+func toolValue(t *testing.T, tool any) map[string]any {
 	t.Helper()
-	var parsed mcp.ToolAnnotations
-	encoded, err := json.Marshal(tool["annotations"])
-	if err != nil {
-		t.Fatal(err)
+	fields := decoded(t, tool)
+	if hints, ok := fields["annotations"]; ok {
+		encoded, err := json.Marshal(hints)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var parsed mcp.ToolAnnotations
+		if err := json.Unmarshal(encoded, &parsed); err != nil {
+			t.Fatal(err)
+		}
+		fields["annotations"] = decoded(t, parsed)
 	}
-	if err := json.Unmarshal(encoded, &parsed); err != nil {
-		t.Fatal(err)
-	}
-	return hints{readOnly: parsed.ReadOnlyHint, idempotent: parsed.IdempotentHint, destructive: parsed.DestructiveHint, openWorld: parsed.OpenWorldHint}
+	return fields
 }
 
 func TestInstructionsNameTheConfiguredWaitLimit(t *testing.T) {

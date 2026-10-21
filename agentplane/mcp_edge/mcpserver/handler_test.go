@@ -124,7 +124,7 @@ const toolsList = `{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}`
 
 func TestRefusedBearersNeverReachTheCore(t *testing.T) {
 	recorder := &recordingCore{}
-	h := newHarness(t, recorder.core(nil, noWatch), 30)
+	h := newHarness(t, recorder.core(nil, noWatch), Options{MaxWaitSeconds: 30})
 	for _, tc := range []struct {
 		name          string
 		authorization []string
@@ -146,7 +146,7 @@ func TestRefusedBearersNeverReachTheCore(t *testing.T) {
 }
 
 func TestAnAuthorityOutageIsNotAnInvalidToken(t *testing.T) {
-	h := newHarness(t, &fakeCore{}, 30)
+	h := newHarness(t, &fakeCore{}, Options{MaxWaitSeconds: 30})
 	response := post(t, h.url(), mcpHeaders("Bearer "+outageToken), toolsList)
 	if response.StatusCode != http.StatusServiceUnavailable || response.Header.Get("Retry-After") == "" {
 		t.Errorf("status = %d, Retry-After = %q; want 503 with a Retry-After", response.StatusCode,
@@ -171,7 +171,7 @@ func TestToolsCallTheCoreAsTheVerifiedCaller(t *testing.T) {
 		"GetActionPolicy": &pb.GetActionPolicyResponse{ActionPolicy: &pb.CallerActionPolicy{Synced: true}},
 	}, func(_ *pb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[pb.WatchActionRequestResponse]) error {
 		return stream.Send(&pb.WatchActionRequestResponse{ActionRequest: testRequest(pb.ActionState_ACTION_STATE_DENIED)})
-	}), 30)
+	}), Options{MaxWaitSeconds: 30})
 	for _, token := range []string{callerToken, otherCallerToken} {
 		session := h.connect(t, token)
 		callTool(t, session, "get_action_policy", `{}`)
@@ -187,7 +187,7 @@ func TestToolsCallTheCoreAsTheVerifiedCaller(t *testing.T) {
 
 func TestInvalidArgumentsAreRefusedBeforeTheCore(t *testing.T) {
 	recorder := &recordingCore{}
-	session := newHarness(t, recorder.core(nil, noWatch), 30).connect(t, callerToken)
+	session := newHarness(t, recorder.core(nil, noWatch), Options{MaxWaitSeconds: 30}).connect(t, callerToken)
 	request := `{"idempotency_key": "test-key", "title": "test title", "action": {"group": "test-mcp", "name": "alpha"}, ` +
 		`"arguments": {}`
 	for _, tc := range []struct{ name, tool, arguments string }{
@@ -236,7 +236,7 @@ func TestAWaitAnswersTheReceiptThatSatisfiesIt(t *testing.T) {
 			}
 		}
 		return nil
-	}), 30).connect(t, callerToken)
+	}), Options{MaxWaitSeconds: 30}).connect(t, callerToken)
 	terminal := callTool(t, session, "get_action_request", `{"request_id": "`+testRequestID+`", "wait": {"wait_seconds": 10}}`)
 	decided := callTool(t, session, "get_action_request",
 		`{"request_id": "`+testRequestID+`", "wait": {"wait_seconds": 10, "wait_until": "decision"}}`)
@@ -297,7 +297,7 @@ func TestAWaitDeadlineAnswersTheCurrentReceipt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			session := newHarness(t, (&recordingCore{}).core(map[string]proto.Message{
 				"GetActionRequest": &pb.GetActionRequestResponse{ActionRequest: testRequest(pb.ActionState_ACTION_STATE_DECISION_PENDING)},
-			}, tc.watch), 30).connect(t, callerToken)
+			}, tc.watch), Options{MaxWaitSeconds: 30}).connect(t, callerToken)
 			result := callTool(t, session, "get_action_request", `{"request_id": "`+testRequestID+`", "wait": {"wait_seconds": `+tc.wait+`}}`)
 			if got := receiptState(t, result); got != tc.want {
 				t.Errorf("state = %q, want %q", got, tc.want)
@@ -319,7 +319,7 @@ func TestAWatchTheCoreEndsEarlyAnswersAsPythonDid(t *testing.T) {
 			recorder := &recordingCore{}
 			session := newHarness(t, recorder.core(nil, func(*pb.WatchActionRequestRequest, grpc.ServerStreamingServer[pb.WatchActionRequestResponse]) error {
 				return status.Error(tc.code, "test watch ended")
-			}), 30).connect(t, callerToken)
+			}), Options{MaxWaitSeconds: 30}).connect(t, callerToken)
 			result := callTool(t, session, "get_action_result", `{"request_id": "`+testRequestID+`", "wait": {"wait_seconds": 10}}`)
 			if got := text(t, result); !result.IsError || got != string(tc.want) {
 				t.Errorf("answer = %q (error %v), want %q", got, result.IsError, tc.want)
@@ -336,7 +336,7 @@ func TestADisconnectEndsTheWaitWithoutCancellingTheRequest(t *testing.T) {
 	}, func(request *pb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[pb.WatchActionRequestResponse]) error {
 		close(watching)
 		return blockUntilDone(ended)(request, stream)
-	}), 30)
+	}), Options{MaxWaitSeconds: 30})
 	ctx, disconnect := context.WithCancel(t.Context())
 	call := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "request_action", "arguments": ` +
 		`{"request": {"idempotency_key": "test-disconnect", "title": "test title", "action": {"group": "test-mcp", ` +
@@ -364,7 +364,9 @@ func TestADisconnectEndsTheWaitWithoutCancellingTheRequest(t *testing.T) {
 	}
 }
 
-func TestRequestActionWaitsForTheResultItsToolAnswered(t *testing.T) {
+// answeredRequest is a request whose MCP tool answered "test answer".
+func answeredRequest(t *testing.T) *pb.ActionRequest {
+	t.Helper()
 	stored, err := structpb.NewValue(map[string]any{
 		"content":           []any{map[string]any{"type": "text", "text": "test answer"}},
 		"structuredContent": map[string]any{"width": 1},
@@ -377,6 +379,11 @@ func TestRequestActionWaitsForTheResultItsToolAnswered(t *testing.T) {
 		Id: "00000000-0000-0000-0000-0000000000e1", State: pb.ExecutionState_EXECUTION_STATE_SUCCEEDED, Result: stored,
 		CreatedAt: succeeded.GetCreatedAt(),
 	}
+	return succeeded
+}
+
+func TestRequestActionWaitsForTheResultItsToolAnswered(t *testing.T) {
+	succeeded := answeredRequest(t)
 	recorder := &recordingCore{}
 	session := newHarness(t, recorder.core(map[string]proto.Message{
 		"SubmitActionRequest": &pb.SubmitActionRequestResponse{ActionRequest: testRequest(pb.ActionState_ACTION_STATE_DECISION_PENDING)},
@@ -388,7 +395,7 @@ func TestRequestActionWaitsForTheResultItsToolAnswered(t *testing.T) {
 			}
 		}
 		return nil
-	}), 30).connect(t, callerToken)
+	}), Options{MaxWaitSeconds: 30}).connect(t, callerToken)
 	result := callTool(t, session, "request_action", `{"request": {"idempotency_key": "test-answered", "title": "test title", `+
 		`"action": {"group": "test-mcp", "name": "alpha"}, "arguments": {}}, "wait": {"wait_seconds": 10}}`)
 	if result.IsError || text(t, result) != "test answer" {
