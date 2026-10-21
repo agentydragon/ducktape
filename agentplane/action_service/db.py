@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+from types import MappingProxyType
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
 from sqlalchemy import (
     CheckConstraint,
+    Column,
     DateTime,
     ForeignKey,
     Index,
@@ -25,13 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, Mapper, mapped_column
 
 from agentplane.action_service.catalog import ActionIdentity
-from agentplane.action_service.models import (
-    ActionState,
-    ExecutionState,
-    ExternalGrantProvenance,
-    PolicyEvidence,
-    Verdict,
-)
+from agentplane.action_service.models import ActionState, ExecutionState, PolicyEvidence, Verdict
 from agentplane.action_service.updates import CHANNEL, CONNECTIONS_CHANNEL, DISPATCH_CHANNEL, MCP_LINKAGE_CHANNEL
 from agentplane.subjects import ServiceAccountRef
 from util.db_url import async_engine_url
@@ -117,6 +113,9 @@ def _notify_connection(_mapper: Mapper[object], connection: Connection, _row: ob
 class ActionRequestRow(Base):
     __tablename__ = "action_request"
     __table_args__ = (
+        # CLEANUP(added 2026-10-21): Drop this column and `exclude_properties` below with a migration, in its own
+        #   data-deletion PR, once every deployed Action Service image is this one or later: earlier ones select it.
+        Column("external_grant", JSONB),
         UniqueConstraint("caller_namespace", "caller_name", "idempotency_key"),
         Index("ix_action_request_caller_created", "caller_namespace", "caller_name", "created_at"),
         Index("ix_action_request_state_created", "state", "created_at"),
@@ -134,6 +133,8 @@ class ActionRequestRow(Base):
         ),
     )
 
+    __mapper_args__ = MappingProxyType({"exclude_properties": ["external_grant"]})
+
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     idempotency_key: Mapped[str] = mapped_column(Text)
     action: Mapped[ActionIdentity] = mapped_column(PydanticColumn(ActionIdentity))
@@ -142,9 +143,6 @@ class ActionRequestRow(Base):
     description: Mapped[str | None] = mapped_column(Text)
     caller_namespace: Mapped[str] = mapped_column(Text)
     caller_name: Mapped[str] = mapped_column(Text)
-    # CLEANUP(added 2026-10-21): Drop this column (a migration, in its own data-deletion PR) once the
-    #   deployed Action Service image is one that never writes it; nothing reads it.
-    external_grant: Mapped[ExternalGrantProvenance | None] = mapped_column(PydanticColumn(ExternalGrantProvenance))
     state: Mapped[ActionState] = mapped_column(TextBackedStrEnumColumn(ActionState))
     version: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
