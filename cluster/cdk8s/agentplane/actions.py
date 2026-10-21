@@ -196,8 +196,8 @@ class Actions(Construct):
             [
                 RolePolicyRule(resources=[custom_resource("", "podtemplates")], verbs=["get"]),
                 RolePolicyRule(resources=[custom_resource("", "pods")], verbs=["create", "get", "list", "delete"]),
-                # `get` and not `create`: kubernetes_asyncio opens exec as an HTTP GET upgrade,
-                # where kubectl POSTs.
+                # Both verbs: a WebSocket exec is an HTTP GET upgrade, and the API server
+                # authorizes it as `create` too.
                 RolePolicyRule(resources=[custom_resource("", "pods/exec")], verbs=["get", "create"]),
                 # The caller's account, for the owner reference that collects its boxes with it.
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
