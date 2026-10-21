@@ -6,12 +6,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"sync"
+	"testing"
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"github.com/moby/moby/client"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -23,12 +26,19 @@ const (
 	postgresPass  = "postgres"
 	postgresDB    = "postgres"
 	ryukImage     = "testcontainers/ryuk:0.14.0"
+	// templateDB is the copy of the migrated database that Clone copies.
+	templateDB = "migrated_template"
 )
 
 // Database owns a PostgreSQL container and the connection migrated by the service's production Goose code.
 type Database struct {
 	URL       string
 	container testcontainers.Container
+
+	mu sync.Mutex
+	// admin creates and drops the clones; nil until the first Clone.
+	admin  *sql.DB
+	clones int
 }
 
 // Start loads the repository-pinned PostgreSQL and Ryuk images, starts PostgreSQL, and applies migrate.
@@ -73,7 +83,73 @@ func Start(ctx context.Context, migrate func(context.Context, *sql.DB) error) (*
 // Close terminates PostgreSQL. Testcontainers' Ryuk remains responsible for cleanup if the Go test
 // process exits before this explicit shutdown runs.
 func (db *Database) Close() error {
-	return terminate(db.container)
+	var closeAdmin error
+	if db.admin != nil {
+		closeAdmin = db.admin.Close()
+	}
+	return errors.Join(closeAdmin, terminate(db.container))
+}
+
+// Clone returns the URL of a database of the test's own, copied from the migrated one, which the test's cleanup
+// drops: it starts with the schema and no rows, so queries that span every row see only the test's, and its NOTIFY
+// channels reach only its own connections. A test package that clones connects to the migrated database only
+// through clones, since a copy needs it idle.
+func (db *Database) Clone(t testing.TB) string {
+	t.Helper()
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	if db.admin == nil {
+		admin, err := db.createTemplate(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		db.admin = admin
+	}
+	db.clones++
+	name := fmt.Sprintf("test_%d", db.clones)
+	if _, err := db.admin.ExecContext(t.Context(), `CREATE DATABASE `+name+` TEMPLATE `+templateDB); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := db.admin.Exec(`DROP DATABASE ` + name + ` WITH (FORCE)`); err != nil {
+			t.Error(err)
+		}
+	})
+	return db.databaseURL(name)
+}
+
+func (db *Database) databaseURL(name string) string {
+	parsed, err := url.Parse(db.URL)
+	if err != nil {
+		panic(err)
+	}
+	parsed.Path = "/" + name
+	return parsed.String()
+}
+
+// createTemplate copies the migrated database into templateDB, from a connection to another database.
+func (db *Database) createTemplate(ctx context.Context) (*sql.DB, error) {
+	admin, err := sql.Open("postgres", db.databaseURL("template1"))
+	if err != nil {
+		return nil, err
+	}
+	// The migrator's connection may still be closing on the server.
+	for {
+		_, err = admin.ExecContext(ctx, `CREATE DATABASE `+templateDB+` TEMPLATE `+postgresDB)
+		var failure *pq.Error
+		if !errors.As(err, &failure) || failure.Code != "55006" {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return nil, errors.Join(err, admin.Close())
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if err != nil {
+		return nil, errors.Join(err, admin.Close())
+	}
+	return admin, nil
 }
 
 func openDatabase(ctx context.Context, container testcontainers.Container) (string, *sql.DB, error) {

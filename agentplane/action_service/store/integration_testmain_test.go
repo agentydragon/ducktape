@@ -4,28 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
+	_ "github.com/lib/pq"
 )
 
-const templateDatabase = "action_template"
-
-var (
-	integrationDatabase *postgres.Database
-	// admin holds the connection that creates and drops each test's database.
-	admin     *sql.DB
-	databases atomic.Int64
-)
+var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
 	os.Exit(runIntegrationTests(m))
@@ -34,55 +24,21 @@ func TestMain(m *testing.M) {
 func runIntegrationTests(m *testing.M) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	database, err := postgres.Start(ctx, migrations.Up)
-	if err == nil {
-		integrationDatabase = database
-		err = createTemplate(ctx)
-	}
 	cancel()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	integrationDatabase = database
 
 	code := m.Run()
-	if err := errors.Join(admin.Close(), database.Close()); err != nil {
+	if err := database.Close(); err != nil {
 		fmt.Fprintln(os.Stderr, "close PostgreSQL fixture:", err)
 		if code == 0 {
 			code = 1
 		}
 	}
 	return code
-}
-
-func databaseURL(name string) string {
-	parsed, err := url.Parse(integrationDatabase.URL)
-	if err != nil {
-		panic(err)
-	}
-	parsed.Path = "/" + name
-	return parsed.String()
-}
-
-// createTemplate copies the migrated database, which every test then clones: a test starts with no rows, so
-// the queries that span every owner see only its own.
-func createTemplate(ctx context.Context) error {
-	var err error
-	if admin, err = sql.Open("postgres", databaseURL("template1")); err != nil {
-		return err
-	}
-	// The migrator's connection may still be closing on the server.
-	for {
-		_, err = admin.ExecContext(ctx, `CREATE DATABASE `+templateDatabase+` TEMPLATE postgres`)
-		var failure *pq.Error
-		if !errors.As(err, &failure) || failure.Code != "55006" {
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return err
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
 }
 
 // fixture is a Store over a database of its own.
@@ -94,21 +50,12 @@ type fixture struct {
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	name := fmt.Sprintf("test_%d", databases.Add(1))
-	if _, err := admin.ExecContext(t.Context(), `CREATE DATABASE `+name+` TEMPLATE `+templateDatabase); err != nil {
-		t.Fatal(err)
-	}
-	dsn := databaseURL(name)
+	dsn := integrationDatabase.Clone(t)
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		db.Close()
-		if _, err := admin.Exec(`DROP DATABASE ` + name + ` WITH (FORCE)`); err != nil {
-			t.Error(err)
-		}
-	})
+	t.Cleanup(func() { db.Close() })
 	return fixture{Store: New(db), db: db, url: dsn}
 }
 
