@@ -89,15 +89,23 @@ func (i *Index) Admits(account auth.Account) bool {
 	return labeled
 }
 
-// ResolveBindings is the caller's PolicyBindings as admission decides from them, in name order, each with the sets it
-// names that exist and parse; a missing or refused set contributes nothing. The Policy Controller deletes a binding at
-// expiry. Nothing while the Index is unavailable, so every request then waits for an operator.
-func (i *Index) ResolveBindings(caller policyapi.ServiceAccountRef) []policies.Binding {
+// Resolve is the subject's PolicyBindings in name order, each with how the sets it names stand, and whether the Index
+// was available to read them: nothing when it was not. The Policy Controller deletes a binding at expiry. Admission
+// and the policy views read this one resolution, so what a view reports and what admission decides cannot drift.
+func (i *Index) Resolve(subject policyapi.ServiceAccountRef) ([]reader.BindingResolution[policies.Policy], bool) {
 	if !i.Freshness.Available(time.Now()) {
-		return nil
+		return nil, false
 	}
+	return i.Rules.Bindings(subject), true
+}
+
+// ResolveBindings is the caller's PolicyBindings as admission decides from them, in name order, each with the sets it
+// names that exist and parse; a missing or refused set contributes nothing. Nothing while the Index is unavailable, so
+// every request then waits for an operator.
+func (i *Index) ResolveBindings(caller policyapi.ServiceAccountRef) []policies.Binding {
+	resolved, _ := i.Resolve(caller)
 	var bindings []policies.Binding
-	for _, bound := range i.Rules.Bindings(caller) {
+	for _, bound := range resolved {
 		binding := policies.Binding{
 			Namespace: bound.Binding.Namespace, Name: bound.Binding.Name, ResourceVersion: bound.Binding.ResourceVersion,
 		}
