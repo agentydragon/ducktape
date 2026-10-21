@@ -2105,6 +2105,7 @@ use_repo(
     "com_github_santhosh_tekuri_jsonschema_v6",
     "com_github_schlunsen_claude_agent_sdk_go",
     "com_github_sethvargo_go_retry",
+    "com_github_sherclockholmes_webpush_go",
     "com_github_spf13_cast",
     "com_github_spf13_cobra",
     "com_github_spf13_viper",

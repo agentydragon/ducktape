@@ -5,6 +5,7 @@ package(default_visibility = ["//agentplane/action_service:__subpackages__"])
 go_library(
     name = "store",
     srcs = [
+        "approvals.go",
         "cancel.go",
         "decisions.go",
         "executions.go",

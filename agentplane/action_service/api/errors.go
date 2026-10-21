@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc/codes"
@@ -51,6 +52,14 @@ func failure(ctx context.Context, err error) error {
 		return status.Error(codes.Unavailable, catalog.ErrUnavailable.Error())
 	case errors.As(err, &conflict) && conflictCodes[conflict.Reason] != codes.OK:
 		return status.Error(conflictCodes[conflict.Reason], conflict.Message)
+	case errors.Is(err, push.ErrUnsupportedEndpoint):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, push.ErrNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, push.ErrRegisteredElsewhere):
+		return status.Error(codes.AlreadyExists, err.Error())
+	case errors.Is(err, errPushNotConfigured):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, errDraining):
 		return status.Error(codes.Unavailable, errDraining.Error())
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):

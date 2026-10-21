@@ -83,6 +83,12 @@ require (
 // Direct dependencies for agentplane/action_service/mcpexec (bearer tokens sent to MCP servers)
 require golang.org/x/oauth2 v0.36.0
 
+// Direct dependencies for agentplane/action_service/push (VAPID and RFC 8291 payload encryption)
+require (
+	github.com/SherClockHolmes/webpush-go v1.4.0
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
+)
+
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
