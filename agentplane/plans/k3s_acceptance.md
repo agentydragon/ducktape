@@ -155,8 +155,9 @@ Decided 2026-10-21 05:38 (operator).
 - **The scripted upstream** is `agentplane/acceptance/scripted_upstream.py`.
   - It is one HTTP server for both dialects: `/v1/messages` goes to `ClaudeModel` and
     `/v1/responses` to `CodexModel`.
-  - It reuses the runner tests' `ScriptedModel` and `ModelEndpoint`; `ModelEndpoint` gains a bind
-    address.
+  - It reuses the runner tests' `ScriptedModel`, `ClaudeModel` and `CodexModel`, which first move
+    from `runner/testing/` to `agentplane/testing/` (operator, 2026-10-21 05:42), and
+    `ModelEndpoint`, which gains a bind address.
   - It keeps one queue per Sandbox Pod and dialect. The Pod is the one LLM ingress names in the
     `x-litellm-spend-logs-metadata` header it adds.
   - The k3s plugin starts it on the node IP before rendering the chart, and points LLM ingress's

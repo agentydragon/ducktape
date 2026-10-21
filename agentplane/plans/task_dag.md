@@ -2026,8 +2026,10 @@ have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-b
 **Proposed; the first model backend (operator, 2026-10-21 05:23).** Laid out as in the plan's
 [Test layout](k3s_acceptance.md#test-layout).
 
-- `agentplane/acceptance/scripted_upstream.py` serves the runner tests' `ScriptedModel` in both
-  dialects, one queue per Sandbox Pod, as LLM ingress's upstream at the node IP.
+- First, `scripted_model.py`, `claude_model.py` and `codex_model.py` move from `runner/testing/` to
+  `agentplane/testing/`, every caller updated in the same PR.
+- `agentplane/acceptance/scripted_upstream.py` serves them in both dialects, one queue per Sandbox
+  Pod, as LLM ingress's upstream at the node IP.
 - It stands in for LiteLLM; the catalogs stay as they are.
 - Scripted targets need a runner image with both harnesses; the fixture has a Claude-only one
   (`claude/runner_layout`), and the model-free targets keep the harness-free one.
