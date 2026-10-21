@@ -117,15 +117,6 @@ class Probe(BaseModel):
     unlisted_refused: bool = Field(description="Whether the host no policy names was refused.")
 
 
-def _get_through_proxy(host: str, path: str) -> str:
-    """A GET through the Sandbox's proxy in bash alone: the k3s runner image has no HTTP client."""
-    request = f"GET http://{host}{path} HTTP/1.1\\r\\nHost: {host}\\r\\nConnection: close\\r\\n\\r\\n"
-    return (
-        'p=${HTTP_PROXY#http://}; p=${p%/}; exec 3<>"/dev/tcp/${p%:*}/${p##*:}"; '
-        f"printf '{request}' >&3; head -n 1 <&3"
-    )
-
-
 async def _scripted_shell_turn(agent: Agent, model: ScriptedModel[Any], command: str) -> Turn:
     async with asyncio.TaskGroup() as turns:
         turn = turns.create_task(agent.run(f"Run: {command}"))
@@ -257,7 +248,7 @@ async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered_model)
-    command = _get_through_proxy(host, path)
+    command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}{path}"
 
     await _scripted_shell_turn(agent, model, command)
     refused = await _decision_for(client, view.name, host)
