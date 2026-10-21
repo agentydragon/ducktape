@@ -23,7 +23,7 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.net import pick_free_port
+from util.net import reserve_free_port
 from util.settings_contract import env_name, settings_file
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -191,8 +191,8 @@ async def run_gateway(
     migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
     await asyncio.to_thread(_migrate, database_url, migration_log)
 
-    port = pick_free_port()
-    http_port = pick_free_port()
+    port = reserve_free_port()
+    http_port = reserve_free_port()
     binary = get_required_path(own_repo_rlocation(_GATEWAY_BINARY))
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
     # The settings file as the cdk8s renderer writes it: its keys checked against the Python model.
