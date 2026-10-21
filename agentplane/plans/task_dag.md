@@ -1973,7 +1973,8 @@ old paths.
 [the plan](k3s_acceptance.md).**
 
 - The deployed acceptance scenarios take their deployment as a target: testing, staging, or the
-  disposable k3s stack in [`x/k3s_env`](../x/k3s_env/README.md).
+  disposable k3s stack in [`x/k3s_env`](../x/k3s_env/README.md). The Dispatcher and Pod storage
+  scenarios run on k3s (#11330, [acceptance README](../acceptance/README.md)).
 - They take a model backend: a real model, or a scripted one.
 - `agentplane-testing` goes.
 - k3s targets enter CI once they meet a time and reliability bar.
@@ -1983,12 +1984,11 @@ changes.
 
 ```mermaid
 flowchart LR
-    ACCEPTANCE_TARGETS[Proposed: scenarios take their deployment as a target]
     ACCEPTANCE_MODEL_BACKEND_ORDER[Decision: real or scripted model first]
     K3S_MODEL_CREDENTIALS[Decision: model key for k3s acceptance]
     K3S_MODEL_SCENARIOS[Blocked: real-model scenarios on k3s]
-    ACCEPTANCE_SCRIPTED_MODEL[Blocked: scripted-model scenarios on k3s]
-    K3S_FIXTURE_IDENTITY[Blocked: Dex and MCP fixtures in the k3s chart]
+    ACCEPTANCE_SCRIPTED_MODEL[Proposed: scripted-model scenarios on k3s]
+    K3S_FIXTURE_IDENTITY[Proposed: Dex and MCP fixtures in the k3s chart]
     K3S_VM_ACCEPTANCE[Decision: where VM acceptance runs]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     TESTING_ROLLOUT_ROLE[Decision: what replaces testing before staging]
@@ -1997,12 +1997,9 @@ flowchart LR
     K3S_MIGRATOR_CONNECT_RETRY[Proposed: migrators retry their first connection]
     K3S_TEST_STARTUP[Proposed: cut the time before pytest starts]
     K3S_CI_TIER[Decision: which k3s targets run in CI]
-    ACCEPTANCE_TARGETS --> K3S_MODEL_SCENARIOS
     K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
-    ACCEPTANCE_TARGETS --> ACCEPTANCE_SCRIPTED_MODEL
     ACCEPTANCE_MODEL_BACKEND_ORDER -. orders .-> K3S_MODEL_SCENARIOS
     ACCEPTANCE_MODEL_BACKEND_ORDER -. orders .-> ACCEPTANCE_SCRIPTED_MODEL
-    ACCEPTANCE_TARGETS --> K3S_FIXTURE_IDENTITY
     K3S_MODEL_SCENARIOS -. first backend .-> TESTING_ENVIRONMENT_RETIRE
     ACCEPTANCE_SCRIPTED_MODEL -. first backend .-> TESTING_ENVIRONMENT_RETIRE
     K3S_VM_IMAGE -. the emulation spike needs it .-> K3S_VM_ACCEPTANCE
@@ -2010,32 +2007,11 @@ flowchart LR
     K3S_VM_ACCEPTANCE --> TESTING_ENVIRONMENT_RETIRE
     TESTING_ROLLOUT_ROLE --> TESTING_ENVIRONMENT_RETIRE
     K3S_CI_TIER -. if the k3s suite gates staging pins .-> TESTING_ENVIRONMENT_RETIRE
-    ACCEPTANCE_TARGETS --> K3S_CI_TIER
     ACCEPTANCE_SCRIPTED_MODEL -. model scenarios on PRs .-> K3S_CI_TIER
     K3S_KUBE_PROXY_RETEST -. faster, ClusterIP coverage .-> K3S_CI_TIER
     K3S_MIGRATOR_CONNECT_RETRY -. faster on slow workers .-> K3S_CI_TIER
     K3S_TEST_STARTUP -. faster .-> K3S_CI_TIER
 ```
-
-### `ACCEPTANCE_TARGETS` — scenarios take their deployment as a target
-
-**Proposed.** One target description replaces the testing defaults and hardcodes:
-
-- The app URL, token, namespace and kubeconfig.
-- What the deployment offers: templates, Dex and the MCP fixtures, KVM.
-
-The hardcodes to remove:
-
-- `test_dispatcher_deployed`'s namespace.
-- `test_storage_deployed`'s testing URL, quota and empty-namespace checks.
-- `test_dcr`'s MCP URL.
-
-On k3s, a session-scoped fixture starts `running_stack` and supplies the description. A macro
-generates one target per scenario and deployment, only where the deployment offers what the
-scenario needs; each target is its own RBE action.
-
-Exit: the Dispatcher queue, replica and wake cases and the Pod storage case pass from the same
-files against k3s, on RBE with no cluster credentials, and against testing.
 
 ### `ACCEPTANCE_MODEL_BACKEND_ORDER` — real or scripted model first
 
@@ -2057,8 +2033,9 @@ Question: which models, what budget, and is a BuildBuddy secret acceptable?
 
 ### `K3S_MODEL_SCENARIOS` — real-model scenarios on k3s
 
-**Blocked on `ACCEPTANCE_TARGETS` and `K3S_MODEL_CREDENTIALS`.** These pass on k3s on both
-harnesses with the real model:
+**Blocked on `K3S_MODEL_CREDENTIALS`.** Their `_k3s` targets need a runner image with both
+harnesses; the model-free targets use the harness-free one. These pass on k3s on both harnesses
+with the real model:
 
 - `test_egress`
 - `test_instructions`
@@ -2067,7 +2044,7 @@ harnesses with the real model:
 
 ### `ACCEPTANCE_SCRIPTED_MODEL` — scripted-model scenarios on k3s
 
-**Blocked on `ACCEPTANCE_TARGETS`.** The runner tests' `ScriptedModel`, in both dialects, is
+**Proposed, ordered by `ACCEPTANCE_MODEL_BACKEND_ORDER`.** The runner tests' `ScriptedModel`, in both dialects, is
 served by the test process as LLM ingress's upstream at the node IP, and the catalog offers it.
 
 The test scripts each model step and asserts what the model was sent. Scripted variants of
@@ -2079,13 +2056,14 @@ endpoint.
 
 ### `K3S_FIXTURE_IDENTITY` — Dex and MCP fixtures in the k3s chart
 
-**Blocked on `ACCEPTANCE_TARGETS`.** Add to the fixture chart:
+**Proposed.** Add to the fixture chart:
 
 - Dex, with a plain config Secret.
 - `mcp-everything`.
 - The Dex-backed `example` OAuth server.
 
-Let the operator-login kubeconfig guard accept the fixture's apiserver.
+Let the operator-login kubeconfig guard accept the fixture's apiserver, and drop `test_dcr`'s
+hardcoded testing MCP URL.
 
 Exit: `test_mcp` and `test_dcr` pass on k3s with whichever model backend exists by then.
 
@@ -2141,7 +2119,7 @@ filling the runtime values in the test. Exit: before and after timings on fresh 
 
 ### `K3S_CI_TIER` — which k3s targets run in CI
 
-**Decision, after `ACCEPTANCE_TARGETS`.** A target enters CI when its slowest of 10 fresh runs
+**Decision.** A target enters CI when its slowest of 10 fresh runs
 fits the budget the operator sets and 20 consecutive fresh runs pass. Fork PRs never get the model
 key.
 

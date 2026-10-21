@@ -68,8 +68,8 @@ layer (−40%) and the harness-free runner image (−35%).
 
 | Scenario                                                                                                         | Needs                                                                                                 | On k3s                                                             |
 | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `test_dispatcher_deployed` (queue, replicas, wake)                                                               | kubectl, Pod-bound tokens, two Gateway replicas                                                       | portable, no model                                                 |
-| `test_storage_deployed`, Pod case                                                                                | Sandbox-owned PVCs                                                                                    | portable; drop the testing-quota precondition                      |
+| `test_dispatcher_deployed` (queue, replicas, wake)                                                               | kubectl, Pod-bound tokens, two Gateway replicas                                                       | runs on k3s (#11330)                                               |
+| `test_storage_deployed`, Pod case                                                                                | Sandbox-owned PVCs                                                                                    | runs on k3s (#11330)                                               |
 | `test_egress`, `test_instructions`, `test_launch_presets`, `test_suspend_resume` Pod case                        | turns on both harnesses, the egress ring, kubectl                                                     | portable with a model key, or scripted (no key)                    |
 | `test_mcp`, `test_dcr`                                                                                           | Dex operator login, `mcp-everything`, the Dex-backed `example` OAuth server, a browser for Dex's form | needs Dex and both MCP fixtures in the chart                       |
 | VM cases: `test_vm_sandbox`, `test_vm_workspace_ownership`, `test_suspend_resume` VM, `test_storage_deployed` VM | KubeVirt, KVM                                                                                         | no KVM on RBE (finding 4)                                          |
@@ -85,18 +85,12 @@ pins, and a real rollout before staging ([testing before staging](task_dag.md#te
 A scenario is written once. It runs against a **target**, a deployment, and a **model backend**,
 whatever serves its model turns.
 
-**Targets.** The `conftest` already reads the app URL, token, namespace and ServiceAccount from
-`AGENTPLANE_ACCEPTANCE_*`, with testing as the default. A few scenarios still hardcode testing:
-
-- `test_dispatcher_deployed` hardcodes its namespace.
-- `test_storage_deployed` asserts the testing URL, its quota and an empty namespace.
-- `test_dcr` hardcodes testing's MCP URL.
-
-A target becomes one description of all of these, plus what the target offers: templates, Dex and
-the MCP fixtures, KVM. On k3s, a session-scoped fixture starts the stack and supplies the
-description. Testing and staging take theirs from the environment, as now. Bazel generates one target
-per scenario and deployment, and only where the deployment offers what the scenario needs. A scenario
-is never skipped at runtime.
+**Targets** (landed in #11330; [acceptance README](../acceptance/README.md)). A scenario declared
+with `acceptance_test(k3s = True)` runs against the deployment the environment names
+(`AGENTPLANE_ACCEPTANCE_*`, testing by default) and as `<scenario>_k3s`, which starts its own stack
+on RBE and publishes it through the same variables. Cases that need VM Sandboxes are marked and the
+k3s target deselects them. The Dispatcher and Pod storage scenarios run this way; the rest move as
+the steps below give k3s what they need.
 
 **Model backends.**
 
@@ -124,17 +118,11 @@ Exact request contents are scripted only.
 
 Ordered by what unblocks what. Speed work runs alongside and blocks only the CI tier.
 
-1. **`ACCEPTANCE_TARGETS`.**
-   - The suite takes its deployment as a target, as above.
-   - The testing hardcodes go, and k3s becomes a target the fixture starts.
-   - Each generated target is its own RBE action, so the files run in parallel.
-   - Model-free scenarios come first: the Dispatcher queue, replica and wake cases, and the Pod
-     storage case, passing against both k3s and testing from the same files.
-2. **`ACCEPTANCE_MODEL_BACKEND_ORDER`** (decision): which model backend comes first.
+1. **`ACCEPTANCE_MODEL_BACKEND_ORDER`** (decision): which model backend comes first.
    - Recommended: real model first. Every model scenario is written that way and passes against
      testing now, so on k3s it needs only the key.
    - The scripted backend is second, but it is what lets model scenarios run on pull requests.
-3. **Model backends on k3s.** These two can run in either order, as decided in step 2.
+2. **Model backends on k3s.** These two can run in either order, as decided in step 1.
    - **`K3S_MODEL_CREDENTIALS`** (decision), then **`K3S_MODEL_SCENARIOS`**.
      - The fixture today takes a Qwen-only key through `--test_env`, which lands on the BuildBuddy
        command line.
@@ -147,26 +135,26 @@ Ordered by what unblocks what. Speed work runs alongside and blocks only the CI 
      - The catalog offers the scripted model.
      - Scripted variants of `test_egress`, `test_instructions` and the Pod case of
        `test_suspend_resume` run on both harnesses.
-4. **`K3S_FIXTURE_IDENTITY`.** Then `test_mcp` and `test_dcr` run on k3s.
+3. **`K3S_FIXTURE_IDENTITY`.** Then `test_mcp` and `test_dcr` run on k3s.
    - Add Dex with a plain config Secret. The ExternalSecret template is what dropped it from the
      fixture.
    - Add `mcp-everything` and the `example` OAuth server.
    - Add an operator-login kubeconfig guard that accepts the fixture's apiserver.
-5. **`K3S_VM_ACCEPTANCE`** (decision): where VM-Sandbox acceptance runs with no testing cluster.
+4. **`K3S_VM_ACCEPTANCE`** (decision): where VM-Sandbox acceptance runs with no testing cluster.
    - Recommended: spike KubeVirt with software emulation inside the RBE k3s, on the Bazel-built
      guest (`K3S_VM_IMAGE`).
    - If a guest boot under emulation is too slow to be a test, VM acceptance runs against staging
      as an operator-run check: the same scenarios, a different target.
    - Executors with `/dev/kvm` would need self-hosted BuildBuddy executors, which
      [the self-hosting notes](../../docs/buildbuddy_selfhost.md) list as Enterprise-only.
-6. **`TESTING_ROLLOUT_ROLE`** (decision). Testing is also the stage that risky rollouts hit before
+5. **`TESTING_ROLLOUT_ROLE`** (decision). Testing is also the stage that risky rollouts hit before
    staging.
    - Recommended: the k3s acceptance suite on the exact commit gates the staging image pins, and
      staging is the first real cluster.
    - The real-model suite runs against staging after a rollout.
    - Flux, Cilium and CNPG-level changes then land on staging directly, with a rollback plan in
      the PR.
-7. **`TESTING_ENVIRONMENT_RETIRE`** (existing node, moved). Three PRs:
+6. **`TESTING_ENVIRONMENT_RETIRE`** (existing node, moved). Three PRs:
    - The recipes, memories and RBAC roles that name testing.
    - The Flux kustomization, generated manifests, DNS and routes.
    - The testing databases and volumes. This is a data drop, so it is its own PR and lands only on
@@ -192,7 +180,7 @@ Speed, in parallel:
 
 ## CI tier
 
-**`K3S_CI_TIER`** (decision, after step 1 and the first model backend). What blocks CI:
+**`K3S_CI_TIER`** (decision, after the first model backend). What blocks CI:
 
 - **Time on slow workers.** Set the budget on the slowest of 10 fresh runs, not the median.
 - **Reliability.** Each admitted target needs 20 consecutive fresh green runs
