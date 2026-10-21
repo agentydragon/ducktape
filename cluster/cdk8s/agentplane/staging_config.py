@@ -219,7 +219,6 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
     cfg.sandbox_presets["public-coder-ducktape"] = sandbox
     for group, presets in INBOX_GROUPS.items():
         for name in presets:
-            preset = cfg.sandbox_presets[name]
-            preset.inbox_tags = [group]
-            preset.policy_sets += [send_to(group)]
+            cfg.sandbox_presets[name].inbox_tags = [group]
+            cfg.sandbox_presets[name].policy_sets += [send_to(group)]
     return cfg
