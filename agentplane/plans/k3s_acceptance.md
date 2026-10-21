@@ -184,13 +184,7 @@ Decided 2026-10-21 05:38 (operator).
 
 Ordered by what unblocks what. Speed work runs alongside and blocks only the CI tier.
 
-1. **`ACCEPTANCE_SCRIPTED_MODEL`**: the scripted backend on k3s, laid out as in
-   [Test layout](#test-layout). It goes first: the operator is fine with either order, and it needs
-   no key (2026-10-21 05:23).
-   - Scripted versions of `test_session_instructions`, `test_launch_presets`, the Pod case of
-     `test_suspend_resume` and the `test_egress` cases that need no outside credential run on both
-     harnesses.
-2. **`K3S_MODEL_CREDENTIALS`** (decision), then **`K3S_MODEL_SCENARIOS`**: the real-model set on
+1. **`K3S_MODEL_CREDENTIALS`** (decision), then **`K3S_MODEL_SCENARIOS`**: the real-model set on
    k3s. Until then that set runs against testing or staging.
    - The fixture today takes a Qwen-only key through `--test_env`, which lands on the BuildBuddy
      command line.
@@ -201,26 +195,26 @@ Ordered by what unblocks what. Speed work runs alongside and blocks only the CI 
      tests.
    - Deliver the key as a BuildBuddy secret rather than a flag. BuildBuddy RBE secrets are unused
      in this repo so far.
-3. **`K3S_FIXTURE_IDENTITY`.** Then `test_mcp` and `test_dcr` run on k3s.
+2. **`K3S_FIXTURE_IDENTITY`.** Then `test_mcp` and `test_dcr` run on k3s.
    - Add Dex with a plain config Secret. The ExternalSecret template is what dropped it from the
      fixture.
    - Add `mcp-everything` and the `example` OAuth server.
    - Add an operator-login kubeconfig guard that accepts the fixture's apiserver.
-4. **`K3S_VM_ACCEPTANCE`**: where VM-Sandbox acceptance runs with no testing cluster.
+3. **`K3S_VM_ACCEPTANCE`**: where VM-Sandbox acceptance runs with no testing cluster.
    - In flight: a spike of KubeVirt with software emulation (`useEmulation`) inside the RBE k3s, on
      the Bazel-built guest (`K3S_VM_IMAGE`) (operator, 2026-10-21 06:42).
    - If a guest boot under emulation is too slow to be a test, VM acceptance runs against staging
      as an operator-run check: the same scenarios, a different target.
    - Executors with `/dev/kvm` would need self-hosted BuildBuddy executors, which
      [the self-hosting notes](../../docs/buildbuddy_selfhost.md) list as Enterprise-only.
-5. **`TESTING_ROLLOUT_ROLE`** (decision). Testing is also the stage that risky rollouts hit before
+4. **`TESTING_ROLLOUT_ROLE`** (decision). Testing is also the stage that risky rollouts hit before
    staging.
    - Recommended: the k3s acceptance suite on the exact commit gates the staging image pins, and
      staging is the first real cluster.
    - The real-model suite runs against staging after a rollout.
    - Flux, Cilium and CNPG-level changes then land on staging directly, with a rollback plan in
      the PR.
-6. **`TESTING_ENVIRONMENT_RETIRE`** (existing node, moved). Three PRs:
+5. **`TESTING_ENVIRONMENT_RETIRE`** (existing node, moved). Three PRs:
    - The recipes, memories and RBAC roles that name testing.
    - The Flux kustomization, generated manifests, DNS and routes.
    - The testing databases and volumes. This is a data drop, so it is its own PR and lands only on

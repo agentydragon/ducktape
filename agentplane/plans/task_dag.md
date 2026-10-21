@@ -1999,7 +1999,6 @@ changes.
 flowchart LR
     K3S_MODEL_CREDENTIALS[Decision: model key for k3s acceptance]
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
-    ACCEPTANCE_SCRIPTED_MODEL[In flight: scripted-model scenarios on k3s]
     K3S_FIXTURE_IDENTITY[Proposed: Dex and MCP fixtures in the k3s chart]
     K3S_VM_ACCEPTANCE[In flight: KubeVirt emulation spike on k3s]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
@@ -2012,13 +2011,11 @@ flowchart LR
     APP_BRIDGE_TEST_SPLIT[Candidate: app bridge tests split by tier]
     FAKE_APISERVERS_TO_ENVTEST[Candidate: envtest in place of fake API servers]
     K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
-    ACCEPTANCE_SCRIPTED_MODEL --> TESTING_ENVIRONMENT_RETIRE
     K3S_VM_IMAGE -. the emulation spike needs it .-> K3S_VM_ACCEPTANCE
     K3S_FIXTURE_IDENTITY --> TESTING_ENVIRONMENT_RETIRE
     K3S_VM_ACCEPTANCE --> TESTING_ENVIRONMENT_RETIRE
     TESTING_ROLLOUT_ROLE --> TESTING_ENVIRONMENT_RETIRE
     K3S_CI_TIER -. if the k3s suite gates staging pins .-> TESTING_ENVIRONMENT_RETIRE
-    ACCEPTANCE_SCRIPTED_MODEL -. model scenarios on PRs .-> K3S_CI_TIER
     K3S_KUBE_PROXY_RETEST -. faster, ClusterIP coverage .-> K3S_CI_TIER
     K3S_MIGRATOR_CONNECT_RETRY -. faster on slow workers .-> K3S_CI_TIER
     K3S_TEST_STARTUP -. faster .-> K3S_CI_TIER
@@ -2043,22 +2040,6 @@ have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-b
 
 - `test_session_instructions`
 - The `test_egress` probe
-
-### `ACCEPTANCE_SCRIPTED_MODEL` — scripted-model scenarios on k3s
-
-**In flight; the first model backend (operator, 2026-10-21 05:23).** Laid out as in the plan's
-[Test layout](k3s_acceptance.md#test-layout). The scripted backend, `test_session_instructions`'s
-scripted case, `test_suspend_resume`'s Pod case and `test_launch_presets` are in place
-([acceptance README](../acceptance/README.md)); each remaining scenario gets its scripted version,
-and loses its real one, in its own PR.
-
-Exit: scripted versions of `test_session_instructions`, `test_launch_presets`, the Pod case of
-`test_suspend_resume` and the `test_egress` cases that need no outside credential pass on k3s on
-both harnesses. The plumbing scenarios' real versions are deleted in the same PRs, so against
-staging only the real-model set and the model-free scenarios run.
-
-Out of scope: scripted runs against testing or staging, which would need a deployed scripted-model
-endpoint.
 
 ### `K3S_FIXTURE_IDENTITY` — Dex and MCP fixtures in the k3s chart
 

@@ -12,6 +12,7 @@ import string
 from dataclasses import dataclass, replace
 from typing import Any
 
+from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRulesMethods
 from cdk8s import ApiObjectMetadata, Chart, Size, Testing
 from cdk8s_plus_34 import (
     ContainerProps,
@@ -25,7 +26,7 @@ from cdk8s_plus_34 import (
     k8s,
 )
 
-from agentplane.acceptance import launch_preset
+from agentplane.acceptance import launch_preset, runtime_grant
 from agentplane.subjects import ServiceAccountRef
 from agentplane.x.k3s_env import fixture_database
 from cluster.cdk8s import agent_access_profiles as access
@@ -49,7 +50,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.chart import Namespace
 from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
-from cluster.cdk8s.providers.agentplane.policy_set import PolicySet
+from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
@@ -383,6 +384,20 @@ def objects(
         f"policy-set-{sandbox_pod.TOOL_CONFIG_GRANT}",
         metadata=ApiObjectMetadata(name=sandbox_pod.TOOL_CONFIG_GRANT, namespace=NAMESPACE),
         rules=access.rules_for_grants([tool_config_grant]),
+    )
+    # A request `basic` refuses: GET on a path it does not name, on a host it does.
+    PolicySet(
+        chart,
+        f"policy-set-{runtime_grant.POLICY_SET}",
+        metadata=ApiObjectMetadata(name=runtime_grant.POLICY_SET, namespace=NAMESPACE),
+        rules=[
+            Rule.egress(
+                hosts=[notifications.service(NAMESPACE).fqdn],
+                cluster_internal=True,
+                methods=[PolicySetSpecRulesMethods.GET],
+                paths=["/test-runtime-grant"],
+            )
+        ],
     )
     controller = policy_controller.PolicyController(
         chart,

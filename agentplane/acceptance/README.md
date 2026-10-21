@@ -260,6 +260,11 @@ scenario explicitly. Start with the egress vertical slice:
 bazelisk test //agentplane/acceptance:test_egress --test_output=streamed --test_arg=-s
 ```
 
+That target runs the egress probe, whose evidence is what a real model works out. `test_egress_k3s`
+runs the other egress cases with the scripted model: the model call goes through the proxy, and a
+PolicySet bound to a running Sandbox takes effect. The latter binds the fixture's own PolicySet
+([`runtime_grant.py`](runtime_grant.py)), not one a deployment's Sandboxes use.
+
 Run the other live scenarios by their explicit targets: `:test_session_instructions`, `:test_mcp`,
 and `:test_thread_latency`.
 

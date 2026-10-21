@@ -1,11 +1,11 @@
-"""What a sandbox may reach, checked against a deployed Agentplane by running real agents in it.
+"""What a sandbox may reach, checked by running agents in it.
 
-A scenario states a goal and asks the agent to end with a JSON report, rather than dictating a
-command and grepping prose: the agent chooses how, which is the behaviour worth testing, and the
-answer stays machine-checkable. Every claim in that report is then cross-checked against the proxy's
-decision history, which is the system's own record of what it admitted -- an agent saying "I fetched it"
-is equally consistent with a request the proxy admitted, one that never reached the proxy, and a
-model that ran nothing.
+The probe runs a real model against a deployment. It states a goal and asks the agent to end with a
+JSON report, rather than dictating a command and grepping prose: the agent chooses how, which is the
+behaviour worth testing, and the answer stays machine-checkable. Every claim in that report is then
+cross-checked against the proxy's decision history, which is the system's own record of what it
+admitted -- an agent saying "I fetched it" is equally consistent with a request the proxy admitted,
+one that never reached the proxy, and a model that ran nothing.
 
 The reported username is the load-bearing assertion. `agentydragon-agent` can only come back if the
 sandbox asked the proxy what it may present and was told, sent a placeholder it cannot itself
@@ -22,24 +22,31 @@ empty history behind a green unit suite -- was caught by a person noticing.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
 import textwrap
 from datetime import UTC, datetime
+from typing import Any
+from uuid import uuid4
 
+import pytest
 import pytest_bazel
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.acceptance.agent import Agent
+from agentplane.acceptance import runtime_grant
+from agentplane.acceptance.agent import Agent, Turn
 from agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
+from agentplane.acceptance.scripted_upstream import ScriptedUpstream
 from agentplane.app.sandbox_models import SandboxView
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision, Outcome
 from agentplane.proto import runner_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
+from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -47,7 +54,6 @@ from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 # Staging's seeded policy and the credential it substitutes
 # (cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml, PolicySet "github-agentydragon-agent").
 GITHUB_AGENTYDRAGON_AGENT = "github-agentydragon-agent"
-GITHUB_HOST = "github.com"
 GITHUB_API_HOST = "api.github.com"
 PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # Where a sandbox asks what it may reach. The prompt names this and nothing about the credential:
@@ -111,8 +117,21 @@ class Probe(BaseModel):
     unlisted_refused: bool = Field(description="Whether the host no policy names was refused.")
 
 
-def _verbatim(command: str) -> str:
-    return f"Run exactly this command and report its output verbatim: {command}"
+def _get_through_proxy(host: str, path: str) -> str:
+    """A GET through the Sandbox's proxy in bash alone: the k3s runner image has no HTTP client."""
+    request = f"GET http://{host}{path} HTTP/1.1\\r\\nHost: {host}\\r\\nConnection: close\\r\\n\\r\\n"
+    return (
+        'p=${HTTP_PROXY#http://}; p=${p%/}; exec 3<>"/dev/tcp/${p%:*}/${p##*:}"; '
+        f"printf '{request}' >&3; head -n 1 <&3"
+    )
+
+
+async def _scripted_shell_turn(agent: Agent, model: ScriptedModel[Any], command: str) -> Turn:
+    async with asyncio.TaskGroup() as turns:
+        turn = turns.create_task(agent.run(f"Run: {command}"))
+        await model.reply(await model.request(), ShellCall(call_id=f"call-{uuid4().hex[:8]}", command=command))
+        await model.reply(await model.request(), Text("Done."))
+    return turn.result()
 
 
 async def _decision_for(client: Client, sandbox: str, host: str, *, after: datetime | None = None) -> Decision:
@@ -129,6 +148,7 @@ async def _decision_for(client: Client, sandbox: str, host: str, *, after: datet
     raise AssertionError("unreachable: reraise=True either returns a decision or raises")
 
 
+@pytest.mark.real_model
 async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
 ) -> None:
@@ -161,8 +181,9 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     assert refused.reason == "no-rule", f"{refused!r}"
 
 
+@pytest.mark.scripted_model
 async def test_the_model_call_itself_goes_through_the_proxy(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
+    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     """The runner holds only an inert placeholder, not the LiteLLM key, so a turn happens at all only
     if the proxy admits the model call and substitutes its sidecar-only workload token for the
@@ -179,9 +200,13 @@ async def test_the_model_call_itself_goes_through_the_proxy(
     default PolicySets are for.
     """
     view = await sandbox(f"accept-model-{harness}")
-    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
-
-    turn = await agent.run("Reply with the single word: ok. Do not use any tool.")
+    assert view.pod is not None
+    model = scripted.model(view.pod.name, harness)
+    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered_model)
+    async with asyncio.TaskGroup() as turns:
+        answered = turns.create_task(agent.run("Reply with the single word: ok."))
+        await model.reply(await model.request(), Text("ok"))
+    turn = answered.result()
 
     served = await _decision_for(client, view.name, LLM_INGRESS_HOST)
     assert served.outcome is Outcome.ALLOW, f"{served!r}\n{turn.transcript}"
@@ -208,28 +233,47 @@ def _kubectl_create_binding(sandbox: SandboxView, policy_set: str) -> None:
     subprocess.run(["kubectl", "-n", namespace, "create", "-f", "-"], input=json.dumps(body), text=True, check=True)
 
 
+def _granted_request() -> tuple[str, str]:
+    """The host and path the fixture's runtime-grant PolicySet admits."""
+    namespace = os.environ.get(NAMESPACE, TESTING_NAMESPACE)
+    result = subprocess.run(
+        ["kubectl", "-n", namespace, "get", "policyset", runtime_grant.POLICY_SET, "-o", "json"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=20,
+    )
+    rule = json.loads(result.stdout)["spec"]["rules"][0]
+    return rule["hosts"][0], rule["paths"][0]
+
+
+@pytest.mark.scripted_model
 async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
+    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     """Binding at runtime is a live grant, not a restart: one sandbox, refused and then admitted."""
+    host, path = _granted_request()
     view = await sandbox(f"accept-bind-{harness}")
-    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
-    command = _verbatim(f"git ls-remote {PUBLIC_REPO} HEAD")
+    assert view.pod is not None
+    model = scripted.model(view.pod.name, harness)
+    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered_model)
+    command = _get_through_proxy(host, path)
 
-    await agent.run(command)
-    refused = await _decision_for(client, view.name, GITHUB_HOST)
-    assert refused.outcome is Outcome.DENY, f"an unbound sandbox reached GitHub: {refused!r}"
+    await _scripted_shell_turn(agent, model, command)
+    refused = await _decision_for(client, view.name, host)
+    assert refused.outcome is Outcome.DENY, f"an unbound sandbox was admitted: {refused!r}"
 
     # The app's grant route needs an operator login, which this agent-token suite does not hold, so
     # the binding is written as an operator would with kubectl, owned by the Sandbox.
-    _kubectl_create_binding(view, GITHUB_AGENTYDRAGON_AGENT)
+    _kubectl_create_binding(view, runtime_grant.POLICY_SET)
     # Observe the read-only request, not one replica's acknowledgement of the binding.
     async for attempt in AsyncRetrying(stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True):
         with attempt:
             after = datetime.now(UTC)
-            turn = await agent.run(command)
-            admitted = await _decision_for(client, view.name, GITHUB_HOST, after=after)
+            turn = await _scripted_shell_turn(agent, model, command)
+            admitted = await _decision_for(client, view.name, host, after=after)
             assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}\n{turn.transcript}"
+            assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
 
 
 if __name__ == "__main__":

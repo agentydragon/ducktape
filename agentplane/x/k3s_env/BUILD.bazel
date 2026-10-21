@@ -4,6 +4,8 @@ load("//agentplane/x/k3s_env:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+# gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
+
 # Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
 # Manual only: it runs k3s as root.
 
@@ -239,6 +241,8 @@ py_library(
         ":fixture_database",
         "//agentplane:subjects",
         "//agentplane/acceptance:launch_preset",
+        "//agentplane/acceptance:runtime_grant",
+        "//agentplane/crds:policyset",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
