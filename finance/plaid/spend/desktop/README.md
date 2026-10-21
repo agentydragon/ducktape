@@ -51,7 +51,11 @@ credentials.
 
 The D-Bus interface is `works.allegedly.PlaidSpend1` at `/works/allegedly/PlaidSpend` on `works.allegedly.PlaidSpend`.
 `GetView()` returns the latest server JSON view. `ViewChanged(JSON)` announces a new full view. Read-only `Status` and
-`LastError` properties communicate local connection/login state, and `Login()` starts the browser flow.
+`LastError` properties communicate local connection/login state. `LastAttemptAt` and `NextRetryAt` are epoch seconds as
+D-Bus doubles; zero means there has been no attempt or no retry is scheduled. The daemon records an attempt before
+opening the event connection, clears the retry time when an attempt starts or the daemon stops, and wakes a retry when
+the network returns. Authentication-required and authorizing states have no automatic retry. The panel's desktop
+attempt age is separate from the server's `last_synced_at` time. `Login()` starts the browser flow.
 
 ## Deployment assumptions
 

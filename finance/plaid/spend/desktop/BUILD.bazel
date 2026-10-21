@@ -32,6 +32,7 @@ py_library(
     deps = [
         ":credentials",
         ":oauth",
+        "//util:network_monitor",
         "@pypi//dbus_next",
         "@pypi//httpx",
     ],
@@ -112,5 +113,6 @@ py_wheel(
         ":package_init",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
+        "//util:network_monitor",
     ],
 )

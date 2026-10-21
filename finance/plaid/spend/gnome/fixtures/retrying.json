@@ -1,0 +1,16 @@
+{
+  "status": "error",
+  "error": "The network is unavailable.",
+  "has_view": true,
+  "last_attempt_seconds_ago": 75,
+  "retry_in_seconds": 20,
+  "view": {
+    "generated_at": "2026-10-15T11:00:00Z",
+    "cards": [],
+    "allowance": {
+      "status": "active",
+      "last_synced_at": "2026-10-15T11:00:00Z",
+      "note": "Showing the last server view."
+    }
+  }
+}

@@ -24,6 +24,7 @@ python314Packages.buildPythonApplication {
   pythonImportsCheck = [
     "finance.plaid.spend.desktop.cli"
     "finance.plaid.spend.desktop.daemon"
+    "util.network_monitor"
   ];
   doCheck = false;
   dontUsePytestCheck = true;

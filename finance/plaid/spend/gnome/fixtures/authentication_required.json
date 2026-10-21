@@ -1,6 +1,7 @@
 {
   "status": "authentication-required",
   "error": "Sign in to connect your Plaid account.",
+  "last_attempt_seconds_ago": 75,
   "view": {
     "generated_at": null,
     "cards": []

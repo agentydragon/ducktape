@@ -12,7 +12,7 @@ import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 const BUS_NAME = "works.allegedly.PlaidSpend";
 const OBJECT_PATH = "/works/allegedly/PlaidSpend";
 const INTERFACE_NAME = "works.allegedly.PlaidSpend1";
-const TEST_NOW_MS = (() => {
+const TEST_START_NOW_MS = (() => {
   if (GLib.getenv("PLAID_SPEND_TEST") !== "1") return null;
   const value = GLib.getenv("PLAID_SPEND_TEST_NOW");
   if (value === null) return null;
@@ -22,6 +22,7 @@ const TEST_NOW_MS = (() => {
   }
   return timestamp;
 })();
+let TEST_NOW_MS = TEST_START_NOW_MS;
 const INTERFACE_INFO = Gio.DBusNodeInfo.new_for_xml(
   `<node><interface name="${INTERFACE_NAME}">
     <method name="GetView"><arg name="view" type="s" direction="out"/></method>
@@ -29,6 +30,8 @@ const INTERFACE_INFO = Gio.DBusNodeInfo.new_for_xml(
     <signal name="ViewChanged"><arg name="view" type="s"/></signal>
     <property name="Status" type="s" access="read"/>
     <property name="LastError" type="s" access="read"/>
+    <property name="LastAttemptAt" type="d" access="read"/>
+    <property name="NextRetryAt" type="d" access="read"/>
   </interface></node>`
 ).lookup_interface(INTERFACE_NAME);
 
@@ -42,6 +45,15 @@ function unpackString(value, fallback = "") {
   } catch (_error) {
     return fallback;
   }
+}
+
+function unpackNumber(value, fallback = 0) {
+  const unpacked = value?.deep_unpack();
+  return typeof unpacked === "number" && Number.isFinite(unpacked) ? unpacked : fallback;
+}
+
+function relativeNowMs() {
+  return TEST_NOW_MS ?? Date.now();
 }
 
 function formatMoney(minorUnits, currency) {
@@ -135,11 +147,33 @@ function formatDaily(minorUnits, currency) {
 }
 
 function formatSyncAge(timestamp) {
-  const elapsed = ((TEST_NOW_MS ?? Date.now()) - new Date(timestamp).getTime()) / 60000;
+  const elapsed = (relativeNowMs() - new Date(timestamp).getTime()) / 60000;
   if (!Number.isFinite(elapsed)) return "?";
   if (elapsed < 60) return `${Math.max(0, Math.floor(elapsed))}m`;
   if (elapsed < 2880) return `${Math.floor(elapsed / 60)}h`;
   return `${Math.floor(elapsed / 1440)}d`;
+}
+
+function formatDuration(seconds) {
+  const total = Math.max(0, Math.floor(seconds));
+  if (total < 60) return `${total}s`;
+  if (total < 3600) return `${Math.floor(total / 60)}m ${total % 60}s`;
+  if (total < 86400) return `${Math.floor(total / 3600)}h ${Math.floor((total % 3600) / 60)}m`;
+  return `${Math.floor(total / 86400)}d ${Math.floor((total % 86400) / 3600)}h`;
+}
+
+function desktopTimingLabel(status, lastAttemptAt, nextRetryAt) {
+  const now = relativeNowMs() / 1000;
+  const attempt = lastAttemptAt > 0 ? `Last attempt ${formatDuration(now - lastAttemptAt)} ago` : "No desktop attempt";
+  if (nextRetryAt > 0) return `${attempt} · Retry in ${formatDuration(nextRetryAt - now)}`;
+  if (status === "authentication-required")
+    return lastAttemptAt > 0 ? `${attempt} · Sign-in required` : "Sign-in required · no automatic retry";
+  if (status === "authorizing")
+    return lastAttemptAt > 0 ? `${attempt} · Signing in` : "Signing in · no automatic retry";
+  if (lastAttemptAt <= 0) return null;
+  if (status === "ready") return `${attempt} · Connected`;
+  if (status === "connecting") return `${attempt} · Connecting`;
+  return `${attempt} · No retry scheduled`;
 }
 
 const PlaidSpendIndicator = GObject.registerClass(
@@ -151,6 +185,8 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._view = { cards: [], generated_at: null };
       this._status = "starting";
       this._error = "";
+      this._lastAttemptAt = 0;
+      this._nextRetryAt = 0;
       this._hasView = false;
       this._viewRequestId = 0;
       this._viewRequestCancellable = null;
@@ -158,6 +194,8 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._testMode = GLib.getenv("PLAID_SPEND_TEST") === "1";
       this._testIface = null;
       this._testBusOwnerId = 0;
+      this._timingItem = null;
+      this._timingRefreshId = 0;
 
       const box = new St.BoxLayout({ y_align: Clutter.ActorAlign.CENTER });
       this._icon = new St.Icon({ icon_name: "credit-card-symbolic", style_class: "system-status-icon" });
@@ -167,7 +205,10 @@ const PlaidSpendIndicator = GObject.registerClass(
       this.add_child(box);
 
       this._menuOpenId = this.menu.connect("open-state-changed", (_menu, open) => {
-        if (open) this._renderPopup();
+        if (open) {
+          this._renderPopup();
+          this._startTimingRefresh();
+        } else this._stopTimingRefresh();
       });
 
       if (this._testMode) this._exportTestInterface();
@@ -218,7 +259,38 @@ const PlaidSpendIndicator = GObject.registerClass(
       if (!this._proxy) return;
       this._status = unpackString(this._proxy.get_cached_property("Status"), this._status);
       this._error = unpackString(this._proxy.get_cached_property("LastError"), this._error);
+      if (!this._proxy.g_name_owner) {
+        this._lastAttemptAt = 0;
+        this._nextRetryAt = 0;
+      } else {
+        this._lastAttemptAt = unpackNumber(this._proxy.get_cached_property("LastAttemptAt"));
+        this._nextRetryAt = unpackNumber(this._proxy.get_cached_property("NextRetryAt"));
+      }
       this._render();
+    }
+
+    _startTimingRefresh() {
+      if (this._timingRefreshId) return;
+      this._timingRefreshId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
+        if (this._destroyed) {
+          this._timingRefreshId = 0;
+          return GLib.SOURCE_REMOVE;
+        }
+        this._updateTimingItem();
+        return GLib.SOURCE_CONTINUE;
+      });
+    }
+
+    _stopTimingRefresh() {
+      if (!this._timingRefreshId) return;
+      GLib.source_remove(this._timingRefreshId);
+      this._timingRefreshId = 0;
+    }
+
+    _updateTimingItem() {
+      if (!this._timingItem) return;
+      const text = desktopTimingLabel(this._status, this._lastAttemptAt, this._nextRetryAt);
+      if (text) this._timingItem.label.set_text(text);
     }
 
     _fetchView() {
@@ -331,6 +403,20 @@ const PlaidSpendIndicator = GObject.registerClass(
       }
       this._status = fixture.status || "ready";
       this._error = fixture.error || "";
+      TEST_NOW_MS = TEST_START_NOW_MS;
+      const now = relativeNowMs() / 1000;
+      this._lastAttemptAt =
+        fixture.last_attempt_seconds_ago == null
+          ? typeof fixture.last_attempt_at === "number" && Number.isFinite(fixture.last_attempt_at)
+            ? fixture.last_attempt_at
+            : 0
+          : now - Number(fixture.last_attempt_seconds_ago);
+      this._nextRetryAt =
+        fixture.retry_in_seconds == null
+          ? typeof fixture.next_retry_at === "number" && Number.isFinite(fixture.next_retry_at)
+            ? fixture.next_retry_at
+            : 0
+          : now + Number(fixture.retry_in_seconds);
       this._view = fixture.view;
       this._hasView = fixture.has_view !== false;
       this._render();
@@ -342,6 +428,7 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._testIface = Gio.DBusExportedObject.wrapJSObject(
         '<node><interface name="works.allegedly.PlaidSpendTest">' +
           '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
+          '<method name="AdvanceClock"><arg type="d" direction="in" name="seconds"/></method>' +
           '<method name="OpenMenu"/>' +
           '<method name="WaitForPaint"/>' +
           '<method name="CloseMenu"/>' +
@@ -352,6 +439,13 @@ const PlaidSpendIndicator = GObject.registerClass(
           "</interface></node>",
         {
           Reload: (path) => this._loadFixtureFile(path),
+          AdvanceClock: (seconds) => {
+            if (TEST_NOW_MS === null || !Number.isFinite(seconds) || seconds <= 0) {
+              throw new Error("test clock can only advance by a positive number of seconds");
+            }
+            TEST_NOW_MS += seconds * 1000;
+            this._renderPopup();
+          },
           WaitForPaintAsync: (_params, invocation) => {
             const signal = global.stage.connect("after-paint", () => {
               global.stage.disconnect(signal);
@@ -411,6 +505,7 @@ const PlaidSpendIndicator = GObject.registerClass(
     _renderPopup() {
       if (this._destroyed || !this.menu) return;
       this.menu.removeAll();
+      this._timingItem = null;
       const allowance = this._view?.allowance;
       const statusText =
         {
@@ -428,6 +523,9 @@ const PlaidSpendIndicator = GObject.registerClass(
         login.connect("activate", () => this._proxy?.call("Login", null, Gio.DBusCallFlags.NONE, -1, null, null));
         this.menu.addMenuItem(login);
       }
+
+      const timingText = desktopTimingLabel(this._status, this._lastAttemptAt, this._nextRetryAt);
+      if (timingText) this._timingItem = this._addReadOnly(timingText, "plaid-spend-caption");
 
       if (allowance) {
         if (allowance.status === "active" && this._status === "ready") {
@@ -453,9 +551,9 @@ const PlaidSpendIndicator = GObject.registerClass(
                 "plaid-spend-caution"
               );
           }
-          if (allowance.last_synced_at)
-            this._addReadOnly(`Sync ${formatSyncAge(allowance.last_synced_at)} ago`, "plaid-spend-caption");
         } else this._addReadOnly(allowance.note || "Allowance unavailable; check connection");
+        if (allowance.last_synced_at)
+          this._addReadOnly(`Sync ${formatSyncAge(allowance.last_synced_at)} ago`, "plaid-spend-caption");
       }
       if (this._view?.dashboard_url?.startsWith("https://")) {
         const link = new PopupMenu.PopupMenuItem("Check a purchase / dashboard…");
@@ -501,6 +599,7 @@ const PlaidSpendIndicator = GObject.registerClass(
 
     destroy() {
       this._destroyed = true;
+      this._stopTimingRefresh();
       if (this._menuOpenId) this.menu.disconnect(this._menuOpenId);
       this._cancelViewRequest();
       for (const handlerId of this._proxyHandlerIds) this._proxy.disconnect(handlerId);
