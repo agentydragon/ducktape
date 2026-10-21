@@ -165,8 +165,17 @@ class Notifications(Construct):
             self,
             "role",
             metadata=ApiObjectMetadata(name=role_name, namespace=env.namespace),
-            # Resolving a destination reads its Sandbox, not the Pod.
-            rules=[RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"])],
+            rules=[
+                # Resolving a destination reads its Sandbox, not the Pod.
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"]),
+                # Authorizing a peer send watches the caller's session_inbox_access rules and reports
+                # a set it cannot parse on each binding that names it, as egress and Actions do.
+                RolePolicyRule(
+                    resources=[custom_resource(GROUP, resource) for resource in ("policysets", "policybindings")],
+                    verbs=["get", "list", "watch"],
+                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
+            ],
         )
         RoleBinding(
             self,
