@@ -35,10 +35,13 @@ flowchart LR
     subgraph MESSAGING_TRACK[Agent messaging]
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
     end
-    subgraph K3S_TRACK[k3s acceptance, retiring agentplane-testing]
+    subgraph K3S_TRACK[System tests on k3s, retiring agentplane-testing]
+        K3S_MODEL_CREDENTIALS[Decision: when real-model targets run]
         K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
-        TESTING_ROLLOUT_ROLE[Decision: what replaces testing]
-        TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
+        LIVE_TARGETS_OFF_TESTING[Candidate: live targets off testing]
+        STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
+        AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
+        TESTING_ENVIRONMENT_RETIRE[Blocked: delete agentplane-testing]
     end
     subgraph TIER_TRACK[Test tiers: envtest and the bridge split]
         FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
@@ -1927,73 +1930,83 @@ Do not delete retained runner stores, native conversations or History. Confirm e
 routing to the private store, suspended-queue retry and restart on the deployed images before retiring
 old paths.
 
-## 14. Acceptance on k3s and retiring `agentplane-testing`
+## 14. System tests on k3s and retiring `agentplane-testing`
 
-**Approved 2026-10-21 UTC ([the plan](k3s_acceptance.md)).** Acceptance scenarios take a target (testing, staging or
-the disposable k3s stack in [`x/k3s_env`](../x/k3s_env/README.md)) and a model backend (real or scripted), and every
-k3s and `_vm` target runs in PR CI ([system tests README](../system_tests/README.md)). What remains: the model key
-and the real-model set on k3s, and retiring `agentplane-testing`.
+**In progress ([the plan](testing_retirement.md)).** The system tests run on the disposable k3s stack in
+[`x/k3s_env`](../x/k3s_env/README.md) in PR CI ([system tests README](../system_tests/README.md)). The operator's
+direction (2026-10-21 22:02): move every workflow off the testing instance, give RBE a real-model key for the tests
+that need one, and delete the instance.
 
 The [K3s startup experiment constraints](#k3s-startup-experiment-constraints) still apply to fixture
 changes.
 
 ```mermaid
 flowchart LR
-    K3S_MODEL_CREDENTIALS[Decision: model key for k3s acceptance]
+    K3S_MODEL_CREDENTIALS[Decision: when real-model targets run]
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
-    TESTING_ROLLOUT_ROLE[Decision: what replaces testing before staging]
-    TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
+    LIVE_TARGETS_OFF_TESTING[Candidate: live targets off testing]
+    STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
+    AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
+    TESTING_ENVIRONMENT_RETIRE[Blocked: delete agentplane-testing]
     K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
-    TESTING_ROLLOUT_ROLE --> TESTING_ENVIRONMENT_RETIRE
+    K3S_MODEL_SCENARIOS --> TESTING_ENVIRONMENT_RETIRE
+    LIVE_TARGETS_OFF_TESTING --> TESTING_ENVIRONMENT_RETIRE
+    STAGING_FIRST_ROLLOUT --> TESTING_ENVIRONMENT_RETIRE
+    AGENT_TESTING_ACCESS_RETIRE --> TESTING_ENVIRONMENT_RETIRE
 ```
 
-### `K3S_MODEL_CREDENTIALS` — model key for k3s acceptance
+### `K3S_MODEL_CREDENTIALS` — a real-model key on RBE
 
-**Decision.** Today a Qwen-only key reaches the fixture through `--test_env`, which BuildBuddy
-records on the command line. No BuildBuddy secret for model access exists yet (operator,
-2026-10-21 05:22).
+**Decision: when the `_real_model` targets run; the mechanism is
+[settled](testing_retirement.md#the-model-key-on-rbe).** A Terraform-minted, budget-capped LiteLLM key on the
+`cheap_experiments_models` lane, which the operator copies once into the BuildBuddy org secret
+`AGENTPLANE_SYSTEM_TEST_MODEL_KEY`. `system_test(real_model = True)` generates `<scenario>_real_model`, whose
+`exec_properties` name that secret in `test.env-secrets`, so only that test action decrypts it.
 
-Recommendation: a Terraform-provisioned, budget-capped LiteLLM key offering models on both
-harnesses (ChatGPT luna for Codex), delivered as a BuildBuddy secret.
-
-Question: which models, what budget, and is a BuildBuddy secret acceptable?
+Recommended: they run after merge on `devel`, a signal rather than a gate on a code change.
 
 ### `K3S_MODEL_SCENARIOS` — the real-model set on k3s
 
-**Blocked on `K3S_MODEL_CREDENTIALS`.** Only scenarios where the model's behavior is under test
-have a real-model version. Their
-`_k3s_real` targets pass on both harnesses:
+**Blocked on `K3S_MODEL_CREDENTIALS`.** Only scenarios where the model's behavior is under test have a real-model
+version. Their `_real_model` targets pass on both harnesses, and their `_live` targets are deleted:
 
 - `test_session_instructions`
-- The `test_egress` probe
+- The `test_egress` probe, binding a fixture-only credential PolicySet, not staging's `github-agentydragon-agent`
 
-The `test_egress` probe's `_k3s_real` target binds a fixture-only credential PolicySet, not staging's
-`github-agentydragon-agent`.
+### `LIVE_TARGETS_OFF_TESTING` — no live target points at testing
 
-### `TESTING_ROLLOUT_ROLE` — what replaces testing as the stage before staging
+**Candidate.** Delete the `_live` targets of `test_dispatcher`, `test_storage`, `test_thread_stream` and
+`test_vm_workspace_ownership`, which their k3s and `_vm` targets cover. `test_thread_latency` and
+`test_ollama_routes`, which need Electric and the GPU Ollama, run against staging and read staging's app ConfigMap.
+Whichever of this and `K3S_MODEL_SCENARIOS` lands second deletes the `live` variant from `system_test` and the
+`TESTING_NAMESPACE` default.
 
-**Decision.** Testing is where risky rollouts land before staging (operator, 2026-10-12: testing
-down is better than staging down). Recommendation:
+### `STAGING_FIRST_ROLLOUT` — risky config goes to staging
 
-- The k3s suite passing on the exact commit gates staging's image pins.
-- The real-model suite runs against staging after a rollout.
-- Changes only a real cluster exercises (Flux, Cilium, CNPG, External Secrets, Gateway API,
-  Kyverno) land on staging directly, with a rollback plan in the PR.
+**Candidate.** Testing gates no image pins; it is where risky config lands first (operator, 2026-10-12: testing down
+is better than staging down). Rewrite the docs and recipes that send a change to testing first: such a change lands
+on staging after the system tests pass, with a rollback plan in the PR. Flux, Cilium, CNPG, External Secrets,
+cert-manager, Gateway API and Kyverno changes have no test, so staging is the first cluster they reach.
 
-### `TESTING_ENVIRONMENT_RETIRE` — retire `agentplane-testing`
+### `AGENT_TESTING_ACCESS_RETIRE` — agents lose their testing access
 
-**Blocked on `TESTING_ROLLOUT_ROLE` and the first model backend on k3s.**
-Three PRs: recipes, docs and RBAC that name testing; the Flux kustomization, generated manifests,
-DNS and routes; the testing databases and volumes, a data drop that waits for the operator's word.
-`test_thread_latency` and `test_ollama_routes` remain staging-only manual checks. Preserve staging.
+**Candidate.** The managed presets stop selecting the `agentplane-testing-operator` Role and the `agentplane-testing`
+egress policy ([agent RBAC](../../cluster/docs/agent_rbac.md)); the recipes that used them point at system tests
+through `bbr` and at staging reads.
+
+### `TESTING_ENVIRONMENT_RETIRE` — delete `agentplane-testing`
+
+**Blocked on the four nodes above.** Three PRs: the Flux kustomization, image pins, generated manifests, DNS and
+routes; the Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and
+volumes, a data drop that waits for the operator's word. Preserve staging.
 
 ## 15. Cleanups after the current tracks
 
 Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
 lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the Python Action Service, its
 parity harnesses and the workload `/mcp` egress path in
-[the Action port's stages and cutover](action_service_go_port.md#stages); testing's Dex MCP client, Action groups and
-`TESTING_NAMESPACE` default in `TESTING_ENVIRONMENT_RETIRE`. The overview's graph is in
+[the Action port's stages and cutover](action_service_go_port.md#stages); testing's Dex MCP client and Action groups
+in `TESTING_ENVIRONMENT_RETIRE`; the `TESTING_NAMESPACE` default in `LIVE_TARGETS_OFF_TESTING`. The overview's graph is in
 [Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
 produce are named at the fake and are not cleanups.
 
@@ -2036,16 +2049,16 @@ the runner fixtures push straight to `GoHistoryService`'s ingress, and both stan
 
 ### `K3S_SPIKE_TARGETS_RETIRE` — delete the k3s spike targets
 
-**Blocked on `K3S_MODEL_SCENARIOS` and the acceptance scenarios covering `test_lifecycle`'s cases.** Delete
-`x/k3s_env`'s `test_env` (the real-model smoke that needs `LITELLM_QWEN_KEY`) once the `_k3s_real` targets land, and
+**Blocked on `K3S_MODEL_SCENARIOS` and the system test scenarios covering `test_lifecycle`'s cases.** Delete
+`x/k3s_env`'s `test_env` (the real-model smoke that needs `LITELLM_QWEN_KEY`) once the `_real_model` targets land, and
 `test_lifecycle` with `.github/workflows/agentplane-k3s-lifecycle.yml` once system test scenarios cover its four
 cases (check suspend/resume and storage).
 
 ### `K3S_ENV_OUT_OF_X` — the k3s stack leaves `x/`
 
 **Blocked on the fixture and VM lanes no longer editing it; its targets run in PR CI (#11370), so it is no longer
-experimental.** Move `agentplane/x/k3s_env` to a stable home and update every reference (BUILD labels, acceptance
-targets, docs, workflows).
+experimental.** Move `agentplane/x/k3s_env` to a stable home and update every reference (BUILD labels, system
+test targets, docs, workflows).
 
 ### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 

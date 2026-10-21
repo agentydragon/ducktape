@@ -42,9 +42,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   cheaper route
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
-- [Acceptance against any deployment](k3s_acceptance.md) — approved: scenarios run against testing, staging or the
-  disposable k3s stack with a real or scripted model, and the k3s targets (`<scenario>`, `<scenario>_vm`) run in PR CI; what is left is
-  the model key and retiring `agentplane-testing`
+- [Retiring `agentplane-testing`](testing_retirement.md) — in progress: every workflow on the testing instance moves to
+  the k3s system tests (a real-model key on RBE for the few that need one) or staging, then the instance is deleted
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
   DAG node names; the design is [VM Sandboxes](../docs/vm_sandboxes.md)
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
