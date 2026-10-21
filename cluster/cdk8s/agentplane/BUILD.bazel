@@ -519,6 +519,7 @@ py_library(
     name = "actions_testing_fixtures",
     srcs = ["actions_testing_fixtures.py"],
     deps = [
+        ":actions",
         ":dex",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:mcp_settings",

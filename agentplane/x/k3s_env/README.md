@@ -22,7 +22,9 @@ The app and Dex serve on their in-cluster Service names, which OIDC redirects ca
 [`stack.py`](stack.py) adds the Services' addresses to the node's `/etc/hosts` so the test process
 reaches the same names. The app serves http. Dex serves TLS too, because the app and the Action
 Service accept a plain-http issuer only on loopback: a CA made per stack signs its certificate, and
-the app, the Action Service and the test process trust it through `SSL_CERT_FILE`.
+the app, the Action Service and the test process trust it through `SSL_CERT_FILE`. The Action
+Service's own OAuth server, which `test_dcr` registers with, is such an issuer too, so it names itself
+by a loopback origin that `stack.py` port-forwards to the Action Service.
 
 Both targets drive the app's REST/SSE API and omit Electric and the browser frontend. Tests of the
 frontend sync protocol run Electric separately. The database bootstrap still creates the `electric`

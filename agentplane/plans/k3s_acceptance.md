@@ -85,7 +85,7 @@ layer (−40%) and the harness-free runner image (−35%).
 | `test_dispatcher_deployed` (queue, replicas, wake)                                                               | kubectl, Pod-bound tokens, two Gateway replicas                                                       | runs on k3s (#11330)                                               |
 | `test_storage_deployed`, Pod case                                                                                | Sandbox-owned PVCs                                                                                    | runs on k3s (#11330)                                               |
 | `test_egress`, `test_session_instructions`, `test_launch_presets`, `test_suspend_resume` Pod case                | turns on both harnesses, the egress ring, kubectl                                                     | scripted (no key); the real-model set needs a key                  |
-| `test_mcp`, `test_dcr`                                                                                           | Dex operator login, `mcp-everything`, the Dex-backed `example` OAuth server, a browser for Dex's form | needs Dex and both MCP fixtures in the chart                       |
+| `test_mcp`, `test_dcr`                                                                                           | Dex operator login, `mcp-everything`, the Dex-backed `example` OAuth server, a browser for Dex's form | runs on k3s with the MCP fixtures                                  |
 | VM cases: `test_vm_sandbox`, `test_vm_workspace_ownership`, `test_suspend_resume` VM, `test_storage_deployed` VM | KubeVirt, KVM                                                                                         | no KVM on RBE (finding 3)                                          |
 | `test_thread_latency`                                                                                            | browser, Electric, frontend; ceilings for the deployed system                                         | no Electric in the fixture; RBE timings are not deployment latency |
 | `test_ollama_routes`                                                                                             | the GPU Ollama                                                                                        | not reachable from RBE                                             |
@@ -187,26 +187,21 @@ Ordered by what unblocks what. Speed work runs alongside and blocks only the CI 
      tests.
    - Deliver the key as a BuildBuddy secret rather than a flag. BuildBuddy RBE secrets are unused
      in this repo so far.
-2. **`K3S_FIXTURE_IDENTITY`.** Then `test_mcp` and `test_dcr` run on k3s.
-   - Add Dex with a plain config Secret. The ExternalSecret template is what dropped it from the
-     fixture.
-   - Add `mcp-everything` and the `example` OAuth server.
-   - Add an operator-login kubeconfig guard that accepts the fixture's apiserver.
-3. **`K3S_VM_ACCEPTANCE`**: where VM-Sandbox acceptance runs with no testing cluster.
+2. **`K3S_VM_ACCEPTANCE`**: where VM-Sandbox acceptance runs with no testing cluster.
    - In flight: a spike of KubeVirt with software emulation (`useEmulation`) inside the RBE k3s, on
      the Bazel-built guest (`K3S_VM_IMAGE`) (operator, 2026-10-21 06:42).
    - If a guest boot under emulation is too slow to be a test, VM acceptance runs against staging
      as an operator-run check: the same scenarios, a different target.
    - Executors with `/dev/kvm` would need self-hosted BuildBuddy executors, which
      [the self-hosting notes](../../docs/buildbuddy_selfhost.md) list as Enterprise-only.
-4. **`TESTING_ROLLOUT_ROLE`** (decision). Testing is also the stage that risky rollouts hit before
+3. **`TESTING_ROLLOUT_ROLE`** (decision). Testing is also the stage that risky rollouts hit before
    staging.
    - Recommended: the k3s acceptance suite on the exact commit gates the staging image pins, and
      staging is the first real cluster.
    - The real-model suite runs against staging after a rollout.
    - Flux, Cilium and CNPG-level changes then land on staging directly, with a rollback plan in
      the PR.
-5. **`TESTING_ENVIRONMENT_RETIRE`** (existing node, moved). Three PRs:
+4. **`TESTING_ENVIRONMENT_RETIRE`** (existing node, moved). Three PRs:
    - The recipes, memories and RBAC roles that name testing.
    - The Flux kustomization, generated manifests, DNS and routes.
    - The testing databases and volumes. This is a data drop, so it is its own PR and lands only on

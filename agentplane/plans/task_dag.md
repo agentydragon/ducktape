@@ -1949,7 +1949,6 @@ changes.
 flowchart LR
     K3S_MODEL_CREDENTIALS[Decision: model key for k3s acceptance]
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
-    K3S_FIXTURE_IDENTITY[In flight: test_dcr on the k3s chart's Dex and MCP fixtures]
     K3S_VM_ACCEPTANCE[In flight: KubeVirt emulation spike on k3s]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     TESTING_ROLLOUT_ROLE[Decision: what replaces testing before staging]
@@ -1958,7 +1957,6 @@ flowchart LR
     FAKE_APISERVERS_TO_ENVTEST[Candidate: envtest in place of fake API servers]
     K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
     K3S_VM_IMAGE -. the emulation spike needs it .-> K3S_VM_ACCEPTANCE
-    K3S_FIXTURE_IDENTITY --> TESTING_ENVIRONMENT_RETIRE
     K3S_VM_ACCEPTANCE --> TESTING_ENVIRONMENT_RETIRE
     TESTING_ROLLOUT_ROLE --> TESTING_ENVIRONMENT_RETIRE
     K3S_CI_TIER -. if the k3s suite gates staging pins .-> TESTING_ENVIRONMENT_RETIRE
@@ -1983,15 +1981,6 @@ have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-b
 
 - `test_session_instructions`
 - The `test_egress` probe
-
-### `K3S_FIXTURE_IDENTITY` — Dex and MCP fixtures in the k3s chart
-
-**In flight.** The fixture chart runs Dex, `mcp-everything` and the Dex-backed OAuth MCP server
-for targets that ask (`acceptance_test(mcp_fixtures = True)`), and `test_mcp` runs there with the
-scripted model. Left: `test_dcr` on k3s, which needs the Action Service's OAuth server configured in
-the fixture and its MCP URL from the environment in place of the hardcoded testing one.
-
-Exit: `test_dcr_k3s` passes.
 
 ### `K3S_VM_ACCEPTANCE` — where VM acceptance runs
 
@@ -2029,10 +2018,9 @@ down is better than staging down). Recommendation:
 
 ### `TESTING_ENVIRONMENT_RETIRE` — retire `agentplane-testing`
 
-**Blocked on `K3S_FIXTURE_IDENTITY`, `K3S_VM_ACCEPTANCE`, `TESTING_ROLLOUT_ROLE` and the first
-model backend on k3s.** Three PRs:
-recipes, docs and RBAC that name testing; the Flux kustomization, generated manifests, DNS and
-routes; the testing databases and volumes, a data drop that waits for the operator's word.
+**Blocked on `K3S_VM_ACCEPTANCE`, `TESTING_ROLLOUT_ROLE` and the first model backend on k3s.**
+Three PRs: recipes, docs and RBAC that name testing; the Flux kustomization, generated manifests,
+DNS and routes; the testing databases and volumes, a data drop that waits for the operator's word.
 `test_thread_latency` and `test_ollama_routes` remain staging-only manual checks. Preserve staging.
 
 ### `K3S_CI_TIER` — which k3s targets run in CI

@@ -40,7 +40,7 @@ from constructs import Construct
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.mcp_settings import McpOAuthServer
 from cluster.cdk8s import cilium, pod_policy
-from cluster.cdk8s.agentplane import dex
+from cluster.cdk8s.agentplane import actions, dex
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy, deny_all_egress
 
@@ -270,7 +270,7 @@ def oauth_fixture_server(server_id: str, *, client_id: str, redirect_uri: str) -
         server_id=server_id,
         server_url=_OAUTH_FIXTURE_MCP_URL,
         client_id=client_id,
-        client_secret_file=Path("/etc/agentplane-mcp/client-secret"),
+        client_secret_file=Path(actions.MCP_OAUTH_DIR, "client-secret"),
         redirect_uri=redirect_uri,
         scopes=["openid"],
     )

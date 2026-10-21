@@ -1,6 +1,7 @@
 load("//agentplane/acceptance:defs.bzl", "acceptance_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+# gazelle:exclude test_dcr.py
 # gazelle:exclude test_dispatcher_deployed.py
 # gazelle:exclude test_egress.py
 # gazelle:exclude test_launch_presets.py
@@ -370,20 +371,16 @@ py_test(
     ],
 )
 
-# Real testing ingress; never send registrations to staging or run this implicitly in CI.
-py_test(
+acceptance_test(
     name = "test_dcr",
-    size = "medium",
     srcs = ["test_dcr.py"],
-    tags = [
-        "manual",
-        "no-cache",
-        "no-remote-exec",
-    ],
+    deployed = False,
+    k3s = "model_free",
+    mcp_fixtures = True,
     deps = [
         ":conftest",
         ":dcr",
-        "//:conftest",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

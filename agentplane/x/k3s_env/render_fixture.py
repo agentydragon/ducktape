@@ -1,5 +1,6 @@
 """Render the fixture chart into `$K3S_FIXTURE_DIR`, at build time: `<backend>.json` for each model
-backend, and `local-model-mcp-fixtures.json` with Dex and the MCP servers `test_mcp` calls.
+backend, and `local-model-mcp-fixtures.json` with Dex, the MCP servers `test_mcp` calls and the Action
+Service's OAuth server `test_dcr` registers with.
 
 Takes no arguments: the app's `Settings`, which the chart code builds, parses `sys.argv` as its own.
 """
@@ -34,7 +35,12 @@ def _render(output: Path, backend: Backend, mcp: McpInputs | None) -> None:
             for service in fixture_chart.browser_services(mcp_fixtures=mcp is not None)
         ],
         mcp_fixtures=(
-            McpFixtures(dex_host=fixture_chart.DEX_HOST, operator_secret=fixture_chart.OPERATOR_SECRET)
+            McpFixtures(
+                dex_host=fixture_chart.DEX_HOST,
+                operator_secret=fixture_chart.OPERATOR_SECRET,
+                actions_service=fixture_chart.ACTIONS_SERVICE.name,
+                actions_port=fixture_chart.ACTIONS_SERVICE.port.number,
+            )
             if mcp is not None
             else None
         ),

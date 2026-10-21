@@ -6,6 +6,7 @@ objects (staging's policy sets, testing's MCP fixtures) come from `Environment.e
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -62,6 +63,8 @@ _MCP_PATHS = (
 )
 
 
+# Where the Action Service reads the `oauth_secret_items` of `mcp_oauth_secret`.
+MCP_OAUTH_DIR = "/etc/agentplane-mcp"
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
 _DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 
@@ -97,10 +100,12 @@ class Actions(Construct):
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
         migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
+        container_env: Mapping[str, EnvValue] | None = None,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
         self.database_url = database_url
+        self.container_env = container_env or {}
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.image_pull_policy = image_pull_policy
@@ -240,7 +245,7 @@ class Actions(Construct):
                 .key("client_id")
                 .env_value(self, "github-mcp-client-secret-env")
             )
-        return env
+        return env | dict(self.container_env)
 
     def _add_workload(self, settings: SettingsFile) -> ServiceWorkload:
         env = self._container_env()
@@ -292,7 +297,7 @@ class Actions(Construct):
             default_mode=0o440,
             items={key: PathMapping(path=key) for key in self.env.actions.oauth_secret_items},
         )
-        container.mount("/etc/agentplane-mcp", oauth_volume, read_only=True)
+        container.mount(MCP_OAUTH_DIR, oauth_volume, read_only=True)
         settings.mount_into(container, env=Settings.config_file_env)
         if self.env.actions.github_mcp_client_secret_name is not None:
             github_secret = Secret.from_secret_name(

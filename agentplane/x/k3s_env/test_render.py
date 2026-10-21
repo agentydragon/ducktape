@@ -8,12 +8,16 @@ import bcrypt
 import pytest_bazel
 import yaml
 
+from agentplane.action_service.oauth_settings import OAuthSettings
+from agentplane.action_service.settings import Settings as ActionsSettings  # beside the runner gateway's
 from agentplane.runner_gateway.settings import Settings
 from agentplane.x.k3s_env import fixture_chart, fixture_database
 from agentplane.x.k3s_env.rendered_fixture import McpInputs
 from util.settings_contract import env_name
 
-_MCP = McpInputs(dex_ca_cert="dex-ca\n", dex_cert="dex-cert\n", dex_key="dex-key\n")
+_MCP = McpInputs(
+    dex_ca_cert="dex-ca\n", dex_cert="dex-cert\n", dex_key="dex-key\n", actions_origin="http://127.0.0.1:1"
+)
 
 
 def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -238,6 +242,22 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         volume = next(volume for volume in pod_spec["volumes"] if volume["name"] == mount["name"])
         bundle = _resource(docs, "ConfigMap", volume["configMap"]["name"])["data"][cert_file.name]
         assert bundle.endswith(_MCP.dex_ca_cert), workload
+
+    # The Action Service's OAuth server names itself by the forwarded origin and reads each of its files
+    # from a mounted key of a Secret the fixture writes.
+    actions_pod = _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]
+    (actions_container,) = actions_pod["containers"]
+    oauth = OAuthSettings.model_validate_json(
+        next(
+            entry["value"] for entry in actions_container["env"] if entry["name"] == env_name(ActionsSettings, "oauth")
+        )
+    )
+    assert oauth.base_url == _MCP.actions_origin
+    for path in (oauth.upstream_client_secret_file, oauth.jwt_signing_key_file, oauth.encryption_key_file):
+        mount = next(mount for mount in actions_container["volumeMounts"] if mount["mountPath"] == str(path.parent))
+        volume = next(volume for volume in actions_pod["volumes"] if volume["name"] == mount["name"])["secret"]
+        assert {"key": path.name, "path": path.name} in volume["items"], path
+        assert _resource(docs, "Secret", volume["secretName"])["stringData"][path.name], path
 
 
 if __name__ == "__main__":

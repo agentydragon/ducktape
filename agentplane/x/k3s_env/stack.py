@@ -7,6 +7,7 @@ first Deployment that does not, with the Pod states and logs of whatever did not
 The test process reaches the app (and Dex) by their in-cluster Service names, which it resolves
 through `/etc/hosts`: OIDC redirects name them, and the action is discarded after the test. Dex's
 certificate comes from a CA made per stack, which `McpFixtureAccess.ca_bundle` adds to the system roots.
+The Action Service's OAuth server names itself by a loopback origin, which a port-forward serves.
 """
 
 import contextlib
@@ -17,13 +18,16 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import tarfile
 import tempfile
+import threading
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -268,6 +272,8 @@ class McpFixtureAccess:
     ca_bundle: Path
     # The Secret with the operator's Dex login.
     operator_secret: str
+    # The Action Service's MCP endpoint, at the origin its OAuth server names itself by.
+    actions_mcp_url: str
 
 
 @dataclass(frozen=True)
@@ -282,9 +288,40 @@ class Stack:
 def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
     ca = tls.make_ca("test-k3s-fixture-ca")
     cert, key = tls.issue_leaf(ca, dex_host, work)
+    # A free port now; the port-forward listens on it once the Action Service is Available.
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
     return rendered_fixture.McpInputs(
-        dex_ca_cert=ca.cert_pem.decode(), dex_cert=cert.read_text(), dex_key=key.read_text()
+        dex_ca_cert=ca.cert_pem.decode(),
+        dex_cert=cert.read_text(),
+        dex_key=key.read_text(),
+        actions_origin=f"http://127.0.0.1:{port}",
     )
+
+
+@contextlib.contextmanager
+def _port_forward(k3s: K3s, namespace: str, service: str, origin: str, port: int) -> Iterator[None]:
+    """Forward the loopback `origin` to `service`'s `port` from when kubectl says it listens."""
+    local = urlsplit(origin)
+    with subprocess.Popen(
+        [
+            *(str(k3s.binary), "kubectl", "--kubeconfig", str(k3s.kubeconfig), "port-forward", "-n", namespace),
+            *(f"--address={local.hostname}", f"service/{service}", f"{local.port}:{port}"),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    ) as forward:
+        try:
+            assert forward.stdout is not None
+            if not (line := forward.stdout.readline()).startswith("Forwarding from"):
+                raise RuntimeError(f"kubectl port-forward {service}: {line!r}")
+            # Its log of each connection, which would fill the pipe unread.
+            threading.Thread(target=shutil.copyfileobj, args=(forward.stdout, sys.stdout), daemon=True).start()
+            yield
+        finally:
+            forward.terminate()
 
 
 def _resolve_on_node(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
@@ -329,7 +366,9 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
     work = Path(tempfile.mkdtemp())
     k3s = K3s(work, get_required_path(os.environ["K3S_BINARY_RLOCATION"]))
     process = k3s.start()
-    try:
+    with contextlib.ExitStack() as cleanup:
+        cleanup.callback(shutil.rmtree, work, ignore_errors=True)
+        cleanup.callback(process.terminate)
         ca_cert, ca_key = _openssl_ca(work)
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
         system_roots = Path("/etc/ssl/certs/ca-certificates.crt").read_text()
@@ -371,13 +410,23 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
         if mcp is not None and fixture.mcp_fixtures is not None:
             ca_bundle = work / "ca-certificates.crt"
             ca_bundle.write_text(system_roots + mcp.dex_ca_cert)
-            access = McpFixtureAccess(ca_bundle=ca_bundle, operator_secret=fixture.mcp_fixtures.operator_secret)
+            cleanup.enter_context(
+                _port_forward(
+                    k3s,
+                    fixture.namespace,
+                    fixture.mcp_fixtures.actions_service,
+                    mcp.actions_origin,
+                    fixture.mcp_fixtures.actions_port,
+                )
+            )
+            access = McpFixtureAccess(
+                ca_bundle=ca_bundle,
+                operator_secret=fixture.mcp_fixtures.operator_secret,
+                actions_mcp_url=f"{mcp.actions_origin}/mcp",
+            )
         token = k3s.kubectl(
             "-n", fixture.namespace, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
         ).strip()
         print("memory:", run("free", "-m"))
         yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         print(k3s.report(fixture.namespace))
-    finally:
-        process.terminate()
-        shutil.rmtree(work, ignore_errors=True)

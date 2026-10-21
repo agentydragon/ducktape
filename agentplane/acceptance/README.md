@@ -181,11 +181,12 @@ distinct wake generations per authenticated caller per rolling minute.
 
 ## MCP integration
 
-`test_mcp_k3s` runs on a stack with Dex, `mcp-everything` and the Dex-backed OAuth MCP fixture
-(`acceptance_test(mcp_fixtures = True)`), configured under test-only names
-([`mcp_servers.py`](mcp_servers.py)). The scripted model runs one `agentplane --json actions …`
-command per turn, on each harness, and the scenario reads the printed receipt back from what the
-harness sent the model.
+`test_mcp_k3s` and `test_dcr_k3s` run on a stack with Dex, `mcp-everything`, the Dex-backed OAuth
+MCP fixture and the Action Service's own OAuth server (`acceptance_test(mcp_fixtures = True)`),
+configured under test-only names ([`mcp_servers.py`](mcp_servers.py)). `test_dcr_k3s` registers an
+MCP client with that OAuth server ([`dcr.md`](dcr.md)). In `test_mcp_k3s` the scripted model runs one
+`agentplane --json actions …` command per turn, on each harness, and the scenario reads the printed
+receipt back from what the harness sent the model.
 
 - `test_agent_executes_mcp_action` binds its Sandbox to an `exact_actions` set naming the
   `mcp-everything` echo, submits it with `--wait` and checks the exact upstream echo result.

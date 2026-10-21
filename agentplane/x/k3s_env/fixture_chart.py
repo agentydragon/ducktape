@@ -6,7 +6,9 @@ and never reads or edits the production generated manifest.
 
 Browsers and services reach the app and Dex by their in-cluster Service names: Pods through the
 cluster DNS, the test process on the node through `/etc/hosts` (`stack.py`). The app answers over http;
-Dex over TLS, as the app and the Action Service accept a plain-http issuer only on loopback.
+Dex over TLS, as the app and the Action Service accept a plain-http issuer only on loopback. The Action
+Service's own OAuth server is such an issuer, so it names itself by a loopback origin, which the test
+process forwards to it.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from __future__ import annotations
 import secrets
 import string
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import bcrypt
@@ -34,9 +37,13 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
+from cryptography.fernet import Fernet
 from more_itertools import one
 
 from agentplane.acceptance import launch_preset, mcp_servers, runtime_grant
+from agentplane.action_service.models import OperatorPrincipal
+from agentplane.action_service.oauth_settings import OAuthSettings
+from agentplane.action_service.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.x.k3s_env import fixture_database
 from agentplane.x.k3s_env.rendered_fixture import LocalModel, McpInputs, Models, PublicLiteLLM
@@ -67,6 +74,7 @@ from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
+from util.settings_contract import env_name
 
 NAMESPACE = testing.ENV.namespace
 RUNNER_GATEWAY = "runner-gateway"
@@ -79,6 +87,7 @@ EGRESS_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-histo
 DEX_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-dex:unset"
 MCP_EVERYTHING_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset"
 APP_ORIGIN = app_component.service(NAMESPACE).url
+ACTIONS_SERVICE = actions.service(NAMESPACE)
 DEX_HOST = dex.service().host
 DEX_ISSUER = dex.issuer(f"https://{DEX_HOST}:{dex.HTTPS_PORT.number}")
 # Test-only Dex clients and operator in place of testing's, which an operator's deployment uses.
@@ -115,9 +124,11 @@ def _secret(
 def objects(
     *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, mcp: McpInputs | None
 ) -> list[dict[str, Any]]:
-    """Synthesize only the objects the one-node, operator-light k3s fixture deploys; Dex and the MCP
-    servers `test_mcp` calls only given `mcp`, whose images then need importing."""
+    """Synthesize only the objects the one-node, operator-light k3s fixture deploys; Dex, the MCP
+    servers `test_mcp` calls and the Action Service's OAuth server only given `mcp`, whose images then
+    need importing."""
     operator_oidc = testing.operator_oidc(issuer=DEX_ISSUER, app_client_id=_APP_LOGIN.id)
+    oauth, oauth_files = _actions_oauth(mcp.actions_origin) if mcp is not None else (None, {})
     env = replace(
         testing.ENV,
         vm_sandboxes=False,
@@ -150,6 +161,7 @@ def objects(
                 mcp_servers.OAUTH: actions_testing_fixtures.oauth_fixture_group(mcp_servers.OAUTH),
                 "sandbox": testing.ENV.actions.action_groups["sandbox"],
             },
+            oauth_secret_items=(*testing.ENV.actions.oauth_secret_items, *oauth_files),
         ),
     )
     if isinstance(models, LocalModel):
@@ -325,6 +337,9 @@ def objects(
         memory_limit=None,
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         migrate_memory_limit=None,
+        container_env=(
+            {env_name(Settings, "oauth"): EnvValue.from_value(oauth.model_dump_json())} if oauth is not None else None
+        ),
     )
     notifications.Notifications(
         chart,
@@ -362,7 +377,9 @@ def objects(
         {"client-id": _APP_LOGIN.id, "client-secret": _password(), "session-secret": _password(64)},
     )
     _secret(
-        chart, actions.mcp_oauth_secret(NAMESPACE).name, {"client-id": _MCP_LINKAGE.id, "client-secret": _password()}
+        chart,
+        actions.mcp_oauth_secret(NAMESPACE).name,
+        {"client-id": _MCP_LINKAGE.id, "client-secret": _password(), **oauth_files},
     )
     if mcp is not None:
         _add_mcp_fixtures(chart, mcp, system_roots=system_roots, dex_clients=[app_service, action_service])
@@ -482,6 +499,30 @@ def _add_mcp_fixtures(chart: Chart, mcp: McpInputs, *, system_roots: str, dex_cl
         cpu_limit=None,
         memory_limit=None,
     )
+
+
+def _actions_oauth(origin: str) -> tuple[OAuthSettings, dict[str, str]]:
+    """The Action Service's OAuth server at `origin`, signing operators in at Dex, and the files it reads
+    from `actions.mcp_oauth_secret`. For registration only (`test_dcr`): no scenario signs in through
+    it, so Dex has no client for it."""
+    files = Path(actions.MCP_OAUTH_DIR)
+    settings = OAuthSettings(
+        config_url=f"{DEX_ISSUER}/.well-known/openid-configuration",
+        upstream_client_id="test-actions-oauth",
+        upstream_client_secret_file=files / "oauth-client-secret",
+        base_url=origin,
+        integration_app_url=APP_ORIGIN,
+        jwt_signing_key_file=files / "jwt-signing-key",
+        encryption_key_file=files / "encryption-key",
+        upstream_issuer=DEX_ISSUER,
+        upstream_subject=_OPERATOR.subject,
+        approving_operator=OperatorPrincipal(issuer=DEX_ISSUER, subject=_OPERATOR.subject),
+    )
+    return settings, {
+        "oauth-client-secret": _password(),
+        "jwt-signing-key": _password(64),
+        "encryption-key": Fernet.generate_key().decode(),
+    }
 
 
 def _trust(workload: Construct, bundle: ConfigMap) -> None:
