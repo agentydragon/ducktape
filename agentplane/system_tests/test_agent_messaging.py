@@ -27,13 +27,13 @@ from google.protobuf.message import Message
 from more_itertools import one
 from pydantic import BaseModel
 
-from agentplane.acceptance import send_grant
-from agentplane.acceptance.agent import Agent
-from agentplane.acceptance.conftest import Sandboxes, namespace
-from agentplane.acceptance.scripted_upstream import ScriptedUpstream
 from agentplane.app.testing.client import Client
 from agentplane.notification_service import notifications_pb2
 from agentplane.proto import runner_pb2
+from agentplane.system_tests import send_grant
+from agentplane.system_tests.agent import Agent
+from agentplane.system_tests.conftest import Sandboxes, namespace
+from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
@@ -94,8 +94,10 @@ async def test_an_agent_messages_another_which_reads_and_acknowledges_it(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     async with asyncio.TaskGroup() as starting:
-        recipient_started = starting.create_task(sandbox(f"accept-msg-to-{harness}", inbox_tags=[send_grant.INBOX_TAG]))
-        sender_started = starting.create_task(sandbox(f"accept-msg-from-{harness}", policies=[send_grant.POLICY_SET]))
+        recipient_started = starting.create_task(
+            sandbox(f"systest-msg-to-{harness}", inbox_tags=[send_grant.INBOX_TAG])
+        )
+        sender_started = starting.create_task(sandbox(f"systest-msg-from-{harness}", policies=[send_grant.POLICY_SET]))
     recipient, sender = recipient_started.result(), sender_started.result()
     assert recipient.pod is not None
     assert sender.pod is not None

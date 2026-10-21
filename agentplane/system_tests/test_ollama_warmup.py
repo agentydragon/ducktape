@@ -6,7 +6,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.acceptance.ollama_warmup import warm_ollama
+from agentplane.system_tests.ollama_warmup import warm_ollama
 from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_128K
 
 QWEN = OLLAMA_QWEN_IQ4XS_128K.native

@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from kubernetes_asyncio import client as k8s, config as k8s_config
 
-from agentplane.acceptance.conftest import namespace
+from agentplane.system_tests.conftest import namespace
 
 # The longest `kubectl wait` a scenario asks for is 300 s; kubectl gets a little more to report it.
 KUBECTL_SECONDS = 310

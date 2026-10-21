@@ -1,9 +1,9 @@
-"""An acceptance scenario, run against a deployed instance and, opted in, a k3s stack of its own."""
+"""A system test scenario: run on a k3s stack of its own and, opted in, live against a deployed instance."""
 
 load("//agentplane/x/k3s_env:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-# The `_k3s` target's runner image, by what its scenarios run.
+# The k3s target's runner image, by what its scenarios run.
 _RUNNER_LAYOUTS = {
     # No harness, so the image imports faster.
     "model_free": "//agentplane/x/k3s_env:lifecycle/runner_layout",
@@ -20,21 +20,21 @@ _MCP_FIXTURE_LAYOUTS = [
     "//agentplane/x/k3s_env:mcp_fixtures/oauth_fixture_layout",
 ]
 
-# The `_k3s_vm` target's manifest: the local model's, with VM Sandboxes.
+# The `_vm` target's manifest: the local model's, with VM Sandboxes.
 _VM_FIXTURE = "//agentplane/x/k3s_env:rendered/local-model-vm.json"
 
-def acceptance_test(name, srcs, deps, k3s = None, vm_sandboxes = False, deployed = True, mcp_fixtures = False, size = "small", timeout = None):
-    """Generates `name` unless `deployed` is False, `name + "_k3s"` when `k3s` names its scenarios'
-    kind, and `name + "_k3s_vm"` with `vm_sandboxes`.
+def system_test(name, srcs, deps, k3s = None, vm_sandboxes = False, live = True, mcp_fixtures = False, size = "small", timeout = None):
+    """Generates `name` when `k3s` names its scenarios' kind, `name + "_vm"` with `vm_sandboxes`, and
+    `name + "_live"` unless `live` is False.
 
-    `name` runs against the deployment the caller's environment names (`AGENTPLANE_ACCEPTANCE_*`,
-    testing by default) with the caller's kubeconfig and a real model, off RBE; a scenario with only
-    `scripted_model` cases has nothing to run there and passes `deployed = False`. `name + "_k3s"`
-    starts its own stack in one RBE action (`agentplane.x.k3s_env.acceptance_target`) and runs the
-    `scripted_model` scenarios and the unmarked ones, in PR CI like any test; `k3s` is `"model_free"`
-    when none runs a turn, else `"scripted"`; `mcp_fixtures` adds Dex and the MCP servers to its
-    stack. `name + "_k3s_vm"` does the same for the `vm_sandboxes` scenarios, which only it runs, on a
-    stack with KubeVirt. `size` and `timeout` apply to `name`.
+    `name` starts its own k3s stack in one RBE action (`agentplane.x.k3s_env.system_test_target`) and
+    runs the `scripted_model` scenarios and the unmarked ones, in PR CI like any test; `k3s` is
+    `"model_free"` when none runs a turn, else `"scripted"`; `mcp_fixtures` adds Dex and the MCP
+    servers to its stack. `name + "_vm"` does the same for the `vm_sandboxes` scenarios, which only it
+    runs, on a stack with KubeVirt. `name + "_live"` runs against the deployment the caller's
+    environment names (`AGENTPLANE_SYSTEM_TEST_*`, testing by default) with the caller's kubeconfig and
+    a real model, off RBE; a scenario with only `scripted_model` cases has nothing to run there and
+    passes `live = False`. `size` and `timeout` apply to `name + "_live"`.
 
     A hidden library owns the source, so all targets share one compiled copy. Gazelle does not
     manage macro rules: exclude the source in the BUILD file and keep `deps` by hand.
@@ -49,18 +49,18 @@ def acceptance_test(name, srcs, deps, k3s = None, vm_sandboxes = False, deployed
         "main_module": "pytest_bazel",
         "deps": [":" + name + "_lib", "@pypi//pytest_bazel"],
     }
-    if deployed:
+    if live:
         py_test(
-            name = name,
+            name = name + "_live",
             size = size,
             timeout = timeout,
             # kubectl reads the caller's own kubeconfig; without HOME or KUBECONFIG it falls back to
             # http://localhost:8080 and fails for a reason that looks nothing like the cause.
             env_inherit = [
-                "AGENTPLANE_ACCEPTANCE_NAMESPACE",
-                "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT",
-                "AGENTPLANE_ACCEPTANCE_TOKEN",
-                "AGENTPLANE_ACCEPTANCE_URL",
+                "AGENTPLANE_SYSTEM_TEST_NAMESPACE",
+                "AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT",
+                "AGENTPLANE_SYSTEM_TEST_TOKEN",
+                "AGENTPLANE_SYSTEM_TEST_URL",
                 "HOME",
                 "KUBECONFIG",
             ],
@@ -72,7 +72,7 @@ def acceptance_test(name, srcs, deps, k3s = None, vm_sandboxes = False, deployed
         )
     if k3s != None:
         _k3s_test(
-            name = name + "_k3s",
+            name = name,
             runner_layout = _RUNNER_LAYOUTS[k3s],
             fixture = _MCP_FIXTURE if mcp_fixtures else _FIXTURE,
             layouts = _MCP_FIXTURE_LAYOUTS if mcp_fixtures else [],
@@ -80,7 +80,7 @@ def acceptance_test(name, srcs, deps, k3s = None, vm_sandboxes = False, deployed
         )
     if vm_sandboxes:
         _k3s_test(
-            name = name + "_k3s_vm",
+            name = name + "_vm",
             # The guest's runner comes from the runner disk; no Sandbox runs the Pod runner image.
             runner_layout = _RUNNER_LAYOUTS["model_free"],
             fixture = _VM_FIXTURE,
@@ -101,14 +101,14 @@ def _k3s_test(name, runner_layout, fixture, layouts, main_module, deps, data = [
         ] + layouts + data,
         env = {
             "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
-            "AGENTPLANE_ACCEPTANCE_MODEL_BACKEND": "scripted_model",
+            "AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND": "scripted_model",
             "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + fixture + ")",
             "K3S_MCP_FIXTURE_LAYOUTS": " ".join(["$(rlocationpath " + layout + ")" for layout in layouts]),
             "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath " + runner_layout + ")",
-            "PYTEST_PLUGINS": "agentplane.x.k3s_env.acceptance_target",
+            "PYTEST_PLUGINS": "agentplane.x.k3s_env.system_test_target",
         } | env,
         exec_properties = K3S_EXEC_PROPERTIES,
         tags = K3S_TAGS,
         main_module = main_module,
-        deps = deps + ["//agentplane/x/k3s_env:acceptance_target"],
+        deps = deps + ["//agentplane/x/k3s_env:system_test_target"],
     )

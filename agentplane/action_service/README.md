@@ -22,7 +22,7 @@ ways to prove one account, and the label admits either. The integration app labe
 mints per Sandbox; staging commits `claude-ai` for Claude.ai MCP Connections, `haku-agent`, and a
 binding for `public-coder-agent/openclaw` alongside their policies in
 `cluster/cdk8s/agentplane/actions_staging_policies.py`. Testing commits none:
-nothing there enrolls an external Connection, and the acceptance suite creates the objects it
+nothing there enrolls an external Connection, and the system tests create the objects they
 needs at run time. `policy_informer.PolicyInformer` watches them with a label selector into the
 `PolicyIndex`,
 and `connections.ConnectionAuthority` resolves grants against that index: a grant whose
@@ -470,8 +470,8 @@ the redacted `CallerActionPolicyView`, and
 present, refused or missing. Both carry `synced`; the integration app's Sandbox page reads the
 operator form.
 
-The end-to-end proof is `//agentplane/acceptance:test_mcp_k3s`, which creates the set and binding
-for the Sandbox it launches through the Kubernetes API (see [the acceptance README](../acceptance/README.md))
+The end-to-end proof is `//agentplane/system_tests:test_mcp`, which creates the set and binding
+for the Sandbox it launches through the Kubernetes API (see [the system tests README](../system_tests/README.md))
 against the upstream `mcp-everything` image described in
 [the fixture guide](testing/README.md); `test_runtime` drives the same production
 composition against an envtest API server.

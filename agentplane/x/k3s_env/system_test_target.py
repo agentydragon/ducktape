@@ -1,8 +1,8 @@
-"""A pytest plugin that runs acceptance scenarios against a k3s stack of their own.
+"""A pytest plugin that runs system test scenarios against a k3s stack of their own.
 
-An acceptance scenario's `_k3s` and `_k3s_vm` targets load it by name (`PYTEST_PLUGINS`). Before any
+A scenario's k3s and `_vm` targets load it by name (`PYTEST_PLUGINS`). Before any
 scenario fixture runs, it starts the stack and publishes it the way an operator names a deployment:
-the `AGENTPLANE_ACCEPTANCE_*` variables the acceptance `conftest` reads, `KUBECONFIG`, and `kubectl`
+the `AGENTPLANE_SYSTEM_TEST_*` variables the system tests' `conftest` reads, `KUBECONFIG`, and `kubectl`
 on `PATH`. LLM ingress forwards to the scenario's scripted model on the node, which the scenario starts
 on the published address (`scripted_upstream`). A stack with the MCP fixtures also publishes the
 operator's login Secret for `operator_login` and the Action Service's MCP endpoint, and trusts Dex's CA
@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from agentplane.acceptance import operator_login, scripted_upstream
-from agentplane.acceptance.conftest import ACTIONS_MCP_URL, BASE_URL, NAMESPACE, TOKEN
+from agentplane.system_tests import operator_login, scripted_upstream
+from agentplane.system_tests.conftest import ACTIONS_MCP_URL, BASE_URL, NAMESPACE, TOKEN
 from agentplane.x.k3s_env import rendered_fixture
 from agentplane.x.k3s_env.stack import Timeline, node_ip, running_stack
 from util.bazel.runfiles import get_required_path

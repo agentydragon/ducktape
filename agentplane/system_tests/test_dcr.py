@@ -8,8 +8,8 @@ import os
 import pytest
 import pytest_bazel
 
-from agentplane.acceptance.conftest import ACTIONS_MCP_URL
-from agentplane.acceptance.dcr import DcrError, register_client
+from agentplane.system_tests.conftest import ACTIONS_MCP_URL
+from agentplane.system_tests.dcr import DcrError, register_client
 
 
 @pytest.mark.parametrize("redirect_uri", ["http://127.0.0.1:49152/callback", "https://client.example.test/callback"])

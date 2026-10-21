@@ -31,7 +31,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from agentplane.acceptance.conftest import AUDIENCE, TESTING_SERVICE_ACCOUNT
+from agentplane.system_tests.conftest import AUDIENCE, TESTING_SERVICE_ACCOUNT
 from agentplane.testing import tls
 from agentplane.x.k3s_env import rendered_fixture, vm_sandboxes
 from agentplane.x.k3s_env.bootstrap import Bootstrap

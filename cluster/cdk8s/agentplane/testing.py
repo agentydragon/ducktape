@@ -266,7 +266,7 @@ _TOKEN_RULE = RolePolicyRule(
     resources=[named_resource("", "serviceaccounts/token", "agentplane-agent")], verbs=["create"]
 )
 
-# `//agentplane/acceptance:test_dispatcher_deployed` calls the Dispatcher as the app and notifications
+# `//agentplane/system_tests:test_dispatcher_live` calls the Dispatcher as the app and notifications
 # and fails the Runner Gateway over between replicas. A token bound to a live Pod is that Pod's account
 # toward the Gateway, so the token rule names exactly the Gateway's two wake callers rather than
 # `serviceaccounts/token` in general. Pod `delete` cannot name the Gateway's Pod ahead of time and covers
@@ -290,7 +290,7 @@ _DISPATCHER_ACCEPTANCE_RULES = [
 class AgentRbac(Construct):
     """The operator Role/RoleBinding an agent needs to drive Agentplane **testing**
     without a human: Sandbox lifecycle, exec/port-forward into runner Pods, the
-    token used to call the app's own API, and what the Dispatcher acceptance probes need.
+    token used to call the app's own API, and what the Dispatcher system test probes need.
 
     **Testing only, deliberately.** `agentplane-testing` runs Dex-backed fake operator login
     and no MCP group -- nothing here reaches a real account. `agentplane-staging`
@@ -327,8 +327,8 @@ class AgentRbac(Construct):
 
 class AcceptanceToken(Construct):
     """Lets `agentplane-staging`'s `claude-ai` and `haku-agent` mint this namespace's app token,
-    so their sandboxes can run the acceptance suite's harness scenarios
-    (`agentplane/acceptance/README.md`), which ask the API server for nothing else. None of
+    so their sandboxes can run the system tests' live harness scenarios
+    (`agentplane/system_tests/README.md`), which ask the API server for nothing else. None of
     `AgentRbac`'s Sandbox lifecycle or exec rights are granted by this Role:
     the token is an identity for the app, as `_TOKEN_RULE` says. `claude-ai` separately
     receives `AgentRbac` in testing; `haku-agent` does not.

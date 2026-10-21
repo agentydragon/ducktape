@@ -30,7 +30,6 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.applications import Starlette
 
-from agentplane.acceptance.dcr import register_client
 from agentplane.action_service.api import create_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog
@@ -54,6 +53,7 @@ from agentplane.action_service.testing.callers import OTHER, PERSONAL, admitted_
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
+from agentplane.system_tests.dcr import register_client
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 from util.net import bind_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop

@@ -11,7 +11,8 @@ import pytest
 import pytest_bazel
 from pydantic import JsonValue, SecretStr
 
-from agentplane.acceptance.operator_login import (
+from agentplane.app.oidc import SECURE_COOKIE
+from agentplane.system_tests.operator_login import (
     K3S_FIXTURE_API,
     SECRET_PATH_ENV,
     LoginBlockedError,
@@ -22,7 +23,6 @@ from agentplane.acceptance.operator_login import (
     read_operator_credentials,
     verify_action_federation,
 )
-from agentplane.app.oidc import SECURE_COOKIE
 
 APP = "https://app.test.invalid"
 DEX = "https://dex.test.invalid"

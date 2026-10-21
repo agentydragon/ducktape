@@ -6,8 +6,8 @@ import pytest
 import pytest_bazel
 import yaml
 
-from agentplane.acceptance.ollama_catalog import ollama_cases
 from agentplane.proto import runner_pb2
+from agentplane.system_tests.ollama_catalog import ollama_cases
 from util.bazel.runfiles import get_required_path
 
 # gazelle:include_dep @pypi//protobuf

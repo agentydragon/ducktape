@@ -14,11 +14,11 @@ import pytest_bazel
 import yaml
 from kubernetes_asyncio import client as k8s
 
-from agentplane.acceptance.cluster import api_client, kubectl
-from agentplane.acceptance.conftest import POD_TEMPLATE, VM_TEMPLATE, namespace
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
+from agentplane.system_tests.cluster import api_client, kubectl
+from agentplane.system_tests.conftest import POD_TEMPLATE, VM_TEMPLATE, namespace
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 BOUND_SECONDS = 300
@@ -181,8 +181,8 @@ async def _volumes(name: str, uid: str) -> dict:
 
 
 async def _probe(client: Client, name: str, cwd: str, workspace_dir: str, marker: str) -> dict:
-    state = "/state/storage-acceptance-state"
-    workspace = f"{workspace_dir}/storage-acceptance-workspace"
+    state = "/state/storage-systest-state"
+    workspace = f"{workspace_dir}/storage-systest-workspace"
     source = f'set -eu\ntest "$(cat {state})" = {shlex.quote(marker)}\nsha256sum {state}\n'
     source += f'test "$(cat {workspace})" = {shlex.quote(marker)}\nsha256sum {workspace}\n'
     if workspace_dir == "/workspace":
@@ -226,10 +226,10 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, case
     assert controller["status"].get("readyReplicas") == 1
     controller_image = controller["spec"]["template"]["spec"]["containers"][0]["image"]
     existing = json.loads(await kubectl("get", f"sandboxes.{GROUP}", "-o", "json"))["items"]
-    assert not existing, "serialize this acceptance with the deployment's other Sandbox users"
+    assert not existing, "serialize this scenario with the deployment's other Sandbox users"
     vm = case.startswith("vm")
     base = await _object(f"sandboxtemplates.{GROUP}", VM_TEMPLATE if vm else POD_TEMPLATE)
-    name = f"accept-storage-{case}-{uuid4().hex[:8]}"
+    name = f"systest-storage-{case}-{uuid4().hex[:8]}"
     template = name
     spec = copy.deepcopy(base["spec"])
     workspace_dir = "/state/workspaces" if vm else "/workspace"
@@ -240,7 +240,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, case
         runner = next(container for container in spec["pod"]["spec"]["containers"] if container["name"] == "runner")
         runner["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
     marker = f"storage-test-{uuid4().hex}"
-    bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-acceptance-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-acceptance-workspace\nsync\n"
+    bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-systest-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-systest-workspace\nsync\n"
     config = await _object("configmap", "app-config")
     policies = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
     assert policies

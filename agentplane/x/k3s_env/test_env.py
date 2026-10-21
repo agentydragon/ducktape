@@ -8,12 +8,12 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.acceptance.agent import Agent
-from agentplane.acceptance.conftest import POD_TEMPLATE, wait_until_running
 from agentplane.app.sandbox_models import NewSandbox
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
+from agentplane.system_tests.agent import Agent
+from agentplane.system_tests.conftest import POD_TEMPLATE, wait_until_running
 from agentplane.x.k3s_env.rendered_fixture import PublicLiteLLM
 from agentplane.x.k3s_env.stack import Stack, Timeline, run, running_stack
 

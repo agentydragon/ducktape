@@ -25,19 +25,6 @@ from more_itertools import one
 from pydantic import JsonValue
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.acceptance import mcp_servers
-from agentplane.acceptance.agent import Agent
-from agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
-from agentplane.acceptance.operator_login import (
-    LoginBlockedError,
-    OperatorCredentials,
-    app_origin,
-    follow_dex_authorization,
-    login_operator,
-    read_operator_credentials,
-    verify_action_federation,
-)
-from agentplane.acceptance.scripted_upstream import ScriptedUpstream
 from agentplane.action_service.models import (
     ActionRequestView,
     ActionState,
@@ -58,6 +45,19 @@ from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2
+from agentplane.system_tests import mcp_servers
+from agentplane.system_tests.agent import Agent
+from agentplane.system_tests.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
+from agentplane.system_tests.operator_login import (
+    LoginBlockedError,
+    OperatorCredentials,
+    app_origin,
+    follow_dex_authorization,
+    login_operator,
+    read_operator_credentials,
+    verify_action_federation,
+)
+from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
@@ -176,7 +176,7 @@ class PolicyObjects:
         """One set bound to `sandbox`'s ServiceAccount, the binding ActionsReady: the set's and the
         binding's names."""
         suffix = uuid4().hex[:8]
-        set_name = self.create_policy_set(f"accept-{name}-{suffix}", auto_approve)
+        set_name = self.create_policy_set(f"systest-{name}-{suffix}", auto_approve)
         binding_name = self.create_binding(f"{sandbox.name}-{name}-{suffix}", sandbox=sandbox, policy_sets=[set_name])
         self.wait_actions_ready(binding_name)
         return set_name, binding_name
@@ -238,7 +238,7 @@ async def test_agent_executes_mcp_action(
     scripted: ScriptedUpstream,
     policy_objects: PolicyObjects,
 ) -> None:
-    view = await sandbox(f"accept-mcp-{harness}")
+    view = await sandbox(f"systest-mcp-{harness}")
     policy_objects.bind(
         view, "exact-echo", [{"type": "exact_actions", "actions": {mcp_servers.EVERYTHING_GROUP: [mcp_servers.ECHO]}}]
     )
@@ -282,7 +282,7 @@ async def test_operator_links_oauth_mcp_server(
     callback = await operator_bff.get("/mcp-linkage/callback", params={"state": state, "code": code})
     assert callback.status_code == HTTPStatus.SEE_OTHER, callback.text
 
-    view = await sandbox(f"accept-oauth-mcp-{harness}")
+    view = await sandbox(f"systest-oauth-mcp-{harness}")
     policy_objects.bind(
         view, "oauth-echo", [{"type": "exact_actions", "actions": {mcp_servers.OAUTH: [mcp_servers.ECHO]}}]
     )
@@ -350,7 +350,7 @@ async def test_agent_mcp_bff_decision(
     scripted: ScriptedUpstream,
     verdict: Verdict,
 ) -> None:
-    view = await sandbox(f"accept-mcp-{harness}-{verdict}")
+    view = await sandbox(f"systest-mcp-{harness}-{verdict}")
     agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
     # Nothing binds this Sandbox to a policy set, so every Action of its waits for the operator.
     marker = f"MCP-BFF-{uuid4()}-" + "x" * 201
@@ -461,7 +461,7 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     a matching echo is auto-approved and executed with the binding and set on its Decision, an
     argument miss waits for the operator, and once the Policy Controller has deleted the expired
     binding so does a match."""
-    view = await sandbox(f"accept-policy-{harness}")
+    view = await sandbox(f"systest-policy-{harness}")
     set_name, binding_name = policy_objects.bind(
         view,
         "echo",

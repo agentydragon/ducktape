@@ -9,12 +9,12 @@ import os
 import pytest
 import pytest_bazel
 
-from agentplane.acceptance.agent import Agent
-from agentplane.acceptance.conftest import Sandboxes
-from agentplane.acceptance.ollama_catalog import ollama_cases
 from agentplane.app.testing.client import Client
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
+from agentplane.system_tests.agent import Agent
+from agentplane.system_tests.conftest import Sandboxes
+from agentplane.system_tests.ollama_catalog import ollama_cases
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -42,7 +42,7 @@ async def test_ollama_tool_call(client: Client, sandbox: Sandboxes, harness: run
     try:
         offered = (await client.models()).harnesses[Harness(runner_pb2.Harness.Name(harness))]
         assert route in offered, f"route absent from offered models for {case_id}"
-        view = await sandbox("accept-ollama-smoke")
+        view = await sandbox("systest-ollama-smoke")
         evidence["sandbox"] = view.name
         agent = await Agent.open(client, sandbox=view.name, harness=harness, model=route)
         evidence["thread_id"] = str(agent.thread_id)

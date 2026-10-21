@@ -1,4 +1,4 @@
-"""Dedicated acceptance operator bootstrap through Dex's local password form; no client-side
+"""Dedicated system test operator bootstrap through Dex's local password form; no client-side
 OIDC/session implementation."""
 
 import base64
@@ -133,7 +133,7 @@ def app_origin(base_url: str) -> httpx.URL:
     except httpx.InvalidURL:
         raise LoginBlockedError("BLOCKED: invalid BFF app origin") from None
     if not _transport_allowed(url) or url.userinfo or url.query or url.fragment or url.path != "/":
-        raise LoginBlockedError("BLOCKED: BFF acceptance requires an HTTPS app origin without credentials or path")
+        raise LoginBlockedError("BLOCKED: BFF login requires an HTTPS app origin without credentials or path")
     return _origin(url)
 
 

@@ -95,7 +95,7 @@ oci_image(
         name = variant + "/runner_layout",
         testonly = True,
         image = image,
-        visibility = ["//agentplane/acceptance:__pkg__"],
+        visibility = ["//agentplane/system_tests:__pkg__"],
     )
     for variant, image in {
         "lifecycle": ":runner_image",
@@ -136,13 +136,13 @@ _IMAGES = {
 ]
 
 # Dex and the MCP servers `test_mcp` calls, imported only by targets that run them
-# (`acceptance_test(mcp_fixtures = True)`): a subdirectory, so `stack.py`'s glob skips them.
+# (`system_test(mcp_fixtures = True)`): a subdirectory, so `stack.py`'s glob skips them.
 [
     oci_layout_rloc(
         name = "mcp_fixtures/" + name + "_layout",
         testonly = True,
         image = image,
-        visibility = ["//agentplane/acceptance:__pkg__"],
+        visibility = ["//agentplane/system_tests:__pkg__"],
     )
     for name, image in {
         "dex": "@dex_linux_amd64",
@@ -152,13 +152,13 @@ _IMAGES = {
 ]
 
 # KubeVirt's and Kyverno's images, imported by targets that run VM Sandboxes
-# (`acceptance_test(vm_sandboxes = True)`): a subdirectory, so `stack.py`'s glob skips them.
+# (`system_test(vm_sandboxes = True)`): a subdirectory, so `stack.py`'s glob skips them.
 [
     oci_layout_rloc(
         name = "vm_sandboxes/" + name + "_layout",
         testonly = True,
         image = image,
-        visibility = ["//agentplane/acceptance:__pkg__"],
+        visibility = ["//agentplane/system_tests:__pkg__"],
     )
     for name, image in K3S_VM_IMAGES.items()
 ]
@@ -186,16 +186,16 @@ py_test(
 )
 
 py_library(
-    name = "acceptance_target",
+    name = "system_test_target",
     testonly = True,
-    srcs = ["acceptance_target.py"],
-    visibility = ["//agentplane/acceptance:__pkg__"],
+    srcs = ["system_test_target.py"],
+    visibility = ["//agentplane/system_tests:__pkg__"],
     deps = [
         ":rendered_fixture",
         ":stack",
-        "//agentplane/acceptance:conftest",
-        "//agentplane/acceptance:operator_login",
-        "//agentplane/acceptance:scripted_upstream",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:operator_login",
+        "//agentplane/system_tests:scripted_upstream",
         "//util/bazel:runfiles",
         "@pypi//pytest",
     ],
@@ -218,7 +218,7 @@ py_library(
         ":bootstrap",
         ":rendered_fixture",
         ":vm_sandboxes",
-        "//agentplane/acceptance:conftest",
+        "//agentplane/system_tests:conftest",
         "//agentplane/testing:tls",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
@@ -248,12 +248,12 @@ py_test(
         ":rendered_fixture",
         ":stack",
         "//:conftest",
-        "//agentplane/acceptance:agent",
-        "//agentplane/acceptance:conftest",
         "//agentplane/app:sandbox_models",
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:conftest",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -281,9 +281,9 @@ py_test(
         ":stack",
         "//:conftest",
         "//agentplane:sandbox_resource",
-        "//agentplane/acceptance:conftest",
         "//agentplane/app:sandbox_models",
         "//agentplane/app/testing:client",
+        "//agentplane/system_tests:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -299,14 +299,14 @@ py_library(
         ":fixture_database",
         ":rendered_fixture",
         "//agentplane:subjects",
-        "//agentplane/acceptance:launch_preset",
-        "//agentplane/acceptance:mcp_servers",
-        "//agentplane/acceptance:runtime_grant",
-        "//agentplane/acceptance:send_grant",
         "//agentplane/action_service:models",
         "//agentplane/action_service:oauth_settings",
         "//agentplane/action_service:settings",
         "//agentplane/crds:policyset",
+        "//agentplane/system_tests:launch_preset",
+        "//agentplane/system_tests:mcp_servers",
+        "//agentplane/system_tests:runtime_grant",
+        "//agentplane/system_tests:send_grant",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
@@ -368,7 +368,7 @@ py_binary(
 )
 
 # The fixture chart for each model backend, and for the local model with the MCP fixtures (Dex and the
-# MCP servers of `acceptance_test(mcp_fixtures = True)` targets) and with VM Sandboxes, rendered once
+# MCP servers of `system_test(mcp_fixtures = True)` targets) and with VM Sandboxes, rendered once
 # per build so no test action starts Node or compiles the chart code. The values only the test action
 # knows are placeholders it fills in.
 genrule(
@@ -386,7 +386,7 @@ genrule(
         ":render_fixture_bin",
         "@nodejs_linux_amd64//:bin/node",
     ],
-    visibility = ["//agentplane/acceptance:__pkg__"],
+    visibility = ["//agentplane/system_tests:__pkg__"],
 )
 
 py_library(

@@ -117,8 +117,8 @@ Gazelle owns Python `py_library`/`py_test` rules (<devinfra/docs/gazelle.md>).
   )
   ```
 
-- Test-only is per package: a test-support umbrella (`testing/`, `e2e/`, `agentplane/acceptance/`) uses `package(default_testonly = True)`; other packages hold production code plus `test_*.py`/`*_test.py` targets. Shared test libraries go in `conftest.py` or an umbrella.
-- `testing/` holds fakes, builders, fixtures, matchers — never tests of production code (those sit beside the code, or in `e2e/`/`acceptance/`). `testing/test_x.py` tests only `testing/x.py`.
+- Test-only is per package: a test-support umbrella (`testing/`, `e2e/`, `agentplane/system_tests/`) uses `package(default_testonly = True)`; other packages hold production code plus `test_*.py`/`*_test.py` targets. Shared test libraries go in `conftest.py` or an umbrella.
+- `testing/` holds fakes, builders, fixtures, matchers — never tests of production code (those sit beside the code, or in `e2e/`/`system_tests/`). `testing/test_x.py` tests only `testing/x.py`.
 - `test_*.py`/`*_test.py` names are for test targets only; a non-test file whose name is an external contract gets `# gazelle:exclude`.
 - Hand-run demos/probes are `demo_<what>` (any language), beside their subject or under `x/`, in no test target. Promote to a test or production code if it earns it.
 - Never list `conftest.py` in `py_test.srcs` (the plugin wires the conftest chain).

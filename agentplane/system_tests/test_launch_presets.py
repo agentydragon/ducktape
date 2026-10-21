@@ -10,15 +10,15 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 
-from agentplane.acceptance import launch_preset
-from agentplane.acceptance.agent import RUNNER_ANSWERS_SECONDS, Agent
-from agentplane.acceptance.conftest import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
-from agentplane.acceptance.scripted_upstream import ScriptedUpstream
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
+from agentplane.system_tests import launch_preset
+from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, Agent
+from agentplane.system_tests.conftest import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
+from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -36,7 +36,7 @@ async def test_a_preset_launches_an_initialized_editable_codex_thread(
     assert preset.session_defaults.harness is Harness.CODEX
 
     view = await sandbox(
-        "accept-test-preset",
+        "systest-test-preset",
         template=preset.template,
         preset=launch_preset.SANDBOX_PRESET,
         policies=preset.policy_sets,
@@ -119,7 +119,7 @@ async def test_a_preset_launches_an_initialized_editable_codex_thread(
     inherited_id = uuid4()
     await client.create_session(view.name, inherited_id)
     inherited = await client.wait_for_thread_feed(inherited_id, timeout_s=RUNNER_ANSWERS_SECONDS)
-    local_model = "acceptance-local-model-override"
+    local_model = "systest-local-model-override"
     local_id = uuid4()
     await client.create_session(view.name, local_id, overrides={"model": local_model})
     local = await client.wait_for_thread_feed(local_id, timeout_s=RUNNER_ANSWERS_SECONDS)

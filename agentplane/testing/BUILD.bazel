@@ -3,7 +3,6 @@ load("//devinfra/python:defs.bzl", "py_library")
 package(
     default_testonly = True,
     default_visibility = [
-        "//agentplane/acceptance:__pkg__",
         "//agentplane/action_service:__pkg__",
         "//agentplane/app:__pkg__",
         "//agentplane/app/testing:__pkg__",
@@ -16,6 +15,7 @@ package(
         "//agentplane/runner:__subpackages__",
         "//agentplane/runner_gateway:__subpackages__",
         "//agentplane/sandboxes:__subpackages__",
+        "//agentplane/system_tests:__pkg__",
         "//agentplane/x/k3s_env:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
     ],

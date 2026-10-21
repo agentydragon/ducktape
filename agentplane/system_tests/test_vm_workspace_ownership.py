@@ -11,10 +11,10 @@ import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
-from agentplane.acceptance.conftest import VM_TEMPLATE, Sandboxes
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
+from agentplane.system_tests.conftest import VM_TEMPLATE, Sandboxes
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 WORKSPACE_ROOT = "/state/workspaces"
@@ -62,7 +62,7 @@ async def _run_setup(
 @pytest.mark.vm_sandboxes
 async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client: Client, sandbox: Sandboxes) -> None:
     """Check absence before opening, then use the ordinary Session setup and Git paths."""
-    view = await sandbox(f"accept-vm-workspace-{uuid4().hex[:10]}", template=VM_TEMPLATE)
+    view = await sandbox(f"systest-vm-workspace-{uuid4().hex[:10]}", template=VM_TEMPLATE)
     harness = runner_pb2.HARNESS_CODEX
     offered = (await client.models()).harnesses[Harness.CODEX]
     assert offered, "testing offers no Codex model for the model-free setup Session"
@@ -105,7 +105,7 @@ async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client
             "fi",
             "git_top=$(git rev-parse --show-toplevel)",
             'test "$git_top" = "$PWD"',
-            "echo WORKSPACE_OWNER_ACCEPTANCE",
+            "echo WORKSPACE_OWNER_SYSTEM_TEST",
             (
                 'echo "uid=$(id -u) gid=$(id -g) dir_owner=$(stat -c %u:%g .) '
                 'git_owner=$(stat -c %u:%g .git) git_top=$git_top"'
@@ -121,7 +121,7 @@ async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client
         cwd=workspace,
         setup_script=setup_script,
     )
-    assert "WORKSPACE_OWNER_ACCEPTANCE" in output, stderr
+    assert "WORKSPACE_OWNER_SYSTEM_TEST" in output, stderr
     assert f"uid={AGENT_UID} gid={AGENT_GID} dir_owner={AGENT_UID}:{AGENT_GID}" in output, stderr
     assert f"git_owner={AGENT_UID}:{AGENT_GID} git_top={workspace}" in output, stderr
 

@@ -10,7 +10,7 @@
 #
 # The harnesses are nixpkgs' versions, not the ones //agentplane/runner/... pins and tests, and
 # nothing runs a turn through this image before it publishes: after a change that moves either
-# harness, run //agentplane/acceptance against the deployment.
+# harness, run the `_live` targets in //agentplane/system_tests against the deployment.
 #
 # Build:  nix build .#runner-image
 # Load:   docker load < result

@@ -8,9 +8,9 @@ high. Agents can still run it
 directly with `bbr test //agentplane/x/k3s_env:test_lifecycle --test_output=all`. The separate
 `test_env` model smoke remains manual and requires `LITELLM_QWEN_KEY`.
 
-Acceptance scenarios run on the same stack as `<scenario>_k3s` targets in
-[`agentplane/acceptance`](../../acceptance/README.md), which PR CI runs:
-[`acceptance_target.py`](acceptance_target.py)
+System test scenarios run on the same stack as the k3s targets in
+[`agentplane/system_tests`](../../system_tests/README.md), which PR CI runs:
+[`system_test_target.py`](system_test_target.py)
 is the pytest plugin that starts it and publishes it as the deployment under test, with LLM ingress
 forwarding to the scenario's scripted model on the node. Scripted targets take the
 `harnesses/runner_layout` image, which carries both pinned harnesses.
@@ -115,7 +115,7 @@ or expensive rerun were needed. New quiesce behavior still needs its own focused
 
 ## VM Sandboxes
 
-An acceptance scenario's `_k3s_vm` target ([acceptance README](../../acceptance/README.md)) runs on a
+A system test scenario's `_vm` target ([system tests README](../../system_tests/README.md)) runs on a
 stack rendered with VM Sandboxes (`rendered/local-model-vm.json`), so [`vm_sandboxes.py`](vm_sandboxes.py)
 installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
 and Kyverno's admission controller, which adds the egress relay to each launcher Pod as in
@@ -152,10 +152,10 @@ Importing the two sets at once took 169 s and 202 s, against 58 s and 78 s one a
 ([invocation](https://app.buildbuddy.io/invocation/a7f1a8e7-b891-4495-9252-a4327412d10b); that worker
 was slower throughout, k3s up at 47 s).
 
-The `_k3s_vm` targets in one invocation ([invocation](https://app.buildbuddy.io/invocation/b1635c1d-db13-4262-842f-cf07b912d07b)),
-each on its own worker: `test_vm_sandbox_k3s_vm` (two VM Sandboxes, a turn on each) 483 s,
-`test_storage_deployed_k3s_vm` 492 s, `test_suspend_resume_k3s_vm` 597 s; the Pod case,
-`test_suspend_resume_k3s`, 216 s.
+The `_vm` targets in one invocation ([invocation](https://app.buildbuddy.io/invocation/b1635c1d-db13-4262-842f-cf07b912d07b)),
+each on its own worker: `test_vm_sandbox_vm` (two VM Sandboxes, a turn on each) 483 s,
+`test_storage_vm` 492 s, `test_suspend_resume_vm` 597 s; the Pod case,
+`test_suspend_resume`, 216 s.
 
 In a run with pulls ([invocation](https://app.buildbuddy.io/invocation/989d9e78-957b-4e0c-8f54-717e5f679e59)),
 create, Ready, suspend, resume and Ready again took under 2 minutes; the resumed VM was running 14 s
@@ -173,7 +173,7 @@ only each explicitly paired experiment supports its own comparison.
 ### Image layers in memory, 2026-10-21
 
 The [containerd import tail](#containerd-import-tail) profile found unpacking bound by filesystem writes.
-One run each of `test_thread_stream_k3s`, importing the same images one `ctr images import` per image:
+One run each of `test_thread_stream`, importing the same images one `ctr images import` per image:
 
 | containerd storage                                 | Import, s | Action, s | Invocation                                                                            |
 | -------------------------------------------------- | --------: | --------: | ------------------------------------------------------------------------------------- |
@@ -181,15 +181,15 @@ One run each of `test_thread_stream_k3s`, importing the same images one `ctr ima
 | Whole root on tmpfs, every image streams all blobs |      75.6 |     182.5 | [c78cffa4](https://app.buildbuddy.io/invocation/c78cffa4-7619-4420-945d-bf1c716d4d38) |
 | Snapshotter root on tmpfs, shared blobs once       |      64.8 |     190.7 | [d1c5e40b](https://app.buildbuddy.io/invocation/d1c5e40b-d99b-40e4-9d9b-a6f802e69195) |
 
-The first two ran alone; the last ran beside `test_mcp_k3s` and `test_suspend_resume_k3s_vm`, also with the
+The first two ran alone; the last ran beside `test_mcp` and `test_suspend_resume_vm`, also with the
 snapshotter root on tmpfs. `free -m` when each stack was ready (before any scenario ran), in MiB of the
 executor's 9724; shared memory is mostly the layer tmpfs:
 
-| Target                       | Shared | Available |
-| ---------------------------- | -----: | --------: |
-| `test_thread_stream_k3s`     |   3042 |      4991 |
-| `test_mcp_k3s`               |   3520 |      4328 |
-| `test_suspend_resume_k3s_vm` |   4521 |      2426 |
+| Target                   | Shared | Available |
+| ------------------------ | -----: | --------: |
+| `test_thread_stream`     |   3042 |      4991 |
+| `test_mcp`               |   3520 |      4328 |
+| `test_suspend_resume_vm` |   4521 |      2426 |
 
 On the VM stack that is close to the tmpfs default cap (half of memory), and 2.4 GiB is left for guests
 that request 1.5 GiB each, so a stack with VM Sandboxes keeps its layers on disk.
@@ -263,7 +263,7 @@ What is left before pytest is 5–10 s of VM and workspace setup and the remaini
 bytecode compilation ([executor constraints](#rbe-executor-constraints)).
 
 The test process no longer builds the app's `Settings`, which parses argv, so pytest flags such as
-`--test_arg=-s` work on `test_lifecycle` and the `_k3s` acceptance targets
+`--test_arg=-s` work on `test_lifecycle` and the system test k3s targets
 ([run](https://app.buildbuddy.io/invocation/93bfc317-4354-46fd-b19b-fac04650fb20)). `test_render`
 still renders the chart in process and rejects them.
 
@@ -754,7 +754,7 @@ remaining OCI/containerd import and unpack cost, while keeping lifecycle asserti
 unchanged. Do not use this one pair to justify moving the expensive workflow into general CI.
 
 The separate workflow runs only the model-free lifecycle target. Its bare-cluster fixtures do not
-provide Cilium or OIDC/Dex coverage (KubeVirt runs only in the `_k3s_vm` targets), and this target is not
+provide Cilium or OIDC/Dex coverage (KubeVirt runs only in the system tests' `_vm` targets), and this target is not
 Dispatcher multi-replica acceptance. Keep the `agentplane-testing` environment and fixture/spike
 cleanup as separate future work until those coverage gaps have an explicit owner and replacement.
 

@@ -103,7 +103,7 @@ py_test(
     ],
 )
 
-# Deployable image: an OAuth-protected MCP server for acceptance-testing linkage against a real
+# Deployable image: an OAuth-protected MCP server for system-testing linkage against a real
 # in-cluster backend. Deployed only to the testing namespace; never referenced by production
 # Action Service settings.
 aspect_py_binary(

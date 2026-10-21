@@ -7,7 +7,7 @@ to the shared listener on `8080` and its port `8081` to the HTTP/JSON facade. Th
 the exact Sandbox is ready, with per-Sandbox Lease and PostgreSQL generation fencing.
 
 The manual queue, replica and wake probes are documented in the
-[acceptance suite](../../acceptance/README.md#dispatcher-queue-and-replica-acceptance).
+[system tests](../../system_tests/README.md#dispatcher-queue-and-replicas).
 
 ## Contract
 

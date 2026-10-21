@@ -13,20 +13,20 @@ import pytest
 import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.acceptance.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn, runner_startup_retries
-from agentplane.acceptance.conftest import (
+from agentplane.app.sandbox_models import SandboxView
+from agentplane.app.testing.client import Client
+from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_resource import OperatingMode
+from agentplane.system_tests.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn, runner_startup_retries
+from agentplane.system_tests.conftest import (
     POD_TEMPLATE,
     VM_TEMPLATE,
     VM_WORKING_DIRECTORY,
     Sandboxes,
     wait_until_running,
 )
-from agentplane.acceptance.scripted_upstream import ScriptedUpstream
-from agentplane.app.sandbox_models import SandboxView
-from agentplane.app.testing.client import Client
-from agentplane.proto import event_log_pb2, runner_pb2
-from agentplane.runner.harness import Harness
-from agentplane.sandbox_resource import OperatingMode
+from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -123,7 +123,7 @@ class _ResumeRun:
 
     @classmethod
     async def start(cls, client: Client, sandbox: Sandboxes, *, template: str) -> _ResumeRun:
-        view = await sandbox(f"accept-resume-{template}-{uuid4().hex[:8]}", template=template)
+        view = await sandbox(f"systest-resume-{template}-{uuid4().hex[:8]}", template=template)
         assert view.pod is not None
         run = cls(
             client=client,

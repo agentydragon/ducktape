@@ -44,8 +44,6 @@ import pytest_bazel
 from more_itertools import one
 from pydantic import BaseModel, Field
 
-from agentplane.acceptance.agent import Agent
-from agentplane.acceptance.conftest import Sandboxes
 from agentplane.app.electric import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScopeResponse
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.history_service.fold.views import EntityKind, PayloadField, ThreadItemState, ThreadPayloadReference
@@ -53,6 +51,8 @@ from agentplane.native.claude import wire as claude_wire  # Both harnesses name 
 from agentplane.native.codex import wire as codex_wire
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
+from agentplane.system_tests.agent import Agent
+from agentplane.system_tests.conftest import Sandboxes
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -221,7 +221,7 @@ async def _open_thread(http: httpx.AsyncClient, thread_id: UUID) -> ThreadOpen:
 async def test_a_one_word_turn_answers_and_its_thread_opens_in_time(
     client: Client, base_url: str, token: str, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
 ) -> None:
-    view = await sandbox(f"accept-latency-{harness}")
+    view = await sandbox(f"systest-latency-{harness}")
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     turn = await agent.run(PING)
     turn_seconds = time.monotonic() - turn.accepted

@@ -5,8 +5,8 @@ load("//devinfra/oci:py_image.bzl", "py_image_bytecode_layer", "py_image_entrypo
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = [
-    "//agentplane/acceptance:__pkg__",
     "//agentplane/app:__subpackages__",
+    "//agentplane/system_tests:__pkg__",
 ])
 
 # gazelle:resolve py agentplane.proto.command_pb2 //agentplane/proto:command_pb2
@@ -38,8 +38,8 @@ py_library(
     name = "api",
     srcs = ["api.py"],
     visibility = [
-        "//agentplane/acceptance:__pkg__",
         "//agentplane/app:__subpackages__",
+        "//agentplane/system_tests:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -103,8 +103,8 @@ py_library(
     name = "presets",
     srcs = ["presets.py"],
     visibility = [
-        "//agentplane/acceptance:__pkg__",
         "//agentplane/app:__subpackages__",
+        "//agentplane/system_tests:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -118,8 +118,8 @@ py_library(
     name = "main",
     srcs = ["main.py"],
     visibility = [
-        "//agentplane/acceptance:__pkg__",
         "//agentplane/app:__subpackages__",
+        "//agentplane/system_tests:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -654,8 +654,8 @@ py_library(
     name = "oidc",
     srcs = ["oidc.py"],
     visibility = [
-        "//agentplane/acceptance:__pkg__",
         "//agentplane/app:__subpackages__",
+        "//agentplane/system_tests:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
@@ -813,8 +813,8 @@ py_library(
     name = "action_federation",
     srcs = ["action_federation.py"],
     visibility = [
-        "//agentplane/acceptance:__pkg__",
         "//agentplane/app:__subpackages__",
+        "//agentplane/system_tests:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [

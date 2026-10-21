@@ -21,11 +21,11 @@ import asyncio
 import pytest
 import pytest_bazel
 
-from agentplane.acceptance.agent import Agent
-from agentplane.acceptance.conftest import Sandboxes
-from agentplane.acceptance.scripted_upstream import ScriptedUpstream
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
+from agentplane.system_tests.agent import Agent
+from agentplane.system_tests.conftest import Sandboxes
+from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
@@ -57,7 +57,7 @@ async def test_the_model_obeys_the_standing_instruction_its_session_was_opened_w
     model, same deployment -- and neither turn uses a tool, so nothing the first leaves behind can
     reach the second.
     """
-    view = await sandbox(f"accept-instructions-{harness}")
+    view = await sandbox(f"systest-instructions-{harness}")
 
     instructed = await Agent.open(client, sandbox=view.name, harness=harness, model=model, instructions=INSTRUCTIONS)
     obeyed = await instructed.run(PROMPT)
@@ -80,7 +80,7 @@ async def test_the_standing_instruction_reaches_the_model_and_only_in_its_own_se
 ) -> None:
     """Two sessions on one sandbox, as in the real-model scenario: what each sends the model shows
     whether the app, the Dispatcher and the runner carried the instruction, and to that session only."""
-    view = await sandbox(f"accept-instructions-{harness}")
+    view = await sandbox(f"systest-instructions-{harness}")
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
 

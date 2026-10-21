@@ -1,4 +1,4 @@
-"""Dispatcher queue/Ready acceptance, independent of the app's HTTP surface."""
+"""Dispatcher queue/Ready system test, independent of the app's HTTP surface."""
 
 import asyncio
 import json
@@ -13,13 +13,13 @@ import pytest_bazel
 import yaml
 from kubernetes_asyncio import client as k8s, watch as k8s_watch
 
-from agentplane.acceptance.cluster import api_client, kubectl
-from agentplane.acceptance.conftest import namespace
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import dial
 from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
+from agentplane.system_tests.cluster import api_client, kubectl
+from agentplane.system_tests.conftest import namespace
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -235,7 +235,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     assert policies
     assert all(isinstance(name, str) and name for name in policies)
     suffix = uuid4().hex[:8]
-    sandbox, session, command = (f"accept-dispatch-{suffix}", str(uuid4()), str(uuid4()))
+    sandbox, session, command = (f"systest-dispatch-{suffix}", str(uuid4()), str(uuid4()))
     evidence: dict[str, object] = {
         "namespace": namespace(),
         "image": image,
@@ -471,7 +471,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
     assert isinstance(policies, list)
     assert policies
     suffix = uuid4().hex[:8]
-    sandbox, session, command = (f"accept-wake-{suffix}", str(uuid4()), str(uuid4()))
+    sandbox, session, command = (f"systest-wake-{suffix}", str(uuid4()), str(uuid4()))
     evidence: dict[str, object] = {
         "namespace": namespace(),
         "images": deployments,

@@ -13,10 +13,10 @@ import pytest
 import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.acceptance.conftest import POD_TEMPLATE, wait_until_running
 from agentplane.app.sandbox_models import NewSandbox, SandboxView
 from agentplane.app.testing.client import Client
 from agentplane.sandbox_resource import OperatingMode
+from agentplane.system_tests.conftest import POD_TEMPLATE, wait_until_running
 from agentplane.x.k3s_env.stack import Stack, Timeline, running_stack
 
 TRANSITION_SECONDS = 300.0

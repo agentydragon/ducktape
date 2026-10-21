@@ -1,4 +1,4 @@
-"""OAuth-protected MCP server for acceptance-testing MCP OAuth linkage.
+"""OAuth-protected MCP server for system-testing MCP OAuth linkage.
 
 The hermetic test variant uses fastmcp's ``InMemoryOAuthProvider``. The deployed variant uses
 Dex as the authorization server and only verifies Dex-issued JWTs locally. The Action Service

@@ -1,14 +1,14 @@
-load("//agentplane/acceptance:defs.bzl", "acceptance_test")
+load("//agentplane/system_tests:defs.bzl", "system_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:exclude test_agent_messaging.py
 # gazelle:exclude test_dcr.py
-# gazelle:exclude test_dispatcher_deployed.py
+# gazelle:exclude test_dispatcher.py
 # gazelle:exclude test_egress.py
 # gazelle:exclude test_launch_presets.py
 # gazelle:exclude test_mcp.py
 # gazelle:exclude test_session_instructions.py
-# gazelle:exclude test_storage_deployed.py
+# gazelle:exclude test_storage.py
 # gazelle:exclude test_suspend_resume.py
 # gazelle:exclude test_thread_stream.py
 # gazelle:exclude test_vm_sandbox.py
@@ -56,7 +56,7 @@ py_library(
 # The probe runs real model turns against a deployment; the other cases run scripted on k3s.
 # `eternal` for the suite's own bounds, not a warm run's ~120 s: each Sandbox may wait
 # SANDBOX_READY_SECONDS for its Pod and each turn TURN_SECONDS, so a cold run is most of an hour.
-acceptance_test(
+system_test(
     name = "test_egress",
     timeout = "eternal",
     srcs = ["test_egress.py"],
@@ -82,12 +82,12 @@ acceptance_test(
     ],
 )
 
-# Scripted only, so no deployment target.
-acceptance_test(
+# Scripted only, so no live target.
+system_test(
     name = "test_agent_messaging",
     srcs = ["test_agent_messaging.py"],
-    deployed = False,
     k3s = "scripted",
+    live = False,
     deps = [
         ":agent",
         ":conftest",
@@ -106,12 +106,12 @@ acceptance_test(
     ],
 )
 
-# Scripted only, so no deployment target.
-acceptance_test(
+# Scripted only, so no live target.
+system_test(
     name = "test_launch_presets",
     srcs = ["test_launch_presets.py"],
-    deployed = False,
     k3s = "scripted",
+    live = False,
     deps = [
         ":agent",
         ":conftest",
@@ -132,7 +132,7 @@ acceptance_test(
 
 # One sandbox and two turns per harness. `eternal` because the bound is the suite's own -- a Pod
 # scheduled and pulled, then turns that may each take TURN_SECONDS -- not the warm run's minutes.
-acceptance_test(
+system_test(
     name = "test_session_instructions",
     timeout = "eternal",
     srcs = ["test_session_instructions.py"],
@@ -152,10 +152,10 @@ acceptance_test(
 )
 
 # One VM Sandbox and one scripted turn per harness. The guest boots before its runner answers.
-acceptance_test(
+system_test(
     name = "test_vm_sandbox",
     srcs = ["test_vm_sandbox.py"],
-    deployed = False,
+    live = False,
     vm_sandboxes = True,
     deps = [
         ":agent",
@@ -174,7 +174,7 @@ acceptance_test(
 # One VM Sandbox and two model-free Codex setup Sessions. The second opens a fresh workspace, then Git
 # init/rev-parse verifies the normal runner path used the harness UID/GID. `eternal` because a VM
 # guest boots before its runner answers.
-acceptance_test(
+system_test(
     name = "test_vm_workspace_ownership",
     timeout = "eternal",
     srcs = ["test_vm_workspace_ownership.py"],
@@ -194,11 +194,11 @@ acceptance_test(
 
 # Two Threads, one per harness, share a fixture Sandbox so a single Pod (or VM launcher) replacement
 # exercises both native stores; the old Pod is gone before the same Sandbox resumes.
-acceptance_test(
+system_test(
     name = "test_suspend_resume",
     srcs = ["test_suspend_resume.py"],
-    deployed = False,
     k3s = "scripted",
+    live = False,
     vm_sandboxes = True,
     deps = [
         ":agent",
@@ -222,7 +222,7 @@ acceptance_test(
 
 # A browser's view of a Thread: two Sandboxes and four turns per harness, `eternal` as for
 # `test_session_instructions`.
-acceptance_test(
+system_test(
     name = "test_thread_stream",
     timeout = "eternal",
     srcs = ["test_thread_stream.py"],
@@ -286,10 +286,10 @@ py_test(
     timeout = "eternal",
     srcs = ["test_thread_latency.py"],
     env_inherit = [
-        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
-        "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT",
-        "AGENTPLANE_ACCEPTANCE_TOKEN",
-        "AGENTPLANE_ACCEPTANCE_URL",
+        "AGENTPLANE_SYSTEM_TEST_NAMESPACE",
+        "AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT",
+        "AGENTPLANE_SYSTEM_TEST_TOKEN",
+        "AGENTPLANE_SYSTEM_TEST_URL",
         "HOME",
         "KUBECONFIG",
     ],
@@ -318,11 +318,11 @@ py_test(
     ],
 )
 
-acceptance_test(
+system_test(
     name = "test_mcp",
     srcs = ["test_mcp.py"],
-    deployed = False,
     k3s = "scripted",
+    live = False,
     mcp_fixtures = True,
     deps = [
         ":agent",
@@ -388,11 +388,11 @@ py_test(
     ],
 )
 
-acceptance_test(
+system_test(
     name = "test_dcr",
     srcs = ["test_dcr.py"],
-    deployed = False,
     k3s = "model_free",
+    live = False,
     mcp_fixtures = True,
     deps = [
         ":conftest",
@@ -489,10 +489,10 @@ py_test(
     ],
 )
 
-acceptance_test(
-    name = "test_dispatcher_deployed",
+system_test(
+    name = "test_dispatcher",
     size = "large",
-    srcs = ["test_dispatcher_deployed.py"],
+    srcs = ["test_dispatcher.py"],
     k3s = "model_free",
     deps = [
         ":cluster",
@@ -516,10 +516,10 @@ acceptance_test(
 )
 
 # Two bounded fresh fixtures; the VM case exercises guest boot and normal stop/start.
-acceptance_test(
-    name = "test_storage_deployed",
+system_test(
+    name = "test_storage",
     timeout = "eternal",
-    srcs = ["test_storage_deployed.py"],
+    srcs = ["test_storage.py"],
     k3s = "model_free",
     vm_sandboxes = True,
     deps = [

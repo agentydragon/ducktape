@@ -34,16 +34,16 @@ import pytest_bazel
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.acceptance import runtime_grant
-from agentplane.acceptance.agent import Agent
-from agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
-from agentplane.acceptance.scripted_upstream import ScriptedUpstream
 from agentplane.app.sandbox_models import SandboxView
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision, Outcome
 from agentplane.proto import runner_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
+from agentplane.system_tests import runtime_grant
+from agentplane.system_tests.agent import Agent
+from agentplane.system_tests.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
+from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
@@ -59,8 +59,8 @@ PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # endpoint reports each target's header, the shape of its value and its scheme, so an agent does not
 # have to guess that GitHub wants `Bearer` -- both harnesses sent the placeholder bare and were
 # refused when it did not.
-ACCEPTANCE_NAMESPACE = os.environ.get("AGENTPLANE_ACCEPTANCE_NAMESPACE", "agentplane-testing")
-RULES_URL = f"http://egress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local/v1/rules"
+TARGET_NAMESPACE = os.environ.get("AGENTPLANE_SYSTEM_TEST_NAMESPACE", "agentplane-testing")
+RULES_URL = f"http://egress.{TARGET_NAMESPACE}.svc.cluster.local/v1/rules"
 # Whose PAT the policy substitutes: the identity GitHub reports back if substitution worked.
 BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
@@ -71,10 +71,10 @@ UNLISTED_HOST = "example.com"
 # because an agent that cannot reach it has nothing to run -- so a sandbox that names no policy
 # still has this one.
 BASIC_POLICY = "basic"
-LLM_INGRESS_HOST = f"llm-ingress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local"
+LLM_INGRESS_HOST = f"llm-ingress.{TARGET_NAMESPACE}.svc.cluster.local"
 
 # The proxy records a decision as it serves it; the app reads committed history over a separate hop, and a
-# each replica observes bindings asynchronously; acceptance checks actual read-only egress.
+# each replica observes bindings asynchronously; the scenario checks actual read-only egress.
 DECISION_SECONDS = 30.0
 BINDING_SECONDS = 60.0
 
@@ -139,7 +139,7 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 
     Nothing here tells the agent the placeholder. If it comes back as the bot, discovery worked.
     """
-    view = await sandbox(f"accept-probe-{harness}", policies=[GITHUB_AGENTYDRAGON_AGENT])
+    view = await sandbox(f"systest-probe-{harness}", policies=[GITHUB_AGENTYDRAGON_AGENT])
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     turn = await agent.run(PROBE)
     probe = turn.report(Probe)
@@ -180,7 +180,7 @@ async def test_the_model_call_itself_goes_through_the_proxy(
     The sandbox names no policy. `basic` reaching the ingress anyway is what the app's
     default PolicySets are for.
     """
-    view = await sandbox(f"accept-model-{harness}")
+    view = await sandbox(f"systest-model-{harness}")
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered_model)
@@ -234,7 +234,7 @@ async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
 ) -> None:
     """Binding at runtime is a live grant, not a restart: one sandbox, refused and then admitted."""
     host, path = _granted_request()
-    view = await sandbox(f"accept-bind-{harness}")
+    view = await sandbox(f"systest-bind-{harness}")
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered_model)

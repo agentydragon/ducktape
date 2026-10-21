@@ -135,7 +135,7 @@ async def register_client(server: str, redirect_uri: str) -> Registration:
     wire = _Wire(server)
     storage = TokenStorageAdapter(MemoryStore(), server_url=server)
     metadata = OAuthClientMetadata(
-        client_name=f"Agentplane DCR acceptance {uuid4()}",
+        client_name=f"Agentplane DCR system test {uuid4()}",
         redirect_uris=[AnyUrl(redirect_uri)],
         grant_types=["authorization_code", "refresh_token"],
         response_types=["code"],
@@ -205,7 +205,7 @@ async def register_client(server: str, redirect_uri: str) -> Registration:
         # SDK errors may include response bodies or OAuth state. Do not chain them,
         # including when nested inside the transport's AnyIO exception groups.
         raise DcrError(
-            f"DCR acceptance failed at {wire.stage} (HTTP {wire.last_status}): "
+            f"DCR registration failed at {wire.stage} (HTTP {wire.last_status}): "
             f"{_safe_reason(error)}; HTTP/OAuth details withheld"
         ) from None
     finally:

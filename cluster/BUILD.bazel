@@ -16,7 +16,7 @@ filegroup(
     name = "agentplane_testing_manifest",
     srcs = ["generated/agentplane-testing/agentplane-testing.k8s.yaml"],
     visibility = [
-        "//agentplane/acceptance:__pkg__",
+        "//agentplane/system_tests:__pkg__",
         "//agentplane/x/k3s_env:__pkg__",
     ],
 )

@@ -615,8 +615,8 @@ def add_staging_action_policies(scope: Construct) -> None:
             for index, subject in enumerate(access.profile_subjects("agentplane-sandbox-read"))
         )
     )
-    # The testing deployment's app, for the acceptance suite's harness scenarios run from a box
-    # (agentplane/acceptance/README.md): by its Service rather than its public name, which would
+    # The testing deployment's app, for the system tests' live harness scenarios run from a box
+    # (agentplane/system_tests/README.md): by its Service rather than its public name, which would
     # hairpin out through the Gateway and back. Plain HTTP, so the proxy reads the request without
     # bumping TLS. Nothing is substituted: the suite presents the app token it mints in
     # agentplane-testing (testing.AcceptanceToken), so any method may pass.
@@ -704,7 +704,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # in plaid-mcp and presents pgweb's HTTP Basic password only on its query API, so a sandbox of
     # this caller's can inspect sync health and run SQL over the Plaid mirror as `plaid_ro`, which
     # can only SELECT (agent_access_profiles.py, egress_staging_credentials.py).
-    # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
+    # `agentplane-testing` presents nothing either: the system tests bring their own app token.
     # `mimir-reads` presents nothing either: GET on Mimir's Prometheus query API over the cluster Service.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol

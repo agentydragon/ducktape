@@ -1,6 +1,6 @@
-# External-client dynamic registration acceptance
+# External-client dynamic registration
 
-`//agentplane/acceptance:test_dcr_k3s` starts an actual MCP Python SDK `ClientSession` over
+`//agentplane/system_tests:test_dcr` starts an actual MCP Python SDK `ClientSession` over
 Streamable HTTP against the Action Service of a k3s stack with the MCP fixtures, at the `/mcp`
 endpoint of the loopback origin its OAuth server names itself by (`ACTIONS_MCP_URL`, a port-forward:
 [`x/k3s_env`](../x/k3s_env/README.md)). The SDK receives the unauthenticated challenge, fetches its
@@ -9,7 +9,7 @@ advertised endpoint. Wire observers require JSON content types and RFC 7591 `201
 the result, and the probe checks that the requested client metadata survives. Loopback and
 hosted-style HTTPS redirect URIs exercise both client shapes.
 
-This is **registration-only acceptance**, not completed OAuth or Claude.ai compatibility proof. It
+This proves **registration only**, not completed OAuth or Claude.ai compatibility proof. It
 deliberately stops at the SDK redirect callback, before fetching `/authorize`, reading operator
 credentials, exchanging tokens, or completing authenticated MCP initialization; the fixture's Dex has
 no client for the Action Service's OAuth server. No Action, sandbox, model turn, or operator grant is

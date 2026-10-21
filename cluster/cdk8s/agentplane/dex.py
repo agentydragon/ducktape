@@ -279,7 +279,7 @@ def _add_credentials(scope: Construct) -> None:
 
 
 def operator_login_data(operator: Operator, *, password: str, issuer: str) -> dict[str, str]:
-    """The operator's login as `agentplane/acceptance/operator_login.py` reads it from its Secret."""
+    """The operator's login as `agentplane/system_tests/operator_login.py` reads it from its Secret."""
     return {
         "login": operator.email,
         "username": operator.username,

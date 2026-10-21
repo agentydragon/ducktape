@@ -648,7 +648,7 @@ gate VM resource acceptance or lifecycle work.
 ### `VM_LIFECYCLE` — integrated lifecycle verification
 
 **Blocked on the resource-limit checks.** Basic VM creation, Session execution,
-retained-state suspend/resume and replacement are covered by the [acceptance suite](../acceptance/README.md).
+retained-state suspend/resume and replacement are covered by the [acceptance suite](../system_tests/README.md).
 Combine that coverage with the resource-limit evidence; do not
 repeat completed live runs just to assemble a capstone. Additional live faults need a concrete unresolved platform risk,
 not a Cartesian product of every component crash and lifecycle operation.
@@ -1931,7 +1931,7 @@ old paths.
 
 **Approved 2026-10-21 UTC ([the plan](k3s_acceptance.md)).** Acceptance scenarios take a target (testing, staging or
 the disposable k3s stack in [`x/k3s_env`](../x/k3s_env/README.md)) and a model backend (real or scripted), and every
-`_k3s` and `_k3s_vm` target runs in PR CI ([acceptance README](../acceptance/README.md)). What remains: the model key
+k3s and `_vm` target runs in PR CI ([system tests README](../system_tests/README.md)). What remains: the model key
 and the real-model set on k3s, and retiring `agentplane-testing`.
 
 The [K3s startup experiment constraints](#k3s-startup-experiment-constraints) still apply to fixture
@@ -2038,7 +2038,7 @@ the runner fixtures push straight to `GoHistoryService`'s ingress, and both stan
 
 **Blocked on `K3S_MODEL_SCENARIOS` and the acceptance scenarios covering `test_lifecycle`'s cases.** Delete
 `x/k3s_env`'s `test_env` (the real-model smoke that needs `LITELLM_QWEN_KEY`) once the `_k3s_real` targets land, and
-`test_lifecycle` with `.github/workflows/agentplane-k3s-lifecycle.yml` once acceptance `_k3s` scenarios cover its four
+`test_lifecycle` with `.github/workflows/agentplane-k3s-lifecycle.yml` once system test scenarios cover its four
 cases (check suspend/resume and storage).
 
 ### `K3S_ENV_OUT_OF_X` — the k3s stack leaves `x/`
@@ -2049,7 +2049,7 @@ targets, docs, workflows).
 
 ### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
-**Blocked on `RUNNER_LAYERING_VM`.** The `_k3s_vm` targets boot a Bazel-built test guest under `x/k3s_env/guest`, a
+**Blocked on `RUNNER_LAYERING_VM`.** The system tests' `_vm` targets boot a Bazel-built test guest under `x/k3s_env/guest`, a
 second copy of `runner/vm.nix`'s guest contract (disks by serial, workspace format, cgroup delegation, harness and
 tool paths). Delete it once the production guest is Bazel-built and boots in seconds under
 emulation, and point the k3s VM scenarios at that guest.

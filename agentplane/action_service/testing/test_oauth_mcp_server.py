@@ -1,6 +1,6 @@
 """Hermetic, in-process rehearsal of the deployed OAuth MCP fixture: linkage completes and the
-echo tool executes with the resulting token, the same shape the acceptance suite exercises
-against the real cluster (`//agentplane/acceptance:test_mcp`), without needing one."""
+echo tool executes with the resulting token, the same shape the system tests exercise
+against the real cluster (`//agentplane/system_tests:test_mcp`), without needing one."""
 
 from __future__ import annotations
 

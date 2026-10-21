@@ -216,7 +216,7 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     visibility = [
-        "//agentplane/acceptance:__pkg__",
+        "//agentplane/system_tests:__pkg__",
         "//agentplane/x/k3s_env:__pkg__",
     ],
     deps = [

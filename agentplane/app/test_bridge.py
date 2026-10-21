@@ -4,7 +4,7 @@ a Dispatcher answering before delivery or ahead of the archive, and a Session op
 app's back. The runner takes control through the Go Runner Gateway, whose Dispatcher delivers the
 app's commands; the scripted Dispatchers stand in only where a case needs one to answer as no real
 one would on cue. The fault-free flows a browser sees are scenarios in
-`agentplane/acceptance/test_thread_stream.py`."""
+`agentplane/system_tests/test_thread_stream.py`."""
 
 from __future__ import annotations
 

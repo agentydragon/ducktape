@@ -29,7 +29,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep @pypi//protobuf
 
 # `host:port`; set only on a target whose LLM ingress forwards here.
-ADDRESS = "AGENTPLANE_ACCEPTANCE_SCRIPTED_UPSTREAM"
+ADDRESS = "AGENTPLANE_SYSTEM_TEST_SCRIPTED_UPSTREAM"
 
 # LLM ingress replaces any caller's value with the verified Pod's (agentplane/llm_ingress/README.md).
 _IDENTITY_HEADER = "x-litellm-spend-logs-metadata"

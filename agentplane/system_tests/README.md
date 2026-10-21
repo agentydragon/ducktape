@@ -1,23 +1,23 @@
-# Agentplane acceptance suite
+# Agentplane system tests
 
-The default acceptance scenarios are **deployed vertical tests**: they create real sandboxes through
-the app's HTTP API, open sessions on the real harnesses, use the deployed LLM, and assert on
+The system test scenarios are **vertical tests of a running deployment**: they create real
+sandboxes through the app's HTTP API, open sessions on the real harnesses, and assert on
 cross-component behavior and durable system evidence. They are not unit tests with a live backend —
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
 
-The deployment under test is whatever the environment names: `AGENTPLANE_ACCEPTANCE_{URL,TOKEN,NAMESPACE,SERVICE_ACCOUNT}`
-and the caller's kubeconfig, testing by default. A scenario declared with
-`acceptance_test(k3s = ...)` ([`defs.bzl`](defs.bzl)) also gets a `<scenario>_k3s` target: one
-RBE action that starts its own [k3s stack](../x/k3s_env/README.md) and publishes it through the same
-variables ([`acceptance_target.py`](../x/k3s_env/acceptance_target.py)), so it needs no cluster
-credentials and runs in PR CI whenever its inputs change. That stack runs no VM Sandboxes; it
-deselects cases marked `vm_sandboxes`. `acceptance_test(vm_sandboxes = True)` runs those cases, and
-only those, as `<scenario>_k3s_vm`, on a stack with KubeVirt emulating the guest CPU and the k3s
-test guest ([VM Sandboxes](../x/k3s_env/README.md#vm-sandboxes)). `test_vm_sandbox_k3s_vm` runs a
-scripted turn on each harness in a VM Sandbox.
+A scenario declared with `system_test(k3s = ...)` ([`defs.bzl`](defs.bzl)) runs as `<scenario>`: one
+RBE action that starts its own [k3s stack](../x/k3s_env/README.md) and publishes it through
+`AGENTPLANE_SYSTEM_TEST_{URL,TOKEN,NAMESPACE,SERVICE_ACCOUNT}`
+([`system_test_target.py`](../x/k3s_env/system_test_target.py)), so it needs no cluster credentials
+and runs in PR CI whenever its inputs change. That stack runs no VM Sandboxes; it deselects cases
+marked `vm_sandboxes`. `system_test(vm_sandboxes = True)` runs those cases, and only those, as
+`<scenario>_vm`, on a stack with KubeVirt emulating the guest CPU and the k3s test guest
+([VM Sandboxes](../x/k3s_env/README.md#vm-sandboxes)). `test_vm_sandbox_vm` runs a scripted turn on
+each harness in a VM Sandbox. `<scenario>_live` runs the scenario against the deployment those
+variables and the caller's kubeconfig name, testing by default ([Running live](#running-live)).
 
-The model backend is the target's too (`AGENTPLANE_ACCEPTANCE_MODEL_BACKEND`). A deployment serves a
+The model backend is the target's too (`AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND`). A deployment serves a
 real model. On the k3s stack, LLM ingress forwards to the scenario itself, which plays the model
 ([`scripted_upstream.py`](scripted_upstream.py)): the `scripted` fixture hands a scenario the
 `ScriptedModel` of its own Sandbox's Pod, and the scenario answers each request and asserts what
@@ -27,7 +27,7 @@ catalog there too, so a ChatGPT route puts Codex in code mode, which the scripte
 Every request the scripted model receives is kept in the target's `test.outputs/scripted_upstream/`.
 
 ```bash
-bbr test //agentplane/acceptance:test_dispatcher_deployed_k3s //agentplane/acceptance:test_storage_deployed_k3s //agentplane/acceptance:test_session_instructions_k3s
+bbr test //agentplane/system_tests:test_dispatcher //agentplane/system_tests:test_storage //agentplane/system_tests:test_session_instructions
 ```
 
 Fast offline driver tests cover login choreography (`test_operator_login`), startup retries and
@@ -40,7 +40,7 @@ It does not dump prompts, tool output or native frames, or automatically resend 
 
 The general egress and instruction scenarios run on **both harnesses**. The runner protocol is the
 same for Claude and Codex, so one parametrized harness case covers both; `offered_model` asks the deployment
-which models it offers for that harness rather than hardcoding one. `test_launch_presets_k3s` instead exercises a Codex launch preset's
+which models it offers for that harness rather than hardcoding one. `test_launch_presets` instead exercises a Codex launch preset's
 defaults, Sandbox binding, bootstrap marker, inherited fields, and local override, with the scripted
 model only. The k3s fixture configures that preset (`launch_preset.py`) in place of the deployment's.
 Initial session Open uses a 120-second retry budget for HTTP 503, retaining the same session id;
@@ -51,7 +51,7 @@ refusals and other server failures are not startup readiness signals.
 `test_thread_stream` is a browser's view of a Thread with the scripted model: every tab follows one
 archived log by event id, a reconnect resumes after its `Last-Event-ID`, a command id answers only
 the command it first named, and turns nobody watches are archived, a failed one included, with the
-next input its own turn. Its scripted cases run as `test_thread_stream_k3s`.
+next input its own turn. It runs live as `test_thread_stream_live`.
 
 ## Thread latency
 
@@ -59,44 +59,43 @@ next input its own turn. Its scripted cases run as `test_thread_stream_k3s`.
 to the harness's own reported turn to half a second, then times the browser's reads to open that
 thread, per stage, cold and warm, against regression ceilings; its module docstring defines each
 interval. Each run writes its timings to
-`bazel-testlogs/agentplane/acceptance/test_thread_latency/test.outputs/`.
+`bazel-testlogs/agentplane/system_tests/test_thread_latency/test.outputs/`.
 
 ## VM workspace ownership
 
-`//agentplane/acceptance:test_vm_workspace_ownership` creates one uniquely named VM Sandbox and
+`test_vm_workspace_ownership` creates one uniquely named VM Sandbox and
 opens two Codex Sessions without sending a model turn. The first setup checks that the
 second Session's workspace path is absent; the second exercises normal runner setup, checks UID/GID
 107 ownership, then runs `git init` and `git rev-parse` with global and system Git config disabled.
 Fixture teardown suspends and deletes only the Sandbox created by that invocation.
-`test_vm_workspace_ownership_k3s_vm` runs it on a stack of its own; against a deployment:
+`test_vm_workspace_ownership_vm` runs it on a stack of its own; live:
 
 ```bash
-bazelisk test //agentplane/acceptance:test_vm_workspace_ownership --test_output=streamed
+bazelisk test //agentplane/system_tests:test_vm_workspace_ownership_live --test_output=streamed
 ```
 
 The result is written to the target's `test.outputs/vm-workspace-ownership.json`.
 
-## Workspace storage layout acceptance
+## Workspace storage layout
 
-`//agentplane/acceptance:test_storage_deployed` is a model-free fixture for the
+`test_storage` is a model-free fixture for the
 built-in Pod `DirectoryTree` and VM `RawDiskImage`/ext4 workspace paths. It checks Sandbox-owned
 PVC identity and layout records, marker bytes across suspend/resume, refusal of an incompatible
 claim before workload start, and retained data after VM replacement. It creates only its own
 Sandbox, template and workload, then removes them through UID-preconditioned lifecycle operations.
-It refuses a deployment that already has Sandboxes, so on testing it runs only while no one else
-uses it; `test_storage_deployed_k3s` and `test_storage_deployed_k3s_vm` run the Pod and VM cases on
-stacks of their own.
+It refuses a deployment that already has Sandboxes, so live on testing it runs only while no one else
+uses it; `test_storage` and `test_storage_vm` run the Pod and VM cases on stacks of their own.
 
 ```bash
-bazelisk test //agentplane/acceptance:test_storage_deployed --test_output=streamed
+bazelisk test //agentplane/system_tests:test_storage_live --test_output=streamed
 ```
 
-The target writes `test.outputs/storage-{pod-directory,vm-raw}.json`. The deployed target is
+The target writes `test.outputs/storage-{pod-directory,vm-raw}.json`. The live target is
 `manual` and `no-remote-exec`; general controlled-host setup is below.
 
 ## Suspend and resume
 
-`test_suspend_resume_k3s` and `test_suspend_resume_k3s_vm` test two Threads (Claude and Codex) in one
+`test_suspend_resume` and `test_suspend_resume_vm` test two Threads (Claude and Codex) in one
 Sandbox with the scripted model, a Pod Sandbox and a VM Sandbox respectively. Each suspends until the
 old Pod or launcher is gone, then resumes the original Threads by sending their next input.
 Each case verifies all Sandbox-owned state and workspace PVC UIDs and bound PVs survive, the
@@ -119,14 +118,14 @@ command checkpoint or interrupted setup; deterministic coverage for those bounda
 
 ## Agent messaging
 
-`test_agent_messaging_k3s` has one agent message another, each in its own Sandbox, on each harness. The
+`test_agent_messaging` has one agent message another, each in its own Sandbox, on each harness. The
 sender holds the fixture's [`send_grant`](send_grant.py) PolicySet, a `session_inbox_access` rule to an
 inbox tag the recipient carries, and runs `agentplane notifications send`; the recipient reads and
 acknowledges its inbox when the platform's notice starts its turn. It asserts the entry's authenticated
 sender and the sender's view of its message: covered while the recipient holds the notice, acknowledged
 after. Most of its run is the Notification Service's notice debounce.
 
-## Dispatcher queue and replica acceptance
+## Dispatcher queue and replicas
 
 These probes target the Runner Gateway. The Dispatcher
 Service remains `session-dispatcher:8080`; replica operations target the `runner-gateway`
@@ -139,14 +138,14 @@ operator host or from a `claude-ai` Sandbox (the
 [testing operator Role](../../cluster/docs/agent_rbac.md#testing-only-agentplane-operator-access) holds the grants it needs):
 
 ```bash
-bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
+bazelisk test //agentplane/system_tests:test_dispatcher_live \
   --test_arg=-k --test_arg=queue --test_output=streamed
 ```
 
 To cover replica takeover and deletion broadcast, run the bounded testing-only replica case:
 
 ```bash
-bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
+bazelisk test //agentplane/system_tests:test_dispatcher_live \
   --test_arg=-k --test_arg=replicas --test_output=streamed
 ```
 
@@ -168,7 +167,7 @@ The `opted_in` case covers send-triggered wake for both app `OpenSession` and no
 and notification images are Ready and the caller allowlist matches the intended identities:
 
 ```bash
-bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
+bazelisk test //agentplane/system_tests:test_dispatcher_live \
   --test_arg=-k --test_arg=opted_in --test_output=streamed
 ```
 
@@ -183,10 +182,10 @@ distinct wake generations per authenticated caller per rolling minute.
 
 ## MCP integration
 
-`test_mcp_k3s` and `test_dcr_k3s` run on a stack with Dex, `mcp-everything`, the Dex-backed OAuth
-MCP fixture and the Action Service's own OAuth server (`acceptance_test(mcp_fixtures = True)`),
-configured under test-only names ([`mcp_servers.py`](mcp_servers.py)). `test_dcr_k3s` registers an
-MCP client with that OAuth server ([`dcr.md`](dcr.md)). In `test_mcp_k3s` the scripted model runs one
+`test_mcp` and `test_dcr` run on a stack with Dex, `mcp-everything`, the Dex-backed OAuth
+MCP fixture and the Action Service's own OAuth server (`system_test(mcp_fixtures = True)`),
+configured under test-only names ([`mcp_servers.py`](mcp_servers.py)). `test_dcr` registers an
+MCP client with that OAuth server ([`dcr.md`](dcr.md)). In `test_mcp` the scripted model runs one
 `agentplane --json actions …` command per turn, on each harness, and the scenario reads the printed
 receipt back from what the harness sent the model.
 
@@ -229,35 +228,35 @@ Credentials stay in process memory. HTTP logging is suppressed for the BFF clien
 lifetime; pytest local-variable dumps are refused before Secret access. Do not add
 HTTP tracing, response dumps or credential artifacts. The existing suite URL/token
 settings below still serve the separate workload client. The agent-pod runner
-restriction below still applies: remote choreography tests are not live acceptance.
+restriction below still applies: remote choreography tests are not live runs.
 
 After login, a fresh absent-Action lookup checks federation without listing existing
 requests. Its `404` must carry the BFF's structured upstream error for that exact
 operator Action request path, not an arbitrary ingress, signing-key, or login error.
 Malformed or unexpected responses fail without exposing their contents.
 
-## Running it
+## Running live
 
-Not in CI, and not on RBE: the target is `manual`, so `//...` never selects it, and it needs a
-kubeconfig and a route to the cluster.
+A `_live` target is not in CI and not on RBE: it is `manual`, so `//...` never selects it, and it
+needs a kubeconfig and a route to the cluster.
 
 Bazel excludes `manual` targets from package patterns, so `:all` runs the fast offline driver
-tests and the `_k3s` targets, not any deployed vertical scenario. Name the live scenario
-explicitly. Start with the egress vertical slice:
+tests and the k3s targets, not any live run. Name the live target explicitly. Start with the egress
+vertical slice:
 
 ```bash
-bazelisk test //agentplane/acceptance:test_egress --test_output=streamed --test_arg=-s
+bazelisk test //agentplane/system_tests:test_egress_live --test_output=streamed --test_arg=-s
 ```
 
-That target runs the egress probe, whose evidence is what a real model works out. `test_egress_k3s`
+That target runs the egress probe, whose evidence is what a real model works out. `test_egress`
 runs the other egress cases with the scripted model: the model call goes through the proxy, and a
 PolicySet bound to a running Sandbox takes effect. The latter binds the fixture's own PolicySet
 ([`runtime_grant.py`](runtime_grant.py)), not one a deployment's Sandboxes use.
 
-Run the other live scenarios by their explicit targets: `:test_session_instructions` and
+Run the other live scenarios by their explicit targets: `:test_session_instructions_live` and
 `:test_thread_latency`.
 
-`//agentplane/acceptance:test_ollama_routes` exercises every configured Ollama chat
+`//agentplane/system_tests:test_ollama_routes` exercises every configured Ollama chat
 route offered by the committed testing app ConfigMap, on each harness that offers it,
 with the 128k cases first. Collection reads the generated manifest, not cdk8s Python;
 each case still checks that the live app offers the route before opening a session. Each cell creates a Sandbox,
@@ -283,12 +282,12 @@ names, so a token for any other ServiceAccount is refused with `403`.
 
 Override any of it through the environment:
 
-| Variable                                | Default                                      |
-| --------------------------------------- | -------------------------------------------- |
-| `AGENTPLANE_ACCEPTANCE_URL`             | `https://agentplane-testing.allegedly.works` |
-| `AGENTPLANE_ACCEPTANCE_TOKEN`           | minted with `kubectl`                        |
-| `AGENTPLANE_ACCEPTANCE_NAMESPACE`       | `agentplane-testing`                         |
-| `AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT` | `agentplane-agent`                           |
+| Variable                                 | Default                                      |
+| ---------------------------------------- | -------------------------------------------- |
+| `AGENTPLANE_SYSTEM_TEST_URL`             | `https://agentplane-testing.allegedly.works` |
+| `AGENTPLANE_SYSTEM_TEST_TOKEN`           | minted with `kubectl`                        |
+| `AGENTPLANE_SYSTEM_TEST_NAMESPACE`       | `agentplane-testing`                         |
+| `AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT` | `agentplane-agent`                           |
 
 Staging remains available for ad hoc click-through tests by overriding the URL and namespace.
 The testing environment is Flux-managed and exposes the app and Dex HTTPS routes needed for the
@@ -325,14 +324,14 @@ Use the first point at which the run fails to choose the next investigation:
 
 | Observation                                                   | Likely seam                                                                  |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| No `accept-*` Sandbox is created                              | Bazel client, module/repository rules, kubeconfig, or acceptance-token setup |
+| No `systest-*` Sandbox is created                             | Bazel client, module/repository rules, kubeconfig, or token setup            |
 | Sandbox is created but never becomes ready                    | Scheduling, image pull, runner bootstrap, or testing capacity                |
-| App rejects the initial API request                           | Acceptance token audience, subject allowlist, or app ingress                 |
+| App rejects the initial API request                           | Token audience, subject allowlist, or app ingress                            |
 | Model turn hangs and the decision history is empty            | Sandbox proxy environment, proxy route, or model ingress path                |
 | Ring records a deny for an expected destination               | Egress policy/binding or destination URL mismatch                            |
 | Rules discovery succeeds but destination authentication fails | Placeholder substitution or independent destination authentication           |
 | Test assertions pass but teardown reports a failure           | Runtime cleanup/reconciliation; inspect the named Sandbox before rerunning   |
-| Process is killed and `accept-*` Sandboxes remain             | Expected teardown limitation; clean them up deliberately before the next run |
+| Process is killed and `systest-*` Sandboxes remain            | Expected teardown limitation; clean them up deliberately before the next run |
 
 Keep the complete test output and the proxy/app decision evidence together.
 The model transcript explains what the agent attempted, but the decision history
@@ -340,7 +339,7 @@ is the authority for what the proxy actually served.
 
 ### Where an agent can run it
 
-Agent pods must use `bbr`/CI, never local Bazel or pytest. This deployed suite is
+Agent pods must use `bbr`/CI, never local Bazel or pytest. The live targets are
 `manual` / `no-remote-exec` and lacks an approved CI runner with staging identity and
 connectivity. Therefore it is **blocked from agent pods**; do not disable remote
 execution/caching or mint substitute credentials to work around that boundary.
@@ -352,7 +351,7 @@ mode for the created Sandbox's name and UID, within the existing readiness bound
 alone does not satisfy deletion admission. Authorization refusals fail immediately; teardown
 does not poll the inventory, reconnect a dropped stream, or delete a replacement Sandbox.
 Afterwards, check that nothing leaked: `kubectl -n agentplane-testing get sandboxes.agentplane.allegedly.works`
-should show no `accept-*`.
+should show no `systest-*`.
 
 ## What it costs
 
@@ -368,8 +367,8 @@ It cannot run if the process is killed outright — a Bazel timeout, a `^C`, a d
 and each leaked sandbox holds a PVC and a node slot in testing until someone notices.
 
 What that wants is a sweep at session start: list the sandboxes whose names carry this suite's
-`accept-` stem, and delete any older than a run could plausibly be. Deliberately not built yet,
-because the stem is the only marker and a real sandbox someone named `accept-something` would be
+`systest-` stem, and delete any older than a run could plausibly be. Deliberately not built yet,
+because the stem is the only marker and a real sandbox someone named `systest-something` would be
 destroyed by it — a label the app sets on suite-created sandboxes, or a dedicated namespace, is the
 thing to add first.
 

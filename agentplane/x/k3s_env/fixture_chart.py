@@ -40,11 +40,11 @@ from constructs import Construct
 from cryptography.fernet import Fernet
 from more_itertools import one
 
-from agentplane.acceptance import launch_preset, mcp_servers, runtime_grant, send_grant
 from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.settings import Settings
 from agentplane.subjects import ServiceAccountRef
+from agentplane.system_tests import launch_preset, mcp_servers, runtime_grant, send_grant
 from agentplane.x.k3s_env import fixture_database
 from agentplane.x.k3s_env.rendered_fixture import LocalModel, McpInputs, Models, PublicLiteLLM
 from cluster.cdk8s import agent_access_profiles as access
@@ -97,7 +97,7 @@ _MCP_LINKAGE = dex.StaticClient(
     id="test-mcp-linkage", name="Test MCP linkage", redirect_uri=f"{APP_ORIGIN}/mcp-linkage/callback"
 )
 _OPERATOR = dex.Operator(email="test-operator@k3s-fixture.invalid", username="test-operator", user_id="test-operator")
-# Dex's config and the operator's login, which `agentplane/acceptance/operator_login.py` reads.
+# Dex's config and the operator's login, which `agentplane/system_tests/operator_login.py` reads.
 OPERATOR_SECRET = "test-operator-login"
 _DEX_TLS_SECRET = "test-dex-tls"
 # The system roots and the CA of Dex's certificate, for the Pods that call Dex.

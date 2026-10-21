@@ -145,12 +145,12 @@ oci_layout_rloc(
     name = "vm_guest_boot_layout",
     testonly = True,
     image = ":boot_image",
-    visibility = ["//agentplane/acceptance:__pkg__"],
+    visibility = ["//agentplane/system_tests:__pkg__"],
 )
 
 oci_layout_rloc(
     name = "vm_guest_root_layout",
     testonly = True,
     image = ":root_image",
-    visibility = ["//agentplane/acceptance:__pkg__"],
+    visibility = ["//agentplane/system_tests:__pkg__"],
 )

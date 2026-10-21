@@ -1,9 +1,9 @@
-"""Fixtures for the live acceptance suite: a client against a deployed app, both harnesses, and
+"""Fixtures for the system tests: a client against a deployed app, both harnesses, and
 sandboxes that clean up after themselves.
 
 Which instance is under test comes from the environment; the shipped default is the isolated
-testing deployment. Staging remains available for explicit ad hoc runs, and a scenario's `_k3s`
-target publishes a k3s stack of its own the same way (`agentplane.x.k3s_env.acceptance_target`).
+testing deployment. Staging remains available for explicit ad hoc runs, and a scenario's k3s
+target publishes a k3s stack of its own the same way (`agentplane.x.k3s_env.system_test_target`).
 
 So does the model backend (`MODEL_BACKEND`): a real model, the default, or one the scenario scripts
 (`scripted_upstream`). A scenario that needs one marks it, and the other target deselects it.
@@ -23,24 +23,24 @@ from uuid import UUID
 import pytest
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.acceptance import scripted_upstream
-from agentplane.acceptance.ollama_warmup import warm_ollama
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, sandbox_is_ready
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
+from agentplane.system_tests import scripted_upstream
+from agentplane.system_tests.ollama_warmup import warm_ollama
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
 
-BASE_URL = "AGENTPLANE_ACCEPTANCE_URL"
-TOKEN = "AGENTPLANE_ACCEPTANCE_TOKEN"
-NAMESPACE = "AGENTPLANE_ACCEPTANCE_NAMESPACE"
-SERVICE_ACCOUNT = "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT"
-MODEL_BACKEND = "AGENTPLANE_ACCEPTANCE_MODEL_BACKEND"
+BASE_URL = "AGENTPLANE_SYSTEM_TEST_URL"
+TOKEN = "AGENTPLANE_SYSTEM_TEST_TOKEN"
+NAMESPACE = "AGENTPLANE_SYSTEM_TEST_NAMESPACE"
+SERVICE_ACCOUNT = "AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT"
+MODEL_BACKEND = "AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND"
 # The Action Service's MCP endpoint, which a k3s stack with the MCP fixtures publishes.
-ACTIONS_MCP_URL = "AGENTPLANE_ACCEPTANCE_ACTIONS_MCP_URL"
+ACTIONS_MCP_URL = "AGENTPLANE_SYSTEM_TEST_ACTIONS_MCP_URL"
 
 
 class ModelBackend(StrEnum):

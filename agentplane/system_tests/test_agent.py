@@ -1,4 +1,4 @@
-"""Offline acceptance-driver startup and terminal-result checks, not deployed harness evidence."""
+"""Offline system test driver startup and terminal-result checks, not deployed harness evidence."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -10,13 +10,13 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.acceptance import agent as agent_module, conftest as fixtures
-from agentplane.acceptance.agent import RUNNER_ANSWERS_SECONDS, Agent
-from agentplane.acceptance.conftest import SandboxNotReadyError, suspend_and_delete
 from agentplane.app.live import SandboxesSnapshot
 from agentplane.app.testing.client import Client
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.sandbox_resource import OperatingMode
+from agentplane.system_tests import agent as agent_module, conftest as fixtures
+from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, Agent
+from agentplane.system_tests.conftest import SandboxNotReadyError, suspend_and_delete
 
 # gazelle:include_dep @pypi//protobuf
 
