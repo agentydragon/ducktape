@@ -1,5 +1,6 @@
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//agentplane/x/k3s_env:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_TAGS")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
@@ -46,6 +47,7 @@ oci_image(
         name = variant + "/runner_layout",
         testonly = True,
         image = image,
+        visibility = ["//agentplane/acceptance:__pkg__"],
     )
     for variant, image in {
         "lifecycle": ":runner_image",
@@ -84,24 +86,6 @@ _IMAGES = {
     for name, image in _IMAGES.items()
 ]
 
-_K3S_EXEC_PROPERTIES = {
-    "dockerNetwork": "bridge",
-    "recycle-runner": "false",
-    "EstimatedComputeUnits": "4",
-    "EstimatedFreeDiskBytes": "50GB",
-}
-
-_K3S_TAGS = [
-    "external",
-    "manual",
-    "no-cache",
-    "requires-network",
-]
-
-_K3S_BINARY = "@k3s_linux_amd64//file:k3s"
-
-_K3S_BINARY_RLOCATION = "$(rlocationpath " + _K3S_BINARY + ")"
-
 py_test(
     name = "test_render",
     # cdk8s/jsii startup dominates this one-case test on RBE; see debug/render_startup.md.
@@ -121,6 +105,19 @@ py_test(
 )
 
 py_library(
+    name = "acceptance_target",
+    testonly = True,
+    srcs = ["acceptance_target.py"],
+    visibility = ["//agentplane/acceptance:__pkg__"],
+    deps = [
+        ":fixture_chart",
+        ":stack",
+        "//agentplane/acceptance:conftest",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
     name = "inventory_k3s_images",
     srcs = ["inventory_k3s_images.py"],
 )
@@ -131,7 +128,7 @@ py_library(
     srcs = ["stack.py"],
     data = [
         "//agentplane/crds",
-        _K3S_BINARY,
+        K3S_BINARY,
     ] + [":" + name + "_layout" for name in _IMAGES],
     deps = [
         ":bootstrap",
@@ -150,16 +147,16 @@ py_test(
     data = [
         ":claude/runner_layout",
         "@nodejs_linux_amd64//:bin/node",
-        _K3S_BINARY,
+        K3S_BINARY,
     ],
     env = {
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
-        "K3S_BINARY_RLOCATION": _K3S_BINARY_RLOCATION,
+        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath :claude/runner_layout)",
     },
     env_inherit = ["LITELLM_QWEN_KEY"],
-    exec_properties = _K3S_EXEC_PROPERTIES,
-    tags = _K3S_TAGS,
+    exec_properties = K3S_EXEC_PROPERTIES,
+    tags = K3S_TAGS,
     deps = [
         ":fixture_chart",
         ":stack",
@@ -184,15 +181,15 @@ py_test(
     data = [
         ":lifecycle/runner_layout",
         "@nodejs_linux_amd64//:bin/node",
-        _K3S_BINARY,
+        K3S_BINARY,
     ],
     env = {
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
-        "K3S_BINARY_RLOCATION": _K3S_BINARY_RLOCATION,
+        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath :lifecycle/runner_layout)",
     },
-    exec_properties = _K3S_EXEC_PROPERTIES,
-    tags = _K3S_TAGS,
+    exec_properties = K3S_EXEC_PROPERTIES,
+    tags = K3S_TAGS,
     deps = [
         ":fixture_chart",
         ":stack",

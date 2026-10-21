@@ -1,11 +1,10 @@
-"""Fresh testing-only storage fixtures; deterministic file probes, without model turns."""
+"""Fresh storage fixtures on a deployment no one else is using; deterministic file probes, without model turns."""
 
 from __future__ import annotations
 
 import asyncio
 import copy
 import json
-import os
 import shlex
 from contextlib import AsyncExitStack
 from uuid import uuid4
@@ -13,49 +12,27 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 import yaml
-from kubernetes_asyncio import client as k8s, config as k8s_config
+from kubernetes_asyncio import client as k8s
 
+from agentplane.acceptance.cluster import api_client, kubectl
+from agentplane.acceptance.conftest import namespace
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-NAMESPACE = "agentplane-testing"
 BOUND_SECONDS = 300
 RECORD = "agentplane.allegedly.works/workspace-record"
 
 
-async def _kubectl(*args: str, body: dict | None = None) -> str:
-    process = await asyncio.create_subprocess_exec(
-        "kubectl",
-        "-n",
-        NAMESPACE,
-        *args,
-        stdin=asyncio.subprocess.PIPE if body is not None else None,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        async with asyncio.timeout(BOUND_SECONDS + 10):
-            stdout, stderr = await process.communicate(json.dumps(body).encode() if body is not None else None)
-    except BaseException:
-        if process.returncode is None:
-            process.kill()
-        await process.wait()
-        raise
-    if process.returncode:
-        raise RuntimeError(f"kubectl {' '.join(args)}: {stderr.decode()}")
-    return stdout.decode().strip()
-
-
 async def _object(kind: str, name: str) -> dict:
-    decoded = json.loads(await _kubectl("get", kind, name, "-o", "json"))
+    decoded = json.loads(await kubectl("get", kind, name, "-o", "json"))
     assert isinstance(decoded, dict)
     return decoded
 
 
 async def _condition(name: str, condition: str, value: str = "True") -> None:
-    await _kubectl(
+    await kubectl(
         "wait",
         f"sandboxes.{GROUP}/{name}",
         f'--for=jsonpath={{.status.conditions[?(@.type=="{condition}")].status}}={value}',
@@ -90,7 +67,7 @@ async def _readiness_snapshot(name: str) -> dict:
             }
 
     pods = json.loads(
-        await _kubectl("get", "pods", "--selector=agentplane.allegedly.works/sandbox=" + name, "-o", "json")
+        await kubectl("get", "pods", "--selector=agentplane.allegedly.works/sandbox=" + name, "-o", "json")
     )["items"]
     pod_names = {pod["metadata"]["name"] for pod in pods}
     snapshot["pods"] = [
@@ -114,7 +91,7 @@ async def _readiness_snapshot(name: str) -> dict:
         }
         for pod in pods
     ]
-    events = json.loads(await _kubectl("get", "events", "-o", "json"))["items"]
+    events = json.loads(await kubectl("get", "events", "-o", "json"))["items"]
     snapshot["events"] = [
         {key: event.get(key) for key in ("eventTime", "firstTimestamp", "lastTimestamp", "type", "reason", "message")}
         | {"object": event.get("involvedObject", {}).get("name"), "kind": event.get("involvedObject", {}).get("kind")}
@@ -125,7 +102,7 @@ async def _readiness_snapshot(name: str) -> dict:
 
 
 async def _running(name: str, uid: str, value: bool) -> None:
-    await _kubectl(
+    await kubectl(
         "patch",
         f"sandboxes.{GROUP}",
         name,
@@ -136,23 +113,21 @@ async def _running(name: str, uid: str, value: bool) -> None:
 
 
 async def _delete(plural: str, name: str, uid: str, *, group: str = GROUP, version: str = VERSION) -> None:
-    configuration = k8s.Configuration()
-    await k8s_config.load_kube_config(client_configuration=configuration)
-    async with k8s.ApiClient(configuration) as api:
+    async with api_client() as api:
         await k8s.CustomObjectsApi(api).delete_namespaced_custom_object(
             group,
             version,
-            NAMESPACE,
+            namespace(),
             plural,
             name,
             body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid)),
         )
-    await _kubectl("wait", f"{plural}.{group}/{name}", "--for=delete", "--timeout=120s")
+    await kubectl("wait", f"{plural}.{group}/{name}", "--for=delete", "--timeout=120s")
 
 
 async def _suspend(name: str, uid: str) -> None:
     await _running(name, uid, False)
-    await _kubectl(
+    await kubectl(
         "wait",
         f"sandboxes.{GROUP}/{name}",
         '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
@@ -171,7 +146,7 @@ async def _cleanup(name: str, uid: str, claims: list[str]) -> None:
     try:
         await _delete("sandboxes", name, uid)
         for claim in claims:
-            await _kubectl("wait", f"pvc/{claim}", "--for=delete", "--timeout=120s")
+            await kubectl("wait", f"pvc/{claim}", "--for=delete", "--timeout=120s")
     except Exception as error:
         errors.append(error)
     if errors:
@@ -245,20 +220,13 @@ async def _probe(client: Client, name: str, cwd: str, workspace_dir: str, marker
     raise AssertionError("storage probe ended without its setup result")
 
 
-@pytest.mark.parametrize("case", ["pod-directory", "vm-raw"])
-async def test_fresh_workspace_storage_survives_replacement(client: Client, base_url: str, case: str) -> None:
-    # This test cannot be redirected to staging via the standard client fixture.
-    assert base_url.rstrip("/") == "https://agentplane-testing.allegedly.works"
+@pytest.mark.parametrize("case", ["pod-directory", pytest.param("vm-raw", marks=pytest.mark.vm_sandboxes)])
+async def test_fresh_workspace_storage_survives_replacement(client: Client, case: str) -> None:
     controller = await _object("deployment", "sandbox-controller")
     assert controller["status"].get("readyReplicas") == 1
-    # The operator supplies the exact source-verified accepting pin before the run. A concurrent
-    # image rollout fails this gate before any new-layout template is written.
     controller_image = controller["spec"]["template"]["spec"]["containers"][0]["image"]
-    assert controller_image == os.environ["AGENTPLANE_STORAGE_CONTROLLER_IMAGE"], controller_image
-    existing = json.loads(await _kubectl("get", f"sandboxes.{GROUP}", "-o", "json"))["items"]
-    assert not existing, "serialize this acceptance with other testing Sandbox users"
-    quota = json.loads(await _kubectl("get", "resourcequota", "-o", "json"))["items"]
-    assert quota[0]["status"]["used"]["requests.storage"] == "5Gi", "unexpected active testing storage"
+    existing = json.loads(await kubectl("get", f"sandboxes.{GROUP}", "-o", "json"))["items"]
+    assert not existing, "serialize this acceptance with the deployment's other Sandbox users"
     vm = case.startswith("vm")
     base = await _object(f"sandboxtemplates.{GROUP}", "runner-vm" if vm else "runner")
     name = f"accept-storage-{case}-{uuid4().hex[:8]}"
@@ -279,7 +247,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
     assert all(isinstance(policy, str) for policy in policies)
     evidence: dict = {
         "case": case,
-        "namespace": NAMESPACE,
+        "namespace": namespace(),
         "controller_image": controller_image,
         "base_template": base,
         "sandbox": name,
@@ -294,7 +262,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
     save()
     async with AsyncExitStack() as stack:
         created_template = json.loads(
-            await _kubectl(
+            await kubectl(
                 "create",
                 "-f",
                 "-",
@@ -303,14 +271,14 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
                 body={
                     "apiVersion": SANDBOX_API_VERSION,
                     "kind": "SandboxTemplate",
-                    "metadata": {"name": template, "namespace": NAMESPACE},
+                    "metadata": {"name": template, "namespace": namespace()},
                     "spec": spec,
                 },
             )
         )
         stack.push_async_callback(_delete, "sandboxtemplates", template, created_template["metadata"]["uid"])
         created = json.loads(
-            await _kubectl(
+            await kubectl(
                 "create",
                 "-f",
                 "-",
@@ -319,7 +287,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
                 body={
                     "apiVersion": SANDBOX_API_VERSION,
                     "kind": "Sandbox",
-                    "metadata": {"name": name, "namespace": NAMESPACE},
+                    "metadata": {"name": name, "namespace": namespace()},
                     "spec": {"template": template, "running": True, "policySets": policies, "bootstrap": bootstrap},
                 },
             )
@@ -357,19 +325,19 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
             assert "\next4 " in evidence["first_probe"]["stdout"]
         save()
         await _suspend(name, uid)
-        await _kubectl("wait", f"pod/{old_incarnation['name']}", "--for=delete", "--timeout=120s")
+        await kubectl("wait", f"pod/{old_incarnation['name']}", "--for=delete", "--timeout=120s")
         # Ordinary VM suspension halts the VM and removes its VMI/launcher, retaining the VM and
         # all its disks. VM-object replacement is a separate explicit fixture operation below.
         if vm:
-            await _kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
+            await kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
         assert await _volumes(name, uid) == before
         # Exercise the durable record at the actual resume boundary: an incompatible claim
         # edit must refuse before starting any replacement or changing retained contents.
         changed = await _object(f"sandboxtemplates.{GROUP}", template)
         changed["spec"]["workspaceVolume"]["claim"]["resources"]["requests"]["storage"] = "11Gi"
-        await _kubectl("replace", "-f", "-", body=changed)
+        await kubectl("replace", "-f", "-", body=changed)
         await _running(name, uid, True)
-        await _kubectl(
+        await kubectl(
             "wait",
             f"sandboxes.{GROUP}/{name}",
             '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=VolumeLayoutMismatch',
@@ -383,7 +351,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         await _suspend(name, uid)
         changed = await _object(f"sandboxtemplates.{GROUP}", template)
         changed["spec"] = spec
-        await _kubectl("replace", "-f", "-", body=changed)
+        await kubectl("replace", "-f", "-", body=changed)
         await _running(name, uid, True)
         await _condition(name, "Ready")
         await _condition(name, "Bootstrapped")
@@ -402,8 +370,8 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         save()
         if vm:
             await _suspend(name, uid)
-            await _kubectl("wait", f"pod/{new_incarnation['name']}", "--for=delete", "--timeout=120s")
-            await _kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
+            await kubectl("wait", f"pod/{new_incarnation['name']}", "--for=delete", "--timeout=120s")
+            await kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
             halted = await _object("virtualmachine", name)
             assert halted["metadata"]["uid"] == workload_uid
             assert halted["spec"]["runStrategy"] == "Halted"

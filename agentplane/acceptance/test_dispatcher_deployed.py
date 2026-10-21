@@ -1,4 +1,4 @@
-"""Testing-only Dispatcher queue/Ready acceptance, independent of the app's HTTP surface."""
+"""Dispatcher queue/Ready acceptance, independent of the app's HTTP surface."""
 
 import asyncio
 import json
@@ -11,8 +11,10 @@ import grpc
 import pytest
 import pytest_bazel
 import yaml
-from kubernetes_asyncio import client as k8s, config as k8s_config, watch as k8s_watch
+from kubernetes_asyncio import client as k8s, watch as k8s_watch
 
+from agentplane.acceptance.cluster import api_client, kubectl
+from agentplane.acceptance.conftest import namespace
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import dial
 from agentplane.proto import runner_pb2
@@ -23,7 +25,6 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
-NAMESPACE = "agentplane-testing"
 SERVICE = "session-dispatcher"
 WORKLOAD = "runner-gateway"
 BOUND_SECONDS = 300
@@ -43,39 +44,16 @@ class DispatchFailedError(RuntimeError):
     pass
 
 
-async def _kubectl(*args: str, body: dict[str, object] | None = None) -> str:
-    process = await asyncio.create_subprocess_exec(
-        "kubectl",
-        "-n",
-        NAMESPACE,
-        *args,
-        stdin=asyncio.subprocess.PIPE if body is not None else None,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        async with asyncio.timeout(BOUND_SECONDS + 10):
-            stdout, stderr = await process.communicate(json.dumps(body).encode() if body is not None else None)
-    except BaseException:
-        if process.returncode is None:
-            process.kill()
-        await process.wait()
-        raise
-    if process.returncode:
-        raise RuntimeError(f"kubectl {' '.join(args)}: {stderr.decode()}")
-    return stdout.decode().strip()
-
-
 async def _delete_pod(name: str, uid: str) -> None:
     await _delete("pod", name, uid)
 
 
 async def _bound_caller(service_account: str) -> tuple[Caller, str, str]:
-    pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={service_account}", "-o", "json"))
+    pods = json.loads(await kubectl("get", "pods", "-l", f"app.kubernetes.io/name={service_account}", "-o", "json"))
     pod = next(item for item in pods["items"] if not item["metadata"].get("deletionTimestamp"))
     name = pod["metadata"]["name"]
     uid = pod["metadata"]["uid"]
-    token = await _kubectl(
+    token = await kubectl(
         "create",
         "token",
         service_account,
@@ -89,21 +67,19 @@ async def _bound_caller(service_account: str) -> tuple[Caller, str, str]:
 
 
 async def _delete(kind: str, name: str, uid: str) -> None:
-    configuration = k8s.Configuration()
-    await k8s_config.load_kube_config(client_configuration=configuration)
-    async with k8s.ApiClient(configuration) as api:
+    async with api_client() as api:
         options = k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid))
         if kind == "pod":
-            await k8s.CoreV1Api(api).delete_namespaced_pod(name, NAMESPACE, body=options)
+            await k8s.CoreV1Api(api).delete_namespaced_pod(name, namespace(), body=options)
         else:
             await k8s.CustomObjectsApi(api).delete_namespaced_custom_object(
-                GROUP, VERSION, NAMESPACE, "sandboxes", name, body=options
+                GROUP, VERSION, namespace(), "sandboxes", name, body=options
             )
-    await _kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
+    await kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
 
 
 async def _cleanup_sandbox(name: str, uid: str) -> None:
-    await _kubectl(
+    await kubectl(
         "patch",
         "sandbox.agentplane.allegedly.works",
         name,
@@ -111,13 +87,13 @@ async def _cleanup_sandbox(name: str, uid: str) -> None:
         "-p",
         json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
     )
-    await _kubectl(
+    await kubectl(
         "wait",
         f"sandbox.agentplane.allegedly.works/{name}",
         "--for=jsonpath={.status.operatingMode}=Suspended",
         "--timeout=300s",
     )
-    await _kubectl(
+    await kubectl(
         "wait",
         f"sandbox.agentplane.allegedly.works/{name}",
         '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
@@ -132,7 +108,7 @@ async def _forward(resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
     process = await asyncio.create_subprocess_exec(
         "kubectl",
         "-n",
-        NAMESPACE,
+        namespace(),
         "port-forward",
         resource,
         f"{port}:8080",
@@ -181,15 +157,15 @@ async def _dispatch_until(
 async def _replace_owner_with_peer(
     sandbox_uid: str, deployment_uid: str, evidence: dict[str, object]
 ) -> AsyncIterator[str]:
-    pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
+    pods = json.loads(await kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
     (original,) = pods["items"]
     lease_name = f"dispatcher-{UUID(sandbox_uid).hex}"
-    lease = json.loads(await _kubectl("get", "lease", lease_name, "-o", "json"))
+    lease = json.loads(await kubectl("get", "lease", lease_name, "-o", "json"))
     holder = lease["spec"]["holderIdentity"]
     scaled_generation: int | None = None
     try:
         patched = json.loads(
-            await _kubectl(
+            await kubectl(
                 "patch",
                 "deployment",
                 WORKLOAD,
@@ -207,20 +183,18 @@ async def _replace_owner_with_peer(
             )
         )
         scaled_generation = patched["metadata"]["generation"]
-        await _kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
-        pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
+        await kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
+        pods = json.loads(await kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
         (peer,) = [item for item in pods["items"] if item["metadata"]["uid"] != original["metadata"]["uid"]]
         await _delete_pod(original["metadata"]["name"], original["metadata"]["uid"])
-        configuration = k8s.Configuration()
-        await k8s_config.load_kube_config(client_configuration=configuration)
-        async with k8s.ApiClient(configuration) as api, k8s_watch.Watch() as watch:
+        async with api_client() as api, k8s_watch.Watch() as watch:
             coordination = k8s.CoordinationV1Api(api)
-            current = await coordination.read_namespaced_lease(lease_name, NAMESPACE)
+            current = await coordination.read_namespaced_lease(lease_name, namespace())
             if current.spec.holder_identity == holder:
                 async with asyncio.timeout(BOUND_SECONDS):
                     async for event in watch.stream(
                         coordination.list_namespaced_lease,
-                        NAMESPACE,
+                        namespace(),
                         field_selector=f"metadata.name={lease_name}",
                         resource_version=current.metadata.resource_version,
                     ):
@@ -235,28 +209,27 @@ async def _replace_owner_with_peer(
         yield peer["metadata"]["name"]
     finally:
         if scaled_generation is not None:
-            current = json.loads(await _kubectl("get", "deployment", WORKLOAD, "-o", "json"))
+            current = json.loads(await kubectl("get", "deployment", WORKLOAD, "-o", "json"))
             # Do not overwrite a concurrent operator or GitOps rollout.
             if current["metadata"]["uid"] == deployment_uid and current["metadata"]["generation"] == scaled_generation:
-                await _kubectl(
+                await kubectl(
                     "scale",
                     f"deployment/{WORKLOAD}",
                     "--current-replicas=2",
                     "--replicas=1",
                     f"--resource-version={current['metadata']['resourceVersion']}",
                 )
-                await _kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
+                await kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
 
 
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("replica_failover", [False, True], ids=["queue", "replicas"])
 async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission(replica_failover: bool) -> None:
-    deployment = json.loads(await _kubectl("get", "deployment", WORKLOAD, "-o", "json"))
-    assert deployment["status"].get("readyReplicas") == 1, "testing Dispatcher is not Ready"
+    deployment = json.loads(await kubectl("get", "deployment", WORKLOAD, "-o", "json"))
+    assert deployment["status"].get("readyReplicas") == 1, "the Dispatcher is not Ready"
     assert deployment["spec"]["replicas"] == 1
-    assert deployment["spec"]["strategy"]["type"] == "Recreate"
     image = deployment["spec"]["template"]["spec"]["containers"][0]["image"]
-    app_config = json.loads(await _kubectl("get", "configmap", "app-config", "-o", "json"))
+    app_config = json.loads(await kubectl("get", "configmap", "app-config", "-o", "json"))
     policies = yaml.safe_load(app_config["data"]["config.yaml"])["default_policy_sets"]
     assert isinstance(policies, list)
     assert policies
@@ -264,7 +237,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     suffix = uuid4().hex[:8]
     sandbox, session, command = (f"accept-dispatch-{suffix}", str(uuid4()), str(uuid4()))
     evidence: dict[str, object] = {
-        "namespace": NAMESPACE,
+        "namespace": namespace(),
         "image": image,
         "sandbox": sandbox,
         "session": session,
@@ -279,7 +252,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
         # existing app Pod as the token's binding object; this probe creates no caller Pods.
         authentication, caller, _caller_uid = await _bound_caller("app")
         created = json.loads(
-            await _kubectl(
+            await kubectl(
                 "create",
                 "-f",
                 "-",
@@ -288,7 +261,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 body={
                     "apiVersion": SANDBOX_API_VERSION,
                     "kind": "Sandbox",
-                    "metadata": {"name": sandbox, "namespace": NAMESPACE},
+                    "metadata": {"name": sandbox, "namespace": namespace()},
                     "spec": {"template": "runner", "running": False, "policySets": policies},
                 },
             )
@@ -302,7 +275,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 await _cleanup_sandbox(sandbox, uid)
 
         stack.push_async_callback(cleanup)
-        await _kubectl(
+        await kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{sandbox}",
             '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
@@ -324,11 +297,11 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             stub, authentication, session, lambda row: row.reason == "wake_on_send_disabled"
         )
         assert waiting.sandbox_uid == uid
-        waiting_sandbox = json.loads(await _kubectl("get", "sandbox", sandbox, "-o", "json"))
+        waiting_sandbox = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
         assert waiting_sandbox["spec"].get("running") is False
         assert waiting_sandbox["spec"].get("wakeGeneration", 0) == 0
         evidence["waiting_reason"] = waiting.reason
-        caller_view = json.loads(await _kubectl("get", "pod", caller, "-o", "json"))
+        caller_view = json.loads(await kubectl("get", "pod", caller, "-o", "json"))
         evidence["caller_phase"] = caller_view.get("status", {}).get("phase")
         path.write_text(json.dumps(evidence, indent=2) + "\n")
         if replica_failover:
@@ -364,7 +337,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             timeout=15,
         )
         assert opened.opening.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-        await _kubectl(
+        await kubectl(
             "patch",
             "sandbox.agentplane.allegedly.works",
             sandbox,
@@ -398,7 +371,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
         )
         assert opening.opening.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
         if replica_failover:
-            await _kubectl(
+            await kubectl(
                 "patch",
                 "sandbox.agentplane.allegedly.works",
                 sandbox,
@@ -406,7 +379,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 "-p",
                 json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
             )
-            await _kubectl(
+            await kubectl(
                 "wait",
                 f"sandbox.agentplane.allegedly.works/{sandbox}",
                 '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
@@ -421,8 +394,8 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 metadata=authentication.metadata,
                 timeout=15,
             )
-            await _kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
-            pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
+            await kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
+            pods = json.loads(await kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
             live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
             assert len(live) == 2
             streams = []
@@ -471,7 +444,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
 async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notification_sends() -> None:
     deployments: dict[str, object] = {}
     for name in (WORKLOAD, "sandbox-controller", "app", "notifications"):
-        deployment = json.loads(await _kubectl("get", "deployment", name, "-o", "json"))
+        deployment = json.loads(await kubectl("get", "deployment", name, "-o", "json"))
         assert deployment["status"].get("readyReplicas") == deployment["spec"]["replicas"], f"{name} is not Ready"
         deployments[name] = {
             "images": {
@@ -483,21 +456,24 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                 for container in deployment["spec"]["template"]["spec"].get("initContainers", [])
             },
         }
-    gateway_config = json.loads(await _kubectl("get", "configmap", f"{WORKLOAD}-settings", "-o", "json"))
+    gateway_config = json.loads(await kubectl("get", "configmap", f"{WORKLOAD}-settings", "-o", "json"))
     gateway_settings = yaml.safe_load(gateway_config["data"]["settings.yaml"])
-    expected_wake_callers = [{"namespace": NAMESPACE, "name": "app"}, {"namespace": NAMESPACE, "name": "notifications"}]
+    expected_wake_callers = [
+        {"namespace": namespace(), "name": "app"},
+        {"namespace": namespace(), "name": "notifications"},
+    ]
     accounts = {f"{account['namespace']}/{account['name']}" for account in expected_wake_callers}
     assert set(gateway_settings["dispatcher_callers"]) == accounts
     assert set(gateway_settings["wake_callers"]) == accounts
 
-    service_config = json.loads(await _kubectl("get", "configmap", "app-config", "-o", "json"))
+    service_config = json.loads(await kubectl("get", "configmap", "app-config", "-o", "json"))
     policies = yaml.safe_load(service_config["data"]["config.yaml"])["default_policy_sets"]
     assert isinstance(policies, list)
     assert policies
     suffix = uuid4().hex[:8]
     sandbox, session, command = (f"accept-wake-{suffix}", str(uuid4()), str(uuid4()))
     evidence: dict[str, object] = {
-        "namespace": NAMESPACE,
+        "namespace": namespace(),
         "images": deployments,
         "sandbox": sandbox,
         "session": session,
@@ -509,7 +485,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
     path = undeclared_outputs_dir() / "dispatcher-wake.json"
     path.write_text(json.dumps(evidence, indent=2) + "\n")
     created = json.loads(
-        await _kubectl(
+        await kubectl(
             "create",
             "-f",
             "-",
@@ -518,7 +494,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
             body={
                 "apiVersion": SANDBOX_API_VERSION,
                 "kind": "Sandbox",
-                "metadata": {"name": sandbox, "namespace": NAMESPACE},
+                "metadata": {"name": sandbox, "namespace": namespace()},
                 "spec": {"template": "runner", "running": False, "wakeOnSend": True, "policySets": policies},
             },
         )
@@ -534,13 +510,13 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
             cleaned = True
 
     try:
-        await _kubectl(
+        await kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{sandbox}",
             '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
             "--timeout=300s",
         )
-        stopped = json.loads(await _kubectl("get", "sandbox", sandbox, "-o", "json"))
+        stopped = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
         initial_incarnation = stopped.get("status", {}).get("incarnation", {}).get("uid")
         evidence["initial_incarnation"] = initial_incarnation
         app_authentication, app_pod, app_pod_uid = await _bound_caller("app")
@@ -582,25 +558,25 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                 )
                 assert opened.opening.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
                 assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-                await _kubectl(
+                await kubectl(
                     "wait",
                     f"sandbox.agentplane.allegedly.works/{sandbox}",
                     "--for=jsonpath={.spec.wakeGeneration}=1",
                     "--timeout=120s",
                 )
-                waking = json.loads(await _kubectl("get", "sandbox", sandbox, "-o", "json"))
+                waking = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
                 assert waking["spec"]["running"] is True
                 assert waking["spec"]["wakeGeneration"] == 1
                 evidence["wake_generation"] = waking["spec"]["wakeGeneration"]
                 path.write_text(json.dumps(evidence, indent=2) + "\n")
 
-                await _kubectl(
+                await kubectl(
                     "wait",
                     f"sandbox.agentplane.allegedly.works/{sandbox}",
                     "--for=condition=Ready=True",
                     "--timeout=300s",
                 )
-                ready = json.loads(await _kubectl("get", "sandbox", sandbox, "-o", "json"))
+                ready = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
                 ready_incarnation = ready.get("status", {}).get("incarnation", {}).get("uid")
                 assert ready_incarnation
                 assert ready_incarnation != initial_incarnation

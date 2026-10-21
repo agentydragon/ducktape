@@ -2,7 +2,8 @@
 sandboxes that clean up after themselves.
 
 Which instance is under test comes from the environment; the shipped default is the isolated
-testing deployment. Staging remains available for explicit ad hoc runs.
+testing deployment. Staging remains available for explicit ad hoc runs, and a scenario's `_k3s`
+target publishes a k3s stack of its own the same way (`agentplane.x.k3s_env.acceptance_target`).
 """
 
 from __future__ import annotations
@@ -83,6 +84,15 @@ def mint_token(*, namespace: str, service_account: str, audience: str, lifetime:
     return minted.stdout.strip()
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "vm_sandboxes: needs a deployment that runs VM Sandboxes")
+
+
+def namespace() -> str:
+    """Read at call time: the k3s target publishes its stack after the scenario modules are imported."""
+    return os.environ.get(NAMESPACE, TESTING_NAMESPACE)
+
+
 @pytest.fixture(scope="session")
 def base_url() -> str:
     return os.environ.get(BASE_URL, TESTING_URL)
@@ -94,7 +104,7 @@ def token() -> str:
     if (supplied := os.environ.get(TOKEN)) is not None:
         return supplied
     return mint_token(
-        namespace=os.environ.get(NAMESPACE, TESTING_NAMESPACE),
+        namespace=namespace(),
         service_account=os.environ.get(SERVICE_ACCOUNT, TESTING_SERVICE_ACCOUNT),
         audience=AUDIENCE,
     )

@@ -1,0 +1,50 @@
+"""The deployment under test as Kubernetes sees it: `kubectl` in its namespace and an API client.
+
+Both follow `KUBECONFIG` as it is when called, never as it was at import, so a target that starts
+its own deployment can publish it after the scenario modules load.
+"""
+
+import asyncio
+import json
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from kubernetes_asyncio import client as k8s, config as k8s_config
+
+from agentplane.acceptance.conftest import namespace
+
+# The longest `kubectl wait` a scenario asks for is 300 s; kubectl gets a little more to report it.
+KUBECTL_SECONDS = 310
+
+
+async def kubectl(*args: str, body: object | None = None) -> str:
+    process = await asyncio.create_subprocess_exec(
+        "kubectl",
+        "-n",
+        namespace(),
+        *args,
+        stdin=asyncio.subprocess.PIPE if body is not None else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        async with asyncio.timeout(KUBECTL_SECONDS):
+            stdout, stderr = await process.communicate(json.dumps(body).encode() if body is not None else None)
+    except BaseException:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        raise
+    if process.returncode:
+        raise RuntimeError(f"kubectl {' '.join(args)}: {stderr.decode()}")
+    return stdout.decode().strip()
+
+
+@asynccontextmanager
+async def api_client() -> AsyncIterator[k8s.ApiClient]:
+    # kubernetes_asyncio's own default reads KUBECONFIG once, when it is imported.
+    configuration = k8s.Configuration()
+    await k8s_config.load_kube_config(config_file=os.environ.get("KUBECONFIG"), client_configuration=configuration)
+    async with k8s.ApiClient(configuration) as api:
+        yield api

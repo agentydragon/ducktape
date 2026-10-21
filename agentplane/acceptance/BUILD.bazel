@@ -1,4 +1,8 @@
+load("//agentplane/acceptance:defs.bzl", "acceptance_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# gazelle:exclude test_dispatcher_deployed.py
+# gazelle:exclude test_storage_deployed.py
 
 package(
     default_testonly = True,
@@ -464,21 +468,15 @@ py_test(
     ],
 )
 
-py_test(
+acceptance_test(
     name = "test_dispatcher_deployed",
     size = "large",
     srcs = ["test_dispatcher_deployed.py"],
-    env_inherit = [
-        "HOME",
-        "KUBECONFIG",
-    ],
-    tags = [
-        "manual",
-        "no-remote-exec",
-    ],
+    k3s = True,
     deps = [
+        ":cluster",
         ":conftest",
-        "//:conftest",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/grpc:calls",
@@ -496,25 +494,17 @@ py_test(
     ],
 )
 
-py_test(
+# Two bounded fresh fixtures; the VM case exercises guest boot and normal stop/start, so the k3s
+# target, which runs no VM Sandboxes, deselects it.
+acceptance_test(
     name = "test_storage_deployed",
-    # Two bounded fresh fixtures; the VM case exercises guest boot and normal stop/start. CI
-    # does not select this target; it needs the operator host's kubeconfig and testing ingress.
     timeout = "eternal",
     srcs = ["test_storage_deployed.py"],
-    env_inherit = [
-        "AGENTPLANE_ACCEPTANCE_TOKEN",
-        "AGENTPLANE_STORAGE_CONTROLLER_IMAGE",
-        "HOME",
-        "KUBECONFIG",
-    ],
-    tags = [
-        "manual",
-        "no-remote-exec",
-    ],
+    k3s = True,
     deps = [
+        ":cluster",
         ":conftest",
-        "//:conftest",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/app/testing:client",
@@ -523,5 +513,15 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "cluster",
+    testonly = True,
+    srcs = ["cluster.py"],
+    deps = [
+        ":conftest",
+        "@pypi//kubernetes_asyncio",
     ],
 )

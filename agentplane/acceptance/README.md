@@ -6,6 +6,17 @@ cross-component behavior and durable system evidence. They are not unit tests wi
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
 
+The deployment under test is whatever the environment names: `AGENTPLANE_ACCEPTANCE_{URL,TOKEN,NAMESPACE,SERVICE_ACCOUNT}`
+and the caller's kubeconfig, testing by default. A scenario declared with
+`acceptance_test(k3s = True)` ([`defs.bzl`](defs.bzl)) also gets a `<scenario>_k3s` target: one
+RBE action that starts its own [k3s stack](../x/k3s_env/README.md) and publishes it through the same
+variables ([`acceptance_target.py`](../x/k3s_env/acceptance_target.py)), so it needs no cluster
+credentials. That stack runs no model and no VM Sandboxes; it deselects cases marked `vm_sandboxes`.
+
+```bash
+bbr test //agentplane/acceptance:test_dispatcher_deployed_k3s //agentplane/acceptance:test_storage_deployed_k3s
+```
+
 Fast offline driver tests cover login choreography (`test_operator_login`), startup retries and
 terminal-turn handling (`test_agent`). They create no Sandbox and do not prove that a deployed IdP,
 Agentplane, or harness is reachable. Deployed login remains setup for the MCP vertical scenario.
@@ -47,22 +58,20 @@ The result is written to
 
 ## Workspace storage layout acceptance
 
-`//agentplane/acceptance:test_storage_deployed` is a model-free, testing-only fixture for the
+`//agentplane/acceptance:test_storage_deployed` is a model-free fixture for the
 built-in Pod `DirectoryTree` and VM `RawDiskImage`/ext4 workspace paths. It checks Sandbox-owned
 PVC identity and layout records, marker bytes across suspend/resume, refusal of an incompatible
 claim before workload start, and retained data after VM replacement. It creates only its own
 Sandbox, template and workload, then removes them through UID-preconditioned lifecycle operations.
-Run only on the authorized controlled host, with no existing testing Sandboxes and exactly `5Gi` of
-testing storage quota already in use. Set `AGENTPLANE_STORAGE_CONTROLLER_IMAGE` to the exact
-source-verified controller image; the target refuses a mismatched deployed pin and cannot be
-redirected to staging.
+It refuses a deployment that already has Sandboxes, so on testing it runs only while no one else
+uses it; `test_storage_deployed_k3s` runs the Pod case on a stack of its own.
 
 ```bash
 bazelisk test //agentplane/acceptance:test_storage_deployed --test_output=streamed
 ```
 
-The target writes `test.outputs/storage-{pod-directory,vm-raw}.json`. It is `manual` and
-`no-remote-exec`; general controlled-host setup is below.
+The target writes `test.outputs/storage-{pod-directory,vm-raw}.json`. The deployed target is
+`manual` and `no-remote-exec`; general controlled-host setup is below.
 
 ## Suspend and resume
 
