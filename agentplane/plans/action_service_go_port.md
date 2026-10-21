@@ -1,12 +1,24 @@
 # Action Service Go port
 
-Status: **paused pending the Greenfield service boundaries plan.** `ACTION_SERVICE_GO_PORT` in the [task DAG](task_dag.md)
-records it, and the operator said to port it (2026-10-19 PDT). Read at `devel` 5cfb6498. The plan burns down: a stage leaves when its work
-lands, and the file goes with the Python retirement.
+Status: **paused; resumes when the operator says so.** `ACTION_SERVICE_GO_PORT` in the [task DAG](task_dag.md)
+records it, and the operator said to port it (2026-10-19 PDT) and approved the destination below (2026-10-20 PDT).
+The plan burns down: a stage leaves when its work lands, and the file goes with the Python retirement.
 
-The port moves the service as it is: the same responsibilities, the same PostgreSQL database and schema (Alembic
-head `0027_drop_reconciliation_audit`), one Go binary. Out of scope: any schema change, dropping DCR, a watch
-resume cursor, `SERVICE_SETTINGS_RETHINK`, and renaming a table, channel or setting key.
+The port moves the service into one Go binary shaped by its destination, on the same PostgreSQL database and schema
+(Alembic head `0027_drop_reconciliation_audit`):
+
+- **`actions`**, the core, admits a caller by one path, a workload token of a labeled ServiceAccount, and knows
+  nothing of Connections: no grant check at submit or claim, and no grant provenance on requests. Revoking a
+  Connection stops only its further requests.
+- **Connections, OAuth and `/mcp`** are packages that own their tables and reach the core only through the
+  `ActionService` interface. After the flip they become **`mcp-edge`**, a separate binary that calls `actions` over
+  gRPC with ServiceAccount tokens it mints for the bound accounts ([below](#after-the-flip-the-edge-split)).
+- **Web Push and the executors** stay in `actions` as packages behind one interface each: `push` reads pending
+  approvals from the lifecycle, and the executors use the lease protocol.
+
+Out of scope: any schema change, dropping DCR, a watch resume cursor, `SERVICE_SETTINGS_RETHINK`, renaming a table,
+channel or setting key, `WEB_PUSH_SERVICE`, and dropping the `action_request.external_grant` column (its own data
+change).
 
 ## What moves
 
@@ -14,15 +26,15 @@ resume cursor, `SERVICE_SETTINGS_RETHINK`, and renaming a table, channel or sett
 | -------------------------------------------------------------------------- | -----: | ------------------------------------------------------------------------------- |
 | `store.py`, `service.py` (lifecycle, leases, dispatch, sweeps, heartbeats) |   1313 | `store` and `worker` packages, hand-written SQL on `lib/pq`                     |
 | `models.py`                                                                |    396 | proto messages                                                                  |
-| `api.py`, `operator_stream.py`, `updates.py`, `waits.py`                   |    917 | two protos with generated facades; the receipt stream replaces the wait         |
+| `api.py`, `operator_stream.py`, `updates.py`, `waits.py`                   |    917 | four proto services with generated facades; the receipt stream replaces waits   |
 | `caller_auth.py`, `auth.py`, `operator_oidc.py`                            |    185 | workload `Resolver` plus `PolicyIndex`; operator JWT on `coreos/go-oidc`        |
 | `policies/`, `github_policy/`, `policy_view.py`, `policy_informer.py`      |   1205 | decision providers on `policy/api/v1alpha1` types and the egress informer       |
-| `connections.py`, `enrollments.py`                                         |    698 | grant and consent authority, same rules                                         |
-| `oauth.py`, `oauth_settings.py`                                            |    501 | authorization server on `zitadel/oidc` `op`                                     |
-| `mcp_frontend.py`, `direct_tools.py`, `tool_results.py`                    |    795 | `/mcp` on `modelcontextprotocol/go-sdk`                                         |
+| `connections.py`, `enrollments.py`                                         |    698 | grant and consent authority, same rules, as an edge package                     |
+| `oauth.py`, `oauth_settings.py`                                            |    501 | authorization server on `zitadel/oidc` `op`, as an edge package                 |
+| `mcp_frontend.py`, `direct_tools.py`, `tool_results.py`                    |    795 | `/mcp` on `modelcontextprotocol/go-sdk`, as an edge package                     |
 | `mcp_executor.py`, `mcp_linkage.py`                                        |   1446 | supervisor on the go-sdk client; linkage on `oauthex` and `golang.org/x/oauth2` |
 | `sandbox/`                                                                 |    988 | inventory and template logic; exec on client-go `remotecommand`                 |
-| `push.py`, `push_settings.py`                                              |    318 | `SherClockHolmes/webpush-go` plus the delivery loop                             |
+| `push.py`, `push_settings.py`                                              |    318 | `push` package on `SherClockHolmes/webpush-go`; sends outside any transaction   |
 | `settings.py`, `main.py`, `runtime.py`                                     |    344 | `config.go` (Viper, file plus environment, no flags, same keys), `main.go`      |
 | Python tests (including `sandbox/` and `policies/` tests)                  | ~11600 | Go tests on real PostgreSQL in the stage that ports their subject               |
 
@@ -46,11 +58,12 @@ yet; the stage that first imports one adds it.
 
 ## The authorization server
 
-External MCP clients authorize against the Action Service itself. FastMCP's `OIDCProxy` does that in Python and no
-Go library does the same: `go-sdk` covers the resource-server and client halves, and `fosite` and `zitadel/oidc`
-are protocol toolkits with no DCR or CIMD. The operator chose a toolkit inside the service (2026-10-19 PDT) and
-then `zitadel/oidc` `op` over `fosite` (maintained: `v3.51.16` on 2026-10-15, against `fosite`'s last tag in
-December 2024). Ory Hydra and a Python OAuth edge were rejected.
+External MCP clients authorize against the edge's authorization server, which runs in the Go binary beside `/mcp`
+until the edge split. FastMCP's `OIDCProxy` does that in Python and no Go library does the same: `go-sdk` covers the
+resource-server and client halves, and `fosite` and `zitadel/oidc` are protocol toolkits with no DCR or CIMD. The
+operator chose a toolkit inside the service (2026-10-19 PDT) and then `zitadel/oidc` `op` over `fosite`
+(maintained: `v3.51.16` on 2026-10-15, against `fosite`'s last tag in December 2024). Ory Hydra and a Python OAuth
+edge were rejected.
 
 Stage K opens with a one-day spike that implements `authorize` and `token` for a CIMD client against a PostgreSQL
 storage and answers what is unverified: whether the `openid` scope and id token can be left out for plain OAuth
@@ -69,10 +82,14 @@ Defaults inside it:
 
 ## Contract
 
-`action_service/action_service.proto` (`ActionService`, for workloads) holds its RPCs, shapes and error codes, and an
-`operator_action_service.proto` (`OperatorActionService`, for the integration app alone, not written yet) will hold the
-operator's, in two files so the OpenAPI document `proto_openapi` renders from the first describes only what an agent may call. What the servicers
-and callers still owe it:
+`action_service/action_service.proto` (`ActionService`, for workloads) holds its RPCs, shapes and error codes. It
+gains what the edge needs to serve `/mcp` as a workload caller: a decided-only submit with a distinct refusal code
+for direct tools, `ActionGroup.direct_tools` plus the caller's auto-approvable Actions in `GetActionPolicy`, each
+Action's title and MCP tool hints, and an optional subject on `GetActionPolicyRequest`. The integration app's operator API is three
+services, one per destination, so a later move changes no wire: `OperatorActionService` (requests, decisions,
+catalog, policy, MCP server linkage), `agentplane.mcp_edge.ConnectionService` (Connections and enrollments) and
+`WebPushService`. They live in files apart from the workload proto, so the OpenAPI document `proto_openapi` renders
+from it describes only what an agent may call. What the servicers and callers still owe the protos:
 
 - The rendered document is served at `/openapi.json`, linked from `/llms.txt`, and replaces
   `docs/agents/http_api.md` (stage D).
@@ -87,7 +104,7 @@ and callers still owe it:
 - Hand-written HTTP stays: `/mcp`, the OAuth endpoints and well-known documents, `/oauth/client-metadata.json`,
   `/v1/mcp-linkage/callback`. `/healthz` and `/readyz` become `grpc.health.v1`; `/metrics` stays.
 - The `_ERRORS` table becomes one interceptor mapping each domain error to a gRPC code and detail. Drain answers
-  `UNAVAILABLE`; a grant-authority outage stays a retryable `UNAVAILABLE`.
+  `UNAVAILABLE`. A revoked Connection is refused by `/mcp` itself, before any core call.
 
 ## Stored data the port must read and write exactly
 
@@ -111,15 +128,15 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 
 | Stage | Change                                                                                                                                                                                                                        |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| B     | The protos, workload then operator: the contract to review before any servicer exists.                                                                                                                                        |
-| C     | Go service skeleton (`config.go`, `main.go`, health, metrics, drain) and the lifecycle store with golden vectors; claim, lease, sweep and heartbeat loops.                                                                    |
+| B     | The protos: the workload additions above and the three operator services, the contract to review before any servicer exists.                                                                                                  |
+| C     | Go service skeleton (`config.go`, `main.go`, health, metrics, drain) and the lifecycle store with golden vectors; claim, lease, sweep and heartbeat loops. Locks take the request, then the Execution.                        |
 | D     | Workload auth, catalog, decision providers and policy kinds with the GitHub visibility lookup, `ActionService`, the receipt stream, `docs/agents/`, `/openapi.json`.                                                          |
 | E     | Operator JWT, request RPCs and watches, decision RPC.                                                                                                                                                                         |
-| F     | Connections and enrollments RPCs and watches.                                                                                                                                                                                 |
+| F     | Connections and enrollments: a package owning its tables, which the core store never imports; `ConnectionService`.                                                                                                            |
 | G     | Executors: MCP supervisor and Sandbox exec; executor liveness.                                                                                                                                                                |
 | H     | Outbound linkage, its callback and the CIMD document; MCP-server RPCs.                                                                                                                                                        |
-| I     | Web Push and its RPCs.                                                                                                                                                                                                        |
-| J     | `/mcp` on `go-sdk` and the resource-server `TokenVerifier`.                                                                                                                                                                   |
+| I     | Web Push: package `push` behind one interface to the lifecycle; `WebPushService`.                                                                                                                                             |
+| J     | `/mcp` on `go-sdk` and the resource-server `TokenVerifier`, calling the core only through the `ActionService` interface.                                                                                                      |
 | K     | Authorization server: spike, then authorize, consent redirect, token, refresh, revoke, metadata.                                                                                                                              |
 | L     | Callers, prepared against the protos and merged with the cutover: the app's Action routes and relays, `OperatorActionServiceClient`, the CLI's generated client, the Go Notification Service's HTTP client, acceptance tests. |
 | M     | Testing cutover: repoint `devinfra/ci/image_targets.json`, soak the migrator, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                               |
@@ -137,20 +154,29 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
   the code needs them.
 - **No overlap of Python and Go workers.** The roll uses `Recreate`: dispatch is single shot and a lease sweep
   from one side must not race the other's heartbeats.
-- **External MCP clients re-authorize once.** Their FastMCP-issued tokens cannot be honored. Connections and grants
-  survive in the same tables and the existing reconnect path binds the new authorization to the old Connection after
-  the operator confirms it. Say so in the cutover PR.
+- **External MCP clients re-authorize once**, at the flip and not again at the edge split. Their FastMCP-issued
+  tokens cannot be honored. Connections and grants survive in the same tables and the existing reconnect path binds
+  the new authorization to the old Connection after the operator confirms it. Say so in the cutover PR.
 - **Live Sandboxes.** A Sandbox started before the cutover has the old CLI and guides, which cannot talk to the
   receipt stream until it restarts. That is the "decision card before PRs breaking live Sandboxes" case: ask at
   stage L, with the number of live Sandboxes in hand.
+
+### After the flip: the edge split
+
+1. The edge's database and a copy of its tables (database before code).
+2. `actions` accepts ServiceAccount tokens that are not Pod-bound (reader before writer).
+3. `mcp-edge`: `main`, Deployment, TokenRequest rights and token minting for the bound accounts, audience
+   `actions`; the in-process `ActionService` call becomes the gRPC call.
+4. The public route and the app's Connection calls move to the edge; `actions` stops being public.
+5. The tables leave the `actions` database, in a separate data change.
 
 ## Risks
 
 - **Authorization server correctness** is security-sensitive: a toolkit for the protocol, the `test_oauth.py` cases
   ported, and real-client acceptance on testing before staging.
 - **`go-sdk` states no API stability.** Pin the version and keep its use in the `/mcp`, executor and one auth file.
-- **Per-request direct tools** need a server built per request from the caller's grants. `go-sdk`'s
-  `NewStreamableHTTPHandler` takes a server-per-request function; confirm in stage J.
+- **Per-request direct tools** need a server built per request from the caller's catalog and policy reads.
+  `go-sdk`'s `NewStreamableHTTPHandler` takes a server-per-request function; confirm in stage J.
 - **Outbound linkage versus the `go-sdk` handler.** Its `AuthorizationCodeFetcher` returns the code synchronously,
   which suits a CLI, not an operator click that finishes in a callback on another replica. Stage H uses `oauthex` for
   discovery and registration and `x/oauth2` for the two-phase flow unless a spike shows otherwise.
