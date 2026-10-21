@@ -58,8 +58,10 @@ type Worker struct {
 	timing     Timing
 
 	mu sync.Mutex
-	// scheduled holds the requests whose dispatch is under way, so that a wakeup starts none twice.
-	scheduled map[uuid.UUID]struct{}
+	// scheduled holds the requests whose dispatch is under way, so that a wakeup starts none twice. True marks one a
+	// wakeup found under way: what woke it, such as its Executor becoming ready, may have come after the dispatch
+	// looked, so the dispatch claims once more when it ends.
+	scheduled map[uuid.UUID]bool
 }
 
 func New(s *store.Store, executors Executors, timing Timing) (*Worker, error) {
@@ -73,7 +75,7 @@ func New(s *store.Store, executors Executors, timing Timing) (*Worker, error) {
 	}
 	return &Worker{
 		store: s, executors: executors, executorID: "executor-" + uuid.NewString(), timing: timing,
-		scheduled: map[uuid.UUID]struct{}{},
+		scheduled: map[uuid.UUID]bool{},
 	}, nil
 }
 
@@ -101,7 +103,11 @@ func (w *Worker) Run(ctx context.Context, wakeups <-chan struct{}) {
 
 	var dispatches sync.WaitGroup
 	w.follow(ctx, wakeups, func(id uuid.UUID) {
-		dispatches.Go(func() { w.dispatch(ctx, executions, writes, id) })
+		dispatches.Go(func() {
+			for again := true; again; again = w.unschedule(id) {
+				w.dispatch(ctx, executions, writes, id)
+			}
+		})
 	})
 	finished := make(chan struct{})
 	go func() {
@@ -171,22 +177,29 @@ func (w *Worker) schedule(id uuid.UUID) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if _, scheduled := w.scheduled[id]; scheduled {
+		w.scheduled[id] = true
 		return false
 	}
-	w.scheduled[id] = struct{}{}
+	w.scheduled[id] = false
 	return true
 }
 
-func (w *Worker) unschedule(id uuid.UUID) {
+// unschedule ends the dispatch of id, unless a wakeup found it under way: then id stays scheduled, and unschedule
+// reports that it is to be dispatched again.
+func (w *Worker) unschedule(id uuid.UUID) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.scheduled[id] {
+		w.scheduled[id] = false
+		return true
+	}
 	delete(w.scheduled, id)
+	return false
 }
 
 // dispatch claims the request's Execution and, when this worker won it, runs it and records how it ended. The
 // executor sees executions; the store calls use writes, which outlive it by the stop bound.
 func (w *Worker) dispatch(ctx, executions, writes context.Context, id uuid.UUID) {
-	defer w.unschedule(id)
 	claim, err := w.claim(ctx, writes, id)
 	if err != nil {
 		slog.Error("action dispatch coordination failed; request will not be retried",

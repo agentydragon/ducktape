@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"sync/atomic"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -112,6 +113,43 @@ func TestAnExecutionWaitsForItsExecutorToBeReady(t *testing.T) {
 	e.unready.Store(false)
 	wakeups <- struct{}{}
 	f.await(t, id, store.StateSucceeded)
+}
+
+// The wakeup that says the Executor is ready can come while a dispatch that found it unready is still under way.
+func TestAWakeupDuringADispatchRunsTheRequestOnceTheDispatchEnds(t *testing.T) {
+	f := newFixture(t)
+	parked := f.allowed(t, "parked")
+	e := &executor{step: succeed}
+	e.unready.Store(true)
+	held := &heldRoute{executor: e, routing: make(chan struct{}), resume: make(chan struct{})}
+	wakeups := make(chan struct{}, 1)
+	run(t, f.store, held, testTiming(), wakeups)
+	<-held.routing
+
+	e.unready.Store(false)
+	probe := f.allowed(t, "probe")
+	wakeups <- struct{}{}
+	// The read after the wakeup found parked under way, then started the younger probe.
+	f.await(t, probe, store.StateSucceeded)
+	close(held.resume)
+	f.await(t, parked, store.StateSucceeded)
+}
+
+// heldRoute routes like its executor, but holds the first Route until resume closes, answering as things stood when
+// it was called. It signals routing when the first Route is called.
+type heldRoute struct {
+	*executor
+	routing, resume chan struct{}
+	calls           atomic.Int64
+}
+
+func (h *heldRoute) Route(action store.ActionIdentity) (Executor, bool) {
+	executor, ready := h.executor.Route(action)
+	if h.calls.Add(1) == 1 {
+		close(h.routing)
+		<-h.resume
+	}
+	return executor, ready
 }
 
 // unrouted is a deployment with no Executor for any Action.
