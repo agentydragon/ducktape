@@ -52,8 +52,7 @@ channel or setting key, and `WEB_PUSH_SERVICE`.
 | Pod exec                                                    | client-go `tools/remotecommand`                                                                                 |
 | Settings, logs, metrics, retry, single flight               | Viper with `ExperimentalBindStruct`, `slog` JSON, `prometheus/client_golang`, `go-retry`, `x/sync/singleflight` |
 
-None of `go-sdk`, `go-oidc`, `webpush-go`, `zitadel/oidc` or a JSON Schema library is in `third_party/go.mod`
-yet; the stage that first imports one adds it.
+`zitadel/oidc` is not in `third_party/go.mod` yet; the stage that first imports it adds it.
 
 ## The authorization server
 
@@ -133,7 +132,6 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 | D     | Workload auth, catalog, decision providers and policy kinds with the GitHub visibility lookup, `ActionService`, the receipt stream, `docs/agents/`, `/openapi.json`.                                                          |
 | E     | Operator JWT as `ActionService`'s second principal with its wider reads, the set watches, the decision RPC.                                                                                                                   |
 | H     | Outbound linkage, its callback and the CIMD document; MCP-server RPCs; refreshing linked tokens, and waking an MCP group's supervisor when its linkage changes.                                                               |
-| I     | Web Push: package `push` behind one interface to the lifecycle; `WebPushService`.                                                                                                                                             |
 | J     | `/mcp` on `go-sdk` and the resource-server `TokenVerifier`, calling the core only through the `ActionService` interface.                                                                                                      |
 | K     | Authorization server: spike, then authorize, consent redirect, token, refresh, revoke, metadata.                                                                                                                              |
 | L     | Callers, prepared against the protos and merged with the cutover: the app's Action routes and relays, `OperatorActionServiceClient`, the CLI's generated client, the Go Notification Service's HTTP client, acceptance tests. |
@@ -156,7 +154,8 @@ test still earns it without the Python reference.
   follow the pin. RBAC grants for the Go identity, including the `pods/exec` verb the Go client sends, land before
   the code needs them.
 - **No overlap of Python and Go workers.** The roll uses `Recreate`: dispatch is single shot and a lease sweep
-  from one side must not race the other's heartbeats.
+  from one side must not race the other's heartbeats. Web Push delivery too: Go's per-subscription advisory lock does
+  not exclude Python's row lock, so two push loops, one of each, would both push to one browser.
 - **External MCP clients re-authorize once**, at the flip and not again at the edge split. Their FastMCP-issued
   tokens cannot be honored. Connections and grants survive in the same tables and the existing reconnect path binds
   the new authorization to the old Connection after the operator confirms it. Say so in the cutover PR.

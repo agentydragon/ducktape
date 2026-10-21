@@ -13,8 +13,7 @@ import "google/protobuf/timestamp.proto";
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
 // expired. `INVALID_ARGUMENT` is a malformed request or an unsupported push endpoint. `NOT_FOUND` is a subscription
 // the operator does not hold. `ALREADY_EXISTS` is a push endpoint another operator registered.
-// `FAILED_PRECONDITION` is Web Push that is not configured. `UNAVAILABLE` is a draining service or a lost change
-// notification.
+// `FAILED_PRECONDITION` is Web Push that is not configured. `UNAVAILABLE` is a draining service.
 //
 // Every `Watch*` stream sends the current set as `snapshot` frames of a bounded number of items each, then
 // `snapshot_complete` (alone, for an empty set), then one `upsert` per item that changes afterwards, carrying the item

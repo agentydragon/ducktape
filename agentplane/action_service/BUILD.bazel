@@ -1474,11 +1474,13 @@ go_library(
     deps = [
         ":action_service_go_proto",
         ":operator_action_service_go_proto",
+        ":web_push_service_go_proto",
         "//agentplane/action_service/api",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/informer",
         "//agentplane/action_service/mcpexec",
         "//agentplane/action_service/policies",
+        "//agentplane/action_service/push",
         "//agentplane/action_service/sandbox",
         "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
@@ -1514,6 +1516,7 @@ go_test(
     deps = [
         "//agentplane/action_service/api",
         "//agentplane/action_service/catalog",
+        "//agentplane/action_service/push",
         "//agentplane/workload_auth/go/auth",
     ],
 )
@@ -1551,6 +1554,7 @@ go_test(
     srcs = [
         "integration_testmain_test.go",
         "main_test.go",
+        "push_test.go",
         "sandbox_groups_test.go",
     ],
     embed = [":main_lib"],
@@ -1558,9 +1562,11 @@ go_test(
     deps = [
         ":action_service_go_proto",
         ":operator_action_service_go_proto",
+        ":web_push_service_go_proto",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/migrations",
         "//agentplane/action_service/policies",
+        "//agentplane/action_service/push",
         "//agentplane/action_service/store",
         "//agentplane/mcp_edge:connection_service_go_proto",
         "//agentplane/policy/api/v1alpha1",

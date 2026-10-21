@@ -32,6 +32,7 @@ var unauthenticated = status.Error(codes.Unauthenticated, "invalid bearer")
 const (
 	actionService     = "/agentplane.action_service.ActionService/"
 	operatorService   = "/agentplane.action_service.OperatorActionService/"
+	webPushService    = "/agentplane.action_service.WebPushService/"
 	connectionService = "/agentplane.mcp_edge.ConnectionService/"
 )
 
@@ -170,7 +171,8 @@ func (g *Gate) authenticator(method string) func(context.Context) (admission, er
 	switch {
 	case strings.HasPrefix(method, actionService):
 		return g.authenticate
-	case strings.HasPrefix(method, operatorService), strings.HasPrefix(method, connectionService):
+	case strings.HasPrefix(method, operatorService), strings.HasPrefix(method, webPushService),
+		strings.HasPrefix(method, connectionService):
 		return g.authenticateOperator
 	default:
 		return nil

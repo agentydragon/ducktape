@@ -1,9 +1,10 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
 // `ActionService`'s submission, request reads, watches and cancellation, its catalog reads and watch and the Action
-// policy, `OperatorActionService`'s Decisions, and the MCP edge's `ConnectionService` until the edge is split out, over
-// gRPC and their HTTP facade under /v1/, the agent documentation, the standard gRPC health service and the process's
-// Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the sandbox groups and of the MCP
-// groups, and keeps its policy index equal to the API server's. The other RPCs answer UNIMPLEMENTED.
+// policy, `OperatorActionService`'s Decisions, `WebPushService`, and the MCP edge's `ConnectionService` until the
+// edge is split out, over gRPC and their HTTP facade under /v1/, the agent documentation, the standard gRPC health
+// service and the process's Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the
+// sandbox groups and of the MCP groups, pushes the requests awaiting a Decision to operators' browsers when Web Push
+// is configured, and keeps its policy index equal to the API server's. The other RPCs answer UNIMPLEMENTED.
 package main
 
 import (
@@ -30,8 +31,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/mcpexec"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
+	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
@@ -60,10 +63,12 @@ const (
 )
 
 // deps is who the service asks about a caller: the API server that reviews a workload's bearer, and the one whose
-// policy objects and caller labels the policy index reads, which Kube reaches and where the sandbox groups run.
+// policy objects and caller labels the policy index reads, which Kube reaches and where the sandbox groups run; and
+// how it reaches the browsers' push services.
 type deps struct {
-	Reviews auth.TokenReviews
-	Kube    *rest.Config
+	Reviews       auth.TokenReviews
+	Kube          *rest.Config
+	PushTransport http.RoundTripper
 }
 
 func inClusterDeps() (deps, error) {
@@ -78,7 +83,7 @@ func inClusterDeps() (deps, error) {
 	if err != nil {
 		return deps{}, err
 	}
-	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Kube: kubeConfig}, nil
+	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Kube: kubeConfig, PushTransport: http.DefaultTransport}, nil
 }
 
 // run serves on the configured address until ctx ends, authenticating workloads with the cluster's TokenReview API
@@ -212,6 +217,20 @@ func mcpExecutors(groups *catalog.Catalog, linkages mcpexec.Linkages) (map[strin
 	return byGroup, nil
 }
 
+// webPush is the service's Web Push identity and the Notifier that delivers under it, both nil while Web Push is not
+// configured.
+func webPush(c config, d deps, db *sql.DB, requests *store.Store) (*push.Identity, *push.Notifier, error) {
+	if !c.WebPush.Configured() {
+		return nil, nil, nil
+	}
+	identity, err := push.NewIdentity(c.WebPush)
+	if err != nil {
+		return nil, nil, err
+	}
+	notifier, err := push.NewNotifier(db, requests, identity, c.WebPush.PublicBaseURL, d.PushTransport, push.DefaultTiming())
+	return identity, notifier, err
+}
+
 // gate admits the callers of the service's RPCs: a workload calls while callers admits its ServiceAccount.
 func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 	workloads, err := auth.NewResolver(d.Reviews, c.TokenAudience, c.CallerServiceAccountNamespaces)
@@ -241,10 +260,10 @@ func newRoutes(httpFacade http.Handler) (http.Handler, error) {
 	return routes, nil
 }
 
-// serve answers on listener, runs the dispatch worker, supervises the MCP groups' sessions and keeps the policy index
-// until ctx ends or the listener fails. gRPC and the HTTP routes share the listener. The worker and the MCP groups
-// drain from then on, beside the listener's shutdown, and serve returns once they have and the policy watches have
-// stopped.
+// serve answers on listener, runs the dispatch worker, supervises the MCP groups' sessions, delivers Web Push and keeps
+// the policy index until ctx ends or the listener fails. gRPC and the HTTP routes share the listener. The worker, the
+// MCP groups and Web Push delivery drain from then on, beside the listener's shutdown, and serve returns once they have
+// and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	watchPeriod := c.policyWatchPeriod()
 	policy := informer.NewIndex(reader.StaleAfterCycles*watchPeriod, c.CallerServiceAccountNamespaces)
@@ -257,7 +276,9 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		return err
 	}
 	defer db.Close()
-	hub, err := wakeups.Listen(ctx, c.DatabaseURL, store.UpdatesChannel, store.DispatchChannel, connections.UpdatesChannel)
+	hub, err := wakeups.Listen(
+		ctx, c.DatabaseURL, store.UpdatesChannel, store.DispatchChannel, push.UpdatesChannel, connections.UpdatesChannel,
+	)
 	if err != nil {
 		return fmt.Errorf("Action Service PostgreSQL listener unavailable: %w", err)
 	}
@@ -279,6 +300,19 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	}
 	for key, executor := range supervisors {
 		byGroup[key] = executor
+	}
+	pushIdentity, notifier, err := webPush(c, d, db, requests)
+	if err != nil {
+		return err
+	}
+	// pushChanges wakes the notifier on each commit to a request.
+	var pushChanges <-chan struct{}
+	if notifier != nil {
+		var unsubscribe func()
+		if pushChanges, unsubscribe, err = hub.Subscribe(store.UpdatesChannel); err != nil {
+			return err
+		}
+		defer unsubscribe()
 	}
 	actions := executors{catalog: c.ActionGroups, byGroup: byGroup}
 	dispatcher, err := worker.New(requests, actions, worker.DefaultTiming())
@@ -317,6 +351,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		Executors: actions, Provider: policies.NewProvider(visibility),
 	}))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests))
+	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, api.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
 	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connections.NewStore(db, policy), admission, hub))
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
 	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish
@@ -327,6 +362,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		facadeContext, listener.Addr().String(),
 		action_servicepb.RegisterActionServiceHandlerFromEndpoint,
 		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
+		web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint,
 		connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint,
 	)
 	if err != nil {
@@ -343,6 +379,9 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	var supervising sync.WaitGroup
 	for _, executor := range supervisors {
 		supervising.Go(func() { executor.Run(working) })
+	}
+	if notifier != nil {
+		supervising.Go(func() { notifier.Run(working, pushChanges) })
 	}
 	// The worker reads the pending dispatches again on a dispatch and whenever a group changes, which can make its
 	// Executor ready.

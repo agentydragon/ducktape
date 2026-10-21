@@ -1,15 +1,21 @@
 package main
 
 import (
+	"crypto/ecdh"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
 
@@ -151,6 +157,39 @@ github_visibility:
 	}
 }
 
+// testWebPush is a deployment's Web Push settings but the private key, a Secret it sets in the environment.
+const testWebPush = `web_push:
+  subject: mailto:test-vapid@agentplane.test
+  public_base_url: https://app.test/
+  allowed_push_hosts: [push.test, other-push.test]
+`
+
+func TestWebPushIsOffUnlessConfiguredAndReadsItsKeyFromTheEnvironment(t *testing.T) {
+	if c, err := loadTestConfig(t, requiredFile); err != nil || c.WebPush.Configured() {
+		t.Errorf("Web Push without settings: %+v, %v", c.WebPush, err)
+	}
+	private, err := ecdh.P256().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	c, err := loadTestConfig(t, requiredFile+testWebPush, settingPrefix+"WEB_PUSH__PRIVATE_KEY_PEM="+key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := push.Settings{
+		PrivateKeyPEM: key, Subject: "mailto:test-vapid@agentplane.test", PublicBaseURL: "https://app.test/",
+		AllowedPushHosts: []string{"push.test", "other-push.test"},
+	}
+	if !reflect.DeepEqual(c.WebPush, want) {
+		t.Errorf("Web Push settings: %+v", c.WebPush)
+	}
+}
+
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
 		"unknown key":             requiredFile + "test_unknown_setting: never-print-this\n",
@@ -183,6 +222,9 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"action groups key":                  requiredFile + strings.Replace(testActionGroups, "X-Test-Header: test", "1: never-print-this", 1),
 		"action group field of another type": requiredFile + strings.Replace(testActionGroups, "available: yes", "available: never-print-this", 1),
 		"unknown action group field":         requiredFile + strings.Replace(testActionGroups, "available: yes", "health: never-print-this", 1),
+		"web push without its key":           requiredFile + testWebPush,
+		"web push key not PEM":               requiredFile + testWebPush + "  private_key_pem: never-print-this\n",
+		"unknown web push key":               requiredFile + testWebPush + "  vapid_claims: never-print-this\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadTestConfig(t, file)

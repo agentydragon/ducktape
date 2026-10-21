@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
+	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/go-viper/mapstructure/v2"
@@ -50,6 +51,8 @@ type config struct {
 	PolicyResyncSeconds int `mapstructure:"policy_resync_seconds"`
 	// GitHubVisibility is the unauthenticated GitHub lookup behind `github_public_repository` policies.
 	GitHubVisibility gitHubVisibility `mapstructure:"github_visibility"`
+	// WebPush is on when any of its settings is set; off, no push is sent and no subscription is accepted.
+	WebPush push.Settings `mapstructure:"web_push"`
 	// ActionGroups is read from the file alone; see settingsFile.
 	ActionGroups *catalog.Catalog `mapstructure:"-"`
 }
@@ -129,6 +132,11 @@ func (c *config) validate() error {
 	}
 	if c.GitHubVisibility.CacheTTLSeconds < 0 {
 		return errors.New("github_visibility.cache_ttl_seconds must not be negative")
+	}
+	if c.WebPush.Configured() {
+		if err := c.WebPush.Validate(); err != nil {
+			return err
+		}
 	}
 	if c.operatorsEnabled() {
 		return c.OperatorOIDC.Validate()

@@ -90,6 +90,12 @@ type running struct {
 // the API server kubeConfig reaches.
 func start(t *testing.T, kubeConfig *rest.Config, groups *catalog.Catalog) running {
 	t.Helper()
+	return startConfigured(t, kubeConfig, groups, func(*config, *deps) {})
+}
+
+// startConfigured is start with the configuration and deps configure changes.
+func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Catalog, configure func(*config, *deps)) running {
+	t.Helper()
 	c := defaultConfig()
 	c.ActionGroups = groups
 	c.DatabaseURL = integrationDatabase.Clone(t)
@@ -99,6 +105,7 @@ func start(t *testing.T, kubeConfig *rest.Config, groups *catalog.Catalog) runni
 	c.PolicyNamespace = policyNamespace
 	c.PolicyResyncSeconds = int(reader.MinWatchPeriod / time.Second)
 	cluster := deps{Reviews: kube.TokenReviews(), Kube: kubeConfig}
+	configure(&c, &cluster)
 	db, err := sql.Open("postgres", c.DatabaseURL)
 	if err != nil {
 		t.Fatal(err)
