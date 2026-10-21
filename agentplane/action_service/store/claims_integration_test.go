@@ -2,14 +2,12 @@ package store
 
 import (
 	"errors"
-	"fmt"
 	"reflect"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 )
 
 const (
@@ -148,80 +146,6 @@ func TestClaimLeavesWhatTheDispatchFilterRefusesToBeClaimedElsewhere(t *testing.
 		t.Error("a refused claim changed the request")
 	}
 	f.claim(t, allowed.ID)
-}
-
-func TestAnExternalGrantIsRecheckedAtClaim(t *testing.T) {
-	grant := ExternalGrant{
-		Caller: caller.Account, Issuer: "https://issuer.test.example", ClientID: "test-client",
-		ConnectionID: uuid.New(), GrantID: uuid.New(), Revision: 1,
-	}
-	granted := func(t *testing.T) (fixture, ActionRequest) {
-		f := newFixture(t)
-		f.grants.set(grant, true)
-		request := f.submitInput(t, caller, input("granted"), Admission{RequestID: uuid.New(), ExternalGrant: &grant})
-		return f, f.decide(t, request, VerdictAllow)
-	}
-
-	for _, available := range []bool{true, false} {
-		t.Run(fmt.Sprintf("revoked, action dispatchable here: %v", available), func(t *testing.T) {
-			f, allowed := granted(t)
-			f.grants.set(grant, false)
-			asked := false
-
-			claim, err := f.ClaimExecution(t.Context(), allowed.ID, testExecutor, leaseWindow, func(ActionIdentity) bool {
-				asked = true
-				return available
-			})
-			if err != nil || claim != nil || asked {
-				t.Fatalf("claim %+v, %v, filter asked %v", claim, err, asked)
-			}
-			failed := f.get(t, allowed.ID)
-			execution := failed.Execution
-			if failed.State != StateFailed || !reflect.DeepEqual(failed.Decision, allowed.Decision) || *failed.ExternalGrant != grant ||
-				execution.State != ExecutionFailed || execution.StartedAt != nil || execution.CompletedAt == nil ||
-				!execution.CompletedAt.Equal(failed.UpdatedAt) {
-				t.Errorf("request %+v, execution %+v", failed, execution)
-			}
-			sameJSON(t, execution.Error, loadGolden(t).GrantNotAuthorizedError)
-			if got := eventStates(f.events(t, allowed.ID)); !slices.Equal(got, []ActionState{StateDecisionPending, StateAllowed, StateFailed}) {
-				t.Errorf("events %v", got)
-			}
-			if again, err := f.ClaimExecution(t.Context(), allowed.ID, testExecutor, leaseWindow, anywhere); err != nil || again != nil {
-				t.Errorf("claim after the failure = %+v, %v", again, err)
-			}
-			if len(f.pendingDispatches(t)) != 0 {
-				t.Error("a failed request still awaits dispatch")
-			}
-		})
-	}
-
-	t.Run("authorized, with the request locked for the check", func(t *testing.T) {
-		f, allowed := granted(t)
-		f.grants.during = func() {
-			_, err := f.db.ExecContext(t.Context(), `SELECT 1 FROM action_request WHERE id = $1 FOR UPDATE NOWAIT`, allowed.ID)
-			var failure *pq.Error
-			if !errors.As(err, &failure) || failure.Code != "55P03" {
-				t.Errorf("the request was not locked while the grant was checked: %v", err)
-			}
-		}
-		f.claim(t, allowed.ID)
-		if len(f.grants.calls) != 2 {
-			t.Errorf("the grant was checked %d times, want once at submission and once at claim", len(f.grants.calls))
-		}
-	})
-
-	t.Run("claimed work continues after revocation", func(t *testing.T) {
-		f, allowed := granted(t)
-		claim := f.claim(t, allowed.ID)
-		f.grants.set(grant, false)
-
-		payload := f.markRunning(t, allowed.ID)
-		f.finish(t, allowed.ID, claim.Lease, ExecutionSucceeded)
-		if payload.ExternalGrant == nil || *payload.ExternalGrant != grant || f.get(t, allowed.ID).State != StateSucceeded ||
-			len(f.grants.calls) != 2 {
-			t.Errorf("payload %+v, %d grant checks", payload, len(f.grants.calls))
-		}
-	})
 }
 
 func TestTwoClaimersHaveOneWinner(t *testing.T) {

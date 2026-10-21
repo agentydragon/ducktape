@@ -140,22 +140,6 @@ func TestExecutionWritesWakeFollowersAndNeverDispatchers(t *testing.T) {
 	check("allowing another", true, true, func() { lapsed = f.allowed(t, caller, "lapsed") })
 	check("claiming for a lapsed lease", true, false, func() { f.claimFor(t, lapsed.ID, -time.Second) })
 	check("sweeping a lapsed lease", true, false, func() { f.expire(t) })
-
-	grant := ExternalGrant{
-		Caller: caller.Account, Issuer: "https://issuer.test.example", ClientID: "test-client",
-		ConnectionID: uuid.New(), GrantID: uuid.New(), Revision: 1,
-	}
-	var granted ActionRequest
-	check("allowing a granted request", true, true, func() {
-		f.grants.set(grant, true)
-		granted = f.decide(t, f.submitInput(t, caller, input("granted"), Admission{RequestID: uuid.New(), ExternalGrant: &grant}), VerdictAllow)
-	})
-	f.grants.set(grant, false)
-	check("a claim whose grant was revoked", true, false, func() {
-		if claim, err := f.ClaimExecution(t.Context(), granted.ID, testExecutor, leaseWindow, anywhere); claim != nil || err != nil {
-			t.Errorf("claim %+v, %v", claim, err)
-		}
-	})
 }
 
 func TestAnUpdateNamesItsRequestAndADispatchNamesNothing(t *testing.T) {

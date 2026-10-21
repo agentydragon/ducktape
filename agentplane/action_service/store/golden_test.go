@@ -47,13 +47,11 @@ func TestTerminalStatesGiveTheirRequestsThePythonState(t *testing.T) {
 }
 
 func TestEndedExecutionsHoldTheErrorsPythonWrites(t *testing.T) {
-	vectors := loadGolden(t)
-	for _, vector := range vectors.UnknownOutcomes {
+	for _, vector := range loadGolden(t).UnknownOutcomes {
 		t.Run(vector.Reason, func(t *testing.T) {
 			sameJSON(t, []byte(unknownOutcomeError(UnknownOutcomeReason(vector.Reason))), vector.Error)
 		})
 	}
-	sameJSON(t, []byte(grantNotAuthorizedError), vectors.GrantNotAuthorizedError)
 }
 
 func toStrings[T ~string](values []T) []string {
@@ -135,32 +133,6 @@ func TestVotesAreValidatedAsPythonValidatesOutcomes(t *testing.T) {
 			}
 			if want := vector.Valid && vector.Decisive; want != (err == nil) {
 				t.Errorf("a vote that decides = %v, Validate = %v", want, err)
-			}
-		})
-	}
-}
-
-func TestExternalGrantsAreReadAndWrittenAsPythonDoes(t *testing.T) {
-	for _, vector := range loadGolden(t).ExternalGrants {
-		t.Run(vector.Name, func(t *testing.T) {
-			var sent, stored ExternalGrant
-			err := json.Unmarshal(vector.Input, &sent)
-			if !vector.Valid {
-				if err == nil {
-					t.Errorf("accepted %s", vector.Input)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			written, err := json.Marshal(sent)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sameJSON(t, written, vector.Stored)
-			if err := json.Unmarshal(vector.Stored, &stored); err != nil || stored != sent {
-				t.Errorf("the stored form reads back as %+v, %v; the input was %+v", stored, err, sent)
 			}
 		})
 	}

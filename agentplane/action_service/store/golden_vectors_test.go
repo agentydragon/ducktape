@@ -49,7 +49,6 @@ type golden struct {
 		// Decisive is whether the outcome decides; `no_opinion` defers to a human.
 		Decisive bool `json:"decisive"`
 	} `json:"provider_outcomes"`
-	ExternalGrants []storedVector `json:"external_grants"`
 	PolicyEvidence []storedVector `json:"policy_evidence"`
 	Actors         []struct {
 		storedVector
@@ -78,7 +77,6 @@ type golden struct {
 		Reason string          `json:"reason"`
 		Error  json.RawMessage `json:"error"`
 	} `json:"unknown_outcomes"`
-	GrantNotAuthorizedError json.RawMessage `json:"grant_not_authorized_error"`
 }
 
 // requestInput is the submission a vector holds.

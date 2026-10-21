@@ -23,7 +23,7 @@ type querier interface {
 type rowScanner interface{ Scan(...any) error }
 
 const requestColumns = `id, idempotency_key, action, arguments, title, description, caller_namespace, caller_name,
-	external_grant, state, version, created_at, updated_at, history_at`
+	state, version, created_at, updated_at, history_at`
 
 // requestRow is a request with the position in history its first non-pending Event gave it.
 type requestRow struct {
@@ -58,22 +58,16 @@ func utc(t *time.Time) *time.Time {
 
 func scanRequest(row rowScanner) (requestRow, error) {
 	var r requestRow
-	var action, arguments, grant []byte
+	var action, arguments []byte
 	var state string
 	if err := row.Scan(&r.ID, &r.IdempotencyKey, &action, &arguments, &r.Title, &r.Description, &r.Caller.Namespace,
-		&r.Caller.Name, &grant, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt); err != nil {
+		&r.Caller.Name, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt); err != nil {
 		return requestRow{}, err
 	}
 	if err := json.Unmarshal(action, &r.Action); err != nil {
 		return requestRow{}, fmt.Errorf("request %s action: %w", r.ID, err)
 	}
 	r.Arguments = arguments
-	if document := jsonValue(grant); document != nil {
-		r.ExternalGrant = new(ExternalGrant)
-		if err := json.Unmarshal(document, r.ExternalGrant); err != nil {
-			return requestRow{}, fmt.Errorf("request %s external_grant: %w", r.ID, err)
-		}
-	}
 	r.State = ActionState(state)
 	if !r.State.valid() {
 		return requestRow{}, fmt.Errorf("request %s has unknown state %q", r.ID, state)
@@ -250,8 +244,6 @@ func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principa
 
 // Submit stores an admitted request for the caller. The caller's idempotency key is spent whatever the envelope
 // says: a second submission under it is a ConflictIdempotencyKeyUsed, and the request is read back by key.
-//
-// A presented grant must still authorize this exact caller, in this transaction.
 func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input ActionRequestInput, admission Admission) (ActionRequest, error) {
 	if err := input.Validate(); err != nil {
 		return ActionRequest{}, err
@@ -264,44 +256,21 @@ func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input Action
 			return ActionRequest{}, err
 		}
 	}
-	var grantDocument any
-	if grant := admission.ExternalGrant; grant != nil {
-		if err := grant.validate(); err != nil {
-			return ActionRequest{}, err
-		}
-		encoded, err := json.Marshal(grant)
-		if err != nil {
-			return ActionRequest{}, err
-		}
-		grantDocument = string(encoded)
-	}
 	action, err := json.Marshal(input.Action)
 	if err != nil {
 		return ActionRequest{}, err
 	}
 	var view ActionRequest
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
-		if grant := admission.ExternalGrant; grant != nil {
-			authorized := caller == grant.Principal()
-			if authorized {
-				var err error
-				if authorized, err = s.grants.AuthorizeAction(ctx, tx, *grant); err != nil {
-					return err
-				}
-			}
-			if !authorized {
-				return ErrExternalGrantNotAuthorized
-			}
-		}
 		at := now()
 		row, err := scanRequest(tx.QueryRowContext(ctx, `
 			INSERT INTO action_request (id, idempotency_key, action, arguments, title, description, caller_namespace,
-				caller_name, external_grant, state, version, created_at, updated_at)
-			VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9::jsonb, 'decision_pending', 1, $10, $10)
+				caller_name, state, version, created_at, updated_at)
+			VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, 'decision_pending', 1, $9, $9)
 			ON CONFLICT (caller_namespace, caller_name, idempotency_key) DO NOTHING
 			RETURNING `+requestColumns,
 			admission.RequestID, input.IdempotencyKey, string(action), string(input.Arguments), input.Title,
-			input.Description, caller.Account.Namespace, caller.Account.Name, grantDocument, at))
+			input.Description, caller.Account.Namespace, caller.Account.Name, at))
 		if errors.Is(err, sql.ErrNoRows) {
 			return &ConflictError{
 				Reason:  ConflictIdempotencyKeyUsed,

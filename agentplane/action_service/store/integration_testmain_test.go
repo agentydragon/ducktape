@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -86,39 +85,11 @@ func createTemplate(ctx context.Context) error {
 	}
 }
 
-// fakeGrants is a GrantAuthority that authorizes the grants the test allows.
-type fakeGrants struct {
-	mu         sync.Mutex
-	authorized map[uuid.UUID]bool
-	err        error
-	calls      []ExternalGrant
-	// during runs while a check is in progress, inside the store's transaction.
-	during func()
-}
-
-func (g *fakeGrants) AuthorizeAction(_ context.Context, _ *sql.Tx, grant ExternalGrant) (bool, error) {
-	g.mu.Lock()
-	g.calls = append(g.calls, grant)
-	authorized, err, during := g.authorized[grant.GrantID], g.err, g.during
-	g.mu.Unlock()
-	if during != nil {
-		during()
-	}
-	return authorized, err
-}
-
-func (g *fakeGrants) set(grant ExternalGrant, authorized bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.authorized[grant.GrantID] = authorized
-}
-
 // fixture is a Store over a database of its own.
 type fixture struct {
 	*Store
-	db     *sql.DB
-	url    string
-	grants *fakeGrants
+	db  *sql.DB
+	url string
 }
 
 func newFixture(t *testing.T) fixture {
@@ -138,8 +109,7 @@ func newFixture(t *testing.T) fixture {
 			t.Error(err)
 		}
 	})
-	grants := &fakeGrants{authorized: map[uuid.UUID]bool{}}
-	return fixture{Store: New(db, grants), db: db, url: dsn, grants: grants}
+	return fixture{Store: New(db), db: db, url: dsn}
 }
 
 var (

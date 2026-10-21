@@ -72,11 +72,9 @@ func scanIDs(rows *sql.Rows) ([]uuid.UUID, error) {
 
 // ClaimExecution reserves the one dispatch of an allowed request for the executor and grants its first lease
 // window. The claim is nil, and nothing is claimed, when the Execution no longer awaits dispatch (another claimer
-// won, or the request was cancelled), when a Connection's grant no longer authorizes the request (the request then
-// fails, keeping its Decision), or when canDispatch refuses its Action.
+// won, or the request was cancelled) or when canDispatch refuses its Action.
 //
-// A grant is rechecked before canDispatch is asked, in this transaction. canDispatch runs inside it too: it must
-// not block or use the database.
+// canDispatch runs in the claiming transaction: it must not block or use the database.
 func (s *Store) ClaimExecution(ctx context.Context, id uuid.UUID, executorID string, leaseDuration time.Duration, canDispatch func(ActionIdentity) bool) (*ExecutionClaim, error) {
 	if executorID == "" || canDispatch == nil {
 		return nil, invalid("a claim needs an executor and a dispatch filter")
@@ -97,24 +95,10 @@ func (s *Store) ClaimExecution(ctx context.Context, id uuid.UUID, executorID str
 		if row.State != StateAllowed {
 			return &ConflictError{Reason: ConflictNotDispatchable, Message: fmt.Sprintf("cannot dispatch request in %s", row.State)}
 		}
-		at := now()
-		if grant := row.ExternalGrant; grant != nil {
-			authorized, err := s.grants.AuthorizeAction(ctx, tx, *grant)
-			if err != nil {
-				return err
-			}
-			if !authorized {
-				if _, err := tx.ExecContext(ctx,
-					`UPDATE action_execution SET state = $2, error = $3::jsonb, completed_at = $4 WHERE request_id = $1`,
-					id, ExecutionFailed, grantNotAuthorizedError, at); err != nil {
-					return err
-				}
-				return advance(ctx, tx, &row, StateFailed, at, nil)
-			}
-		}
 		if !canDispatch(row.Action) {
 			return nil
 		}
+		at := now()
 		started := &ExecutionClaim{
 			RequestID: id,
 			Lease:     Lease{ExecutorID: executorID, Token: uuid.New()},
@@ -191,9 +175,7 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 		if err := advance(ctx, tx, &row, StateRunning, at, nil); err != nil {
 			return err
 		}
-		payload = ExecutionRequest{
-			RequestID: row.ID, Action: row.Action, Arguments: row.Arguments, Caller: row.Caller, ExternalGrant: row.ExternalGrant,
-		}
+		payload = ExecutionRequest{RequestID: row.ID, Action: row.Action, Arguments: row.Arguments, Caller: row.Caller}
 		return nil
 	})
 	return payload, err

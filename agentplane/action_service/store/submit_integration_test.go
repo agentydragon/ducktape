@@ -29,7 +29,7 @@ func TestSubmitStoresAPendingRequestWithItsFirstEvent(t *testing.T) {
 
 	if request.ID != id || request.IdempotencyKey != "pending" || request.Action != body.Action ||
 		request.Title != body.Title || *request.Description != description || request.Caller != caller.Account ||
-		request.ExternalGrant != nil || request.State != StateDecisionPending || request.Version != 1 ||
+		request.State != StateDecisionPending || request.Version != 1 ||
 		!request.CreatedAt.Equal(request.UpdatedAt) || request.Decision != nil || request.Execution != nil {
 		t.Errorf("stored %+v", request)
 	}
@@ -130,55 +130,6 @@ func TestADecisiveVoteCommitsItsDecisionWithTheInsert(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestAnExternalGrantMustStillAuthorizeTheCaller(t *testing.T) {
-	grant := ExternalGrant{
-		Caller: caller.Account, Issuer: "https://issuer.test.example", ClientID: "test-client",
-		ConnectionID: uuid.New(), GrantID: uuid.New(), Revision: 1,
-	}
-	submit := func(f fixture, owner CallerPrincipal, grant ExternalGrant) error {
-		_, err := f.Submit(t.Context(), owner, input("granted"), Admission{RequestID: uuid.New(), ExternalGrant: &grant})
-		return err
-	}
-
-	t.Run("authorized", func(t *testing.T) {
-		f := newFixture(t)
-		f.grants.set(grant, true)
-		request := f.submitInput(t, caller, input("granted"), Admission{RequestID: uuid.New(), ExternalGrant: &grant})
-		if request.ExternalGrant == nil || *request.ExternalGrant != grant || len(f.grants.calls) != 1 {
-			t.Errorf("grant %+v after %d checks", request.ExternalGrant, len(f.grants.calls))
-		}
-	})
-	t.Run("refused by the authority", func(t *testing.T) {
-		f := newFixture(t)
-		if err := submit(f, caller, grant); !errors.Is(err, ErrExternalGrantNotAuthorized) {
-			t.Errorf("got %v", err)
-		}
-		if f.count(t, `SELECT count(*) FROM action_request`) != 0 {
-			t.Error("a request without authority was stored")
-		}
-	})
-	t.Run("for another caller", func(t *testing.T) {
-		f := newFixture(t)
-		f.grants.set(grant, true)
-		if err := submit(f, otherCaller, grant); !errors.Is(err, ErrExternalGrantNotAuthorized) {
-			t.Errorf("got %v", err)
-		}
-		if len(f.grants.calls) != 0 {
-			t.Error("the authority was asked about a grant of another caller")
-		}
-	})
-	t.Run("authority failure", func(t *testing.T) {
-		f := newFixture(t)
-		f.grants.err = errors.New("test authority outage")
-		if err := submit(f, caller, grant); !errors.Is(err, f.grants.err) {
-			t.Errorf("got %v", err)
-		}
-		if f.count(t, `SELECT count(*) FROM action_request`) != 0 {
-			t.Error("a request was stored without an answer from the authority")
-		}
-	})
 }
 
 func TestAnInvalidSubmissionStoresNothing(t *testing.T) {

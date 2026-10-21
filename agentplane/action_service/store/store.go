@@ -21,20 +21,12 @@ const (
 	DispatchChannel = "agentplane_action_dispatches"
 )
 
-// GrantAuthority decides whether a Connection's grant still authorizes an Action.
-type GrantAuthority interface {
-	// AuthorizeAction runs in the store's transaction and must take the Connection's row locks there, so a
-	// revocation is atomic with the write that relied on the grant.
-	AuthorizeAction(ctx context.Context, tx *sql.Tx, grant ExternalGrant) (bool, error)
-}
-
 // Store reads and writes the Action Service's database.
 type Store struct {
-	db     *sql.DB
-	grants GrantAuthority
+	db *sql.DB
 }
 
-func New(db *sql.DB, grants GrantAuthority) *Store { return &Store{db: db, grants: grants} }
+func New(db *sql.DB) *Store { return &Store{db: db} }
 
 // now is the time a write records: PostgreSQL keeps microseconds, so a value read back equals the one written.
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
@@ -72,8 +64,6 @@ var (
 	ErrNotFound = errors.New("action request not found")
 	// ErrInvalid is an argument that breaks a documented bound or pattern.
 	ErrInvalid = errors.New("invalid argument")
-	// ErrExternalGrantNotAuthorized is a submission whose Connection grant does not authorize its caller.
-	ErrExternalGrantNotAuthorized = errors.New("external grant is not authorized")
 )
 
 // ConflictReason is why a request conflicts with the state it meets.

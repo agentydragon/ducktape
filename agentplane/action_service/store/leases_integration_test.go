@@ -40,7 +40,7 @@ func TestMarkRunningCrossesTheNoReplayBoundary(t *testing.T) {
 	f.claim(t, allowed.ID)
 
 	payload := f.markRunning(t, allowed.ID)
-	if payload.RequestID != allowed.ID || payload.Action != body.Action || payload.Caller != caller.Account || payload.ExternalGrant != nil {
+	if payload.RequestID != allowed.ID || payload.Action != body.Action || payload.Caller != caller.Account {
 		t.Errorf("payload %+v", payload)
 	}
 	sameJSON(t, payload.Arguments, body.Arguments)

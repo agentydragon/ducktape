@@ -30,7 +30,7 @@ func TestAPendingCancellationIsDurableAndIdempotent(t *testing.T) {
 	}
 
 	// A Store over the same database is a restarted service.
-	restarted := New(f.db, f.grants)
+	restarted := New(f.db)
 	duplicate, err := restarted.Cancel(t.Context(), pending.ID, caller)
 	if err != nil || duplicate.Outcome != OutcomeAlreadyCancelled || !reflect.DeepEqual(duplicate.Request, result.Request) {
 		t.Errorf("duplicate = %+v, %v", duplicate, err)

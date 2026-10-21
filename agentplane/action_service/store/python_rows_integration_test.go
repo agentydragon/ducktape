@@ -14,14 +14,14 @@ import (
 // filled.
 
 // insertRequest writes a pending request and the Event Python's insert listener records for it.
-func (f fixture) insertRequest(t *testing.T, id uuid.UUID, owner ServiceAccount, key string, stored storedRequest, grant json.RawMessage) {
+func (f fixture) insertRequest(t *testing.T, id uuid.UUID, owner ServiceAccount, key string, stored storedRequest) {
 	t.Helper()
 	f.exec(t, `
 		INSERT INTO action_request (id, idempotency_key, action, arguments, title, description, caller_namespace, caller_name,
-			external_grant, state, version, created_at, updated_at)
-		VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9::jsonb, 'decision_pending', 1, now(), now())`,
+			state, version, created_at, updated_at)
+		VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, 'decision_pending', 1, now(), now())`,
 		id, key, string(stored.Action), string(stored.Arguments), stored.Title, stored.Description, owner.Namespace,
-		owner.Name, jsonParam(grant))
+		owner.Name)
 	f.exec(t, `INSERT INTO action_event (request_id, sequence, state, at) VALUES ($1, 1, 'decision_pending', now())`, id)
 }
 
@@ -34,7 +34,7 @@ var minimalRequest = storedRequest{
 func (f fixture) insertMinimalRequest(t *testing.T, owner ServiceAccount, key string) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
-	f.insertRequest(t, id, owner, key, minimalRequest, nil)
+	f.insertRequest(t, id, owner, key, minimalRequest)
 	return id
 }
 
@@ -57,7 +57,7 @@ func TestRequestsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 			f := newFixture(t)
 			sent := requestInput(t, vector.Input)
 			id := uuid.New()
-			f.insertRequest(t, id, otherCaller.Account, sent.IdempotencyKey, vector.Stored, nil)
+			f.insertRequest(t, id, otherCaller.Account, sent.IdempotencyKey, vector.Stored)
 
 			read := f.get(t, id)
 			stored, err := json.Marshal(read.Action)
@@ -82,27 +82,35 @@ func TestRequestsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 	}
 }
 
-func TestExternalGrantsPythonStoredAreReadAndWrittenBack(t *testing.T) {
-	for _, vector := range loadGolden(t).ExternalGrants {
-		if !vector.Valid {
-			continue
-		}
-		t.Run(vector.Name, func(t *testing.T) {
-			f := newFixture(t)
-			var grant ExternalGrant
-			if err := json.Unmarshal(vector.Input, &grant); err != nil {
-				t.Fatal(err)
-			}
-			id := uuid.New()
-			f.insertRequest(t, id, grant.Caller, "python-granted", minimalRequest, vector.Stored)
-			if read := f.get(t, id); read.ExternalGrant == nil || *read.ExternalGrant != grant {
-				t.Errorf("read grant %+v, want %+v", read.ExternalGrant, grant)
-			}
+// legacyExternalGrant is the `action_request.external_grant` document the Python service writes for a request a
+// Connection's grant submitted. The store neither reads nor writes the column.
+const legacyExternalGrant = `{
+	"caller": {"namespace": "test-namespace", "name": "test-caller"}, "issuer": "https://issuer.test.example",
+	"client_id": "test-client", "connection_id": "6c0a2b3f-4d5e-4f60-9b7c-8d9e0f1a2b3c",
+	"grant_id": "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f", "revision": 1, "binding_version": 0}`
 
-			f.grants.set(grant, true)
-			written := f.submitInput(t, grant.Principal(), input("go-granted"), Admission{RequestID: uuid.New(), ExternalGrant: &grant})
-			sameJSON(t, f.document(t, `SELECT external_grant FROM action_request WHERE id = $1`, written.ID), vector.Stored)
-		})
+func TestARowWithTheLegacyExternalGrantColumnSetStillReadsAndKeepsIt(t *testing.T) {
+	f := newFixture(t)
+	id := f.insertMinimalRequest(t, caller.Account, "python-legacy-column")
+	f.exec(t, `UPDATE action_request SET external_grant = $2::jsonb WHERE id = $1`, id, legacyExternalGrant)
+
+	read := f.get(t, id)
+	if read.ID != id || read.IdempotencyKey != "python-legacy-column" || read.Caller != caller.Account ||
+		read.Action != (ActionIdentity{Group: "test-group", Name: "test-action"}) || read.Title != minimalRequest.Title ||
+		read.State != StateDecisionPending || read.Version != 1 || read.Decision != nil || read.Execution != nil {
+		t.Errorf("read %+v", read)
+	}
+
+	// Python reads the column until the cutover, so a rollback must find the document as it left it.
+	allowed := f.decide(t, read, VerdictAllow)
+	f.finish(t, id, f.claim(t, id).Lease, ExecutionSucceeded)
+	if got := f.get(t, id); got.State != StateSucceeded || got.Version != allowed.Version+2 {
+		t.Errorf("request %+v after the store took it through its Execution", got)
+	}
+	sameJSON(t, f.document(t, `SELECT external_grant FROM action_request WHERE id = $1`, id), []byte(legacyExternalGrant))
+
+	if submitted := f.submit(t, caller, "go-submitted"); f.count(t, `SELECT count(*) FROM action_request WHERE id = $1 AND external_grant IS NULL`, submitted.ID) != 1 {
+		t.Error("a request the store submitted has the column set")
 	}
 }
 
@@ -187,7 +195,7 @@ func TestAbsentValuesAreWrittenAsNull(t *testing.T) {
 		query string
 		rows  int
 	}{
-		{"request", `SELECT count(*) FROM action_request WHERE description IS NULL AND external_grant IS NULL`, 1},
+		{"request", `SELECT count(*) FROM action_request WHERE description IS NULL`, 1},
 		{"events", `SELECT count(*) FROM action_event WHERE actor IS NULL`, 2},
 		{"decision", `SELECT count(*) FROM action_decision
 			WHERE decision_note IS NULL AND reason_code IS NULL AND reason_description IS NULL AND policy_evidence IS NULL`, 1},
@@ -204,13 +212,12 @@ func TestAbsentValuesAreWrittenAsNull(t *testing.T) {
 func TestAJSONNullIsAnAbsentValue(t *testing.T) {
 	f := newFixture(t)
 	allowed := f.allowed(t, caller, "json-null")
-	f.exec(t, `UPDATE action_request SET external_grant = 'null'::jsonb WHERE id = $1`, allowed.ID)
 	f.exec(t, `UPDATE action_event SET actor = 'null'::jsonb WHERE request_id = $1`, allowed.ID)
 	f.exec(t, `UPDATE action_decision SET policy_evidence = 'null'::jsonb WHERE request_id = $1`, allowed.ID)
 	f.exec(t, `UPDATE action_execution SET state = 'succeeded', result = 'null'::jsonb, error = 'null'::jsonb WHERE request_id = $1`, allowed.ID)
 
 	read := f.get(t, allowed.ID)
-	if read.ExternalGrant != nil || read.Decision.PolicyEvidence != nil || read.Execution.Result != nil || read.Execution.Error != nil {
+	if read.Decision.PolicyEvidence != nil || read.Execution.Result != nil || read.Execution.Error != nil {
 		t.Errorf("read %+v, %+v, %+v", read, read.Decision, read.Execution)
 	}
 	if actors := f.events(t, allowed.ID); actors[0].Actor != nil || actors[1].Actor != nil {

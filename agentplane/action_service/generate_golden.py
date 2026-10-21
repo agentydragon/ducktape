@@ -1,10 +1,10 @@
 """Golden vectors that pin the Go store (`agentplane/action_service/store`) to the stored forms of this service.
 
-Stored rows hold values this service computed or serialized: an ActionRequest's `action`, `arguments` and
-`external_grant`, an event's `actor`, a Decision's `policy_evidence`, the `error` of an Execution the store ends,
-the ActionState an Execution's terminal state gives its request and the cursor a history page ends at. Each
-vector is produced by the Python code that writes the column, and the Go store must reproduce it and read it back.
-An input the Python models refuse is a vector too, because the Go store validates the same bounds.
+Stored rows hold values this service computed or serialized: an ActionRequest's `action` and `arguments`, an
+event's `actor`, a Decision's `policy_evidence`, the `error` of an Execution the store ends, the ActionState an
+Execution's terminal state gives its request and the cursor a history page ends at. Each vector is produced by the
+Python code that writes the column, and the Go store must reproduce it and read it back. An input the Python models
+refuse is a vector too, because the Go store validates the same bounds.
 
 Regenerate with `bb run //agentplane/action_service:generate_golden_bin -- <path to golden.json>`.
 """
@@ -24,7 +24,6 @@ from agentplane.action_service.models import (
     ActionState,
     DecisionInput,
     ExecutionState,
-    ExternalGrantProvenance,
     PolicyEvidence,
     PolicyKind,
     PolicySource,
@@ -34,7 +33,6 @@ from agentplane.action_service.models import (
     Verdict,
 )
 from agentplane.action_service.store import (
-    GRANT_NOT_AUTHORIZED_ERROR,
     TERMINAL_ACTION_STATE,
     actor_document,
     actor_from_document,
@@ -47,8 +45,8 @@ from util.sqlalchemy_types import PydanticColumn
 Json = dict[str, object]
 
 REQUEST = "5b9f1a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b"
-CONNECTION = "6c0a2b3f-4d5e-4f60-9b7c-8d9e0f1a2b3c"
-GRANT = "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f"
+SECOND_REQUEST = "6c0a2b3f-4d5e-4f60-9b7c-8d9e0f1a2b3c"
+THIRD_REQUEST = "8d3c1f2a-5b6e-4c7d-9e0f-1a2b3c4d5e6f"
 
 
 def pydantic_column(column_type: object) -> PydanticColumn[object]:
@@ -57,7 +55,6 @@ def pydantic_column(column_type: object) -> PydanticColumn[object]:
 
 
 ACTION = pydantic_column(ActionRequestRow.__table__.c.action.type)
-EXTERNAL_GRANT = pydantic_column(ActionRequestRow.__table__.c.external_grant.type)
 POLICY_EVIDENCE = pydantic_column(DecisionRow.__table__.c.policy_evidence.type)
 
 
@@ -158,40 +155,6 @@ def decision_inputs() -> dict[str, Json]:
         "idempotency key above 200 characters": decision_input(idempotency_key="k" * 201),
         "note above 2000 characters": decision_input(decision_note="n" * 2001),
         "multibyte note above 2000 characters": decision_input(decision_note="🚀" * 2001),
-    }
-
-
-def external_grant(**fields: object) -> Json:
-    return {
-        "caller": account(),
-        "issuer": "https://issuer.test.example",
-        "client_id": "test-client",
-        "connection_id": CONNECTION,
-        "grant_id": GRANT,
-        "revision": 1,
-        "binding_version": 0,
-    } | fields
-
-
-def external_grants() -> dict[str, Json]:
-    return {
-        "every field": external_grant(revision=7, binding_version=3),
-        "binding version omitted": {k: v for k, v in external_grant().items() if k != "binding_version"},
-        "empty issuer and client": external_grant(issuer="", client_id=""),
-        "uppercase UUIDs": external_grant(connection_id=CONNECTION.upper(), grant_id=GRANT.upper()),
-        "UUIDs without hyphens": external_grant(connection_id=CONNECTION.replace("-", "")),
-        "unicode names": external_grant(caller=account("名前空間", "アカウント-é")),
-        "revision 0": external_grant(revision=0),
-        "negative binding version": external_grant(binding_version=-1),
-        "extra field": external_grant(extra=1),
-        "missing caller": {k: v for k, v in external_grant().items() if k != "caller"},
-        "missing grant id": {k: v for k, v in external_grant().items() if k != "grant_id"},
-        "missing revision": {k: v for k, v in external_grant().items() if k != "revision"},
-        "empty caller namespace": external_grant(caller=account(namespace="")),
-        "empty caller name": external_grant(caller=account(name="")),
-        "extra caller field": external_grant(caller=account() | {"extra": 1}),
-        "connection id is not a UUID": external_grant(connection_id="not-a-uuid"),
-        "null issuer": external_grant(issuer=None),
     }
 
 
@@ -301,8 +264,8 @@ def cursor(document: object) -> str:
 def history_cursors() -> Json:
     positions = {
         "microseconds": ("2026-10-19T12:34:56.123456+00:00", REQUEST),
-        "whole seconds": ("2026-10-19T12:34:56+00:00", CONNECTION),
-        "one microsecond": ("2026-01-01T00:00:00.000001+00:00", GRANT),
+        "whole seconds": ("2026-10-19T12:34:56+00:00", SECOND_REQUEST),
+        "one microsecond": ("2026-01-01T00:00:00.000001+00:00", THIRD_REQUEST),
         "midnight": ("2026-12-31T00:00:00+00:00", REQUEST),
         "far future": ("9999-12-31T23:59:59.999999+00:00", REQUEST),
     }
@@ -375,17 +338,6 @@ def build() -> Json:
                 },
             }
         )
-    grant_vectors = [
-        {"name": name, "input": case, "valid": False}
-        if not accepted(ExternalGrantProvenance, case)
-        else {
-            "name": name,
-            "input": case,
-            "valid": True,
-            "stored": EXTERNAL_GRANT.process_bind_param(ExternalGrantProvenance.model_validate(case), None),
-        }
-        for name, case in external_grants().items()
-    ]
     evidence_vectors = [
         {"name": name, "input": case, "valid": False}
         if not accepted(PolicyEvidence, case)
@@ -444,7 +396,6 @@ def build() -> Json:
             for name, case in decision_inputs().items()
         ],
         "provider_outcomes": outcome_vectors,
-        "external_grants": grant_vectors,
         "policy_evidence": evidence_vectors,
         "actors": actor_vectors,
         "history_cursors": history_cursors(),
@@ -457,7 +408,6 @@ def build() -> Json:
             {"reason": reason.value, "error": unknown_outcome_error(reason)}
             for reason in (UnknownOutcomeReason.EXECUTOR_LOST, UnknownOutcomeReason.LEASE_EXPIRED)
         ],
-        "grant_not_authorized_error": GRANT_NOT_AUTHORIZED_ERROR,
     }
 
 

@@ -24,21 +24,6 @@ type ActionIdentity struct {
 	Name  string `json:"name"`
 }
 
-// ExternalGrant is the authenticated evidence that a Connection's grant submitted a request. It is stored as
-// `action_request.external_grant` and never changes.
-type ExternalGrant struct {
-	Caller         ServiceAccount `json:"caller"`
-	Issuer         string         `json:"issuer"`
-	ClientID       string         `json:"client_id"`
-	ConnectionID   uuid.UUID      `json:"connection_id"`
-	GrantID        uuid.UUID      `json:"grant_id"`
-	Revision       int64          `json:"revision"`
-	BindingVersion int64          `json:"binding_version"`
-}
-
-// Principal returns the caller the grant acts as.
-func (g ExternalGrant) Principal() CallerPrincipal { return CallerPrincipal{Account: g.Caller} }
-
 // ReadPrincipal is who reads requests: a CallerPrincipal reads its own, an OperatorPrincipal and a
 // ServiceReaderPrincipal read every owner's.
 type ReadPrincipal interface{ isReadPrincipal() }
@@ -49,7 +34,7 @@ type Principal interface {
 	isPrincipal()
 }
 
-// CallerPrincipal is a workload or Connection that proved one ServiceAccount.
+// CallerPrincipal is a workload that proved one ServiceAccount.
 type CallerPrincipal struct {
 	Account ServiceAccount `json:"account"`
 }
@@ -201,8 +186,6 @@ type Admission struct {
 	// Vote commits a Decision with the insert, so the request is never visible as pending. Nil leaves the
 	// Decision to a human.
 	Vote *ProviderVote
-	// ExternalGrant is set when a Connection's grant submitted the request.
-	ExternalGrant *ExternalGrant
 }
 
 // DecisionInput is a human Decision on a pending request.
@@ -224,9 +207,8 @@ type ActionRequest struct {
 	Title       string
 	Description *string
 	// Caller is the ServiceAccount that submitted the request.
-	Caller        ServiceAccount
-	ExternalGrant *ExternalGrant
-	State         ActionState
+	Caller ServiceAccount
+	State  ActionState
 	// Version counts the request's transitions from 1; an Event's sequence is the version it records.
 	Version   int64
 	CreatedAt time.Time
@@ -308,9 +290,8 @@ type ExecutionRequest struct {
 	RequestID uuid.UUID
 	Action    ActionIdentity
 	// Arguments is a JSON object.
-	Arguments     json.RawMessage
-	Caller        ServiceAccount
-	ExternalGrant *ExternalGrant
+	Arguments json.RawMessage
+	Caller    ServiceAccount
 }
 
 // ExecutionOutcome is the terminal outcome an executor delivers.
@@ -340,10 +321,6 @@ var terminalActionStates = map[ExecutionState]ActionState{
 	ExecutionCancelled: StateCancelled,
 	ExecutionUnknown:   StateExecutionUnknown,
 }
-
-// grantNotAuthorizedError is the `action_execution.error` of a request whose Connection grant no longer
-// authorized it at claim time.
-const grantNotAuthorizedError = `{"code": "external_grant_not_authorized"}`
 
 // unknownOutcomeError is the `action_execution.error` of an Execution whose outcome could not be observed.
 func unknownOutcomeError(reason UnknownOutcomeReason) string {
@@ -387,13 +364,6 @@ func validateKey(field, value string) error {
 		return invalid("%s must match %s", field, keyPattern)
 	}
 	return nil
-}
-
-func (g ExternalGrant) validate() error {
-	if g.Revision < 1 || g.BindingVersion < 0 {
-		return invalid("grant revision must be at least 1 and binding version at least 0")
-	}
-	return g.Caller.validate()
 }
 
 func (p OperatorPrincipal) validate() error {
@@ -522,14 +492,6 @@ func (a *ActionIdentity) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	return a.validate()
-}
-
-func (g *ExternalGrant) UnmarshalJSON(data []byte) error {
-	type plain ExternalGrant
-	if err := decodeFields(data, (*plain)(g), "caller", "issuer", "client_id", "connection_id", "grant_id", "revision"); err != nil {
-		return err
-	}
-	return g.validate()
 }
 
 func (e *PolicyEvidence) UnmarshalJSON(data []byte) error {
