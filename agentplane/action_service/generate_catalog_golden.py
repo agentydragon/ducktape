@@ -260,7 +260,7 @@ def build() -> dict[str, object]:
             continue
         catalog = ActionCatalog.model_validate({"groups": case})
         held = catalog.model_dump(mode="json")["groups"]
-        views = [view.model_dump(mode="json") for view in catalog.group_views(with_detail=False)]
+        views: list[JsonValue] = [view.model_dump(mode="json") for view in catalog.group_views(with_detail=False)]
         vectors.append({"name": name, "input": case, "valid": True, "held": held, "views": views})
     return {"action_groups": vectors}
 
