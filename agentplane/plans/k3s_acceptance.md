@@ -70,7 +70,7 @@ layer (−40%) and the harness-free runner image (−35%).
 | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `test_dispatcher_deployed` (queue, replicas, wake)                                                               | kubectl, Pod-bound tokens, two Gateway replicas                                                       | runs on k3s (#11330)                                               |
 | `test_storage_deployed`, Pod case                                                                                | Sandbox-owned PVCs                                                                                    | runs on k3s (#11330)                                               |
-| `test_egress`, `test_instructions`, `test_launch_presets`, `test_suspend_resume` Pod case                        | turns on both harnesses, the egress ring, kubectl                                                     | portable with a model key, or scripted (no key)                    |
+| `test_egress`, `test_instructions`, `test_launch_presets`, `test_suspend_resume` Pod case                        | turns on both harnesses, the egress ring, kubectl                                                     | scripted (no key); the real-model set needs a key                  |
 | `test_mcp`, `test_dcr`                                                                                           | Dex operator login, `mcp-everything`, the Dex-backed `example` OAuth server, a browser for Dex's form | needs Dex and both MCP fixtures in the chart                       |
 | VM cases: `test_vm_sandbox`, `test_vm_workspace_ownership`, `test_suspend_resume` VM, `test_storage_deployed` VM | KubeVirt, KVM                                                                                         | no KVM on RBE (finding 4)                                          |
 | `test_thread_latency`                                                                                            | browser, Electric, frontend; ceilings for the deployed system                                         | no Electric in the fixture; RBE timings are not deployment latency |
@@ -111,17 +111,25 @@ the steps below give k3s what they need.
     there needs a deployed scripted-model endpoint that the test drives, which this plan does not
     schedule.
 
-Some scenarios exist for only one backend. "The model obeys the instruction" is real-model only.
-Exact request contents are scripted only.
+Most scenarios need only the scripted backend (operator, 2026-10-21 05:38). A real model runs only
+where the model's behavior is what is under test:
+
+- `test_instructions`: the model obeys the instructions its session was opened with.
+- The `test_egress` probe: the model works out from the rules endpoint how to present a credential
+  it does not hold.
+- Later, a model uses the `agentplane` CLI unprompted.
+
+Everything else is plumbing, and gets a scripted version only. Each plumbing scenario's real version
+is replaced by its scripted one in the same PR.
 
 ## Test layout
 
-Proposed 2026-10-21; the operator has not chosen yet.
+Decided 2026-10-21 05:38 (operator).
 
 - **Scenarios** stay in `agentplane/acceptance/test_<behavior>.py`, one module per behavior. A
   module holds that behavior's version for each backend it has, and the system-side steps and
-  checks they share: create the Sandbox, suspend it, read the egress decisions. A module may have
-  one version only.
+  checks they share: create the Sandbox, suspend it, read the egress decisions. Most modules have
+  a scripted version only.
 - **One test function per backend.** A function names its backend with a marker, `real_model` or
   `scripted_model`, and each target's plugin deselects what it cannot serve, as the k3s target
   does for `vm_sandboxes`.
@@ -131,10 +139,9 @@ Proposed 2026-10-21; the operator has not chosen yet.
   - A scripted function takes a `scripted` fixture: the `ScriptedModel` for its Sandbox and
     harness. It runs the turn with `Agent.run` and answers each model request with `reply`
     (`Text`, `ShellCall`). Its evidence is the system's record, plus what the harness sent.
-  - Example, the Pod case of `test_suspend_resume`. The shared steps check the volumes, the new
-    incarnation and the dormant sessions. The real version asks the model to recall the seeded
-    code. The scripted version checks that the first request after resume carries the seeded code
-    in its conversation.
+  - Example, `test_instructions`. The real version checks that the model's answer carries the
+    marker the instructions ask for. The scripted version checks that the instructions reach the
+    model's system text, for Claude, or its developer instructions, for Codex.
 - **Bazel targets.** `acceptance_test` makes one target for each (target, backend) pair the
   scenario has:
 
@@ -167,9 +174,11 @@ Ordered by what unblocks what. Speed work runs alongside and blocks only the CI 
 1. **`ACCEPTANCE_SCRIPTED_MODEL`**: the scripted backend on k3s, laid out as in
    [Test layout](#test-layout). It goes first: the operator is fine with either order, and it needs
    no key (2026-10-21 05:23).
-   - Scripted versions of `test_instructions`, the Pod case of `test_suspend_resume` and the
-     `test_egress` cases that need no outside credential run on both harnesses.
-2. **`K3S_MODEL_CREDENTIALS`** (decision), then **`K3S_MODEL_SCENARIOS`**: real models on k3s.
+   - Scripted versions of `test_instructions`, `test_launch_presets`, the Pod case of
+     `test_suspend_resume` and the `test_egress` cases that need no outside credential run on both
+     harnesses.
+2. **`K3S_MODEL_CREDENTIALS`** (decision), then **`K3S_MODEL_SCENARIOS`**: the real-model set on
+   k3s. Until then that set runs against testing or staging.
    - The fixture today takes a Qwen-only key through `--test_env`, which lands on the BuildBuddy
      command line.
    - No BuildBuddy secret for model access exists yet (operator, 2026-10-21 05:22). How one is

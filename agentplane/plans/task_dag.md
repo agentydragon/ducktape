@@ -1977,7 +1977,7 @@ changes.
 ```mermaid
 flowchart LR
     K3S_MODEL_CREDENTIALS[Decision: model key for k3s acceptance]
-    K3S_MODEL_SCENARIOS[Blocked: real-model scenarios on k3s]
+    K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
     ACCEPTANCE_SCRIPTED_MODEL[Proposed: scripted-model scenarios on k3s]
     K3S_FIXTURE_IDENTITY[Proposed: Dex and MCP fixtures in the k3s chart]
     K3S_VM_ACCEPTANCE[Decision: where VM acceptance runs]
@@ -1989,8 +1989,7 @@ flowchart LR
     K3S_TEST_STARTUP[Proposed: cut the time before pytest starts]
     K3S_CI_TIER[Decision: which k3s targets run in CI]
     K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
-    K3S_MODEL_SCENARIOS -. first backend .-> TESTING_ENVIRONMENT_RETIRE
-    ACCEPTANCE_SCRIPTED_MODEL -. first backend .-> TESTING_ENVIRONMENT_RETIRE
+    ACCEPTANCE_SCRIPTED_MODEL --> TESTING_ENVIRONMENT_RETIRE
     K3S_VM_IMAGE -. the emulation spike needs it .-> K3S_VM_ACCEPTANCE
     K3S_FIXTURE_IDENTITY --> TESTING_ENVIRONMENT_RETIRE
     K3S_VM_ACCEPTANCE --> TESTING_ENVIRONMENT_RETIRE
@@ -2013,30 +2012,32 @@ harnesses (ChatGPT luna for Codex), delivered as a BuildBuddy secret.
 
 Question: which models, what budget, and is a BuildBuddy secret acceptable?
 
-### `K3S_MODEL_SCENARIOS` — real-model scenarios on k3s
+### `K3S_MODEL_SCENARIOS` — the real-model set on k3s
 
-**Blocked on `K3S_MODEL_CREDENTIALS`.** Their `_k3s` targets need a runner image with both
-harnesses; the model-free targets use the harness-free one. These pass on k3s on both harnesses
-with the real model:
+**Blocked on `K3S_MODEL_CREDENTIALS`.** Only scenarios where the model's behavior is under test
+have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-backend)). Their
+`_k3s_real` targets pass on both harnesses:
 
-- `test_egress`
 - `test_instructions`
-- `test_launch_presets`, with the preset in the fixture's app config
-- The Pod case of `test_suspend_resume`
+- The `test_egress` probe
 
 ### `ACCEPTANCE_SCRIPTED_MODEL` — scripted-model scenarios on k3s
 
 **Proposed; the first model backend (operator, 2026-10-21 05:23).** Laid out as in the plan's
-[Test layout](k3s_acceptance.md#test-layout), which waits on the operator's choice.
+[Test layout](k3s_acceptance.md#test-layout).
 
 - `agentplane/acceptance/scripted_upstream.py` serves the runner tests' `ScriptedModel` in both
   dialects, one queue per Sandbox Pod, as LLM ingress's upstream at the node IP.
 - The fixture's app catalog and Codex catalog offer one scripted route per harness.
+- Scripted targets need a runner image with both harnesses; the fixture has a Claude-only one
+  (`claude/runner_layout`), and the model-free targets keep the harness-free one.
 - Scenario functions carry `real_model` or `scripted_model`, and each target deselects what it
   cannot serve.
 
-Exit: scripted versions of `test_instructions`, the Pod case of `test_suspend_resume` and the
-`test_egress` cases that need no outside credential pass on k3s on both harnesses.
+Exit: scripted versions of `test_instructions`, `test_launch_presets`, the Pod case of
+`test_suspend_resume` and the `test_egress` cases that need no outside credential pass on k3s on
+both harnesses. The plumbing scenarios' real versions are deleted in the same PRs, so against
+staging only the real-model set and the model-free scenarios run.
 
 Out of scope: scripted runs against testing or staging, which would need a deployed scripted-model
 endpoint.
