@@ -1,4 +1,5 @@
-"""Fixtures over the fake Kubernetes in `testing/kubernetes.py`."""
+"""The app's collaborators in its tests: a database of the test's own, the Go History Service, and a
+namespace of the test's own on the target's Kubernetes API server."""
 
 from __future__ import annotations
 
@@ -8,13 +9,12 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
 from uuid import UUID
 
 import grpc
 import httpx
 import pytest
-from kubernetes_asyncio.client import CoreV1Api
+from kubernetes_asyncio.client import AuthenticationV1Api
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.action_policy import ActionPolicyInventory
@@ -57,8 +57,6 @@ from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.fixtures import (
-    history_api,
-    history_kubeconfig,
     history_on,
     history_service,
     service_database_template,
@@ -82,16 +80,11 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.testing.runner_peer import Endpoint, runner_peer
 from agentplane.sandboxes.inventory import SandboxInventory
-from agentplane.sandboxes.testing.fake_inventory import (
-    NAMESPACE,
-    TEMPLATE,
-    FakeAuthenticationV1Api,
-    FakeCoreV1Api,
-    FakeCustomObjectsApi,
-    close_fake_api_clients,
-)
+from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
+from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 from util.testing.postgres_fixtures import (
     database_clones,
@@ -101,12 +94,6 @@ from util.testing.postgres_fixtures import (
     postgres_image,
 )
 from util.testing.sqlalchemy_engines import managed_async_engine
-
-
-@pytest.fixture(autouse=True)
-async def close_fake_clients() -> AsyncIterator[None]:
-    yield
-    await close_fake_api_clients()
 
 
 @pytest.fixture(scope="session")
@@ -237,13 +224,8 @@ async def operator_token() -> str:
 
 
 @pytest.fixture
-def custom_objects() -> FakeCustomObjectsApi:
-    return FakeCustomObjectsApi()
-
-
-@pytest.fixture
-def core_v1() -> FakeCoreV1Api:
-    return FakeCoreV1Api()
+async def namespace(api_server: KubernetesApiServer) -> SandboxNamespace:
+    return await SandboxNamespace.new(api_server)
 
 
 @pytest.fixture
@@ -279,13 +261,11 @@ async def gateway_endpoint(tmp_path: Path) -> AsyncIterator[Endpoint]:
 
 
 @pytest.fixture
-def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> SandboxAccess:
+def inventory(namespace: SandboxNamespace) -> SandboxAccess:
     return SandboxAccess(
-        SandboxInventory(
-            namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), core_v1=cast(CoreV1Api, core_v1)
-        ),
+        SandboxInventory(namespace=namespace.name, custom_objects=namespace.custom_objects, core_v1=namespace.core_v1),
         default_policy_sets=frozenset(),
-        caller=ServiceAccountRef(namespace=NAMESPACE, name="app"),
+        caller=namespace.account("app"),
     )
 
 
@@ -297,43 +277,52 @@ def gateway(gateway_endpoint: Endpoint) -> SandboxControlClient:
 # The agent's credential, and what a test client carries: the app's other one is an OIDC session
 # only an authorization-code round trip produces (`test_auth_routes.py`).
 AUDIENCE = "agentplane-test"
-AGENT = f"system:serviceaccount:{NAMESPACE}:test-agent"
-AGENT_TOKEN = "test-agent-token"  # a test literal, not a real credential
-AGENT_AUTH = {"Authorization": f"Bearer {AGENT_TOKEN}"}
+_AGENT = "test-agent"
 # A second ServiceAccount, whose tokens are every bit as valid as the agent's and which the app
 # accepts nothing from: what naming the subjects it does accept is for.
-STRANGER = f"system:serviceaccount:{NAMESPACE}:test-stranger"
-STRANGER_TOKEN = "test-stranger-token"  # a test literal, not a real credential
-STRANGER_AUTH = {"Authorization": f"Bearer {STRANGER_TOKEN}"}
+_STRANGER = "test-stranger"
+
+
+async def _bearer(api_server: KubernetesApiServer, account: ServiceAccountRef) -> dict[str, str]:
+    """Headers carrying a Pod-bound token of `account`'s for the app's audience, which TokenReview accepts."""
+    return {"Authorization": f"Bearer {await api_server.workload_token(account, [AUDIENCE])}"}
 
 
 @pytest.fixture
-def authentication() -> FakeAuthenticationV1Api:
-    api = FakeAuthenticationV1Api()
-    api.issue(AGENT_TOKEN, username=AGENT, audiences=[AUDIENCE])
-    api.issue(STRANGER_TOKEN, username=STRANGER, audiences=[AUDIENCE])
-    return api
+def agent(namespace: SandboxNamespace) -> str:
+    """The username the agent's tokens review as, which the app is told to accept."""
+    return f"system:serviceaccount:{namespace.name}:{_AGENT}"
 
 
 @pytest.fixture
-def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
-    return TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=(AGENT,))
+async def agent_auth(api_server: KubernetesApiServer, namespace: SandboxNamespace) -> dict[str, str]:
+    return await _bearer(api_server, namespace.account(_AGENT))
 
 
 @pytest.fixture
-def live_index(core_v1: FakeCoreV1Api) -> LiveIndex:
+async def stranger_auth(api_server: KubernetesApiServer, namespace: SandboxNamespace) -> dict[str, str]:
+    return await _bearer(api_server, namespace.account(_STRANGER))
+
+
+@pytest.fixture
+def reviewer(api_server: KubernetesApiServer, agent: str) -> TokenReviewer:
+    return TokenReviewer(AuthenticationV1Api(api_server.api), audience=AUDIENCE, subjects=(agent,))
+
+
+@pytest.fixture
+def live_index(namespace: SandboxNamespace) -> LiveIndex:
     """An index nothing is watching: the fixtures that need one drive it themselves."""
-    return LiveIndex(freshness=Freshness(stale_after_seconds=90), core_v1=cast(CoreV1Api, core_v1))
+    return LiveIndex(freshness=Freshness(stale_after_seconds=90), core_v1=namespace.core_v1)
 
 
 @pytest.fixture
-def egress(custom_objects: FakeCustomObjectsApi, action_policy: ActionPolicyInventory) -> EgressAccess:
-    return EgressAccess(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), action_policy=action_policy)
+def egress(namespace: SandboxNamespace, action_policy: ActionPolicyInventory) -> EgressAccess:
+    return EgressAccess(namespace=namespace.name, custom_objects=namespace.custom_objects, action_policy=action_policy)
 
 
 @pytest.fixture
-def action_policy(custom_objects: FakeCustomObjectsApi) -> ActionPolicyInventory:
-    return ActionPolicyInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects))
+def action_policy(namespace: SandboxNamespace) -> ActionPolicyInventory:
+    return ActionPolicyInventory(namespace=namespace.name, custom_objects=namespace.custom_objects)
 
 
 @pytest.fixture

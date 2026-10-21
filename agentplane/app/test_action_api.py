@@ -46,7 +46,6 @@ from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.api import CallerGrantView, create_app
-from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
 from agentplane.app.database_updates import create_database_updates
@@ -72,7 +71,8 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, policy_binding, sandbox
+from agentplane.sandbox_resource import SANDBOXES_PLURAL
+from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
@@ -422,7 +422,9 @@ async def review(
         )
 
 
-async def test_connection_management_preserves_federation_csrf_versions_and_history(review: Review) -> None:
+async def test_connection_management_preserves_federation_csrf_versions_and_history(
+    review: Review, agent_auth: dict[str, str]
+) -> None:
     grant = await review.connections.bind(
         GrantBinding(
             grant_id=uuid4(),
@@ -439,14 +441,14 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     browser = review.browser
     for endpoint in ["/connections", "/connection-service-accounts", path]:
         assert (await browser.get(endpoint)).status_code == 401
-        assert (await browser.get(endpoint, headers=AGENT_AUTH)).status_code == 403
+        assert (await browser.get(endpoint, headers=agent_auth)).status_code == 403
     for method, endpoint, body in [
         ("PATCH", path, {"display_name": "Renamed", "expected_version": original.version}),
         ("POST", f"{path}/unbind", {"expected_version": original.version}),
         ("POST", f"{path}/rebind", {"expected_version": original.version, "service_account": PERSONAL.model_dump()}),
     ]:
         assert (await browser.request(method, endpoint, json=body)).status_code == 401
-        assert (await browser.request(method, endpoint, json=body, headers=AGENT_AUTH)).status_code == 403
+        assert (await browser.request(method, endpoint, json=body, headers=agent_auth)).status_code == 403
     await browser.get("/auth/login")
     assert (await browser.get("/connection-service-accounts")).json() == [PERSONAL.model_dump()]
     assert (await browser.get("/connections")).json() == [original.model_dump(mode="json")]
@@ -488,17 +490,17 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     assert review.calls == []
 
 
-def _bind_live_sandbox(policies: PolicyIndex) -> None:
+def _bind_live_sandbox(policies: PolicyIndex, sandbox_namespace: str) -> None:
     """What the Action Service's informer would hold: a set and a binding naming the ServiceAccount
     the sandbox runs as, plus one naming a like-named account elsewhere that must not show."""
     add_policy_set(policies, "test-reads", [{"type": "exact_actions", "actions": {"test_review": ["record"]}}])
-    for name, namespace in (("live-launch", NAMESPACE), ("live-elsewhere", "agentplane-elsewhere")):
+    for name, namespace in (("live-launch", sandbox_namespace), ("live-elsewhere", "test-elsewhere")):
         add_policy_binding(
             policies,
             name,
             ServiceAccountRef(namespace=namespace, name="live"),
             ["test-reads", "gone"],
-            namespace=NAMESPACE,
+            namespace=sandbox_namespace,
         )
 
 
@@ -522,21 +524,25 @@ async def _first_snapshot(client: httpx.AsyncClient, path: str, headers: dict[st
 
 @pytest.mark.parametrize("operator_connection", ["configured", "disabled"])
 async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_or_says_why_not(
-    review: Review, custom_objects: FakeCustomObjectsApi, live_index: LiveIndex, operator_connection: str
+    review: Review,
+    namespace: SandboxNamespace,
+    agent_auth: dict[str, str],
+    live_index: LiveIndex,
+    operator_connection: str,
 ) -> None:
     """The live frame carries what the Action Service resolves for the ServiceAccount the sandbox
     runs as, through the operator federation. Where the service cannot be asked, the frame says so
     in place of the policy rather than showing an empty one, and an agent watching the same stream
     is told why rather than shown an operator's answer."""
-    custom_objects.objects[("sandboxes", "live")] = live_index.sandboxes["live"] = sandbox("live")
-    _bind_live_sandbox(review.policies)
+    live_index.sandboxes["live"] = await namespace.sandbox("live")
+    _bind_live_sandbox(review.policies, namespace.name)
     browser = review.browser
     await browser.get("/auth/login")
     session = {"Cookie": f"{INSECURE_COOKIE}={browser.cookies[INSECURE_COOKIE]}"}
 
     async with _served(review.app) as url, httpx.AsyncClient(base_url=url) as client:
         frame = await _first_snapshot(client, "/live/sandboxes/live", session)
-        as_agent = await _first_snapshot(client, "/live/sandboxes/live", AGENT_AUTH)
+        as_agent = await _first_snapshot(client, "/live/sandboxes/live", agent_auth)
 
     assert frame.sandbox is not None
     if operator_connection == "disabled":
@@ -551,20 +557,20 @@ async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_o
 
 @pytest.mark.parametrize("operator_connection", ["configured", "disabled"])
 async def test_caller_grants_without_a_sandbox(
-    review: Review, custom_objects: FakeCustomObjectsApi, operator_connection: str
+    review: Review, namespace: SandboxNamespace, operator_connection: str
 ) -> None:
-    _bind_live_sandbox(review.policies)
-    for namespace, name in ((NAMESPACE, "external"), ("other-namespace", "unrelated")):
-        custom_objects.objects[("policybindings", name)] = policy_binding(
-            name,
-            subject={"namespace": namespace, "name": "live"},
-            policy_sets=["missing-policy"],
-            expires_at="2000-01-01T00:00:00Z",
+    _bind_live_sandbox(review.policies, namespace.name)
+    for subject, name in (
+        (namespace.account("live"), "external"),
+        (ServiceAccountRef(namespace="other-namespace", name="live"), "unrelated"),
+    ):
+        await namespace.policy_binding(
+            name, subject=subject, policy_sets=["missing-policy"], expires_at="2000-01-01T00:00:00Z"
         )
     # No Sandbox, OAuth Connection or caller-admission label is needed to inspect bindings.
-    assert not any(kind == "sandboxes" for kind, _ in custom_objects.objects)
+    assert await namespace.names(SANDBOXES_PLURAL) == set()
     await review.browser.get("/auth/login")
-    response = await review.browser.get(f"/caller-grants/{NAMESPACE}/live")
+    response = await review.browser.get(f"/caller-grants/{namespace.name}/live")
     assert response.status_code == 200
     view = CallerGrantView.model_validate(response.json())
     assert [binding.name for binding in view.bindings] == ["external"]
@@ -580,11 +586,13 @@ async def test_caller_grants_without_a_sandbox(
     assert [binding["name"] for binding in other.json()["bindings"]] == ["unrelated"]
 
 
-async def test_caller_grants_require_an_operator_session(review: Review) -> None:
+async def test_caller_grants_require_an_operator_session(
+    review: Review, namespace: SandboxNamespace, agent_auth: dict[str, str]
+) -> None:
     async with _served(review.app) as url, httpx.AsyncClient(base_url=url) as client:
-        path = f"/caller-grants/{NAMESPACE}/live"
+        path = f"/caller-grants/{namespace.name}/live"
         assert (await client.get(path)).status_code == 401
-        assert (await client.get(path, headers=AGENT_AUTH)).status_code == 403
+        assert (await client.get(path, headers=agent_auth)).status_code == 403
 
 
 @pytest.mark.parametrize("operator_connection", ["disabled", "target-subject-mismatch", "wrong-audience"])
@@ -599,7 +607,7 @@ async def test_connection_management_fails_closed_without_valid_federation(
 
 @pytest.mark.parametrize("direct_federation", [False, True], ids=["exchange", "direct"])
 async def test_operator_decision_reaches_canonical_service_and_mcp_once(
-    review: Review, direct_federation: bool
+    review: Review, agent_auth: dict[str, str], direct_federation: bool
 ) -> None:
     browser, service = review.browser, review.service
     pending = await service.submit(
@@ -619,8 +627,8 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(
         "decision_note": "Reviewed scope — allowed for this request.",
     }
     assert (await browser.get("/actions")).status_code == 401
-    assert (await browser.get("/actions", headers=AGENT_AUTH)).status_code == 403
-    assert (await browser.post(path, headers=AGENT_AUTH, json=decision)).status_code == 403
+    assert (await browser.get("/actions", headers=agent_auth)).status_code == 403
+    assert (await browser.post(path, headers=agent_auth, json=decision)).status_code == 403
     assert review.calls == []
 
     await browser.get("/auth/login")
@@ -907,11 +915,13 @@ async def enrollment_path(review: Review, client_id: str = "test-external-client
     return f"/connection-enrollments/{created.handle}"
 
 
-async def test_consent_requires_operator_same_origin_and_preview_csrf(review: Review) -> None:
+async def test_consent_requires_operator_same_origin_and_preview_csrf(
+    review: Review, agent_auth: dict[str, str]
+) -> None:
     path = await enrollment_path(review)
     browser = review.browser
     assert (await browser.post(f"{path}/preview")).status_code == 401
-    assert (await browser.post(f"{path}/preview", headers=AGENT_AUTH)).status_code == 403
+    assert (await browser.post(f"{path}/preview", headers=agent_auth)).status_code == 403
     await browser.get("/auth/login")
     assert (await browser.post(f"{path}/preview", headers={"Origin": "https://evil.test"})).status_code == 403
     assert (await browser.post(f"{path}/preview", headers={"Origin": "null"})).status_code == 403

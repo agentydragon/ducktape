@@ -36,7 +36,7 @@ from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.notification_service import notifications_operator_pb2 as pb
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
+from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 
 SANDBOX = "test-notified-sandbox"
 THREADS = [UUID("00000000-0000-4000-8000-0000000000c1"), UUID("00000000-0000-4000-8000-0000000000c2")]
@@ -94,11 +94,10 @@ def snapshot(frame: bytes) -> dict[str, Any]:
 async def test_a_sandbox_stream_follows_the_current_incarnation(
     app: FastAPI,
     notifications_operator: FakeNotificationsOperator,
-    custom_objects: FakeCustomObjectsApi,
-    core_v1: FakeCoreV1Api,
+    namespace: SandboxNamespace,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    raw, _ = seed_runner(custom_objects, core_v1, SANDBOX)
+    raw, _ = await namespace.runner(SANDBOX)
     notifications_operator.sandbox_script.put_nowait(
         pb.WatchSandboxNotificationsResponse(snapshot=pb.SandboxNotificationStatus(observed_at=OBSERVED))
     )
@@ -113,7 +112,7 @@ async def test_a_sandbox_stream_follows_the_current_incarnation(
     assert messages[0]["status"] == 200
     assert "interrupted" not in caplog.text
     assert notifications_operator.sandbox_requests == [
-        pb.WatchSandboxNotificationsRequest(namespace=NAMESPACE, name=SANDBOX, uid=raw["metadata"]["uid"])
+        pb.WatchSandboxNotificationsRequest(namespace=namespace.name, name=SANDBOX, uid=raw["metadata"]["uid"])
     ]
 
 

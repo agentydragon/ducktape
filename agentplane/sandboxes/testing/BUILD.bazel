@@ -24,17 +24,6 @@ py_library(
 )
 
 py_library(
-    name = "fake_inventory",
-    testonly = True,
-    srcs = ["fake_inventory.py"],
-    deps = [
-        "//agentplane:sandbox_resource",
-        "//agentplane/sandboxes:egress_views",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_library(
     name = "sandbox_namespace",
     srcs = ["sandbox_namespace.py"],
     deps = [

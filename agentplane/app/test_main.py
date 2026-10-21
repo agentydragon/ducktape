@@ -22,7 +22,6 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
-from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database_updates import create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
@@ -47,7 +46,7 @@ from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.sandboxes.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
+from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
@@ -102,7 +101,7 @@ def set_app_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     for name, value in APP_ENVIRONMENT.items():
         monkeypatch.setenv(name, value)
     config = tmp_path / "config.yaml"
-    config.write_text("default_policy_sets: [basic]\n")
+    config.write_text("default_policy_sets: [test-basic]\n")
     monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
 
 
@@ -163,7 +162,7 @@ def test_rest_api_settings_do_not_require_electric(monkeypatch: pytest.MonkeyPat
     assert Settings(_cli_parse_args=[]).electric_url is None
 
 
-@pytest.mark.parametrize("default_policy_sets", [None, [], ["basic"]])
+@pytest.mark.parametrize("default_policy_sets", [None, [], ["test-basic"]])
 def test_default_policy_sets_are_required_for_direct_lifecycle(
     default_policy_sets: list[str] | None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -253,8 +252,8 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
     database: AsyncEngine,
     event_logs: SeededEventLogStore,
     content: ContentStore,
-    custom_objects: FakeCustomObjectsApi,
-    core_v1: FakeCoreV1Api,
+    namespace: SandboxNamespace,
+    agent_auth: dict[str, str],
     notifications: NotificationsOperatorClient,
     dispatcher_http: UpstreamProxy,
     history_client: HistoryServiceClient,
@@ -263,9 +262,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
     fails while the drain is on, and the unwind then closes every connection the app held."""
-    raw, running = seed_runner(custom_objects, core_v1, SANDBOX)
-    live_index.sandboxes[SANDBOX] = raw
-    live_index.pods[SANDBOX] = running
+    live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = await namespace.runner(SANDBOX)
     await event_logs.seed(SANDBOX, "shutdown-session")
     app = create_app(
         inventory,
@@ -308,7 +305,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
             await asyncio.sleep(0.02)
         assert await _other_connections(database) > 0
 
-        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=AGENT_AUTH) as client:
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=agent_auth) as client:
             assert (await client.get("/readyz")).status_code == 204
             assert (await client.get("/threads/00000000-0000-0000-0000-000000000000/sync/scope")).status_code == 404
             async with client.stream("GET", "/live/sandboxes") as stream:

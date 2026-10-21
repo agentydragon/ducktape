@@ -31,7 +31,7 @@ from sqlalchemy import select, update
 from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
-from agentplane.app.testing.replication_process import GatewayAccess, app_process
+from agentplane.app.testing.replication_process import GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
@@ -65,6 +65,7 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
+from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -122,9 +123,9 @@ async def service_history_db_url(electric: ElectricService) -> str:
 
 
 @pytest.fixture
-async def sandbox(history_api: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
+async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
     """The `ReplicationSource`'s."""
-    async with sandbox_cluster(history_api, name=SANDBOX) as started:
+    async with sandbox_cluster(api_server, name=SANDBOX) as started:
         yield started
 
 
@@ -137,6 +138,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     thread_source: ReplicationSource,
     electric: ElectricService,
     certificate: BrowserCertificate,
+    namespace: SandboxNamespace,
 ) -> None:
     thread_id = await event_logs.seed(SANDBOX, SESSION)
     await history.set_attached(thread_id, thread_source.attached)
@@ -145,7 +147,12 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, history=event_logs.reader, gateway=None, frontend_directory=directory, electric_url=electric.url
+            db_url,
+            history=event_logs.reader,
+            sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
+            gateway=None,
+            frontend_directory=directory,
+            electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -216,12 +223,18 @@ async def test_switching_threads_starts_at_each_threads_tail(
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
+    namespace: SandboxNamespace,
 ) -> None:
     threads, _ = await _seed_navigation_threads(event_logs, history, store)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, history=event_logs.reader, gateway=None, frontend_directory=directory, electric_url=electric.url
+            db_url,
+            history=event_logs.reader,
+            sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
+            gateway=None,
+            frontend_directory=directory,
+            electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -254,6 +267,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
+    namespace: SandboxNamespace,
 ) -> None:
     """The history lays an unmeasured row out at a flat guess; one it has read before, at the height
     it read. Rows read on a thread's first visit are laid out at those heights on the return."""
@@ -261,7 +275,12 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, history=event_logs.reader, gateway=None, frontend_directory=directory, electric_url=electric.url
+            db_url,
+            history=event_logs.reader,
+            sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
+            gateway=None,
+            frontend_directory=directory,
+            electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -309,12 +328,18 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
+    namespace: SandboxNamespace,
 ) -> None:
     threads, sources = await _seed_navigation_threads(event_logs, history, store)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, history=event_logs.reader, gateway=None, frontend_directory=directory, electric_url=electric.url
+            db_url,
+            history=event_logs.reader,
+            sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
+            gateway=None,
+            frontend_directory=directory,
+            electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -569,7 +594,12 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         scripted_runner(source, sandbox, gateway_service, sandbox_control),
         source.ingesting(history),
         app_process(
-            db_url, history_client, gateway=gateway_access, frontend_directory=directory, electric_url=electric.url
+            db_url,
+            history_client,
+            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
+            gateway=gateway_access,
+            frontend_directory=directory,
+            electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
         asyncio.timeout(60),

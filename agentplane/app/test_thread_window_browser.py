@@ -38,9 +38,9 @@ async def service_history_db_url(electric: ElectricService) -> str:
 
 
 @pytest.fixture
-async def sandbox(history_api: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
+async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
     """The `ReplicationSource`'s."""
-    async with sandbox_cluster(history_api, name=SANDBOX) as started:
+    async with sandbox_cluster(api_server, name=SANDBOX) as started:
         yield started
 
 

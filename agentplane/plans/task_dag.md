@@ -1951,7 +1951,6 @@ flowchart LR
     TESTING_ROLLOUT_ROLE[Decision: what replaces testing before staging]
     TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
     K3S_CI_TIER[Decision: which k3s targets run in CI]
-    FAKE_APISERVERS_TO_ENVTEST[Candidate: envtest in place of fake API servers]
     K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
     K3S_VM_IMAGE -. the emulation spike needs it .-> K3S_VM_ACCEPTANCE
     K3S_VM_ACCEPTANCE --> TESTING_ENVIRONMENT_RETIRE
@@ -1989,19 +1988,6 @@ self-hosted BuildBuddy executors with KVM are Enterprise-only per the
 [self-hosting notes](../../docs/buildbuddy_selfhost.md).
 
 Exit: a VM scenario passes on k3s with its boot time recorded, or the staging fallback is chosen.
-
-### `FAKE_APISERVERS_TO_ENVTEST` — envtest in place of fake API servers
-
-**Candidate (operator, 2026-10-21 06:41: [test tiers](k3s_acceptance.md#test-tiers)).** Component
-tests use envtest (Python: [`kubernetes_apiserver.py`](../testing/kubernetes_apiserver.py), which
-mints Pod-bound tokens; Go: [`testing/kubeapiserver`](../testing/kubeapiserver)) in place of:
-
-- `agentplane/sandboxes/testing/fake_inventory.py`, behind the app tests.
-
-A fake stays only for a fault the real API server cannot be made to produce, such as a forced
-watch close for an informer's relist, named at the fake. One PR per fake.
-
-Exit: those fakes and stubs are deleted or reduced to the faults they inject.
 
 ### `TESTING_ROLLOUT_ROLE` — what replaces testing as the stage before staging
 

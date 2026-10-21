@@ -1,4 +1,8 @@
-"""Fixtures for tests that read or write through the built Go History Service."""
+"""Fixtures for tests that read or write through the built Go History Service.
+
+They authenticate through `api_server` (`agentplane/testing/kubernetes_apiserver_fixtures.py`), which the
+importing conftest imports beside them.
+"""
 
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import AbstractAsyncContextManager
@@ -14,21 +18,8 @@ from agentplane.history_service.testing.go_service import (
 )
 from agentplane.history_service.testing.history import History, scripted_history
 from agentplane.testing.electric_role import ensure_electric_role
-from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, control_plane, kubernetes_api
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-
-
-@pytest.fixture(scope="session")
-def history_kubeconfig() -> Iterator[Path]:
-    """One control plane for the whole test target; each test enters its own client of it."""
-    with control_plane() as kubeconfig:
-        yield kubeconfig
-
-
-@pytest.fixture
-async def history_api(history_kubeconfig: Path) -> AsyncIterator[KubernetesApiServer]:
-    async with kubernetes_api(history_kubeconfig) as server:
-        yield server
 
 
 @pytest.fixture(scope="session")
@@ -54,14 +45,14 @@ def history_writer_namespaces() -> Sequence[str]:
 @pytest.fixture
 async def history_service(
     service_history_db_url: str,
-    history_api: KubernetesApiServer,
+    api_server: KubernetesApiServer,
     history_writer_namespaces: Sequence[str],
     tmp_path: Path,
     unused_tcp_port_factory: Callable[[], int],
 ) -> AsyncIterator[GoHistoryService]:
     async with go_history_service(
         service_history_db_url,
-        api=history_api,
+        api=api_server,
         directory=tmp_path,
         port_factory=unused_tcp_port_factory,
         writer_namespaces=history_writer_namespaces,
@@ -71,11 +62,11 @@ async def history_service(
 
 @pytest.fixture
 def history_on(
-    history_api: KubernetesApiServer, tmp_path: Path, unused_tcp_port_factory: Callable[[], int]
+    api_server: KubernetesApiServer, tmp_path: Path, unused_tcp_port_factory: Callable[[], int]
 ) -> Callable[[str], AbstractAsyncContextManager[History]]:
     """The Go History Service and a scripted `History` on a database other than the default one."""
 
     def start(database_url: str) -> AbstractAsyncContextManager[History]:
-        return scripted_history(database_url, api=history_api, directory=tmp_path, port_factory=unused_tcp_port_factory)
+        return scripted_history(database_url, api=api_server, directory=tmp_path, port_factory=unused_tcp_port_factory)
 
     return start

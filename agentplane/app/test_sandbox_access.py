@@ -1,63 +1,33 @@
 """The operator's Sandbox writes, made by the app through Kubernetes."""
 
-from typing import cast
-
 import pytest
 import pytest_bazel
-from kubernetes_asyncio import client as k8s_client
 
 from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest
 from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandboxes.errors import InvalidSandboxError, SandboxNotFoundError, UnknownPolicySetError
 from agentplane.sandboxes.inventory import SandboxInventory
-from agentplane.sandboxes.testing.fake_inventory import (
-    NAMESPACE,
-    TEMPLATE,
-    FakeCoreV1Api,
-    FakeCustomObjectsApi,
-    close_fake_api_clients,
-)
-from agentplane.subjects import ServiceAccountRef
-from util.kubernetes import CustomObjectsClient
+from agentplane.sandboxes.testing.sandbox_namespace import TEMPLATE, SandboxNamespace
 
 # gazelle:include_dep @pypi//protobuf
 
 
-@pytest.fixture(autouse=True)
-async def close_fake_clients():
-    yield
-    await close_fake_api_clients()
-
-
 @pytest.fixture
-def custom_objects() -> FakeCustomObjectsApi:
-    objects = FakeCustomObjectsApi()
-    objects.objects[(POLICY_SETS_PLURAL, "test-default")] = {"metadata": {"name": "test-default"}}
-    return objects
-
-
-@pytest.fixture
-def access(custom_objects: FakeCustomObjectsApi) -> SandboxAccess:
+async def access(namespace: SandboxNamespace) -> SandboxAccess:
+    await namespace.egress_policy_set("test-default", [{"hosts": ["test-default.test"]}])
     return SandboxAccess(
-        SandboxInventory(
-            namespace=NAMESPACE,
-            custom_objects=cast(CustomObjectsClient, custom_objects),
-            core_v1=cast(k8s_client.CoreV1Api, FakeCoreV1Api()),
-        ),
+        SandboxInventory(namespace=namespace.name, custom_objects=namespace.custom_objects, core_v1=namespace.core_v1),
         default_policy_sets={"test-default"},
-        caller=ServiceAccountRef(namespace=NAMESPACE, name="test-app"),
+        caller=namespace.account("test-app"),
     )
 
 
-async def test_create_binds_the_default_policy_sets(
-    access: SandboxAccess, custom_objects: FakeCustomObjectsApi
-) -> None:
+async def test_create_binds_the_default_policy_sets(access: SandboxAccess, namespace: SandboxNamespace) -> None:
     view = await access.create(CreateSandboxRequest(name="my-task", template=TEMPLATE))
 
     assert not view.HasField("operating_mode")
-    assert custom_objects.objects[(SANDBOXES_PLURAL, "my-task")]["spec"]["policySets"] == ["test-default"]
+    assert (await namespace.read(SANDBOXES_PLURAL, "my-task"))["spec"]["policySets"] == ["test-default"]
     assert (await access.create(CreateSandboxRequest(name="my-task", template=TEMPLATE))).uid == view.uid
 
 
@@ -68,18 +38,16 @@ async def test_create_refuses_an_invalid_request_and_an_unknown_policy_set(acces
         await access.create(CreateSandboxRequest(name="needs-more", template=TEMPLATE, policy_sets=["test-missing"]))
 
 
-async def test_lifecycle_acts_on_the_incarnation_it_read(
-    access: SandboxAccess, custom_objects: FakeCustomObjectsApi
-) -> None:
+async def test_lifecycle_acts_on_the_incarnation_it_read(access: SandboxAccess, namespace: SandboxNamespace) -> None:
     await access.create(CreateSandboxRequest(name="my-task", template=TEMPLATE))
 
     await access.suspend("my-task")
     assert not (await access.get("my-task")).HasField("operating_mode")
-    custom_objects.objects[(SANDBOXES_PLURAL, "my-task")]["status"] = {"operatingMode": "Suspended"}
+    await namespace.patch_status(SANDBOXES_PLURAL, "my-task", {"operatingMode": "Suspended"})
     assert (await access.get("my-task")).operating_mode == OperatingMode.SUSPENDED
     await access.resume("my-task")
     assert (await access.get("my-task")).operating_mode == OperatingMode.SUSPENDED
-    custom_objects.objects[(SANDBOXES_PLURAL, "my-task")]["status"]["operatingMode"] = "Running"
+    await namespace.patch_status(SANDBOXES_PLURAL, "my-task", {"operatingMode": "Running"})
     assert (await access.get("my-task")).operating_mode == OperatingMode.RUNNING
     with pytest.raises(SandboxNotFoundError):
         await access.suspend("never-made")

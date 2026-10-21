@@ -30,7 +30,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
-from agentplane.app.conftest import AGENT_AUTH, listening
+from agentplane.app.conftest import listening
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel
 from agentplane.app.egress_access import EgressAccess
@@ -442,6 +442,7 @@ def _has_turn_status(entries: list[dict[str, Any]], status: str) -> bool:
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_stream_recovery_reports_the_content_the_model_receives(
     app_url: str,
+    agent_auth: dict[str, str],
     local_runners: RunnerDirectory,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -452,7 +453,7 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
 ) -> None:
     seed_prompt, seed_answer = "Remember the seed prompt", "SEED_ANSWER_FOR_STREAM_RECOVERY"
     partial = "PARTIAL_STREAM_MUST_STAY_UNFINISHED"
-    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=agent_auth) as http:
         thread_id = await _open_thread_with_seed(http, model, spec, seed_prompt=seed_prompt, seed_answer=seed_answer)
         accepted = await http.post(
             f"/threads/{thread_id}/submit-input", json={"commandId": "streaming-input", "text": "Start a long answer"}
@@ -572,6 +573,7 @@ async def _wait_for_conversation_reconciliation(
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_tool_recovery_reports_context_without_repeating_side_effects(
     app_url: str,
+    agent_auth: dict[str, str],
     local_runners: RunnerDirectory,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -591,7 +593,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
         f"printf '%s\\n' ready > {shlex.quote(str(ready))}; "
         "printf 'partial tool output'; exec sleep 3600"
     )
-    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=agent_auth) as http:
         thread_id = await _open_thread_with_seed(http, model, spec, seed_prompt=seed_prompt, seed_answer=seed_answer)
         accepted = await http.post(
             f"/threads/{thread_id}/submit-input",
@@ -670,6 +672,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it(
     app_url: str,
+    agent_auth: dict[str, str],
     local_runners: RunnerDirectory,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -688,7 +691,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         f"printf '%s\\n' {shlex.quote(token)} >> {shlex.quote(str(marker))}; printf '%s' {shlex.quote(tool_output)}"
     )
     partial = "PARTIAL_AFTER_COMPLETED_TOOL"
-    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=agent_auth) as http:
         thread_id = await _open_thread_with_seed(http, model, spec, seed_prompt=seed_prompt, seed_answer=seed_answer)
         accepted = await http.post(
             f"/threads/{thread_id}/submit-input",

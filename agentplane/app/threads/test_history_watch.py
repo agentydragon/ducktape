@@ -22,7 +22,7 @@ from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 async def test_fold_commits_and_renewals_wake_thread_readers(
     service_history_db_url: str,
-    history_api: KubernetesApiServer,
+    api_server: KubernetesApiServer,
     tmp_path: Path,
     unused_tcp_port_factory: Callable[[], int],
 ) -> None:
@@ -31,7 +31,7 @@ async def test_fold_commits_and_renewals_wake_thread_readers(
     async with (
         go_history_service(
             service_history_db_url,
-            api=history_api,
+            api=api_server,
             directory=tmp_path,
             port_factory=unused_tcp_port_factory,
             watch_lease_s=3,

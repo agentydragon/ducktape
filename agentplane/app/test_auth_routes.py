@@ -12,18 +12,19 @@ import re
 from collections.abc import AsyncIterator, Collection
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 import httpx
 import pytest
 import pytest_bazel
+from kubernetes_asyncio.client import AuthenticationV1Api
 from sqlalchemy import select, update
 from starlette.responses import Response
 from starlette.routing import Route
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
-from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
+from agentplane.app.conftest import AUDIENCE
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -41,12 +42,13 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.sandboxes.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api
+from agentplane.sandboxes.testing.sandbox_namespace import TEMPLATE
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.net import bind_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
-OPERATOR = "agentydragon"
+OPERATOR = "test-operator"
 SUBJECT = "op-subject-1"
 SESSION_SECRET = "test-session-secret"  # a test literal, not a real credential
 ACTIVITY_STEP = timedelta(minutes=5)
@@ -68,7 +70,7 @@ def serve(
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
-    authentication: FakeAuthenticationV1Api,
+    api_server: KubernetesApiServer,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
     event_logs: SeededEventLogStore,
@@ -120,7 +122,7 @@ def serve(
             public_base_url=app_url,
             session_activity_step_seconds=int(ACTIVITY_STEP.total_seconds()),
         )
-        reviewer = TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=subjects)
+        reviewer = TokenReviewer(AuthenticationV1Api(api_server.api), audience=AUDIENCE, subjects=subjects)
         app = create_app(
             inventory,
             bridge,
@@ -149,9 +151,9 @@ def serve(
 
 
 @pytest.fixture
-async def served(serve: ServeApp) -> AsyncIterator[str]:
+async def served(serve: ServeApp, agent: str) -> AsyncIterator[str]:
     """That app, accepting a token from the one agent staging names and from nobody else."""
-    async with serve((AGENT,)) as app_url:
+    async with serve((agent,)) as app_url:
         yield app_url
 
 
@@ -182,9 +184,9 @@ async def test_logout_drops_the_session(browser: httpx.AsyncClient, served: str)
     assert (await browser.get("/sandboxes")).status_code == 401
 
 
-async def test_a_non_json_token_exchange_failure_is_reported_as_an_upstream_error(serve: ServeApp) -> None:
+async def test_a_non_json_token_exchange_failure_is_reported_as_an_upstream_error(serve: ServeApp, agent: str) -> None:
     async with (
-        serve((AGENT,), reject_token_exchange=True) as app_url,
+        serve((agent,), reject_token_exchange=True) as app_url,
         httpx.AsyncClient(base_url=app_url, follow_redirects=True) as browser,
     ):
         refused = await browser.get("/auth/login")
@@ -193,10 +195,12 @@ async def test_a_non_json_token_exchange_failure_is_reported_as_an_upstream_erro
     assert refused.json() == {"detail": "Identity provider returned an invalid response; please retry."}
 
 
-async def test_a_kubernetes_token_reaches_the_same_app_without_a_session(served: str) -> None:
+async def test_a_kubernetes_token_reaches_the_same_app_without_a_session(
+    served: str, agent_auth: dict[str, str]
+) -> None:
     """The agent's credential: no cookie, no login, and an identity Kubernetes vouches for that
     this app was told to accept."""
-    async with httpx.AsyncClient(base_url=served, headers=AGENT_AUTH) as agent:
+    async with httpx.AsyncClient(base_url=served, headers=agent_auth) as agent:
         assert (await agent.get("/sandboxes")).status_code == 200
         # No Origin check on this path: a token is not ambient, so no site can make a browser send it.
         created = await agent.post(
@@ -208,24 +212,24 @@ async def test_a_kubernetes_token_reaches_the_same_app_without_a_session(served:
         assert (await stranger.get("/sandboxes")).status_code == 401
 
 
-async def test_a_token_for_another_service_account_is_refused(served: str) -> None:
+async def test_a_token_for_another_service_account_is_refused(served: str, stranger_auth: dict[str, str]) -> None:
     """The one the audience does not catch. Minting a token picks its audience freely -- RBAC gates
     which ServiceAccount you may mint for, never which audience you ask for -- so this token is as
     valid as the agent's and reaches TokenReview the same way. 403 and not 401 is what says it got
     that far: the app authenticated it and refused the identity behind it.
     """
-    async with httpx.AsyncClient(base_url=served, headers=STRANGER_AUTH) as other_account:
+    async with httpx.AsyncClient(base_url=served, headers=stranger_auth) as other_account:
         refused = await other_account.get("/sandboxes")
         created = await other_account.post("/sandboxes", json={"name": "demo"})
 
     assert (refused.status_code, created.status_code) == (403, 403), refused.text
 
 
-async def test_an_empty_allowlist_leaves_a_session_the_only_way_in(serve: ServeApp) -> None:
+async def test_an_empty_allowlist_leaves_a_session_the_only_way_in(serve: ServeApp, agent_auth: dict[str, str]) -> None:
     """The default an app is deployed with, and the state naming nobody has to mean: the token path
     admits no one, and the browser's is untouched."""
     async with serve(()) as app_url:
-        async with httpx.AsyncClient(base_url=app_url, headers=AGENT_AUTH) as agent:
+        async with httpx.AsyncClient(base_url=app_url, headers=agent_auth) as agent:
             refused = await agent.get("/sandboxes")
         async with httpx.AsyncClient(base_url=app_url, follow_redirects=True) as browser:
             await browser.get("/auth/login")

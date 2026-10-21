@@ -22,7 +22,7 @@ from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeou
 from agentplane.app.testing import history_probe, thread_view_marks
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
-from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, app_process
+from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import (
     SANDBOX,
     SESSION,
@@ -46,7 +46,6 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.runner_gateway.testing.runner_connection import runner_connection
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
-from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import deterministic_browser_context, disable_animations_script
 from util.testing.postgres import DatabaseNames
@@ -151,16 +150,9 @@ async def electric(
 
 
 @pytest.fixture
-def gateway_access(
-    history_api: KubernetesApiServer, sandbox: SandboxCluster, gateway_service: GatewayProcess, app_token_file: Path
-) -> GatewayAccess:
+def gateway_access(gateway_service: GatewayProcess, app_token_file: Path) -> GatewayAccess:
     return GatewayAccess(
-        kubeconfig=history_api.kubeconfig,
-        namespace=sandbox.namespace,
-        sandbox=sandbox.name,
-        target=gateway_service.target,
-        dispatcher_http_url=gateway_service.http_url,
-        token_file=app_token_file,
+        target=gateway_service.target, dispatcher_http_url=gateway_service.http_url, token_file=app_token_file
     )
 
 
@@ -233,6 +225,7 @@ async def thread_browser(
         app_process(
             db_url,
             history_client,
+            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
             gateway=gateway_access,
             frontend_directory=directory,
             replay_after=replay_after,

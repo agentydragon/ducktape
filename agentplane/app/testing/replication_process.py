@@ -18,13 +18,14 @@ from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, cast
+from typing import cast
 from uuid import UUID, uuid4
 
 import grpc
 import httpx
 import uvicorn
 from fastapi.staticfiles import StaticFiles
+from kubernetes_asyncio import client as k8s_client
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from agentplane.app.action_policy import ActionPolicyInventory
@@ -42,7 +43,6 @@ from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.notifications_operator import FakeNotificationsOperator
 from agentplane.app.testing.operator_streams import OIDC, with_test_login
-from agentplane.app.testing.runner_gateway import discover
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
@@ -63,9 +63,9 @@ from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.inventory import SandboxInventory
-from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
-from agentplane.subjects import ServiceAccountRef
+from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.testing.kubernetes_apiserver import kubernetes_api
+from util.kubernetes import CustomObjectsClient
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -78,12 +78,17 @@ class Ready:
 
 
 @dataclass(frozen=True)
-class GatewayAccess:
-    """The Runner Gateway an app process reaches, and the Sandbox behind it that the app indexes."""
+class SandboxesAccess:
+    """The API server an app process reads, and the namespace of the Sandboxes it serves."""
 
     kubeconfig: Path
     namespace: str
-    sandbox: str
+
+
+@dataclass(frozen=True)
+class GatewayAccess:
+    """The Runner Gateway an app process reaches."""
+
     target: str
     dispatcher_http_url: str
     # The app's projected token, for both the Dispatcher and the Runner proxy.
@@ -211,6 +216,7 @@ class ReadyServer(uvicorn.Server):
 
 def _run(
     database_url: str,
+    sandboxes: SandboxesAccess,
     gateway: GatewayAccess | None,
     history_target: str,
     history_token_file: Path,
@@ -236,6 +242,7 @@ def _run(
         asyncio.run(
             _serve(
                 database_url,
+                sandboxes,
                 gateway,
                 history_target,
                 history_token_file,
@@ -255,6 +262,7 @@ def _run(
 
 async def _serve(
     database_url: str,
+    sandboxes: SandboxesAccess,
     gateway: GatewayAccess | None,
     history_target: str,
     history_token_file: Path,
@@ -265,17 +273,6 @@ async def _serve(
 ) -> None:
     engine = connect(database_url)
     database_updates = create_database_updates(engine.url)
-    custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
-    index = LiveIndex(
-        freshness=Freshness(stale_after_seconds=90, at={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)}),
-        core_v1=core,
-    )
-    if gateway is not None:
-        async with kubernetes_api(gateway.kubeconfig) as kubernetes:
-            await discover(index, kubernetes, namespace=gateway.namespace, name=gateway.sandbox)
-        # The inventory holds what the index does, as the informers feeding both would.
-        custom.objects[(SANDBOXES_PLURAL, gateway.sandbox)] = index.sandboxes[gateway.sandbox]
-        core.pods[gateway.sandbox] = index.pods[gateway.sandbox]
     with TemporaryDirectory() as directory:
         if gateway is None:
             token_file = Path(directory) / "token"
@@ -296,6 +293,7 @@ async def _serve(
             FakeNotificationsOperator(), notices
         )
         async with (
+            kubernetes_api(sandboxes.kubeconfig) as kubernetes,
             history,
             history.new_client() as watch_client,
             history.new_client() as openings_client,
@@ -308,10 +306,28 @@ async def _serve(
             dial(target) as dispatcher_channel,
             httpx.AsyncClient(base_url=dispatcher_http_url) as dispatcher_facade,
         ):
+            namespace = SandboxNamespace(
+                name=sandboxes.namespace,
+                custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(kubernetes.api)),
+                core_v1=k8s_client.CoreV1Api(kubernetes.api),
+                kubeconfig=sandboxes.kubeconfig,
+            )
+            custom, core = namespace.custom_objects, namespace.core_v1
+            # The Sandboxes and Pods the namespace holds, as the app's watch would have listed them.
+            index = LiveIndex(
+                freshness=Freshness(
+                    stale_after_seconds=90, at={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)}
+                ),
+                core_v1=core,
+            )
+            index.sandboxes.update(
+                {item["metadata"]["name"]: item for item in await namespace.objects(SANDBOXES_PLURAL)}
+            )
+            index.pods.update({pod.metadata.name: pod for pod in await namespace.pods()})
             inventory = SandboxAccess(
-                SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core),
+                SandboxInventory(namespace=namespace.name, custom_objects=custom, core_v1=core),
                 default_policy_sets=frozenset(),
-                caller=ServiceAccountRef(namespace=NAMESPACE, name="app"),
+                caller=namespace.account("app"),
             )
             control = SandboxControlClient(
                 control_target=target, token_file=token_file, request_timeout_s=10, lifecycle_timeout_s=10
@@ -323,8 +339,8 @@ async def _serve(
             history_watch = HistoryWatch(
                 watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
             )
-            action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
-            egress = EgressAccess(namespace=NAMESPACE, custom_objects=custom, action_policy=action_policy)
+            action_policy = ActionPolicyInventory(namespace=namespace.name, custom_objects=custom)
+            egress = EgressAccess(namespace=namespace.name, custom_objects=custom, action_policy=action_policy)
             app = create_app(
                 inventory,
                 bridge,
@@ -398,7 +414,6 @@ async def _serve(
                         await asyncio.gather(watching, opening, return_exceptions=True)
             finally:
                 await engine.dispose()
-                await core.close()
 
 
 async def receive(connection: Connection) -> object:
@@ -440,6 +455,7 @@ async def app_process(
     database_url: str,
     history: HistoryServiceClient,
     *,
+    sandboxes: SandboxesAccess,
     gateway: GatewayAccess | None,
     frontend_directory: Path | None = None,
     replay_after: int | None = None,
@@ -456,6 +472,7 @@ async def app_process(
         target=_run,
         args=(
             database_url,
+            sandboxes,
             gateway,
             history.target,
             history.token_file,

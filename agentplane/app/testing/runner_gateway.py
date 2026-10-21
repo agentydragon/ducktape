@@ -1,5 +1,5 @@
-"""Fixtures for app tests against the Go Runner Gateway, as deployed: a Ready Sandbox on the History
-tests' Kubernetes API server, the Gateway's Dispatcher and Runner proxy over it, and the native runner
+"""Fixtures for app tests against the Go Runner Gateway, as deployed: a Ready Sandbox on the target's
+Kubernetes API server, the Gateway's Dispatcher and Runner proxy over it, and the native runner
 connected through it as that Sandbox's runner."""
 
 import asyncio
@@ -43,8 +43,8 @@ GATEWAY = ServiceAccountRef(namespace="test-gateway-namespace", name="test-runne
 
 
 @pytest.fixture
-async def sandbox(history_api: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
-    async with sandbox_cluster(history_api) as started:
+async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
+    async with sandbox_cluster(api_server) as started:
         yield started
 
 
@@ -70,12 +70,12 @@ def dispatcher_database_url(postgres_admin_url: str, database_names: DatabaseNam
 
 @pytest.fixture
 async def gateway_service(
-    history_api: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str, tmp_path: Path
+    api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str, tmp_path: Path
 ) -> AsyncIterator[GatewayProcess]:
     token_file = tmp_path / "runner-gateway-token"
-    await asyncio.to_thread(token_file.write_text, await history_api.workload_token(GATEWAY, [GATEWAY_AUDIENCE]))
+    await asyncio.to_thread(token_file.write_text, await api_server.workload_token(GATEWAY, [GATEWAY_AUDIENCE]))
     async with run_gateway(
-        history_api.kubeconfig,
+        api_server.kubeconfig,
         database_url=dispatcher_database_url,
         namespace=sandbox.namespace,
         dispatcher_callers=(APP,),
@@ -89,11 +89,11 @@ async def gateway_service(
 
 
 @pytest.fixture
-async def app_token_file(history_api: KubernetesApiServer, tmp_path: Path) -> Path:
+async def app_token_file(api_server: KubernetesApiServer, tmp_path: Path) -> Path:
     """The app's projected token, for both the Dispatcher and the Runner proxy."""
     token_file = tmp_path / "app-runner-gateway-token"
     await asyncio.to_thread(
-        token_file.write_text, await history_api.workload_token(APP, [DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE])
+        token_file.write_text, await api_server.workload_token(APP, [DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE])
     )
     return token_file
 

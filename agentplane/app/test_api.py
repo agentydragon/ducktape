@@ -19,7 +19,6 @@ from google.protobuf.timestamp_pb2 import Timestamp
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import _require_operator_login, create_app, upstream_http_error
-from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -42,27 +41,13 @@ from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.history import History
-from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
-from agentplane.sandboxes.inventory import SandboxInventory
-from agentplane.sandboxes.testing.fake_inventory import (
-    NAMESPACE,
-    READY,
-    TEMPLATE,
-    FakeCoreV1Api,
-    FakeCustomObjectsApi,
-    action_policy_set,
-    egress_policy_set,
-    pod,
-    policy_binding,
-    sandbox,
-    seed_runner,
-)
-from agentplane.subjects import ServiceAccountRef
+from agentplane.sandboxes.testing.sandbox_namespace import READY, TEMPLATE, SandboxNamespace
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -105,17 +90,17 @@ def test_upstream_http_error_preserves_request_without_secrets(upstream_status: 
 
 TEST_PRESETS = PresetCatalog(
     sandboxes={
-        "public-coder": SandboxPreset(
-            title="Public coder",
-            template="agentplane-test-runner",
-            policy_sets=["basic"],
-            thread_preset="public-coder-codex",
+        "test-coder": SandboxPreset(
+            title="Test coder",
+            template=TEMPLATE,
+            policy_sets=["test-basic"],
+            thread_preset="test-coder-codex",
             bootstrap="mkdir -p /state/workspaces",
         )
     },
     threads={
-        "public-coder-codex": ThreadPreset(
-            title="Public coder / Codex",
+        "test-coder-codex": ThreadPreset(
+            title="Test coder / Codex",
             harness=Harness.CODEX,
             model="test-codex-model",
             reasoning_effort="medium",
@@ -175,43 +160,41 @@ def bare_app(
 
 
 @pytest.fixture
-def app(bare_app: FastAPI, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> FastAPI:
-    custom_objects.objects[(SANDBOXES_PLURAL, "live")] = sandbox("live", conditions=READY)
-    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
-    custom_objects.objects[(SANDBOXES_PLURAL, "fresh")] = sandbox("fresh")
-    custom_objects.objects[(SANDBOXES_PLURAL, "fresh")]["status"].pop("operatingMode")
-    custom_objects.objects[(POLICY_SETS_PLURAL, "github")] = egress_policy_set(
-        "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
+async def app(bare_app: FastAPI, namespace: SandboxNamespace) -> FastAPI:
+    await namespace.pod("live", phase="Running", ready=True, ip="10.0.0.7")
+    await namespace.sandbox("live", conditions=READY)
+    await namespace.sandbox("fresh")
+    await namespace.patch_status(SANDBOXES_PLURAL, "fresh", {"operatingMode": None})
+    await namespace.egress_policy_set("github", [{"hosts": ["api.github.com"], "methods": ["GET"]}])
+    await namespace.egress_policy_set("pypi", [{"hosts": ["pypi.org"]}])
+    await namespace.policy_binding("live-seeded", subject=namespace.account("live"), policy_sets=["github"])
+    await namespace.policy_binding(
+        "live-granted", subject=namespace.account("live"), policy_sets=["pypi"], from_git=False
     )
-    custom_objects.objects[(POLICY_SETS_PLURAL, "pypi")] = egress_policy_set("pypi", [{"hosts": ["pypi.org"]}])
-    custom_objects.objects[(POLICY_BINDINGS_PLURAL, "live-seeded")] = policy_binding(
-        "live-seeded", subject={"namespace": NAMESPACE, "name": "live"}, policy_sets=["github"]
-    )
-    custom_objects.objects[(POLICY_BINDINGS_PLURAL, "live-granted")] = policy_binding(
-        "live-granted", subject={"namespace": NAMESPACE, "name": "live"}, policy_sets=["pypi"], from_git=False
-    )
-    for name in ("packages", "basic"):
-        custom_objects.objects[(POLICY_SETS_PLURAL, name)] = egress_policy_set(name, [])
-    custom_objects.objects[(POLICY_SETS_PLURAL, "github-reads")] = action_policy_set(
+    for name in ("test-packages", "test-basic"):
+        await namespace.egress_policy_set(name, [{"hosts": [f"{name}.test"]}])
+    await namespace.action_policy_set(
         "github-reads", [{"type": "exact_actions", "actions": {"github": ["search_code"]}}]
     )
-    custom_objects.objects[(POLICY_SETS_PLURAL, "github-writes")] = action_policy_set(
+    await namespace.action_policy_set(
         "github-writes", [{"type": "exact_actions", "actions": {"github": ["push_files"]}}]
     )
-    custom_objects.objects[(POLICY_SETS_PLURAL, "broken-reads")] = action_policy_set(
-        "broken-reads", [{"type": "no_such_policy_type"}]
+    # The CRD admits any argument schema; its readers refuse one naming no JSON Schema type.
+    await namespace.action_policy_set(
+        "broken-reads",
+        [{"type": "argument_schema", "actions": {"github": ["search_code"]}, "schema": {"type": "no-such-json-type"}}],
     )
     return bare_app
 
 
-def _agent_client(app: FastAPI) -> httpx.AsyncClient:
+def _agent_client(app: FastAPI, auth: dict[str, str]) -> httpx.AsyncClient:
     """The app over ASGI on the test's own loop, where its gRPC channels and database pools were opened."""
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH)
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test", headers=auth)
 
 
 @pytest.fixture
-async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
-    async with _agent_client(app) as test_client:
+async def client(app: FastAPI, agent_auth: dict[str, str]) -> AsyncIterator[httpx.AsyncClient]:
+    async with _agent_client(app, agent_auth) as test_client:
         yield test_client
 
 
@@ -238,7 +221,7 @@ async def test_get_returns_the_row_or_404(client: httpx.AsyncClient) -> None:
     assert (await client.get("/sandboxes/nope")).status_code == 404
 
 
-async def test_create_returns_the_new_row(client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi) -> None:
+async def test_create_returns_the_new_row(client: httpx.AsyncClient, namespace: SandboxNamespace) -> None:
     response = await client.post("/sandboxes", json={"name": "demo", "template": TEMPLATE})
 
     assert response.status_code == 201
@@ -248,8 +231,7 @@ async def test_create_returns_the_new_row(client: httpx.AsyncClient, custom_obje
     assert row["phase"] == "Unspecified"
     assert row["pod"] is None
     assert row["wake_on_send"] is False
-    assert custom_objects.objects[(SANDBOXES_PLURAL, row["name"])]["spec"]["wakeOnSend"] is False
-    assert (SANDBOXES_PLURAL, row["name"]) in custom_objects.objects
+    assert (await namespace.read(SANDBOXES_PLURAL, row["name"]))["spec"]["wakeOnSend"] is False
     # Nothing was picked, so nothing may leave it.
     assert (await client.get(f"/sandboxes/{row['name']}/egress")).json() == []
 
@@ -260,20 +242,28 @@ async def test_templates_list_the_concrete_choices_for_the_create_form(client: h
 
 async def test_the_form_offers_the_namespace_policy_sets(client: httpx.AsyncClient) -> None:
     assert (await client.get("/sandboxes/form")).json() == {
-        "policy_sets": ["basic", "broken-reads", "github", "github-reads", "github-writes", "packages", "pypi"]
+        "policy_sets": [
+            "broken-reads",
+            "github",
+            "github-reads",
+            "github-writes",
+            "pypi",
+            "test-basic",
+            "test-packages",
+        ]
     }
 
 
 async def test_create_records_preset_label_and_bootstrap_without_per_sandbox_session_defaults(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+    client: httpx.AsyncClient, namespace: SandboxNamespace
 ) -> None:
     response = await client.post(
         "/sandboxes",
         json={
             "name": "coder",
             "template": TEMPLATE,
-            "policy_sets": ["packages"],
-            "preset": "public-coder",
+            "policy_sets": ["test-packages"],
+            "preset": "test-coder",
             "bootstrap": "mkdir -p /state/workspaces",
             "wake_on_send": True,
         },
@@ -281,16 +271,17 @@ async def test_create_records_preset_label_and_bootstrap_without_per_sandbox_ses
 
     assert response.status_code == 201, response.text
     row = response.json()
-    assert row["preset"] == "public-coder"
+    assert row["preset"] == "test-coder"
     assert row["wake_on_send"] is True
     assert row["binding"]["bootstrap"] == "mkdir -p /state/workspaces"
     assert "session_defaults" not in row["binding"]
-    assert custom_objects.objects[(SANDBOXES_PLURAL, row["name"])]["spec"] == {
+    assert (await namespace.read(SANDBOXES_PLURAL, row["name"]))["spec"] == {
         "template": TEMPLATE,
         "running": True,
-        "policySets": ["packages"],
+        "policySets": ["test-packages"],
         "bootstrap": "mkdir -p /state/workspaces",
         "wakeOnSend": True,
+        "wakeGeneration": 0,
     }
 
 
@@ -302,16 +293,14 @@ async def test_create_rejects_per_sandbox_session_defaults(client: httpx.AsyncCl
     assert response.status_code == 422
 
 
-async def test_create_records_the_preset_it_was_made_from(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
-) -> None:
+async def test_create_records_the_preset_it_was_made_from(client: httpx.AsyncClient) -> None:
     response = await client.post(
-        "/sandboxes", json={"name": "from-preset", "template": TEMPLATE, "preset": "public-coder"}
+        "/sandboxes", json={"name": "from-preset", "template": TEMPLATE, "preset": "test-coder"}
     )
 
     assert response.status_code == 201, response.text
-    assert response.json()["preset"] == "public-coder"
-    assert (await client.get("/sandboxes/from-preset")).json()["preset"] == "public-coder"
+    assert response.json()["preset"] == "test-coder"
+    assert (await client.get("/sandboxes/from-preset")).json()["preset"] == "test-coder"
 
 
 async def test_create_refuses_a_preset_the_app_does_not_have(client: httpx.AsyncClient) -> None:
@@ -339,163 +328,152 @@ async def test_policy_sets_list_the_namespace_for_the_create_form(client: httpx.
     ids=["no-template", "uppercase-name", "leading-dash-name", "name-too-long-for-a-dns-label", "harness-on-sandbox"],
 )
 async def test_create_rejects_invalid_requests(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi, body: dict
+    client: httpx.AsyncClient, namespace: SandboxNamespace, body: dict
 ) -> None:
     response = await client.post("/sandboxes", json=body)
 
     assert response.status_code == 422
-    assert all(kind != SANDBOXES_PLURAL or name in {"live", "fresh"} for kind, name in custom_objects.objects)
+    assert await namespace.names(SANDBOXES_PLURAL) == {"live", "fresh"}
 
 
-async def test_suspend_resume_apply_in_order(client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi) -> None:
+async def test_suspend_resume_apply_in_order(client: httpx.AsyncClient, namespace: SandboxNamespace) -> None:
     assert (await client.post("/sandboxes/live/suspend")).status_code == 204
     # The desired patch is not an effective-mode report.
     assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Running"
-    custom_objects.objects[(SANDBOXES_PLURAL, "live")]["status"]["operatingMode"] = "Suspended"
+    await namespace.patch_status(SANDBOXES_PLURAL, "live", {"operatingMode": "Suspended"})
     assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Suspended"
     assert (await client.post("/sandboxes/live/resume")).status_code == 204
     assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Suspended"
-    custom_objects.objects[(SANDBOXES_PLURAL, "live")]["status"]["operatingMode"] = "Running"
+    await namespace.patch_status(SANDBOXES_PLURAL, "live", {"operatingMode": "Running"})
     assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Running"
-    assert custom_objects.objects[(SANDBOXES_PLURAL, "live")]["spec"]["running"] is True
+    assert (await namespace.read(SANDBOXES_PLURAL, "live"))["spec"]["running"] is True
     assert (await client.post("/sandboxes/nope/suspend")).status_code == 404
 
 
 async def test_wake_policy_changes_only_the_policy_and_checks_the_displayed_uid(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+    client: httpx.AsyncClient, namespace: SandboxNamespace
 ) -> None:
-    stored = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
-    original_running = stored["spec"]["running"]
-    original_generation = stored["spec"].get("wakeGeneration")
-    uid = stored["metadata"]["uid"]
+    before = await namespace.read(SANDBOXES_PLURAL, "live")
+    uid = before["metadata"]["uid"]
 
     response = await client.patch("/sandboxes/live/wake-policy", json={"uid": uid, "wake_on_send": True})
 
     assert response.status_code == 204
-    assert stored["spec"]["wakeOnSend"] is True
-    assert stored["spec"]["running"] is original_running
-    assert stored["spec"].get("wakeGeneration") == original_generation
-    assert custom_objects.patches[-1][2]["spec"] == {"wakeOnSend": True}
+    assert (await namespace.read(SANDBOXES_PLURAL, "live"))["spec"] == {**before["spec"], "wakeOnSend": True}
 
-    replacement_uid = custom_objects.objects[(SANDBOXES_PLURAL, "fresh")]["metadata"]["uid"]
+    replacement_uid = (await namespace.read(SANDBOXES_PLURAL, "fresh"))["metadata"]["uid"]
     stale = await client.patch("/sandboxes/live/wake-policy", json={"uid": replacement_uid, "wake_on_send": False})
     assert stale.status_code == 404
-    assert stored["spec"]["wakeOnSend"] is True
+    assert (await namespace.read(SANDBOXES_PLURAL, "live"))["spec"]["wakeOnSend"] is True
 
 
-async def test_create_records_the_idle_suspension_time(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
-) -> None:
+async def test_create_records_the_idle_suspension_time(client: httpx.AsyncClient, namespace: SandboxNamespace) -> None:
     response = await client.post(
         "/sandboxes", json={"name": "napper", "template": TEMPLATE, "idle_suspend_after_seconds": 5400}
     )
 
     assert response.status_code == 201, response.text
     assert response.json()["idle_suspend_after_seconds"] == 5400
-    assert custom_objects.objects[(SANDBOXES_PLURAL, "napper")]["spec"]["idleSuspendAfter"] == "1h30m"
+    assert (await namespace.read(SANDBOXES_PLURAL, "napper"))["spec"]["idleSuspendAfter"] == "1h30m"
 
 
 async def test_create_refuses_an_idle_suspension_time_under_a_minute(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+    client: httpx.AsyncClient, namespace: SandboxNamespace
 ) -> None:
     response = await client.post(
         "/sandboxes", json={"name": "napper", "template": TEMPLATE, "idle_suspend_after_seconds": 59}
     )
 
     assert response.status_code == 422
-    assert (SANDBOXES_PLURAL, "napper") not in custom_objects.objects
+    assert "napper" not in await namespace.names(SANDBOXES_PLURAL)
 
 
 async def test_idle_suspension_time_is_set_and_cleared_on_the_displayed_incarnation(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+    client: httpx.AsyncClient, namespace: SandboxNamespace
 ) -> None:
-    stored = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
-    uid = stored["metadata"]["uid"]
+    before = await namespace.read(SANDBOXES_PLURAL, "live")
+    uid = before["metadata"]["uid"]
 
     response = await client.patch("/sandboxes/live/idle-suspend", json={"uid": uid, "idle_suspend_after_seconds": 1800})
 
     assert response.status_code == 204
-    assert stored["spec"]["idleSuspendAfter"] == "30m"
-    assert stored["spec"]["running"] is True
-    assert custom_objects.patches[-1][2]["spec"] == {"idleSuspendAfter": "30m"}
+    assert (await namespace.read(SANDBOXES_PLURAL, "live"))["spec"] == {**before["spec"], "idleSuspendAfter": "30m"}
 
-    replacement_uid = custom_objects.objects[(SANDBOXES_PLURAL, "fresh")]["metadata"]["uid"]
+    replacement_uid = (await namespace.read(SANDBOXES_PLURAL, "fresh"))["metadata"]["uid"]
     stale = await client.patch(
         "/sandboxes/live/idle-suspend", json={"uid": replacement_uid, "idle_suspend_after_seconds": None}
     )
     assert stale.status_code == 404
-    assert stored["spec"]["idleSuspendAfter"] == "30m"
+    assert (await namespace.read(SANDBOXES_PLURAL, "live"))["spec"]["idleSuspendAfter"] == "30m"
 
     cleared = await client.patch("/sandboxes/live/idle-suspend", json={"uid": uid, "idle_suspend_after_seconds": None})
     assert cleared.status_code == 204
-    assert "idleSuspendAfter" not in stored["spec"]
+    assert "idleSuspendAfter" not in (await namespace.read(SANDBOXES_PLURAL, "live"))["spec"]
     assert (await client.get("/sandboxes/live")).json()["idle_suspend_after_seconds"] is None
 
 
 async def test_the_idle_suspension_time_and_reason_are_reported_as_stored(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+    client: httpx.AsyncClient, namespace: SandboxNamespace
 ) -> None:
-    stored = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
     assert (await client.get("/sandboxes/live")).json()["suspended_by"] is None
 
     # The API server returns a `metav1.Duration` as Go writes it, not as the app wrote it.
-    stored["spec"]["idleSuspendAfter"] = "1h30m0s"
-    stored["status"]["suspendedBy"] = "Idle"
-    stored["status"]["suspendedAtWakeGeneration"] = 0
+    await namespace.patch(SANDBOXES_PLURAL, "live", {"spec": {"idleSuspendAfter": "1h30m0s"}})
+    await namespace.patch_status(SANDBOXES_PLURAL, "live", {"suspendedBy": "Idle", "suspendedAtWakeGeneration": 0})
     row = (await client.get("/sandboxes/live")).json()
     assert row["idle_suspend_after_seconds"] == 5400
     assert row["suspended_by"] == "Idle"
 
-    stored["status"]["suspendedBy"] = "Requested"
-    del stored["status"]["suspendedAtWakeGeneration"]
+    await namespace.patch_status(
+        SANDBOXES_PLURAL, "live", {"suspendedBy": "Requested", "suspendedAtWakeGeneration": None}
+    )
     assert (await client.get("/sandboxes/live")).json()["suspended_by"] == "Requested"
 
 
 async def test_resume_during_controller_quiescing_is_retryable_in_direct_app(
-    app: FastAPI, client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+    client: httpx.AsyncClient, namespace: SandboxNamespace
 ) -> None:
-    stored = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
-    stored["spec"]["running"] = False
-    stored["status"]["operatingMode"] = "Suspended"
-    stored["status"]["conditions"] = [
+    await namespace.patch(SANDBOXES_PLURAL, "live", {"spec": {"running": False}})
+    quiescing = await namespace.patch_status(
+        SANDBOXES_PLURAL,
+        "live",
         {
-            "type": "Running",
-            "status": "False",
-            "reason": "Quiescing",
-            "message": "waiting for the runner to seal",
-            "lastTransitionTime": "2026-09-01T12:00:00Z",
-        }
-    ]
-    app.state.services.inventory = SandboxAccess(
-        SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), core_v1=cast(Any, core_v1)),
-        default_policy_sets=set(),
-        caller=ServiceAccountRef(namespace=NAMESPACE, name="app"),
+            "operatingMode": "Suspended",
+            "conditions": [
+                {
+                    "type": "Running",
+                    "status": "False",
+                    "reason": "Quiescing",
+                    "message": "waiting for the runner to seal",
+                    "lastTransitionTime": "2026-09-01T12:00:00Z",
+                }
+            ],
+        },
     )
-    patches = list(custom_objects.patches)
 
     response = await client.post("/sandboxes/live/resume")
 
     assert response.status_code == 503
     assert "retry resume after it is suspended" in response.json()["detail"]
-    assert custom_objects.patches == patches
+    assert (await namespace.read(SANDBOXES_PLURAL, "live"))["metadata"]["resourceVersion"] == quiescing["metadata"][
+        "resourceVersion"
+    ]
 
 
 async def test_delete_starts_teardown_once_the_sandbox_is_suspended(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+    client: httpx.AsyncClient, namespace: SandboxNamespace
 ) -> None:
     # A newly created Sandbox is readable, but its unreported mode is not evidence that it is suspended.
     assert (await client.delete("/sandboxes/fresh")).status_code == 409
-    assert (SANDBOXES_PLURAL, "fresh") in custom_objects.objects
+    assert "fresh" in await namespace.names(SANDBOXES_PLURAL)
 
-    custom_objects.objects[(SANDBOXES_PLURAL, "live")]["metadata"]["finalizers"] = ["test-finalizer"]
+    await namespace.patch(SANDBOXES_PLURAL, "live", {"metadata": {"finalizers": ["test.invalid/seal-sessions"]}})
     assert (await client.delete("/sandboxes/live")).status_code == 409
     assert (await client.get("/sandboxes/live")).json()["phase"] == "Running"
 
     assert (await client.post("/sandboxes/live/suspend")).status_code == 204
     # Only a controller report, not the app's desired-state patch, proves it is suspended.
-    stored = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
-    stored["status"]["operatingMode"] = "Suspended"
-    stored["status"].pop("incarnation", None)
+    await namespace.patch_status(SANDBOXES_PLURAL, "live", {"operatingMode": "Suspended", "incarnation": None})
     assert (await client.delete("/sandboxes/live")).status_code == 204
     # The Sandbox Controller's finalizer holds it until its Sessions are sealed.
     assert (await client.get("/sandboxes/live")).json()["phase"] == "Quiescing"
@@ -512,7 +490,7 @@ async def test_session_open_resolves_preset_defaults_from_sandbox_label_and_over
             json={
                 "name": "coder",
                 "template": TEMPLATE,
-                "preset": "public-coder",
+                "preset": "test-coder",
                 "bootstrap": "mkdir -p /state/workspaces",
             },
         )
@@ -754,7 +732,7 @@ async def test_command_submission_tags_dispatch_and_archived_retry_after_sandbox
     event_logs: SeededEventLogStore,
     history: History,
     store: ThreadStore,
-    custom_objects: FakeCustomObjectsApi,
+    namespace: SandboxNamespace,
     tmp_path: Path,
 ) -> None:
     thread_id = await event_logs.seed("live", str(uuid4()))
@@ -777,7 +755,7 @@ async def test_command_submission_tags_dispatch_and_archived_retry_after_sandbox
     )
     await history.record(thread_id, [admission])
     await store.archive(thread_id)
-    custom_objects.objects.pop((SANDBOXES_PLURAL, "live"))
+    await namespace.delete(SANDBOXES_PLURAL, "live")
 
     retry = await client.post(path, json=body)
     assert retry.status_code == 200, retry.text
@@ -788,8 +766,8 @@ async def test_command_submission_tags_dispatch_and_archived_retry_after_sandbox
 
 async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     tmp_path: Path,
-    custom_objects: FakeCustomObjectsApi,
-    core_v1: FakeCoreV1Api,
+    namespace: SandboxNamespace,
+    agent_auth: dict[str, str],
     inventory: SandboxAccess,
     store: ThreadStore,
     database_updates: WakeupListener,
@@ -807,7 +785,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     dispatcher_http: UpstreamProxy,
 ) -> None:
     """Bound command admission at the public service RPC, without runner internals."""
-    live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
+    live_index.sandboxes["live"], live_index.pods["live"] = await namespace.runner("live")
     session_id = str(uuid4())
     thread_id = await event_logs.seed("live", session_id)
     async with unanswered_dispatcher_service(tmp_path / "wedged-token") as (dispatcher, cancelled):
@@ -830,7 +808,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
             dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )
-        async with _agent_client(app) as http, asyncio.timeout(10):
+        async with _agent_client(app, agent_auth) as http, asyncio.timeout(10):
             response = await http.post(
                 f"/threads/{thread_id}/submit-input",
                 json={"commandId": "test-unanswered-command", "text": "never admitted"},
@@ -868,7 +846,7 @@ async def test_binding_writes_need_an_operator_login_not_a_workload_token(client
 
 @pytest.mark.usefixtures("operator_login")
 async def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+    client: httpx.AsyncClient, namespace: SandboxNamespace
 ) -> None:
     """A sandbox's egress is not frozen at creation: the grant is one more binding naming it, and
     revoking that one leaves the rest of its egress standing."""
@@ -879,18 +857,17 @@ async def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
 
     assert granted.status_code == 201, granted.text
     binding = granted.json()
-    assert (binding["subjects"], binding["provenance"]) == ([{"namespace": NAMESPACE, "name": "live"}], "operator")
+    assert (binding["subjects"], binding["provenance"]) == ([namespace.account("live").model_dump()], "operator")
     # Every named set is the binding's, of any rule type.
     assert [policy_set["name"] for policy_set in binding["policy_sets"]] == ["pypi", "github", "github-reads"]
-    assert custom_objects.objects[(POLICY_BINDINGS_PLURAL, binding["name"])]["spec"]["expiresAt"].startswith(
-        "2099-01-01"
-    )
+    stored = await namespace.read(POLICY_BINDINGS_PLURAL, binding["name"])
+    assert stored["spec"]["expiresAt"].startswith("2099-01-01")
     # Owned by the Sandbox, so deleting the sandbox takes the grant with it.
-    (owner,) = custom_objects.objects[(POLICY_BINDINGS_PLURAL, binding["name"])]["metadata"]["ownerReferences"]
+    (owner,) = stored["metadata"]["ownerReferences"]
     assert (owner["kind"], owner["name"], owner["uid"]) == (
         "Sandbox",
         "live",
-        custom_objects.objects[(SANDBOXES_PLURAL, "live")]["metadata"]["uid"],
+        (await namespace.read(SANDBOXES_PLURAL, "live"))["metadata"]["uid"],
     )
     assert sorted(b["name"] for b in (await client.get("/sandboxes/live/egress")).json()) == sorted(
         ["live-granted", "live-seeded", binding["name"]]
@@ -902,7 +879,7 @@ async def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
 
 @pytest.mark.usefixtures("operator_login")
 async def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+    client: httpx.AsyncClient, namespace: SandboxNamespace
 ) -> None:
     """422 and not 404: the sandbox in the path is there, and 404 on this route already says it is
     not. The CRD would admit the dangling name and the proxy would report `MissingPolicy`, so what
@@ -918,7 +895,7 @@ async def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
     assert (
         await client.post("/sandboxes", json={"name": "demo", "template": TEMPLATE, "policy_sets": ["vanished"]})
     ).status_code == 422
-    assert all(kind != SANDBOXES_PLURAL or name in {"live", "fresh"} for kind, name in custom_objects.objects)
+    assert await namespace.names(SANDBOXES_PLURAL) == {"live", "fresh"}
 
 
 async def test_every_route_needs_one_of_the_two_credentials(client: httpx.AsyncClient) -> None:
@@ -946,15 +923,11 @@ async def test_thread_sync_routes_authenticate_before_dispatch(client: httpx.Asy
 
 
 @pytest.mark.usefixtures("operator_login")
-async def test_binding_revocation(client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi) -> None:
+async def test_binding_revocation(client: httpx.AsyncClient, namespace: SandboxNamespace) -> None:
     """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied, and
     so would the Sandbox's own."""
-    custom_objects.objects[(POLICY_BINDINGS_PLURAL, "live")] = policy_binding(
-        "live",
-        subject={"namespace": NAMESPACE, "name": "live"},
-        policy_sets=["pypi"],
-        from_git=False,
-        sandbox_controlled="live",
+    await namespace.policy_binding(
+        "live", subject=namespace.account("live"), policy_sets=["pypi"], from_git=False, sandbox_controlled="live"
     )
     assert (await client.delete("/policy-bindings/live")).status_code == 409
     assert (await client.delete("/policy-bindings/live-seeded")).status_code == 409
@@ -966,10 +939,10 @@ async def test_binding_revocation(client: httpx.AsyncClient, custom_objects: Fak
 async def test_presets_publish_editable_sandbox_and_session_defaults(client: httpx.AsyncClient) -> None:
     assert (await client.get("/presets")).json() == [
         {
-            "name": "public-coder",
-            "title": "Public coder",
-            "template": "agentplane-test-runner",
-            "policy_sets": ["basic"],
+            "name": "test-coder",
+            "title": "Test coder",
+            "template": TEMPLATE,
+            "policy_sets": ["test-basic"],
             "session_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "test-codex-model",
@@ -984,11 +957,11 @@ async def test_presets_publish_editable_sandbox_and_session_defaults(client: htt
 
 
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
-    bare_app: FastAPI, event_logs: SeededEventLogStore
+    bare_app: FastAPI, event_logs: SeededEventLogStore, agent_auth: dict[str, str]
 ) -> None:
     thread_id = str(await event_logs.seed("live", "s-1"))
     await event_logs.seed("live", "s-2")
-    async with _agent_client(bare_app) as http:
+    async with _agent_client(bare_app, agent_auth) as http:
         found = (await http.get(f"/threads/{thread_id}")).json()
         assert (found["id"], found["name"]) == (thread_id, None)
         assert (await http.get("/threads", params={"sandbox": "other"})).json()["threads"] == []
@@ -1004,10 +977,10 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
 
 
 async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listing(
-    bare_app: FastAPI, event_logs: SeededEventLogStore
+    bare_app: FastAPI, event_logs: SeededEventLogStore, agent_auth: dict[str, str]
 ) -> None:
     thread_id = str(await event_logs.seed("live", "s-1"))
-    async with _agent_client(bare_app) as http:
+    async with _agent_client(bare_app, agent_auth) as http:
         assert (await http.post(f"/threads/{thread_id}/archive")).status_code == 204
         assert (await http.get("/threads", params={"sandbox": "live"})).json()["threads"] == []
         [archived] = (await http.get("/threads", params={"sandbox": "live", "include_archived": "true"})).json()[
@@ -1031,13 +1004,11 @@ async def test_archive_checks_unfinished_work_instead_of_process_liveness(
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: SeededEventLogStore,
-    custom_objects: FakeCustomObjectsApi,
-    core_v1: FakeCoreV1Api,
+    namespace: SandboxNamespace,
+    agent_auth: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    custom_objects.objects[(SANDBOXES_PLURAL, "live")], core_v1.pods["live"] = seed_runner(
-        custom_objects, core_v1, "live"
-    )
+    await namespace.runner("live")
     thread_id = await event_logs.seed("live", "s-1")
     assert event_logs.history is not None
     await event_logs.history.set_attached(
@@ -1054,7 +1025,7 @@ async def test_archive_checks_unfinished_work_instead_of_process_liveness(
         return runner_pb2.RunnerStatus(sessions=[runner_pb2.SessionStatus(session_id=str(thread_id), busy=busy)])
 
     monkeypatch.setattr(bridge, "runner_status", runner_status)
-    async with _agent_client(bare_app) as http:
+    async with _agent_client(bare_app, agent_auth) as http:
         response = await http.post(f"/threads/{thread_id}/archive")
 
     assert response.status_code == (409 if busy else 204)
@@ -1069,20 +1040,18 @@ async def test_a_thread_is_not_archived_when_its_live_runner_cannot_be_checked(
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: SeededEventLogStore,
-    custom_objects: FakeCustomObjectsApi,
-    core_v1: FakeCoreV1Api,
+    namespace: SandboxNamespace,
+    agent_auth: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    custom_objects.objects[(SANDBOXES_PLURAL, "live")], core_v1.pods["live"] = seed_runner(
-        custom_objects, core_v1, "live"
-    )
+    await namespace.runner("live")
     thread_id = await event_logs.seed("live", "runner-loss")
 
     async def runner_unavailable(_sandbox: str) -> runner_pb2.RunnerStatus:
         raise ServiceError(grpc.StatusCode.UNAVAILABLE, "runner connection unavailable")
 
     monkeypatch.setattr(bridge, "runner_status", runner_unavailable)
-    async with _agent_client(bare_app) as http:
+    async with _agent_client(bare_app, agent_auth) as http:
         response = await http.post(f"/threads/{thread_id}/archive")
 
     assert response.status_code == 503

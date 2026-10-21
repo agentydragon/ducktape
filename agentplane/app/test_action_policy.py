@@ -10,10 +10,9 @@ from agentplane.action_service.models import PolicyKind, PolicySource
 from agentplane.action_service.policy_view import EffectivePolicyView, ExactActionsView, SubjectActionPolicyView
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.conftest import operator_token
-from agentplane.sandboxes.testing.fake_inventory import NAMESPACE
 from agentplane.subjects import ServiceAccountRef
 
-LIVE = ServiceAccountRef(namespace=NAMESPACE, name="live")
+LIVE = ServiceAccountRef(namespace="test-sandboxes", name="live")
 
 ANSWER = SubjectActionPolicyView(
     synced=True,
@@ -46,7 +45,7 @@ async def test_for_subject_asks_the_service_about_the_account_and_passes_on_its_
 
     view = await action_policy.for_subject(client, LIVE)
 
-    assert asked == [f"/v1/operator/action-policy/service-accounts/{NAMESPACE}/live"]
+    assert asked == ["/v1/operator/action-policy/service-accounts/test-sandboxes/live"]
     assert (view.synced, view.auto_approve_if) == (True, ANSWER.auto_approve_if)
 
 

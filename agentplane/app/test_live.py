@@ -73,18 +73,11 @@ from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions import Outcome
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
-from agentplane.sandboxes.testing.fake_inventory import (
-    NAMESPACE,
-    FakeCoreV1Api,
-    FakeCustomObjectsApi,
-    egress_policy_set,
-    policy_binding,
-    sandbox,
-    seed_runner,
-)
+from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
 from util.net import pick_free_port
 
@@ -97,28 +90,20 @@ NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 
 
 @pytest.fixture
-def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_index: LiveIndex) -> LiveIndex:
-    """The same objects in the fake API server and in the index, so the two paths can be compared."""
-    seed_runner(custom_objects, core_v1, "runner-1")
-    custom_objects.objects[(SANDBOXES_PLURAL, "shelved")] = sandbox("shelved", running=False)
-    custom_objects.objects[("policysets", "github")] = egress_policy_set(
-        "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
-    )
-    custom_objects.objects[("policybindings", "runner-1-picked")] = policy_binding(
-        "runner-1-picked", subject={"namespace": NAMESPACE, "name": "runner-1"}, policy_sets=["github"]
-    )
-    custom_objects.objects[("policybindings", "elsewhere")] = policy_binding(
-        "elsewhere", subject={"namespace": NAMESPACE, "name": "shelved"}, policy_sets=["github"]
-    )
-    for (kind, name), obj in custom_objects.objects.items():
-        match kind:
-            case "sandboxes":
-                live_index.sandboxes[name] = obj
-            case "policybindings":
-                live_index.bindings[name] = obj
-            case "policysets":
-                live_index.rule_sets[name] = obj
-    live_index.pods.update(core_v1.pods)
+async def seeded(namespace: SandboxNamespace, live_index: LiveIndex) -> LiveIndex:
+    """The same objects on the API server and in the index, so the two paths can be compared."""
+    await namespace.runner("runner-1")
+    await namespace.sandbox("shelved", running=False)
+    await namespace.egress_policy_set("github", [{"hosts": ["api.github.com"], "methods": ["GET"]}])
+    await namespace.policy_binding("runner-1-picked", subject=namespace.account("runner-1"), policy_sets=["github"])
+    await namespace.policy_binding("elsewhere", subject=namespace.account("shelved"), policy_sets=["github"])
+    for plural, store in (
+        (SANDBOXES_PLURAL, live_index.sandboxes),
+        (POLICY_BINDINGS_PLURAL, live_index.bindings),
+        (POLICY_SETS_PLURAL, live_index.rule_sets),
+    ):
+        store.update({item["metadata"]["name"]: item for item in await namespace.objects(plural)})
+    live_index.pods.update({pod.metadata.name: pod for pod in await namespace.pods()})
     return live_index
 
 
@@ -128,8 +113,10 @@ async def test_the_index_projects_the_rows_a_listing_would_return(seeded: LiveIn
     assert seeded.sandbox_view("runner-1") == sandbox_view(await inventory.get("runner-1"))
 
 
-async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex, egress: EgressAccess) -> None:
-    runner = ServiceAccountRef(namespace=NAMESPACE, name="runner-1")
+async def test_the_index_selects_the_bindings_a_request_would(
+    seeded: LiveIndex, egress: EgressAccess, namespace: SandboxNamespace
+) -> None:
+    runner = namespace.account("runner-1")
     assert seeded.bindings_for(runner) == await egress.bindings_for(runner)
     assert [binding.name for binding in seeded.bindings_for(runner)] == ["runner-1-picked"]
 
@@ -137,7 +124,9 @@ async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex,
 EMPTY_POLICY = ActionPolicyView(synced=True, auto_approve_if=[])
 
 
-async def test_the_sandbox_stream_asks_the_service_again_only_when_a_policy_object_changed(seeded: LiveIndex) -> None:
+async def test_the_sandbox_stream_asks_the_service_again_only_when_a_policy_object_changed(
+    seeded: LiveIndex, namespace: SandboxNamespace
+) -> None:
     """Every other change -- a Pod, a thread -- repeats the last answer; a failure is never repeated,
     and a different sandbox is asked about on its own."""
     answers: list[ActionPolicyView | ActionPolicyUnavailable] = [
@@ -152,8 +141,8 @@ async def test_the_sandbox_stream_asks_the_service_again_only_when_a_policy_obje
         asked.append(subject)
         return answers.pop(0)
 
-    runner = ServiceAccountRef(namespace=NAMESPACE, name="runner-1")
-    other = ServiceAccountRef(namespace=NAMESPACE, name="shelved")
+    runner = namespace.account("runner-1")
+    other = namespace.account("shelved")
     policy = ActionPolicyFrames(seeded, fetch)
 
     assert await policy.for_subject(runner) == ActionPolicyUnavailable(code="test-first-attempt-failed")
@@ -192,6 +181,7 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
     app: FastAPI,
     action_policy: ActionPolicyInventory,
     operator_sessions: OperatorSessionStore,
+    namespace: SandboxNamespace,
     caller: CallerIdentity,
     configured: bool,
     code: str,
@@ -238,9 +228,7 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
     )
     row = await stored_login(operator_sessions, login)
 
-    frame = await action_policy_frame(
-        _request(app, login, row), caller, action_policy, ServiceAccountRef(namespace=NAMESPACE, name="runner-1")
-    )
+    frame = await action_policy_frame(_request(app, login, row), caller, action_policy, namespace.account("runner-1"))
 
     assert frame == ActionPolicyUnavailable(code=code)
 
@@ -257,7 +245,7 @@ async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
     assert frame == ThreadsUnavailable(code="UNAVAILABLE")
 
 
-def test_a_sandbox_the_watch_has_dropped_is_gone_rather_than_missing(seeded: LiveIndex) -> None:
+async def test_a_sandbox_the_watch_has_dropped_is_gone_rather_than_missing(seeded: LiveIndex) -> None:
     del seeded.sandboxes["runner-1"]
 
     assert seeded.sandbox_view("runner-1") is None
@@ -362,6 +350,7 @@ async def _next_threads(stream: AsyncIterator[str | bytes | memoryview]) -> Thre
 
 async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_changes(
     seeded: LiveIndex,
+    namespace: SandboxNamespace,
     store: ThreadStore,
     event_logs: SeededEventLogStore,
     replica: Replica,
@@ -387,7 +376,10 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
             archived = await _next_threads(stream)
             assert (archived.threads[0].archived, archived.archived_count) == (True, 1)
 
-            seeded.sandboxes["runner-1"] = sandbox("runner-1", running=False)
+            await namespace.patch(SANDBOXES_PLURAL, "runner-1", {"spec": {"running": False}})
+            seeded.sandboxes["runner-1"] = await namespace.patch_status(
+                SANDBOXES_PLURAL, "runner-1", {"operatingMode": OperatingMode.SUSPENDED.value, "incarnation": None}
+            )
             seeded.changes.notify()
             suspended = await _next_threads(stream)
             assert next(view for view in suspended.sandboxes if view.name == "runner-1").operating_mode == (
@@ -482,9 +474,9 @@ async def _next_decisions(stream: AsyncIterator[str | bytes | memoryview]) -> De
 
 
 async def test_egress_decision_stream_receives_snapshots_and_recovers(
-    seeded: LiveIndex, decisions: DecisionsClient, egress_admin: FakeEgressAdmin
+    seeded: LiveIndex, namespace: SandboxNamespace, decisions: DecisionsClient, egress_admin: FakeEgressAdmin
 ) -> None:
-    subject = (NAMESPACE, "runner-1")
+    subject = (namespace.name, "runner-1")
     egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
     drain = Drain()
     response = await live_egress_decisions(index=seeded, decisions=decisions, shutdown=drain, name="runner-1")
@@ -530,9 +522,13 @@ async def test_egress_decision_stream_receives_snapshots_and_recovers(
 
 
 async def test_egress_decision_stream_reconnects_after_lease_with_rotated_token(
-    seeded: LiveIndex, decisions: DecisionsClient, egress_admin: FakeEgressAdmin, egress_token_file: Path
+    seeded: LiveIndex,
+    namespace: SandboxNamespace,
+    decisions: DecisionsClient,
+    egress_admin: FakeEgressAdmin,
+    egress_token_file: Path,
 ) -> None:
-    subject = (NAMESPACE, "runner-1")
+    subject = (namespace.name, "runner-1")
     egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
     drain = Drain()
     response = await live_egress_decisions(index=seeded, decisions=decisions, shutdown=drain, name="runner-1")

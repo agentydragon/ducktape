@@ -8,6 +8,7 @@ finishes deleting a namespace, so each test takes one of its own and leaves it w
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
@@ -44,6 +45,8 @@ class SandboxNamespace:
     name: str
     custom_objects: CustomObjectsClient
     core_v1: k8s_client.CoreV1Api
+    # How another process reaches the same API server.
+    kubeconfig: Path
 
     @classmethod
     async def new(cls, server: KubernetesApiServer) -> SandboxNamespace:
@@ -55,6 +58,7 @@ class SandboxNamespace:
             name=name,
             custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(server.api)),
             core_v1=core_v1,
+            kubeconfig=server.kubeconfig,
         )
         await namespace._create(
             sandbox_resource.TEMPLATES_PLURAL,
@@ -74,9 +78,15 @@ class SandboxNamespace:
     async def read(self, plural: str, name: str) -> dict[str, Any]:
         return await self.custom_objects.get_namespaced_custom_object(GROUP, VERSION, self.name, plural, name)
 
-    async def names(self, plural: str) -> set[str]:
+    async def objects(self, plural: str) -> list[dict[str, Any]]:
         listed = await self.custom_objects.list_namespaced_custom_object(GROUP, VERSION, self.name, plural)
-        return {item["metadata"]["name"] for item in listed["items"]}
+        return cast(list[dict[str, Any]], listed["items"])
+
+    async def names(self, plural: str) -> set[str]:
+        return {item["metadata"]["name"] for item in await self.objects(plural)}
+
+    async def pods(self) -> list[k8s_client.V1Pod]:
+        return cast(list[k8s_client.V1Pod], (await self.core_v1.list_namespaced_pod(self.name)).items)
 
     async def patch(self, plural: str, name: str, body: dict[str, Any]) -> dict[str, Any]:
         """A merge patch of the object; its `status` is the status subresource's, which this leaves alone."""

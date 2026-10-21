@@ -30,8 +30,6 @@ depends on.
 
 The reshuffle this implies:
 
-- **`FAKE_APISERVERS_TO_ENVTEST`.** Hand-written API servers and TokenReview stubs give way to
-  envtest.
 - **`K3S_VM_ACCEPTANCE`.** VM Sandboxes need KubeVirt on k3s without KVM (finding 3).
 
 ## Where the k3s tests are
