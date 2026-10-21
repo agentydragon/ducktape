@@ -78,6 +78,19 @@ HAKU_ACTION_POLICY_SETS = (
     DUCKTAPE_PR_FAILED_JOBS_SET,
 )
 
+# Inbox groups and the presets that launch into them (operator, 2026-10-21 07:51 UTC). A group's Sandboxes carry
+# its inbox tag and hold its `send_to` PolicySet, so they may message one another.
+INBOX_GROUPS = {
+    "public-coder": ("public-coder", "public-coder-ducktape"),
+    "haku": ("haku",),
+    "finance-agent": ("finance-agent",),
+}
+
+
+def send_to(group: str) -> str:
+    """The PolicySet that lets its holder message every Sandbox tagged `group`."""
+    return f"send-to-{group}"
+
 
 def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFederationSettings) -> AppSettingsConfig:
     cfg = settings(
@@ -204,4 +217,8 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
     sandbox.template = "runner-ducktape"
     sandbox.thread_preset = "public-coder-ducktape-codex"
     cfg.sandbox_presets["public-coder-ducktape"] = sandbox
+    for group, presets in INBOX_GROUPS.items():
+        for name in presets:
+            cfg.sandbox_presets[name].inbox_tags = [group]
+            cfg.sandbox_presets[name].policy_sets += [send_to(group)]
     return cfg

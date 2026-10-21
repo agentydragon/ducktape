@@ -2971,6 +2971,9 @@ data:
           - agentplane-testing
           - public-inventory
           - ducktape-pr-failed-jobs
+          - send-to-public-coder
+        inbox_tags:
+          - public-coder
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -3009,6 +3012,9 @@ data:
           - haku-sandbox-write
           - coinbase
           - plaid-diagnostics
+          - send-to-haku
+        inbox_tags:
+          - haku
         thread_preset: haku-codex
       finance-agent:
         title: Finance agent
@@ -3033,6 +3039,9 @@ data:
           - spend-policy-config
           - plaid-diagnostics
           - ducktape-pr-failed-jobs
+          - send-to-finance-agent
+        inbox_tags:
+          - finance-agent
         thread_preset: finance-agent-codex
       public-coder-ducktape:
         title: Public coder / ducktape
@@ -3052,6 +3061,9 @@ data:
           - agentplane-testing
           - public-inventory
           - ducktape-pr-failed-jobs
+          - send-to-public-coder
+        inbox_tags:
+          - public-coder
         thread_preset: public-coder-ducktape-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -7072,6 +7084,48 @@ spec:
         kind: Role
         name: plaid-spend-finance-config-reader
       type: kubernetes_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: send-to-public-coder
+  namespace: agentplane-staging
+spec:
+  rules:
+    - operations:
+        - send_message
+      targets:
+        inboxTags:
+          - public-coder
+      type: session_inbox_access
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: send-to-haku
+  namespace: agentplane-staging
+spec:
+  rules:
+    - operations:
+        - send_message
+      targets:
+        inboxTags:
+          - haku
+      type: session_inbox_access
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: send-to-finance-agent
+  namespace: agentplane-staging
+spec:
+  rules:
+    - operations:
+        - send_message
+      targets:
+        inboxTags:
+          - finance-agent
+      type: session_inbox_access
 ---
 apiVersion: v1
 kind: ServiceAccount

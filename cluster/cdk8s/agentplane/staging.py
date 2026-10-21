@@ -83,7 +83,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_selections import STAGING_APP_MODELS, model_configs
-from cluster.cdk8s.providers.agentplane.policy_set import PolicySet
+from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.public_coder import egress as public_coder_egress
@@ -481,6 +481,13 @@ def chart(app: App) -> Chart:
             f"policy-set-{name}",
             metadata=ApiObjectMetadata(name=name, namespace=ENV.namespace),
             rules=[*agent_access_profiles.rules_for_grants(grants), *deployment_rules.get(name, ())],
+        )
+    for group in staging_config.INBOX_GROUPS:
+        PolicySet(
+            chart,
+            f"policy-set-{staging_config.send_to(group)}",
+            metadata=ApiObjectMetadata(name=staging_config.send_to(group), namespace=ENV.namespace),
+            rules=[Rule.send_message(inbox_tags=[group])],
         )
     controller = policy_controller.PolicyController(
         chart, "policy-controller", ENV, placement=node_scheduling.HIL_OVH, registry_secret_name=REGISTRY_SECRET_NAME
