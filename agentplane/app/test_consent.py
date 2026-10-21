@@ -24,7 +24,7 @@ from agentplane.app.consent import ConsentAllow, ConsentDeny, decide_enrollment,
 from agentplane.app.operator_sessions import OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.subjects import ServiceAccountRef
 
-PUBLIC_CODER = ServiceAccountRef(namespace="agentplane-test", name="test-public-coder")
+TEST_CODER = ServiceAccountRef(namespace="agentplane-test", name="test-coder")
 LOGIN = OperatorSession(issuer="https://test-idp.invalid/", subject="test-subject", username="test-operator")
 
 
@@ -58,7 +58,7 @@ async def test_lost_response_preserves_binding_and_exact_decision(operator_sessi
     def downstream(request: httpx.Request) -> httpx.Response:
         assert request.headers["Authorization"] == f"Bearer {OPERATOR_TOKEN}"
         if request.url.path.endswith("/caller-service-accounts"):
-            return httpx.Response(200, json=[PUBLIC_CODER.model_dump()])
+            return httpx.Response(200, json=[TEST_CODER.model_dump()])
         if request.url.path.endswith("/connections"):
             return httpx.Response(200, json=[])
         body = json.loads(request.content)
@@ -82,7 +82,7 @@ async def test_lost_response_preserves_binding_and_exact_decision(operator_sessi
             verdict="allow",
             csrf_token=preview.csrf_token,
             connection=NewConnection(display_name="My client"),
-            service_account=PUBLIC_CODER,
+            service_account=TEST_CODER,
         )
         with pytest.raises(httpx.ReadError):
             await decide_enrollment(row, "handle", decision, client)

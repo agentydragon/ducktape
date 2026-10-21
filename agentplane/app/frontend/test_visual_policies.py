@@ -1007,18 +1007,18 @@ async def test_consent_reconnect_decision_phone(reconnect_review: VisualPage) ->
 
 @DESKTOP_AND_MOBILE
 async def test_policy_set_selector_hides_picked_option(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_app("/sandboxes?preset=public-coder")
-    await view.page.wait_for_selector('.mantine-Pill-root:has-text("basic")', state="attached")
+    await app.mount_app("/sandboxes?preset=test-coder")
+    await view.page.wait_for_selector('.mantine-Pill-root:has-text("test-basic")', state="attached")
     await view.check(context="fixture ready")
     page = view.page
-    await _open_select(page, label="Policy sets", available="pypi", picked="basic", press_arrow_down=True)
+    await _open_select(page, label="Policy sets", available="pypi", picked="test-basic", press_arrow_down=True)
     await view.capture(target=view.page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE
-async def test_sandbox_form_public_coder_preset_layout(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_app("/sandboxes?preset=public-coder")
-    await view.page.wait_for_selector('.mantine-Pill-root:has-text("ducktape-pr-failed-jobs")', state="attached")
+async def test_sandbox_form_test_coder_preset_layout(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/sandboxes?preset=test-coder")
+    await view.page.wait_for_selector('.mantine-Pill-root:has-text("test-pr-failed-jobs")', state="attached")
     await expect(view.page.locator(".mantine-Pill-root")).to_have_count(14)
     headers = view.page.locator("thead tr th")
     await expect(headers.nth(0)).to_have_text("Status")

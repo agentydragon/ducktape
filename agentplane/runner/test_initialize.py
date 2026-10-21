@@ -33,14 +33,14 @@ def recorded(state: Path) -> list[runner_pb2.InitializationEvent]:
 async def test_bootstrap_runs_before_the_first_harness_and_not_again(
     config: RunnerTestConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
 ) -> None:
-    script = "mkdir -p workspaces\nprintf 'ready\\n' | tee -a workspaces/public-coder-ready\n"
+    script = "mkdir -p workspaces\nprintf 'ready\\n' | tee -a workspaces/test-ready\n"
     async with running(bootstrapped(config, script), gateway):
         driver = RunnerDriver(gateway)
         first = await driver.attach("bootstrap-1", spec=spec)
         second = await driver.attach("bootstrap-2", spec=spec)
 
     assert first.attached.harness_state == second.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
-    assert (config.state_dir / "workspaces/public-coder-ready").read_text() == "ready\n"
+    assert (config.state_dir / "workspaces/test-ready").read_text() == "ready\n"
     output, result = recorded(config.state_dir)
     assert output.output == runner_pb2.InitializationOutput(
         stream=runner_pb2.INITIALIZATION_STREAM_STDOUT, data=b"ready\n"

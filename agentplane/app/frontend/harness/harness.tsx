@@ -205,21 +205,21 @@ function addProvisioningSandbox(): void {
   });
 }
 
-const PUBLIC_CODER_POLICY_SETS = [
-  "basic",
-  "packages",
-  "github-agentydragon-agent",
-  "github-clone",
-  "github-actions-logs",
-  "buildbuddy",
-  "public-coder-pr-visuals",
-  "common-github-read",
-  "github-identity-reads",
-  "ssh-reads",
-  "shared-diagnostics",
-  "agentplane-testing",
-  "public-inventory",
-  "ducktape-pr-failed-jobs",
+const TEST_CODER_POLICY_SETS = [
+  "test-basic",
+  "test-packages",
+  "test-github-writes",
+  "test-github-clone",
+  "test-github-actions-logs",
+  "test-build-cache",
+  "test-pr-visuals",
+  "test-github-reads",
+  "test-github-identity-reads",
+  "test-ssh-reads",
+  "test-shared-diagnostics",
+  "test-environment-access",
+  "test-inventory",
+  "test-pr-failed-jobs",
 ];
 
 const POLICY_SETS: PolicySetView[] = [
@@ -263,7 +263,7 @@ const POLICY_SETS: PolicySetView[] = [
     ],
   },
   {
-    name: "public-coder",
+    name: "test-coder",
     generation: 2,
     refused: null,
     rules: [
@@ -367,8 +367,8 @@ const BINDINGS: BindingView[] = [
     subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
     expires_at: null,
     conditions: [verdict("ActionsReady", "True", "spec accepted", 1)],
-    // The preset names public-coder alone; harness-reviews was picked at launch.
-    policy_sets: [policySet("public-coder"), policySet("harness-reviews")],
+    // The preset names test-coder alone; harness-reviews was picked at launch.
+    policy_sets: [policySet("test-coder"), policySet("harness-reviews")],
     missing_policy_sets: [],
   },
   {
@@ -419,14 +419,14 @@ const ACTION_POLICY: ActionPolicyView = {
   auto_approve_if: [
     {
       binding: "ready-sandbox-k2m9x",
-      policy_set: "public-coder",
+      policy_set: "test-coder",
       source: "rules",
       index: 0,
       policy: { type: "exact_actions", actions: { github: ["get_file_contents", "list_commits", "search_code"] } },
     },
     {
       binding: "ready-sandbox-k2m9x",
-      policy_set: "public-coder",
+      policy_set: "test-coder",
       source: "rules",
       index: 1,
       policy: {
@@ -984,7 +984,7 @@ const ACTIONS: ActionRequestView[] = [
     title: "echo the test repository handle back",
     description: "Confirms the fixture connection still reaches the echo Action before the demo run.",
     idempotency_key: "visual-pending",
-    caller: { namespace: "agentplane-visual", name: "test-public-coder" },
+    caller: { namespace: "agentplane-visual", name: "test-coder" },
     state: "decision_pending",
     version: 1,
     created_at: ago(3 * 60_000),
@@ -1109,7 +1109,7 @@ const ACTIONS: ActionRequestView[] = [
     title: "echo a repository outside the binding",
     description: "Reads test-owner/other-repository, which this workload has no binding for.",
     idempotency_key: "visual-denied",
-    caller: { namespace: "agentplane-visual", name: "test-public-coder" },
+    caller: { namespace: "agentplane-visual", name: "test-coder" },
     state: "denied",
     version: 2,
     created_at: ago(80 * 60_000),
@@ -2387,10 +2387,10 @@ routes.push(
     /^\/presets$/,
     () => [
       {
-        name: "public-coder",
-        title: "Public coder",
+        name: "test-coder",
+        title: "Test coder",
         template: "runner",
-        policy_sets: [...PUBLIC_CODER_POLICY_SETS],
+        policy_sets: [...TEST_CODER_POLICY_SETS],
         session_defaults: {
           harness: "HARNESS_CODEX",
           model: "harness-codex-model",
@@ -2403,7 +2403,7 @@ routes.push(
     ],
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
-  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...PUBLIC_CODER_POLICY_SETS, "pypi", "github-public"] })],
+  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...TEST_CODER_POLICY_SETS, "pypi", "github-public"] })],
   ["GET", /^\/actions$/, () => ACTIONS],
   [
     "GET",
@@ -2489,7 +2489,7 @@ routes.push(
         version: 1,
       },
       service_accounts: [
-        { namespace: "agentplane-visual", name: "public-coder" },
+        { namespace: "agentplane-visual", name: "test-coder" },
         { namespace: "agentplane-visual", name: "operator-assistant" },
       ],
       connections: [sampleConnection()],

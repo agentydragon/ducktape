@@ -67,8 +67,8 @@ def decision(
     if reason is not None:
         row.reason = reason
     if outcome == "allow":
-        row.binding = "sandboxes-github-agentydragon-agent"
-        row.policy = "github-agentydragon-agent"
+        row.binding = "test-sandbox-github-writes"
+        row.policy = "test-github-writes"
         row.rule = 0
         if address is not None:
             row.address = address

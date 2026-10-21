@@ -14,17 +14,17 @@ from agentplane.runner.harness import Harness
 def presets() -> PresetCatalog:
     return PresetCatalog(
         sandboxes={
-            "public-coder": SandboxPreset(
-                title="Public coder",
+            "test-coder": SandboxPreset(
+                title="Test coder",
                 template="runner",
-                policy_sets=["github-agentydragon-agent"],
-                thread_preset="public-coder-codex",
+                policy_sets=["test-github-writes"],
+                thread_preset="test-coder-codex",
                 bootstrap="mkdir -p /state/workspaces",
             )
         },
         threads={
-            "public-coder-codex": ThreadPreset(
-                title="Public coder / Codex",
+            "test-coder-codex": ThreadPreset(
+                title="Test coder / Codex",
                 harness=Harness.CODEX,
                 model="preset-model",
                 reasoning_effort="medium",
@@ -50,7 +50,7 @@ def test_session_defaults_over_replaces_only_explicitly_set_fields(
 
 
 def test_opening_defaults_resolve_from_the_authoritative_sandbox_preset_label(presets: PresetCatalog) -> None:
-    defaults = presets.defaults_for_sandbox("public-coder")
+    defaults = presets.defaults_for_sandbox("test-coder")
 
     assert defaults.harness is Harness.CODEX
     assert defaults.model == "preset-model"

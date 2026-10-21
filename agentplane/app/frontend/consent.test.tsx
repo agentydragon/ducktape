@@ -17,7 +17,7 @@ function preview(): ConsentPreview {
       expires_at: "2026-09-09T12:00:00Z",
       version: 1,
     },
-    service_accounts: [{ namespace: "agentplane-test", name: "public-coder" }],
+    service_accounts: [{ namespace: "agentplane-test", name: "test-coder" }],
     connections: [],
     csrf_token: "test-only-csrf",
     attempted_decision: null,
@@ -60,13 +60,13 @@ function button(container: HTMLElement, label: string): HTMLButtonElement {
   return found;
 }
 
-const PUBLIC_CODER = { namespace: "agentplane-test", name: "public-coder" };
+const TEST_CODER = { namespace: "agentplane-test", name: "test-coder" };
 
 async function chooseServiceAccount(container: HTMLElement): Promise<void> {
   const select = container.querySelector<HTMLSelectElement>('select[name="service_account"]');
   if (!select) throw new Error("missing ServiceAccount select");
   await act(async () => {
-    select.value = "agentplane-test/public-coder";
+    select.value = "agentplane-test/test-coder";
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
@@ -104,7 +104,7 @@ describe("ConnectionConsent", () => {
       {
         verdict: "allow",
         csrf_token: "test-only-csrf",
-        service_account: PUBLIC_CODER,
+        service_account: TEST_CODER,
         connection: {
           kind: "reconnect",
           connection_id: connection.id,
@@ -127,7 +127,7 @@ describe("ConnectionConsent", () => {
     expect(sent.map(({ path }) => path)).toEqual([PREVIEW]);
     expect(container.textContent).toContain("registered-client-id");
     expect(container.textContent).toContain("https://client.test/oauth/callback");
-    expect(container.querySelector('option[value="agentplane-test/public-coder"]')).not.toBeNull();
+    expect(container.querySelector('option[value="agentplane-test/test-coder"]')).not.toBeNull();
     expect(button(container, "Authorize").disabled).toBe(true);
     await chooseServiceAccount(container);
     await act(async () => button(container, "Authorize").click());
@@ -137,7 +137,7 @@ describe("ConnectionConsent", () => {
         verdict: "allow",
         csrf_token: "test-only-csrf",
         connection: { kind: "new", display_name: "Claude on wyrm2" },
-        service_account: PUBLIC_CODER,
+        service_account: TEST_CODER,
       },
     ]);
   });
@@ -183,7 +183,7 @@ describe("ConnectionConsent", () => {
       verdict: "allow" as const,
       csrf_token: "test-only-csrf",
       connection: { kind: "new" as const, display_name: "Saved connection" },
-      service_account: PUBLIC_CODER,
+      service_account: TEST_CODER,
     };
     const sent = serve(
       { ...preview(), attempted_decision: selected },
