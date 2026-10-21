@@ -9,7 +9,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
-	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
@@ -25,14 +24,13 @@ import (
 // GitHub lookup that has not answered by then confirms nothing, so the request waits for an operator.
 const providerTimeout = 5 * time.Second
 
-// Submissions is what SubmitActionRequest admits a request against.
+// Submissions is what SubmitActionRequest admits a request against, beside the policy index.
 type Submissions struct {
 	// Catalog holds the Actions a request may name, with their input schemas.
 	Catalog *catalog.Catalog
 	// Executors says which of them this service runs: an Action no Executor runs is refused.
 	Executors worker.Executors
-	// Policy resolves the caller's PolicyBindings as they stand at admission, and Provider decides from them.
-	Policy   *informer.Index
+	// Provider decides from the caller's PolicyBindings as the policy index resolves them at admission.
 	Provider *policies.Provider
 }
 
@@ -131,7 +129,7 @@ func (s *Service) runnable(action store.ActionIdentity) (catalog.ActionDefinitio
 func (s *Service) decide(ctx context.Context, caller store.CallerPrincipal, action store.ActionIdentity, arguments map[string]any) policies.Decision {
 	ctx, cancel := context.WithTimeout(ctx, providerTimeout)
 	defer cancel()
-	bindings := s.submissions.Policy.ResolveBindings(policyapi.ServiceAccountRef{
+	bindings := s.policy.ResolveBindings(policyapi.ServiceAccountRef{
 		Namespace: caller.Account.Namespace, Name: caller.Account.Name,
 	})
 	return s.submissions.Provider.Decide(ctx, bindings, action, arguments)

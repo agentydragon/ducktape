@@ -1,8 +1,9 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
-// `ActionService`'s submission, request reads, watches and cancellation and `OperatorActionService`'s Decisions over
-// gRPC and their HTTP facade under /v1/, the agent documentation, the standard gRPC health service and the process's
-// Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the sandbox groups and of the
-// MCP groups, and keeps its policy index equal to the API server's. The other RPCs answer UNIMPLEMENTED.
+// `ActionService`'s submission, request reads, watches and cancellation and the Action policy, and
+// `OperatorActionService`'s Decisions, over gRPC and their HTTP facade under /v1/, the agent documentation, the
+// standard gRPC health service and the process's Prometheus metrics at /metrics, runs the dispatch worker, which runs
+// the Actions of the sandbox groups and of the MCP groups, and keeps its policy index equal to the API server's. The
+// other RPCs answer UNIMPLEMENTED.
 package main
 
 import (
@@ -310,8 +311,8 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
 	)
 	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Freshness})
-	action_servicepb.RegisterActionServiceServer(grpcServer, api.NewService(requests, hub, admission, api.Submissions{
-		Catalog: c.ActionGroups, Executors: actions, Policy: policy, Provider: policies.NewProvider(visibility),
+	action_servicepb.RegisterActionServiceServer(grpcServer, api.NewService(requests, hub, admission, policy, api.Submissions{
+		Catalog: c.ActionGroups, Executors: actions, Provider: policies.NewProvider(visibility),
 	}))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests))
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the

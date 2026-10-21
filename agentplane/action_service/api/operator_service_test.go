@@ -126,7 +126,7 @@ func TestADecisionThatCannotBeRecordedFails(t *testing.T) {
 
 func TestAWorkloadsBearerNeverReachesTheOperatorService(t *testing.T) {
 	reviews := &kubeapiserver.CountedReviews{TokenReviews: kube.TokenReviews()}
-	s := serveWith(t, reviews, kube.Config)
+	s := serveWith(t, reviews)
 	request := s.submit(t, caller, "test-pending")
 	for _, token := range []string{callerToken, readerToken} {
 		_, err := s.decideAs(t, token, decision(request, allow))

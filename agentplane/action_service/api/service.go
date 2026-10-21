@@ -1,5 +1,6 @@
 // Package api serves the Action Service's request RPCs over its store: `ActionService`'s submission, reads and
-// watches of requests and their events and a caller's cancellation, and `OperatorActionService`'s Decisions.
+// watches of requests and their events, a caller's cancellation and the Action policy over the policy index, and
+// `OperatorActionService`'s Decisions.
 //
 // A Gate admits every call before it runs (agentplane/docs/grpc_services.md). The bearer picks the principal, as
 // action_service.proto says: a workload of a labeled ServiceAccount submits, reads and cancels its own account's
@@ -10,6 +11,7 @@ import (
 	"context"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/google/uuid"
@@ -32,12 +34,14 @@ type Service struct {
 	// updates wakes a watch on each commit to a request.
 	updates *wakeups.Hub
 	// gate admitted each call; a watch asks it again before every frame.
-	gate        *Gate
+	gate *Gate
+	// policy is the policy index admission resolves bindings from.
+	policy      *informer.Index
 	submissions Submissions
 }
 
-func NewService(requests *store.Store, updates *wakeups.Hub, gate *Gate, submissions Submissions) *Service {
-	return &Service{store: requests, updates: updates, gate: gate, submissions: submissions}
+func NewService(requests *store.Store, updates *wakeups.Hub, gate *Gate, policy *informer.Index, submissions Submissions) *Service {
+	return &Service{store: requests, updates: updates, gate: gate, policy: policy, submissions: submissions}
 }
 
 func parseRequestID(value string) (uuid.UUID, error) {

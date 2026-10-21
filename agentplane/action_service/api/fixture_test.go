@@ -5,11 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -38,7 +40,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/rest"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -57,6 +59,8 @@ var (
 	otherAccount     = auth.Account{Namespace: testNamespace, Name: "test-other-caller"}
 	readerAccount    = auth.Account{Namespace: testNamespace, Name: "test-reader"}
 	unlabeledAccount = auth.Account{Namespace: testNamespace, Name: "test-unlabeled"}
+	// labeledReaderAccount is a service reader whose ServiceAccount also carries the caller label.
+	labeledReaderAccount = auth.Account{Namespace: testNamespace, Name: "test-labeled-reader"}
 	// outsiderAccount is labeled, outside the namespaces whose workloads may call.
 	outsiderAccount = auth.Account{Namespace: "test-elsewhere", Name: "test-caller"}
 
@@ -67,8 +71,8 @@ var (
 	// policyObjects writes PolicySets and PolicyBindings.
 	policyObjects client.Client
 	// Each proves its account, from a Pod running as it.
-	callerToken, otherToken, readerToken, unlabeledToken, outsiderToken string
-	// policyNamespaces numbers each served API's policy namespace.
+	callerToken, otherToken, readerToken, labeledReaderToken, unlabeledToken, outsiderToken string
+	// policyNamespaces numbers the policy namespaces.
 	policyNamespaces atomic.Int32
 )
 
@@ -87,14 +91,14 @@ func useAPIServer(server *kubeapiserver.Server) error {
 	if policyObjects, err = client.New(server.Config, client.Options{Scheme: scheme}); err != nil {
 		return err
 	}
-	for _, account := range []auth.Account{callerAccount, otherAccount, outsiderAccount} {
+	for _, account := range []auth.Account{callerAccount, otherAccount, labeledReaderAccount, outsiderAccount} {
 		if err := setCallerLabel(ctx, account, true); err != nil {
 			return err
 		}
 	}
 	for token, account := range map[*string]auth.Account{
 		&callerToken: callerAccount, &otherToken: otherAccount, &readerToken: readerAccount,
-		&unlabeledToken: unlabeledAccount, &outsiderToken: outsiderAccount,
+		&labeledReaderToken: labeledReaderAccount, &unlabeledToken: unlabeledAccount, &outsiderToken: outsiderAccount,
 	} {
 		var err error
 		if *token, err = server.WorkloadToken(ctx, account, testAudience); err != nil {
@@ -154,7 +158,65 @@ const updatesConnection = "test-action-updates"
 
 func serve(t *testing.T) *served {
 	t.Helper()
-	return serveWith(t, kube.TokenReviews(), kube.Config)
+	return serveWith(t, kube.TokenReviews())
+}
+
+// serveWith serves the API with workload tokens reviewed by reviews, and a policy index of a namespace of its own.
+func serveWith(t *testing.T, reviews auth.TokenReviews) *served {
+	t.Helper()
+	namespace := newPolicyNamespace(t)
+	index, _ := namespace.watch(t)
+	return serveWithPolicy(t, reviews, namespace, index)
+}
+
+// policyNamespace is a namespace of one test's own, for its PolicySets and PolicyBindings.
+type policyNamespace string
+
+func newPolicyNamespace(t *testing.T) policyNamespace {
+	t.Helper()
+	name := fmt.Sprintf("test-policy-%d", policyNamespaces.Add(1))
+	_, err := kube.Clientset.CoreV1().Namespaces().Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return policyNamespace(name)
+}
+
+// watch runs a policy informer of the namespace and returns its index once the index is available, with what stops
+// the informer. The informer runs until stopped or the test ends.
+func (n policyNamespace) watch(t *testing.T) (*informer.Index, func()) {
+	t.Helper()
+	index := informer.NewIndex(reader.StaleAfterCycles*reader.MinWatchPeriod, []string{testNamespace})
+	policyInformer, err := informer.New(kube.Config, index, string(n), reader.MinWatchPeriod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		policyInformer.Run(ctx)
+	}()
+	var stopped sync.Once
+	stop := func() {
+		stopped.Do(func() {
+			cancel()
+			<-done
+		})
+	}
+	t.Cleanup(stop)
+	eventually(t, "the policy index to be available", func() bool { return index.Freshness.Available(time.Now()) })
+	return index, stop
+}
+
+// eventually waits for the condition, and fails the test once callDeadline passes without it.
+func eventually(t *testing.T, what string, condition func() bool) {
+	t.Helper()
+	err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true,
+		func(context.Context) (bool, error) { return condition(), nil })
+	if err != nil {
+		t.Fatalf("gave up waiting for %s: %v", what, err)
+	}
 }
 
 // testCatalog are the ActionGroups submissions name. test-group's and test-github's Actions run and test-offline's
@@ -218,9 +280,8 @@ func fakeGitHub(t *testing.T) string {
 	return github.URL
 }
 
-// submissions admits against testCatalog, and runs a policy index of a namespace of its own on the API server policy
-// reaches.
-func (s *served) submissions(t *testing.T, policy *rest.Config) Submissions {
+// submissions admits against testCatalog.
+func (s *served) submissions(t *testing.T) Submissions {
 	t.Helper()
 	var settings catalog.Settings
 	if err := yaml.Unmarshal([]byte(testCatalog), &settings); err != nil {
@@ -234,35 +295,16 @@ func (s *served) submissions(t *testing.T, policy *rest.Config) Submissions {
 		groups:   map[string]bool{"test-group": true, "test-github": true, "test-offline": true, "test-broken": true},
 		executor: succeeding{},
 	}
-	s.policy = fmt.Sprintf("test-policy-%d", policyNamespaces.Add(1))
-	if _, err := kube.Clientset.CoreV1().Namespaces().Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: s.policy}}, metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	s.index = informer.NewIndex(reader.StaleAfterCycles*reader.MinWatchPeriod, []string{testNamespace})
-	policyInformer, err := informer.New(policy, s.index, s.policy, reader.MinWatchPeriod)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	watching := make(chan struct{})
-	go func() {
-		defer close(watching)
-		policyInformer.Run(ctx)
-	}()
-	t.Cleanup(func() {
-		cancel()
-		<-watching
-	})
 	visibility, err := policies.NewVisibility(fakeGitHub(t), time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Submissions{Catalog: groups, Executors: s.routes, Policy: s.index, Provider: policies.NewProvider(visibility)}
+	return Submissions{Catalog: groups, Executors: s.routes, Provider: policies.NewProvider(visibility)}
 }
 
-// serveWith serves the API with workload tokens reviewed by reviews, and a policy index of the API server policy
-// reaches.
-func serveWith(t *testing.T, reviews auth.TokenReviews, policy *rest.Config) *served {
+// serveWithPolicy serves the API with workload tokens reviewed by reviews, admitting submissions against testCatalog
+// and reading Action policy from index, which holds the namespace's policy objects.
+func serveWithPolicy(t *testing.T, reviews auth.TokenReviews, namespace policyNamespace, index *informer.Index) *served {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
 	db, err := sql.Open("postgres", dsn)
@@ -283,7 +325,9 @@ func serveWith(t *testing.T, reviews auth.TokenReviews, policy *rest.Config) *se
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { updates.Close() })
-	s := &served{store: store.New(db), db: db, issuer: newIssuer(t), databaseURL: dsn}
+	s := &served{
+		store: store.New(db), db: db, issuer: newIssuer(t), policy: string(namespace), index: index, databaseURL: dsn,
+	}
 	s.operatorToken = s.issuer.token(t, nil)
 	// Every call asks the TokenReview API again, so a revoked token is refused once the API server refuses it.
 	workloads, err := auth.NewResolver(reviews, testAudience, []string{testNamespace}, auth.WithVerdictTTL(0))
@@ -295,10 +339,11 @@ func serveWith(t *testing.T, reviews auth.TokenReviews, policy *rest.Config) *se
 		t.Fatal(err)
 	}
 	s.gate = NewGate(GateOptions{
-		Workloads: workloads, Callers: labeledAccounts{}, ReaderAccounts: []auth.Account{readerAccount}, Operators: operators,
+		Workloads: workloads, Callers: labeledAccounts{}, ReaderAccounts: []auth.Account{readerAccount, labeledReaderAccount},
+		Operators: operators,
 	})
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
-	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, s.gate, s.submissions(t, policy)))
+	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, s.gate, index, s.submissions(t)))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -333,6 +378,28 @@ func as(t *testing.T, token string) context.Context {
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	t.Cleanup(cancel)
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+}
+
+// get is the HTTP facade's answer to a GET of path with the bearer, or with none when token is empty.
+func (s *served) get(t *testing.T, path, token string) (int, []byte) {
+	t.Helper()
+	call, err := http.NewRequestWithContext(t.Context(), http.MethodGet, s.url+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "" {
+		call.Header.Set("Authorization", "Bearer "+token)
+	}
+	response, err := http.DefaultClient.Do(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.StatusCode, body
 }
 
 // submit stores a pending request of the owner, as admission would.

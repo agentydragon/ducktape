@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
@@ -165,7 +166,7 @@ func TestAWorkloadIsRefusedOnceItsAccountLosesTheLabelOrItsPodIsGone(t *testing.
 }
 
 func TestAWorkloadIsUnavailableWhileTheAPIServerCannotBeReached(t *testing.T) {
-	s := serveWith(t, kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")}, kube.Config)
+	s := serveWith(t, kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")})
 	_, err := s.client.ListActionRequests(as(t, callerToken), &action_servicepb.ListActionRequestsRequest{})
 	wantCode(t, "a workload", err, codes.Unavailable)
 	// An operator's token is verified against the issuer's keys alone.
@@ -190,8 +191,8 @@ func TestADrainingServiceRefusesEveryCall(t *testing.T) {
 
 func TestAnRPCNotServedYetIsUnimplementedOnceAdmitted(t *testing.T) {
 	s := serve(t)
-	_, err := s.client.GetActionPolicy(as(t, callerToken), &action_servicepb.GetActionPolicyRequest{})
-	wantCode(t, "an admitted caller", err, codes.Unimplemented)
-	_, err = s.client.GetActionPolicy(as(t, "test-token-unknown"), &action_servicepb.GetActionPolicyRequest{})
+	_, err := s.operators.ListMcpServers(as(t, s.operatorToken), &operator_action_servicepb.ListMcpServersRequest{})
+	wantCode(t, "an admitted operator", err, codes.Unimplemented)
+	_, err = s.operators.ListMcpServers(as(t, "test-token-unknown"), &operator_action_servicepb.ListMcpServersRequest{})
 	wantCode(t, "an unknown token", err, codes.Unauthenticated)
 }

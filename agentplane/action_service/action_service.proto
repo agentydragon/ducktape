@@ -138,9 +138,11 @@ service ActionService {
 
   // What an account's bindings auto-decide, resolved as admission would resolve them now: the caller's own, or those
   // of the `subject` it names. Any caller may name any ServiceAccount, in any namespace and labeled or not; an
-  // account no binding names reads as having none. An operator has no account of its own and must name one, else
-  // `INVALID_ARGUMENT`. Read it instead of submitting to find out whether a request would wait for an operator. While
-  // `synced` is false nothing auto-decides: every request takes the human path, whatever the policy objects say.
+  // account no binding names reads as having none. A service reader's exception does not reach this RPC: it reads
+  // policy as a workload, so only while its ServiceAccount is labeled. An operator has no account of its own and must
+  // name one, else `INVALID_ARGUMENT`. Read it instead of submitting to find out whether a request would wait for an
+  // operator. While `synced` is false nothing auto-decides: every request takes the human path, whatever the policy
+  // objects say.
   rpc GetActionPolicy(GetActionPolicyRequest) returns (GetActionPolicyResponse) {
     option (google.api.http) = {get: "/v1/action-policy"};
   }
