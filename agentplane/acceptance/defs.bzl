@@ -10,11 +10,13 @@ _RUNNER_LAYOUTS = {
     "scripted": "//agentplane/x/k3s_env:harnesses/runner_layout",
 }
 
-def acceptance_test(name, srcs, deps, k3s = None, size = "small", timeout = None):
-    """Generates `name`, and `name + "_k3s"` when `k3s` names its scenarios' kind.
+def acceptance_test(name, srcs, deps, k3s = None, deployed = True, size = "small", timeout = None):
+    """Generates `name` unless `deployed` is False, and `name + "_k3s"` when `k3s` names its
+    scenarios' kind.
 
     `name` runs against the deployment the caller's environment names (`AGENTPLANE_ACCEPTANCE_*`,
-    testing by default) with the caller's kubeconfig and a real model, off RBE. `name + "_k3s"`
+    testing by default) with the caller's kubeconfig and a real model, off RBE; a scenario with only
+    `scripted_model` cases has nothing to run there and passes `deployed = False`. `name + "_k3s"`
     starts its own stack in one RBE action (`agentplane.x.k3s_env.acceptance_target`) and runs the
     `scripted_model` scenarios and the unmarked ones; `k3s` is `"model_free"` when none runs a turn,
     else `"scripted"`. `size` and `timeout` apply to `name`.
@@ -32,26 +34,27 @@ def acceptance_test(name, srcs, deps, k3s = None, size = "small", timeout = None
         "main_module": "pytest_bazel",
         "deps": [":" + name + "_lib", "@pypi//pytest_bazel"],
     }
-    py_test(
-        name = name,
-        size = size,
-        timeout = timeout,
-        # kubectl reads the caller's own kubeconfig; without HOME or KUBECONFIG it falls back to
-        # http://localhost:8080 and fails for a reason that looks nothing like the cause.
-        env_inherit = [
-            "AGENTPLANE_ACCEPTANCE_NAMESPACE",
-            "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT",
-            "AGENTPLANE_ACCEPTANCE_TOKEN",
-            "AGENTPLANE_ACCEPTANCE_URL",
-            "HOME",
-            "KUBECONFIG",
-        ],
-        tags = [
-            "manual",
-            "no-remote-exec",
-        ],
-        **common
-    )
+    if deployed:
+        py_test(
+            name = name,
+            size = size,
+            timeout = timeout,
+            # kubectl reads the caller's own kubeconfig; without HOME or KUBECONFIG it falls back to
+            # http://localhost:8080 and fails for a reason that looks nothing like the cause.
+            env_inherit = [
+                "AGENTPLANE_ACCEPTANCE_NAMESPACE",
+                "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT",
+                "AGENTPLANE_ACCEPTANCE_TOKEN",
+                "AGENTPLANE_ACCEPTANCE_URL",
+                "HOME",
+                "KUBECONFIG",
+            ],
+            tags = [
+                "manual",
+                "no-remote-exec",
+            ],
+            **common
+        )
     if k3s == None:
         return
     runner_layout = _RUNNER_LAYOUTS[k3s]

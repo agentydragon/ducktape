@@ -2048,7 +2048,7 @@ have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-b
 
 **In flight; the first model backend (operator, 2026-10-21 05:23).** Laid out as in the plan's
 [Test layout](k3s_acceptance.md#test-layout). The scripted backend, `test_session_instructions`'s
-scripted case and `test_suspend_resume`'s Pod case are in place
+scripted case, `test_suspend_resume`'s Pod case and `test_launch_presets` are in place
 ([acceptance README](../acceptance/README.md)); each remaining scenario gets its scripted version,
 and loses its real one, in its own PR.
 

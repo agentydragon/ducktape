@@ -25,6 +25,7 @@ from cdk8s_plus_34 import (
     k8s,
 )
 
+from agentplane.acceptance import launch_preset
 from agentplane.subjects import ServiceAccountRef
 from agentplane.x.k3s_env import fixture_database
 from cluster.cdk8s import agent_access_profiles as access
@@ -51,6 +52,7 @@ from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
+from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
 NAMESPACE = testing.ENV.namespace
 RUNNER_GATEWAY = "runner-gateway"
@@ -100,7 +102,23 @@ def objects(
     *, node_ip: str, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models
 ) -> list[dict[str, Any]]:
     """Synthesize only the objects the one-node, operator-light k3s fixture deploys."""
-    env = replace(testing.ENV, vm_sandboxes=False)
+    env = replace(
+        testing.ENV,
+        vm_sandboxes=False,
+        # The scenarios' own preset in place of the deployment's, which an operator uses.
+        app_config=testing.ENV.app_config.model_copy(
+            update={
+                "thread_presets": {
+                    launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)
+                },
+                "sandbox_presets": {
+                    launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
+                        template=runner_sandbox.NAME, policy_sets=[egress.PACKAGES_POLICY]
+                    )
+                },
+            }
+        ),
+    )
     if isinstance(models, LocalModel):
         # The scripted model has no catalog entry, as in the runner tests: Codex then uses the metadata it
         # falls back to for an unknown slug and calls the function tools the scripted model answers. A

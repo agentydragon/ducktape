@@ -1,4 +1,5 @@
-"""Live vertical acceptance for the configured public-coder launch preset."""
+"""A launch preset, from the preset list to a resumed Sandbox. The k3s target configures the preset
+(`launch_preset.py`)."""
 
 from __future__ import annotations
 
@@ -6,41 +7,42 @@ import asyncio
 import time
 from uuid import uuid4
 
+import pytest
 import pytest_bazel
 
+from agentplane.acceptance import launch_preset
 from agentplane.acceptance.agent import RUNNER_ANSWERS_SECONDS, Agent
 from agentplane.acceptance.conftest import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
+from agentplane.acceptance.scripted_upstream import ScriptedUpstream
 from agentplane.app.testing.client import Client
+from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
+from agentplane.testing.scripted_model import ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
-PUBLIC_CODER = "public-coder"
-GITHUB_AGENTYDRAGON_AGENT = "github-agentydragon-agent"
-INSTRUCTIONS = "For this acceptance thread, end the final answer with PRESET-INSTRUCTIONS-OK."
+INSTRUCTIONS = "Test instructions that override the preset's for this session."
 
 
-async def test_public_coder_preset_launches_an_initialized_editable_codex_thread(
-    client: Client, sandbox: Sandboxes
+@pytest.mark.scripted_model
+async def test_a_preset_launches_an_initialized_editable_codex_thread(
+    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
     configured = {preset.name: preset for preset in await client.presets()}
-    preset = configured[PUBLIC_CODER]
+    preset = configured[launch_preset.SANDBOX_PRESET]
     assert preset.session_defaults.harness is Harness.CODEX
-    policies = preset.policy_sets
-    assert GITHUB_AGENTYDRAGON_AGENT in policies
-    assert preset.session_defaults.model
 
     view = await sandbox(
-        "accept-public-coder",
+        "accept-test-preset",
         template=preset.template,
-        preset=PUBLIC_CODER,
-        policies=policies,
+        preset=launch_preset.SANDBOX_PRESET,
+        policies=preset.policy_sets,
         bootstrap=preset.bootstrap,
     )
-    assert view.preset == PUBLIC_CODER
+    assert view.preset == launch_preset.SANDBOX_PRESET
     assert view.binding is not None
 
     first_id = uuid4()
@@ -60,14 +62,22 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
         preset.session_defaults.reasoning_effort,
     )
 
-    agent = Agent(client, thread_id=first.id, cursor=first.last_cursor)
-    turn = await agent.run(
-        "Use a shell tool to read /state/workspaces/.agentplane-public-coder-ready, then briefly report its exact content."
-    )
-    assert "public-coder workspace initialized" in turn.transcript
-    assert "PRESET-INSTRUCTIONS-OK" in turn.answer
-
     assert view.pod is not None
+    model = scripted.model(view.pod.name, runner_pb2.HARNESS_CODEX)
+    agent = Agent(client, thread_id=first.id, cursor=first.last_cursor)
+    async with asyncio.TaskGroup() as turns:
+        turn = turns.create_task(agent.run("Report what the workspace's ready marker says."))
+        request = await model.request()
+        # The preset's model and the session's own instructions reach the model.
+        assert request.model == preset.session_defaults.model
+        assert INSTRUCTIONS in request.system_text, request.system_text
+        await model.reply(request, ShellCall(call_id="read-ready-marker", command=f"cat {launch_preset.READY_MARKER}"))
+        request = await model.request()
+        # The bootstrap ran in the Sandbox before the session's first command.
+        assert [o.text for o in request.tool_outputs if launch_preset.READY_TEXT in o.text], request.tool_outputs
+        await model.reply(request, Text("The workspace is initialized."))
+    assert launch_preset.READY_TEXT in turn.result().transcript
+
     previous_incarnation = view.pod.uid
     await client.suspend_sandbox(view.name)
     suspend_deadline = time.monotonic() + SANDBOX_READY_SECONDS

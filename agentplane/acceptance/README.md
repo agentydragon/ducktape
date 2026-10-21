@@ -36,8 +36,9 @@ It does not dump prompts, tool output or native frames, or automatically resend 
 
 The general egress and instruction scenarios run on **both harnesses**. The runner protocol is the
 same for Claude and Codex, so one parametrized harness case covers both; `offered_model` asks the deployment
-which models it offers for that harness rather than hardcoding one. `test_launch_presets` instead exercises the configured `public-coder` preset's
-intentional Codex default, Sandbox binding, bootstrap marker, inherited fields, and local override.
+which models it offers for that harness rather than hardcoding one. `test_launch_presets_k3s` instead exercises a Codex launch preset's
+defaults, Sandbox binding, bootstrap marker, inherited fields, and local override, with the scripted
+model only. The k3s fixture configures that preset (`launch_preset.py`) in place of the deployment's.
 Initial session Open uses a 120-second retry budget for HTTP 503, retaining the same session id;
 refusals and other server failures are not startup readiness signals.
 
@@ -259,8 +260,8 @@ scenario explicitly. Start with the egress vertical slice:
 bazelisk test //agentplane/acceptance:test_egress --test_output=streamed --test_arg=-s
 ```
 
-Run the other live scenarios by their explicit targets: `:test_launch_presets`,
-`:test_session_instructions`, `:test_mcp`, and `:test_thread_latency`.
+Run the other live scenarios by their explicit targets: `:test_session_instructions`, `:test_mcp`,
+and `:test_thread_latency`.
 
 `//agentplane/acceptance:test_ollama_routes` exercises every configured Ollama chat
 route offered by the committed testing app ConfigMap, on each harness that offers it,

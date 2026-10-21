@@ -233,10 +233,12 @@ py_test(
 
 py_library(
     name = "fixture_chart",
+    testonly = True,
     srcs = ["fixture_chart.py"],
     deps = [
         ":fixture_database",
         "//agentplane:subjects",
+        "//agentplane/acceptance:launch_preset",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
@@ -259,6 +261,7 @@ py_library(
         "//cluster/cdk8s/agentplane:session_dispatcher",
         "//cluster/cdk8s/agentplane:testing",
         "//cluster/cdk8s/providers/agentplane:policy_set",
+        "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

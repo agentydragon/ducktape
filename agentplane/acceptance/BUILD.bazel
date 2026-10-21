@@ -2,6 +2,7 @@ load("//agentplane/acceptance:defs.bzl", "acceptance_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:exclude test_dispatcher_deployed.py
+# gazelle:exclude test_launch_presets.py
 # gazelle:exclude test_session_instructions.py
 # gazelle:exclude test_storage_deployed.py
 # gazelle:exclude test_suspend_resume.py
@@ -85,27 +86,26 @@ py_test(
     ],
 )
 
-py_test(
+# Scripted only, so no deployment target.
+acceptance_test(
     name = "test_launch_presets",
-    timeout = "eternal",
     srcs = ["test_launch_presets.py"],
-    env_inherit = [
-        "HOME",
-        "KUBECONFIG",
-    ],
-    tags = [
-        "manual",
-        "no-remote-exec",
-    ],
+    deployed = False,
+    k3s = "scripted",
     deps = [
         ":agent",
         ":conftest",
-        "//:conftest",
+        ":launch_preset",
+        ":scripted_upstream",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane:sandbox_resource",
         "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/testing:scripted_model",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -530,5 +530,14 @@ py_library(
         "//util/testing:undeclared_outputs",
         "@pypi//aiohttp",
         "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "launch_preset",
+    srcs = ["launch_preset.py"],
+    deps = [
+        "//agentplane/app:presets",
+        "//agentplane/runner:harness",
     ],
 )
