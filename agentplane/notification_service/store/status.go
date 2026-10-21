@@ -136,6 +136,7 @@ type EntryProvider string
 const (
 	EntryFromActions EntryProvider = "actions"
 	EntryFromGitHub  EntryProvider = "github"
+	EntryFromMessage EntryProvider = "message"
 )
 
 // EntrySummary describes an entry the agent has not acknowledged without its payload.
@@ -175,6 +176,10 @@ func summarize(cursor int64, event EventIdentity, payload []byte, createdAt time
 				}
 			}
 		}
+	case MessageEvent:
+		// Who sent it is what the service authenticated; the body is never shown.
+		summary.Provider = EntryFromMessage
+		summary.Summary = fmt.Sprintf("Message from %s/%s", event.Sender.Namespace, event.Sender.Name)
 	default:
 		return EntrySummary{}, fmt.Errorf("entry %d: unknown event identity %T", cursor, event)
 	}

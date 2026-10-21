@@ -59,6 +59,7 @@ go_test(
         "golden_vectors_test.go",
         "inboxes_integration_test.go",
         "integration_testmain_test.go",
+        "models_test.go",
         "notices_integration_test.go",
         "python_rows_integration_test.go",
         "status_integration_test.go",

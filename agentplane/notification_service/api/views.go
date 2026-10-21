@@ -270,6 +270,11 @@ func eventIdentityView(event store.EventIdentity) (*notificationspb.EventIdentit
 			AppId: event.AppID, DeliveryId: event.DeliveryID.String(), RepositoryId: event.RepositoryID,
 			Event: name, Action: event.Action,
 		}}}, nil
+	case store.MessageEvent:
+		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_Message{Message: &notificationspb.MessageEvent{
+			MessageId: event.MessageID.String(),
+			Sender:    &notificationspb.ServiceAccount{Namespace: event.Sender.Namespace, Name: event.Sender.Name},
+		}}}, nil
 	default:
 		return nil, fmt.Errorf("stored event identity %T is unknown", event)
 	}

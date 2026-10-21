@@ -106,7 +106,7 @@ type EventFilter struct {
 }
 
 // EventIdentity names an entry's event within its source, which is how a redelivery is told from a new event:
-// an ActionsEvent or a GitHubEvent.
+// an ActionsEvent, a GitHubEvent or a MessageEvent.
 type EventIdentity interface{ isEventIdentity() }
 
 type ActionsEvent struct {
@@ -122,8 +122,15 @@ type GitHubEvent struct {
 	Action       *string
 }
 
+// MessageEvent is a message a workload sent to the inbox, with the sender the service authenticated.
+type MessageEvent struct {
+	MessageID uuid.UUID
+	Sender    ServiceAccount
+}
+
 func (ActionsEvent) isEventIdentity() {}
 func (GitHubEvent) isEventIdentity()  {}
+func (MessageEvent) isEventIdentity() {}
 
 var (
 	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
@@ -435,6 +442,19 @@ func (e GitHubEvent) MarshalJSON() ([]byte, error) {
 	}{"github", e.AppID, e.DeliveryID, e.RepositoryID, e.Event, e.Action})
 }
 
+type serviceAccountJSON struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
+func (e MessageEvent) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Provider  string             `json:"provider"`
+		MessageID uuid.UUID          `json:"message_id"`
+		Sender    serviceAccountJSON `json:"sender"`
+	}{"message", e.MessageID, serviceAccountJSON(e.Sender)})
+}
+
 // decode reads one JSON value into v, refusing fields v does not name, as the stored models do.
 func decode(data []byte, v any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -644,6 +664,19 @@ func DecodeEventIdentity(data []byte) (EventIdentity, error) {
 			AppID: *wire.AppID, DeliveryID: *wire.DeliveryID, RepositoryID: *wire.RepositoryID,
 			Event: wire.Event, Action: wire.Action,
 		}, nil
+	case "message":
+		var wire struct {
+			Provider  string              `json:"provider"`
+			MessageID *uuid.UUID          `json:"message_id"`
+			Sender    *serviceAccountJSON `json:"sender"`
+		}
+		if err := decode(data, &wire); err != nil {
+			return nil, err
+		}
+		if err := errors.Join(required("message_id", wire.MessageID != nil), required("sender", wire.Sender != nil)); err != nil {
+			return nil, err
+		}
+		return MessageEvent{MessageID: *wire.MessageID, Sender: ServiceAccount(*wire.Sender)}, nil
 	default:
 		return nil, fmt.Errorf("unknown event provider %q", head.Provider)
 	}

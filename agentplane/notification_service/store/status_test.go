@@ -140,6 +140,12 @@ func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
 			`{"check_suite": {"conclusion": "success"}}`,
 			"GitHub check_suite",
 		},
+		{
+			"a message by its sender, never its body",
+			MessageEvent{MessageID: request, Sender: ServiceAccount{Namespace: "test-namespace", Name: "test-sender"}},
+			`{"body": "private", "from_session": "test-session"}`,
+			"Message from test-namespace/test-sender",
+		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got, err := summarize(1, c.event, []byte(c.payload), time.Time{})
@@ -156,6 +162,7 @@ func TestAnEntrySaysWhichKindOfSourceItCameFrom(t *testing.T) {
 	for event, want := range map[EventIdentity]EntryProvider{
 		ActionsEvent{RequestID: uuid.New(), Sequence: 1}: EntryFromActions,
 		GitHubEvent{Event: EventPush}:                    EntryFromGitHub,
+		MessageEvent{MessageID: uuid.New()}:              EntryFromMessage,
 	} {
 		got, err := summarize(1, event, []byte(`{}`), time.Time{})
 		if err != nil {

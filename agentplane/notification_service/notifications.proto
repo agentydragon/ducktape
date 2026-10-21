@@ -395,15 +395,15 @@ message Inbox {
   optional string delivery_error = 9;
 }
 
-// One event delivered to an inbox.
+// One event delivered to an inbox: a source's event, or a message.
 message InboxEntry {
   int64 cursor = 1;
   // Which event this is. One event can match several subscriptions, and is one entry.
   EventIdentity event = 2;
   // The provider's own JSON for the event: an Action event's `sequence`, `state`, `at` and `actor`, or the full
-  // GitHub webhook body.
+  // GitHub webhook body. A message's is what its sender wrote: `body`, and `from_session` when given.
   google.protobuf.Struct payload = 3;
-  // UUIDs of the subscriptions the event matched.
+  // UUIDs of the subscriptions the event matched; none for a message.
   repeated string subscription_ids = 4;
 }
 
@@ -413,6 +413,7 @@ message EventIdentity {
   oneof provider {
     ActionsEvent actions = 1;
     GitHubEvent github = 2;
+    MessageEvent message = 3;
   }
 }
 
@@ -430,6 +431,19 @@ message GitHubEvent {
   int64 repository_id = 3;
   GitHubEventName event = 4;
   optional string action = 5;
+}
+
+message MessageEvent {
+  // UUID.
+  string message_id = 1;
+  // Who sent it, as the service authenticated the caller: a Sandbox's own ServiceAccount, or the one an OAuth
+  // client acts as. Never taken from the message.
+  ServiceAccount sender = 2;
+}
+
+message ServiceAccount {
+  string namespace = 1;
+  string name = 2;
 }
 
 // A notice: the message sent to the Session's runner naming the entries that await the agent.
