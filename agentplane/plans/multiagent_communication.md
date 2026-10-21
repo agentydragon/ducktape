@@ -637,7 +637,8 @@ idempotency key (unique per sender and destination inbox) deduplicates retries, 
 after 30 days. Peer messages do not count toward the inbox's 10000-cursor lifetime limit, because
 reaching it forces the inbox to be retired, which cancels its subscriptions. Instead each sender may
 have at most 128 unacknowledged messages in an inbox, and a send beyond that is refused with HTTP 429,
-never dropped.
+never dropped. **The 30-day expiry, the 128-message cap and the idempotency key were accepted by the
+operator, 2026-10-21 UTC.**
 Sending and explicit lifecycle controls remain different operations; v1 notice-triggered wake
 follows the Sandbox policy above, without a separate peer-wake grant.
 

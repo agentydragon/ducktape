@@ -84,7 +84,7 @@ point.** The service (`agentplane/notification_service/`) has grown to several r
   since the last notice or acknowledgement.
 
 Decide which stay, which move to other services, and what the remaining service is called. The inbox
-messaging nodes of section 3 (`AGENT_MESSAGING_DESIGN` and the nodes it feeds) record the service name as
+messaging nodes of section 3 (`AGENT_MESSAGE_INGRESS` and the nodes after it) record the service name as
 open and keep v1 in one deployment; this node is the later restructuring, not a prerequisite for them.
 Related: whether notice delivery belongs with the Dispatcher
 ([freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership)),
@@ -259,7 +259,6 @@ flowchart TD
     HISTORY_SANDBOX_UID[Blocked: History records and checks the Sandbox UID]
     APP_THREAD_SANDBOX_UID[Blocked: the app stores each Thread's Sandbox UID]
     HISTORY_SESSION_REKEY[Blocked: key History by Sandbox UID and Session ID]
-    AGENT_MESSAGING_DESIGN[Decision: remaining inbox messaging and permission contracts]
     AGENT_MESSAGE_INGRESS[Blocked: authorized send API and durable receipts]
     AGENT_MESSAGE_RECEPTION[Blocked: receiving, recovery and acknowledgement]
     AGENT_MESSAGING[Capstone: end-to-end agent messaging]
@@ -280,10 +279,8 @@ flowchart TD
     HISTORY_SANDBOX_UID --> APP_THREAD_SANDBOX_UID
     APP_THREAD_SANDBOX_UID --> HISTORY_SESSION_REKEY
     SESSION_ACCESS_RULES --> AGENT_MESSAGE_INGRESS
-    AGENT_MESSAGING_DESIGN --> AGENT_MESSAGE_INGRESS
     AGENT_MESSAGE_INGRESS --> AGENT_MESSAGE_RECEPTION
-    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities, section 2] -. related .-> AGENT_MESSAGING_DESIGN
-    NOTIFICATION_SERVICE_SPLIT -. related .-> AGENT_MESSAGE_INGRESS
+    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities, section 2] -. related .-> AGENT_MESSAGE_INGRESS
     NOTIFICATION_SERVICE_SPLIT -. related .-> AGENT_MESSAGE_RECEPTION
     AGENT_MESSAGE_RECEPTION --> AGENT_MESSAGING
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
@@ -455,39 +452,10 @@ announces the pair; the app and Notifications pass the UID they hold. The ingres
 Sandbox UID up as part of the key. Electric shape handles reset, so verify a browser reconnects. Rows of
 deleted Sandboxes follow the review's answer.
 
-### `AGENT_MESSAGING_DESIGN` — inbox messaging and notice contract
-
-**Decision; v1 inbox delivery selected.** Address Sandbox-hosted recipients by destination Sandbox plus
-Session ID ([agreed addressing](multiagent_communication.md#peer-message-path)), authorize sends at
-Sandbox granularity using the tentative shared Session-access rules, and reuse the existing
-durable inbox/read/ack and batched-notice machinery. The send operation appends to a Session inbox;
-its payload is separate from transcript reads and the platform-generated notice.
-The sender's append grant supplies the authorization for acceptance; v1 requires no separate
-recipient opt-in, allowlist or approval.
-Peer sends do not require source subscriptions. Generalize the current service around inbox/messaging in one
-deployment initially, with optional subscription/source integrations; leave Dispatcher separate.
-Use `subscription` for source-following and `notice` for the batched inbox prompt. The service keeps
-its name for now, the send API is HTTP JSON, and the [discovery fields](multiagent_communication.md#sandbox-session-discovery-and-provisioning)
-are selected. Inbox read/ack retains the receiving
-Sandbox's owner-SA boundary; v1 adds no delegable inbox-read or acknowledgement permissions.
-The [sender-facing receipt contract](multiagent_communication.md#sender-facing-receipts) is
-selected: the sender queries a message it sent for notice coverage and acknowledgement, and not found
-means no record. Read receipts and notice delivery stage are not v1.
-OAuth-bound SAs can be senders; v1 does not provide inboxes for externally running agents.
-Distinguish accepted, noticed, admitted, handled and task-success evidence. Retention, limits and
-deduplication follow the existing inbox, and [the peer message path](multiagent_communication.md#peer-message-path)
-sets the recipient states. Reading a transcript grants neither send nor ack.
-
-V1 retains notice batching in Notifications and wake/delivery in Dispatcher. A Sandbox's existing
-`spec.wakeOnSend` policy applies to any admitted message, including mixed-source notices; a suspended
-Sandbox with it disabled requires an explicit resume. Retain the existing trusted service-caller/wake allowlist. Add no
-per-peer or per-source wake grant in v1. Agent receive/read/ack behavior needs actual harness
-validation before the selected approach is claimed effective. Moving responsibilities into
-Dispatcher or adding selective event wake is future work, not a prerequisite.
-
 ### `AGENT_MESSAGE_INGRESS` — authorized send and acceptance
 
-**Blocked on messaging decision and its selected prerequisites.** Implement a configurable inbox-service
+**Blocked on `SESSION_ACCESS_RULES`.** The [peer message path](multiagent_communication.md#peer-message-path)
+is the agreed contract, including the inbox defaults the operator accepted on 2026-10-21 UTC. Implement a configurable inbox-service
 message-body byte limit backed by a database ceiling; reject oversized messages before acceptance
 without truncation and reject configurations above the ceiling. Default 32 KiB, ceiling 256 KiB.
 Implement server-authenticated sender provenance, shared Session-access rule enforcement, idempotent
