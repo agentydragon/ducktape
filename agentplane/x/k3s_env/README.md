@@ -109,7 +109,8 @@ directly, a busybox initramfs that mounts an erofs root under a tmpfs overlay, a
 the runner what [`vm.nix`](../../runner/vm.nix) does. The runner comes from the production runner disk,
 as in a Pod; Codex is pinned in the root disk.
 
-**Gotcha:** KubeVirt's and Kyverno's images are pulled from quay.io and ghcr.io when the stack starts.
+**Gotcha:** KubeVirt's and Kyverno's images are pulled from quay.io and ghcr.io when the stack starts,
+so `test_vm_lifecycle` is `manual`: PR CI does not run it.
 
 ### VM lifecycle timings, 2026-10-21
 

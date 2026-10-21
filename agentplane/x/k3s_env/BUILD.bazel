@@ -287,7 +287,9 @@ py_test(
         "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
     },
     exec_properties = K3S_EXEC_PROPERTIES,
-    tags = K3S_TAGS,
+    # Runs only by name: KubeVirt's and Kyverno's images come from their registries at run time, about
+    # half of its 7 minutes, so PR CI would pay that and their availability on every change here.
+    tags = K3S_TAGS + ["manual"],
     deps = [
         ":stack",
         ":vm_sandboxes",
