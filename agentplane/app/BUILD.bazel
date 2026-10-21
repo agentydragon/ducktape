@@ -853,35 +853,11 @@ py_library(
     name = "consent",
     srcs = ["consent.py"],
     deps = [
-        ":action_federation",
-        ":operator_sessions",
         "//agentplane:subjects",
         "//agentplane/action_service:client",
         "//agentplane/action_service:connections",
         "//agentplane/action_service:enrollments",
-        "@pypi//fastapi",
         "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_consent",
-    size = "medium",
-    srcs = ["test_consent.py"],
-    requires_docker = True,
-    deps = [
-        ":action_federation",
-        ":conftest",
-        ":consent",
-        ":operator_sessions",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/action_service:client",
-        "//agentplane/action_service:connections",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

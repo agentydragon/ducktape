@@ -915,7 +915,7 @@ async def enrollment_path(review: Review, client_id: str = "test-external-client
     return f"/connection-enrollments/{created.handle}"
 
 
-async def test_consent_requires_operator_same_origin_and_preview_csrf(
+async def test_consent_requires_operator_and_same_origin_and_decides_once(
     review: Review, agent_auth: dict[str, str]
 ) -> None:
     path = await enrollment_path(review)
@@ -925,7 +925,8 @@ async def test_consent_requires_operator_same_origin_and_preview_csrf(
     await browser.get("/auth/login")
     assert (await browser.post(f"{path}/preview", headers={"Origin": "https://evil.test"})).status_code == 403
     assert (await browser.post(f"{path}/preview", headers={"Origin": "null"})).status_code == 403
-    body = {"verdict": "deny", "csrf_token": "never-previewed"}
+    body = {"verdict": "deny", "expected_version": 1}
+    # The Actions authority pins an enrollment at its first preview, and refuses a decision before one.
     assert (await browser.post(f"{path}/decision", json=body)).status_code == 403
     response = await browser.post(f"{path}/preview")
     assert response.status_code == 200, response.text
@@ -933,28 +934,25 @@ async def test_consent_requires_operator_same_origin_and_preview_csrf(
     assert preview["enrollment"]["client_id"] == "test-external-client"
     assert preview["enrollment"]["redirect_uri"] == "https://external-client.test/callback"
     assert preview["service_accounts"] == [PERSONAL.model_dump()]
-    assert preview["attempted_decision"] is None
     assert "access_token" not in response.text
     assert "server-held-state" not in response.text
-    assert (await browser.post(f"{path}/decision", json=body)).status_code == 403
-    body["csrf_token"] = preview["csrf_token"]
     assert (
         await browser.post(f"{path}/decision", headers={"Origin": "https://evil.test"}, json=body)
     ).status_code == 403
     denied = await browser.post(f"{path}/decision", json=body)
     assert denied.status_code == 200, denied.text
     assert denied.json() == {"verdict": "deny", "redirect_url": None}
-    assert (await browser.post(f"{path}/decision", json=body)).json() == denied.json()
+    assert (await browser.post(f"{path}/decision", json=body)).status_code == 409
 
 
-async def test_consent_allow_round_trip_replays_across_app_replicas(review: Review) -> None:
+async def test_consent_allow_round_trip_and_no_second_decision_from_a_replica(review: Review) -> None:
     path = await enrollment_path(review)
     browser = review.browser
     await browser.get("/auth/login")
     preview = (await browser.post(f"{path}/preview")).json()
     body = {
         "verdict": "allow",
-        "csrf_token": preview["csrf_token"],
+        "expected_version": preview["enrollment"]["version"],
         "connection": {"kind": "new", "display_name": "My Claude on wyrm2"},
         "service_account": PERSONAL.model_dump(),
     }
@@ -966,16 +964,8 @@ async def test_consent_allow_round_trip_replays_across_app_replicas(review: Revi
     }
     replica = review.second_browser
     replica.cookies.update(browser.cookies)
-    reloaded = await replica.post(f"{path}/preview")
-    assert reloaded.status_code == 200, reloaded.text
-    assert reloaded.json()["attempted_decision"] == body
-    assert reloaded.json()["csrf_token"] == preview["csrf_token"]
-    assert (await replica.post(f"{path}/decision", json=body)).json() == result.json()
-    changed = {**body, "connection": {"kind": "new", "display_name": "different name"}}
-    assert (await replica.post(f"{path}/decision", json=changed)).status_code == 409
-    assert (
-        await replica.post(f"{path}/decision", json={"verdict": "deny", "csrf_token": body["csrf_token"]})
-    ).status_code == 409
+    for again in (body, {"verdict": "deny", "expected_version": body["expected_version"]}):
+        assert (await replica.post(f"{path}/decision", json=again)).status_code == 409
     # The BFF does not activate a grant. The OAuth adapter must still verify the same upstream operator.
     approved = await review.enrollments.approved(
         client_id="test-external-client",
@@ -1001,11 +991,15 @@ async def test_consent_is_pinned_to_its_operator_not_their_session(review: Revie
     await a.get("/auth/login")
     preview = await a.post(f"{path}/preview")
     assert preview.status_code == 200, preview.text
-    denied = await a.post(f"{path}/decision", json={"verdict": "deny", "csrf_token": preview.json()["csrf_token"]})
+    denied = await a.post(
+        f"{path}/decision", json={"verdict": "deny", "expected_version": preview.json()["enrollment"]["version"]}
+    )
     assert denied.status_code == 200, denied.text
 
 
-async def test_existing_connection_consent_requires_confirmation_and_preserves_reviewed_version(review: Review) -> None:
+async def test_existing_connection_consent_requires_confirmation_and_never_refreshes_the_reviewed_version(
+    review: Review,
+) -> None:
     old = await review.connections.bind(
         GrantBinding(
             grant_id=uuid4(),
@@ -1025,7 +1019,7 @@ async def test_existing_connection_consent_requires_confirmation_and_preserves_r
     assert preview["connections"] == [connection.model_dump(mode="json")]
     body = ConsentAllow(
         verdict="allow",
-        csrf_token=preview["csrf_token"],
+        expected_version=preview["enrollment"]["version"],
         service_account=PERSONAL,
         connection=ConfirmedReconnectConnection(
             connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
@@ -1043,34 +1037,22 @@ async def test_existing_connection_consent_requires_confirmation_and_preserves_r
     renamed = await review.connections.rename(
         connection.id, expected_version=connection.version, display_name="Changed after review"
     )
-    replica = review.second_browser
-    replica.cookies.update(browser.cookies)
-    reloaded = (await replica.post(f"{path}/preview")).json()
-    assert reloaded["attempted_decision"] == body
+    reloaded = (await browser.post(f"{path}/preview")).json()
     assert reloaded["connections"][0]["version"] == renamed.version
-    assert (await replica.post(f"{path}/decision", json=body)).json() == result.json()
     changed = {**body, "connection": {**body["connection"], "expected_version": renamed.version}}
-    assert (await replica.post(f"{path}/decision", json=changed)).status_code == 409
+    assert (await browser.post(f"{path}/decision", json=changed)).status_code == 409
 
 
-async def test_consent_interactions_have_distinct_csrf_and_reject_extra_authority(review: Review) -> None:
-    first, second = await enrollment_path(review, "one"), await enrollment_path(review, "two")
+async def test_consent_decision_rejects_extra_authority(review: Review) -> None:
+    path = await enrollment_path(review)
     browser = review.browser
     await browser.get("/auth/login")
-    previews = await asyncio.gather(browser.post(f"{first}/preview"), browser.post(f"{second}/preview"))
-    one, two = [response.json() for response in previews]
-    assert one["csrf_token"] != two["csrf_token"]
-    assert (
-        await browser.post(f"{second}/decision", json={"verdict": "deny", "csrf_token": one["csrf_token"]})
-    ).status_code == 403
+    version = (await browser.post(f"{path}/preview")).json()["enrollment"]["version"]
+    deny = {"verdict": "deny", "expected_version": version}
     for extra in ({"redirect_url": "https://evil.test"}, {"service_account": PERSONAL.model_dump()}):
-        response = await browser.post(
-            f"{first}/decision", json={"verdict": "deny", "csrf_token": one["csrf_token"], **extra}
-        )
+        response = await browser.post(f"{path}/decision", json={**deny, **extra})
         assert response.status_code == 422, response.text
-    denied = await browser.post(f"{first}/decision", json={"verdict": "deny", "csrf_token": one["csrf_token"]})
-    assert denied.status_code == 200
-    assert (await browser.post(f"{second}/preview")).json()["attempted_decision"] is None
+    assert (await browser.post(f"{path}/decision", json=deny)).status_code == 200
 
 
 if __name__ == "__main__":

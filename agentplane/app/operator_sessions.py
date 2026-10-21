@@ -1,14 +1,14 @@
 """PostgreSQL browser sessions; only a random, signed handle crosses into the browser.
 
 A row's JSON payload is Starlette's session -- authlib's state/nonce/PKCE data while a login is
-pending, and the consent flow's interactions -- and the operator's login is typed columns beside it.
+pending -- and the operator's login is typed columns beside it.
 
 No request holds its row while its handler runs, so requests presenting one session run
 concurrently. The middleware reads the row before the handler and, before the response headers go
 out, writes what the handler changed in a transaction that locks the row and applies the change to
-the row as it is then. What changes the row in between -- a renewed login token, a consent
-interaction -- does the same through `SessionRow`. A write that finds the row gone does not bring it
-back, so an in-flight request cannot undo a logout.
+the row as it is then. A renewed login token changes the row in between, the same way, through
+`SessionRow`. A write that finds the row gone does not bring it back, so an in-flight request
+cannot undo a logout.
 
 A row expires at the earlier of its absolute deadline, fixed when it is created, and an idle
 deadline that every request presenting it moves forward.
@@ -293,7 +293,6 @@ class HeldSession:
     expired; clearing it ends the session."""
 
     login: OperatorSession | None
-    payload: dict[str, Any]
 
 
 class SessionRow:
@@ -322,17 +321,15 @@ class SessionRow:
             row = await _locked(db, self.id)
             login = row.login if row is not None else None
             if row is None or login is None:
-                yield HeldSession(None, {})
+                yield HeldSession(None)
                 return
-            held = HeldSession(login, copy.deepcopy(row.payload))
+            held = HeldSession(login)
             yield held
             if held.login is None:
                 await _end(db, row)
                 return
             if held.login != login:
                 row.login = held.login
-            if held.payload != row.payload:
-                row.payload = held.payload
 
 
 @dataclass(frozen=True)

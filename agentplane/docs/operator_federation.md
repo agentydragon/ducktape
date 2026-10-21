@@ -44,12 +44,11 @@ Requests presenting one session run concurrently, on one replica or several: non
 its handler runs. Each reads the row before its handler; before its response headers go out, it writes
 what the handler changed in a short transaction that locks the row and applies the change, key by key,
 to the payload as it is then, so a concurrent request's change stands. The renewal above is the only
-lock held across a call upstream; consent interactions lock the row around their Action Service calls,
-never across one. Only a request writing the row waits for either. A write that finds the row gone is
-dropped and the cookie cleared, so no request revives a session ended meanwhile. Of the callbacks
-completing one pending login, only the first replaces its row; any other, and one overtaken by a
-logout, answers 401 and creates nothing. Logout deletes the entire row; cookie
-replay then fails on every replica. Deleting a row also invalidates that session administratively.
+lock held across a call upstream, and only a request writing the row waits for it. A write that finds
+the row gone is dropped and the cookie cleared, so no request revives a session ended meanwhile. Of
+the callbacks completing one pending login, only the first replaces its row; any other, and one
+overtaken by a logout, answers 401 and creates nothing. Logout deletes the entire row; cookie replay
+then fails on every replica. Deleting a row also invalidates that session administratively.
 Expired rows are rejected immediately and deleted on access; successful logins additionally clean
 up expired rows. There is no background retention scheduler. Backups may retain expired credentials:
 restrict DB/backup access accordingly. SQLAlchemy parameter logging is disabled for the app engine.

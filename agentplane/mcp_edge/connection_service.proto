@@ -19,9 +19,9 @@ import "google/protobuf/timestamp.proto";
 // expired. `INVALID_ARGUMENT` is a malformed request. `NOT_FOUND` is a Connection or enrollment that does not exist.
 // `ABORTED` is an `expected_version` that is no longer current, or a Connection that changed after the operator
 // reviewed it. `FAILED_PRECONDITION` is a state that refuses the call: a Connection without an active grant or bound
-// caller, a ServiceAccount no longer labeled as an Action caller, or an enrollment that expired or already holds a
-// different decision. `PERMISSION_DENIED` is an enrollment pinned to another operator. `UNAVAILABLE` is a draining
-// service or a lost change notification.
+// caller, a ServiceAccount no longer labeled as an Action caller, or an enrollment that expired or is already decided.
+// `PERMISSION_DENIED` is an enrollment pinned to another operator. `UNAVAILABLE` is a draining service or a lost change
+// notification.
 //
 // An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT`; a response never carries one.
 //
@@ -82,11 +82,11 @@ service ConnectionService {
     option (google.api.http) = {post: "/v1/operator/connection-enrollments/{handle}/preview" body: "*"};
   }
 
-  // Records the operator's consent or refusal, once. An exact retry answers with the recorded result; a different
-  // decision after one fails `FAILED_PRECONDITION`. `expected_version` must be the preview's `version`, else
-  // `ABORTED`, as does a reconnect target whose Connection changed since it was reviewed. An allow names a labeled
-  // ServiceAccount (else `PERMISSION_DENIED`) and either a new Connection or an existing one the operator confirmed.
-  // Consent alone grants nothing: the OAuth token exchange that follows does.
+  // Records the operator's consent or refusal, once: any decision after it, even a repeat after a lost answer, fails
+  // `FAILED_PRECONDITION`, and the authorization restarts from the MCP client. `expected_version` must be the
+  // preview's `version`, else `ABORTED`, as does a reconnect target whose Connection changed since it was reviewed. An
+  // allow names a labeled ServiceAccount (else `PERMISSION_DENIED`) and either a new Connection or an existing one the
+  // operator confirmed. Consent alone grants nothing: the OAuth token exchange that follows does.
   rpc DecideConnectionEnrollment(DecideConnectionEnrollmentRequest) returns (DecideConnectionEnrollmentResponse) {
     option (google.api.http) = {post: "/v1/operator/connection-enrollments/{handle}/decision" body: "*"};
   }

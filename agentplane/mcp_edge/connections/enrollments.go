@@ -176,17 +176,9 @@ func (s *Store) previewEnrollment(ctx context.Context, handle string, by Operato
 	return previewed, err
 }
 
-// repeats reports whether d is the decision e records.
-func (d decision) repeats(e enrollment) bool {
-	if d.allow == nil || e.allowed == nil {
-		return d.allow == nil && *e.verdict == verdictDeny
-	}
-	return *d.allow == *e.allowed
-}
-
-// decideEnrollment records the operator's decision once. A repeat of the recorded decision, such as a retry after a lost
-// answer, answers with its result; any other decision after one is refused. An allow records the account and the Connection: it grants nothing until the
-// authorization server turns it into a grant.
+// decideEnrollment records the operator's decision once: any decision after it, even a repeat after a lost answer, is
+// refused, and the operator restarts the authorization from the MCP client. An allow records the account and the
+// Connection: it grants nothing until the authorization server turns it into a grant.
 func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision, by Operator) (decisionResult, error) {
 	var result decisionResult
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
@@ -198,11 +190,7 @@ func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision,
 			return err
 		}
 		if e.verdict != nil {
-			if !d.repeats(e) {
-				return status.Error(codes.FailedPrecondition, "enrollment already has a different decision")
-			}
-			result = e.result(*e.verdict)
-			return nil
+			return status.Error(codes.FailedPrecondition, "enrollment already decided; restart authorization")
 		}
 		if e.version != d.expectedVersion {
 			return status.Error(codes.Aborted, "enrollment version changed")
@@ -243,16 +231,11 @@ func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision,
 			WHERE id = $1`, e.id, decided, caller, displayName, connectionID, connectionVersion); err != nil {
 			return err
 		}
-		result = e.result(decided)
+		result = decisionResult{verdict: decided}
+		if decided == verdictAllow {
+			result.redirectURL = &e.upstreamURL
+		}
 		return nil
 	})
 	return result, err
-}
-
-func (e enrollment) result(decided verdict) decisionResult {
-	result := decisionResult{verdict: decided}
-	if decided == verdictAllow {
-		result.redirectURL = &e.upstreamURL
-	}
-	return result
 }

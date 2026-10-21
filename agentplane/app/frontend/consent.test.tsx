@@ -19,20 +19,18 @@ function preview(): ConsentPreview {
     },
     service_accounts: [{ namespace: "agentplane-test", name: "test-coder" }],
     connections: [],
-    csrf_token: "test-only-csrf",
-    attempted_decision: null,
   };
 }
 
 const PREVIEW = "/connection-enrollments/opaque-handle/preview";
 const DECISION = "/connection-enrollments/opaque-handle/decision";
 
-/** Answers the preview with `previewed` and each decision with the next of `decided`, the last one
- * repeating; a `Response` answers as an HTTP failure. */
-function serve(previewed: ConsentPreview | Response, ...decided: (ConsentResult | Response)[]): Sent[] {
+/** Answers the preview with `previewed` and a decision with `decided`; a `Response` answers as an
+ * HTTP failure. */
+function serve(previewed: ConsentPreview | Response, decided?: ConsentResult | Response): Sent[] {
   return answerApi(({ path }) => {
     if (path === PREVIEW) return previewed;
-    if (path === DECISION) return decided.length > 1 ? decided.shift() : decided[0];
+    if (path === DECISION) return decided;
   });
 }
 
@@ -72,11 +70,10 @@ async function chooseServiceAccount(container: HTMLElement): Promise<void> {
 }
 
 describe("ConnectionConsent", () => {
-  it("requires a fresh explicit confirmation for reconnect and pins the reviewed version on retry", async () => {
+  it("requires a fresh explicit confirmation for reconnect and sends the reviewed version", async () => {
     const connection = sampleConnection();
     const sent = serve(
       { ...preview(), connections: [connection] },
-      refused("Connection changed; restart authorization"),
       refused("Connection changed; restart authorization")
     );
     const container = await render();
@@ -103,7 +100,7 @@ describe("ConnectionConsent", () => {
     expect(decisions(sent)).toEqual([
       {
         verdict: "allow",
-        csrf_token: "test-only-csrf",
+        expected_version: 1,
         service_account: TEST_CODER,
         connection: {
           kind: "reconnect",
@@ -114,10 +111,7 @@ describe("ConnectionConsent", () => {
       },
     ]);
     await vi.waitFor(() => expect(container.textContent).toContain("restart authorization"));
-    expect(selection.disabled).toBe(true);
-    await decide(container, "Retry authorization", sent);
-    const [first, retried] = decisions(sent);
-    expect(retried).toEqual(first);
+    expect(container.textContent).toContain("start a new authorization from your MCP client");
   });
 
   it("requires an explicit labeled ServiceAccount and continues only after authorization", async () => {
@@ -135,7 +129,7 @@ describe("ConnectionConsent", () => {
     expect(decisions(sent)).toEqual([
       {
         verdict: "allow",
-        csrf_token: "test-only-csrf",
+        expected_version: 1,
         connection: { kind: "new", display_name: "Claude on wyrm2" },
         service_account: TEST_CODER,
       },
@@ -149,7 +143,7 @@ describe("ConnectionConsent", () => {
     expect(container.textContent).toContain("No labeled caller ServiceAccounts");
     await act(async () => button(container, "Deny").click());
     await vi.waitFor(() => expect(container.textContent).toContain("Connection denied"));
-    expect(decisions(sent)).toEqual([{ verdict: "deny", csrf_token: "test-only-csrf" }]);
+    expect(decisions(sent)).toEqual([{ verdict: "deny", expected_version: 1 }]);
     expect(navigate).not.toHaveBeenCalled();
   });
 
@@ -159,40 +153,6 @@ describe("ConnectionConsent", () => {
     expect(container.textContent).toContain('<img src=x onerror="alert(1)">');
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("a")).toBeNull();
-  });
-
-  it("keeps a failed decision immutable and retries its exact payload", async () => {
-    const sent = serve(preview(), Response.json({ detail: "service unavailable" }, { status: 503 }), {
-      verdict: "allow",
-      redirect_url: "https://idp.test/resume",
-    });
-    const container = await render();
-    await chooseServiceAccount(container);
-    await decide(container, "Authorize", sent);
-    await vi.waitFor(() => expect(container.textContent).toContain("service unavailable"));
-    expect(container.querySelector("input")?.disabled).toBe(true);
-    expect(container.querySelector("select")?.disabled).toBe(true);
-    await act(async () => button(container, "Retry authorization").click());
-    await vi.waitFor(() => expect(decisions(sent)).toHaveLength(2));
-    const [first, retried] = decisions(sent);
-    expect(retried).toEqual(first);
-  });
-
-  it("restores a retry-only decision after reload", async () => {
-    const selected = {
-      verdict: "allow" as const,
-      csrf_token: "test-only-csrf",
-      connection: { kind: "new" as const, display_name: "Saved connection" },
-      service_account: TEST_CODER,
-    };
-    const sent = serve(
-      { ...preview(), attempted_decision: selected },
-      { verdict: "allow", redirect_url: "https://idp.test/resume" }
-    );
-    const container = await render();
-    expect(container.querySelector("input")?.value).toBe("Saved connection");
-    await act(async () => button(container, "Retry authorization").click());
-    await vi.waitFor(() => expect(decisions(sent)).toEqual([selected]));
   });
 
   it("shows expired or refused previews without authorization controls", async () => {

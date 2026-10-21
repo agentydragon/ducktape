@@ -2493,8 +2493,6 @@ routes.push(
         { namespace: "agentplane-visual", name: "operator-assistant" },
       ],
       connections: [sampleConnection()],
-      csrf_token: "test-only-csrf",
-      attempted_decision: null,
     }),
   ],
   [

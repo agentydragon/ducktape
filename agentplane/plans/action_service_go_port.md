@@ -91,8 +91,8 @@ enrollments) and `WebPushService`. They live in files apart from `action_service
 
 - Go neither reads nor writes `connection_enrollment`'s `decision_digest` and `browser_hash`, or
   `external_connection_grant`'s `request_digest` and `activation_deadline`: consent is pinned to its operator alone,
-  a repeated decision is compared with the decision's own columns, and a grant is created active in the transaction
-  that issues its tokens, which nothing retries.
+  any decision after an enrollment's first is refused, and a grant is created active in the transaction that issues
+  its tokens, which nothing retries.
 - `handle_hash` and `mcp_linkage_flow.state_hash` are `sha256` hex of the raw string, and the PKCE
   challenge is the unpadded URL-safe base64 of `sha256` of the verifier.
 - `action_request.arguments`, `action_event.actor`, `action_execution.result` and `error`, and the scope lists are

@@ -408,21 +408,16 @@ confirmation. A fresh authorization can reconnect to the same ServiceAccount or 
 policy editing is offered.
 
 Both `/connection-enrollments/{handle}/preview` and `/decision` are operator-only POSTs
-with the existing exact-Origin check and per-request federation. The BFF stores a CSRF token,
-original version, and decision retry key per interaction in the persistent operator session;
-replicas share them. Each step changes the stored interactions under the session row's lock,
-never held across an Actions call, so concurrent previews lose none and two of one handle share
-one. At most 32 unexpired interactions are retained per session. The Actions authority pins the
-enrollment to the authenticated operator of the first preview, in whichever browser session,
-owns expiry, and consumes one decision. The BFF preserves the exact attempted decision for retry after a lost
-response, including page reload; changing it requires a fresh OAuth authorization.
-The existing Connection's reviewed version is part of that exact decision; a 409 never silently
-refreshes it or retries replacement. Consent does not revoke old authority: token exchange's
-version-checked reservation does, before replacement activation. Failed issuance does not restore
-old grants or rewrite Action provenance; deliberate operator Connection rebinding (below) is
-separate from consent and can change the account an existing credential acts as.
-The v2 session interaction namespace requires in-flight pre-upgrade consent pages to restart OAuth;
-ordinary operator login sessions remain valid.
+with the existing exact-Origin check and per-request federation; the app relays them to the
+Actions authority and keeps no consent state. The decision carries the version the preview
+returned. The Actions authority pins the enrollment to the authenticated operator of the
+first preview, in whichever browser session, owns expiry, and records one decision: it refuses
+any decision after that, even a repeat after a lost response, so a lost answer means a fresh
+OAuth authorization from the MCP client. An existing Connection's reviewed version is part of the
+decision; a 409 never silently refreshes it. Consent does not revoke old authority: token
+exchange's version-checked reservation does, before replacement activation. Failed issuance does
+not restore old grants or rewrite Action provenance; deliberate operator Connection rebinding
+(below) is separate from consent and can change the account an existing credential acts as.
 
 Authorize resumes only the server-held continuation returned by the authenticated Actions
 authority; no client or browser-provided URL is accepted. Deny grants nothing and leaves a

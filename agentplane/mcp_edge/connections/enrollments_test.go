@@ -12,6 +12,7 @@ import (
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -149,7 +150,7 @@ func TestAPreviewRefusesAnUnknownOrExpiredEnrollment(t *testing.T) {
 	wantCode(t, "an expired enrollment", err, codes.FailedPrecondition)
 }
 
-func TestAnAllowIsRecordedOnceAndAnExactRetryGetsItsAnswer(t *testing.T) {
+func TestAnAllowIsRecordedOnceAndEveryDecisionAfterItIsRefused(t *testing.T) {
 	s := serve(t)
 	handle := s.previewed(t)
 	const decisions = 4
@@ -162,11 +163,19 @@ func TestAnAllowIsRecordedOnceAndAnExactRetryGetsItsAnswer(t *testing.T) {
 		})
 	}
 	wg.Wait()
+	// One of the same decision, made at once, is recorded; the others are decisions after it.
+	recorded := 0
 	for i, answer := range answers {
-		if failures[i] != nil || answer.GetVerdict() != action_servicepb.Verdict_VERDICT_ALLOW ||
-			answer.GetRedirectUrl() != testUpstreamURL {
+		switch {
+		case failures[i] == nil && answer.GetVerdict() == action_servicepb.Verdict_VERDICT_ALLOW &&
+			answer.GetRedirectUrl() == testUpstreamURL:
+			recorded++
+		case status.Code(failures[i]) != codes.FailedPrecondition:
 			t.Errorf("decision %d: %v, %v", i, answer, failures[i])
 		}
+	}
+	if recorded != 1 {
+		t.Errorf("%d decisions recorded", recorded)
 	}
 	got := s.storedDecision(t, handle)
 	if got.verdict.String != "allow" || got.callerNamespace.String != callerAccount.Namespace ||
@@ -185,10 +194,6 @@ func TestAnAllowIsRecordedOnceAndAnExactRetryGetsItsAnswer(t *testing.T) {
 
 	_, err := s.client.DecideConnectionEnrollment(as(t, testOperator), deny(handle))
 	wantCode(t, "a deny after the allow", err, codes.FailedPrecondition)
-	other := allowNew(handle)
-	other.GetAllow().GetNewConnection().DisplayName = "test-other-connection"
-	_, err = s.client.DecideConnectionEnrollment(as(t, testOperator), other)
-	wantCode(t, "an allow of another Connection after the allow", err, codes.FailedPrecondition)
 }
 
 func TestADenyRecordsNoAccountAndSendsTheBrowserNowhere(t *testing.T) {

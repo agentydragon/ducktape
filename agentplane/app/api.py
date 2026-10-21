@@ -60,12 +60,7 @@ from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import OIDCSettings, build_oauth
 from agentplane.app.operator_relay import operator_relay
-from agentplane.app.operator_sessions import (
-    OperatorSessionMiddleware,
-    OperatorSessionStore,
-    operator_session_row,
-    request_session,
-)
+from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, request_session
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.sandbox_models import (
@@ -467,15 +462,15 @@ OperatorActions = Annotated[OperatorActionServiceClient, Depends(_operator_actio
 
 
 @consent_router.post("/{handle}/preview")
-async def connection_preview(request: Request, handle: EnrollmentHandle, client: OperatorActions) -> ConsentPreview:
-    return await preview_enrollment(operator_session_row(request), handle, client)
+async def connection_preview(handle: EnrollmentHandle, client: OperatorActions) -> ConsentPreview:
+    return await preview_enrollment(handle, client)
 
 
 @consent_router.post("/{handle}/decision")
 async def connection_decision(
-    request: Request, handle: EnrollmentHandle, body: ConsentDecision, client: OperatorActions
+    handle: EnrollmentHandle, body: ConsentDecision, client: OperatorActions
 ) -> EnrollmentDecisionResult:
-    return await decide_enrollment(operator_session_row(request), handle, body, client)
+    return await decide_enrollment(handle, body, client)
 
 
 connections_router = APIRouter(tags=["connections"])

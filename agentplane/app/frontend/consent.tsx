@@ -37,8 +37,6 @@ export function ConnectionConsent({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState<"allow" | "deny" | null>(null);
-  // A lost response can only retry the exact decision. Never let a second click change its meaning.
-  const [attempt, setAttempt] = useState<ConsentDecision | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -46,21 +44,7 @@ export function ConnectionConsent({
       (value) => {
         if (!active) return;
         setPreview(value);
-        setAttempt(value.attempted_decision);
-        setName(
-          value.attempted_decision?.verdict === "allow" && value.attempted_decision.connection.kind === "new"
-            ? value.attempted_decision.connection.display_name
-            : (value.enrollment.client_name ?? "")
-        );
-        setAccount(
-          value.attempted_decision?.verdict === "allow"
-            ? serviceAccountKey(value.attempted_decision.service_account)
-            : ""
-        );
-        if (value.attempted_decision?.verdict === "allow" && value.attempted_decision.connection.kind === "reconnect") {
-          setConnectionId(value.attempted_decision.connection.connection_id);
-          setConfirmed(true);
-        }
+        setName(value.enrollment.client_name ?? "");
       },
       (failure: unknown) => {
         if (active) setError(displayableError(failure));
@@ -72,7 +56,6 @@ export function ConnectionConsent({
   }, [handle]);
 
   async function decide(decision: ConsentDecision): Promise<void> {
-    setAttempt(decision);
     setSubmitting(true);
     setError(null);
     try {
@@ -102,10 +85,6 @@ export function ConnectionConsent({
   const accounts = preview?.service_accounts ?? [];
   const selectedAccount = accounts.find((candidate) => serviceAccountKey(candidate) === account);
   const existing = preview?.connections.find((connection) => connection.id === connectionId);
-  const reviewedVersion =
-    attempt?.verdict === "allow" && attempt.connection.kind === "reconnect"
-      ? attempt.connection.expected_version
-      : existing?.version;
   return (
     <Paper withBorder p="lg" maw={760} w="100%" mx="auto">
       <Stack>
@@ -115,9 +94,9 @@ export function ConnectionConsent({
             {error}
           </Text>
         )}
-        {error && attempt !== null && (
+        {error && preview && (
           <Text size="sm">
-            Retry sends the same decision. To change it, start a new authorization from your client.
+            If the decision was recorded, deciding again is refused: start a new authorization from your MCP client.
           </Text>
         )}
         {!preview && !error && <Text>Loading authorization request…</Text>}
@@ -150,7 +129,6 @@ export function ConnectionConsent({
                 setConnectionId(event.currentTarget.value);
                 setConfirmed(false);
               }}
-              disabled={attempt !== null}
             />
             {connectionId === "new" ? (
               <TextInput
@@ -159,7 +137,6 @@ export function ConnectionConsent({
                 value={name}
                 maxLength={200}
                 onChange={(event) => setName(event.currentTarget.value)}
-                disabled={attempt !== null}
                 required
               />
             ) : (
@@ -171,7 +148,7 @@ export function ConnectionConsent({
                 >
                   <Stack gap="xs">
                     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-                      Connection {existing.id} · reviewed version {reviewedVersion}
+                      Connection {existing.id} · reviewed version {existing.version}
                     </Text>
                     {existing.grants.map((grant) => (
                       <Text key={grant.id} size="sm" style={{ overflowWrap: "anywhere" }}>
@@ -189,7 +166,6 @@ export function ConnectionConsent({
                       label="I confirm replacing this Connection’s authority"
                       checked={confirmed}
                       onChange={(event) => setConfirmed(event.currentTarget.checked)}
-                      disabled={attempt !== null}
                     />
                   </Stack>
                 </Alert>
@@ -211,7 +187,6 @@ export function ConnectionConsent({
                 setAccount(event.currentTarget.value);
                 setConfirmed(false);
               }}
-              disabled={attempt !== null}
               required
             />
             {accounts.length === 0 && (
@@ -223,42 +198,37 @@ export function ConnectionConsent({
               Action records the specific client connection.
             </Text>
             <Group justify="flex-end">
-              {attempt !== null ? (
-                <Button loading={submitting} onClick={() => void decide(attempt)}>
-                  Retry {attempt.verdict === "allow" ? "authorization" : "denial"}
-                </Button>
-              ) : (
-                <>
-                  <Button
-                    color="red"
-                    variant="light"
-                    onClick={() => void decide({ verdict: "deny", csrf_token: preview.csrf_token })}
-                  >
-                    Deny
-                  </Button>
-                  <Button
-                    disabled={!selectedAccount || (connectionId === "new" ? !name.trim() : !existing || !confirmed)}
-                    onClick={() => {
-                      if (!selectedAccount) return;
-                      void decide({
-                        verdict: "allow",
-                        csrf_token: preview.csrf_token,
-                        connection: existing
-                          ? {
-                              kind: "reconnect",
-                              connection_id: existing.id,
-                              expected_version: existing.version,
-                              authority_change_confirmed: true,
-                            }
-                          : { kind: "new", display_name: name.trim() },
-                        service_account: { namespace: selectedAccount.namespace, name: selectedAccount.name },
-                      });
-                    }}
-                  >
-                    Authorize
-                  </Button>
-                </>
-              )}
+              <Button
+                color="red"
+                variant="light"
+                disabled={submitting}
+                onClick={() => void decide({ verdict: "deny", expected_version: preview.enrollment.version })}
+              >
+                Deny
+              </Button>
+              <Button
+                disabled={
+                  submitting || !selectedAccount || (connectionId === "new" ? !name.trim() : !existing || !confirmed)
+                }
+                onClick={() => {
+                  if (!selectedAccount) return;
+                  void decide({
+                    verdict: "allow",
+                    expected_version: preview.enrollment.version,
+                    connection: existing
+                      ? {
+                          kind: "reconnect",
+                          connection_id: existing.id,
+                          expected_version: existing.version,
+                          authority_change_confirmed: true,
+                        }
+                      : { kind: "new", display_name: name.trim() },
+                    service_account: { namespace: selectedAccount.namespace, name: selectedAccount.name },
+                  });
+                }}
+              >
+                Authorize
+              </Button>
             </Group>
           </>
         )}
