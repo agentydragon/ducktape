@@ -18,7 +18,7 @@ import (
 // The facade is the listener's own client: its gRPC call must come back to the gRPC server mounted
 // on the listener it was sent from.
 func TestAgentAPIAnswersTheRulesFacadeThroughItsOwnListener(t *testing.T) {
-	hop, err := auth.NewResolver(acceptingReviews{}, "test-audience", []string{"test-ns"})
+	hop, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{"test-ns"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -20,11 +22,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// serveGRPC serves the rules API over index on an in-process gRPC server, reviewing the accounts
-// table's tokens, and returns a client for it.
-func serveGRPC(t *testing.T, accounts map[string]string, index *policy.Index) (egressrulespb.EgressRulesClient, *reviews) {
+// serveGRPC serves the rules API over index on an in-process gRPC server, reviewing bearers with
+// reviews, and returns a client for it.
+func serveGRPC(t *testing.T, reviews auth.TokenReviews, index *policy.Index) egressrulespb.EgressRulesClient {
 	t.Helper()
-	service, reviewed := serviceOver(t, accounts, index)
+	service := serviceOver(t, reviews, index)
 	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()
 	egressrulespb.RegisterEgressRulesServer(server, service)
@@ -39,7 +41,7 @@ func serveGRPC(t *testing.T, accounts map[string]string, index *policy.Index) (e
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	return egressrulespb.NewEgressRulesClient(connection), reviewed
+	return egressrulespb.NewEgressRulesClient(connection)
 }
 
 // metadataOf is outgoing metadata from key, value pairs.
@@ -48,9 +50,9 @@ func metadataOf(pairs ...string) context.Context {
 }
 
 func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
-	client, _ := serveGRPC(t, map[string]string{"token-sb": "sb"}, githubIndex())
+	client := serveGRPC(t, kube.TokenReviews(), githubIndex())
 
-	got, err := client.GetRules(metadataOf("authorization", "Bearer token-sb"), &egressrulespb.GetRulesRequest{})
+	got, err := client.GetRules(metadataOf("authorization", "Bearer "+sbToken), &egressrulespb.GetRulesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +78,7 @@ func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 	if !proto.Equal(got, want) {
 		t.Errorf("response = %v, want %v", got, want)
 	}
-	for _, forbidden := range []string{secretValue, "vault-entry", "credential-key", "secretRef", "token-sb"} {
+	for _, forbidden := range []string{secretValue, "vault-entry", "credential-key", "secretRef", sbToken} {
 		if strings.Contains(got.String(), forbidden) {
 			t.Errorf("%q reached a sandbox-readable response", forbidden)
 		}
@@ -98,9 +100,9 @@ func TestGetRulesNamesEachTargetByItsOwnFields(t *testing.T) {
 			resources.JSONField{Field: "password"},
 		},
 	})
-	client, _ := serveGRPC(t, map[string]string{"token-sb": "sb"}, index)
+	client := serveGRPC(t, kube.TokenReviews(), index)
 
-	got, err := client.GetRules(metadataOf("authorization", "Bearer token-sb"), &egressrulespb.GetRulesRequest{})
+	got, err := client.GetRules(metadataOf("authorization", "Bearer "+sbToken), &egressrulespb.GetRulesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,9 +132,9 @@ func TestGetRulesKeepsAnEmptyListDistinctFromAnAbsentOne(t *testing.T) {
 		Type: resources.EgressRuleType, Hosts: []string{"a.example.com"}, Methods: []string{}, Paths: []string{},
 	}))
 	index.Rules.PutBinding(binding("sb", "b", "none"))
-	client, _ := serveGRPC(t, map[string]string{"token-sb": "sb"}, index)
+	client := serveGRPC(t, kube.TokenReviews(), index)
 
-	got, err := client.GetRules(metadataOf("authorization", "Bearer token-sb"), &egressrulespb.GetRulesRequest{})
+	got, err := client.GetRules(metadataOf("authorization", "Bearer "+sbToken), &egressrulespb.GetRulesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,9 +146,9 @@ func TestGetRulesKeepsAnEmptyListDistinctFromAnAbsentOne(t *testing.T) {
 }
 
 func TestGetRulesAnswersNoEgressWithNoPolicies(t *testing.T) {
-	client, _ := serveGRPC(t, map[string]string{"token-nobody": "nobody"}, githubIndex())
+	client := serveGRPC(t, kube.TokenReviews(), githubIndex())
 
-	got, err := client.GetRules(metadataOf("authorization", "Bearer token-nobody"), &egressrulespb.GetRulesRequest{})
+	got, err := client.GetRules(metadataOf("authorization", "Bearer "+nobodyToken), &egressrulespb.GetRulesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,24 +162,25 @@ func TestGetRulesAnswersNoEgressWithNoPolicies(t *testing.T) {
 func TestGetRulesFailsClosedWithoutAProvenBearer(t *testing.T) {
 	for name, c := range map[string]struct {
 		pairs       []string
-		wantReviews int
+		wantReviews int32
 	}{
 		"no authorization":   {nil, 0},
 		"not a bearer":       {[]string{"authorization", "Basic abc"}, 0},
-		"two authorizations": {[]string{"authorization", "Bearer token-sb", "authorization", "Bearer token-sb"}, 0},
+		"two authorizations": {[]string{"authorization", "Bearer " + sbToken, "authorization", "Bearer " + sbToken}, 0},
 		"a forged bearer":    {[]string{"authorization", "Bearer forged"}, 1},
-		"only a hop bearer":  {[]string{"proxy-authorization", "Bearer token-sb"}, 0},
+		"only a hop bearer":  {[]string{"proxy-authorization", "Bearer " + sbToken}, 0},
 	} {
 		t.Run(name, func(t *testing.T) {
-			client, reviewed := serveGRPC(t, map[string]string{"token-sb": "sb"}, githubIndex())
+			reviewed := &kubeapiserver.CountedReviews{TokenReviews: kube.TokenReviews()}
+			client := serveGRPC(t, reviewed, githubIndex())
 
 			got, err := client.GetRules(metadataOf(c.pairs...), &egressrulespb.GetRulesRequest{})
 
 			if status.Code(err) != codes.Unauthenticated || got != nil {
 				t.Errorf("got %v, %v; want Unauthenticated and no rules", got, err)
 			}
-			if reviewed.calls != c.wantReviews {
-				t.Errorf("%d token reviews, want %d: an unusable header must not reach the API server", reviewed.calls, c.wantReviews)
+			if got := reviewed.Calls.Load(); got != c.wantReviews {
+				t.Errorf("%d token reviews, want %d: an unusable header must not reach the API server", got, c.wantReviews)
 			}
 			if strings.Contains(err.Error(), "forged") {
 				t.Errorf("the response echoes the rejected token: %v", err)
@@ -187,9 +190,9 @@ func TestGetRulesFailsClosedWithoutAProvenBearer(t *testing.T) {
 }
 
 func TestGetRulesIsUnavailableWhenTheBearerCannotBeReviewed(t *testing.T) {
-	client, _ := serveGRPC(t, map[string]string{"token-broken": unreachable}, githubIndex())
+	client := serveGRPC(t, unreachable, githubIndex())
 
-	_, err := client.GetRules(metadataOf("authorization", "Bearer token-broken"), &egressrulespb.GetRulesRequest{})
+	_, err := client.GetRules(metadataOf("authorization", "Bearer "+sbToken), &egressrulespb.GetRulesRequest{})
 
 	if status.Code(err) != codes.Unavailable {
 		t.Errorf("got %v, want Unavailable: an unanswered review says nothing about the caller", err)

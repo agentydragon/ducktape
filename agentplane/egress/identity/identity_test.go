@@ -1,84 +1,95 @@
 package identity
 
 import (
-	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
-	hopAudience       = "egress"
+	hopAudience       = "test-egress"
 	projectedAudience = "https://kubernetes.test.invalid"
+	testNamespace     = "test-workloads"
 )
 
-// reviews answers TokenReviews from a table of token to the Pod it is bound to; an absent token is
-// not authenticated and a token mapped to "error" fails the call.
-type reviews struct {
-	audience string
-	pods     map[string]string
-	// foreign names the tokens of a ServiceAccount outside the namespaces the resolver serves.
-	foreign map[string]bool
+var (
+	api    *kubeapiserver.Server
+	runner = auth.Account{Namespace: testNamespace, Name: "test-runner"}
+)
+
+func TestMain(m *testing.M) {
+	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) error {
+		api = server
+		return nil
+	}))
 }
 
-func (r reviews) Create(_ context.Context, review *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	pod, known := r.pods[review.Spec.Token]
-	if pod == "error" {
-		return nil, errors.New("API server unreachable")
-	}
-	namespace := "workloads"
-	if r.foreign[review.Spec.Token] {
-		namespace = "elsewhere"
-	}
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: known,
-		Audiences:     []string{r.audience},
-		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:" + namespace + ":runner", UID: "sa-1",
-			Extra: map[string]authenticationv1.ExtraValue{
-				"authentication.kubernetes.io/pod-name": {pod}, "authentication.kubernetes.io/pod-uid": {"uid-" + pod},
-			},
-		},
-	}}, nil
-}
+var unreachable = kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")}
 
-func verifier(t *testing.T, hop, projected map[string]string) *Verifier {
+func verifier(t *testing.T, hop, projected auth.TokenReviews) *Verifier {
 	t.Helper()
-	hopResolver, err := auth.NewResolver(reviews{audience: hopAudience, pods: hop, foreign: map[string]bool{"foreign": true}}, hopAudience, []string{"workloads"})
+	hopResolver, err := auth.NewResolver(hop, hopAudience, []string{testNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	projectedResolver, err := auth.NewResolver(reviews{audience: projectedAudience, pods: projected}, projectedAudience, []string{"workloads"})
+	projectedResolver, err := auth.NewResolver(projected, projectedAudience, []string{testNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return NewVerifier(hopResolver, map[string]*auth.Resolver{projectedAudience: projectedResolver})
 }
 
-func TestIdentifyTellsARejectedTokenFromAnUnansweredReview(t *testing.T) {
-	v := verifier(t, map[string]string{"good": "pod-a", "broken": "error"}, nil)
+func pod(t *testing.T, account auth.Account) *corev1.Pod {
+	t.Helper()
+	pod, err := api.Pod(t.Context(), account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pod
+}
 
-	principal, err := v.Identify(t.Context(), "good")
-	if err != nil || principal.PodUID != "uid-pod-a" {
+func token(t *testing.T, pod *corev1.Pod, audience string) string {
+	t.Helper()
+	token, err := api.PodToken(t.Context(), pod, audience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
+}
+
+func TestIdentifyTellsARejectedTokenFromAnUnansweredReview(t *testing.T) {
+	a := pod(t, runner)
+	good := token(t, a, hopAudience)
+
+	principal, err := verifier(t, api.TokenReviews(), api.TokenReviews()).Identify(t.Context(), good)
+	if err != nil || principal.PodUID != string(a.UID) {
 		t.Fatalf("Identify(good) = %+v, %v", principal, err)
 	}
-	for token, want := range map[string]decision.Reason{"unknown": decision.TokenRejected, "broken": decision.Unavailable} {
-		_, err := v.Identify(t.Context(), token)
+	for name, c := range map[string]struct {
+		verifier *Verifier
+		bearer   string
+		want     decision.Reason
+	}{
+		"unknown":    {verifier(t, api.TokenReviews(), api.TokenReviews()), "test-unknown-token", decision.TokenRejected},
+		"unanswered": {verifier(t, unreachable, api.TokenReviews()), good, decision.Unavailable},
+	} {
+		_, err := c.verifier.Identify(t.Context(), c.bearer)
 		var refused *Rejection
-		if !errors.As(err, &refused) || refused.Reason != want {
-			t.Errorf("Identify(%s) = %v, want a rejection with reason %s", token, err, want)
+		if !errors.As(err, &refused) || refused.Reason != c.want {
+			t.Errorf("Identify(%s) = %v, want a rejection with reason %s", name, err, c.want)
 		}
 	}
 }
 
 func TestIdentifyRejectsAServiceAccountOutsideTheServedNamespaces(t *testing.T) {
-	v := verifier(t, map[string]string{"foreign": "pod-a"}, nil)
+	foreign := token(t, pod(t, auth.Account{Namespace: "test-elsewhere", Name: "test-runner"}), hopAudience)
 
-	_, err := v.Identify(t.Context(), "foreign")
+	_, err := verifier(t, api.TokenReviews(), api.TokenReviews()).Identify(t.Context(), foreign)
 	var refused *Rejection
 	if !errors.As(err, &refused) || refused.Reason != decision.TokenRejected {
 		t.Fatalf("Identify(foreign) = %v, want a %s rejection", err, decision.TokenRejected)
@@ -116,29 +127,34 @@ func TestParseProjectedTokensKeepsOnlyAudienceTokenPairs(t *testing.T) {
 }
 
 func TestVerifyProjectedKeepsOnlyTokensProvenForThePresentingPod(t *testing.T) {
-	v := verifier(t, map[string]string{"hop": "pod-a"}, map[string]string{"projected-a": "pod-a", "projected-b": "pod-b", "broken": "error"})
-	principal, err := v.Identify(t.Context(), "hop")
+	a, b := pod(t, runner), pod(t, runner)
+	hop, projectedA, projectedB := token(t, a, hopAudience), token(t, a, projectedAudience), token(t, b, projectedAudience)
+	v := verifier(t, api.TokenReviews(), api.TokenReviews())
+	principal, err := v.Identify(t.Context(), hop)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for name, offered := range map[string]map[string]string{
+	for name, c := range map[string]struct {
+		verifier *Verifier
+		offered  map[string]string
+	}{
 		// A caller that holds another Pod's token for this audience cannot have the proxy spend it,
 		// though the hop it arrived on authenticated.
-		"another pod's token": {projectedAudience: "projected-b"},
+		"another pod's token": {v, map[string]string{projectedAudience: projectedB}},
 		// Which audiences may be substituted for is the deployment's to list.
-		"unconfigured audience": {"https://unlisted.test.invalid": "projected-a"},
+		"unconfigured audience": {v, map[string]string{"https://unlisted.test.invalid": projectedA}},
 		// Audiences do not substitute for one another: the hop bearer proves the same Pod and is
 		// still refused for a destination that validates a different audience.
-		"hop bearer":        {projectedAudience: "hop"},
-		"unanswered review": {projectedAudience: "broken"},
+		"hop bearer":        {v, map[string]string{projectedAudience: hop}},
+		"unanswered review": {verifier(t, api.TokenReviews(), unreachable), map[string]string{projectedAudience: projectedA}},
 	} {
-		if got := v.VerifyProjected(t.Context(), offered, principal); len(got) != 0 {
+		if got := c.verifier.VerifyProjected(t.Context(), c.offered, principal); len(got) != 0 {
 			t.Errorf("%s: kept %v", name, got)
 		}
 	}
-	got := v.VerifyProjected(t.Context(), map[string]string{projectedAudience: "projected-a"}, principal)
-	if len(got) != 1 || got[projectedAudience] != "projected-a" {
+	got := v.VerifyProjected(t.Context(), map[string]string{projectedAudience: projectedA}, principal)
+	if len(got) != 1 || got[projectedAudience] != projectedA {
 		t.Errorf("a token for the presenting Pod: kept %v", got)
 	}
 }

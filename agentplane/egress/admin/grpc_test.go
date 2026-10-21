@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -23,32 +25,30 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
 	testAudience    = "test-egress-admin"
 	callerNamespace = "test-callers"
-	readerToken     = "test-reader-token"
-	strangerToken   = "test-stranger-token"
 )
 
-// fakeReviews proves a token to the ServiceAccount of the name it maps to, in callerNamespace.
-type fakeReviews map[string]string
+var (
+	api *kubeapiserver.Server
+	// readerToken proves test-reader, an allowed caller; strangerToken proves test-stranger, which is
+	// not.
+	readerToken, strangerToken string
+)
 
-func (r fakeReviews) Create(_ context.Context, review *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	name, known := r[review.Spec.Token]
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: known,
-		Audiences:     []string{testAudience},
-		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:" + callerNamespace + ":" + name, UID: "uid-" + name,
-			Extra: map[string]authenticationv1.ExtraValue{
-				"authentication.kubernetes.io/pod-name": {"pod-" + name}, "authentication.kubernetes.io/pod-uid": {"pod-uid-" + name},
-			},
-		},
-	}}, nil
+func TestMain(m *testing.M) {
+	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) (err error) {
+		api = server
+		ctx := context.Background()
+		if readerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: callerNamespace, Name: "test-reader"}, testAudience); err != nil {
+			return err
+		}
+		strangerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: callerNamespace, Name: "test-stranger"}, testAudience)
+		return err
+	}))
 }
 
 // changingDecisions serves the records it was last given.
@@ -93,9 +93,7 @@ func followOnTicks(ticks <-chan struct{}, settled chan<- struct{}) fakeChanges {
 func serveGRPC(t *testing.T, options ServiceOptions) (egressadminpb.EgressAdminClient, *Service) {
 	t.Helper()
 	var err error
-	options.Resolver, err = auth.NewResolver(
-		fakeReviews{readerToken: "test-reader", strangerToken: "test-stranger"}, testAudience, []string{callerNamespace},
-	)
+	options.Resolver, err = auth.NewResolver(api.TokenReviews(), testAudience, []string{callerNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}

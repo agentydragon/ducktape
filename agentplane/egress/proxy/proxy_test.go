@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -30,57 +31,83 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"golang.org/x/net/http2"
 	authenticationv1 "k8s.io/api/authentication/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
 	fixtureHost       = "upstream.test"
-	hopAudience       = "egress"
+	hopAudience       = "test-egress"
 	projectedAudience = "https://kubernetes.test.invalid"
 	staleAfter        = time.Hour
 )
 
-// unreachable is the Pod a token is bound to when its review fails rather than answers.
-const unreachable = "unreachable"
+var (
+	kube   *kubeapiserver.Server
+	runner = auth.Account{Namespace: "test-workloads", Name: "test-runner"}
+	// runnerPod is the Pod hopToken and projectedToken are bound to.
+	runnerPod                *corev1.Pod
+	hopToken, projectedToken string
+)
 
-// reviewer answers TokenReviews for one audience from a table of valid token to the Pod it is bound
-// to. It neither pretends to be an API server nor claims to prove Kubernetes bound-token issuance
-// or revocation.
-type reviewer struct {
-	audience string
-	mu       sync.Mutex
-	pods     map[string]string
+func TestMain(m *testing.M) {
+	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) (err error) {
+		kube = server
+		ctx := context.Background()
+		if runnerPod, err = server.Pod(ctx, runner); err != nil {
+			return err
+		}
+		if hopToken, err = server.PodToken(ctx, runnerPod, hopAudience); err != nil {
+			return err
+		}
+		if projectedToken, err = server.PodToken(ctx, runnerPod, projectedAudience); err != nil {
+			return err
+		}
+		bearerHeader = http.Header{"Proxy-Authorization": {"Bearer " + hopToken}}
+		validBearer = "Proxy-Authorization: Bearer " + hopToken + "\r\n"
+		return nil
+	}))
 }
 
-func (r *reviewer) Create(_ context.Context, review *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	pod, valid := r.pods[review.Spec.Token]
-	if pod == unreachable {
-		return nil, errors.New("API server unreachable")
+// runnerToken is a new Pod running as runner and a token for audience bound to it.
+func runnerToken(t *testing.T, audience string) (*corev1.Pod, string) {
+	t.Helper()
+	pod, err := kube.Pod(t.Context(), runner)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: valid, Audiences: []string{r.audience},
-		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:workloads:runner", UID: "sa-1",
-			Extra: map[string]authenticationv1.ExtraValue{"authentication.kubernetes.io/pod-name": {pod}, "authentication.kubernetes.io/pod-uid": {"uid-" + pod}},
-		},
-	}}, nil
+	token, err := kube.PodToken(t.Context(), pod, audience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pod, token
 }
 
-func (r *reviewer) bind(token, pod string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.pods[token] = pod
+// hopReviews passes the proxy's hop reviews to the API server, unless a test injects one of two
+// faults the API server cannot produce: being unreachable, or, rebound, answering that a token it
+// accepts proves another Pod than it did before, where the API server binds a token to one Pod for
+// life.
+type hopReviews struct {
+	auth.TokenReviews
+	unreachable atomic.Bool
+	rebound     atomic.Bool
 }
 
-func (r *reviewer) revoke(token string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.pods, token)
+func (h *hopReviews) Create(ctx context.Context, review *authenticationv1.TokenReview, options metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
+	if h.unreachable.Load() {
+		return nil, errors.New("test API server unreachable")
+	}
+	answer, err := h.TokenReviews.Create(ctx, review, options)
+	if err != nil || !h.rebound.Load() || !answer.Status.Authenticated {
+		return answer, err
+	}
+	answer.Status.User.Extra["authentication.kubernetes.io/pod-name"] = authenticationv1.ExtraValue{"test-replacement-pod"}
+	answer.Status.User.Extra["authentication.kubernetes.io/pod-uid"] = authenticationv1.ExtraValue{"test-replacement-pod-uid"}
+	return answer, nil
 }
 
 type countedListener struct {
@@ -134,8 +161,7 @@ func (r *records) all() []decision.Record {
 
 type lab struct {
 	index      *policy.Index
-	hop        *reviewer
-	projected  *reviewer
+	hop        *hopReviews
 	records    *records
 	options    Options
 	proxy      *Proxy
@@ -158,8 +184,7 @@ func newLab(t *testing.T) *lab {
 	upstreamCA, upstreamRoot := makeCA(t, "upstream")
 	l := &lab{
 		index:      policy.NewIndex(staleAfter),
-		hop:        &reviewer{audience: hopAudience, pods: map[string]string{"valid": "pod-1"}},
-		projected:  &reviewer{audience: projectedAudience, pods: map[string]string{"projected-valid": "pod-1"}},
+		hop:        &hopReviews{TokenReviews: kube.TokenReviews()},
 		records:    &records{},
 		roots:      interceptRoot,
 		upstreamCA: upstreamCA,
@@ -176,11 +201,11 @@ func newLab(t *testing.T) *lab {
 		Paths: []string{"/allowed", "/stream", "/sse", "/ws", "/cancel"},
 	})
 	// These tests revoke and rebind tokens between requests, so every call reviews its bearer.
-	hop, err := auth.NewResolver(l.hop, hopAudience, []string{"workloads"}, auth.WithVerdictTTL(0))
+	hop, err := auth.NewResolver(l.hop, hopAudience, []string{runner.Namespace}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
 	}
-	projected, err := auth.NewResolver(l.projected, projectedAudience, []string{"workloads"}, auth.WithVerdictTTL(0))
+	projected, err := auth.NewResolver(kube.TokenReviews(), projectedAudience, []string{runner.Namespace}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +223,7 @@ func newLab(t *testing.T) *lab {
 	return l
 }
 
-// allow grants the runner ServiceAccount exactly rules, replacing what it was granted.
+// allow grants runner exactly rules, replacing what it was granted.
 func (l *lab) allow(rules ...policyapi.Rule) {
 	l.index.Rules.PutPolicySet(&policyapi.PolicySet{
 		ObjectMeta: metav1.ObjectMeta{Name: "egress", Namespace: "rules"}, Spec: policyapi.PolicySetSpec{Rules: rules},
@@ -206,7 +231,7 @@ func (l *lab) allow(rules ...policyapi.Rule) {
 	l.index.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: "rules"},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject: policyapi.ServiceAccountRef{Namespace: "workloads", Name: "runner"}, PolicySets: []string{"egress"},
+			Subject: policyapi.ServiceAccountRef{Namespace: runner.Namespace, Name: runner.Name}, PolicySets: []string{"egress"},
 		},
 	})
 }
@@ -264,7 +289,7 @@ func (l *lab) tunnel(t *testing.T, port string, tlsEnabled bool) (net.Conn, *htt
 // header lines.
 func (l *lab) tunnelPresenting(t *testing.T, port string, tlsEnabled bool, extra string) (net.Conn, *http2.ClientConn) {
 	t.Helper()
-	return l.tunnelAs(t, "valid", port, tlsEnabled, extra)
+	return l.tunnelAs(t, hopToken, port, tlsEnabled, extra)
 }
 
 // tunnelAs opens a tunnel whose CONNECT carries the hop bearer token and, verbatim, extra header lines.
@@ -586,7 +611,7 @@ func TestRevocationDuringDNSAndMixedForbiddenAnswersNeverDial(t *testing.T) {
 				}
 				return addresses
 			}
-			response := l.send(t, "GET", portOf(upstream), "/allowed", http.Header{"Proxy-Authorization": {"Bearer valid"}}, nil)
+			response := l.send(t, "GET", portOf(upstream), "/allowed", bearerHeader, nil)
 			refusal := l.records.all()[0]
 			if response.StatusCode != want.status || *refusal.Reason != want.reason || counted.accepts.Load() != 0 {
 				t.Fatalf("denied after DNS: status=%d reason=%v TCP=%d", response.StatusCode, *refusal.Reason, counted.accepts.Load())
@@ -619,7 +644,7 @@ func TestExistingConnectionRevocationStalenessAndAuthCleanup(t *testing.T) {
 			case "stale":
 				l.index.Freshness.RecordCycle(policy.Secrets, time.Now().Add(-2*staleAfter))
 			case "changed-principal":
-				l.hop.bind("valid", "replacement-pod")
+				l.hop.rebound.Store(true)
 			}
 			header := ""
 			if change == "invalid-replacement" {
@@ -683,7 +708,7 @@ func TestIncrementalSSEAndWebSocket(t *testing.T) {
 	// WebSocket upgrades require HTTP/1 on both legs; HTTP/2 extended CONNECT is
 	// a different protocol and intentionally outside this spike.
 	proxyURL, _ := url.Parse("http://" + l.address)
-	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL), TLSClientConfig: &tls.Config{RootCAs: l.roots}, ProxyConnectHeader: http.Header{"Proxy-Authorization": {"Bearer valid"}}}}
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL), TLSClientConfig: &tls.Config{RootCAs: l.roots}, ProxyConnectHeader: bearerHeader}}
 	req, _ := http.NewRequestWithContext(bounded(t), "GET", "https://"+fixtureHost+":"+portOf(upstream)+"/ws", nil)
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Upgrade", "websocket")

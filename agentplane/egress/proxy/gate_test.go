@@ -27,6 +27,7 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"golang.org/x/net/http2"
+	corev1 "k8s.io/api/core/v1"
 )
 
 var (
@@ -42,11 +43,11 @@ var (
 		Name: "workload", Source: resources.AuthenticatedWorkloadToken{},
 		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
 	}
-	bearerHeader = http.Header{"Proxy-Authorization": {"Bearer valid"}}
+	// bearerHeader carries hopToken as a plain proxy request's header, and validBearer as the
+	// Proxy-Authorization line of a raw CONNECT. TestMain sets both.
+	bearerHeader http.Header
+	validBearer  string
 )
-
-// validBearer is the Proxy-Authorization line of a raw CONNECT that the reviewer accepts.
-const validBearer = "Proxy-Authorization: Bearer valid\r\n"
 
 func rule(path, credential string) policyapi.Rule {
 	rule := policyapi.Rule{Type: resources.EgressRuleType, Hosts: []string{fixtureHost}, Paths: []string{path}}
@@ -106,7 +107,7 @@ func TestRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 		"no bearer":        {nil, "/allowed", nil, 403, decision.TokenMissing, false},
 		"unreviewed token": {header("Proxy-Authorization", "Bearer forged"), "/allowed", nil, 403, decision.TokenRejected, false},
 		"two bearers": {
-			header("Proxy-Authorization", "Bearer valid", "Proxy-Authorization", "Bearer valid"), "/allowed", nil,
+			header("Proxy-Authorization", "Bearer "+hopToken, "Proxy-Authorization", "Bearer "+hopToken), "/allowed", nil,
 			403, decision.TokenMissing, false,
 		},
 		"no rule for the path": {bearerHeader, "/elsewhere", nil, 403, decision.NoRule, true},
@@ -114,7 +115,7 @@ func TestRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 			bearerHeader, "/allowed", func(l *lab) { l.index.Rules.DeleteBinding("runner") }, 403, decision.NoBinding, true,
 		},
 		"another credential's placeholder": {
-			header("Proxy-Authorization", "Bearer valid", "x-api-key", "agentplane-credential-other"), "/allowed",
+			header("Proxy-Authorization", "Bearer "+hopToken, "x-api-key", "agentplane-credential-other"), "/allowed",
 			func(l *lab) {
 				l.index.PutCredential(resources.Credential{
 					Name: "other", Source: resources.SecretKey{Name: "keys", Key: "key"},
@@ -123,7 +124,7 @@ func TestRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 			}, 403, decision.PlaceholderUnresolved, true,
 		},
 		"credential without a value": {
-			header("Proxy-Authorization", "Bearer valid", "x-api-key", "agentplane-credential-key"), "/allowed",
+			header("Proxy-Authorization", "Bearer "+hopToken, "x-api-key", "agentplane-credential-key"), "/allowed",
 			func(l *lab) { l.index.DeleteSecret("keys") }, 403, decision.CredentialUnavailable, true,
 		},
 		"host that does not resolve": {
@@ -170,12 +171,12 @@ func TestAdmittedRequestIsSubstitutedAndLosesItsHopHeaders(t *testing.T) {
 		}
 	})
 	response := l.send(t, "GET", portOf(upstream), "/allowed",
-		header("Proxy-Authorization", "Bearer valid", "x-api-key", "agentplane-credential-key",
-			"X-Agentplane-Workload-Token", projectedAudience+" projected-valid"), nil)
+		header("Proxy-Authorization", "Bearer "+hopToken, "x-api-key", "agentplane-credential-key",
+			"X-Agentplane-Workload-Token", projectedAudience+" "+projectedToken), nil)
 	record := l.records.all()[0]
 	if response.StatusCode != 200 || record.Outcome != decision.Allow || !record.Substituted ||
 		*record.Address != "127.0.0.1" || *record.Binding != "runner" || *record.Policy != "egress" || *record.Rule != 0 ||
-		*record.SourcePodUID != "uid-pod-1" || record.Subject.Name != "runner" || record.Host != fixtureHost {
+		*record.SourcePodUID != string(runnerPod.UID) || record.Subject.Name != runner.Name || record.Host != fixtureHost {
 		t.Errorf("status %d, record %+v", response.StatusCode, record)
 	}
 }
@@ -226,7 +227,7 @@ func TestJSONBodyCredentialIsSubstitutedWithItsLengthUpdated(t *testing.T) {
 		received.set(string(body))
 		length.set(strconv.FormatInt(r.ContentLength, 10))
 	})
-	json := header("Proxy-Authorization", "Bearer valid", "Content-Type", "application/json")
+	json := header("Proxy-Authorization", "Bearer "+hopToken, "Content-Type", "application/json")
 
 	l.send(t, "POST", portOf(upstream), "/json", json, strings.NewReader(`{"token":"agentplane-credential-body-token","n":1}`))
 	want := `{"token":"a-much-longer-real-body-secret","n":1}`
@@ -246,7 +247,7 @@ func TestProjectedTokenIsSubstitutedOnlyWhenItProvesTheHopsPod(t *testing.T) {
 	l := newLab(t)
 	l.index.PutCredential(projectedCredential)
 	l.allow(rule("/kube", "kube"))
-	l.projected.bind("other-pod-token", "pod-2")
+	_, otherPodToken := runnerToken(t, projectedAudience)
 	var authorization seen
 	upstream := plainUpstream(t, func(w http.ResponseWriter, r *http.Request) { authorization.set(r.Header.Get("Authorization")) })
 	for name, c := range map[string]struct {
@@ -254,15 +255,15 @@ func TestProjectedTokenIsSubstitutedOnlyWhenItProvesTheHopsPod(t *testing.T) {
 		status        int
 		authorization string
 	}{
-		"same pod":              {projectedAudience + " projected-valid", 200, "Bearer projected-valid"},
-		"another pod":           {projectedAudience + " other-pod-token", 403, ""},
+		"same pod":              {projectedAudience + " " + projectedToken, 200, "Bearer " + projectedToken},
+		"another pod":           {projectedAudience + " " + otherPodToken, 403, ""},
 		"unreviewed":            {projectedAudience + " forged", 403, ""},
-		"unconfigured audience": {"https://other.test.invalid projected-valid", 403, ""},
-		"malformed":             {"projected-valid", 403, ""},
+		"unconfigured audience": {"https://other.test.invalid " + projectedToken, 403, ""},
+		"malformed":             {projectedToken, 403, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			response := l.send(t, "GET", portOf(upstream), "/kube",
-				header("Proxy-Authorization", "Bearer valid", "Authorization", "Bearer agentplane-credential-kube",
+				header("Proxy-Authorization", "Bearer "+hopToken, "Authorization", "Bearer agentplane-credential-kube",
 					"X-Agentplane-Workload-Token", c.presented), nil)
 			if got := authorization.take(); response.StatusCode != c.status || got != c.authorization {
 				t.Errorf("status %d, upstream Authorization %q", response.StatusCode, got)
@@ -283,7 +284,7 @@ func TestTunnelRequestsInheritWhatTheConnectPresented(t *testing.T) {
 		authorization.set(r.Header.Get("Authorization"))
 	}))
 	_, client := l.tunnelPresenting(t, portOf(upstream), true,
-		"X-Agentplane-Workload-Token: "+projectedAudience+" projected-valid\r\n")
+		"X-Agentplane-Workload-Token: "+projectedAudience+" "+projectedToken+"\r\n")
 	send := func(tokens ...string) int {
 		req := request(bounded(t), portOf(upstream), "/kube", true, nil)
 		req.Header.Del("x-api-key")
@@ -297,7 +298,7 @@ func TestTunnelRequestsInheritWhatTheConnectPresented(t *testing.T) {
 		return response.StatusCode
 	}
 
-	if status, got := send(), authorization.take(); status != 200 || got != "Bearer projected-valid" {
+	if status, got := send(), authorization.take(); status != 200 || got != "Bearer "+projectedToken {
 		t.Errorf("without the header: status %d, upstream Authorization %q", status, got)
 	}
 	// A request that presents the header with nothing usable in it inherits nothing.
@@ -305,7 +306,7 @@ func TestTunnelRequestsInheritWhatTheConnectPresented(t *testing.T) {
 		t.Errorf("with a malformed entry: status %d, upstream Authorization %q", status, got)
 	}
 	// What it presented replaces what the CONNECT did.
-	if status, got := send(projectedAudience+" projected-valid"), authorization.take(); status != 200 || got != "Bearer projected-valid" {
+	if status, got := send(projectedAudience+" "+projectedToken), authorization.take(); status != 200 || got != "Bearer "+projectedToken {
 		t.Errorf("with a fresh entry: status %d, upstream Authorization %q", status, got)
 	}
 }
@@ -434,13 +435,10 @@ func TestConnectRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 		// authenticated is whether the record names a subject.
 		authenticated bool
 	}{
-		"no bearer":        {"", "", nil, 403, decision.TokenMissing, false},
-		"unreviewed token": {"Proxy-Authorization: Bearer forged\r\n", "", nil, 403, decision.TokenRejected, false},
-		"two bearers":      {validBearer + validBearer, "", nil, 403, decision.TokenMissing, false},
-		"review that fails": {
-			"Proxy-Authorization: Bearer unreviewable\r\n", "", func(l *lab) { l.hop.bind("unreviewable", unreachable) },
-			502, decision.Unavailable, false,
-		},
+		"no bearer":            {"", "", nil, 403, decision.TokenMissing, false},
+		"unreviewed token":     {"Proxy-Authorization: Bearer forged\r\n", "", nil, 403, decision.TokenRejected, false},
+		"two bearers":          {validBearer + validBearer, "", nil, 403, decision.TokenMissing, false},
+		"review that fails":    {validBearer, "", func(l *lab) { l.hop.unreachable.Store(true) }, 502, decision.Unavailable, false},
 		"no binding":           {validBearer, "", func(l *lab) { l.index.Rules.DeleteBinding("runner") }, 403, decision.NoBinding, true},
 		"no rule for the host": {validBearer, "other.test", nil, 403, decision.NoRule, true},
 		"stale policy": {
@@ -503,7 +501,7 @@ func TestAConnectTheRulesAdmitIsAcknowledgedWithoutDialingAndRecorded(t *testing
 		t.Errorf("status %d, %d upstream TCP connections", response.StatusCode, counted.accepts.Load())
 	}
 	if admitted.Outcome != decision.Allow || admitted.Phase != decision.Connect || admitted.Method != http.MethodConnect ||
-		admitted.Reason != nil || valueOf(admitted.Subject) != (decision.Subject{Namespace: "workloads", Name: "runner"}) ||
+		admitted.Reason != nil || valueOf(admitted.Subject) != (decision.Subject{Namespace: runner.Namespace, Name: runner.Name}) ||
 		valueOf(admitted.Binding) != "runner" || valueOf(admitted.Address) != "127.0.0.1" || admitted.Host != fixtureHost {
 		t.Errorf("record %+v", admitted)
 	}
@@ -536,23 +534,28 @@ func TestClusterInternalRuleLetsTheGateAdmitAPrivateAddress(t *testing.T) {
 
 func TestARejectedOrRevokedBearerLeavesATunnelWithoutAnIdentity(t *testing.T) {
 	for name, c := range map[string]struct {
-		// change happens after the tunnel has carried a request.
-		change func(*lab)
+		// change happens after the tunnel, opened on token bound to pod, has carried a request.
+		change func(t *testing.T, pod *corev1.Pod, token string)
 		hop    string
 	}{
 		"replacement the reviewer rejects": {nil, "Bearer forged"},
-		"bearer revoked mid-tunnel":        {func(l *lab) { l.hop.revoke("valid") }, ""},
+		"bearer revoked mid-tunnel": {func(t *testing.T, pod *corev1.Pod, token string) {
+			if err := kube.Revoke(t.Context(), pod, token, hopAudience); err != nil {
+				t.Fatal(err)
+			}
+		}, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			l := newLab(t)
+			pod, token := runnerToken(t, hopAudience)
 			upstream, counted := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 			port := portOf(upstream)
-			_, client := l.tunnel(t, port, true)
+			_, client := l.tunnelAs(t, token, port, true, "")
 			if got := tunnelStatus(t, client, port, ""); got != 200 {
 				t.Fatalf("initial request=%d", got)
 			}
 			if c.change != nil {
-				c.change(l)
+				c.change(t, pod, token)
 			}
 
 			// The refused request leaves the tunnel nothing to fall back on, neither the CONNECT's bearer
@@ -630,8 +633,8 @@ func TestEachConnectionSubstitutesItsOwnWorkloadBearerAndNeverForwardsTheHopHead
 	l := newLab(t)
 	l.index.PutCredential(workloadCredential)
 	l.allow(rule("/workload", workloadCredential.Name))
-	l.hop.bind("valid-b", "pod-2")
-	l.hop.bind("valid-c", "pod-3")
+	_, tokenB := runnerToken(t, hopAudience)
+	_, tokenC := runnerToken(t, hopAudience)
 	var authorization, hop seen
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authorization.set(r.Header.Get("Authorization"))
@@ -639,8 +642,8 @@ func TestEachConnectionSubstitutesItsOwnWorkloadBearerAndNeverForwardsTheHopHead
 	})
 	tlsUpstream, _ := l.upstream(t, fixtureHost, true, handler)
 	plain := plainUpstream(t, handler)
-	_, tunnelA := l.tunnelAs(t, "valid", portOf(tlsUpstream), true, "")
-	_, tunnelB := l.tunnelAs(t, "valid-b", portOf(tlsUpstream), true, "")
+	_, tunnelA := l.tunnelAs(t, hopToken, portOf(tlsUpstream), true, "")
+	_, tunnelB := l.tunnelAs(t, tokenB, portOf(tlsUpstream), true, "")
 	placeholder := "Bearer " + workloadCredential.Placeholder()
 	through := func(client *http2.ClientConn) int {
 		req := request(bounded(t), portOf(tlsUpstream), "/workload", true, nil)
@@ -659,7 +662,7 @@ func TestEachConnectionSubstitutesItsOwnWorkloadBearerAndNeverForwardsTheHopHead
 		func() int { return through(tunnelA) },
 		func() int { return through(tunnelB) },
 		func() int {
-			return l.send(t, "GET", portOf(plain), "/workload", header("Proxy-Authorization", "Bearer valid-c", "Authorization", placeholder), nil).StatusCode
+			return l.send(t, "GET", portOf(plain), "/workload", header("Proxy-Authorization", "Bearer "+tokenC, "Authorization", placeholder), nil).StatusCode
 		},
 		func() int { return through(tunnelA) },
 	} {
@@ -672,7 +675,7 @@ func TestEachConnectionSubstitutesItsOwnWorkloadBearerAndNeverForwardsTheHopHead
 		}
 	}
 
-	if want := []string{"Bearer valid", "Bearer valid-b", "Bearer valid-c", "Bearer valid"}; !slices.Equal(got, want) {
+	if want := []string{"Bearer " + hopToken, "Bearer " + tokenB, "Bearer " + tokenC, "Bearer " + hopToken}; !slices.Equal(got, want) {
 		t.Errorf("upstream saw Authorization %q, want each request's own hop bearer %q", got, want)
 	}
 }
@@ -699,7 +702,6 @@ func TestNoSecretReachesTheLogsOrTheRecordedDecisions(t *testing.T) {
 	const (
 		forgedBearer    = "forged-bearer-secret"
 		forgedProjected = "forged-projected-secret"
-		hopBearer       = "hop-bearer-secret"
 		pathSecret      = "path-secret"
 		querySecret     = "query-secret"
 		headerSecret    = "header-secret"
@@ -711,7 +713,7 @@ func TestNoSecretReachesTheLogsOrTheRecordedDecisions(t *testing.T) {
 	log.SetOutput(&logs)
 	t.Cleanup(func() { log.SetOutput(previous) })
 	l := newLab(t)
-	l.hop.bind(hopBearer, "pod-1")
+	_, hopBearer := runnerToken(t, hopAudience)
 	l.index.PutCredential(tokenCredential)
 	l.index.PutSecret(resources.NewSecret("keys", map[string]string{"key": "real-secret", "body": bodySecret}))
 	l.allow(rule("/json", tokenCredential.Name), rule("/public/**", ""))

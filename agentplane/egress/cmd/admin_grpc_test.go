@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -14,32 +15,30 @@ import (
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const testToken = "test-admin-token"
+const testAudience = "test-audience"
 
-// acceptingReviews proves testToken to the ServiceAccount test-ns/test-app.
-type acceptingReviews struct{}
+var (
+	api *kubeapiserver.Server
+	// testToken proves the ServiceAccount test-ns/test-app for testAudience.
+	testToken string
+)
 
-func (acceptingReviews) Create(_ context.Context, review *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: review.Spec.Token == testToken,
-		Audiences:     review.Spec.Audiences,
-		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:test-ns:test-app", UID: "test-uid",
-			Extra: map[string]authenticationv1.ExtraValue{
-				"authentication.kubernetes.io/pod-name": {"test-pod"}, "authentication.kubernetes.io/pod-uid": {"test-pod-uid"},
-			},
-		},
-	}}, nil
+func TestMain(m *testing.M) {
+	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) (err error) {
+		api = server
+		testToken, err = server.WorkloadToken(context.Background(), auth.Account{Namespace: "test-ns", Name: "test-app"}, testAudience)
+		return err
+	}))
 }
 
 type noDecisions struct{}
@@ -70,11 +69,11 @@ type idleHistory struct{}
 func (idleHistory) Health() history.Health { return history.Health{} }
 
 func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
-	c := config{AdminGRPCAudience: "test-audience", AdminGRPCCallers: []string{"test-ns/test-app"}}
+	c := config{AdminGRPCAudience: testAudience, AdminGRPCCallers: []string{"test-ns/test-app"}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /test-live", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "alive") })
 	adminServer := &http.Server{Handler: mux}
-	shutdown, err := mountAdminGRPC(adminServer, c, acceptingReviews{}, admin.ServiceOptions{
+	shutdown, err := mountAdminGRPC(adminServer, c, api.TokenReviews(), admin.ServiceOptions{
 		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{}, Clock: time.Now,
 	})
 	if err != nil {
@@ -148,7 +147,7 @@ func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T)
 // API is configured.
 func TestAdminListenerServesHealthWithoutTheAdminGRPCAPI(t *testing.T) {
 	adminServer := &http.Server{Handler: http.NewServeMux()}
-	shutdown, err := mountAdminGRPC(adminServer, config{}, acceptingReviews{}, admin.ServiceOptions{Index: readyIndex{}, Clock: time.Now})
+	shutdown, err := mountAdminGRPC(adminServer, config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}, Clock: time.Now})
 	if err != nil {
 		t.Fatal(err)
 	}
