@@ -32,7 +32,7 @@ py_test(
 )
 
 go_binary(
-    name = "buildbuddy_secret_sync",
+    name = "buildbuddy-secret-sync",
     srcs = ["buildbuddy_secret_sync.go"],
     importpath = "github.com/agentydragon/ducktape/cluster/tf_runner/buildbuddy_secret_sync",
     deps = ["@org_golang_x_crypto//nacl/box"],
@@ -40,10 +40,9 @@ go_binary(
 
 pkg_tar(
     name = "buildbuddy_secret_sync_layer",
-    srcs = [":buildbuddy_secret_sync"],
+    srcs = [":buildbuddy-secret-sync"],
     mode = "0755",
     package_dir = "/usr/local/bin",
-    renames = {":buildbuddy_secret_sync": "buildbuddy-secret-sync"},
 )
 
 provider_plugin_layer(
