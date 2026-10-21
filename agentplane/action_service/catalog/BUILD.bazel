@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/action_service:__subpackages__"])
+
+go_library(
+    name = "catalog",
+    srcs = ["catalog.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/catalog",
+)
+
+go_test(
+    name = "catalog_test",
+    srcs = [
+        "catalog_test.go",
+        "golden_test.go",
+    ],
+    embed = [":catalog"],
+    embedsrcs = ["golden.json"],
+    deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
+)
+
+exports_files(
+    ["golden.json"],
+    visibility = ["//agentplane/action_service:__pkg__"],
+)

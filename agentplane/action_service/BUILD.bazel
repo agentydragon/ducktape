@@ -1316,6 +1316,38 @@ py_test(
     ],
 )
 
+py_binary(
+    name = "generate_catalog_golden_bin",
+    main_module = "agentplane.action_service.generate_catalog_golden",
+    deps = [":generate_catalog_golden"],
+)
+
+py_library(
+    name = "generate_catalog_golden",
+    srcs = ["generate_catalog_golden.py"],
+    deps = [
+        ":catalog",
+        ":generate_golden",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_catalog_golden",
+    srcs = ["test_catalog_golden.py"],
+    # Pure synchronous test; no conftest fixture is needed.
+    args = ["--noconftest"],
+    data = ["//agentplane/action_service/catalog:golden.json"],
+    deps = [
+        ":conftest",
+        ":generate_catalog_golden",
+        ":generate_golden",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 proto_library(
     name = "action_service_proto",
     srcs = ["action_service.proto"],
@@ -1406,6 +1438,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service",
     deps = [
+        "//agentplane/action_service/catalog",
         "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
         "//agentplane/grpc/facade",
@@ -1414,6 +1447,7 @@ go_library(
         "@com_github_lib_pq//:pq",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@com_github_spf13_viper//:viper",
+        "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//health/grpc_health_v1",
     ],
@@ -1429,6 +1463,19 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":main_lib"],
+    deps = ["//agentplane/action_service/catalog"],
+)
+
+go_test(
+    name = "executors_test",
+    srcs = ["executors_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/action_service/catalog",
+        "//agentplane/action_service/store",
+        "//agentplane/action_service/worker",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
 )
 
 go_test(

@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -63,11 +64,28 @@ func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
 	return db, nil
 }
 
-// executors routes no Action: no backend is ported yet, so the worker fails each Execution it claims as unsupported,
-// as the Python service fails an Action whose group its catalog does not hold.
-type executors struct{}
+// executors routes each Action the catalog offers to the Executor of its group. An Action the catalog does not offer,
+// or of a group no Executor runs, fails as unsupported, as in the Python service; one of a group that is unavailable
+// waits for it to come back.
+type executors struct {
+	catalog *catalog.Catalog
+	// byGroup holds the Executor of each group that has one, by key. No Executor is ported yet.
+	byGroup map[string]worker.Executor
+}
 
-func (executors) Route(store.ActionIdentity) (worker.Executor, bool) { return nil, false }
+func (e executors) Route(action store.ActionIdentity) (worker.Executor, bool) {
+	executor, bound := e.byGroup[action.Group]
+	if !bound {
+		return nil, false
+	}
+	switch _, _, err := e.catalog.Resolve(action.Group, action.Name); {
+	case errors.Is(err, catalog.ErrUnavailable):
+		return executor, false
+	case err != nil:
+		return nil, false
+	}
+	return executor, true
+}
 
 // serve answers on listener and runs the dispatch worker until ctx ends or the listener fails. gRPC and the HTTP
 // routes share the listener. The worker drains from then on, beside the listener's shutdown, and serve returns
@@ -89,7 +107,7 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 		return err
 	}
 	defer unsubscribe()
-	dispatcher, err := worker.New(store.New(db), executors{}, worker.DefaultTiming())
+	dispatcher, err := worker.New(store.New(db), executors{catalog: c.ActionGroups}, worker.DefaultTiming())
 	if err != nil {
 		return err
 	}

@@ -41,6 +41,8 @@ agentplane/notification_service/store/golden.json
 
 # The Python Action Service generates these golden vectors; test_golden checks exact output.
 agentplane/action_service/store/golden.json
+# The Python Action Service generates these golden vectors; test_catalog_golden checks exact output.
+agentplane/action_service/catalog/golden.json
 
 # controller-gen owns these Agentplane CRD snapshots; test_generate checks exact output.
 agentplane/crds/manifests/crd-sandboxes.yaml

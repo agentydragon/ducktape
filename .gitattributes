@@ -165,3 +165,5 @@ agentplane/notification_service/store/golden.json linguist-generated=true
 
 # Golden vectors the Python Action Service generates; test_golden checks the exact output.
 agentplane/action_service/store/golden.json linguist-generated=true
+# Golden vectors the Python Action Service generates; test_catalog_golden checks the exact output.
+agentplane/action_service/catalog/golden.json linguist-generated=true
