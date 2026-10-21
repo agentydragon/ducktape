@@ -14,6 +14,7 @@ import (
 
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/mcpserver"
+	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
 func TestACodeExchangeActivatesTheGrantItIssuesTokensFor(t *testing.T) {
@@ -204,13 +205,14 @@ func TestAReconnectOfAConnectionChangedSinceConsentIsRefusedAndRevokesNothing(t 
 	c := h.only(t)
 	r := newRequest(clientID)
 	answer := h.answer(t, r, must(h.authorize(t.Context(), h.authorizeURL(r, nil), reconnection(callerAccount, c)))(t))
-	if _, err := h.connections.UpdateConnection(as(t, testOperator), &pb.UpdateConnectionRequest{
-		ConnectionId: c.GetId(), ExpectedVersion: c.GetVersion(), DisplayName: "test-renamed",
+	if _, err := h.connections.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
+		ConnectionId: c.GetId(), ExpectedVersion: c.GetVersion(),
+		ServiceAccount: &sandboxes.ServiceAccount{Namespace: otherAccount.Namespace, Name: otherAccount.Name},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	wantRefused(t, "the stale reconnect", h.exchange(t, r, answer.Get("code"), nil), http.StatusBadRequest, "invalid_grant", "")
-	h.wantAdmitted(t, "the current access token", current.AccessToken, callerAccount)
+	h.wantAdmitted(t, "the current access token", current.AccessToken, otherAccount)
 }
 
 func TestARefreshRotatesTheRefreshTokenAndASpentOneRevokesTheGrant(t *testing.T) {

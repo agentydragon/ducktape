@@ -11,7 +11,7 @@ from anyio import CancelScope
 from pydantic import BaseModel, TypeAdapter
 
 from agentplane.action_service.catalog import ActionGroupView
-from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionRename, ConnectionVersion
+from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionVersion
 from agentplane.action_service.enrollments import (
     EnrollmentDecisionInput,
     EnrollmentDecisionResult,
@@ -78,13 +78,6 @@ class OperatorActionServiceClient:
 
     async def connections(self) -> list[Connection]:
         return await self._call(TypeAdapter(list[Connection]), "GET", "/v1/operator/connections")
-
-    async def connection(self, connection_id: UUID) -> Connection:
-        return await self._call(TypeAdapter(Connection), "GET", f"/v1/operator/connections/{connection_id}")
-
-    async def rename_connection(self, connection_id: UUID, body: ConnectionRename) -> Connection:
-        url = f"/v1/operator/connections/{connection_id}"
-        return await self._call(TypeAdapter(Connection), "PATCH", url, body=body)
 
     async def rebind_connection(self, connection_id: UUID, body: ConnectionRebind) -> Connection:
         url = f"/v1/operator/connections/{connection_id}/rebind"

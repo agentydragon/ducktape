@@ -285,32 +285,19 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
             OTHER.model_dump(),
             PERSONAL.model_dump(),
         ]
-        response = await http.get(f"/v1/operator/connections/{grant.connection_id}")
-        assert response.status_code == 200
-        assert response.json()["grants"][0]["client_id"] == "client-1"
-        renamed = await http.patch(
-            f"/v1/operator/connections/{grant.connection_id}", json={"display_name": "Renamed", "expected_version": 1}
-        )
-        assert renamed.status_code == 200
-        forged = await http.patch(
-            f"/v1/operator/connections/{grant.connection_id}",
-            json={"display_name": "Forged", "expected_version": 2, "service_account": OTHER.model_dump()},
-        )
-        assert forged.status_code == 422
         endpoint = f"/v1/operator/connections/{grant.connection_id}/rebind"
-        rebind = {"expected_version": 2, "service_account": OTHER.model_dump()}
+        rebind = {"expected_version": 1, "service_account": OTHER.model_dump()}
         assert (await http.post(endpoint, json={**rebind, "caller": PERSONAL.model_dump()})).status_code == 422
-        assert (await http.post(endpoint, json={**rebind, "expected_version": 1})).status_code == 409
         assert (await http.post(endpoint, json=rebind)).status_code == 400  # Grant is pending, not issued.
         await service.activate(grant.id)
         assert (await http.post(endpoint, json=rebind)).status_code == 409  # Activation changed the version.
-        rebound = await http.post(endpoint, json={**rebind, "expected_version": 3})
+        rebound = await http.post(endpoint, json={**rebind, "expected_version": 2})
         assert rebound.status_code == 200
         assert rebound.json()["bound_caller"] == OTHER.model_dump()
         assert (await service.resolve(grant.id, issuer=ISSUER, client_id=grant.client_id)).caller == OTHER
         assert (await http.post("/v1/operator/connections", json={})).status_code == 405
         unbound = await http.post(
-            f"/v1/operator/connections/{grant.connection_id}/unbind", json={"expected_version": 4}
+            f"/v1/operator/connections/{grant.connection_id}/unbind", json={"expected_version": 3}
         )
         assert unbound.status_code == 200
         assert unbound.json()["grants"][0]["status"] == "revoked"

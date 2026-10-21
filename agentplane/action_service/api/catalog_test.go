@@ -17,7 +17,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // testCatalog holds an MCP group whose direct tools name an Action it offers and one it does not, an MCP group that
@@ -43,11 +42,9 @@ const testCatalog = `{
 // offlineHealth is the test-offline group's connection as an MCP executor would report it.
 func offlineHealth(detail string) *action_servicepb.McpHealth {
 	return &action_servicepb.McpHealth{
-		State:    action_servicepb.McpLifecycle_MCP_LIFECYCLE_DISCONNECTED,
-		Reason:   action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_CONNECT_FAILED.Enum(),
-		Detail:   &detail,
-		RetryAt:  timestamppb.New(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)),
-		Failures: 3,
+		State:  action_servicepb.McpLifecycle_MCP_LIFECYCLE_DISCONNECTED,
+		Reason: action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_CONNECT_FAILED.Enum(),
+		Detail: &detail,
 	}
 }
 

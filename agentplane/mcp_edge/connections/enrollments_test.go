@@ -280,8 +280,8 @@ func TestAReconnectRecordsTheConnectionAtTheVersionReviewed(t *testing.T) {
 		t.Errorf("recorded %+v", got)
 	}
 
-	if _, err := s.client.UpdateConnection(as(t, testOperator), &pb.UpdateConnectionRequest{
-		ConnectionId: c.GetId(), ExpectedVersion: 1, DisplayName: "test-changed",
+	if _, err := s.client.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
+		ConnectionId: c.GetId(), ExpectedVersion: 1, ServiceAccount: message(otherAccount),
 	}); err != nil {
 		t.Fatal(err)
 	}

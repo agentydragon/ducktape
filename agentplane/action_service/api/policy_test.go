@@ -176,7 +176,7 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 	set := namespace.policySet(t, "test-set", exactActions(testGroup, testAction))
 	refused := namespace.policySet(t, "test-refused-set", refusedSchema())
 	binding := &policyapi.PolicyBinding{
-		ObjectMeta: metav1.ObjectMeta{Namespace: string(namespace), Name: "test-binding", Labels: map[string]string{"test-label": "test-value"}},
+		ObjectMeta: metav1.ObjectMeta{Namespace: string(namespace), Name: "test-binding"},
 		Spec: policyapi.PolicyBindingSpec{
 			Subject:    policyapi.ServiceAccountRef{Namespace: callerAccount.Namespace, Name: callerAccount.Name},
 			PolicySets: []string{"test-set", "test-refused-set", "test-missing-set"},
@@ -218,7 +218,6 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 			{Name: "test-refused-set", Generation: refused.Generation, Refused: proto.String("")},
 		},
 		MissingPolicySets: []string{"test-missing-set"},
-		Labels:            map[string]string{"test-label": "test-value"},
 		Generation:        &binding.Generation,
 		// A binding with a set refused or missing is not ready.
 		Ready: &action_servicepb.ReadyCondition{

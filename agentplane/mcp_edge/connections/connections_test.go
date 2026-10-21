@@ -58,60 +58,34 @@ func TestConnectionsAreListedOldestFirstWithEveryGrantInRevisionOrder(t *testing
 		grants[1].GetActivatedAt() == nil || grants[1].GetRevokedAt() != nil {
 		t.Errorf("grants %v", grants)
 	}
-
-	_, err = s.client.GetConnection(as(t, testOperator), &pb.GetConnectionRequest{ConnectionId: uuid.NewString()})
-	wantCode(t, "get an unknown Connection", err, codes.NotFound)
-	_, err = s.client.GetConnection(as(t, testOperator), &pb.GetConnectionRequest{ConnectionId: "test-not-a-uuid"})
-	wantCode(t, "get by a malformed id", err, codes.InvalidArgument)
 }
 
-func TestARenameTrimsTheNameAndNeedsTheCurrentVersion(t *testing.T) {
-	s := serve(t)
-	c := s.active(t, "test-named", callerAccount)
-	rename := func(version int64, name string) (*pb.UpdateConnectionResponse, error) {
-		return s.client.UpdateConnection(as(t, testOperator), &pb.UpdateConnectionRequest{
-			ConnectionId: c.GetId(), ExpectedVersion: version, DisplayName: name,
-		})
+func TestAConnectionNameIsTrimmedAndCountedInCharacters(t *testing.T) {
+	if got, err := displayName("  test-named\t"); err != nil || got != "test-named" {
+		t.Errorf("trimmed to %q, %v", got, err)
 	}
-	renamed, err := rename(1, "  test-renamed\t")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := renamed.GetConnection(); got.GetDisplayName() != "test-renamed" || got.GetVersion() != 2 ||
-		!got.GetUpdatedAt().AsTime().After(c.GetUpdatedAt().AsTime()) {
-		t.Errorf("renamed to %v", got)
-	}
-	_, err = rename(1, "test-stale")
-	wantCode(t, "a rename at a stale version", err, codes.Aborted)
-	// The limit counts characters, not bytes.
-	if _, err := rename(2, strings.Repeat("é", 200)); err != nil {
+	if _, err := displayName(strings.Repeat("é", 200)); err != nil {
 		t.Errorf("a name of 200 characters: %v", err)
 	}
 	for what, name := range map[string]string{
 		"blank":          " \t ",
 		"201 characters": strings.Repeat("é", 201),
 	} {
-		_, err := rename(3, name)
+		_, err := displayName(name)
 		wantCode(t, "a "+what+" name", err, codes.InvalidArgument)
 	}
-	_, err = rename(0, "test-unversioned")
-	wantCode(t, "a rename at version 0", err, codes.InvalidArgument)
-	_, err = s.client.UpdateConnection(as(t, testOperator), &pb.UpdateConnectionRequest{
-		ConnectionId: uuid.NewString(), ExpectedVersion: 1, DisplayName: "test-unknown",
-	})
-	wantCode(t, "a rename of an unknown Connection", err, codes.NotFound)
 }
 
-func TestOfConcurrentRenamesAtOneVersionOnlyOneIsApplied(t *testing.T) {
+func TestOfConcurrentRebindsAtOneVersionOnlyOneIsApplied(t *testing.T) {
 	s := serve(t)
 	c := s.active(t, "test-contested", callerAccount)
-	const renames = 8
-	codesSeen := make([]codes.Code, renames)
+	const rebinds = 8
+	codesSeen := make([]codes.Code, rebinds)
 	var wg sync.WaitGroup
-	for i := range renames {
+	for i := range rebinds {
 		wg.Go(func() {
-			_, err := s.client.UpdateConnection(as(t, testOperator), &pb.UpdateConnectionRequest{
-				ConnectionId: c.GetId(), ExpectedVersion: 1, DisplayName: "test-rename-" + string(rune('a'+i)),
+			_, err := s.client.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
+				ConnectionId: c.GetId(), ExpectedVersion: 1, ServiceAccount: message(otherAccount),
 			})
 			codesSeen[i] = status.Code(err)
 		})
@@ -121,11 +95,11 @@ func TestOfConcurrentRenamesAtOneVersionOnlyOneIsApplied(t *testing.T) {
 	for _, code := range codesSeen {
 		counts[code]++
 	}
-	if counts[codes.OK] != 1 || counts[codes.Aborted] != renames-1 {
+	if counts[codes.OK] != 1 || counts[codes.Aborted] != rebinds-1 {
 		t.Errorf("answers %v, want one OK and the rest Aborted", counts)
 	}
 	if got := s.get(t, uuid.MustParse(c.GetId())); got.GetVersion() != 2 {
-		t.Errorf("version %d after one rename", got.GetVersion())
+		t.Errorf("version %d after one rebind", got.GetVersion())
 	}
 }
 

@@ -19,14 +19,14 @@ Connection acting as it. Authenticating is not being admitted: an unlabeled acco
 Actions, so a workload the operator has not named cannot queue Actions for them either. Nothing is
 admitted before the ServiceAccount watch has synced. The service lists the labeled accounts to the
 operator, which is what a Connection's consent picks from. The
-single operator can inspect Connections, rename them, and unbind them. A Connection's UUID does
-not change on rename; names are presentation and need not be unique.
+single operator can inspect Connections, rebind them, and unbind them. A Connection's name is
+chosen at consent; names are presentation and need not be unique.
 
 The trusted OAuth adapter reserves a pending grant only after consent, then activates it after
 verified issuance. A pending grant has an activation deadline and cannot authorize calls. Exact
 binding retries recover the same grant and Connection; conflicting retries are refused.
 Each grant retains the ServiceAccount it acts as, its exact verified downstream issuer/client
-pair, Connection UUID and binding revision. Those fields do not change on rename or reconnect.
+pair, Connection UUID and binding revision. Those fields do not change on rebind or reconnect.
 
 Reconnect revokes the previous grant and creates a new pending revision. Existing credentials never
 acquire the replacement ServiceAccount's authority. Unbind and grant revocation take effect on the
@@ -42,7 +42,7 @@ endpoints.
 
 Each externally admitted Action retains an immutable snapshot of its submitting grant independently
 of caller-supplied metadata. A shared-ServiceAccount repeat of a key is refused, and the lookup by
-key returns the first Action with its original provenance; rename, reconnect, refresh and
+key returns the first Action with its original provenance; rebind, reconnect, refresh and
 revocation cannot rewrite that evidence.
 Admission and dispatch authorization are atomic with revocation. Dispatch requires the original
 grant and its ServiceAccount still to authorize the Action, not a later replacement binding.

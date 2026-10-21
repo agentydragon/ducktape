@@ -7,7 +7,6 @@
         "bindings": [
           {
             "generation": 1,
-            "labels": {},
             "missingPolicySets": ["test-gone"],
             "name": "test-nothing",
             "policySets": [
@@ -149,9 +148,6 @@
         "bindings": [
           {
             "generation": 3,
-            "labels": {
-              "test.example/managed-by": "test-writer"
-            },
             "missingPolicySets": ["test-missing"],
             "name": "test-mixed",
             "policySets": [
@@ -187,9 +183,6 @@
         {
           "metadata": {
             "generation": 3,
-            "labels": {
-              "test.example/managed-by": "test-writer"
-            },
             "name": "test-mixed",
             "namespace": "test-policies",
             "resourceVersion": "17",
@@ -392,7 +385,6 @@
         "bindings": [
           {
             "generation": 1,
-            "labels": {},
             "missingPolicySets": [],
             "name": "test-twice",
             "policySets": [
@@ -850,7 +842,6 @@
           {
             "expiresAt": "2026-10-01T13:00:00Z",
             "generation": 1,
-            "labels": {},
             "missingPolicySets": [],
             "name": "test-a",
             "policySets": [
@@ -862,7 +853,6 @@
           },
           {
             "generation": 1,
-            "labels": {},
             "missingPolicySets": [],
             "name": "test-b",
             "policySets": [
@@ -1381,7 +1371,6 @@
         "bindings": [
           {
             "generation": 1,
-            "labels": {},
             "missingPolicySets": [],
             "name": "test-grant",
             "policySets": [

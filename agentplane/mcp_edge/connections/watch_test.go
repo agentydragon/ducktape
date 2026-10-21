@@ -78,10 +78,10 @@ func wantEnd(t *testing.T, what string, stream connectionStream, code codes.Code
 	}
 }
 
-func (s *served) rename(t *testing.T, c *pb.Connection, name string) {
+func (s *served) unbind(t *testing.T, c *pb.Connection) {
 	t.Helper()
-	if _, err := s.client.UpdateConnection(as(t, testOperator), &pb.UpdateConnectionRequest{
-		ConnectionId: c.GetId(), ExpectedVersion: c.GetVersion(), DisplayName: name,
+	if _, err := s.client.UnbindConnection(as(t, testOperator), &pb.UnbindConnectionRequest{
+		ConnectionId: c.GetId(), ExpectedVersion: c.GetVersion(),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -109,10 +109,10 @@ func TestAWatchSendsEveryConnectionInBoundedChunksThenEachChange(t *testing.T) {
 		t.Errorf("snapshot %v, want every Connection oldest first: %v", got, want)
 	}
 
-	renamed := s.get(t, uuid.MustParse(want[3]))
-	s.rename(t, renamed, "test-renamed")
-	if got := upsert(t, stream); got.GetId() != renamed.GetId() || got.GetDisplayName() != "test-renamed" {
-		t.Errorf("upsert %v, want the rename of %s", got, renamed.GetId())
+	unbound := s.get(t, uuid.MustParse(want[3]))
+	s.unbind(t, unbound)
+	if got := upsert(t, stream); got.GetId() != unbound.GetId() || got.GetBoundCaller() != nil {
+		t.Errorf("upsert %v, want the unbind of %s", got, unbound.GetId())
 	}
 	rebound := s.get(t, uuid.MustParse(want[5]))
 	if _, err := s.client.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
@@ -143,9 +143,9 @@ func TestAWatchEndsUnauthenticatedOnceItsBearerIsRefused(t *testing.T) {
 
 	// A change is not sent once the bearer is refused.
 	s.gate.refuse(testOperator)
-	s.rename(t, c, "test-after-refusal")
+	s.unbind(t, c)
 	wantEnd(t, "the watch with a change to send", refused, codes.Unauthenticated)
-	if got := upsert(t, idle); got.GetDisplayName() != "test-after-refusal" {
+	if got := upsert(t, idle); got.GetId() != c.GetId() || got.GetBoundCaller() != nil {
 		t.Errorf("upsert %v", got)
 	}
 	// With nothing to send, the bearer is checked again all the same.
@@ -204,18 +204,19 @@ func TestTheHTTPFacadeServesTheConnectionsAsJSON(t *testing.T) {
 		return response
 	}
 
-	renamed := call(http.MethodPatch, "/v1/operator/connections/"+c.GetId(),
-		[]byte(`{"expectedVersion": "1", "displayName": "test-renamed-over-http"}`))
-	body, err := io.ReadAll(renamed.Body)
+	rebound := call(http.MethodPost, "/v1/operator/connections/"+c.GetId()+"/rebind",
+		[]byte(`{"expectedVersion": "1", "serviceAccount": {"namespace": "test-agentplane", "name": "test-other-caller"}}`))
+	body, err := io.ReadAll(rebound.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var answer pb.UpdateConnectionResponse
+	var answer pb.RebindConnectionResponse
 	if err := protojson.Unmarshal(body, &answer); err != nil {
-		t.Fatalf("%d %s: %v", renamed.StatusCode, body, err)
+		t.Fatalf("%d %s: %v", rebound.StatusCode, body, err)
 	}
-	if renamed.StatusCode != http.StatusOK || answer.GetConnection().GetDisplayName() != "test-renamed-over-http" {
-		t.Errorf("%d %s", renamed.StatusCode, body)
+	if bound := accountOf(answer.GetConnection().GetBoundCaller()); rebound.StatusCode != http.StatusOK ||
+		bound == nil || *bound != otherAccount {
+		t.Errorf("%d %s", rebound.StatusCode, body)
 	}
 
 	watched := call(http.MethodGet, "/v1/operator/connections:watch", nil)
@@ -239,7 +240,7 @@ func TestTheHTTPFacadeServesTheConnectionsAsJSON(t *testing.T) {
 		frames = append(frames, frame)
 	}
 	if len(frames) != 2 || len(frames[0].GetSnapshot().GetConnections()) != 1 ||
-		frames[0].GetSnapshot().GetConnections()[0].GetDisplayName() != "test-renamed-over-http" ||
+		frames[0].GetSnapshot().GetConnections()[0].GetVersion() != 2 ||
 		frames[1].GetSnapshotComplete() == nil {
 		t.Errorf("frames %v, %v", frames, lines.Err())
 	}

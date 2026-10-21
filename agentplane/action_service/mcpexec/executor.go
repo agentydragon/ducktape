@@ -20,7 +20,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sethvargo/go-retry"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Timing is an Executor's intervals and bounds.
@@ -69,14 +68,10 @@ type Executor struct {
 	available bool
 	// actions are the offered tools' definitions, as the catalog holds them.
 	actions map[string]catalog.ActionDefinition
-	// state, reason, detail, discovered, retryAt and failures are the group's health; see action_servicepb.McpHealth.
-	// A zero time is none.
-	state      action_servicepb.McpLifecycle
-	reason     *action_servicepb.McpUnavailableReason
-	detail     *string
-	discovered time.Time
-	retryAt    time.Time
-	failures   int
+	// state, reason and detail are the group's health; see action_servicepb.McpHealth.
+	state  action_servicepb.McpLifecycle
+	reason *action_servicepb.McpUnavailableReason
+	detail *string
 	// availableSince is when the group was last offered; zero while it is not.
 	availableSince time.Time
 	backoff        retry.Backoff
@@ -143,7 +138,7 @@ func (e *Executor) Run(ctx context.Context) {
 	e.mu.Lock()
 	e.draining = true
 	e.withdraw(nil, "")
-	e.state, e.retryAt = action_servicepb.McpLifecycle_MCP_LIFECYCLE_DRAINING, time.Time{}
+	e.state = action_servicepb.McpLifecycle_MCP_LIFECYCLE_DRAINING
 	e.retire()
 	e.publish()
 	e.mu.Unlock()
@@ -157,9 +152,6 @@ func (e *Executor) Run(ctx context.Context) {
 
 // attempt brings the group to where its server and linkage let it be now.
 func (e *Executor) attempt(ctx context.Context) {
-	e.mu.Lock()
-	e.retryAt = time.Time{}
-	e.mu.Unlock()
 	if account, linked := linkedAccountOf(e.server); linked {
 		reading, cancel := context.WithTimeout(ctx, e.timing.Lifecycle)
 		problem, err := linkageProblem(reading, e.linkages, account.serverID)
@@ -262,17 +254,14 @@ func (e *Executor) list(ctx context.Context, s *session) (map[string]tool, error
 }
 
 // schedule is how long the supervisor waits before its next attempt: the refresh interval while the group is offered,
-// else the next backoff, which it records in the group's health.
+// else the next backoff.
 func (e *Executor) schedule() time.Duration {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.available {
 		return e.timing.Refresh
 	}
-	e.failures++
 	delay, _ := e.backoff.Next()
-	e.retryAt = time.Now().Add(delay)
-	e.publish()
 	reason := "none"
 	if e.reason != nil {
 		reason = e.reason.String()
@@ -320,7 +309,7 @@ func (e *Executor) offer(tools map[string]tool) {
 		e.availableSince = now
 	}
 	e.forgetStableFailures(now)
-	e.state, e.reason, e.detail, e.retryAt, e.discovered = action_servicepb.McpLifecycle_MCP_LIFECYCLE_AVAILABLE, nil, nil, time.Time{}, now
+	e.state, e.reason, e.detail = action_servicepb.McpLifecycle_MCP_LIFECYCLE_AVAILABLE, nil, nil
 	e.publish()
 }
 
@@ -342,7 +331,6 @@ func (e *Executor) withdraw(reason *action_servicepb.McpUnavailableReason, detai
 // forgetStableFailures forgets the failures before a stay offered long enough to call stable. Callers hold mu.
 func (e *Executor) forgetStableFailures(now time.Time) {
 	if !e.availableSince.IsZero() && now.Sub(e.availableSince) >= e.timing.Stable {
-		e.failures = 0
 		e.backoff = backoff()
 	}
 }
@@ -378,22 +366,11 @@ func (e *Executor) retire() {
 
 // publish writes the group's state to the catalog. Callers hold mu.
 func (e *Executor) publish() {
-	health := &action_servicepb.McpHealth{
-		State: e.state, Reason: e.reason, Detail: e.detail, LastDiscoveryAt: timestamp(e.discovered),
-		RetryAt: timestamp(e.retryAt), Failures: int32(e.failures),
-	}
+	health := &action_servicepb.McpHealth{State: e.state, Reason: e.reason, Detail: e.detail}
 	available, actions := e.available, e.actions
 	e.groups.Update(e.key, func(g *catalog.Group) {
 		g.Available, g.Actions, g.Health = available, actions, health
 	})
-}
-
-// timestamp is t, or nil for the zero time.
-func timestamp(t time.Time) *timestamppb.Timestamp {
-	if t.IsZero() {
-		return nil
-	}
-	return timestamppb.New(t)
 }
 
 // describe is err for an operator, a lifecycle step's deadline by its bound.

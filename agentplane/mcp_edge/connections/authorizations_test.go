@@ -175,7 +175,7 @@ func TestActivationRefusesAConsentThatAllowsNoGrantNow(t *testing.T) {
 	reconnected := s.active(t, "test-reconnected", callerAccount)
 	changed, handle := s.authorize(t)
 	s.decide(t, reconnect(handle, reconnected.GetId(), 1))
-	s.rename(t, reconnected, "test-renamed")
+	s.unbind(t, reconnected)
 	allowed := s.allowed(t, callerAccount)
 
 	for _, refused := range []struct {

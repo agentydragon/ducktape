@@ -27,7 +27,7 @@ from starlette.routing import Route
 
 from agentplane.action_service import api as service_api
 from agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
-from agentplane.action_service.connections import ConnectionAuthority, GrantBinding, GrantStatus, NewConnection
+from agentplane.action_service.connections import ConnectionAuthority, GrantBinding, NewConnection
 from agentplane.action_service.database_migrate import RUNNER as ACTIONS_RUNNER
 from agentplane.action_service.db import make_engine, make_sessionmaker
 from agentplane.action_service.enrollments import ConfirmedReconnectConnection, EnrollmentAuthority, EnrollmentInput
@@ -439,53 +439,40 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     original = await review.connections.get(grant.connection_id)
     path = f"/connections/{original.id}"
     browser = review.browser
-    for endpoint in ["/connections", "/connection-service-accounts", path]:
+    for endpoint in ["/connections", "/connection-service-accounts"]:
         assert (await browser.get(endpoint)).status_code == 401
         assert (await browser.get(endpoint, headers=agent_auth)).status_code == 403
-    for method, endpoint, body in [
-        ("PATCH", path, {"display_name": "Renamed", "expected_version": original.version}),
-        ("POST", f"{path}/unbind", {"expected_version": original.version}),
-        ("POST", f"{path}/rebind", {"expected_version": original.version, "service_account": PERSONAL.model_dump()}),
+    for endpoint, body in [
+        (f"{path}/unbind", {"expected_version": original.version}),
+        (f"{path}/rebind", {"expected_version": original.version, "service_account": PERSONAL.model_dump()}),
     ]:
-        assert (await browser.request(method, endpoint, json=body)).status_code == 401
-        assert (await browser.request(method, endpoint, json=body, headers=agent_auth)).status_code == 403
+        assert (await browser.post(endpoint, json=body)).status_code == 401
+        assert (await browser.post(endpoint, json=body, headers=agent_auth)).status_code == 403
     await browser.get("/auth/login")
     assert (await browser.get("/connection-service-accounts")).json() == [PERSONAL.model_dump()]
     assert (await browser.get("/connections")).json() == [original.model_dump(mode="json")]
-    assert (await browser.get(path)).json() == original.model_dump(mode="json")
-    rename = {"display_name": " Renamed ", "expected_version": original.version}
+    unbind = {"expected_version": original.version}
     for origin in ["https://cross-origin.invalid", "http://test-app.invalid.evil.example"]:
-        assert (await browser.patch(path, json=rename, headers={"Origin": origin})).status_code == 403
-        assert (
-            await browser.post(
-                f"{path}/unbind", json={"expected_version": original.version}, headers={"Origin": origin}
-            )
-        ).status_code == 403
+        assert (await browser.post(f"{path}/unbind", json=unbind, headers={"Origin": origin})).status_code == 403
     saved_origin = browser.headers.pop("Origin")
-    assert (await browser.patch(path, json=rename)).status_code == 403
-    assert (await browser.post(f"{path}/unbind", json={"expected_version": original.version})).status_code == 403
+    assert (await browser.post(f"{path}/unbind", json=unbind)).status_code == 403
     browser.headers["Origin"] = saved_origin
     assert await review.connections.get(original.id) == original
-    assert (await browser.patch(path, json={**rename, "service_account": PERSONAL.model_dump()})).status_code == 422
-    assert (await browser.patch(path, json={**rename, "expected_version": 0})).status_code == 422
-    renamed = await browser.patch(path, json=rename)
-    assert renamed.status_code == 200
-    assert renamed.json()["display_name"] == "Renamed"
-    assert renamed.json()["id"] == str(original.id)
-    assert renamed.json()["grants"] == original.model_dump(mode="json")["grants"]
-    assert (await browser.patch(path, json=rename)).status_code == 409
+    assert (
+        await browser.post(f"{path}/unbind", json={**unbind, "service_account": PERSONAL.model_dump()})
+    ).status_code == 422
+    assert (await browser.post(f"{path}/unbind", json={**unbind, "expected_version": 0})).status_code == 422
+    unbound = await browser.post(f"{path}/unbind", json=unbind)
+    assert unbound.status_code == 200
+    assert unbound.json()["id"] == str(original.id)
+    assert unbound.json()["grants"][0]["status"] == "revoked"
+    assert unbound.json()["grants"][0]["client_id"] == grant.client_id
+    assert unbound.json()["grants"][0]["id"] == str(grant.id)
     assert (
         await browser.post(
             f"{path}/rebind", json={"expected_version": original.version, "service_account": PERSONAL.model_dump()}
         )
     ).status_code == 409
-    assert (await browser.post(f"{path}/unbind", json={"expected_version": original.version})).status_code == 409
-    assert (await review.connections.get(original.id)).grants[0].status is GrantStatus.ACTIVE
-    unbound = await browser.post(f"{path}/unbind", json={"expected_version": renamed.json()["version"]})
-    assert unbound.status_code == 200
-    assert unbound.json()["grants"][0]["status"] == "revoked"
-    assert unbound.json()["grants"][0]["client_id"] == grant.client_id
-    assert unbound.json()["grants"][0]["id"] == str(grant.id)
     assert len((await browser.get("/connections")).json()) == 1
     assert review.calls == []
 

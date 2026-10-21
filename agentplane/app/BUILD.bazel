@@ -71,7 +71,6 @@ py_library(
         "//agentplane/action_service:enrollments",
         "//agentplane/action_service:mcp_linkage",
         "//agentplane/action_service:models",
-        "//agentplane/action_service:policy_view",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:runner_directory",
         "//agentplane/app/threads:store",
@@ -968,7 +967,7 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/action_service:client",
         "//agentplane/action_service:policy_view",
-        "//agentplane/sandboxes:action_policy_views",
+        "//util:kubernetes",
         "@pypi//pydantic",
     ],
 )

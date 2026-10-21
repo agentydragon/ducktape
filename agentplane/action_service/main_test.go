@@ -329,7 +329,7 @@ func awaitMCPHealth(t *testing.T, groups *catalog.Catalog, key string, condition
 
 // echoUpstream serves an MCP server whose one tool, test_echo, answers "test text"; the server answers 503 while down
 // holds. It returns the server's endpoint.
-func echoUpstream(t *testing.T, down *atomic.Bool) string {
+func echoUpstream(t *testing.T, down *atomic.Bool, refusals *atomic.Int64) string {
 	t.Helper()
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-upstream", Version: "v0.0.1"}, nil)
 	server.AddTool(&mcp.Tool{Name: "test_echo", InputSchema: json.RawMessage(`{"type": "object"}`)},
@@ -339,6 +339,7 @@ func echoUpstream(t *testing.T, down *atomic.Bool) string {
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if down.Load() {
+			refusals.Add(1)
 			http.Error(w, "the test upstream is down", http.StatusServiceUnavailable)
 			return
 		}
@@ -358,20 +359,18 @@ func mcpGroup(endpoint string) string {
 // once the server is back the group offers its tools, and the request runs.
 func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
 	var down atomic.Bool
+	var refusals atomic.Int64
 	down.Store(true)
-	groups := newCatalog(t, `{"test-mcp": `+mcpGroup(echoUpstream(t, &down))+`}`)
+	groups := newCatalog(t, `{"test-mcp": `+mcpGroup(echoUpstream(t, &down, &refusals))+`}`)
 	service := start(t, kube.Config, groups)
 	waitReady(t, service)
 
 	id := service.allow(t, store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
 		store.ActionIdentity{Group: "test-mcp", Name: "test_echo"}, `{}`)
-	var failures int32
-	awaitMCPHealth(t, groups, "test-mcp", func(h *action_servicepb.McpHealth) bool {
-		failures = h.GetFailures()
-		return failures > 0
-	})
-	// Another attempt fails after the dispatch was committed: the request still waits.
-	awaitMCPHealth(t, groups, "test-mcp", func(h *action_servicepb.McpHealth) bool { return h.GetFailures() > failures })
+	// Another attempt fails after the dispatch was committed: the request still waits. Each failed attempt withdraws
+	// the group again, which changes the catalog.
+	committed := refusals.Load()
+	awaitMCPHealth(t, groups, "test-mcp", func(*action_servicepb.McpHealth) bool { return refusals.Load() > committed })
 	if request, err := service.store.Get(t.Context(), id, testOperator); err != nil || request.State != store.StateAllowed {
 		t.Fatalf("while the server is down the request is %s, %v", request.State, err)
 	}
@@ -410,7 +409,7 @@ func fetch(t *testing.T, address string) (int, []byte) {
 func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
 	var down atomic.Bool
 	groups := newCatalog(t, `{"test-linked": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e",
-		"config": {"transport": "streamable-http", "url": "`+echoUpstream(t, &down)+`", "server_id": "test-linked", "auth": "oauth"}}}}`)
+		"config": {"transport": "streamable-http", "url": "`+echoUpstream(t, &down, new(atomic.Int64))+`", "server_id": "test-linked", "auth": "oauth"}}}}`)
 	provider := oauthprovider.New(t, oauthprovider.Options{ExpiresIn: 3600})
 	shared := provider.Server("test-shared")
 	shared.ClientID, shared.UseSharedCIMD = nil, true
@@ -678,8 +677,8 @@ func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmi
 	var down atomic.Bool
 	down.Store(true)
 	// test-mcp's server is never down; test-offline's always is.
-	groups := newCatalog(t, `{"test-mcp": `+mcpGroup(echoUpstream(t, new(atomic.Bool)))+`,
-		"test-offline": `+mcpGroup(echoUpstream(t, &down))+`}`)
+	groups := newCatalog(t, `{"test-mcp": `+mcpGroup(echoUpstream(t, new(atomic.Bool), new(atomic.Int64)))+`,
+		"test-offline": `+mcpGroup(echoUpstream(t, &down, new(atomic.Int64)))+`}`)
 	caller := auth.Account{Namespace: readerAccount.Namespace, Name: "test-submitter"}
 	setCallerLabel(t, caller, true)
 	token, err := kube.WorkloadToken(t.Context(), caller, testAudience)

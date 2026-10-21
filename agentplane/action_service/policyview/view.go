@@ -32,8 +32,8 @@ type Reader int
 const (
 	// Workload is a caller: it is shown each binding's sets that resolved, present and valid.
 	Workload Reader = iota + 1
-	// Operator is also shown each binding's diagnostics: its labels, generation and ActionsReady, the sets it names that
-	// are refused, and the names no set answers to.
+	// Operator is also shown each binding's diagnostics: its generation and ActionsReady, the sets it names that are
+	// refused, and the names no set answers to.
 	Operator
 )
 
@@ -103,7 +103,6 @@ func binding(bound reader.BindingResolution[policies.Policy], viewer Reader) *ac
 		}
 	}
 	view.MissingPolicySets = bound.Missing
-	view.Labels = bound.Binding.Labels
 	view.Generation = &bound.Binding.Generation
 	if condition := meta.FindStatusCondition(bound.Binding.Status.Conditions, informer.ActionsReady.Type); condition != nil {
 		view.Ready = &action_servicepb.ReadyCondition{

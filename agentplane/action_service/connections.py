@@ -1,7 +1,7 @@
 """Single-operator Connection authority, independent of OAuth protocol and browser ceremony.
 
 Only an in-process OAuth adapter may bind/activate grants after verifying consent and the
-upstream principal. The operator API exposes inventory, rename, rebinding and revocation. A grant acts
+upstream principal. The operator API exposes inventory, rebinding and revocation. A grant acts
 as one labeled ServiceAccount, checked against the policy informer's index on every resolution:
 removing the label or the ServiceAccount is the disable.
 """
@@ -30,10 +30,6 @@ class ConnectionVersion(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_version: int = Field(ge=1)
-
-
-class ConnectionRename(ConnectionVersion):
-    display_name: ConnectionName
 
 
 class ConnectionRebind(ConnectionVersion):

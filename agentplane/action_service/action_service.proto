@@ -567,10 +567,8 @@ message McpHealth {
   // What `reason` came from: the backend's error, or the OAuth linkage's state. It can name backend addresses, so it
   // is present for operators only and absent in a workload's view.
   optional string detail = 3;
-  google.protobuf.Timestamp last_discovery_at = 4;
-  google.protobuf.Timestamp retry_at = 5;
-  // Consecutive failures since the last success.
-  int32 failures = 6;
+  reserved 4 to 6;
+  reserved "last_discovery_at", "retry_at", "failures";
 }
 
 enum McpLifecycle {
@@ -590,7 +588,8 @@ enum McpUnavailableReason {
   MCP_UNAVAILABLE_REASON_INVALID_CATALOG = 3;
   MCP_UNAVAILABLE_REASON_LINKAGE_UNAVAILABLE = 4;
   MCP_UNAVAILABLE_REASON_SESSION_FAILED = 5;
-  MCP_UNAVAILABLE_REASON_SUPERVISOR_STOPPED = 6;
+  reserved 6;
+  reserved "MCP_UNAVAILABLE_REASON_SUPERVISOR_STOPPED";
 }
 
 // One Action: its description and the argument schema a submission is validated against.
@@ -643,8 +642,8 @@ message CallerBinding {
   // The named sets that exist, in the binding's order. A workload's view lists only those that resolved, present and
   // valid; an operator's lists the refused ones too.
   repeated ActionPolicySet policy_sets = 3;
-  // The binding's metadata labels, for a reader that tells writers apart by them. Operator's view only.
-  map<string, string> labels = 4;
+  reserved 4;
+  reserved "labels";
   // The binding's metadata generation; a Ready judged at an older one is stale. Operator's view only.
   optional int64 generation = 5;
   // The binding's `ActionsReady`; absent until the service has judged the binding at all. Operator's view only.

@@ -193,37 +193,6 @@ func answer(c connection, err error) (*pb.Connection, error) {
 	return connectionView(c)
 }
 
-func (s *Service) GetConnection(ctx context.Context, request *pb.GetConnectionRequest) (*pb.GetConnectionResponse, error) {
-	id, err := parseConnectionID(request.GetConnectionId())
-	if err != nil {
-		return nil, err
-	}
-	view, err := answer(s.store.get(ctx, id))
-	if err != nil {
-		return nil, failure(ctx, err)
-	}
-	return &pb.GetConnectionResponse{Connection: view}, nil
-}
-
-func (s *Service) UpdateConnection(ctx context.Context, request *pb.UpdateConnectionRequest) (*pb.UpdateConnectionResponse, error) {
-	id, err := parseConnectionID(request.GetConnectionId())
-	if err != nil {
-		return nil, err
-	}
-	if err := checkVersion("expected_version", request.GetExpectedVersion()); err != nil {
-		return nil, err
-	}
-	name, err := displayName(request.GetDisplayName())
-	if err != nil {
-		return nil, err
-	}
-	view, err := answer(s.store.rename(ctx, id, request.GetExpectedVersion(), name))
-	if err != nil {
-		return nil, failure(ctx, err)
-	}
-	return &pb.UpdateConnectionResponse{Connection: view}, nil
-}
-
 func (s *Service) RebindConnection(ctx context.Context, request *pb.RebindConnectionRequest) (*pb.RebindConnectionResponse, error) {
 	id, err := parseConnectionID(request.GetConnectionId())
 	if err != nil {

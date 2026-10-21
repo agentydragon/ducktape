@@ -486,11 +486,10 @@ watch. Missing references, expiry and unsynced/unavailable Action policy stay vi
 Action Service does not hide bindings. The disclosure is read-only and does not calculate
 arbitrary Kubernetes RBAC. Existing Sandbox grant editing and live updates are unchanged.
 
-The BFF proxies `GET /connections[/{id}]`, `PATCH /connections/{id}`,
-`POST /connections/{id}/rebind`, `POST /connections/{id}/unbind`, and
+The BFF proxies `GET /connections`, `POST /connections/{id}/rebind`, `POST /connections/{id}/unbind`, and
 `GET /connection-service-accounts` through the same request-bound
 operator federation as Action review. Unsafe browser requests require exact Origin. Canonical
-`ConnectionRename`, `ConnectionRebind`, and `ConnectionVersion` models carry the version the operator reviewed; a 409
+`ConnectionRebind` and `ConnectionVersion` models carry the version the operator reviewed; a 409
 refreshes the inventory and asks for review, never automatically retrying a destructive operation.
 The app owns no Connection state. Reconnect requires fresh OAuth authorization from the external
 client; the management rebind is a separate operator-authorized retarget of an existing token.

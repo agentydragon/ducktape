@@ -266,9 +266,15 @@ func (s *served) active(t *testing.T, name string, account auth.Account) *pb.Con
 
 func (s *served) get(t *testing.T, id uuid.UUID) *pb.Connection {
 	t.Helper()
-	got, err := s.client.GetConnection(as(t, testOperator), &pb.GetConnectionRequest{ConnectionId: id.String()})
+	listed, err := s.client.ListConnections(as(t, testOperator), &pb.ListConnectionsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return got.GetConnection()
+	for _, c := range listed.GetConnections() {
+		if c.GetId() == id.String() {
+			return c
+		}
+	}
+	t.Fatalf("Connection %s is not listed", id)
+	return nil
 }

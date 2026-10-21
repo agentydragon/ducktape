@@ -39,7 +39,6 @@ from agentplane.action_service.connections import (
     ConnectionConflictError,
     ConnectionNotFoundError,
     ConnectionRebind,
-    ConnectionRename,
     ConnectionVersion,
     GrantRejectedError,
 )
@@ -531,16 +530,6 @@ def _connection_routes(operator: APIRouter, authority: ConnectionAuthority, upda
             return _sse_json(await authority.list())
 
         return snapshot_stream(updates.subscribe_connections, read, authorized)
-
-    @operator.get("/connections/{connection_id}")
-    async def connection(connection_id: UUID) -> Connection:
-        return await authority.get(connection_id)
-
-    @operator.patch("/connections/{connection_id}")
-    async def rename_connection(connection_id: UUID, body: ConnectionRename) -> Connection:
-        return await authority.rename(
-            connection_id, expected_version=body.expected_version, display_name=body.display_name
-        )
 
     @operator.post("/connections/{connection_id}/rebind")
     async def rebind_connection(connection_id: UUID, body: ConnectionRebind) -> Connection:

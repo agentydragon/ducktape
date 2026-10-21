@@ -234,22 +234,6 @@ func (s *Store) list(ctx context.Context, after *position, limit int) ([]connect
 	return connections, err
 }
 
-func (s *Store) get(ctx context.Context, id uuid.UUID) (connection, error) {
-	var found []connection
-	err := s.read(ctx, func(tx *sql.Tx) error {
-		var err error
-		found, err = scanConnections(ctx, tx, `SELECT `+connectionColumns+` FROM external_connection WHERE id = $1`, id)
-		return err
-	})
-	if err != nil {
-		return connection{}, err
-	}
-	if len(found) == 0 {
-		return connection{}, errConnectionNotFound
-	}
-	return found[0], nil
-}
-
 // versions is the version of every Connection.
 func (s *Store) versions(ctx context.Context) (map[uuid.UUID]int64, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, version FROM external_connection`)
@@ -343,16 +327,6 @@ func requireVersion(c *connection, expected int64) error {
 		return errVersionChanged
 	}
 	return nil
-}
-
-func (s *Store) rename(ctx context.Context, id uuid.UUID, expectedVersion int64, name string) (connection, error) {
-	return s.change(ctx, id, func(_ *sql.Tx, c *connection) (bool, error) {
-		if err := requireVersion(c, expectedVersion); err != nil {
-			return false, err
-		}
-		c.displayName = name
-		return true, nil
-	})
 }
 
 // rebind retargets the Connection's active grant to another labeled account. The grants keep the account consent

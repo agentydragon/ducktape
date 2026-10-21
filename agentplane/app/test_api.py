@@ -312,13 +312,6 @@ async def test_create_refuses_a_preset_the_app_does_not_have(client: httpx.Async
     assert response.status_code == 422
 
 
-async def test_policy_sets_list_the_namespace_for_the_create_form(client: httpx.AsyncClient) -> None:
-    sets = {policy_set["name"]: policy_set for policy_set in (await client.get("/action-policy/sets")).json()}
-    assert {"github-reads", "github-writes", "broken-reads", "github"} <= set(sets)
-    assert (sets["github-reads"]["refused"], sets["github"]["refused"]) == (None, None)
-    assert sets["broken-reads"]["refused"] is not None
-
-
 @pytest.mark.parametrize(
     "body",
     [

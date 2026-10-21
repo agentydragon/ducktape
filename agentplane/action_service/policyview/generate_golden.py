@@ -59,14 +59,13 @@ def egress() -> Json:
     return {"type": "egress", "hosts": ["egress.test"]}
 
 
-def metadata(name: str, *, generation: int, resource_version: str, labels: dict[str, str] | None = None) -> Json:
+def metadata(name: str, *, generation: int, resource_version: str) -> Json:
     return {
         "name": name,
         "namespace": NAMESPACE,
         "uid": f"uid-{name}",
         "generation": generation,
         "resourceVersion": resource_version,
-        **({"labels": dict(labels)} if labels else {}),
     }
 
 
@@ -91,17 +90,13 @@ def binding(
     subject: Json = SUBJECT,
     generation: int = 1,
     resource_version: str = "1",
-    labels: dict[str, str] | None = None,
     expires_at: str | None = None,
     conditions: list[JsonValue] | None = None,
 ) -> Json:
     spec: Json = {"subject": subject, "policySets": list(sets)}
     if expires_at is not None:
         spec["expiresAt"] = expires_at
-    raw: Json = {
-        "metadata": metadata(name, generation=generation, resource_version=resource_version, labels=labels),
-        "spec": spec,
-    }
+    raw: Json = {"metadata": metadata(name, generation=generation, resource_version=resource_version), "spec": spec}
     if conditions is not None:
         raw["status"] = {"conditions": conditions}
     return raw
@@ -208,7 +203,6 @@ def decide(vector: Vector) -> None:
                 }
                 for s in b.policy_sets
             ],
-            "labels": dict(b.labels),
             "generation": b.generation,
             "missingPolicySets": list(b.missing_policy_sets),
         }
@@ -271,7 +265,6 @@ def vectors() -> dict[str, Vector]:
                     "test-other-reader",
                     generation=3,
                     resource_version="17",
-                    labels={"test.example/managed-by": "test-writer"},
                     conditions=[
                         condition("EgressReady", "True", "Enforced", "egress rules: 0", 3),
                         condition(

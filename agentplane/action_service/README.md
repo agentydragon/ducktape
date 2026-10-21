@@ -90,7 +90,7 @@ Allow stores the selected ServiceAccount and either a new name or an explicitly 
 URL. Deny returns no redirect. Exact decision retries recover the original response; conflicting
 or stale decisions cannot overwrite it. The watched labeled ServiceAccounts supply the UI picker.
 The service validates the existing Connection version at decision and the binding authority checks
-it again when reserving the replacement at code exchange. A concurrent rename, unbind, activation,
+it again when reserving the replacement at code exchange. A concurrent rebind, unbind, activation,
 or competing reconnect requires fresh authorization rather than updating the reviewed version.
 The consent row retains the selected Connection UUID and version.
 Grant reservation revokes all prior active/pending grants atomically, even if later issuance fails;

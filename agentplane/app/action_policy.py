@@ -15,8 +15,8 @@ from agentplane.action_service.policy_view import EffectivePolicyView
 from agentplane.app.action_federation import UpstreamFailure
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL
-from agentplane.sandboxes.action_policy_views import ActionPolicyReader
 from agentplane.subjects import ServiceAccountRef
+from util.kubernetes import CustomObjectsClient
 
 
 class ActionPolicyView(BaseModel):
@@ -49,8 +49,12 @@ class ActionPolicyUnavailable(BaseModel):
     )
 
 
-class ActionPolicyInventory(ActionPolicyReader):
+class ActionPolicyInventory:
     """Read-only policy inventory and operator-federated policy views."""
+
+    def __init__(self, *, namespace: str, custom_objects: CustomObjectsClient) -> None:
+        self._namespace = namespace
+        self._custom_objects = custom_objects
 
     async def policy_set_names(self) -> list[str]:
         """The namespace's PolicySets, of any rule type, in name order."""

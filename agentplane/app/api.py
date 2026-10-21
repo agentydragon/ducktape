@@ -23,11 +23,10 @@ from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field
 
 from agentplane.action_service.catalog import ActionGroupView
 from agentplane.action_service.client import OperatorActionServiceClient
-from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionRename, ConnectionVersion
+from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionVersion
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from agentplane.action_service.models import ActionHistoryPage, ActionRequestView, ActionState, DecisionInput
-from agentplane.action_service.policy_view import ActionPolicySetView
 from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
@@ -420,15 +419,6 @@ async def revoke_binding(egress: Egress, name: str) -> None:
     await egress.revoke(name)
 
 
-action_policy_router = APIRouter(prefix="/action-policy", tags=["action-policy"])
-
-
-@action_policy_router.get("/sets")
-async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetView]:
-    """The namespace's sets with the Action Service's verdict on each: what a launch picks from."""
-    return await action_policy.list_policy_sets()
-
-
 threads = APIRouter(prefix="/threads", tags=["threads"])
 
 
@@ -554,16 +544,6 @@ async def connections_stream(
     request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
 ) -> StreamingResponse:
     return _operator_resource_stream(request, shutdown, updates, sessions, client.stream_connections, "Connections")
-
-
-@connections_router.get("/connections/{connection_id}")
-async def get_connection(connection_id: UUID, client: OperatorActions) -> Connection:
-    return await client.connection(connection_id)
-
-
-@connections_router.patch("/connections/{connection_id}")
-async def rename_connection(connection_id: UUID, body: ConnectionRename, client: OperatorActions) -> Connection:
-    return await client.rename_connection(connection_id, body)
 
 
 @connections_router.post("/connections/{connection_id}/rebind")
@@ -1282,7 +1262,6 @@ def create_app(
         consent_router,
         connections_router,
         policy_binding_router,
-        action_policy_router,
         live_router,
         system_router,
     ):

@@ -31,7 +31,6 @@ func TestTheGroupOffersTheServersToolsAsItsActions(t *testing.T) {
 	// A name the catalog cannot key is left out, not the whole list.
 	server.AddTool(&mcp.Tool{Name: "Test.Unkeyed", InputSchema: objectSchema}, answering(&calls{}, textResult("unused")))
 	groups := mcpGroup(t, httpConfig(newUpstream(t, server, nil).url()))
-	before := time.Now()
 	supervise(t, groups, nil, executorTiming())
 
 	g := awaitGroup(t, groups, offering("test_annotated", "test_bare"))
@@ -48,8 +47,7 @@ func TestTheGroupOffersTheServersToolsAsItsActions(t *testing.T) {
 		t.Errorf("test_bare is %+v", bare)
 	}
 	h := g.Health
-	if h.State != action_servicepb.McpLifecycle_MCP_LIFECYCLE_AVAILABLE || h.Reason != nil || h.Detail != nil ||
-		h.RetryAt != nil || h.LastDiscoveryAt.AsTime().Before(before) || h.Failures != 0 {
+	if h.State != action_servicepb.McpLifecycle_MCP_LIFECYCLE_AVAILABLE || h.Reason != nil || h.Detail != nil {
 		t.Errorf("health %v", h)
 	}
 }
@@ -100,8 +98,8 @@ func TestAToolListTheCatalogCannotHoldWithdrawsTheGroupUntilItIsFixed(t *testing
 	supervise(t, groups, nil, executorTiming())
 	g := awaitGroup(t, groups, unavailableFor(action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_INVALID_CATALOG,
 		func(detail string) bool { return strings.Contains(detail, "test_invalid") }))
-	if len(g.Actions) != 0 || g.Health.RetryAt == nil || g.Health.Failures == 0 {
-		t.Errorf("the withdrawn group offers %v with health %v", g.Actions, g.Health)
+	if len(g.Actions) != 0 {
+		t.Errorf("the withdrawn group offers %v", g.Actions)
 	}
 
 	fixed := newServer()
@@ -118,18 +116,12 @@ func TestAServerThatIsDownLeavesItsGroupUnavailableUntilItIsBack(t *testing.T) {
 	groups := mcpGroup(t, httpConfig(u.url()))
 	supervise(t, groups, nil, executorTiming())
 	g := awaitGroup(t, groups, unavailableFor(action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_CONNECT_FAILED, anyDetail))
-	if g.Health.State != action_servicepb.McpLifecycle_MCP_LIFECYCLE_DISCONNECTED || g.Health.Failures == 0 ||
-		g.Health.RetryAt == nil {
+	if g.Health.State != action_servicepb.McpLifecycle_MCP_LIFECYCLE_DISCONNECTED {
 		t.Errorf("health %v", g.Health)
 	}
 
 	u.down.Store(false)
-	g = awaitGroup(t, groups, offering("test_tool"))
-	// The failures stay counted until the group has stayed offered for Timing.Stable, so a server that fails again
-	// right after it came back keeps backing off.
-	if g.Health.Failures == 0 || g.Health.RetryAt != nil {
-		t.Errorf("health %v", g.Health)
-	}
+	awaitGroup(t, groups, offering("test_tool"))
 }
 
 func TestConfiguredHeadersAndAMountedBearerAreSentOnEveryRequest(t *testing.T) {
