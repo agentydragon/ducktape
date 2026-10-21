@@ -2083,6 +2083,7 @@ use_repo(
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
     "com_github_prometheus_procfs",
+    "com_github_santhosh_tekuri_jsonschema_v6",
     "com_github_schlunsen_claude_agent_sdk_go",
     "com_github_sethvargo_go_retry",
     "com_github_spf13_cast",

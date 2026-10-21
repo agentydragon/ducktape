@@ -1,0 +1,4523 @@
+{
+ "decisions": {
+  "a binding naming no valid set": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "repo": "test-repo"
+   },
+   "bindings": [
+    {
+     "name": "test-binding",
+     "policy_sets": [],
+     "resource_version": "1"
+    }
+   ],
+   "namespace": "test-policies",
+   "outcome": {
+    "evidence": null,
+    "reason_code": "no_auto_approve_match",
+    "reason_description": "no auto-approve policy bound to the caller lists test-github/get_file_contents",
+    "verdict": "no_opinion"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "a long description is cut at 500 code points": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "public-owner",
+    "repo": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+   },
+   "bindings": [
+    {
+     "name": "test-binding",
+     "policy_sets": [
+      {
+       "generation": 1,
+       "name": "test-set",
+       "rules": [
+        {
+         "policy": {
+          "actions": {
+           "test-github": [
+            "get_file_contents",
+            "search_pull_requests",
+            "search_code"
+           ]
+          },
+          "type": "github_public_repository"
+         },
+         "type": "action_auto_approve"
+        }
+       ]
+      }
+     ],
+     "resource_version": "1"
+    }
+   ],
+   "namespace": "test-policies",
+   "outcome": {
+    "evidence": {
+     "bindings": [
+      {
+       "name": "test-binding",
+       "namespace": "test-policies",
+       "resource_version": "1"
+      }
+     ],
+     "matched": {
+      "index": 0,
+      "namespace": "test-policies",
+      "policy_set": "test-set",
+      "repository": {
+       "confirmed_public": true,
+       "owner": "public-owner",
+       "repository": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+      },
+      "source": "rules",
+      "type": "github_public_repository"
+     },
+     "policy_sets": [
+      {
+       "generation": 1,
+       "name": "test-set",
+       "namespace": "test-policies"
+      }
+     ]
+    },
+    "reason_code": "policy_set_auto_approve",
+    "reason_description": "binding test-policies/test-binding set test-set rules[0] github_public_repository: reviewed read targets confirmed-public repository public-owner/\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+    "verdict": "allow"
+   },
+   "visibility": {
+    "public": [
+     [
+      "public-owner",
+      "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "a long no-opinion description is cut at 500 code points": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "domain": "light",
+    "entity_id": "light.kitchen",
+    "service": "turn_on",
+    "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9": 1
+   },
+   "bindings": [
+    {
+     "name": "test-binding",
+     "policy_sets": [
+      {
+       "generation": 1,
+       "name": "test-set",
+       "rules": [
+        {
+         "policy": {
+          "actions": {
+           "test-home-assistant": [
+            "ha_call_service"
+           ]
+          },
+          "entities": {
+           "light.kitchen": [
+            "turn_on",
+            "turn_off"
+           ]
+          },
+          "type": "home_assistant_entity_control"
+         },
+         "type": "action_auto_approve"
+        }
+       ]
+      }
+     ],
+     "resource_version": "1"
+    }
+   ],
+   "namespace": "test-policies",
+   "outcome": {
+    "evidence": null,
+    "reason_code": "no_auto_approve_match",
+    "reason_description": "set test-set rules[0] home_assistant_entity_control: call carries argument(s) this policy has not reviewed: \u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+    "verdict": "no_opinion"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "an exact match": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {},
+   "bindings": [
+    {
+     "name": "test-binding",
+     "policy_sets": [
+      {
+       "generation": 1,
+       "name": "test-set",
+       "rules": [
+        {
+         "policy": {
+          "actions": {
+           "test-group": [
+            "test-action"
+           ]
+          },
+          "type": "exact_actions"
+         },
+         "type": "action_auto_approve"
+        }
+       ]
+      }
+     ],
+     "resource_version": "1"
+    }
+   ],
+   "namespace": "test-policies",
+   "outcome": {
+    "evidence": {
+     "bindings": [
+      {
+       "name": "test-binding",
+       "namespace": "test-policies",
+       "resource_version": "1"
+      }
+     ],
+     "matched": {
+      "index": 0,
+      "namespace": "test-policies",
+      "policy_set": "test-set",
+      "repository": null,
+      "source": "rules",
+      "type": "exact_actions"
+     },
+     "policy_sets": [
+      {
+       "generation": 1,
+       "name": "test-set",
+       "namespace": "test-policies"
+      }
+     ]
+    },
+    "reason_code": "policy_set_auto_approve",
+    "reason_description": "binding test-policies/test-binding set test-set rules[0] exact_actions: exact action test-group/test-action is listed",
+    "verdict": "allow"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "declines, then a match in a later binding": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "public-owner",
+    "repo": "Public-Repo"
+   },
+   "bindings": [
+    {
+     "name": "a-binding",
+     "policy_sets": [
+      {
+       "generation": 3,
+       "name": "shared",
+       "rules": [
+        {
+         "policy": {
+          "actions": {
+           "test-github": [
+            "get_file_contents",
+            "search_pull_requests",
+            "search_code"
+           ]
+          },
+          "owner": "test-owner",
+          "repository": "test-repo",
+          "type": "github_repository"
+         },
+         "type": "action_auto_approve"
+        }
+       ]
+      }
+     ],
+     "resource_version": "5"
+    },
+    {
+     "name": "b-binding",
+     "policy_sets": [
+      {
+       "generation": 3,
+       "name": "shared",
+       "rules": [
+        {
+         "policy": {
+          "actions": {
+           "test-github": [
+            "get_file_contents",
+            "search_pull_requests",
+            "search_code"
+           ]
+          },
+          "owner": "test-owner",
+          "repository": "test-repo",
+          "type": "github_repository"
+         },
+         "type": "action_auto_approve"
+        }
+       ]
+      },
+      {
+       "generation": 1,
+       "name": "public",
+       "rules": [
+        {
+         "policy": {
+          "actions": {
+           "test-github": [
+            "get_file_contents",
+            "search_pull_requests",
+            "search_code"
+           ]
+          },
+          "type": "github_public_repository"
+         },
+         "type": "action_auto_approve"
+        }
+       ]
+      }
+     ],
+     "resource_version": "6"
+    }
+   ],
+   "namespace": "test-policies",
+   "outcome": {
+    "evidence": {
+     "bindings": [
+      {
+       "name": "a-binding",
+       "namespace": "test-policies",
+       "resource_version": "5"
+      },
+      {
+       "name": "b-binding",
+       "namespace": "test-policies",
+       "resource_version": "6"
+      }
+     ],
+     "matched": {
+      "index": 0,
+      "namespace": "test-policies",
+      "policy_set": "public",
+      "repository": {
+       "confirmed_public": true,
+       "owner": "public-owner",
+       "repository": "Public-Repo"
+      },
+      "source": "rules",
+      "type": "github_public_repository"
+     },
+     "policy_sets": [
+      {
+       "generation": 3,
+       "name": "shared",
+       "namespace": "test-policies"
+      },
+      {
+       "generation": 1,
+       "name": "public",
+       "namespace": "test-policies"
+      }
+     ]
+    },
+    "reason_code": "policy_set_auto_approve",
+    "reason_description": "binding test-policies/b-binding set public rules[0] github_public_repository: reviewed read targets confirmed-public repository public-owner/Public-Repo",
+    "verdict": "allow"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "every listing policy declines": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "other-owner",
+    "repo": "private-repo"
+   },
+   "bindings": [
+    {
+     "name": "test-binding",
+     "policy_sets": [
+      {
+       "generation": 1,
+       "name": "test-set",
+       "rules": [
+        {
+         "policy": {
+          "actions": {
+           "test-github": [
+            "get_file_contents",
+            "search_pull_requests",
+            "search_code"
+           ]
+          },
+          "owner": "test-owner",
+          "repository": "test-repo",
+          "type": "github_repository"
+         },
+         "type": "action_auto_approve"
+        },
+        {
+         "policy": {
+          "actions": {
+           "test-github": [
+            "get_file_contents",
+            "search_pull_requests",
+            "search_code"
+           ]
+          },
+          "type": "github_public_repository"
+         },
+         "type": "action_auto_approve"
+        }
+       ]
+      }
+     ],
+     "resource_version": "1"
+    }
+   ],
+   "namespace": "test-policies",
+   "outcome": {
+    "evidence": null,
+    "reason_code": "no_auto_approve_match",
+    "reason_description": "set test-set rules[0] github_repository: repository other-owner/private-repo is outside test-owner/test-repo; set test-set rules[1] github_public_repository: repository other-owner/private-repo is not confirmed public",
+    "verdict": "no_opinion"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "no bindings": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "repo": "test-repo"
+   },
+   "bindings": [],
+   "namespace": "test-policies",
+   "outcome": {
+    "evidence": null,
+    "reason_code": "no_auto_approve_match",
+    "reason_description": "no auto-approve policy bound to the caller lists test-github/get_file_contents",
+    "verdict": "no_opinion"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "no policy lists the Action": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "repo": "test-repo"
+   },
+   "bindings": [
+    {
+     "name": "test-binding",
+     "policy_sets": [
+      {
+       "generation": 1,
+       "name": "test-set",
+       "rules": [
+        {
+         "policy": {
+          "actions": {
+           "test-github": [
+            "other-action"
+           ]
+          },
+          "type": "exact_actions"
+         },
+         "type": "action_auto_approve"
+        },
+        {
+         "hosts": [
+          "egress.test"
+         ],
+         "type": "egress"
+        }
+       ]
+      }
+     ],
+     "resource_version": "1"
+    }
+   ],
+   "namespace": "test-policies",
+   "outcome": {
+    "evidence": null,
+    "reason_code": "no_auto_approve_match",
+    "reason_description": "no auto-approve policy bound to the caller lists test-github/get_file_contents",
+    "verdict": "no_opinion"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "the first match approves": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "repo": "test-repo"
+   },
+   "bindings": [
+    {
+     "name": "test-binding",
+     "policy_sets": [
+      {
+       "generation": 1,
+       "name": "egress-only",
+       "rules": [
+        {
+         "hosts": [
+          "egress.test"
+         ],
+         "type": "egress"
+        }
+       ]
+      },
+      {
+       "generation": 4,
+       "name": "test-set",
+       "rules": [
+        {
+         "policy": {
+          "actions": {
+           "test-github": [
+            "other-action"
+           ]
+          },
+          "type": "exact_actions"
+         },
+         "type": "action_auto_approve"
+        },
+        {
+         "hosts": [
+          "egress.test"
+         ],
+         "type": "egress"
+        },
+        {
+         "policy": {
+          "actions": {
+           "test-github": [
+            "get_file_contents",
+            "search_pull_requests",
+            "search_code"
+           ]
+          },
+          "owner": "test-owner",
+          "repository": "test-repo",
+          "type": "github_repository"
+         },
+         "type": "action_auto_approve"
+        },
+        {
+         "policy": {
+          "actions": {
+           "test-github": [
+            "get_file_contents"
+           ]
+          },
+          "type": "exact_actions"
+         },
+         "type": "action_auto_approve"
+        }
+       ]
+      }
+     ],
+     "resource_version": "17"
+    }
+   ],
+   "namespace": "test-policies",
+   "outcome": {
+    "evidence": {
+     "bindings": [
+      {
+       "name": "test-binding",
+       "namespace": "test-policies",
+       "resource_version": "17"
+      }
+     ],
+     "matched": {
+      "index": 2,
+      "namespace": "test-policies",
+      "policy_set": "test-set",
+      "repository": {
+       "confirmed_public": false,
+       "owner": "test-owner",
+       "repository": "test-repo"
+      },
+      "source": "rules",
+      "type": "github_repository"
+     },
+     "policy_sets": [
+      {
+       "generation": 1,
+       "name": "egress-only",
+       "namespace": "test-policies"
+      },
+      {
+       "generation": 4,
+       "name": "test-set",
+       "namespace": "test-policies"
+      }
+     ]
+    },
+    "reason_code": "policy_set_auto_approve",
+    "reason_description": "binding test-policies/test-binding set test-set rules[2] github_repository: reviewed read targets repository test-owner/test-repo",
+    "verdict": "allow"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  }
+ },
+ "evaluations": {
+  "Home Assistant, a list of entity ids": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "domain": "light",
+    "entity_id": [
+     "light.kitchen"
+    ],
+    "service": "turn_on"
+   },
+   "outcome": {
+    "not_matched": "auto-approval requires exactly one entity_id, given as a string"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, a numeric service": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "domain": "light",
+    "entity_id": "light.kitchen",
+    "service": 5
+   },
+   "outcome": {
+    "not_matched": "service 5 is not allowed on light.kitchen"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, a reviewed call": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "domain": "light",
+    "entity_id": "light.kitchen",
+    "service": "turn_on"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "light.turn_on targets only light.kitchen, which this policy controls",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, another Action": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_restart"
+   },
+   "arguments": {
+    "domain": "light",
+    "entity_id": "light.kitchen",
+    "service": "turn_on"
+   },
+   "outcome": {
+    "not_matched": "test-home-assistant/ha_restart is not listed"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, another domain": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "domain": "switch",
+    "entity_id": "light.kitchen",
+    "service": "turn_on"
+   },
+   "outcome": {
+    "not_matched": "domain 'switch' does not match the entity's own domain"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, another entity": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "domain": "light",
+    "entity_id": "light.hall",
+    "service": "turn_on"
+   },
+   "outcome": {
+    "not_matched": "light.hall is not an entity this policy controls"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, another service": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "domain": "light",
+    "entity_id": "light.kitchen",
+    "service": "toggle"
+   },
+   "outcome": {
+    "not_matched": "service 'toggle' is not allowed on light.kitchen"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, data and every response argument": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "data": {
+     "brightness": 3
+    },
+    "domain": "light",
+    "entity_id": "light.kitchen",
+    "result_attribute_keys": [],
+    "result_fields": [],
+    "return_response": true,
+    "service": "turn_on",
+    "verbose": true,
+    "wait": false
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "light.turn_on targets only light.kitchen, which this policy controls",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, list data": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "data": [
+     1
+    ],
+    "domain": "light",
+    "entity_id": "light.kitchen",
+    "service": "turn_on"
+   },
+   "outcome": {
+    "not_matched": "data must be an object"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, no domain": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "entity_id": "light.kitchen",
+    "service": "turn_on"
+   },
+   "outcome": {
+    "not_matched": "domain None does not match the entity's own domain"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, no entity id": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "domain": "light",
+    "service": "turn_on"
+   },
+   "outcome": {
+    "not_matched": "auto-approval requires exactly one entity_id, given as a string"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, null data": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "data": null,
+    "domain": "light",
+    "entity_id": "light.kitchen",
+    "service": "turn_on"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "light.turn_on targets only light.kitchen, which this policy controls",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, retargeting data": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "data": {
+     "area_id": "x",
+     "brightness": 1,
+     "target": {}
+    },
+    "domain": "light",
+    "entity_id": "light.kitchen",
+    "service": "turn_on"
+   },
+   "outcome": {
+    "not_matched": "data would retarget the call via: area_id, target"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "Home Assistant, unreviewed arguments": {
+   "action": {
+    "group": "test-home-assistant",
+    "name": "ha_call_service"
+   },
+   "arguments": {
+    "domain": "light",
+    "entity_id": "light.kitchen",
+    "service": "turn_on",
+    "ws_command": {},
+    "zz": 1
+   },
+   "outcome": {
+    "not_matched": "call carries argument(s) this policy has not reviewed: ws_command, zz"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "exact, another group": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {},
+   "outcome": {
+    "not_matched": "test-group/test-action is not listed"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "other-group": [
+       "test-action"
+      ]
+     },
+     "type": "exact_actions"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "exact, another name": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {},
+   "outcome": {
+    "not_matched": "test-group/test-action is not listed"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "other-action"
+      ]
+     },
+     "type": "exact_actions"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "exact, listed": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {},
+   "outcome": {
+    "matched": {
+     "explanation": "exact action test-group/test-action is listed",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "type": "exact_actions"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "public, a dot segment in the repo": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "x",
+    "repo": "../public-owner/public-repo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed read targets confirmed-public repository x/../public-owner/public-repo",
+     "repository": {
+      "confirmed_public": true,
+      "owner": "x",
+      "repository": "../public-owner/public-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "type": "github_public_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "public, a numeric repo": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "public-owner",
+    "repo": 5
+   },
+   "outcome": {
+    "not_matched": "call does not identify a repository with string owner/repo arguments"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "type": "github_public_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "public, a slash in the owner": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "public-owner/public-repo",
+    "repo": "x"
+   },
+   "outcome": {
+    "not_matched": "repository public-owner/public-repo/x is not confirmed public"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "type": "github_public_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "public, code search": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:public-owner/public-repo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed code search targets confirmed-public repository public-owner/public-repo",
+     "repository": {
+      "confirmed_public": true,
+      "owner": "public-owner",
+      "repository": "public-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "type": "github_public_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "public, confirmed": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "public-owner",
+    "repo": "Public-Repo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed read targets confirmed-public repository public-owner/Public-Repo",
+     "repository": {
+      "confirmed_public": true,
+      "owner": "public-owner",
+      "repository": "Public-Repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "type": "github_public_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "public, not confirmed": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "private-owner",
+    "repo": "private-repo"
+   },
+   "outcome": {
+    "not_matched": "repository private-owner/private-repo is not confirmed public"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "type": "github_public_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "public, pull search with a qualifier": {
+   "action": {
+    "group": "test-github",
+    "name": "search_pull_requests"
+   },
+   "arguments": {
+    "owner": "public-owner",
+    "query": "repo:o/r",
+    "repo": "Public-Repo"
+   },
+   "outcome": {
+    "not_matched": "pull-request search query sets a repository qualifier; omit it so owner/repo scopes the search"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "type": "github_public_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "public, unavailable": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "public-owner",
+    "repo": "Public-Repo"
+   },
+   "outcome": {
+    "not_matched": "could not confirm public-owner/Public-Repo is public"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "type": "github_public_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": true
+   }
+  },
+  "repository, a numeric owner": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": 5,
+    "repo": "test-repo"
+   },
+   "outcome": {
+    "not_matched": "call does not identify a repository with string owner/repo arguments"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, another pair": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "repo": "other-repo"
+   },
+   "outcome": {
+    "not_matched": "repository test-owner/other-repo is outside test-owner/test-repo"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:test-owner/test-repo foo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed code search targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "test-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search after an ideographic space": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "foo\u3000repo:test-owner/test-repo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed code search targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "test-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search before a file separator": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:test-owner/test-repo\u001cfoo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed code search targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "test-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search before a no-break space": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:test-owner/test-repo\u00a0foo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed code search targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "test-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search before a trailing newline": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:test-owner/test-repo\n"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed code search targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "test-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search before a vertical tab": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:test-owner/test-repo\u000bfoo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed code search targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "test-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search before a zero-width space": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:test-owner/test-repo\u200bfoo"
+   },
+   "outcome": {
+    "not_matched": "code search requires one unquoted repo:owner/repo qualifier"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search ignores owner and repo": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "query": "repo:o/r",
+    "repo": "test-repo"
+   },
+   "outcome": {
+    "not_matched": "repository o/r is outside test-owner/test-repo"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search with a Kelvin sign": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:\u212a-owner/test-repo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed code search targets repository k-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "\u212a-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "k-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search with a dotless i": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:\u0131-owner/test-repo"
+   },
+   "outcome": {
+    "not_matched": "repository \u0131-owner/test-repo is outside i-owner/test-repo"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "i-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search with a dotted capital I": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:\u0130-owner/test-repo"
+   },
+   "outcome": {
+    "not_matched": "repository \u0130-owner/test-repo is outside i-owner/test-repo"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "i-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search with a long s": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:te\u017ft-owner/test-repo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed code search targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "te\u017ft-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search with a numeric query": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": 5
+   },
+   "outcome": {
+    "not_matched": "code search requires a string query"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search with a quoted qualifier": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "\"repo:test-owner/test-repo\""
+   },
+   "outcome": {
+    "not_matched": "code search requires one unquoted repo:owner/repo qualifier"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search with repeated repo:": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:repo:test-owner/test-repo"
+   },
+   "outcome": {
+    "not_matched": "code search requires one unquoted repo:owner/repo qualifier"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search with the qualifier last": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "foo repo:test-owner/test-repo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed code search targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "test-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search with two qualifiers": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "repo:test-owner/test-repo repo:o/r"
+   },
+   "outcome": {
+    "not_matched": "code search requires exactly one repository qualifier"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, code search without a qualifier": {
+   "action": {
+    "group": "test-github",
+    "name": "search_code"
+   },
+   "arguments": {
+    "query": "foo"
+   },
+   "outcome": {
+    "not_matched": "code search requires exactly one repository qualifier"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, no repo": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "test-owner"
+   },
+   "outcome": {
+    "not_matched": "call does not identify a repository with string owner/repo arguments"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, pull search with a capitalized qualifier": {
+   "action": {
+    "group": "test-github",
+    "name": "search_pull_requests"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "query": "Repo:o/r",
+    "repo": "test-repo"
+   },
+   "outcome": {
+    "not_matched": "pull-request search query sets a repository qualifier; omit it so owner/repo scopes the search"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, pull search with a combining mark before repo:": {
+   "action": {
+    "group": "test-github",
+    "name": "search_pull_requests"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "query": "e\u0301repo:o/r",
+    "repo": "test-repo"
+   },
+   "outcome": {
+    "not_matched": "pull-request search query sets a repository qualifier; omit it so owner/repo scopes the search"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, pull search with a letter before repo:": {
+   "action": {
+    "group": "test-github",
+    "name": "search_pull_requests"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "query": "\u00e9repo:o/r",
+    "repo": "test-repo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed read targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "test-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, pull search with a negated qualifier": {
+   "action": {
+    "group": "test-github",
+    "name": "search_pull_requests"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "query": "-repo:o/r",
+    "repo": "test-repo"
+   },
+   "outcome": {
+    "not_matched": "pull-request search query sets a repository qualifier; omit it so owner/repo scopes the search"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, pull search with a numeric query": {
+   "action": {
+    "group": "test-github",
+    "name": "search_pull_requests"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "query": 5,
+    "repo": "test-repo"
+   },
+   "outcome": {
+    "not_matched": "pull-request search requires a string query"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, pull search with a qualifier": {
+   "action": {
+    "group": "test-github",
+    "name": "search_pull_requests"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "query": "is:open repo:o/r",
+    "repo": "test-repo"
+   },
+   "outcome": {
+    "not_matched": "pull-request search query sets a repository qualifier; omit it so owner/repo scopes the search"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, pull search with a word before repo:": {
+   "action": {
+    "group": "test-github",
+    "name": "search_pull_requests"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "query": "foo_repo:o/r",
+    "repo": "test-repo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed read targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "test-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, pull search without a qualifier": {
+   "action": {
+    "group": "test-github",
+    "name": "search_pull_requests"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "query": "is:open",
+    "repo": "test-repo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed read targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "test-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, the configured pair": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "test-owner",
+    "repo": "test-repo"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed read targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "test-owner",
+      "repository": "test-repo"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "repository, the configured pair in another case": {
+   "action": {
+    "group": "test-github",
+    "name": "get_file_contents"
+   },
+   "arguments": {
+    "owner": "Test-Owner",
+    "repo": "TEST-REPO"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "reviewed read targets repository test-owner/test-repo",
+     "repository": {
+      "confirmed_public": false,
+      "owner": "Test-Owner",
+      "repository": "TEST-REPO"
+     }
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, 0.3 as a multiple of 0.1": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 0.3
+   },
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: 0.3 is not a multiple of 0.1"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "multipleOf": 0.1
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, 1.0 as an integer": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 1.0
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "type": "integer"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, 1.0 as an integer in draft-04": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 1.0
+   },
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: 1.0 is not of type 'integer'"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "properties": {
+       "a": {
+        "type": "integer"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, 1.5 as a multiple of 0.5": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 1.5
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "multipleOf": 0.5
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, 1.5 as an integer": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 1.5
+   },
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: 1.5 is not of type 'integer'"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "type": "integer"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, a local $ref": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 4
+   },
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: 4 is greater than the maximum of 3"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$defs": {
+       "small": {
+        "maximum": 3
+       }
+      },
+      "properties": {
+       "a": {
+        "$ref": "#/$defs/small"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, a pattern's $ before a trailing newline": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": "abc\n"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "pattern": "^[a-z]+$"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, a pattern's \\d against an Arabic-Indic digit": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": "\u0663"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "pattern": "^\\d+$"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, a remote $ref": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {},
+   "outcome": {
+    "raised": "Unresolvable"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$ref": "https://schema.test/remote.json"
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, a required property missing": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {},
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: 'a' is a required property"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "required": [
+       "a"
+      ]
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, an additional property": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 1
+   },
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: Additional properties are not allowed ('a' was unexpected)"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "additionalProperties": false
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, an integer beyond 64 bits": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 18446744073709551616
+   },
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: 18446744073709551616 is greater than the maximum of 18446744073709551615"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "maximum": 18446744073709551615
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, const 1 against 1.0": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 1.0
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "const": 1
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, dependencies in 2020-12": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 1
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "dependencies": {
+       "a": [
+        "b"
+       ]
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, dependentRequired": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 1
+   },
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: 'b' is a dependency of 'a'"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "dependentRequired": {
+       "a": [
+        "b"
+       ]
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, draft-04 exclusiveMaximum": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 5
+   },
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: 5 is greater than or equal to the maximum of 5"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "properties": {
+       "a": {
+        "exclusiveMaximum": true,
+        "maximum": 5
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, format in 2020-12": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": "x"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "format": "email"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, format in draft-07": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": "x"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+       "a": {
+        "format": "email"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, if then else": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "c": 1
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "else": {
+       "required": [
+        "c"
+       ]
+      },
+      "if": {
+       "required": [
+        "a"
+       ]
+      },
+      "then": {
+       "required": [
+        "b"
+       ]
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, maxLength counts code points": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": "\ud83d\ude80"
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "maxLength": 1
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, satisfied": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 1
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "const": 1
+       }
+      },
+      "required": [
+       "a"
+      ]
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, the 2020-12 metaschema": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "type": 5
+   },
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: 5 is not valid under any of the given schemas"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$ref": "https://json-schema.org/draft/2020-12/schema"
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, true as an integer": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": true
+   },
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: True is not of type 'integer'"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "type": "integer"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, unevaluatedProperties": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": 1,
+    "b": 2
+   },
+   "outcome": {
+    "not_matched": "arguments do not satisfy the schema: Unevaluated properties are not allowed ('b' was unexpected)"
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {}
+      },
+      "unevaluatedProperties": false
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  },
+  "schema, unique items 1 and true": {
+   "action": {
+    "group": "test-group",
+    "name": "test-action"
+   },
+   "arguments": {
+    "a": [
+     1,
+     true
+    ]
+   },
+   "outcome": {
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
+   },
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "uniqueItems": true
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   },
+   "visibility": {
+    "public": [
+     [
+      "Public-Owner",
+      "public-repo"
+     ]
+    ],
+    "unavailable": false
+   }
+  }
+ },
+ "rules": {
+  "GitHub public repository": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "type": "github_public_repository"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "GitHub repository": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-github": [
+       "get_file_contents",
+       "search_pull_requests",
+       "search_code"
+      ]
+     },
+     "owner": "test-owner",
+     "repository": "test-repo",
+     "type": "github_repository"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "Home Assistant": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "Home Assistant, a list of entity ids": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen,light.hall": [
+       "turn_on"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "Home Assistant, a service with a dash": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn-on"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "Home Assistant, an entity id ending in a newline": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen\n": [
+       "turn_on"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "Home Assistant, an entity id without a domain": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "kitchen": [
+       "turn_on"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "Home Assistant, an uppercase entity id": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "Light.Kitchen": [
+       "turn_on"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "Home Assistant, another Action": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-home-assistant": [
+       "ha_call_service",
+       "ha_restart"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "Home Assistant, two groups": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-ha-a": [
+       "ha_call_service"
+      ],
+      "test-ha-b": [
+       "ha_call_service"
+      ]
+     },
+     "entities": {
+      "light.kitchen": [
+       "turn_on",
+       "turn_off"
+      ]
+     },
+     "type": "home_assistant_entity_control"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, a $ref to the 2020-12 metaschema": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$ref": "https://json-schema.org/draft/2020-12/schema"
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, a file $ref": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$ref": "file:///etc/hostname"
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, a local $ref to nowhere": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$ref": "#/$defs/missing"
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, a lookahead pattern": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "pattern": "(?=a)a"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, a named group pattern": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "pattern": "(?P<x>a)"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, a numeric $schema": {
+   "outcome": "raised",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$schema": 5
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, a pattern that does not compile": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "pattern": "["
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, a remote $ref": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$ref": "https://schema.test/remote.json"
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, a string minimum": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "minimum": "x"
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, an $id that is not a URI": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$id": "not a uri ::"
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, an unknown $schema": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$schema": "https://schema.test/unknown",
+      "required": [
+       "a"
+      ]
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, an unknown type": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "type": "nope"
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, draft-03": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$schema": "http://json-schema.org/draft-03/schema#",
+      "properties": {
+       "a": {
+        "required": true
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, draft-04": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "required": [
+       "a"
+      ]
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, draft-07": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "required": [
+       "a"
+      ]
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, empty": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {},
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "argument schema, typical": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "additionalProperties": false,
+      "properties": {
+       "count": {
+        "minimum": 0,
+        "type": "integer"
+       },
+       "label": {
+        "minLength": 1,
+        "type": "string"
+       }
+      },
+      "required": [
+       "count"
+      ],
+      "type": "object"
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "exact actions": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action",
+       "other_action"
+      ]
+     },
+     "type": "exact_actions"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "exact actions, a group key starting with a digit": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "1group": [
+       "test-action"
+      ]
+     },
+     "type": "exact_actions"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "exact actions, a group key with an uppercase letter": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "Test-Group": [
+       "test-action"
+      ]
+     },
+     "type": "exact_actions"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "exact actions, a name ending in a newline": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action\n"
+      ]
+     },
+     "type": "exact_actions"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "exact actions, a name of 200 characters": {
+   "outcome": "accepted",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ]
+     },
+     "type": "exact_actions"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "exact actions, a name of 201 characters": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ]
+     },
+     "type": "exact_actions"
+    },
+    "type": "action_auto_approve"
+   }
+  },
+  "exact actions, a name with a space": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test action"
+      ]
+     },
+     "type": "exact_actions"
+    },
+    "type": "action_auto_approve"
+   }
+  }
+ }
+}

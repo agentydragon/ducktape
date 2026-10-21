@@ -1,4 +1,5 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -214,5 +215,83 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_binary(
+    name = "generate_golden_bin",
+    main_module = "agentplane.action_service.policies.generate_golden",
+    deps = [":generate_golden"],
+)
+
+py_library(
+    name = "generate_golden",
+    srcs = ["generate_golden.py"],
+    deps = [
+        ":kind",
+        ":registry",
+        ":resources",
+        "//agentplane:subjects",
+        "//agentplane/action_service:catalog",
+        "//agentplane/action_service:models",
+        "//agentplane/action_service:policy_evaluation",
+        "//agentplane/action_service:providers",
+        "//agentplane/action_service/github_policy:visibility",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//referencing",
+    ],
+)
+
+py_test(
+    name = "test_golden",
+    srcs = ["test_golden.py"],
+    data = ["golden.json"],
+    deps = [
+        ":generate_golden",
+        "//:conftest",
+        "//agentplane/action_service:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+go_library(
+    name = "policies",
+    srcs = [
+        "argument_schema.go",
+        "github.go",
+        "home_assistant.go",
+        "policy.go",
+        "provider.go",
+        "visibility.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/policies",
+    deps = [
+        "//agentplane/action_service/store",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/reader",
+        "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
+        "@io_k8s_apimachinery//pkg/util/cache",
+        "@io_k8s_apimachinery//pkg/util/sets",
+        "@org_golang_x_sync//singleflight",
+        "@org_golang_x_text//cases",
+    ],
+)
+
+go_test(
+    name = "policies_test",
+    srcs = [
+        "golden_test.go",
+        "visibility_test.go",
+    ],
+    embed = [":policies"],
+    embedsrcs = ["golden.json"],
+    deps = [
+        "//agentplane/action_service/store",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/reader",
+        "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
+        "@io_k8s_apimachinery//pkg/util/sets",
     ],
 )

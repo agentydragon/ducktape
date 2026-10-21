@@ -94,6 +94,10 @@ One library per job. An unlisted job reuses what other Go services import before
 | Retry      | `sethvargo/go-retry`; callers own error classification and progress resets.                                 |
 | Cgroups    | `containerd/cgroups/v3/cgroup2`.                                                                            |
 | GitHub     | `google/go-github` (REST) with `bradleyfalzon/ghinstallation` (App JWTs, installation tokens).              |
+| Schemas    | `santhosh-tekuri/jsonschema/v6`, with a loader of your own: the default one reads local files.              |
+| TTL cache  | `apimachinery/pkg/util/cache.Expiring`; `x/sync/singleflight` shares a lookup between callers.              |
+| Sets       | `apimachinery/pkg/util/sets`.                                                                               |
+| Casefold   | `x/text/cases.Fold`.                                                                                        |
 
 ## Build System (Bazel)
 

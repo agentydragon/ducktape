@@ -353,7 +353,9 @@ func (a ServiceAccount) validate() error {
 	return nil
 }
 
-func (a ActionIdentity) validate() error {
+// Validate checks the group and name have the stored form: lowercase letters, digits, `_` and `-`, starting with a
+// letter, 1 to 200 characters.
+func (a ActionIdentity) Validate() error {
 	if err := validateKey("group", a.Group); err != nil {
 		return err
 	}
@@ -415,7 +417,7 @@ func (i ActionRequestInput) Validate() error {
 	if !isObject(i.Arguments) {
 		return invalid("arguments must be a JSON object")
 	}
-	return i.Action.validate()
+	return i.Action.Validate()
 }
 
 func (i DecisionInput) Validate() error {
@@ -495,7 +497,7 @@ func (a *ActionIdentity) UnmarshalJSON(data []byte) error {
 	if err := decodeFields(data, (*plain)(a), "group", "name"); err != nil {
 		return err
 	}
-	return a.validate()
+	return a.Validate()
 }
 
 func (e *PolicyEvidence) UnmarshalJSON(data []byte) error {
