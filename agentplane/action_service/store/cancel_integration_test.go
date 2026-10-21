@@ -166,8 +166,8 @@ func TestAnAllowedRequestWithoutAPendingDispatchCannotBeCancelled(t *testing.T) 
 			strand(t, f, allowed.ID)
 			before := f.get(t, allowed.ID)
 
-			if _, err := f.Cancel(t.Context(), allowed.ID, caller); conflictReason(err) != ConflictNoPendingDispatch {
-				t.Errorf("got %v", err)
+			if _, err := f.Cancel(t.Context(), allowed.ID, caller); err == nil || conflictReason(err) != 0 || errors.Is(err, ErrNotFound) {
+				t.Errorf("got %v; want the store's fault", err)
 			}
 			if !reflect.DeepEqual(f.get(t, allowed.ID), before) {
 				t.Error("a refused cancellation changed the request")

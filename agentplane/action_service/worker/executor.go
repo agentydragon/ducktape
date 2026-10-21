@@ -58,22 +58,34 @@ const (
 )
 
 func unknownOutcome(reason store.UnknownOutcomeReason, message string) store.ExecutionOutcome {
-	return store.ExecutionOutcome{State: store.ExecutionUnknown, Error: errorDocument(string(reason), message)}
+	return ErrorDocument{Kind: string(reason), Message: message}.Outcome(store.ExecutionUnknown)
 }
 
 // failedOutcome names err by its type, as the Python service names an exception by its class: the message can
 // carry request or backend material, so only the log has it.
 func failedOutcome(err error) store.ExecutionOutcome {
-	return store.ExecutionOutcome{State: store.ExecutionFailed, Error: errorDocument(fmt.Sprintf("%T", err), failedMessage)}
+	return Failed(fmt.Sprintf("%T", err), failedMessage)
 }
 
-func errorDocument(kind, message string) json.RawMessage {
-	document, err := json.Marshal(struct {
-		Kind    string `json:"kind"`
-		Message string `json:"message"`
-	}{kind, message})
+// ErrorDocument is the error of an Execution that failed or whose outcome is unknown, as the Python service writes it.
+type ErrorDocument struct {
+	// Kind names why, for a program; Message says it to the caller.
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
+	// Diagnostics are what an MCP group's failed request showed, when it showed any.
+	Diagnostics map[string]any `json:"diagnostics,omitempty"`
+}
+
+// Outcome is an Execution that ended in state with d as its error.
+func (d ErrorDocument) Outcome(state store.ExecutionState) store.ExecutionOutcome {
+	encoded, err := json.Marshal(d)
 	if err != nil {
 		panic(err)
 	}
-	return document
+	return store.ExecutionOutcome{State: state, Error: encoded}
+}
+
+// Failed is an Execution that failed with the error kind and message.
+func Failed(kind, message string) store.ExecutionOutcome {
+	return ErrorDocument{Kind: kind, Message: message}.Outcome(store.ExecutionFailed)
 }

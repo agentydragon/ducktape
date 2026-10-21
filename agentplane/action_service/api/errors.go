@@ -29,7 +29,6 @@ var conflictCodes = map[store.ConflictReason]codes.Code{
 	store.ConflictDecisionKeyReused:  codes.AlreadyExists,
 	store.ConflictVersionChanged:     codes.Aborted,
 	store.ConflictAlreadyDecided:     codes.FailedPrecondition,
-	store.ConflictNoPendingDispatch:  codes.FailedPrecondition,
 }
 
 // failure answers a failed call with the status code the protos name for it. A message the client can act on is

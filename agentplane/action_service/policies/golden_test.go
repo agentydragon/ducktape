@@ -43,7 +43,6 @@ var (
 		"schema, 1.0 as an integer in draft-04":                 "the library reads 1.0 as an integer in every draft",
 		"schema, a pattern's $ before a trailing newline":       "RE2's $ is the end of text",
 		"schema, a pattern's \\d against an Arabic-Indic digit": "RE2's \\d is ASCII",
-		"schema, format in draft-07":                            "the library asserts format before draft 2019-09",
 		"schema, dependencies in 2020-12":                       "the library honours draft 7's dependencies in every draft",
 		"schema, a remote $ref":                                 "refused when the set is read, where Python raises at evaluation",
 		"public, a dot segment in the repo":                     "Python's HTTP client resolves the dot segment to another repository's path",

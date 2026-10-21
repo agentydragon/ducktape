@@ -8,8 +8,8 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-// inputSchemaURL names an input schema while it compiles. It is one document: nothing else resolves.
-const inputSchemaURL = "urn:agentplane:action-input-schema"
+// schemaURL names a schema while it compiles. It is one document: nothing else resolves.
+const schemaURL = "urn:agentplane:action-arguments-schema"
 
 // ErrInvalidArguments is arguments that do not satisfy their Action's input schema. Why they do not is not kept: the
 // validator's account of it can quote the arguments back.
@@ -23,26 +23,39 @@ var annotatedFormats = []string{
 	"period", "relative-json-pointer", "semver", "time", "uri", "uri-reference", "uri-template", "uuid",
 }
 
-// CheckArguments checks arguments, decoded as jsonschema.UnmarshalJSON decodes JSON, against the Action's input
-// schema. It returns nil when they satisfy it, ErrInvalidArguments when they do not, and another error when the
-// schema is not a valid JSON Schema. A schema without `$schema` is read as draft 2020-12, as Python's
-// jsonschema.validate reads it, and one that refers to any document but itself and the drafts' metaschemas is not
-// valid.
-func (a ActionDefinition) CheckArguments(arguments any) error {
-	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(a.InputSchema))
-	if err != nil {
-		return fmt.Errorf("input schema is not JSON: %w", err)
-	}
+// CompileSchema compiles document, a JSON Schema of an Action's arguments decoded as jsonschema.UnmarshalJSON decodes
+// JSON, checking it against its draft's metaschema, so that it validates as Python's jsonschema.validate does. A
+// schema without `$schema` is read as draft 2020-12, and one that refers to any document but itself and the drafts'
+// metaschemas is not valid.
+func CompileSchema(document any) (*jsonschema.Schema, error) {
 	compiler := jsonschema.NewCompiler()
 	compiler.DefaultDraft(jsonschema.Draft2020)
 	compiler.UseLoader(noDocuments{})
 	for _, name := range annotatedFormats {
 		compiler.RegisterFormat(&jsonschema.Format{Name: name, Validate: func(any) error { return nil }})
 	}
-	if err := compiler.AddResource(inputSchemaURL, document); err != nil {
-		return fmt.Errorf("input schema: %w", err)
+	if err := compiler.AddResource(schemaURL, document); err != nil {
+		return nil, err
 	}
-	schema, err := compiler.Compile(inputSchemaURL)
+	return compiler.Compile(schemaURL)
+}
+
+// noDocuments loads no document a schema refers to; the library's default loader reads local files.
+type noDocuments struct{}
+
+func (noDocuments) Load(url string) (any, error) {
+	return nil, fmt.Errorf("an arguments schema cannot refer to %s", url)
+}
+
+// CheckArguments checks arguments, decoded as jsonschema.UnmarshalJSON decodes JSON, against the Action's input
+// schema. It returns nil when they satisfy it, ErrInvalidArguments when they do not, and another error when the
+// schema is not one CompileSchema compiles.
+func (a ActionDefinition) CheckArguments(arguments any) error {
+	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(a.InputSchema))
+	if err != nil {
+		return fmt.Errorf("input schema is not JSON: %w", err)
+	}
+	schema, err := CompileSchema(document)
 	if err != nil {
 		return fmt.Errorf("input schema: %w", err)
 	}
@@ -50,11 +63,4 @@ func (a ActionDefinition) CheckArguments(arguments any) error {
 		return ErrInvalidArguments
 	}
 	return nil
-}
-
-// noDocuments loads no document a schema refers to; the library's default loader reads local files.
-type noDocuments struct{}
-
-func (noDocuments) Load(url string) (any, error) {
-	return nil, fmt.Errorf("an input schema cannot refer to %s", url)
 }

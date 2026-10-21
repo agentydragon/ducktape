@@ -11,12 +11,10 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
-
-// schemaURL names a policy's schema while it compiles. A policy schema is one document: nothing else resolves.
-const schemaURL = "urn:agentplane:action-policy-schema"
 
 // ArgumentSchema matches a listed Action whose arguments satisfy a JSON Schema, with plain JSON Schema semantics: the
 // schema says which properties are required and which may be absent, so `properties` alone never implies presence.
@@ -28,8 +26,7 @@ type ArgumentSchema struct {
 
 func (ArgumentSchema) Type() store.PolicyKind { return store.PolicyArgumentSchema }
 
-// parseArgumentSchema compiles the schema, checking it against its draft's metaschema. A schema without `$schema` is
-// read as draft 2020-12, and one that refers to any document but itself and the drafts' metaschemas is refused.
+// parseArgumentSchema compiles the schema as catalog.CompileSchema does.
 func parseArgumentSchema(spec policyapi.ActionPolicy) (ArgumentSchema, error) {
 	if spec.Schema == nil {
 		return ArgumentSchema{}, errors.New("an argument_schema policy needs a schema")
@@ -38,13 +35,7 @@ func parseArgumentSchema(spec policyapi.ActionPolicy) (ArgumentSchema, error) {
 	if err != nil {
 		return ArgumentSchema{}, fmt.Errorf("schema is not JSON: %w", err)
 	}
-	compiler := jsonschema.NewCompiler()
-	compiler.DefaultDraft(jsonschema.Draft2020)
-	compiler.UseLoader(noDocuments{})
-	if err := compiler.AddResource(schemaURL, document); err != nil {
-		return ArgumentSchema{}, fmt.Errorf("schema is not a valid JSON Schema: %w", err)
-	}
-	compiled, err := compiler.Compile(schemaURL)
+	compiled, err := catalog.CompileSchema(document)
 	if err != nil {
 		return ArgumentSchema{}, fmt.Errorf("schema is not a valid JSON Schema: %w", err)
 	}
@@ -53,13 +44,6 @@ func parseArgumentSchema(spec policyapi.ActionPolicy) (ArgumentSchema, error) {
 		return ArgumentSchema{}, fmt.Errorf("schema is not a JSON object: %w", err)
 	}
 	return ArgumentSchema{Schema: written, compiled: compiled}, nil
-}
-
-// noDocuments loads no document a schema refers to; the library's default loader reads local files.
-type noDocuments struct{}
-
-func (noDocuments) Load(url string) (any, error) {
-	return nil, fmt.Errorf("a policy schema cannot refer to %s", url)
 }
 
 func (k ArgumentSchema) evaluate(_ context.Context, action store.ActionIdentity, arguments map[string]any, _ *Visibility) Outcome {

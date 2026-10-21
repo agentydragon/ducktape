@@ -415,11 +415,4 @@ func TestACancellationThatCannotBeAnsweredFails(t *testing.T) {
 	wantCode(t, "a request ID that is not a UUID", err, codes.InvalidArgument)
 	_, err = s.cancel(t, callerToken, store.ActionRequest{ID: uuid.New()})
 	wantCode(t, "an unknown request", err, codes.NotFound)
-	// An allowed request whose Execution no longer awaits dispatch, a state no store call leaves behind.
-	stranded := s.decide(t, s.submit(t, caller, "test-stranded"), store.VerdictAllow)
-	if _, err := s.db.ExecContext(t.Context(), `UPDATE action_execution SET state = $2 WHERE request_id = $1`, stranded.ID, store.ExecutionCancelled); err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.cancel(t, callerToken, stranded)
-	wantCode(t, "an allowed request with no pending dispatch", err, codes.FailedPrecondition)
 }

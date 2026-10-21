@@ -32,12 +32,6 @@ const (
 	unlockTimeout = 5 * time.Second
 )
 
-// Lifecycle is what delivery reads of the Action lifecycle.
-type Lifecycle interface {
-	// Approvals returns every request awaiting a Decision and each request of ids, whatever its state, oldest first.
-	Approvals(ctx context.Context, ids []uuid.UUID) ([]store.ActionRequest, error)
-}
-
 // Timing is delivery's intervals and bounds.
 type Timing struct {
 	// Sweep is how often a pass runs without a wakeup, which retries the pushes that failed.
@@ -64,24 +58,24 @@ func DefaultTiming() Timing {
 // service worker's single notification absorbs. A push service that reports the subscription gone (404 or 410) has it
 // deleted. Nothing is executed here.
 type Notifier struct {
-	db        *sql.DB
-	lifecycle Lifecycle
-	identity  *Identity
-	client    *http.Client
+	db       *sql.DB
+	requests *store.Store
+	identity *Identity
+	client   *http.Client
 	// baseURL is the integration app's address, without a trailing slash.
 	baseURL string
 	timing  Timing
 }
 
 // NewNotifier delivers over transport, which reaches the push services.
-func NewNotifier(db *sql.DB, lifecycle Lifecycle, identity *Identity, baseURL string, transport http.RoundTripper, timing Timing) (*Notifier, error) {
+func NewNotifier(db *sql.DB, requests *store.Store, identity *Identity, baseURL string, transport http.RoundTripper, timing Timing) (*Notifier, error) {
 	for _, positive := range []time.Duration{timing.Sweep, timing.Retry, timing.Send} {
 		if positive <= 0 {
 			return nil, fmt.Errorf("push intervals and bounds must be positive: %+v", timing)
 		}
 	}
 	return &Notifier{
-		db: db, lifecycle: lifecycle, identity: identity, baseURL: strings.TrimRight(baseURL, "/"), timing: timing,
+		db: db, requests: requests, identity: identity, baseURL: strings.TrimRight(baseURL, "/"), timing: timing,
 		// A push service's redirect is not followed: the endpoint is the only destination a subscription names.
 		client: &http.Client{
 			Transport:     transport,
@@ -189,7 +183,7 @@ func (n *Notifier) deliver(ctx context.Context, endpoint string) (err error) {
 	for id := range shown {
 		ids = append(ids, id)
 	}
-	requests, err := n.lifecycle.Approvals(ctx, ids)
+	requests, err := n.requests.Approvals(ctx, ids)
 	if err != nil {
 		return err
 	}
