@@ -20,9 +20,9 @@ import "google/protobuf/timestamp.proto";
 // whose ServiceAccount is not labeled; the answer does not say which. `INVALID_ARGUMENT` is a malformed request,
 // arguments that do not satisfy the Action's schema, or a group and Action this service cannot run. `NOT_FOUND` is a
 // request that does not exist or is not the caller's, or an unknown Action in `GetAction`. `ALREADY_EXISTS` is an
-// idempotency key the account already used. `FAILED_PRECONDITION` is an allowed request whose dispatch is no longer
-// pending. `UNAVAILABLE` is a draining service, an ActionGroup that is temporarily unavailable, or a lost change
-// notification.
+// idempotency key the account already used. `PERMISSION_DENIED` is a `decided_only` submission no policy decides.
+// `FAILED_PRECONDITION` is an allowed request whose dispatch is no longer pending. `UNAVAILABLE` is a draining
+// service, an ActionGroup that is temporarily unavailable, or a lost change notification.
 //
 // An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT` unless its field says it stands for a default; a
 // response never carries one.
@@ -33,6 +33,10 @@ service ActionService {
   // anything is stored. A request a policy decides arrives already `ACTION_STATE_ALLOWED` or `ACTION_STATE_DENIED`
   // and is never visible as `ACTION_STATE_DECISION_PENDING`; any other request waits there for an operator. An allow
   // is not execution success: read the Execution with `GetActionRequest` or `WatchActionRequest`.
+  //
+  // With `decided_only`, a request no policy decides fails `PERMISSION_DENIED` instead of waiting, and the status
+  // message says why. Nothing is stored: no operator is asked, nothing is left to cancel and `idempotency_key` stays
+  // unused.
   //
   // `idempotency_key` is unique per calling ServiceAccount and is accepted once. A repeat fails `ALREADY_EXISTS`
   // instead of replaying the first response; recover a lost response with `ListActionRequests` by key, and never
@@ -93,9 +97,11 @@ service ActionService {
     option (google.api.http) = {get: "/v1/action-groups/{group_key}/actions/{action_key}"};
   }
 
-  // What the caller's own bindings auto-decide, resolved as admission would resolve them now. Read it instead of
-  // submitting to find out whether a request would wait for an operator. While `synced` is false nothing
-  // auto-decides: every request takes the human path, whatever the policy objects say.
+  // What an account's bindings auto-decide, resolved as admission would resolve them now: the caller's own, or those
+  // of the `subject` it names. Any caller may name any ServiceAccount, in any namespace and labeled or not; an
+  // account no binding names reads as having none. Read it instead of submitting to find out whether a request would
+  // wait for an operator. While `synced` is false nothing auto-decides: every request takes the human path, whatever
+  // the policy objects say.
   rpc GetActionPolicy(GetActionPolicyRequest) returns (GetActionPolicyResponse) {
     option (google.api.http) = {get: "/v1/action-policy"};
   }
@@ -114,6 +120,8 @@ message SubmitActionRequestRequest {
   // Detail or justification the title leaves out, for the operator: at most 250 characters. Build on the title
   // instead of restating it.
   optional string description = 5;
+  // Refuse a request no policy decides instead of leaving it for an operator.
+  bool decided_only = 6;
 }
 
 message SubmitActionRequestResponse {
@@ -220,7 +228,10 @@ message GetActionResponse {
   Action action = 1;
 }
 
-message GetActionPolicyRequest {}
+message GetActionPolicyRequest {
+  // The ServiceAccount whose policy to read, with both `namespace` and `name` set; absent reads the caller's own.
+  agentplane.proto.ServiceAccount subject = 1;
+}
 
 message GetActionPolicyResponse {
   CallerActionPolicy action_policy = 1;
@@ -437,6 +448,11 @@ message ActionGroup {
   // The answering replica's view of an MCP group's connection; absent for a group without one.
   McpHealth health = 7;
   repeated Action actions = 8;
+  // Names of this group's Actions that are also direct tools: MCP tools of their own, named `<group>__<action>`, for
+  // a caller whose `CallerActionPolicy.auto_approvable` holds the Action. Reviewed, so an Action the backend adds is
+  // never one; sorted, and empty for a group with none. A name is a direct tool only while `actions` holds it, so
+  // none is while the group is unavailable. A group that lists any has no `__` in its key.
+  repeated string direct_tools = 9;
 }
 
 // Where an ActionGroup's Actions run.
@@ -492,6 +508,19 @@ message Action {
   // A JSON Schema of `arguments`. Execution checks the backend's schema again, so a schema that changed after
   // discovery can still fail the request.
   google.protobuf.Struct input_schema = 4;
+  // A display name; absent when the backend gives none.
+  optional string title = 5;
+  // The backend's MCP behavior hints; absent when it gives none. Advisory: they shape how a client presents the
+  // Action, never what the service allows.
+  ToolAnnotations annotations = 6;
+}
+
+// MCP tool behavior hints as the backend gave them; each is absent when the backend left it out.
+message ToolAnnotations {
+  optional bool read_only_hint = 1;
+  optional bool destructive_hint = 2;
+  optional bool idempotent_hint = 3;
+  optional bool open_world_hint = 4;
 }
 
 // An account's effective Action policy, in the form the account may see: what its bindings auto-decide, as admission
@@ -502,10 +531,14 @@ message CallerActionPolicy {
   // The subject's unexpired, valid bindings in name order. Empty means every request waits for an operator.
   repeated CallerBinding bindings = 2;
   // Whether the service's copy of the policy objects is complete and still refreshed. While it is not, including
-  // when a watch has wedged, nothing auto-decides and `auto_approve_if` is empty.
+  // when a watch has wedged, nothing auto-decides and `auto_approve_if` and `auto_approvable` are empty.
   bool synced = 3;
   // In evaluation order; the first match approves.
   repeated EffectivePolicy auto_approve_if = 4;
+  // Every Action some policy in `auto_approve_if` lists, sorted by group, then name, whether or not the catalog
+  // offers it. A request for any other Action is never auto-decided; one for a listed Action is approved only if a
+  // policy listing it matches, which can depend on its arguments.
+  repeated ActionIdentity auto_approvable = 5;
 }
 
 message CallerBinding {
