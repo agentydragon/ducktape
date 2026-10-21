@@ -550,6 +550,22 @@ Dispatcher keys `OpenSession` on a caller-minted `session_id` today and
 `HARNESS_IDENTITY_DESIGN` recommends keeping client-chosen globally unique public IDs, so a
 service-reserved identity changes both. Neither depends on any History key or read-policy node.
 
+**Operator inputs, 2026-10-21 UTC (not decisions):**
+
+- Handle "where can SA X create new sessions" "similarly to the inbox-sending permission groups". The
+  [Session-access rule](multiagent_communication.md#schema-for-the-first-session-access-rule) already
+  lists `operations`, so `create_session` would be another entry over the same direct, `allSandboxes`
+  and, later, tag targets. Only enforcement differs: the Dispatcher's caller, not the Notification
+  service.
+- Creating sessions in the Sandbox the SA runs in is "a permission i'd be ok granting automatically
+  (since SA is the unit of isolation)". "Own" needs no rule: a Sandbox runs as the ServiceAccount of its
+  own name.
+- A limit on active sessions or Sandboxes "might be shelved", since cluster limits already bound
+  Sandboxes. What he cares about more is "i don't want this thing to drain my whole usage", which is a
+  spend budget rather than a count. A message wakes a Sandbox and starts a turn, so it is a spend path
+  too; the inbox's cap of 128 unacknowledged messages per sender bounds the queue, not spend. A budget
+  would sit at LLM ingress per ServiceAccount, not in these grants.
+
 ### `THREAD_CREATE_AUTHORIZATION` — implement session-create grants
 
 **Blocked on create policy.** Enforce scope/defaults and idempotent Open
@@ -563,6 +579,14 @@ required for an independent isolation boundary; adding a Session within one is n
 lifetime, parent termination, quota/fanout and revocation without automatic privilege inheritance.
 Choose policy ownership and audit records before adding tables. State separately whether the
 operation also opens a session; if so, depend on `THREAD_CREATE_AUTHORIZATION` for that composition.
+
+**Operator input, 2026-10-21 UTC (not a decision):** "when a SA makes a sandbox, it should be able to send
+it messages, at least when it requests that (if not by default)". A hand-written rule cannot name a
+Sandbox that does not exist yet, so the launch would create the grant: a PolicySet and PolicyBinding
+owned by the new Sandbox, whose `session_access` rule has a UID-pinned direct target, deleted with it.
+An explicit launch option keeps "launch alone does not grant messaging"; whether it is the default is
+the operator's to choose. Once `SANDBOX_INBOX_TAGS` lands, stamping an inbox tag at launch is the
+alternative. Spend limits: see `THREAD_CREATE_POLICY`.
 
 ### `AGENT_SANDBOX_LAUNCH` — constrained agent-requested launch
 
