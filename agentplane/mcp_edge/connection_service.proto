@@ -1,0 +1,278 @@
+// External Connections: MCP clients outside the cluster that act on Actions as a ServiceAccount, and the operator
+// consent that creates them.
+syntax = "proto3";
+
+package agentplane.mcp_edge;
+
+import "agentplane/action_service/action_service.proto";
+import "agentplane/proto/sandboxes.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// The caller is the integration app acting for an operator, with the operator's OIDC bearer as for
+// `agentplane.action_service.OperatorActionService`. A Connection's active grant lets its OAuth client call the MCP
+// server as the Connection's bound ServiceAccount; what that account may do is the Action Service's policy, not the
+// Connection's.
+//
+// An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
+// expired. `INVALID_ARGUMENT` is a malformed request. `NOT_FOUND` is a Connection or enrollment that does not exist.
+// `ABORTED` is an `expected_version` that is no longer current, or a Connection that changed after the operator
+// reviewed it. `FAILED_PRECONDITION` is a state that refuses the call: a Connection without an active grant or bound
+// caller, a ServiceAccount no longer labeled as an Action caller, or an enrollment that expired or already holds a
+// different decision. `PERMISSION_DENIED` is an enrollment bound to another browser or operator. `UNAVAILABLE` is a
+// draining service or a lost change notification.
+//
+// An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT`; a response never carries one.
+//
+// Every `Watch*` stream sends the current set as `snapshot` frames of a bounded number of items each, then
+// `snapshot_complete` (alone, for an empty set), then one `upsert` per item that changes afterwards, carrying the item
+// as it now stands. A client replaces what it holds under the item's identity. A change wakes the server but the item
+// is read from the table, so changes in quick succession may arrive as one `upsert`. Nothing is replayed: a new
+// stream starts from a new snapshot, which is the whole set. The bearer is checked again before every frame: a
+// stream whose bearer expires or stops being accepted ends `UNAUTHENTICATED`, and the client opens another with a
+// fresh token. A stream that ends `UNAUTHENTICATED` before its first frame was refused at the door, and retrying it
+// with the same token cannot succeed.
+service ConnectionService {
+  // The ServiceAccounts a new Connection may act as: those currently labeled as Action callers, as the service's
+  // watch sees them.
+  rpc ListCallerServiceAccounts(ListCallerServiceAccountsRequest) returns (ListCallerServiceAccountsResponse) {
+    option (google.api.http) = {get: "/v1/operator/caller-service-accounts"};
+  }
+
+  // Every external Connection, oldest first, with all its grants.
+  rpc ListConnections(ListConnectionsRequest) returns (ListConnectionsResponse) {
+    option (google.api.http) = {get: "/v1/operator/connections"};
+  }
+
+  rpc GetConnection(GetConnectionRequest) returns (GetConnectionResponse) {
+    option (google.api.http) = {get: "/v1/operator/connections/{connection_id}"};
+  }
+
+  // Renames a Connection. A name is presentation only: it need not be unique and the Connection's `id` does not
+  // change. `expected_version` must be the `version` read, else `ABORTED`.
+  rpc UpdateConnection(UpdateConnectionRequest) returns (UpdateConnectionResponse) {
+    option (google.api.http) = {patch: "/v1/operator/connections/{connection_id}" body: "*"};
+  }
+
+  // Retargets future uses of the Connection's issued tokens to another labeled ServiceAccount. Past grants stay as
+  // they were, and requests already made keep the caller they were made as. Needs an active grant and a bound
+  // caller, else `FAILED_PRECONDITION`, as does a `service_account` not labeled as an Action caller. Rebinding to the
+  // account already bound changes nothing.
+  rpc RebindConnection(RebindConnectionRequest) returns (RebindConnectionResponse) {
+    option (google.api.http) = {post: "/v1/operator/connections/{connection_id}/rebind" body: "*"};
+  }
+
+  // Revokes every grant and clears the bound caller, so the Connection's tokens stop resolving at once. Requests the
+  // Connection already made are not withdrawn: they are decided and dispatched as usual. A Connection with every
+  // grant already revoked answers unchanged whatever `expected_version` says.
+  rpc UnbindConnection(UnbindConnectionRequest) returns (UnbindConnectionResponse) {
+    option (google.api.http) = {post: "/v1/operator/connections/{connection_id}/unbind" body: "*"};
+  }
+
+  // The Connections, then each one again whenever it changes.
+  rpc WatchConnections(WatchConnectionsRequest) returns (stream WatchConnectionsResponse) {
+    option (google.api.http) = {get: "/v1/operator/connections:watch"};
+  }
+
+  // Shows an operator the OAuth authorization they are asked to consent to, and binds the enrollment to their
+  // browser: the first preview records `browser_binding` and the operator, and any other browser or operator then
+  // fails `PERMISSION_DENIED`. An enrollment that does not exist fails `NOT_FOUND`, an expired one
+  // `FAILED_PRECONDITION`.
+  rpc PreviewConnectionEnrollment(PreviewConnectionEnrollmentRequest) returns (PreviewConnectionEnrollmentResponse) {
+    option (google.api.http) = {post: "/v1/operator/connection-enrollments/{handle}/preview" body: "*"};
+  }
+
+  // Records the operator's consent or refusal, once. An exact retry answers with the recorded result; a different
+  // decision after one fails `FAILED_PRECONDITION`. `expected_version` must be the preview's `version`, else
+  // `ABORTED`, as does a reconnect target whose Connection changed since it was reviewed. An allow names a labeled
+  // ServiceAccount (else `PERMISSION_DENIED`) and either a new Connection or an existing one the operator confirmed.
+  // Consent alone grants nothing: the OAuth token exchange that follows does.
+  rpc DecideConnectionEnrollment(DecideConnectionEnrollmentRequest) returns (DecideConnectionEnrollmentResponse) {
+    option (google.api.http) = {post: "/v1/operator/connection-enrollments/{handle}/decision" body: "*"};
+  }
+}
+
+message ListCallerServiceAccountsRequest {}
+
+message ListCallerServiceAccountsResponse {
+  repeated agentplane.proto.ServiceAccount service_accounts = 1;
+}
+
+message ListConnectionsRequest {}
+
+message ListConnectionsResponse {
+  repeated Connection connections = 1;
+}
+
+message GetConnectionRequest {
+  // UUID.
+  string connection_id = 1;
+}
+
+message GetConnectionResponse {
+  Connection connection = 1;
+}
+
+message UpdateConnectionRequest {
+  // UUID.
+  string connection_id = 1;
+  // The Connection's current `version`.
+  int64 expected_version = 2;
+  // 1 to 200 characters after trimming whitespace.
+  string display_name = 3;
+}
+
+message UpdateConnectionResponse {
+  Connection connection = 1;
+}
+
+message RebindConnectionRequest {
+  // UUID.
+  string connection_id = 1;
+  // The Connection's current `version`.
+  int64 expected_version = 2;
+  // The labeled ServiceAccount future uses act as.
+  agentplane.proto.ServiceAccount service_account = 3;
+}
+
+message RebindConnectionResponse {
+  Connection connection = 1;
+}
+
+message UnbindConnectionRequest {
+  // UUID.
+  string connection_id = 1;
+  // The Connection's current `version`.
+  int64 expected_version = 2;
+}
+
+message UnbindConnectionResponse {
+  Connection connection = 1;
+}
+
+message WatchConnectionsRequest {}
+
+// Exactly one field is set.
+message WatchConnectionsResponse {
+  oneof frame {
+    ConnectionChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    Connection upsert = 3;
+    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
+    // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
+    google.protobuf.Empty reconnect_required = 4;
+  }
+}
+
+message ConnectionChunk {
+  repeated Connection connections = 1;
+}
+
+// An external client's access to Actions, acting as one ServiceAccount. Nothing is deleted: unbinding revokes.
+message Connection {
+  // UUID.
+  string id = 1;
+  string display_name = 2;
+  // Increases with every change of the Connection or its grants; an update sends the one it read.
+  int64 version = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  // Every grant the Connection has had, oldest revision first.
+  repeated Grant grants = 6;
+  // The ServiceAccount its unrevoked grant acts as; absent exactly when the Connection is unbound.
+  agentplane.proto.ServiceAccount bound_caller = 7;
+}
+
+// One consented OAuth authorization of a Connection. Immutable apart from its status.
+message Grant {
+  // UUID.
+  string id = 1;
+  // UUID.
+  string connection_id = 2;
+  // From 1; a reconnect revokes the previous grant and adds the next revision.
+  int32 revision = 3;
+  // The ServiceAccount consent chose. A rebind changes `Connection.bound_caller`, not this.
+  agentplane.proto.ServiceAccount caller = 4;
+  // The verified downstream OAuth issuer and client of the pair.
+  string issuer = 5;
+  string client_id = 6;
+  GrantStatus status = 7;
+  // A pending grant cannot authorize calls, and cannot be activated after this.
+  google.protobuf.Timestamp activation_deadline = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp activated_at = 10;
+  google.protobuf.Timestamp revoked_at = 11;
+}
+
+enum GrantStatus {
+  GRANT_STATUS_UNSPECIFIED = 0;
+  GRANT_STATUS_PENDING = 1;
+  GRANT_STATUS_ACTIVE = 2;
+  GRANT_STATUS_REVOKED = 3;
+}
+
+message PreviewConnectionEnrollmentRequest {
+  // The enrollment's handle, from the consent URL.
+  string handle = 1;
+  // An unguessable value the browser keeps, 32 to 200 characters. Only the browser and operator of the first preview
+  // can decide.
+  string browser_binding = 2;
+}
+
+message PreviewConnectionEnrollmentResponse {
+  string client_id = 1;
+  optional string client_name = 2;
+  string redirect_uri = 3;
+  // The enrollment lasts at most 15 minutes.
+  google.protobuf.Timestamp expires_at = 4;
+  // The `expected_version` of the decision.
+  int64 version = 5;
+}
+
+message DecideConnectionEnrollmentRequest {
+  // The enrollment's handle, from the consent URL.
+  string handle = 1;
+  // The value the preview bound.
+  string browser_binding = 2;
+  // The preview's `version`.
+  int64 expected_version = 3;
+  // Chosen by the caller: 1 to 200 characters.
+  string idempotency_key = 4;
+  // Exactly one field is set.
+  oneof decision {
+    EnrollmentAllow allow = 5;
+    google.protobuf.Empty deny = 6;
+  }
+}
+
+message EnrollmentAllow {
+  // A ServiceAccount labeled as an Action caller.
+  agentplane.proto.ServiceAccount service_account = 1;
+  // Exactly one field is set.
+  oneof connection {
+    NewConnection new_connection = 2;
+    ReconnectConnection reconnect = 3;
+  }
+}
+
+message NewConnection {
+  // 1 to 200 characters after trimming whitespace.
+  string display_name = 1;
+}
+
+// Replaces an existing Connection's authority, so the operator must say they reviewed that.
+message ReconnectConnection {
+  // UUID.
+  string connection_id = 1;
+  // The Connection's `version` the operator reviewed.
+  int64 expected_version = 2;
+  // Must be true: the operator confirmed the change of authority. False fails `INVALID_ARGUMENT`.
+  bool authority_change_confirmed = 3;
+}
+
+message DecideConnectionEnrollmentResponse {
+  agentplane.action_service.Verdict verdict = 1;
+  // Where the browser continues the upstream sign-in; present for an allow only.
+  optional string redirect_url = 2;
+}

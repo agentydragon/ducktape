@@ -1,0 +1,116 @@
+// Web Push for operators: the browsers an operator registers are notified while Action requests wait for a decision.
+syntax = "proto3";
+
+package agentplane.action_service;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// The caller is the integration app acting for an operator, with the operator's OIDC bearer as for
+// `OperatorActionService`. A subscription belongs to the operator who registered it, and no other operator sees it.
+//
+// An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
+// expired. `INVALID_ARGUMENT` is a malformed request or an unsupported push endpoint. `NOT_FOUND` is a subscription
+// the operator does not hold. `ALREADY_EXISTS` is a push endpoint another operator registered.
+// `FAILED_PRECONDITION` is Web Push that is not configured. `UNAVAILABLE` is a draining service or a lost change
+// notification.
+//
+// Every `Watch*` stream sends the current set as `snapshot` frames of a bounded number of items each, then
+// `snapshot_complete` (alone, for an empty set), then one `upsert` per item that changes afterwards, carrying the item
+// as it now stands. A client replaces what it holds under the item's identity. A change wakes the server but the item
+// is read from the table, so changes in quick succession may arrive as one `upsert`. Nothing is replayed: a new
+// stream starts from a new snapshot, which is the whole set. The bearer is checked again before every frame: a
+// stream whose bearer expires or stops being accepted ends `UNAUTHENTICATED`, and the client opens another with a
+// fresh token. A stream that ends `UNAUTHENTICATED` before its first frame was refused at the door, and retrying it
+// with the same token cannot succeed.
+service WebPushService {
+  // The key the browser subscribes to push with. Absent when Web Push is not configured.
+  rpc GetPushConfig(GetPushConfigRequest) returns (GetPushConfigResponse) {
+    option (google.api.http) = {get: "/v1/operator/push/config"};
+  }
+
+  // The calling operator's own push subscriptions.
+  rpc ListPushSubscriptions(ListPushSubscriptionsRequest) returns (ListPushSubscriptionsResponse) {
+    option (google.api.http) = {get: "/v1/operator/push/subscriptions"};
+  }
+
+  // The calling operator's push subscriptions, then each one again when it is added or changed. A subscription that
+  // is removed, including one the push service reports gone, arrives as `removed_endpoint`.
+  rpc WatchPushSubscriptions(WatchPushSubscriptionsRequest) returns (stream WatchPushSubscriptionsResponse) {
+    option (google.api.http) = {get: "/v1/operator/push/subscriptions:watch"};
+  }
+
+  // Registers a browser's Web Push subscription for the operator. Registering the same endpoint again replaces its
+  // keys. The `User-Agent` header of the HTTP request, cut to 300 characters, becomes the subscription's
+  // `user_agent`; it is not a request field. An `endpoint` that is not an HTTPS URL of a configured push service
+  // fails `INVALID_ARGUMENT`; one another operator registered fails `ALREADY_EXISTS`; Web Push that is not configured
+  // fails `FAILED_PRECONDITION`.
+  rpc CreatePushSubscription(CreatePushSubscriptionRequest) returns (CreatePushSubscriptionResponse) {
+    option (google.api.http) = {post: "/v1/operator/push/subscriptions" body: "*"};
+  }
+
+  // Removes one of the operator's push subscriptions by `endpoint`, a query parameter. Another operator's, or none,
+  // fails `NOT_FOUND`.
+  rpc DeletePushSubscription(DeletePushSubscriptionRequest) returns (DeletePushSubscriptionResponse) {
+    option (google.api.http) = {delete: "/v1/operator/push/subscriptions"};
+  }
+}
+
+message GetPushConfigRequest {}
+
+message GetPushConfigResponse {
+  // The VAPID public key, URL-safe base64 of the uncompressed point; absent when Web Push is not configured.
+  optional string application_server_key = 1;
+}
+
+message ListPushSubscriptionsRequest {}
+
+message ListPushSubscriptionsResponse {
+  repeated PushSubscription push_subscriptions = 1;
+}
+
+message WatchPushSubscriptionsRequest {}
+
+// Exactly one field is set.
+message WatchPushSubscriptionsResponse {
+  oneof frame {
+    PushSubscriptionChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    PushSubscription upsert = 3;
+    // The `endpoint` of a subscription that is gone.
+    string removed_endpoint = 4;
+    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
+    // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
+    google.protobuf.Empty reconnect_required = 5;
+  }
+}
+
+message PushSubscriptionChunk {
+  repeated PushSubscription push_subscriptions = 1;
+}
+
+// A browser's registration for Web Push, never more authority than the operator's own.
+message PushSubscription {
+  // The push service URL; the subscription's identity.
+  string endpoint = 1;
+  optional string user_agent = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message CreatePushSubscriptionRequest {
+  // 1 to 2048 characters.
+  string endpoint = 1;
+  // The browser's public key, 1 to 200 characters.
+  string p256dh = 2;
+  // The browser's authentication secret, 1 to 200 characters.
+  string auth = 3;
+}
+
+message CreatePushSubscriptionResponse {}
+
+message DeletePushSubscriptionRequest {
+  string endpoint = 1;
+}
+
+message DeletePushSubscriptionResponse {}

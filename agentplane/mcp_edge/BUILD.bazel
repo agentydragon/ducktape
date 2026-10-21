@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+proto_library(
+    name = "connection_service_proto",
+    srcs = ["connection_service.proto"],
+    deps = [
+        "//agentplane/action_service:action_service_proto",
+        "//agentplane/proto:sandboxes_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@protobuf//:empty_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "connection_service_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//devinfra/go:grpc_gateway",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb",
+    proto = ":connection_service_proto",
+    deps = [
+        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
