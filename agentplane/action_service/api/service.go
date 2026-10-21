@@ -1,9 +1,9 @@
-// Package api serves the Action Service's request RPCs over its store: `ActionService`'s reads and watches of
-// requests and their events and a caller's cancellation, and `OperatorActionService`'s Decisions.
+// Package api serves the Action Service's request RPCs over its store: `ActionService`'s submission, reads and
+// watches of requests and their events and a caller's cancellation, and `OperatorActionService`'s Decisions.
 //
 // A Gate admits every call before it runs (agentplane/docs/grpc_services.md). The bearer picks the principal, as
-// action_service.proto says: a workload of a labeled ServiceAccount reads and cancels its own account's requests, a
-// service reader reads every account's, and an operator reads every account's and decides them.
+// action_service.proto says: a workload of a labeled ServiceAccount submits, reads and cancels its own account's
+// requests, a service reader reads every account's, and an operator reads every account's and decides them.
 package api
 
 import (
@@ -32,11 +32,12 @@ type Service struct {
 	// updates wakes a watch on each commit to a request.
 	updates *wakeups.Hub
 	// gate admitted each call; a watch asks it again before every frame.
-	gate *Gate
+	gate        *Gate
+	submissions Submissions
 }
 
-func NewService(requests *store.Store, updates *wakeups.Hub, gate *Gate) *Service {
-	return &Service{store: requests, updates: updates, gate: gate}
+func NewService(requests *store.Store, updates *wakeups.Hub, gate *Gate, submissions Submissions) *Service {
+	return &Service{store: requests, updates: updates, gate: gate, submissions: submissions}
 }
 
 func parseRequestID(value string) (uuid.UUID, error) {

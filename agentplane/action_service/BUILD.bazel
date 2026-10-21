@@ -1328,7 +1328,9 @@ py_library(
     deps = [
         ":catalog",
         ":generate_golden",
+        "@pypi//jsonschema",
         "@pypi//pydantic",
+        "@pypi//referencing",
     ],
 )
 
@@ -1580,6 +1582,7 @@ go_test(
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/structpb",
     ],
 )
 

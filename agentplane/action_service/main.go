@@ -1,8 +1,8 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
-// `ActionService`'s request reads, watches and cancellation and `OperatorActionService`'s Decisions over gRPC and
-// their HTTP facade under /v1/, the agent documentation, the standard gRPC health service and the process's
-// Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the sandbox groups and of the MCP
-// groups, and keeps its policy index equal to the API server's. The other RPCs answer UNIMPLEMENTED.
+// `ActionService`'s submission, request reads, watches and cancellation and `OperatorActionService`'s Decisions over
+// gRPC and their HTTP facade under /v1/, the agent documentation, the standard gRPC health service and the process's
+// Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the sandbox groups and of the
+// MCP groups, and keeps its policy index equal to the API server's. The other RPCs answer UNIMPLEMENTED.
 package main
 
 import (
@@ -28,6 +28,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/mcpexec"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
@@ -276,7 +277,14 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	for key, executor := range supervisors {
 		byGroup[key] = executor
 	}
-	dispatcher, err := worker.New(requests, executors{catalog: c.ActionGroups, byGroup: byGroup}, worker.DefaultTiming())
+	actions := executors{catalog: c.ActionGroups, byGroup: byGroup}
+	dispatcher, err := worker.New(requests, actions, worker.DefaultTiming())
+	if err != nil {
+		return err
+	}
+	visibility, err := policies.NewVisibility(
+		c.GitHubVisibility.APIBaseURL, time.Duration(c.GitHubVisibility.CacheTTLSeconds*float64(time.Second)),
+	)
 	if err != nil {
 		return err
 	}
@@ -302,7 +310,9 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
 	)
 	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Freshness})
-	action_servicepb.RegisterActionServiceServer(grpcServer, api.NewService(requests, hub, admission))
+	action_servicepb.RegisterActionServiceServer(grpcServer, api.NewService(requests, hub, admission, api.Submissions{
+		Catalog: c.ActionGroups, Executors: actions, Policy: policy, Provider: policies.NewProvider(visibility),
+	}))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests))
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
 	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish

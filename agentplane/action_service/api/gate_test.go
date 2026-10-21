@@ -11,7 +11,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -166,7 +165,7 @@ func TestAWorkloadIsRefusedOnceItsAccountLosesTheLabelOrItsPodIsGone(t *testing.
 }
 
 func TestAWorkloadIsUnavailableWhileTheAPIServerCannotBeReached(t *testing.T) {
-	s := serveWith(t, kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")})
+	s := serveWith(t, kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")}, kube.Config)
 	_, err := s.client.ListActionRequests(as(t, callerToken), &action_servicepb.ListActionRequestsRequest{})
 	wantCode(t, "a workload", err, codes.Unavailable)
 	// An operator's token is verified against the issuer's keys alone.
@@ -191,9 +190,8 @@ func TestADrainingServiceRefusesEveryCall(t *testing.T) {
 
 func TestAnRPCNotServedYetIsUnimplementedOnceAdmitted(t *testing.T) {
 	s := serve(t)
-	submission := &action_servicepb.SubmitActionRequestRequest{IdempotencyKey: "test-" + uuid.NewString()}
-	_, err := s.client.SubmitActionRequest(as(t, callerToken), submission)
+	_, err := s.client.GetActionPolicy(as(t, callerToken), &action_servicepb.GetActionPolicyRequest{})
 	wantCode(t, "an admitted caller", err, codes.Unimplemented)
-	_, err = s.client.SubmitActionRequest(as(t, "test-token-unknown"), submission)
+	_, err = s.client.GetActionPolicy(as(t, "test-token-unknown"), &action_servicepb.GetActionPolicyRequest{})
 	wantCode(t, "an unknown token", err, codes.Unauthenticated)
 }

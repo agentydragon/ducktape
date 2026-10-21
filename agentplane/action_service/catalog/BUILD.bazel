@@ -4,9 +4,15 @@ package(default_visibility = ["//agentplane/action_service:__subpackages__"])
 
 go_library(
     name = "catalog",
-    srcs = ["catalog.go"],
+    srcs = [
+        "arguments.go",
+        "catalog.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/catalog",
-    deps = ["//agentplane/action_service:action_service_go_proto"],
+    deps = [
+        "//agentplane/action_service:action_service_go_proto",
+        "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
+    ],
 )
 
 go_test(
@@ -17,7 +23,10 @@ go_test(
     ],
     embed = [":catalog"],
     embedsrcs = ["golden.json"],
-    deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
+    deps = [
+        "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
 )
 
 exports_files(

@@ -4,14 +4,17 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // golden.json holds values of the `action_groups` setting, whether the Python service accepts each, and the catalog
-// it holds for one it accepts. `generate_catalog_golden.py` writes it and `test_catalog_golden.py` checks it is
-// current.
+// it holds for one it accepts; and input schemas with arguments, and what the Python service's admission makes of
+// them. `generate_catalog_golden.py` writes it and `test_catalog_golden.py` checks it is current.
 //
 //go:embed golden.json
 var goldenJSON []byte
@@ -160,4 +163,54 @@ func dump(c *Catalog) map[string]any {
 		}
 	}
 	return groups
+}
+
+// argumentDifferences are the input schemas and arguments on which CheckArguments and Python's admission disagree,
+// with why. Each must still differ, so the list cannot outlive what it excuses.
+var argumentDifferences = map[string]string{
+	"a regex format in draft-07, not a regex": "the library asserts `regex` before draft 2019-09 and takes no annotation for it",
+	"dependencies in 2020-12":                 "the library honours draft 7's dependencies in every draft",
+	"an unknown $schema":                      "Python validates as draft 2020-12; the unknown metaschema is not loaded, so the schema cannot be used",
+	"0.3 as a multiple of 0.1":                "exact decimal arithmetic; Python divides in binary floating point",
+	"a lookahead pattern":                     "RE2 has no lookaround, so the schema cannot be used",
+}
+
+func TestArgumentsAreCheckedAsPythonsAdmissionChecksThem(t *testing.T) {
+	var golden struct {
+		Arguments []struct {
+			Name      string          `json:"name"`
+			Schema    json.RawMessage `json:"schema"`
+			Arguments json.RawMessage `json:"arguments"`
+			Outcome   string          `json:"outcome"`
+		} `json:"arguments"`
+	}
+	if err := json.Unmarshal(goldenJSON, &golden); err != nil {
+		t.Fatal(err)
+	}
+	for _, vector := range golden.Arguments {
+		t.Run(vector.Name, func(t *testing.T) {
+			arguments, err := jsonschema.UnmarshalJSON(bytes.NewReader(vector.Arguments))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got string
+			switch err := (ActionDefinition{InputSchema: vector.Schema}).CheckArguments(arguments); {
+			case err == nil:
+				got = "satisfied"
+			case errors.Is(err, ErrInvalidArguments):
+				got = "not_satisfied"
+			default:
+				got = "fault"
+			}
+			if reason, differs := argumentDifferences[vector.Name]; differs {
+				if got == vector.Outcome {
+					t.Errorf("%s, as Python's admission; listed as differing because %s", got, reason)
+				}
+				return
+			}
+			if got != vector.Outcome {
+				t.Errorf("%s; Python's admission: %s", got, vector.Outcome)
+			}
+		})
+	}
 }

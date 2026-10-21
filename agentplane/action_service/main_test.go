@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -145,16 +146,20 @@ func checkHealth(t *testing.T, client healthpb.HealthClient, service string) (he
 	return response.GetStatus(), err
 }
 
-func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testing.T) {
-	service := start(t, kube.Config, &catalog.Catalog{})
-	// Ready once the policy index has listed.
-	err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
+// waitReady returns once the service is ready, which it is once the policy index has listed.
+func waitReady(t *testing.T, service running) {
+	t.Helper()
+	if err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
 		got, err := checkHealth(t, service.health, "")
 		return got == healthpb.HealthCheckResponse_SERVING, err
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("the service never turned ready: %v", err)
 	}
+}
+
+func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testing.T) {
+	service := start(t, kube.Config, &catalog.Catalog{})
+	waitReady(t, service)
 	if got, err := checkHealth(t, service.health, probes.LivenessService); err != nil || got != healthpb.HealthCheckResponse_SERVING {
 		t.Errorf("liveness = %v, %v; want SERVING", got, err)
 	}
@@ -188,14 +193,19 @@ func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testi
 	}
 }
 
-func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {
-	// An API server that refuses every connection: the policy index never lists.
+// refusingAPIServer reaches an API server that refuses every connection, so a policy index of it never lists.
+func refusingAPIServer(t *testing.T) *rest.Config {
+	t.Helper()
 	refusing, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	refusing.Close()
-	service := start(t, &rest.Config{Host: "http://" + refusing.Addr().String()}, &catalog.Catalog{})
+	return &rest.Config{Host: "http://" + refusing.Addr().String()}
+}
+
+func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {
+	service := start(t, refusingAPIServer(t), &catalog.Catalog{})
 	if got, err := checkHealth(t, service.health, ""); err != nil || got != healthpb.HealthCheckResponse_NOT_SERVING {
 		t.Errorf("readiness = %v, %v; want NOT_SERVING", got, err)
 	}
@@ -299,17 +309,16 @@ func awaitMCPHealth(t *testing.T, groups *catalog.Catalog, key string, condition
 	}
 }
 
-// An MCP group whose server is down leaves the service serving, and an allowed request of the group waiting for it:
-// once the server is back the group offers its tools, and the request runs.
-func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
+// echoUpstream serves an MCP server whose one tool, test_echo, answers "test text"; the server answers 503 while down
+// holds. It returns the server's endpoint.
+func echoUpstream(t *testing.T, down *atomic.Bool) string {
+	t.Helper()
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-upstream", Version: "v0.0.1"}, nil)
 	server.AddTool(&mcp.Tool{Name: "test_echo", InputSchema: json.RawMessage(`{"type": "object"}`)},
 		func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "test text"}}}, nil
 		})
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
-	var down atomic.Bool
-	down.Store(true)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if down.Load() {
 			http.Error(w, "the test upstream is down", http.StatusServiceUnavailable)
@@ -318,16 +327,23 @@ func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
 		handler.ServeHTTP(w, r)
 	}))
 	t.Cleanup(upstream.Close)
-	groups := newCatalog(t, `{"test-mcp": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e",
-		"config": {"transport": "streamable-http", "url": "`+upstream.URL+`/mcp", "auth": "none"}}}}`)
+	return upstream.URL + "/mcp"
+}
+
+// mcpGroup is the settings of a group bound to the MCP server at endpoint.
+func mcpGroup(endpoint string) string {
+	return `{"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e",
+		"config": {"transport": "streamable-http", "url": "` + endpoint + `", "auth": "none"}}}`
+}
+
+// An MCP group whose server is down leaves the service serving, and an allowed request of the group waiting for it:
+// once the server is back the group offers its tools, and the request runs.
+func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
+	var down atomic.Bool
+	down.Store(true)
+	groups := newCatalog(t, `{"test-mcp": `+mcpGroup(echoUpstream(t, &down))+`}`)
 	service := start(t, kube.Config, groups)
-	err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
-		got, err := checkHealth(t, service.health, "")
-		return got == healthpb.HealthCheckResponse_SERVING, err
-	})
-	if err != nil {
-		t.Fatalf("the service never turned ready: %v", err)
-	}
+	waitReady(t, service)
 
 	id := service.allow(t, store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
 		store.ActionIdentity{Group: "test-mcp", Name: "test_echo"}, `{}`)
@@ -494,13 +510,8 @@ func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Ready once the policy index has listed, which then vouches that the account carries no label.
-	if err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
-		got, err := checkHealth(t, service.health, "")
-		return got == healthpb.HealthCheckResponse_SERVING, err
-	}); err != nil {
-		t.Fatalf("the service never turned ready: %v", err)
-	}
+	// The index, once listed, vouches that the account carries no label.
+	waitReady(t, service)
 	refused := func(when string) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
@@ -532,4 +543,92 @@ func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t 
 	setCallerLabel(t, caller, false)
 	listOverGRPC(t, service, token, codes.Unauthenticated)
 	refused("unlabeled again")
+}
+
+// submitOverHTTP submits test_echo of the group through the HTTP facade under the key, and answers the status code.
+func submitOverHTTP(t *testing.T, service running, bearer, group, key string) int {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+	body := `{"idempotency_key": "` + key + `", "action": {"group": "` + group + `", "name": "test_echo"}, "arguments": {},
+		"title": "test title"}`
+	call, err := http.NewRequestWithContext(ctx, http.MethodPost, service.url+"/v1/action-requests", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	call.Header.Set("Authorization", "Bearer "+bearer)
+	response, err := http.DefaultClient.Do(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	return response.StatusCode
+}
+
+// A submission is admitted against the configured catalog and the groups' Executors, behind the Gate's policy index.
+func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmitsTheCaller(t *testing.T) {
+	var down atomic.Bool
+	down.Store(true)
+	// test-mcp's server is never down; test-offline's always is.
+	groups := newCatalog(t, `{"test-mcp": `+mcpGroup(echoUpstream(t, new(atomic.Bool)))+`,
+		"test-offline": `+mcpGroup(echoUpstream(t, &down))+`}`)
+	caller := auth.Account{Namespace: readerAccount.Namespace, Name: "test-submitter"}
+	setCallerLabel(t, caller, true)
+	token, err := kube.WorkloadToken(t.Context(), caller, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	submit := func(service running, group, key string) (*action_servicepb.SubmitActionRequestResponse, error) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+		defer cancel()
+		return service.actions.SubmitActionRequest(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token),
+			&action_servicepb.SubmitActionRequestRequest{
+				IdempotencyKey: key, Action: &action_servicepb.ActionIdentity{Group: group, Name: "test_echo"},
+				Arguments: &structpb.Struct{}, Title: "test title",
+			})
+	}
+
+	service := start(t, kube.Config, groups)
+	waitReady(t, service)
+	awaitMCPHealth(t, groups, "test-mcp", func(h *action_servicepb.McpHealth) bool {
+		return h.GetState() == action_servicepb.McpLifecycle_MCP_LIFECYCLE_AVAILABLE
+	})
+	submitted, err := submit(service, "test-mcp", "test-grpc")
+	if err != nil {
+		t.Fatalf("test-mcp over gRPC: %v", err)
+	}
+	id, err := uuid.Parse(submitted.GetActionRequest().GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored, err := service.store.Get(t.Context(), id, testOperator); err != nil || stored.State != store.StateDecisionPending {
+		t.Errorf("the submission is stored as %s, %v; want awaiting a decision", stored.State, err)
+	}
+	if got := submitOverHTTP(t, service, token, "test-mcp", "test-http"); got != http.StatusOK {
+		t.Errorf("test-mcp over HTTP: %d, want 200", got)
+	}
+	for group, want := range map[string]struct {
+		code   codes.Code
+		status int
+	}{
+		"test-offline": {codes.Unavailable, http.StatusServiceUnavailable},
+		"test-unknown": {codes.InvalidArgument, http.StatusBadRequest},
+	} {
+		if _, err := submit(service, group, "test-refused"); status.Code(err) != want.code {
+			t.Errorf("%s over gRPC: %v, want %v", group, err, want.code)
+		}
+		if got := submitOverHTTP(t, service, token, group, "test-refused"); got != want.status {
+			t.Errorf("%s over HTTP: %d, want %d", group, got, want.status)
+		}
+	}
+
+	// The policy index never lists, so it admits no caller.
+	unindexed := start(t, refusingAPIServer(t), &catalog.Catalog{})
+	if _, err := submit(unindexed, "test-mcp", "test-unindexed"); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("without the policy index, over gRPC: %v, want UNAUTHENTICATED", err)
+	}
+	if got := submitOverHTTP(t, unindexed, token, "test-mcp", "test-unindexed"); got != http.StatusUnauthorized {
+		t.Errorf("without the policy index, over HTTP: %d, want 401", got)
+	}
 }
