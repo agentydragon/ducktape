@@ -27,16 +27,18 @@ def mcp(**fields: JsonValue) -> Json:
 
 
 def pod(**fields: JsonValue) -> Json:
-    return {
+    executor: Json = {
         "kind": "pod",
         "description": "test pod executor",
         "namespace": "test-namespace",
         "templates": {"test-template": "a test box"},
-    } | fields
+    }
+    return executor | fields
 
 
 def group(**fields: JsonValue) -> Json:
-    return {"title": "test group", "description": "test group description", "executor": mcp()} | fields
+    defaults: Json = {"title": "test group", "description": "test group description", "executor": mcp()}
+    return defaults | fields
 
 
 def action(**fields: JsonValue) -> Json:
