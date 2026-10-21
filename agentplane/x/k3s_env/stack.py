@@ -136,8 +136,14 @@ class K3s:
             str(self.binary), "kubectl", "--kubeconfig", str(self.kubeconfig), *args, check=check, input_text=input_text
         )
 
-    def start(self) -> subprocess.Popen[bytes]:
+    def start(self, *, layers_in_memory: bool) -> subprocess.Popen[bytes]:
         _shadow_kernel_sysctls(self.work)
+        if layers_in_memory:
+            # Unpacking image layers is bound by writes to the executor's disk. The tmpfs default cap, half
+            # of memory, makes a stack that outgrows it fail on a full filesystem rather than on the OOM killer.
+            layers = self.data_dir / "agent/containerd/io.containerd.snapshotter.v1.overlayfs"
+            layers.mkdir(parents=True)
+            run("mount", "-t", "tmpfs", "tmpfs", str(layers))
         self.log_path = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", self.work)) / "k3s.log"
         log = self.log_path.open("wb")
         process = subprocess.Popen(
@@ -401,7 +407,8 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
 
     work = Path(tempfile.mkdtemp())
     k3s = K3s(work, get_required_path(os.environ["K3S_BINARY_RLOCATION"]))
-    process = k3s.start()
+    # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
+    process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
     timeline.mark("node Ready")
     with contextlib.ExitStack() as cleanup:
         cleanup.callback(shutil.rmtree, work, ignore_errors=True)

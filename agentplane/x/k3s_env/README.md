@@ -15,6 +15,9 @@ is the pytest plugin that starts it and publishes it as the deployment under tes
 forwarding to the scenario's scripted model on the node. Scripted targets take the
 `harnesses/runner_layout` image, which carries both pinned harnesses.
 
+containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a tmpfs, except on a stack
+with VM Sandboxes ([measurements](#image-layers-in-memory-2026-10-21)).
+
 Each stack records its setup in `k3s-timeline.jsonl` among the test's undeclared outputs: when each
 step finished and how long each image took to import, written as it happens, so a hung run shows how far
 it got. An acceptance target's test log ends with the same timeline.
@@ -166,6 +169,30 @@ The harness comparison measures the Go Gateway/Dispatcher fixture with shared ty
 constructs, one plain PostgreSQL instance, and a pinned K3s binary. Electric and the browser
 frontend remain outside this test. Earlier snapshots below use different source revisions;
 only each explicitly paired experiment supports its own comparison.
+
+### Image layers in memory, 2026-10-21
+
+The [containerd import tail](#containerd-import-tail) profile found unpacking bound by filesystem writes.
+One run each of `test_thread_stream_k3s`, importing the same images one `ctr images import` per image:
+
+| containerd storage                                 | Import, s | Action, s | Invocation                                                                            |
+| -------------------------------------------------- | --------: | --------: | ------------------------------------------------------------------------------------- |
+| Disk, every image streams all its blobs            |     107.7 |     235.0 | [10eae102](https://app.buildbuddy.io/invocation/10eae102-419a-45f1-8670-3868978cd6af) |
+| Whole root on tmpfs, every image streams all blobs |      75.6 |     182.5 | [c78cffa4](https://app.buildbuddy.io/invocation/c78cffa4-7619-4420-945d-bf1c716d4d38) |
+| Snapshotter root on tmpfs, shared blobs once       |      64.8 |     190.7 | [d1c5e40b](https://app.buildbuddy.io/invocation/d1c5e40b-d99b-40e4-9d9b-a6f802e69195) |
+
+The first two ran alone; the last ran beside `test_mcp_k3s` and `test_suspend_resume_k3s_vm`, also with the
+snapshotter root on tmpfs. `free -m` when each stack was ready (before any scenario ran), in MiB of the
+executor's 9724; shared memory is mostly the layer tmpfs:
+
+| Target                       | Shared | Available |
+| ---------------------------- | -----: | --------: |
+| `test_thread_stream_k3s`     |   3042 |      4991 |
+| `test_mcp_k3s`               |   3520 |      4328 |
+| `test_suspend_resume_k3s_vm` |   4521 |      2426 |
+
+On the VM stack that is close to the tmpfs default cap (half of memory), and 2.4 GiB is left for guests
+that request 1.5 GiB each, so a stack with VM Sandboxes keeps its layers on disk.
 
 ### Phase timings and image bytes, 2026-10-21
 
