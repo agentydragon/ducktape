@@ -15,10 +15,12 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRules,
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
+    PolicySetSpecRulesOperations,
     PolicySetSpecRulesPolicy,
     PolicySetSpecRulesPolicyType,
     PolicySetSpecRulesRole,
     PolicySetSpecRulesRoleKind,
+    PolicySetSpecRulesTargets,
     PolicySetSpecRulesType,
 )
 from cdk8s import ApiObjectMetadata
@@ -72,6 +74,15 @@ class Rule:
     def action_auto_approve(*, policy: PolicySetSpecRulesPolicy) -> PolicySetSpecRules:
         """Has the Action Service auto-approve a request `policy` matches."""
         return PolicySetSpecRules(type=PolicySetSpecRulesType.ACTION_UNDERSCORE_AUTO_UNDERSCORE_APPROVE, policy=policy)
+
+    @staticmethod
+    def send_message(*, inbox_tags: Sequence[str]) -> PolicySetSpecRules:
+        """Lets the subject message the Sessions of every Sandbox holding one of `inbox_tags`."""
+        return PolicySetSpecRules(
+            type=PolicySetSpecRulesType.SESSION_UNDERSCORE_INBOX_UNDERSCORE_ACCESS,
+            operations=[PolicySetSpecRulesOperations.SEND_UNDERSCORE_MESSAGE],
+            targets=PolicySetSpecRulesTargets(inbox_tags=list(inbox_tags)),
+        )
 
 
 class AutoApproveIf:
