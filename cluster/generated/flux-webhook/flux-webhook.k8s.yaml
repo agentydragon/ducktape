@@ -28,6 +28,96 @@ spec:
     name: github-webhook-token
   type: github
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: finance-agent-webhook-reader
+  namespace: flux-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: flux-system-finance-agent-flux-webhook-token-reader
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - finance-agent-flux-webhook-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: flux-system-finance-agent-flux-webhook-token-reader
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: flux-system-finance-agent-flux-webhook-token-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: finance-agent-webhook-reader
+    namespace: flux-system
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-flux-system-finance-agent-flux-webhook-token-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - flux-system
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: finance-agent-webhook-reader
+      remoteNamespace: forgejo
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: finance-agent-flux-webhook-token
+  namespace: flux-system
+spec:
+  dataFrom:
+    - extract:
+        key: finance-agent-flux-webhook-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-flux-system-finance-agent-flux-webhook-token-secret-store
+  target:
+    creationPolicy: Owner
+    name: finance-agent-flux-webhook-token
+---
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: finance-agent
+  namespace: flux-system
+spec:
+  resources:
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: finance-agent
+      namespace: ducktape-flux
+  secretRef:
+    name: finance-agent-flux-webhook-token
+  type: generic
+---
 apiVersion: notification.toolkit.fluxcd.io/v1beta3
 kind: Provider
 metadata:

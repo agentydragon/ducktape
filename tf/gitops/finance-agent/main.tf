@@ -112,3 +112,34 @@ resource "kubernetes_secret" "finance_agent_flux_reader_source" {
     password = random_password.finance_agent_flux_reader.result
   }
 }
+
+# Match the dedicated Flux Receiver in cluster/cdk8s/flux_webhook/chart.py.
+# The generic Receiver authenticates by its unguessable token-derived URL, as
+# in haku-state. Keep the token and URL in Terraform state / Kubernetes Secrets.
+resource "random_password" "flux_webhook_token" {
+  length  = 48
+  special = false
+}
+
+resource "kubernetes_secret" "flux_webhook_token_source" {
+  metadata {
+    name      = "finance-agent-flux-webhook-token"
+    namespace = "forgejo"
+  }
+  data = {
+    token = random_password.flux_webhook_token.result
+  }
+}
+
+resource "forgejo_repository_webhook" "flux" {
+  repository_id = forgejo_repository.finance_agent.id
+  type          = "forgejo"
+  active        = true
+  branch_filter = "main"
+  events        = ["push"]
+  config = {
+    content_type = "json"
+    # Forgejo blocks private webhook destinations; use the existing public route.
+    url = "https://flux-webhook.allegedly.works/hook/${sha256(join("", [random_password.flux_webhook_token.result, "finance-agent", "flux-system"]))}"
+  }
+}

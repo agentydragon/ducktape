@@ -6,7 +6,7 @@ with their Providers, and the Secret that points the ntfy Provider at the self-h
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ServiceAccount, k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
@@ -26,6 +26,7 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecret
 from cluster.cdk8s import ntfy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -89,6 +90,25 @@ def chart(app: App) -> Chart:
             ReceiverResource.image_repository("tofu-controller", namespace="flux-system"),
             ReceiverResource.image_repository("tf-runner", namespace="flux-system"),
         ],
+    )
+    # Forgejo main pushes request a source fetch; the new artifact then triggers
+    # the policy Kustomization. Periodic reconciliation remains the fallback.
+    finance_token = "finance-agent-flux-webhook-token"
+    finance_reader = ServiceAccount(
+        chart,
+        "finance-webhook-secret-reader",
+        metadata=ApiObjectMetadata(name="finance-agent-webhook-reader", namespace=NAMESPACE),
+        automount_token=False,
+    )
+    secret_copy.secret_copy(chart, finance_token, reader=finance_reader)
+    Receiver(
+        chart,
+        "finance-agent-receiver",
+        metadata=ApiObjectMetadata(name="finance-agent", namespace=NAMESPACE),
+        # Same token-derived URL authentication as the existing Haku receiver.
+        type=ReceiverSpecType.GENERIC,
+        secret_ref=ReceiverSpecSecretRef(name=finance_token),
+        resources=[ReceiverResource.git_repository("finance-agent", namespace="ducktape-flux")],
     )
     grafana = Provider(
         chart,
