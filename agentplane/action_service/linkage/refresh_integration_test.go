@@ -112,10 +112,7 @@ func TestAFailedRefreshIsRecordedAsWhatTheProviderAnswered(t *testing.T) {
 			if token.AccessToken != "test-access-token-1" || token.RefreshFailure == nil {
 				t.Errorf("the token is %+v", token)
 			}
-			linked, err := authority.Linkage(t.Context(), testServer)
-			if err != nil {
-				t.Fatal(err)
-			}
+			linked := linkageOf(t, authority, testServer)
 			failure := linked.GetRefreshFailure()
 			if linked.GetStatus() != tc.want || failure.GetAction() != tc.action || failure.GetError() != tc.error ||
 				failure.GetAttempts() != 1 {

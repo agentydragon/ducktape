@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
@@ -125,17 +126,16 @@ func TestALinkReplacesTheTokenAndADisconnectDiscardsIt(t *testing.T) {
 	authority := f.authority(t, provider.Server(testServer))
 	base := routes(t, authority)
 	for i, want := range []struct {
-		revision, tokenRevision int
-		token                   string
-	}{{1, 1, "test-access-token-1"}, {2, 2, "test-access-token-2"}, {4, 1, "test-access-token-3"}} {
+		tokenRevision int
+		token         string
+	}{{1, "test-access-token-1"}, {2, "test-access-token-2"}, {1, "test-access-token-3"}} {
 		if i == 2 {
 			disconnected, err := authority.Disconnect(t.Context(), testServer)
 			if err != nil {
 				t.Fatal(err)
 			}
 			f.changed(t, "a disconnection")
-			if disconnected.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_UNLINKED || disconnected.GetRevision() != 3 ||
-				disconnected.GetLinkedBy() != nil || disconnected.GetExpiresAt() != nil {
+			if disconnected.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_UNLINKED {
 				t.Errorf("the disconnected linkage is %v", disconnected)
 			}
 			if token, err := authority.Token(t.Context(), testServer); err != nil || token != nil {
@@ -159,8 +159,7 @@ func TestALinkReplacesTheTokenAndADisconnectDiscardsIt(t *testing.T) {
 		if err := protojson.Unmarshal(body, &linked); err != nil {
 			t.Fatal(err)
 		}
-		if linked.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED || int(linked.GetRevision()) != want.revision ||
-			linked.GetLinkedBy().GetSubject() != operator.Subject || linked.GetExpiresAt() == nil {
+		if linked.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED {
 			t.Errorf("link %d: the linkage is %v", i, &linked)
 		}
 		if revision := f.tokenRevision(t, testServer); revision != want.tokenRevision {
@@ -186,9 +185,8 @@ func TestARefusedCodeIsReportedAndLeavesTheServerUnlinked(t *testing.T) {
 	if status != http.StatusBadGateway || !strings.Contains(string(body), oauthprovider.RefusedError) {
 		t.Errorf("the callback answered %d: %s", status, body)
 	}
-	if linked, err := authority.Linkage(t.Context(), testServer); err != nil ||
-		linked.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_UNLINKED {
-		t.Errorf("the linkage is %v, %v", linked, err)
+	if linked := linkageOf(t, authority, testServer); linked.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_UNLINKED {
+		t.Errorf("the linkage is %v", linked)
 	}
 }
 
@@ -353,7 +351,6 @@ func TestAnUnconfiguredServerIsUnknown(t *testing.T) {
 	f := newFixture(t)
 	authority := f.authority(t, oauthprovider.New(t, oauthprovider.Options{}).Server(testServer))
 	for name, call := range map[string]func() error{
-		"Linkage":    func() error { _, err := authority.Linkage(t.Context(), "test-unknown"); return err },
 		"Start":      func() error { _, err := authority.Start(t.Context(), "test-unknown", nil, operator); return err },
 		"Disconnect": func() error { _, err := authority.Disconnect(t.Context(), "test-unknown"); return err },
 		"Token":      func() error { _, err := authority.Token(t.Context(), "test-unknown"); return err },
@@ -366,20 +363,25 @@ func TestAnUnconfiguredServerIsUnknown(t *testing.T) {
 
 func TestTheLinkagesAreTheConfiguredServersByID(t *testing.T) {
 	f := newFixture(t)
-	provider := oauthprovider.New(t, oauthprovider.Options{})
+	provider := oauthprovider.New(t, oauthprovider.Options{ExpiresIn: 3600})
 	second := provider.Server("test-second")
 	second.Scopes = []string{"test-read"}
 	authority := f.authority(t, second, provider.Server("test-first"))
+	linkedAt := time.Now()
 	link(t, authority, "test-first")
-	linkages, err := authority.Linkages(t.Context())
+	linkages, lapse, err := authority.Linkages(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(linkages) != 2 || linkages[0].GetServerId() != "test-first" ||
 		linkages[0].GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED || linkages[1].GetServerId() != "test-second" ||
-		linkages[1].GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_UNLINKED || linkages[1].GetRevision() != 0 ||
+		linkages[1].GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_UNLINKED ||
 		!slices.Equal(linkages[1].GetScopes(), second.Scopes) || linkages[1].GetServerUrl() != second.ServerURL {
 		t.Errorf("the linkages are %v", linkages)
+	}
+	// The linked token's expiry is when a view next changes with no commit.
+	if lapse == nil || lapse.Sub(linkedAt) < time.Hour-time.Minute || lapse.Sub(linkedAt) > time.Hour+time.Minute {
+		t.Errorf("the linkages next lapse at %v, an hour after %v", lapse, linkedAt)
 	}
 }
 

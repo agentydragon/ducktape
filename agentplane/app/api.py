@@ -487,16 +487,6 @@ async def complete_mcp_linkage(state: str, code: str, client: OperatorActions) -
     return RedirectResponse("/#/mcp-servers?linked=1", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@connections_router.get("/mcp-servers/{server_id}/linkage")
-async def mcp_linkage(server_id: str, client: OperatorActions) -> McpLinkageView:
-    return await client.mcp_linkage(server_id)
-
-
-@connections_router.get("/mcp-servers")
-async def list_mcp_linkages(client: OperatorActions) -> list[McpLinkageView]:
-    return await client.mcp_linkages()
-
-
 @connections_router.get("/action-groups")
 async def action_groups(client: OperatorActions) -> list[ActionGroupView]:
     return await client.action_groups()

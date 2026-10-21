@@ -2465,7 +2465,6 @@ routes.push(
   ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
   // The Settings modal mounts all three tabs at once (Mantine keepMounted), so MCP servers and
   // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
-  ["GET", /^\/mcp-servers$/, () => MCP_LINKAGES],
   [
     "GET",
     /^\/action-groups$/,

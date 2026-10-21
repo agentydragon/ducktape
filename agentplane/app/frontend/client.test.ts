@@ -48,7 +48,7 @@ it("on a 401 sends the browser to log in once and never hands the response back 
   vi.stubGlobal("location", { pathname: "/", hash: "#/mcp-servers", replace });
   const answer = (status: number) => async () =>
     Response.json({ detail: "no session and no accepted token" }, { status });
-  const unauthorized = [api.GET("/mcp-servers", { fetch: answer(401) }), api.GET("/actions", { fetch: answer(401) })];
+  const unauthorized = [api.GET("/action-groups", { fetch: answer(401) }), api.GET("/actions", { fetch: answer(401) })];
   // The same pipeline one request later, minus the redirect: had either 401 been handed back to
   // the page, it would have settled before this does.
   const control = api.GET("/models", { fetch: answer(403) });

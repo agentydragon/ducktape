@@ -38,7 +38,6 @@ from agentplane.acceptance.operator_login import (
     verify_action_federation,
 )
 from agentplane.acceptance.scripted_upstream import ScriptedUpstream
-from agentplane.action_service.mcp_linkage import McpLinkageStatus, McpLinkageView
 from agentplane.action_service.models import (
     ActionRequestView,
     ActionState,
@@ -282,11 +281,6 @@ async def test_operator_links_oauth_mcp_server(
 
     callback = await operator_bff.get("/mcp-linkage/callback", params={"state": state, "code": code})
     assert callback.status_code == HTTPStatus.SEE_OTHER, callback.text
-
-    linkage_response = await operator_bff.get(f"/mcp-servers/{server_id}/linkage")
-    assert linkage_response.status_code == HTTPStatus.OK
-    linkage = McpLinkageView.model_validate(linkage_response.json())
-    assert linkage.status is McpLinkageStatus.LINKED
 
     view = await sandbox(f"accept-oauth-mcp-{harness}")
     policy_objects.bind(

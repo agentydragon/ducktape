@@ -500,8 +500,7 @@ The MCP servers tab lists the Action Service's OAuth-linked MCP server groups an
 disconnects each one. The tab follows independent linkage and replica-local MCP health
 snapshots via session-bound `/mcp-servers/stream` and `/action-groups/stream` routes; neither a
 linkage-only event nor a stale health read is presented as a fully live view. The BFF also proxies
-`GET /mcp-servers`, `GET /mcp-servers/{id}/linkage`,
-`POST /mcp-servers/{id}/linkage/start`, and `POST /mcp-servers/{id}/linkage/disconnect` through the
+`POST /mcp-servers/{id}/linkage/start` and `POST /mcp-servers/{id}/linkage/disconnect` through the
 same operator federation; the provider's redirect lands on `GET /mcp-linkage/callback`, which
 completes the link and returns the browser to `/#/mcp-servers`. What a link authorizes and when a
 linked group becomes available is the Action Service's contract

@@ -733,7 +733,7 @@ async def test_provider_availability_is_not_operator_rejection(
 ) -> None:
     await review.browser.get("/auth/login")
     caplog.set_level(logging.WARNING, logger="agentplane.app.action_federation")
-    for path in ("/actions", "/mcp-servers", "/action-groups", "/push/config"):
+    for path in ("/actions", "/action-groups", "/push/config"):
         response = await review.browser.get(path)
         assert response.status_code == expected, response.text
         detail = response.json()["detail"]
@@ -752,7 +752,7 @@ async def test_provider_availability_is_not_operator_rejection(
         assert SUBJECT_A not in response.text
     # Every failure leaves a cause in the log, and the log leaks no more than the response does.
     federation_warnings = [r for r in caplog.records if r.name == "agentplane.app.action_federation"]
-    assert len(federation_warnings) == 4
+    assert len(federation_warnings) == 3
     assert "test-private" not in caplog.text
     assert "access_token" not in caplog.text
     assert SUBJECT_A not in caplog.text

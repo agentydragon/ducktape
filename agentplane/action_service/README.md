@@ -406,9 +406,8 @@ and on a fresh connection after failure. Correlate with backend/proxy evidence; 
 retry `tools/call` or report recovery merely because catalog refresh succeeds. Deployment and live
 reproduction require separate authorization; unit/HTTP-peer tests do not establish the live cause.
 
-Operators manage linkage at `GET /v1/operator/mcp-servers`
-(every configured server's status), `GET /v1/operator/mcp-servers/{server_id}/linkage`, and
-`POST .../linkage/start` and `POST .../linkage/disconnect`; the provider returns to the
+Operators follow linkage on `GET /v1/operator/mcp-servers/stream` (below) and manage it with
+`POST /v1/operator/mcp-servers/{server_id}/linkage/start` and `POST .../linkage/disconnect`; the provider returns to the
 unauthenticated `GET /v1/mcp-linkage/callback?state&code`, which accepts only an unconsumed,
 unexpired flow matching `state`. Operators also read `GET /v1/action-groups` directly (it accepts
 either bearer scheme): the same group diagnostics above (lifecycle, reason, last discovery,

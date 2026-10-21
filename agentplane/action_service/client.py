@@ -54,14 +54,8 @@ class OperatorActionServiceClient:
         params = {"state": state, "code": code}
         return await self._call(TypeAdapter(McpLinkageView), "GET", "/v1/mcp-linkage/callback", params=params)
 
-    async def mcp_linkages(self) -> list[McpLinkageView]:
-        return await self._call(TypeAdapter(list[McpLinkageView]), "GET", "/v1/operator/mcp-servers")
-
     async def action_groups(self) -> list[ActionGroupView]:
         return await self._call(TypeAdapter(list[ActionGroupView]), "GET", "/v1/action-groups")
-
-    async def mcp_linkage(self, server_id: str) -> McpLinkageView:
-        return await self._call(TypeAdapter(McpLinkageView), "GET", f"/v1/operator/mcp-servers/{server_id}/linkage")
 
     async def start_mcp_linkage(self, server_id: str, scopes: list[str]) -> McpLinkageStartView:
         url = f"/v1/operator/mcp-servers/{server_id}/linkage/start"

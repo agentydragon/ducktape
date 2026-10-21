@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/oauth2"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var tokenRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -36,9 +35,9 @@ func observe(operation, outcome string, started time.Time) {
 	tokenRequestDuration.WithLabelValues(operation, outcome).Observe(time.Since(started).Seconds())
 }
 
-// Start begins linking an account to the server for the operator: it discovers the server's OAuth metadata and
-// answers with the authorization URL the operator's browser opens. requested are the scopes to request, each one the
-// server allows; empty requests all of those.
+// Start begins linking an account to the server for the operator, whom the flow records as the table requires: it
+// discovers the server's OAuth metadata and answers with the authorization URL the operator's browser opens. requested
+// are the scopes to request, each one the server allows; empty requests all of those.
 func (a *Authority) Start(ctx context.Context, serverID string, requested []string, operator store.OperatorPrincipal) (*operator_action_servicepb.StartMcpServerLinkageResponse, error) {
 	server, err := a.server(serverID)
 	if err != nil {
@@ -55,7 +54,7 @@ func (a *Authority) Start(ctx context.Context, serverID string, requested []stri
 	if err != nil {
 		return nil, err
 	}
-	state, verifier, flowID, expiresAt := rand.Text(), oauth2.GenerateVerifier(), uuid.New(), now().Add(flowLifetime)
+	state, verifier := rand.Text(), oauth2.GenerateVerifier()
 	authorization, err := a.authorizationURL(server, found, scopes, state, verifier)
 	if err != nil {
 		return nil, err
@@ -69,14 +68,12 @@ func (a *Authority) Start(ctx context.Context, serverID string, requested []stri
 		INSERT INTO mcp_linkage_flow (id, server_id, state_hash, verifier, scopes, authorization_endpoint, token_endpoint,
 			resource, expires_at, operator_issuer, operator_subject)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		flowID, serverID, digest(state), verifier, stored, found.authorizationEndpoint, found.tokenEndpoint,
-		found.resource, expiresAt, operator.Issuer, operator.Subject,
+		uuid.New(), serverID, digest(state), verifier, stored, found.authorizationEndpoint, found.tokenEndpoint,
+		found.resource, now().Add(flowLifetime), operator.Issuer, operator.Subject,
 	); err != nil {
 		return nil, err
 	}
-	return &operator_action_servicepb.StartMcpServerLinkageResponse{
-		FlowId: flowID.String(), AuthorizationUrl: authorization, ExpiresAt: timestamppb.New(expiresAt),
-	}, nil
+	return &operator_action_servicepb.StartMcpServerLinkageResponse{AuthorizationUrl: authorization}, nil
 }
 
 // chooseScopes are the requested scopes once each, in order, or all the allowed ones when none is requested.
@@ -130,7 +127,6 @@ type flow struct {
 	scopes        []string
 	tokenEndpoint string
 	resource      *string
-	operator      store.OperatorPrincipal
 }
 
 // Callback finishes the flow state names with the authorization code: it spends the flow, exchanges the code, and
@@ -170,11 +166,9 @@ func (a *Authority) spend(ctx context.Context, state string) (Server, flow, erro
 		var consumedAt *time.Time
 		err := tx.QueryRowContext(
 			ctx, `
-			SELECT id, server_id, verifier, scopes, token_endpoint, resource, operator_issuer, operator_subject,
-				expires_at, consumed_at
+			SELECT id, server_id, verifier, scopes, token_endpoint, resource, expires_at, consumed_at
 			FROM mcp_linkage_flow WHERE state_hash = $1 FOR UPDATE`, digest(state),
-		).Scan(&id, &serverID, &f.verifier, &scopes, &f.tokenEndpoint, &f.resource, &f.operator.Issuer,
-			&f.operator.Subject, &expiresAt, &consumedAt)
+		).Scan(&id, &serverID, &f.verifier, &scopes, &f.tokenEndpoint, &f.resource, &expiresAt, &consumedAt)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			return ErrInvalidFlow
@@ -195,14 +189,14 @@ func (a *Authority) spend(ctx context.Context, state string) (Server, flow, erro
 	return server, f, err
 }
 
-// link stores the token as the server's, linked by the flow's operator, and answers with the server's linkage. A
-// new token's revision is 1; a relink increases it, and the linkage's revision.
+// link stores the token as the server's and answers with the server's linkage. A new token's revision is 1; a relink
+// increases it, which fences a refresh claimed before it. Columns nothing reads (the token type, updated_at, the
+// linkage's server_url and revision) are written only where the table requires a value.
 func (a *Authority) link(ctx context.Context, server Server, f flow, token *oauth2.Token) (*operator_action_servicepb.McpServerLinkage, error) {
 	scopes, err := scopesJSON(f.scopes)
 	if err != nil {
 		return nil, err
 	}
-	at := now()
 	var views []*operator_action_servicepb.McpServerLinkage
 	err = a.transaction(ctx, func(tx *sql.Tx) error {
 		var stateID uuid.UUID
@@ -213,35 +207,29 @@ func (a *Authority) link(ctx context.Context, server Server, f flow, token *oaut
 			VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, 0)
 			ON CONFLICT (server_id) DO UPDATE SET access_token = excluded.access_token,
 				refresh_token = COALESCE(excluded.refresh_token, mcp_oauth_token_state.refresh_token),
-				token_type = excluded.token_type, scope = excluded.scope, expires_at = excluded.expires_at,
-				token_revision = mcp_oauth_token_state.token_revision + 1, updated_at = excluded.updated_at,
-				refresh_claim_id = NULL, refresh_claim_expires_at = NULL, refresh_failure_count = 0,
-				refresh_failure_started_at = NULL, refresh_failure_latest_at = NULL, refresh_failure_action = NULL,
+				scope = excluded.scope, expires_at = excluded.expires_at,
+				token_revision = mcp_oauth_token_state.token_revision + 1, refresh_claim_id = NULL,
+				refresh_claim_expires_at = NULL, refresh_failure_count = 0, refresh_failure_action = NULL,
 				refresh_retry_at = NULL, refresh_failure_error = NULL
 			RETURNING id`,
-			uuid.New(), server.ServerID, token.AccessToken, refreshToken(token), token.Type(), scopes, expiry(token), at,
+			uuid.New(), server.ServerID, token.AccessToken, refreshToken(token), token.Type(), scopes, expiry(token), now(),
 		).Scan(&stateID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(
 			ctx, `
-			INSERT INTO mcp_server_linkage (server_id, server_url, revision, scopes, token_state_id, token_endpoint, resource,
-				linked_at, linked_by_issuer, linked_by_subject)
-			VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9)
-			ON CONFLICT (server_id) DO UPDATE SET server_url = excluded.server_url,
-				revision = mcp_server_linkage.revision + 1, scopes = excluded.scopes,
-				token_state_id = excluded.token_state_id, token_endpoint = excluded.token_endpoint,
-				resource = excluded.resource, linked_at = excluded.linked_at,
-				linked_by_issuer = excluded.linked_by_issuer, linked_by_subject = excluded.linked_by_subject`,
-			server.ServerID, server.ServerURL, scopes, stateID, f.tokenEndpoint, f.resource, at, f.operator.Issuer,
-			f.operator.Subject,
+			INSERT INTO mcp_server_linkage (server_id, server_url, revision, scopes, token_state_id, token_endpoint, resource)
+			VALUES ($1, $2, 1, $3, $4, $5, $6)
+			ON CONFLICT (server_id) DO UPDATE SET scopes = excluded.scopes, token_state_id = excluded.token_state_id,
+				token_endpoint = excluded.token_endpoint, resource = excluded.resource`,
+			server.ServerID, server.ServerURL, scopes, stateID, f.tokenEndpoint, f.resource,
 		); err != nil {
 			return err
 		}
 		if err := notify(ctx, tx); err != nil {
 			return err
 		}
-		views, err = a.views(ctx, tx, []string{server.ServerID})
+		views, _, err = a.views(ctx, tx, []string{server.ServerID})
 		return err
 	})
 	if err != nil {

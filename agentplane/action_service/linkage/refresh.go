@@ -166,13 +166,11 @@ func (a *Authority) storeRefreshed(ctx context.Context, c claim, token *oauth2.T
 	return a.transaction(ctx, func(tx *sql.Tx) error {
 		result, err := tx.ExecContext(ctx, `
 			UPDATE mcp_oauth_token_state SET access_token = $5, refresh_token = COALESCE($6, refresh_token),
-				token_type = $7, expires_at = $8, token_revision = token_revision + 1, updated_at = $9,
-				refresh_claim_id = NULL, refresh_claim_expires_at = NULL, refresh_failure_count = 0,
-				refresh_failure_started_at = NULL, refresh_failure_latest_at = NULL, refresh_failure_action = NULL,
+				expires_at = $7, token_revision = token_revision + 1, refresh_claim_id = NULL,
+				refresh_claim_expires_at = NULL, refresh_failure_count = 0, refresh_failure_action = NULL,
 				refresh_retry_at = NULL, refresh_failure_error = NULL
 			WHERE id = $1 AND refresh_claim_id = $2 AND token_revision = $3 AND refresh_token = $4`,
-			c.stateID, c.id, c.revision, c.refreshToken, token.AccessToken, refreshToken(token), token.Type(),
-			expiry(token), now())
+			c.stateID, c.id, c.revision, c.refreshToken, token.AccessToken, refreshToken(token), expiry(token))
 		if err != nil {
 			return err
 		}
@@ -201,19 +199,15 @@ func (a *Authority) storeFailure(ctx context.Context, server Server, c claim, fa
 			return err
 		}
 		failures++
-		at := now()
 		var retryAt *time.Time
 		if failure.action == RefreshRetrying {
-			retry := at.Add(retryDelay(failures))
-			retryAt = &retry
+			retryAt = new(now().Add(retryDelay(failures)))
 		}
 		if _, err := tx.ExecContext(
 			ctx, `
-			UPDATE mcp_oauth_token_state SET refresh_failure_count = $2,
-				refresh_failure_started_at = COALESCE(refresh_failure_started_at, $3), refresh_failure_latest_at = $3,
-				refresh_failure_action = $4, refresh_failure_error = $5, refresh_retry_at = $6, refresh_claim_id = NULL,
-				refresh_claim_expires_at = NULL
-			WHERE id = $1`, c.stateID, failures, at, string(failure.action), failure.message, retryAt,
+			UPDATE mcp_oauth_token_state SET refresh_failure_count = $2, refresh_failure_action = $3,
+				refresh_failure_error = $4, refresh_retry_at = $5, refresh_claim_id = NULL, refresh_claim_expires_at = NULL
+			WHERE id = $1`, c.stateID, failures, string(failure.action), failure.message, retryAt,
 		); err != nil {
 			return err
 		}

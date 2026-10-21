@@ -2,17 +2,14 @@ package api
 
 import (
 	"context"
-	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -40,29 +37,29 @@ func TestAnOperatorLinksAndDisconnectsAnMCPServer(t *testing.T) {
 	unlinked := &operator_action_servicepb.McpServerLinkage{
 		ServerId: testServer, ServerUrl: provider.URL + "/mcp", Status: operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_UNLINKED,
 	}
-	listed, err := s.operators.ListMcpServers(ctx, &operator_action_servicepb.ListMcpServersRequest{})
-	if err != nil || len(listed.GetLinkages()) != 1 || !proto.Equal(listed.GetLinkages()[0], unlinked) {
-		t.Errorf("the listing is %v, %v", listed, err)
+	stream := s.watchLinkages(t, ctx)
+	if snapshot := linkageSnapshot(t, stream); len(snapshot) != 1 || !proto.Equal(snapshot[0], unlinked) {
+		t.Errorf("the snapshot is %v", snapshot)
 	}
 
 	started, err := s.operators.StartMcpServerLinkage(ctx, &operator_action_servicepb.StartMcpServerLinkageRequest{ServerId: testServer})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(started.GetAuthorizationUrl(), provider.URL+"/authorize?") {
-		t.Errorf("the authorization URL is %s", started.GetAuthorizationUrl())
+	if !strings.HasPrefix(started.GetAuthorizationUrl(), provider.URL+"/authorize?") ||
+		!proto.Equal(started, &operator_action_servicepb.StartMcpServerLinkageResponse{AuthorizationUrl: started.GetAuthorizationUrl()}) {
+		t.Errorf("the start answered %v", started)
 	}
 	if _, err := s.linkages.Callback(t.Context(), oauthprovider.State(t, started.GetAuthorizationUrl()), "test-code"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.operators.GetMcpServerLinkage(ctx, &operator_action_servicepb.GetMcpServerLinkageRequest{ServerId: testServer})
-	if err != nil {
-		t.Fatal(err)
+	// The scopes the server's metadata offers, all of which the link requested.
+	linked := &operator_action_servicepb.McpServerLinkage{
+		ServerId: testServer, ServerUrl: provider.URL + "/mcp", Status: operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED,
+		Scopes: oauthprovider.Scopes,
 	}
-	linked := got.GetLinkage()
-	if linked.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED || linked.GetRevision() != 1 ||
-		!proto.Equal(linked.GetLinkedBy(), &action_servicepb.Operator{Issuer: s.issuer.url, Subject: operatorSubject}) {
-		t.Errorf("the linkage is %v", linked)
+	if upsert := nextUpsert(t, "the link", stream); !proto.Equal(upsert, linked) {
+		t.Errorf("the link's upsert is %v, want %v", upsert, linked)
 	}
 
 	disconnected, err := s.operators.DisconnectMcpServer(ctx, &operator_action_servicepb.DisconnectMcpServerRequest{ServerId: testServer})
@@ -70,7 +67,6 @@ func TestAnOperatorLinksAndDisconnectsAnMCPServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The configured scopes again, which are none.
-	unlinked.Revision = 2
 	if !proto.Equal(disconnected.GetLinkage(), unlinked) {
 		t.Errorf("the disconnected linkage is %v", disconnected.GetLinkage())
 	}
@@ -83,9 +79,7 @@ func TestAnMCPServerCallThatCannotBeServedFails(t *testing.T) {
 	unusable.AuthorizationEndpoint, unusable.TokenEndpoint = nil, nil
 	s := serveWith(t, kube.TokenReviews(), &catalog.Catalog{}, unusable)
 	ctx := as(t, s.operatorToken)
-	_, err := s.operators.GetMcpServerLinkage(ctx, &operator_action_servicepb.GetMcpServerLinkageRequest{ServerId: "test-unknown"})
-	wantCode(t, "the linkage of an unknown server", err, codes.NotFound)
-	_, err = s.operators.StartMcpServerLinkage(ctx, &operator_action_servicepb.StartMcpServerLinkageRequest{ServerId: "test-unknown"})
+	_, err := s.operators.StartMcpServerLinkage(ctx, &operator_action_servicepb.StartMcpServerLinkageRequest{ServerId: "test-unknown"})
 	wantCode(t, "a link of an unknown server", err, codes.NotFound)
 	_, err = s.operators.DisconnectMcpServer(ctx, &operator_action_servicepb.DisconnectMcpServerRequest{ServerId: "test-unknown"})
 	wantCode(t, "a disconnection of an unknown server", err, codes.NotFound)
@@ -98,23 +92,6 @@ func TestAnMCPServerCallThatCannotBeServedFails(t *testing.T) {
 		ServerId: testServer, Scopes: []string{"test-read", "test-unconfigured"},
 	})
 	wantCode(t, "a link with a scope the server is not configured for", err, codes.InvalidArgument)
-}
-
-func TestTheHTTPFacadeServesTheMCPServers(t *testing.T) {
-	provider := oauthprovider.New(t, oauthprovider.Options{Metadata: true})
-	s := serveWith(t, kube.TokenReviews(), &catalog.Catalog{}, provider.Server(testServer))
-	code, body := s.get(t, "/v1/operator/mcp-servers", s.operatorToken)
-	var listed operator_action_servicepb.ListMcpServersResponse
-	if err := protojson.Unmarshal(body, &listed); code != http.StatusOK || err != nil || len(listed.GetLinkages()) != 1 ||
-		listed.GetLinkages()[0].GetServerId() != testServer {
-		t.Errorf("the listing answered %d %s", code, body)
-	}
-	if code, body := s.get(t, "/v1/operator/mcp-servers/test-unknown/linkage", s.operatorToken); code != http.StatusNotFound {
-		t.Errorf("the linkage of an unknown server answered %d %s", code, body)
-	}
-	if code, body := s.get(t, "/v1/operator/mcp-servers", callerToken); code != http.StatusUnauthorized {
-		t.Errorf("a workload's listing answered %d %s", code, body)
-	}
 }
 
 type linkageStream = grpc.ServerStreamingClient[operator_action_servicepb.WatchMcpServersResponse]
@@ -176,9 +153,9 @@ func TestAnMCPServerWatchSendsEachChangeOfALinkageIncludingItsTokensExpiry(t *te
 		upsert.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED {
 		t.Errorf("the link's upsert is %v, want %v", upsert, linked)
 	}
-	// No commit marks the expiry: the watch sends it once the clock reaches expires_at.
+	// No commit marks the expiry: the watch sends it once the clock reaches the token's expiry.
 	if upsert := nextUpsert(t, "the expiry", stream); upsert.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_EXPIRED ||
-		upsert.GetRevision() != linked.GetRevision() {
+		upsert.GetServerId() != testServer {
 		t.Errorf("the expiry's upsert is %v", upsert)
 	}
 	disconnected, err := s.operators.DisconnectMcpServer(as(t, s.operatorToken),

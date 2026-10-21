@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
+	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -113,4 +114,20 @@ func (f fixture) tokenRevision(t *testing.T, serverID string) int {
 		t.Fatal(err)
 	}
 	return revision
+}
+
+// linkageOf is the linkage of the server serverID, as the authority lists it.
+func linkageOf(t *testing.T, authority *linkage.Authority, serverID string) *operator_action_servicepb.McpServerLinkage {
+	t.Helper()
+	linkages, _, err := authority.Linkages(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, found := range linkages {
+		if found.GetServerId() == serverID {
+			return found
+		}
+	}
+	t.Fatalf("no linkage of %s", serverID)
+	return nil
 }

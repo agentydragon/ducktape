@@ -129,18 +129,19 @@ func TestAWorkloadsBearerNeverReachesTheOperatorService(t *testing.T) {
 	reviews := &kubeapiserver.CountedReviews{TokenReviews: kube.TokenReviews()}
 	s := serveWith(t, reviews, &catalog.Catalog{})
 	request := s.submit(t, caller, "test-pending")
+	disconnection := &operator_action_servicepb.DisconnectMcpServerRequest{ServerId: testServer}
 	for _, token := range []string{callerToken, readerToken} {
 		_, err := s.decideAs(t, token, decision(request, allow))
 		wantCode(t, "a workload's decision", err, codes.Unauthenticated)
-		_, err = s.operators.ListMcpServers(as(t, token), &operator_action_servicepb.ListMcpServersRequest{})
-		wantCode(t, "a workload's listing of the MCP servers", err, codes.Unauthenticated)
+		_, err = s.operators.DisconnectMcpServer(as(t, token), disconnection)
+		wantCode(t, "a workload's disconnection", err, codes.Unauthenticated)
 	}
 	if calls := reviews.Calls.Load(); calls != 0 {
 		t.Errorf("%d workload tokens reviewed", calls)
 	}
-	if _, err := s.operators.ListMcpServers(as(t, s.operatorToken), &operator_action_servicepb.ListMcpServersRequest{}); err != nil {
-		t.Errorf("an operator's listing of the MCP servers: %v", err)
-	}
+	// An operator's reaches the service, which configures no MCP server.
+	_, err := s.operators.DisconnectMcpServer(as(t, s.operatorToken), disconnection)
+	wantCode(t, "an operator's disconnection", err, codes.NotFound)
 }
 
 func TestOfTwoOperatorsDecidingAtOnceOneDecidesAndTheOtherIsTold(t *testing.T) {

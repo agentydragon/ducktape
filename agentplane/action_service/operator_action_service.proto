@@ -42,18 +42,8 @@ service OperatorActionService {
     option (google.api.http) = {post: "/v1/operator/action-requests/{request_id}/decision" body: "*"};
   }
 
-  // One configured MCP server's OAuth linkage. An unknown server fails `NOT_FOUND`.
-  rpc GetMcpServerLinkage(GetMcpServerLinkageRequest) returns (GetMcpServerLinkageResponse) {
-    option (google.api.http) = {get: "/v1/operator/mcp-servers/{server_id}/linkage"};
-  }
-
-  // The linkage of every configured MCP server.
-  rpc ListMcpServers(ListMcpServersRequest) returns (ListMcpServersResponse) {
-    option (google.api.http) = {get: "/v1/operator/mcp-servers"};
-  }
-
-  // The MCP servers' linkages, then each one again whenever it changes, including when a token reaches its
-  // `expires_at`.
+  // The linkage of every configured MCP server, then each one again whenever it changes, including when its token
+  // expires.
   rpc WatchMcpServers(WatchMcpServersRequest) returns (stream WatchMcpServersResponse) {
     option (google.api.http) = {get: "/v1/operator/mcp-servers:watch"};
   }
@@ -88,20 +78,6 @@ message DecideActionRequestResponse {
   ActionRequest action_request = 1;
 }
 
-message GetMcpServerLinkageRequest {
-  string server_id = 1;
-}
-
-message GetMcpServerLinkageResponse {
-  McpServerLinkage linkage = 1;
-}
-
-message ListMcpServersRequest {}
-
-message ListMcpServersResponse {
-  repeated McpServerLinkage linkages = 1;
-}
-
 message WatchMcpServersRequest {}
 
 // Exactly one field is set.
@@ -128,11 +104,10 @@ message StartMcpServerLinkageRequest {
 }
 
 message StartMcpServerLinkageResponse {
-  // UUID.
-  string flow_id = 1;
+  reserved 1, 3;
+  reserved "flow_id", "expires_at";
   // Where the operator's browser authorizes.
   string authorization_url = 2;
-  google.protobuf.Timestamp expires_at = 3;
 }
 
 message DisconnectMcpServerRequest {
@@ -145,17 +120,12 @@ message DisconnectMcpServerResponse {
 
 // The shared OAuth token family of one configured MCP server.
 message McpServerLinkage {
+  reserved 4, 6, 7, 8;
+  reserved "revision", "expires_at", "linked_at", "linked_by";
   string server_id = 1;
   string server_url = 2;
   McpLinkageStatus status = 3;
-  // Increases whenever the linkage is replaced or disconnected.
-  int32 revision = 4;
   repeated string scopes = 5;
-  // When the access token expires; absent when unlinked or when it does not.
-  google.protobuf.Timestamp expires_at = 6;
-  google.protobuf.Timestamp linked_at = 7;
-  // The operator who linked it; absent when unlinked.
-  Operator linked_by = 8;
   // The latest token refresh failure, including one still being retried, which may lapse the token before it clears.
   McpRefreshFailure refresh_failure = 9;
 }

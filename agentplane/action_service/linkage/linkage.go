@@ -18,7 +18,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/lib/pq"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
@@ -63,15 +62,14 @@ const (
 	RefreshRetrying RefreshAction = "retrying"
 )
 
-// parseAction reads a stored action. An earlier release of the Python service stored `operator_action` for what is
-// now `reconnect`, and the Python service still reads it so.
+// parseAction reads a stored action.
 func parseAction(stored *string) (*RefreshAction, error) {
 	if stored == nil {
 		return nil, nil
 	}
 	var action RefreshAction
 	switch *stored {
-	case string(RefreshReconnect), "operator_action":
+	case string(RefreshReconnect):
 		action = RefreshReconnect
 	case string(RefreshRetrying):
 		action = RefreshRetrying
@@ -191,32 +189,17 @@ func scopesJSON(scopes []string) ([]byte, error) {
 	return json.Marshal(scopes)
 }
 
-// Linkages are the linkages of the configured servers, by server ID.
-func (a *Authority) Linkages(ctx context.Context) ([]*operator_action_servicepb.McpServerLinkage, error) {
+// Linkages are the linkages of the configured servers, by server ID, and when one of them next changes with no commit:
+// when the first linked token expires; nil when no linked token does.
+func (a *Authority) Linkages(ctx context.Context) ([]*operator_action_servicepb.McpServerLinkage, *time.Time, error) {
 	var views []*operator_action_servicepb.McpServerLinkage
+	var lapse *time.Time
 	err := a.read(ctx, func(tx *sql.Tx) error {
 		var err error
-		views, err = a.views(ctx, tx, slices.Sorted(maps.Keys(a.servers)))
+		views, lapse, err = a.views(ctx, tx, slices.Sorted(maps.Keys(a.servers)))
 		return err
 	})
-	return views, err
-}
-
-// Linkage is the linkage of the configured server serverID.
-func (a *Authority) Linkage(ctx context.Context, serverID string) (*operator_action_servicepb.McpServerLinkage, error) {
-	if _, err := a.server(serverID); err != nil {
-		return nil, err
-	}
-	var views []*operator_action_servicepb.McpServerLinkage
-	err := a.read(ctx, func(tx *sql.Tx) error {
-		var err error
-		views, err = a.views(ctx, tx, []string{serverID})
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return views[0], nil
+	return views, lapse, err
 }
 
 // read runs f on one snapshot, so a linkage and its token agree.
@@ -231,11 +214,7 @@ func (a *Authority) read(ctx context.Context, f func(*sql.Tx) error) error {
 
 // stored is a server's linkage row, and the token it holds.
 type stored struct {
-	revision        int32
-	scopes          []string
-	linkedAt        *time.Time
-	linkedByIssuer  *string
-	linkedBySubject *string
+	scopes []string
 	// linked is whether the linkage holds a token; the fields below are the token's.
 	linked        bool
 	expiresAt     *time.Time
@@ -245,17 +224,17 @@ type stored struct {
 	retryAt       *time.Time
 }
 
-// views are the linkages of the configured servers serverIDs, in their order.
-func (a *Authority) views(ctx context.Context, tx *sql.Tx, serverIDs []string) ([]*operator_action_servicepb.McpServerLinkage, error) {
+// views are the linkages of the configured servers serverIDs, in their order, and when the first of their linked
+// tokens expires; nil when none does.
+func (a *Authority) views(ctx context.Context, tx *sql.Tx, serverIDs []string) ([]*operator_action_servicepb.McpServerLinkage, *time.Time, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT linkage.server_id, linkage.revision, linkage.scopes, linkage.linked_at, linkage.linked_by_issuer,
-			linkage.linked_by_subject, token.id IS NOT NULL, token.expires_at, token.refresh_failure_action,
+		SELECT linkage.server_id, linkage.scopes, token.id IS NOT NULL, token.expires_at, token.refresh_failure_action,
 			token.refresh_failure_error, token.refresh_failure_count, token.refresh_retry_at
 		FROM mcp_server_linkage AS linkage
 		LEFT JOIN mcp_oauth_token_state AS token ON token.id = linkage.token_state_id
 		WHERE linkage.server_id = ANY($1)`, pq.Array(serverIDs))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 	found := map[string]*stored{}
@@ -263,26 +242,32 @@ func (a *Authority) views(ctx context.Context, tx *sql.Tx, serverIDs []string) (
 		var serverID string
 		var scopes []byte
 		var row stored
-		if err := rows.Scan(&serverID, &row.revision, &scopes, &row.linkedAt, &row.linkedByIssuer, &row.linkedBySubject,
-			&row.linked, &row.expiresAt, &row.failureAction, &row.failureError, &row.failures, &row.retryAt); err != nil {
-			return nil, err
+		if err := rows.Scan(&serverID, &scopes, &row.linked, &row.expiresAt, &row.failureAction, &row.failureError,
+			&row.failures, &row.retryAt); err != nil {
+			return nil, nil, err
 		}
 		if err := json.Unmarshal(scopes, &row.scopes); err != nil {
-			return nil, fmt.Errorf("stored scopes of MCP server %s: %w", serverID, err)
+			return nil, nil, fmt.Errorf("stored scopes of MCP server %s: %w", serverID, err)
 		}
 		found[serverID] = &row
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	at := time.Now()
 	views := make([]*operator_action_servicepb.McpServerLinkage, len(serverIDs))
+	var lapse *time.Time
 	for i, serverID := range serverIDs {
-		if views[i], err = view(a.servers[serverID], found[serverID], at); err != nil {
-			return nil, err
+		row := found[serverID]
+		if views[i], err = view(a.servers[serverID], row, at); err != nil {
+			return nil, nil, err
+		}
+		if views[i].GetStatus() == operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED &&
+			row.expiresAt != nil && (lapse == nil || row.expiresAt.Before(*lapse)) {
+			lapse = row.expiresAt
 		}
 	}
-	return views, nil
+	return views, lapse, nil
 }
 
 // view is the server's linkage at the time at, from its row, which is nil when the server never had a linkage.
@@ -294,7 +279,7 @@ func view(server Server, row *stored, at time.Time) (*operator_action_servicepb.
 	if row == nil {
 		return v, nil
 	}
-	v.Revision, v.Scopes = row.revision, row.scopes
+	v.Scopes = row.scopes
 	if !row.linked {
 		return v, nil
 	}
@@ -309,10 +294,6 @@ func view(server Server, row *stored, at time.Time) (*operator_action_servicepb.
 		v.Status = operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_EXPIRED
 	default:
 		v.Status = operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED
-	}
-	v.ExpiresAt, v.LinkedAt = timestamp(row.expiresAt), timestamp(row.linkedAt)
-	if row.linkedByIssuer != nil && row.linkedBySubject != nil {
-		v.LinkedBy = &action_servicepb.Operator{Issuer: *row.linkedByIssuer, Subject: *row.linkedBySubject}
 	}
 	// A failure still being retried is shown too: the token may lapse before it clears. The table's CHECK sets the
 	// action and the error together.
@@ -331,8 +312,8 @@ func timestamp(t *time.Time) *timestamppb.Timestamp {
 	return timestamppb.New(*t)
 }
 
-// Disconnect discards the server's token and answers with its now unlinked linkage. Each disconnection of a server
-// that has had a linkage increases its revision, as in the Python service.
+// Disconnect discards the server's token and answers with its now unlinked linkage, which requests the configured
+// scopes again.
 func (a *Authority) Disconnect(ctx context.Context, serverID string) (*operator_action_servicepb.McpServerLinkage, error) {
 	server, err := a.server(serverID)
 	if err != nil {
@@ -344,19 +325,17 @@ func (a *Authority) Disconnect(ctx context.Context, serverID string) (*operator_
 	}
 	var views []*operator_action_servicepb.McpServerLinkage
 	err = a.transaction(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE mcp_server_linkage SET revision = revision + 1, token_state_id = NULL, scopes = $2, linked_at = NULL,
-				linked_by_issuer = NULL, linked_by_subject = NULL
-			WHERE server_id = $1`, serverID, scopes); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE mcp_server_linkage SET scopes = $2 WHERE server_id = $1", serverID, scopes); err != nil {
 			return err
 		}
+		// The linkage's token_state_id is set NULL by its foreign key.
 		if _, err := tx.ExecContext(ctx, "DELETE FROM mcp_oauth_token_state WHERE server_id = $1", serverID); err != nil {
 			return err
 		}
 		if err := notify(ctx, tx); err != nil {
 			return err
 		}
-		views, err = a.views(ctx, tx, []string{serverID})
+		views, _, err = a.views(ctx, tx, []string{serverID})
 		return err
 	})
 	if err != nil {

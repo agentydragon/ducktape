@@ -315,7 +315,6 @@ acceptance_test(
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
-        "//agentplane/action_service:mcp_linkage",
         "//agentplane/action_service:models",
         "//agentplane/action_service:policy_evaluation",
         "//agentplane/action_service/policies:resources",

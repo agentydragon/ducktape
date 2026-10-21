@@ -576,14 +576,6 @@ def _mcp_linkage_routes(
             headers={"Cache-Control": "public, max-age=3600"},
         )
 
-    @operator.get("/mcp-servers/{server_id}/linkage")
-    async def linkage_status(server_id: str) -> McpLinkageView:
-        return await authority.status(server_id)
-
-    @operator.get("/mcp-servers")
-    async def list_mcp_linkages() -> list[McpLinkageView]:
-        return await authority.statuses()
-
     @operator.get("/mcp-servers/stream")
     async def mcp_linkages_stream(authorized: _StreamAuthorized) -> StreamingResponse:
         next_expiry: datetime | None = None
