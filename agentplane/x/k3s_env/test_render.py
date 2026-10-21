@@ -82,6 +82,11 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert migrator_env["DATABASE_URL"]["valueFrom"] == proxy_env["AGENTPLANE_EGRESS_DATABASE_URL"]["valueFrom"]
     assert "AGENTPLANE_EGRESS_DATABASE_URL" not in migrator_env
     assert proxy_env["PGSSLMODE"]["value"] == migrator_env["PGSSLMODE"]["value"] == "disable"
+    for workload in ("history-service", "notifications"):
+        pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
+        for container in (*pod_spec["containers"], *pod_spec["initContainers"]):
+            sslmode = {entry["name"]: entry.get("value") for entry in container.get("env", [])}.get("PGSSLMODE")
+            assert sslmode == "disable", (workload, container["name"])
     for service in (doc for doc in docs if doc["kind"] == "Service"):
         assert service["spec"]["clusterIP"] == "None", service["metadata"]["name"]
         for port in service["spec"]["ports"]:

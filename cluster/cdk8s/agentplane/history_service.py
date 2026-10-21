@@ -69,6 +69,7 @@ class HistoryService(Construct):
         registry_secret_name: str | None = "forgejo-images-creds",
         service_cluster_ip: str | None = None,
         container_env: Mapping[str, EnvValue] | None = None,
+        migrate_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
         migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
@@ -128,7 +129,7 @@ class HistoryService(Construct):
             migrate=migrate_init_container(
                 "git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset",
                 name="migrate",
-                env_variables={"AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url},
+                env_variables={"AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url, **(migrate_env or {})},
                 image_pull_policy=migrate_pull_policy,
                 memory_limit=migrate_memory_limit,
             ),
