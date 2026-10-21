@@ -84,25 +84,26 @@ The target writes `test.outputs/storage-{pod-directory,vm-raw}.json`. The deploy
 
 ## Suspend and resume
 
-`//agentplane/acceptance:test_suspend_resume` tests two Threads (Claude and Codex) in one Pod Sandbox,
-and a separate Codex Thread in a VM Sandbox. It suspends until the old launcher or Pod is gone,
-then resumes the original Threads by sending their next input. Each case verifies all Sandbox-owned
-state and workspace PVC UIDs and bound PVs survive,
-the incarnation changes, the sealed archived history remains byte-for-byte unchanged, and one
-`JournalReopened` continues its source sequence before a resumed native turn recalls its token.
-It also checks that Open reserves a Session without a harness process, that a completed turn has a
-ready process assignment, and that the new runner retains dormant Sessions and their native IDs
-before the next input. The two-Thread case also checks token isolation. Intentional delta settlement may leave gaps in
-archive cursors; retained entries remain ordered and unique.
+`//agentplane/acceptance:test_suspend_resume` tests two Threads (Claude and Codex) in one Pod Sandbox
+with the scripted model, and a separate Codex Thread in a VM Sandbox with a real one. It suspends
+until the old launcher or Pod is gone, then resumes the original Threads by sending their next input.
+Each case verifies all Sandbox-owned state and workspace PVC UIDs and bound PVs survive, the
+incarnation changes, the sealed archived history remains byte-for-byte unchanged, and one
+`JournalReopened` continues its source sequence before the resumed native turn. It also checks that
+Open reserves a Session without a harness process, that a completed turn has a ready process
+assignment, and that the new runner retains dormant Sessions and their native IDs before the next
+input. The resumed Pod Threads must send the model their own seeded token and not the other's; the
+VM Thread's model must recall its token. Intentional delta settlement may leave gaps in archive
+cursors; retained entries remain ordered and unique.
 
-Run only after the app, controller and runner changes have reached testing. Check the VM image's
-embedded wheel release provenance: its runner must include Session setup reporting before testing
-suspend, even when the container runner already has it. Run one VM case at a time within the
-testing storage quota. To exercise Codex on the VM without repeating Pod or Claude acceptance:
+`test_suspend_resume_k3s` runs the Pod case on a stack of its own. The deployed target runs the VM
+case: run it only after the app, controller and runner changes have reached testing. Check the VM
+image's embedded wheel release provenance: its runner must include Session setup reporting before
+testing suspend, even when the container runner already has it. Run one VM case at a time within the
+testing storage quota.
 
 ```bash
-bazelisk test //agentplane/acceptance:test_suspend_resume \
-  --test_arg=-k --test_arg=test_vm_codex --test_output=streamed
+bazelisk test //agentplane/acceptance:test_suspend_resume --test_output=streamed
 ```
 
 Successful cases write PVC/PV identities, old/new incarnation UIDs, Session IDs and seal/reopen/

@@ -2047,9 +2047,10 @@ have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-b
 ### `ACCEPTANCE_SCRIPTED_MODEL` — scripted-model scenarios on k3s
 
 **In flight; the first model backend (operator, 2026-10-21 05:23).** Laid out as in the plan's
-[Test layout](k3s_acceptance.md#test-layout). The scripted backend and `test_session_instructions`'s
-scripted case are in place ([acceptance README](../acceptance/README.md)); each remaining scenario
-gets its scripted version, and loses its real one, in its own PR.
+[Test layout](k3s_acceptance.md#test-layout). The scripted backend, `test_session_instructions`'s
+scripted case and `test_suspend_resume`'s Pod case are in place
+([acceptance README](../acceptance/README.md)); each remaining scenario gets its scripted version,
+and loses its real one, in its own PR.
 
 Exit: scripted versions of `test_session_instructions`, `test_launch_presets`, the Pod case of
 `test_suspend_resume` and the `test_egress` cases that need no outside credential pass on k3s on

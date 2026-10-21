@@ -4,6 +4,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:exclude test_dispatcher_deployed.py
 # gazelle:exclude test_session_instructions.py
 # gazelle:exclude test_storage_deployed.py
+# gazelle:exclude test_suspend_resume.py
 
 package(
     default_testonly = True,
@@ -181,36 +182,29 @@ py_test(
     ],
 )
 
-# Live end-to-end resume: two Threads, one per harness, share a fixture Sandbox so a single Pod
-# replacement exercises both native stores. This uses real model turns and waits for the old Pod to
-# disappear before resuming the same Sandbox.
-py_test(
+# Two Threads, one per harness, share a fixture Sandbox so a single Pod replacement exercises both
+# native stores; the old Pod is gone before the same Sandbox resumes. `eternal` as for
+# `test_session_instructions`.
+acceptance_test(
     name = "test_suspend_resume",
     timeout = "eternal",
     srcs = ["test_suspend_resume.py"],
-    env_inherit = [
-        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
-        "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT",
-        "AGENTPLANE_ACCEPTANCE_TOKEN",
-        "AGENTPLANE_ACCEPTANCE_URL",
-        "HOME",
-        "KUBECONFIG",
-    ],
-    tags = [
-        "manual",
-        "no-remote-exec",
-    ],
+    k3s = "scripted",
     deps = [
         ":agent",
         ":conftest",
-        "//:conftest",
+        ":scripted_upstream",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane:sandbox_resource",
+        "//agentplane/app:sandbox_models",
         "//agentplane/app/testing:client",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
+        "//agentplane/testing:scripted_model",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
