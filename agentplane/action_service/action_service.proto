@@ -1,31 +1,46 @@
-// The Action Service's workload API: how a sandboxed agent finds the Actions it may request, submits a request and
-// reads what came of it.
+// The Action Service's API: how a sandboxed agent finds the Actions it may request, submits a request and reads what
+// came of it, and how an operator reads requests, the catalog and Action policy. `OperatorActionService` holds what
+// only an operator does.
 syntax = "proto3";
 
 package agentplane.action_service;
 
 import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
-// Callers are workloads: the bearer is the Pod-bound token of a ServiceAccount that carries the
-// `agentplane.allegedly.works/use-action-service` label. A caller acts for its own ServiceAccount and sees only the
-// requests that account submitted, whichever Pod or external Connection submitted them. The exception is a service
-// reader (the Notification Service's ServiceAccount): it may list, get, watch and read the events of every account's
-// requests. A request reads the same for every reader. An agent reaches the HTTP routes through the egress proxy;
-// `agentplane actions` wraps them.
+// Callers are workloads and operators, and the bearer says which. A workload's bearer is the Pod-bound token of a
+// ServiceAccount that carries the `agentplane.allegedly.works/use-action-service` label. A workload acts for its own
+// ServiceAccount and sees only the requests that account submitted, whichever Pod or external Connection submitted
+// them. The exception is a service reader (the Notification Service's ServiceAccount): it may list, get, watch and
+// read the events of every account's requests. An operator's bearer is the OIDC token the integration app forwards
+// for the operator, verified as for `OperatorActionService`. An operator reads every account's requests and also sees
+// what a workload is not shown, `McpHealth.detail` and the binding diagnostics of `CallerActionPolicy`, but submits
+// and cancels nothing. A request reads the same for every reader. An agent reaches the HTTP routes through the egress
+// proxy; `agentplane actions` wraps them.
 //
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
-// whose ServiceAccount is not labeled; the answer does not say which. `INVALID_ARGUMENT` is a malformed request,
-// arguments that do not satisfy the Action's schema, or a group and Action this service cannot run. `NOT_FOUND` is a
-// request that does not exist or is not the caller's, or an unknown Action in `GetAction`. `ALREADY_EXISTS` is an
-// idempotency key the account already used. `PERMISSION_DENIED` is a `decided_only` submission no policy decides.
-// `FAILED_PRECONDITION` is an allowed request whose dispatch is no longer pending. `UNAVAILABLE` is a draining
-// service, an ActionGroup that is temporarily unavailable, or a lost change notification.
+// expired, or a workload's whose ServiceAccount is not labeled; the answer does not say which. `INVALID_ARGUMENT` is
+// a malformed request, an invalid history cursor, arguments that do not satisfy the Action's schema, or a group and
+// Action this service cannot run. `NOT_FOUND` is a request that does not exist or that the caller may not read, or an
+// unknown Action in `GetAction`. `ALREADY_EXISTS` is an idempotency key the account already used. `PERMISSION_DENIED`
+// is a `decided_only` submission no policy decides, or an operator submitting or cancelling. `FAILED_PRECONDITION` is
+// an allowed request whose dispatch is no longer pending. `UNAVAILABLE` is a draining service, an ActionGroup that is
+// temporarily unavailable, or a lost change notification.
 //
 // An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT` unless its field says it stands for a default; a
 // response never carries one.
+//
+// `WatchActionRequests` and `WatchActionGroups` send the current set as `snapshot` frames of a bounded number of items
+// each, then `snapshot_complete` (alone, for an empty set), then one `upsert` per item that changes afterwards,
+// carrying the item as it now stands. A client replaces what it holds under the item's identity. A change wakes the
+// server but the item is read from the table, so changes in quick succession may arrive as one `upsert`. Nothing is
+// replayed: a new stream starts from a new snapshot, which is the whole set. The bearer is checked again before every
+// frame: a stream whose bearer expires or stops being accepted ends `UNAUTHENTICATED`, and the client opens another
+// with a fresh token. A stream that ends `UNAUTHENTICATED` before its first frame was refused at the door, and
+// retrying it with the same token cannot succeed.
 service ActionService {
   // Records a request for an Action and answers with its receipt.
   //
@@ -45,11 +60,19 @@ service ActionService {
     option (google.api.http) = {post: "/v1/action-requests" body: "*"};
   }
 
-  // The caller's requests, newest first. `limit` bounds a page; continue with `after_id` set to the last request's
-  // `id`. Without `limit` every matching request is returned. An `after_id` that is unknown or not the caller's
-  // fails `NOT_FOUND`.
+  // The requests the caller may read, newest first. `limit` bounds a page; continue with `after_id` set to the last
+  // request's `id`. Without `limit` every matching request is returned. An `after_id` that is unknown or that the
+  // caller may not read fails `NOT_FOUND`.
   rpc ListActionRequests(ListActionRequestsRequest) returns (ListActionRequestsResponse) {
     option (google.api.http) = {get: "/v1/action-requests"};
+  }
+
+  // The requests the caller may read that have left `ACTION_STATE_DECISION_PENDING`, newest first by when they did,
+  // in pages. Continue with `cursor` set to the previous page's `next_cursor`; a page without one is the last. The
+  // route is a custom verb because a literal `history` segment beside `{request_id}` would depend on the gateway's
+  // route order.
+  rpc ListActionRequestHistory(ListActionRequestHistoryRequest) returns (ListActionRequestHistoryResponse) {
+    option (google.api.http) = {get: "/v1/action-requests:history"};
   }
 
   // The receipt of one request: its current state, Decision and Execution, with the result once there is one. Reads
@@ -69,8 +92,17 @@ service ActionService {
     option (google.api.http) = {get: "/v1/action-requests/{request_id}:watch"};
   }
 
+  // The requests the caller may read that are in `state`, then each one again whenever it changes. A request that
+  // stops matching `state` arrives as an `upsert` of its new state, which a client holding it drops. With no `state`
+  // the snapshot is every request ever recorded: the operator's browser passes `ACTION_STATE_DECISION_PENDING`, and
+  // `ListActionRequestHistory` pages the rest. No resume cursor: a reconnect reads the filtered set again.
+  rpc WatchActionRequests(WatchActionRequestsRequest) returns (stream WatchActionRequestsResponse) {
+    option (google.api.http) = {get: "/v1/action-requests:watch"};
+  }
+
   // Withdraws a request that has not been claimed for dispatch, and answers with what happened and the receipt. Only
-  // the submitting account can cancel, else `NOT_FOUND`; a service reader cannot. It takes no version and never
+  // the submitting account can cancel, else `NOT_FOUND`; a service reader cannot, and an operator fails
+  // `PERMISSION_DENIED`. It takes no version and never
   // interrupts an executor. The dispatch claim is the cutoff, even before the executor has physically started. Where
   // the request already ended or passed the cutoff the `outcome` says so, and the receipt is unchanged.
   rpc CancelActionRequest(CancelActionRequestRequest) returns (CancelActionRequestResponse) {
@@ -83,10 +115,17 @@ service ActionService {
     option (google.api.http) = {get: "/v1/action-requests/{request_id}/events"};
   }
 
-  // The reviewed catalog: every ActionGroup with its Actions and their descriptions, the same for every caller. It
-  // is bounded and not paged. A group that is not `available` lists no Actions.
+  // The reviewed catalog: every ActionGroup with its Actions and their descriptions, the same for every caller but
+  // for `McpHealth.detail`, which only an operator's view carries. Health is the answering replica's. It is bounded
+  // and not paged. A group that is not `available` lists no Actions.
   rpc ListActionGroups(ListActionGroupsRequest) returns (ListActionGroupsResponse) {
     option (google.api.http) = {get: "/v1/action-groups"};
+  }
+
+  // The MCP-backed groups as `ListActionGroups` shows them, then each one again whenever its health or catalog
+  // changes. Groups of other executor kinds are not streamed.
+  rpc WatchActionGroups(WatchActionGroupsRequest) returns (stream WatchActionGroupsResponse) {
+    option (google.api.http) = {get: "/v1/action-groups:watch"};
   }
 
   // One Action's current description and argument schema. Fetch it before submitting: do not guess arguments. An
@@ -99,9 +138,9 @@ service ActionService {
 
   // What an account's bindings auto-decide, resolved as admission would resolve them now: the caller's own, or those
   // of the `subject` it names. Any caller may name any ServiceAccount, in any namespace and labeled or not; an
-  // account no binding names reads as having none. Read it instead of submitting to find out whether a request would
-  // wait for an operator. While `synced` is false nothing auto-decides: every request takes the human path, whatever
-  // the policy objects say.
+  // account no binding names reads as having none. An operator has no account of its own and must name one, else
+  // `INVALID_ARGUMENT`. Read it instead of submitting to find out whether a request would wait for an operator. While
+  // `synced` is false nothing auto-decides: every request takes the human path, whatever the policy objects say.
   rpc GetActionPolicy(GetActionPolicyRequest) returns (GetActionPolicyResponse) {
     option (google.api.http) = {get: "/v1/action-policy"};
   }
@@ -143,6 +182,21 @@ message ListActionRequestsResponse {
   repeated ActionRequest action_requests = 1;
 }
 
+message ListActionRequestHistoryRequest {
+  // At most this many requests, 1 to 100; 50 when absent.
+  optional int32 limit = 1;
+  // The previous page's `next_cursor`. Opaque; absent for the first page. An invalid cursor fails `INVALID_ARGUMENT`.
+  optional string cursor = 2;
+  // Whether to include requests a policy allowed without an operator; true when absent.
+  optional bool include_auto_allowed = 3;
+}
+
+message ListActionRequestHistoryResponse {
+  repeated ActionRequest action_requests = 1;
+  // Absent on the last page.
+  optional string next_cursor = 2;
+}
+
 message GetActionRequestRequest {
   // UUID.
   string request_id = 1;
@@ -162,6 +216,27 @@ message WatchActionRequestRequest {
 // The receipt, current as of this frame.
 message WatchActionRequestResponse {
   ActionRequest action_request = 1;
+}
+
+message WatchActionRequestsRequest {
+  // Only requests in these states; empty selects every state.
+  repeated ActionState state = 1;
+}
+
+// Exactly one field is set.
+message WatchActionRequestsResponse {
+  oneof frame {
+    ActionRequestChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    ActionRequest upsert = 3;
+    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
+    // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
+    google.protobuf.Empty reconnect_required = 4;
+  }
+}
+
+message ActionRequestChunk {
+  repeated ActionRequest action_requests = 1;
 }
 
 // The condition on a receipt that ends a watch.
@@ -214,6 +289,24 @@ message ListActionRequestEventsResponse {
 message ListActionGroupsRequest {}
 
 message ListActionGroupsResponse {
+  repeated ActionGroup action_groups = 1;
+}
+
+message WatchActionGroupsRequest {}
+
+// Exactly one field is set.
+message WatchActionGroupsResponse {
+  oneof frame {
+    ActionGroupChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    ActionGroup upsert = 3;
+    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
+    // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
+    google.protobuf.Empty reconnect_required = 4;
+  }
+}
+
+message ActionGroupChunk {
   repeated ActionGroup action_groups = 1;
 }
 
@@ -523,8 +616,8 @@ message ToolAnnotations {
   optional bool open_world_hint = 4;
 }
 
-// An account's effective Action policy, in the form the account may see: what its bindings auto-decide, as admission
-// would resolve them now.
+// An account's effective Action policy: what its bindings auto-decide, as admission would resolve them now. An
+// operator's view adds each binding's diagnostics, which a workload's leaves out.
 message CallerActionPolicy {
   // The ServiceAccount whose bindings these are.
   agentplane.proto.ServiceAccount subject = 1;
@@ -545,9 +638,42 @@ message CallerBinding {
   string name = 1;
   // After this instant the binding contributes nothing; absent when it never expires.
   google.protobuf.Timestamp expires_at = 2;
-  // The named sets that resolved, present and valid, in the binding's order. A set that is missing or refused is
-  // not listed.
-  repeated string policy_sets = 3;
+  // The named sets that exist, in the binding's order. A workload's view lists only those that resolved, present and
+  // valid; an operator's lists the refused ones too.
+  repeated ActionPolicySet policy_sets = 3;
+  // The binding's metadata labels, for a reader that tells writers apart by them. Operator's view only.
+  map<string, string> labels = 4;
+  // The binding's metadata generation; a Ready judged at an older one is stale. Operator's view only.
+  optional int64 generation = 5;
+  // The binding's `ActionsReady`; absent until the service has judged the binding at all. Operator's view only.
+  ReadyCondition ready = 6;
+  // Names in the binding that no set answers to. Operator's view only.
+  repeated string missing_policy_sets = 7;
+}
+
+message ActionPolicySet {
+  string name = 1;
+  int64 generation = 2;
+  // Why a rule does not parse, when one does not; such a set contributes nothing. A PolicySet has no status of its
+  // own: each binding's `ActionsReady` says whether its sets resolved.
+  optional string refused = 3;
+}
+
+// The service's verdict on an object's spec, as its informer last wrote it.
+message ReadyCondition {
+  ConditionStatus status = 1;
+  string reason = 2;
+  string message = 3;
+  // The generation judged; behind the object's while an edit is unjudged.
+  optional int64 observed_generation = 4;
+}
+
+// A Kubernetes condition status.
+enum ConditionStatus {
+  CONDITION_STATUS_UNSPECIFIED = 0;
+  CONDITION_STATUS_TRUE = 1;
+  CONDITION_STATUS_FALSE = 2;
+  CONDITION_STATUS_UNKNOWN = 3;
 }
 
 // One policy as admission walks it: the binding and set it came through and its position there, which is what a

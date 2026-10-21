@@ -1,5 +1,6 @@
-// The Action Service's operator API: what the integration app shows an operator about Actions and does for them. It
-// carries no agent authority.
+// The Action Service's operator API: what the integration app does for an operator about Actions beyond reading them.
+// It carries no agent authority. An operator reads requests, the catalog and Action policy through `ActionService`,
+// with the same bearer.
 syntax = "proto3";
 
 package agentplane.action_service;
@@ -10,21 +11,19 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 // The caller is the integration app acting for an operator. The bearer is the operator's OIDC token, whose issuer,
-// audience and signature the service verifies; a workload's bearer never reaches this service, and an operator's
-// never reaches `ActionService`. An operator sees every account's requests, decides them, and manages MCP server
-// linkage. `ListActionRequests`, `GetActionRequest` and `ListActionGroups` take the messages of `ActionService`, with
-// the operator's wider view.
+// audience and signature the service verifies; a workload's bearer never reaches this service. An operator decides
+// requests and manages MCP server linkage.
 //
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
-// expired. `INVALID_ARGUMENT` is a malformed request, an invalid history cursor, or scopes the MCP server is not
-// configured for. `NOT_FOUND` is a request or MCP server that does not exist. `ALREADY_EXISTS` is a decision key
-// already used for another decision. `ABORTED` is an `expected_version` that is no longer current.
-// `FAILED_PRECONDITION` is a state that refuses the call: a request already decided, or an MCP server whose OAuth
-// metadata cannot be used. `UNAVAILABLE` is a draining service or a lost change notification.
+// expired. `INVALID_ARGUMENT` is a malformed request, or scopes the MCP server is not configured for. `NOT_FOUND` is a
+// request or MCP server that does not exist. `ALREADY_EXISTS` is a decision key already used for another decision.
+// `ABORTED` is an `expected_version` that is no longer current. `FAILED_PRECONDITION` is a state that refuses the
+// call: a request already decided, or an MCP server whose OAuth metadata cannot be used. `UNAVAILABLE` is a draining
+// service or a lost change notification.
 //
 // An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT`; a response never carries one.
 //
-// Every `Watch*` stream sends the current set as `snapshot` frames of a bounded number of items each, then
+// `WatchMcpServers` sends the current set as `snapshot` frames of a bounded number of items each, then
 // `snapshot_complete` (alone, for an empty set), then one `upsert` per item that changes afterwards, carrying the item
 // as it now stands. A client replaces what it holds under the item's identity. A change wakes the server but the item
 // is read from the table, so changes in quick succession may arrive as one `upsert`, and one that happens with the
@@ -34,23 +33,6 @@ import "google/protobuf/timestamp.proto";
 // `UNAUTHENTICATED` before its first frame was refused at the door, and retrying it with the same token cannot
 // succeed.
 service OperatorActionService {
-  // Every account's requests, newest first, with the filters and pages of `ActionService.ListActionRequests`.
-  rpc ListActionRequests(ListActionRequestsRequest) returns (ListActionRequestsResponse) {
-    option (google.api.http) = {get: "/v1/operator/action-requests"};
-  }
-
-  // Requests that have left `ACTION_STATE_DECISION_PENDING`, newest first by when they did, in pages. Continue with
-  // `cursor` set to the previous page's `next_cursor`; a page without one is the last. The route is a custom verb
-  // because a literal `history` segment beside `{request_id}` would depend on the gateway's route order.
-  rpc ListActionRequestHistory(ListActionRequestHistoryRequest) returns (ListActionRequestHistoryResponse) {
-    option (google.api.http) = {get: "/v1/operator/action-requests:history"};
-  }
-
-  // One request of any account. A request that does not exist fails `NOT_FOUND`.
-  rpc GetActionRequest(GetActionRequestRequest) returns (GetActionRequestResponse) {
-    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}"};
-  }
-
   // Records the operator's Decision on a request waiting for one, and answers with the request as it now stands. An
   // allow queues the request for dispatch. `expected_version` must be the `version` the operator reviewed, else
   // `ABORTED`. `idempotency_key` is unique per operator: an identical retry answers with the request as it now
@@ -58,33 +40,6 @@ service OperatorActionService {
   // fails `FAILED_PRECONDITION`. A draining service fails `UNAVAILABLE`.
   rpc DecideActionRequest(DecideActionRequestRequest) returns (DecideActionRequestResponse) {
     option (google.api.http) = {post: "/v1/operator/action-requests/{request_id}/decision" body: "*"};
-  }
-
-  // The requests in `state`, then each one again whenever it changes. A request that stops matching `state` arrives
-  // as an `upsert` of its new state, which a client holding it drops. With no `state` the snapshot is every request
-  // ever recorded: the browser passes `ACTION_STATE_DECISION_PENDING`, and `ListActionRequestHistory` pages the rest.
-  // No resume cursor: a reconnect reads the filtered set again.
-  rpc WatchActionRequests(WatchActionRequestsRequest) returns (stream WatchActionRequestsResponse) {
-    option (google.api.http) = {get: "/v1/operator/action-requests:watch"};
-  }
-
-  // The same catalog as `ActionService.ListActionGroups`, with each MCP group's `health.detail`, which can name
-  // backend addresses and error text. Health is the answering replica's.
-  rpc ListActionGroups(ListActionGroupsRequest) returns (ListActionGroupsResponse) {
-    option (google.api.http) = {get: "/v1/operator/action-groups"};
-  }
-
-  // The MCP-backed groups with their health detail, then each one again whenever its health or catalog changes.
-  // Groups of other executor kinds are not streamed.
-  rpc WatchActionGroups(WatchActionGroupsRequest) returns (stream WatchActionGroupsResponse) {
-    option (google.api.http) = {get: "/v1/operator/action-groups:watch"};
-  }
-
-  // What the named ServiceAccount's bindings auto-decide, as admission would resolve them now, with each binding's
-  // labels and Ready verdict and each named set as present, refused or missing. A subject the service does not watch
-  // reads as no bindings.
-  rpc GetServiceAccountActionPolicy(GetServiceAccountActionPolicyRequest) returns (GetServiceAccountActionPolicyResponse) {
-    option (google.api.http) = {get: "/v1/operator/action-policy/service-accounts/{namespace}/{name}"};
   }
 
   // One configured MCP server's OAuth linkage. An unknown server fails `NOT_FOUND`.
@@ -117,21 +72,6 @@ service OperatorActionService {
   }
 }
 
-message ListActionRequestHistoryRequest {
-  // At most this many requests, 1 to 100; 50 when absent.
-  optional int32 limit = 1;
-  // The previous page's `next_cursor`. Opaque; absent for the first page. An invalid cursor fails `INVALID_ARGUMENT`.
-  optional string cursor = 2;
-  // Whether to include requests a policy allowed without an operator; true when absent.
-  optional bool include_auto_allowed = 3;
-}
-
-message ListActionRequestHistoryResponse {
-  repeated ActionRequest action_requests = 1;
-  // Absent on the last page.
-  optional string next_cursor = 2;
-}
-
 message DecideActionRequestRequest {
   // UUID.
   string request_id = 1;
@@ -146,113 +86,6 @@ message DecideActionRequestRequest {
 
 message DecideActionRequestResponse {
   ActionRequest action_request = 1;
-}
-
-message WatchActionRequestsRequest {
-  // Only requests in these states; empty selects every state.
-  repeated ActionState state = 1;
-}
-
-// Exactly one field is set.
-message WatchActionRequestsResponse {
-  oneof frame {
-    ActionRequestChunk snapshot = 1;
-    google.protobuf.Empty snapshot_complete = 2;
-    ActionRequest upsert = 3;
-    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
-    // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
-    google.protobuf.Empty reconnect_required = 4;
-  }
-}
-
-message ActionRequestChunk {
-  repeated ActionRequest action_requests = 1;
-}
-
-message WatchActionGroupsRequest {}
-
-// Exactly one field is set.
-message WatchActionGroupsResponse {
-  oneof frame {
-    ActionGroupChunk snapshot = 1;
-    google.protobuf.Empty snapshot_complete = 2;
-    ActionGroup upsert = 3;
-    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
-    // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
-    google.protobuf.Empty reconnect_required = 4;
-  }
-}
-
-message ActionGroupChunk {
-  repeated ActionGroup action_groups = 1;
-}
-
-message GetServiceAccountActionPolicyRequest {
-  string namespace = 1;
-  string name = 2;
-}
-
-message GetServiceAccountActionPolicyResponse {
-  SubjectActionPolicy action_policy = 1;
-}
-
-// A subject's effective Action policy for the operator: the account's view plus the verdicts and failures the account
-// is not shown.
-message SubjectActionPolicy {
-  // The subject's unexpired, valid bindings in name order, as admission would resolve them now.
-  repeated SubjectBinding bindings = 1;
-  // Whether the service's copy of the policy objects is complete and still refreshed. While it is not, nothing
-  // auto-decides and `auto_approve_if` is empty.
-  bool synced = 2;
-  // In evaluation order; the first match approves.
-  repeated EffectivePolicy auto_approve_if = 3;
-}
-
-message SubjectBinding {
-  BindingKind kind = 1;
-  string name = 2;
-  // The binding's metadata labels, for a reader that tells writers apart by them.
-  map<string, string> labels = 3;
-  // The binding's metadata generation; a Ready judged at an older one is stale.
-  int64 generation = 4;
-  // After this instant the binding contributes nothing; absent when it never expires.
-  google.protobuf.Timestamp expires_at = 5;
-  // The binding's `ActionsReady`; absent until the service has judged the binding at all.
-  ReadyCondition ready = 6;
-  // The named sets that exist, valid or refused, in the binding's order.
-  repeated ActionPolicySet policy_sets = 7;
-  // Names in the binding that no set answers to.
-  repeated string missing_policy_sets = 8;
-}
-
-enum BindingKind {
-  BINDING_KIND_UNSPECIFIED = 0;
-  BINDING_KIND_POLICY_BINDING = 1;
-}
-
-// The service's verdict on an object's spec, as its informer last wrote it.
-message ReadyCondition {
-  ConditionStatus status = 1;
-  string reason = 2;
-  string message = 3;
-  // The generation judged; behind the object's while an edit is unjudged.
-  optional int64 observed_generation = 4;
-}
-
-// A Kubernetes condition status.
-enum ConditionStatus {
-  CONDITION_STATUS_UNSPECIFIED = 0;
-  CONDITION_STATUS_TRUE = 1;
-  CONDITION_STATUS_FALSE = 2;
-  CONDITION_STATUS_UNKNOWN = 3;
-}
-
-message ActionPolicySet {
-  string name = 1;
-  int64 generation = 2;
-  // Why a rule does not parse, when one does not; such a set contributes nothing. A PolicySet has no status of its
-  // own: each binding's `ActionsReady` says whether its sets resolved.
-  optional string refused = 3;
 }
 
 message GetMcpServerLinkageRequest {

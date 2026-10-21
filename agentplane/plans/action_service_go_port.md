@@ -1,6 +1,6 @@
 # Action Service Go port
 
-Status: **paused; resumes when the operator says so.** `ACTION_SERVICE_GO_PORT` in the [task DAG](task_dag.md)
+Status: **in flight (resumed by the operator 2026-10-21).** `ACTION_SERVICE_GO_PORT` in the [task DAG](task_dag.md)
 records it, and the operator said to port it (2026-10-19 PDT) and approved the destination below (2026-10-20 PDT).
 The plan burns down: a stage leaves when its work lands, and the file goes with the Python retirement.
 
@@ -82,21 +82,23 @@ Defaults inside it:
 
 ## Contract
 
-`action_service/action_service.proto` (`ActionService`, for workloads) holds its RPCs, shapes and error codes. It
-gains what the edge needs to serve `/mcp` as a workload caller: a decided-only submit with a distinct refusal code
-for direct tools, `ActionGroup.direct_tools` plus the caller's auto-approvable Actions in `GetActionPolicy`, each
-Action's title and MCP tool hints, and an optional subject on `GetActionPolicyRequest`. The integration app's operator API is three
-services, one per destination, so a later move changes no wire: `OperatorActionService` (requests, decisions,
-catalog, policy, MCP server linkage), `agentplane.mcp_edge.ConnectionService` (Connections and enrollments) and
-`WebPushService`. They live in files apart from the workload proto, so the OpenAPI document `proto_openapi` renders
-from it describes only what an agent may call. What the servicers and callers still owe the protos:
+`action_service/action_service.proto` (`ActionService`) holds the RPCs, shapes and error codes that workloads and
+operators share: the bearer picks the principal, and an operator reads every account's requests, the catalog with
+MCP health detail, and each binding's diagnostics in `GetActionPolicy`, but submits and cancels nothing (operator,
+2026-10-21: merge the reads). It carries what the edge needs to serve `/mcp` as a workload caller: a decided-only
+submit with its own refusal code, `ActionGroup.direct_tools` plus the caller's auto-approvable Actions in
+`GetActionPolicy`, each Action's title and MCP tool hints, and an optional subject on `GetActionPolicyRequest`. What
+only an operator does is in three services, one per destination, so a later move changes no wire:
+`OperatorActionService` (decisions, MCP server linkage), `agentplane.mcp_edge.ConnectionService` (Connections and
+enrollments) and `WebPushService`. They live in files apart from `action_service.proto`, so the OpenAPI document
+`proto_openapi` renders from it describes only what an agent may call. What the servicers and callers still owe the protos:
 
 - The rendered document is served at `/openapi.json`, linked from `/llms.txt`, and replaces
   `docs/agents/http_api.md` (stage D).
 - `WatchActionRequest` streams the receipt now and on each change and ends at the terminal or decision condition
   or the client's deadline. It replaces `wait_seconds` and `wait_until`; the CLI and the MCP tools' bounded waits
   move in the same change.
-- The five operator watches send a state-filtered snapshot in bounded chunks, then one `upsert` per changed item.
+- The set watches send a state-filtered snapshot in bounded chunks, then one `upsert` per changed item.
   The server keeps `id -> version` for the filtered set, diffs on each wakeup and fetches only changed rows, so
   NOTIFY stays a wakeup and no migration is needed. A watch ends at the bearer's expiry with `UNAUTHENTICATED`, which
   retires the app's `_renewed` and `_without_repeated_snapshots`. A resume cursor is one migration later if the
@@ -128,10 +130,8 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 
 | Stage | Change                                                                                                                                                                                                                        |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| B     | The protos: the workload additions above and the three operator services, the contract to review before any servicer exists.                                                                                                  |
-| C     | Go service skeleton (`config.go`, `main.go`, health, metrics, drain) and the lifecycle store with golden vectors; claim, lease, sweep and heartbeat loops. Locks take the request, then the Execution.                        |
 | D     | Workload auth, catalog, decision providers and policy kinds with the GitHub visibility lookup, `ActionService`, the receipt stream, `docs/agents/`, `/openapi.json`.                                                          |
-| E     | Operator JWT, request RPCs and watches, decision RPC.                                                                                                                                                                         |
+| E     | Operator JWT as `ActionService`'s second principal with its wider reads, the set watches, the decision RPC.                                                                                                                   |
 | F     | Connections and enrollments: a package owning its tables, which the core store never imports; `ConnectionService`.                                                                                                            |
 | G     | Executors: MCP supervisor and Sandbox exec; executor liveness.                                                                                                                                                                |
 | H     | Outbound linkage, its callback and the CIMD document; MCP-server RPCs.                                                                                                                                                        |

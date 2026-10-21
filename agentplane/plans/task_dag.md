@@ -1883,11 +1883,9 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 ```mermaid
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
-    ACTION_SERVICE_GO_PORT[Paused: port the Action Service to Go]
-    ACTION_API_MERGE[Decision, unscheduled: merge parts of the operator and agent-facing Action APIs]
+    ACTION_SERVICE_GO_PORT[In flight: port the Action Service to Go]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
-    ACTION_SERVICE_GO_PORT -. related .-> ACTION_API_MERGE
     ACTION_SERVICE_GO_PORT -. related .-> WEB_PUSH_SERVICE
 ```
 
@@ -1901,28 +1899,18 @@ check on `thread_observations` (404 for a Session no Thread links) is kept or dr
 
 ### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
 
-**Paused until the operator resumes it; operator, 2026-10-19 PDT: port it, with the OAuth authorization server on
-`zitadel/oidc`; 2026-10-20 PDT: approved its destination, an `actions` core with `mcp-edge` split out after the flip.**
-Landed: the Goose migrator and the four proto services (`ActionService`, `OperatorActionService`, `WebPushService`, and
-`ConnectionService` in `agentplane/mcp_edge/`). Serve them as generated facades and delete
-`OperatorActionServiceClient`, the app's Action routes and relays, and the Go Notification Service's hand-written HTTP
-client for the two request reads it makes. The request watch sends delta frames from the start: its first frame is the
-whole history (megabytes, #7922) and it ends every minute with the exchanged token. The MCP endpoint, OAuth metadata and
-consent callbacks stay hand-written HTTP. The receipt wait (`wait_seconds`, `wait_until`) and request paging (`limit`,
-`after_id`) the [agent CLI](../docs/agent_cli.md) calls are served by the Python service today; the port keeps them, and
-a server stream of receipts that ends at the condition replaces the wait with the CLI updated in the same change.
-Stages, stored-data risks and cutover: [Action Service Go port](action_service_go_port.md).
-
-### `ACTION_API_MERGE` — merge parts of the operator and agent-facing Action APIs
-
-**Decision, unscheduled (operator, 2026-10-20 07:25 UTC: "we should consider merging some parts of the operator and
-agent-facing apis").** `OperatorActionService` and `ActionService` define separate RPCs for reading requests and
-action groups over the same messages. They differ in the bearer (an operator's OIDC token, not a Pod-bound
-ServiceAccount token), the route prefix (`/v1/operator/`) and which requests the reader may see. Alternatives:
-keep two services, as the merged contracts have them; or serve the shared reads once and let the bearer pick the
-principal, keeping the operator-only RPCs (decisions, MCP linkage) in `OperatorActionService`. Deciding before the
-servicers of `ACTION_SERVICE_GO_PORT` are written lets them be implemented once. The contracts are
-`action_service.proto` and `operator_action_service.proto` in `agentplane/action_service/`.
+**In flight; operator, 2026-10-19 PDT: port it, with the OAuth authorization server on `zitadel/oidc`; 2026-10-20 PDT:
+approved its destination, an `actions` core with `mcp-edge` split out after the flip; 2026-10-21: resumed.** Landed: the
+Goose migrator, the four proto services (`ActionService`, `OperatorActionService`, `WebPushService`, and
+`ConnectionService` in `agentplane/mcp_edge/`), the lifecycle store, the service skeleton and the dispatch worker. Serve
+them as generated facades and delete `OperatorActionServiceClient`, the app's Action routes and relays, and the Go
+Notification Service's hand-written HTTP client for the two request reads it makes. The request watch sends delta frames
+from the start: its first frame is the whole history (megabytes, #7922) and it ends every minute with the exchanged
+token. The MCP endpoint, OAuth metadata and consent callbacks stay hand-written HTTP. The receipt wait (`wait_seconds`,
+`wait_until`) and request paging (`limit`, `after_id`) the [agent CLI](../docs/agent_cli.md) calls are served by the
+Python service today; the port keeps them, and a server stream of receipts that ends at the condition replaces the wait
+with the CLI updated in the same change. Stages, stored-data risks and cutover: [Action Service Go
+port](action_service_go_port.md).
 
 ### `WEB_PUSH_SERVICE` — Web Push as its own sender
 

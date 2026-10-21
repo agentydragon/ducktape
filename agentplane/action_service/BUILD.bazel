@@ -1320,6 +1320,7 @@ proto_library(
     deps = [
         "//agentplane/proto:sandboxes_proto",
         "@googleapis//google/api:annotations_proto",
+        "@protobuf//:empty_proto",
         "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
     ],
@@ -1340,8 +1341,8 @@ go_proto_library(
     ],
 )
 
-# The agent-facing reference. The operator API is a second proto so that this document describes only what an agent
-# may call.
+# The agent-facing reference. Operator-only RPCs are a second proto so that this document describes only what an
+# agent may call.
 proto_openapi(
     name = "action_service_openapi",
     proto = ":action_service_proto",
