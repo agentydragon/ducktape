@@ -166,7 +166,7 @@ func TestBindingsResolveAsAdmissionDecidesFromThem(t *testing.T) {
 	evidence := allowed.Vote.Evidence
 	if len(evidence.Bindings) != 2 || evidence.Bindings[1].ResourceVersion != b.ResourceVersion ||
 		evidence.Matched != (store.MatchedPolicy{
-			Namespace: f.policy, PolicySet: "test-auto", Source: store.PolicySourceRules, Index: 1, Type: store.PolicyExactActions,
+			Namespace: f.policy, PolicySet: "test-auto", Index: 1, Type: store.PolicyExactActions,
 		}) {
 		t.Errorf("evidence = %+v", evidence)
 	}

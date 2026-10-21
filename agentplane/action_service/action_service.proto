@@ -44,9 +44,9 @@ service ActionService {
   // Records a request for an Action and answers with its receipt.
   //
   // Admission validates `arguments` against the Action's current schema and asks the account's policies before
-  // anything is stored. A request a policy decides arrives already `ACTION_STATE_ALLOWED` or `ACTION_STATE_DENIED`
-  // and is never visible as `ACTION_STATE_DECISION_PENDING`; any other request waits there for an operator. An allow
-  // is not execution success: read the Execution with `GetActionRequest` or `WatchActionRequest`.
+  // anything is stored. A request a policy approves arrives already `ACTION_STATE_ALLOWED` and is never visible as
+  // `ACTION_STATE_DECISION_PENDING`; any other request waits there for an operator. An allow is not execution success:
+  // read the Execution with `GetActionRequest` or `WatchActionRequest`.
   //
   // With `decided_only`, a request no policy decides fails `PERMISSION_DENIED` instead of waiting, and the status
   // message says why. Nothing is stored: no operator is asked, nothing is left to cancel and `idempotency_key` stays
@@ -373,7 +373,7 @@ enum ActionState {
   ACTION_STATE_DECISION_PENDING = 1;
   // Allowed and queued for dispatch; no executor has claimed it.
   ACTION_STATE_ALLOWED = 2;
-  // Refused by an operator or a policy; nothing ran.
+  // Refused by an operator; nothing ran.
   ACTION_STATE_DENIED = 3;
   // Claimed by an executor, which has not started it.
   ACTION_STATE_DISPATCHING = 4;
@@ -388,24 +388,25 @@ enum ActionState {
   ACTION_STATE_EXECUTION_UNKNOWN = 9;
 }
 
-// How a request was decided, by an operator or by a policy.
+// How a request was decided, by an operator or by the caller's policies.
 message Decision {
   // UUID.
   string id = 1;
   Verdict verdict = 2;
-  // Who decided: `human_operator` for an operator, `action_policy_set` for the policy objects.
-  string provider = 3;
-  // The operator who decided; absent when a provider did.
+  reserved 3;
+  reserved "provider";
+  // The operator who decided; absent when policies approved.
   Operator operator = 4;
-  // The operator's note, shared unchanged with the caller and not secret; absent for a provider's Decision.
+  // The operator's note, shared unchanged with the caller and not secret; absent when policies approved.
   optional string decision_note = 5;
-  // A bounded code for a provider's reason; absent for an operator's Decision.
-  optional string reason_code = 6;
-  // A bounded explanation for a provider's reason, safe for the caller to read; absent for an operator's Decision.
+  reserved 6;
+  reserved "reason_code";
+  // Why policies approved, safe for the caller to read; absent for an operator's Decision.
   optional string reason_description = 7;
-  // The policy objects a policy Decision evaluated; absent for any other.
+  // The policy objects a policy Decision evaluated; absent for an operator's.
   PolicyEvidence policy_evidence = 8;
-  string idempotency_key = 9;
+  reserved 9;
+  reserved "idempotency_key";
   google.protobuf.Timestamp decided_at = 10;
 }
 
@@ -444,12 +445,13 @@ message PolicySetEvidence {
   int64 generation = 3;
 }
 
-// The policy that produced the Decision: which set, which list, which entry and which kind.
+// The policy that produced the Decision: which set, which entry and which kind.
 message MatchedPolicy {
   string namespace = 1;
   string policy_set = 2;
-  PolicySource source = 3;
-  // The entry's position in that list, from 0.
+  reserved 3;
+  reserved "source";
+  // The entry's position in the set's `rules`, from 0.
   int32 index = 4;
   PolicyKind type = 5;
   // Set by the GitHub repository kinds; the other kinds resolve no repository.
@@ -464,13 +466,6 @@ message MatchedRepository {
   // (`POLICY_KIND_GITHUB_PUBLIC_REPOSITORY`); a `POLICY_KIND_GITHUB_REPOSITORY` policy names its repository and never
   // looks.
   bool confirmed_public = 3;
-}
-
-// Which list of a PolicySet a policy sits in. Stored in Decisions, so it only grows.
-enum PolicySource {
-  POLICY_SOURCE_UNSPECIFIED = 0;
-  // The set's `rules`.
-  POLICY_SOURCE_RULES = 1;
 }
 
 // The kinds of Action policy; each has one evaluator.
@@ -516,17 +511,10 @@ message ActionEvent {
   int32 sequence = 1;
   ActionState state = 2;
   google.protobuf.Timestamp at = 3;
-  // Who caused the change, where an authenticated actor did (a cancellation); absent otherwise.
-  Principal actor = 4;
-}
-
-// An authenticated identity that can author an Action's events. Exactly one field is set.
-message Principal {
-  oneof principal {
-    // A workload, or an external Connection acting as the ServiceAccount.
-    agentplane.proto.ServiceAccount caller = 1;
-    Operator operator = 2;
-  }
+  reserved 4;
+  // The caller that cancelled the request, a workload or an external Connection acting as the ServiceAccount; absent
+  // for any other change.
+  agentplane.proto.ServiceAccount actor = 5;
 }
 
 // The discovery and ownership unit: one executor and its Actions.
@@ -682,7 +670,8 @@ enum ConditionStatus {
 message EffectivePolicy {
   string binding = 1;
   string policy_set = 2;
-  PolicySource source = 3;
+  reserved 3;
+  reserved "source";
   int32 index = 4;
   Policy policy = 5;
 }

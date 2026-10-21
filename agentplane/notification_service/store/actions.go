@@ -44,21 +44,12 @@ type ActionEvent struct {
 	Sequence int64
 	State    ActionState
 	At       time.Time
-	// Actor is who cancelled the request, or nil for an event nobody caused.
-	Actor ActionActor
+	// Actor is the caller that cancelled the request, or nil for any other event.
+	Actor *CallerActor
 }
-
-// ActionActor is who an Action event records as its author: a CallerActor or an OperatorActor.
-type ActionActor interface{ isActionActor() }
 
 // CallerActor is a workload, or a Connection acting as one, that proved a ServiceAccount.
 type CallerActor struct{ Account ServiceAccount }
-
-// OperatorActor is the human behind the operator surface, as its adapter verified them.
-type OperatorActor struct{ Issuer, Subject string }
-
-func (CallerActor) isActionActor()   {}
-func (OperatorActor) isActionActor() {}
 
 // The JSON forms below are the ones the Action Service writes and the rows already in the database hold.
 
@@ -93,33 +84,20 @@ func (a CallerActor) MarshalJSON() ([]byte, error) {
 	}{a.Account})
 }
 
-func (a OperatorActor) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Issuer  string `json:"issuer"`
-		Subject string `json:"subject"`
-	}{a.Issuer, a.Subject})
-}
-
-func decodeActionActor(data json.RawMessage) (ActionActor, error) {
+func decodeActionActor(data json.RawMessage) (*CallerActor, error) {
 	if data == nil || string(data) == "null" {
 		return nil, nil
 	}
 	var wire struct {
 		Account *ServiceAccount `json:"account"`
-		Issuer  *string         `json:"issuer"`
-		Subject *string         `json:"subject"`
 	}
 	if err := decode(data, &wire); err != nil {
 		return nil, err
 	}
-	switch {
-	case wire.Account != nil && wire.Issuer == nil && wire.Subject == nil:
-		return CallerActor{Account: *wire.Account}, nil
-	case wire.Account == nil && wire.Issuer != nil && wire.Subject != nil && *wire.Issuer != "" && *wire.Subject != "":
-		return OperatorActor{Issuer: *wire.Issuer, Subject: *wire.Subject}, nil
-	default:
-		return nil, errors.New("an actor is a caller (account) or an operator (issuer and subject)")
+	if wire.Account == nil {
+		return nil, errors.New("an actor is the caller that cancelled the request: an account")
 	}
+	return &CallerActor{Account: *wire.Account}, nil
 }
 
 func (e *ActionEvent) UnmarshalJSON(data []byte) error {
@@ -160,10 +138,10 @@ func (e ActionEvent) MarshalJSON() ([]byte, error) {
 		layout += ".000000"
 	}
 	return json.Marshal(struct {
-		Sequence int64       `json:"sequence"`
-		State    ActionState `json:"state"`
-		At       string      `json:"at"`
-		Actor    ActionActor `json:"actor"`
+		Sequence int64        `json:"sequence"`
+		State    ActionState  `json:"state"`
+		At       string       `json:"at"`
+		Actor    *CallerActor `json:"actor"`
 	}{e.Sequence, e.State, e.At.Format(layout + "Z07:00"), e.Actor})
 }
 

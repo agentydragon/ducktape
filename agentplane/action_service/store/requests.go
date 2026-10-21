@@ -139,8 +139,8 @@ func attach(ctx context.Context, q querier, rows []requestRow) ([]ActionRequest,
 
 func loadDecisions(ctx context.Context, q querier, ids pq.StringArray) (map[uuid.UUID]*Decision, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT request_id, id, verdict, provider, operator_issuer, operator_subject, decision_note, reason_code,
-			reason_description, policy_evidence, idempotency_key, decided_at
+		SELECT request_id, id, verdict, operator_issuer, operator_subject, decision_note, reason_description,
+			policy_evidence, decided_at
 		FROM action_decision WHERE request_id = ANY($1::uuid[])`, ids)
 	if err != nil {
 		return nil, err
@@ -153,9 +153,8 @@ func loadDecisions(ctx context.Context, q querier, ids pq.StringArray) (map[uuid
 		var verdict string
 		var issuer, subject *string
 		var evidence []byte
-		if err := rows.Scan(&requestID, &decision.ID, &verdict, &decision.Provider, &issuer, &subject,
-			&decision.DecisionNote, &decision.ReasonCode, &decision.ReasonDescription, &evidence,
-			&decision.IdempotencyKey, &decision.DecidedAt); err != nil {
+		if err := rows.Scan(&requestID, &decision.ID, &verdict, &issuer, &subject, &decision.DecisionNote,
+			&decision.ReasonDescription, &evidence, &decision.DecidedAt); err != nil {
 			return nil, err
 		}
 		decision.Verdict = Verdict(verdict)
@@ -210,7 +209,7 @@ func loadExecutions(ctx context.Context, q querier, ids pq.StringArray) (map[uui
 
 // advance moves the request to state in the caller's transaction as one transition: a version, an Event and the
 // request's first place in history.
-func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state ActionState, at time.Time, actor Principal) error {
+func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state ActionState, at time.Time, actor *CallerPrincipal) error {
 	row.State, row.UpdatedAt = state, at
 	row.Version++
 	if state != StateDecisionPending && row.HistoryAt == nil {
@@ -225,7 +224,7 @@ func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state ActionState
 }
 
 // appendEvent records the request's current version and state, and wakes whoever follows the request.
-func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principal) error {
+func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor *CallerPrincipal) error {
 	var document any
 	if actor != nil {
 		encoded, err := json.Marshal(actor)
@@ -284,13 +283,8 @@ func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input Action
 			return err
 		}
 		if vote := admission.Vote; vote != nil {
-			if _, err := recordDecision(ctx, tx, &row, at, decisionRecord{
-				Verdict:           vote.Verdict,
-				Provider:          vote.Provider,
-				IdempotencyKey:    "auto:" + row.ID.String(),
-				ReasonCode:        &vote.ReasonCode,
-				ReasonDescription: vote.ReasonDescription,
-				PolicyEvidence:    vote.Evidence,
+			if err := recordDecision(ctx, tx, &row, at, decisionRecord{
+				Verdict: VerdictAllow, ReasonDescription: vote.ReasonDescription, PolicyEvidence: vote.Evidence,
 			}); err != nil {
 				return err
 			}

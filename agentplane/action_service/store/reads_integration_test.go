@@ -221,10 +221,6 @@ func (f fixture) decidedAt(t *testing.T, key string, admission Admission, verdic
 	return request
 }
 
-func vote(verdict Verdict) *ProviderVote {
-	return &ProviderVote{Provider: "test-provider", Verdict: verdict, ReasonCode: "test_reason"}
-}
-
 func (f fixture) history(t *testing.T, page HistoryPage) ([]ActionRequest, *string) {
 	t.Helper()
 	requests, next, err := f.History(t.Context(), operator, page)
@@ -245,11 +241,11 @@ func TestHistoryListsRequestsThatLeftPendingNewestTransitionFirst(t *testing.T) 
 		t.Fatal(err)
 	}
 	f.exec(t, `UPDATE action_request SET history_at = $2 WHERE id = $1`, cancelled.ID, base.Add(2*time.Minute))
-	// The two provider Decisions share a time: the ID breaks the tie in the same direction.
-	autoAllowed := f.decidedAt(t, "history-auto-allowed", Admission{RequestID: uuid.New(), Vote: vote(VerdictAllow)}, "", base.Add(3*time.Minute))
-	autoDenied := f.decidedAt(t, "history-auto-denied", Admission{RequestID: uuid.New(), Vote: vote(VerdictDeny)}, "", base.Add(3*time.Minute))
+	// The two policy Decisions share a time: the ID breaks the tie in the same direction.
+	autoAllowed := f.decidedAt(t, "history-auto-allowed", Admission{RequestID: uuid.New(), Vote: &ProviderVote{}}, "", base.Add(3*time.Minute))
+	autoAllowedToo := f.decidedAt(t, "history-auto-allowed-too", Admission{RequestID: uuid.New(), Vote: &ProviderVote{}}, "", base.Add(3*time.Minute))
 
-	all := []ActionRequest{operatorDenied, operatorAllowed, cancelled, autoAllowed, autoDenied}
+	all := []ActionRequest{operatorDenied, operatorAllowed, cancelled, autoAllowed, autoAllowedToo}
 	historyAt := func(request ActionRequest) time.Time {
 		var at time.Time
 		if err := f.db.QueryRowContext(t.Context(), `SELECT history_at FROM action_request WHERE id = $1`, request.ID).Scan(&at); err != nil {
@@ -290,12 +286,12 @@ func TestHistoryListsRequestsThatLeftPendingNewestTransitionFirst(t *testing.T) 
 		t.Errorf("next cursor %v does not end at the last request", next)
 	}
 
-	// Requests a provider allowed are left out before the page fills.
-	withoutAutoAllowed := []ActionRequest{operatorDenied, operatorAllowed, cancelled, autoDenied}
+	// Requests policies allowed are left out before the page fills.
+	withoutAutoAllowed := []ActionRequest{operatorDenied, operatorAllowed, cancelled}
 	if got := walk(HistoryPage{Limit: 2, ExcludeAutoAllowed: true}); !slices.Equal(got, newestFirst(withoutAutoAllowed)) {
 		t.Errorf("without auto-allowed requests: %v, want %v", got, newestFirst(withoutAutoAllowed))
 	}
-	if page, next := f.history(t, HistoryPage{Limit: 4, ExcludeAutoAllowed: true}); len(page) != 4 || next != nil {
+	if page, next := f.history(t, HistoryPage{Limit: 3, ExcludeAutoAllowed: true}); len(page) != 3 || next != nil {
 		t.Errorf("a page filled by the remaining requests = %d requests, next %v", len(page), next)
 	}
 }
@@ -361,7 +357,7 @@ func TestEventsPageBySequence(t *testing.T) {
 			t.Errorf("event %d has sequence %d", i, event.Sequence)
 		}
 	}
-	if last := events[2]; last.Sequence != cancelled.Request.Version || !last.At.Equal(cancelled.Request.UpdatedAt) || last.Actor != caller {
+	if last := events[2]; last.Sequence != cancelled.Request.Version || !last.At.Equal(cancelled.Request.UpdatedAt) || last.Actor == nil || *last.Actor != caller {
 		t.Errorf("the cancellation's event = %+v", last)
 	}
 	if events[0].Actor != nil || events[1].Actor != nil {

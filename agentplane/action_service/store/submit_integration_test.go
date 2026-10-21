@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -77,58 +78,45 @@ func TestAnIdempotencyKeyIsSpentWhateverTheEnvelopeSays(t *testing.T) {
 	}
 }
 
-func TestADecisiveVoteCommitsItsDecisionWithTheInsert(t *testing.T) {
+func TestAPolicyApprovalCommitsItsDecisionWithTheInsert(t *testing.T) {
+	f := newFixture(t)
 	evidence := &PolicyEvidence{
 		Bindings:   []BindingEvidence{{Namespace: "test-namespace", Name: "test-binding", ResourceVersion: "7"}},
 		PolicySets: []PolicySetEvidence{{Namespace: "test-namespace", Name: "test-set", Generation: 4}},
-		Matched:    MatchedPolicy{Namespace: "test-namespace", PolicySet: "test-set", Source: PolicySourceRules, Type: PolicyArgumentSchema},
+		Matched:    MatchedPolicy{Namespace: "test-namespace", PolicySet: "test-set", Type: PolicyArgumentSchema},
 	}
 	description := "matched binding test-binding"
-	for _, test := range []struct {
-		verdict   Verdict
-		state     ActionState
-		execution bool
-	}{
-		{VerdictAllow, StateAllowed, true},
-		{VerdictDeny, StateDenied, false},
-	} {
-		t.Run(string(test.verdict), func(t *testing.T) {
-			f := newFixture(t)
-			request := f.submitInput(t, caller, input("voted"), Admission{RequestID: uuid.New(), Vote: &ProviderVote{
-				Provider: "test-provider", Verdict: test.verdict, ReasonCode: "test_reason", ReasonDescription: &description,
-				Evidence: evidence,
-			}})
+	request := f.submitInput(t, caller, input("voted"), Admission{RequestID: uuid.New(), Vote: &ProviderVote{
+		ReasonDescription: &description, Evidence: evidence,
+	}})
 
-			if request.State != test.state || request.Version != 2 {
-				t.Errorf("state %s version %d, want %s version 2", request.State, request.Version, test.state)
-			}
-			decision := request.Decision
-			if decision == nil || decision.Verdict != test.verdict || decision.Provider != "test-provider" ||
-				decision.Operator != nil || decision.DecisionNote != nil || *decision.ReasonCode != "test_reason" ||
-				*decision.ReasonDescription != description || !reflect.DeepEqual(decision.PolicyEvidence, evidence) ||
-				decision.IdempotencyKey != "auto:"+request.ID.String() || !decision.DecidedAt.Equal(request.UpdatedAt) {
-				t.Errorf("decision %+v", decision)
-			}
-			if (request.Execution != nil) != test.execution {
-				t.Fatalf("execution = %+v, want one: %v", request.Execution, test.execution)
-			}
-			if test.execution {
-				execution := request.Execution
-				if execution.State != ExecutionPendingDispatch || execution.Result != nil || execution.Error != nil ||
-					execution.StartedAt != nil || execution.CompletedAt != nil || execution.ReconciledAt != nil ||
-					!execution.CreatedAt.Equal(request.UpdatedAt) {
-					t.Errorf("execution %+v", execution)
-				}
-			}
-			events := f.events(t, request.ID)
-			if got := eventStates(events); !reflect.DeepEqual(got, []ActionState{StateDecisionPending, test.state}) ||
-				!events[0].At.Equal(events[1].At) || events[1].Sequence != 2 {
-				t.Errorf("events %+v", events)
-			}
-			if f.count(t, `SELECT count(*) FROM action_request WHERE history_at = updated_at`) != 1 {
-				t.Error("the request did not enter history when it was decided")
-			}
-		})
+	if request.State != StateAllowed || request.Version != 2 {
+		t.Errorf("state %s version %d, want allowed version 2", request.State, request.Version)
+	}
+	decision := request.Decision
+	if decision == nil || decision.Verdict != VerdictAllow || decision.Operator != nil || decision.DecisionNote != nil ||
+		*decision.ReasonDescription != description || !reflect.DeepEqual(decision.PolicyEvidence, evidence) ||
+		!decision.DecidedAt.Equal(request.UpdatedAt) {
+		t.Errorf("decision %+v", decision)
+	}
+	// Python reads the provider and reason code Go no longer does.
+	if f.count(t, `SELECT count(*) FROM action_decision
+		WHERE provider = 'action_policy_set' AND reason_code = 'policy_set_auto_approve'`) != 1 {
+		t.Error("the decision is not recorded as Python's policy provider records it")
+	}
+	execution := request.Execution
+	if execution == nil || execution.State != ExecutionPendingDispatch || execution.Result != nil || execution.Error != nil ||
+		execution.StartedAt != nil || execution.CompletedAt != nil || execution.ReconciledAt != nil ||
+		!execution.CreatedAt.Equal(request.UpdatedAt) {
+		t.Errorf("execution %+v", execution)
+	}
+	events := f.events(t, request.ID)
+	if got := eventStates(events); !reflect.DeepEqual(got, []ActionState{StateDecisionPending, StateAllowed}) ||
+		!events[0].At.Equal(events[1].At) || events[1].Sequence != 2 {
+		t.Errorf("events %+v", events)
+	}
+	if f.count(t, `SELECT count(*) FROM action_request WHERE history_at = updated_at`) != 1 {
+		t.Error("the request did not enter history when it was decided")
 	}
 }
 
@@ -139,9 +127,9 @@ func TestAnInvalidSubmissionStoresNothing(t *testing.T) {
 	if _, err := f.Submit(t.Context(), caller, body, Admission{RequestID: uuid.New()}); !errors.Is(err, ErrInvalid) {
 		t.Errorf("an empty title: %v", err)
 	}
-	vote := &ProviderVote{Provider: "test-provider", Verdict: "no_opinion", ReasonCode: "test_reason"}
-	if _, err := f.Submit(t.Context(), caller, input("invalid"), Admission{RequestID: uuid.New(), Vote: vote}); !errors.Is(err, ErrInvalid) {
-		t.Errorf("a vote that does not decide: %v", err)
+	long := strings.Repeat("x", 501)
+	if _, err := f.Submit(t.Context(), caller, input("invalid"), Admission{RequestID: uuid.New(), Vote: &ProviderVote{ReasonDescription: &long}}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("an approval reason over 500 characters: %v", err)
 	}
 	if f.count(t, `SELECT count(*) FROM action_request`) != 0 {
 		t.Error("an invalid submission was stored")

@@ -37,9 +37,8 @@ func (s *OperatorService) DecideActionRequest(ctx context.Context, request *oper
 	}
 	// The Gate admits only operators to this service.
 	operator := admitted(ctx).principal.(store.OperatorPrincipal)
-	decided, _, err := s.store.Decide(ctx, id, store.DecisionInput{
-		Verdict: verdict, ExpectedVersion: request.GetExpectedVersion(), IdempotencyKey: request.GetIdempotencyKey(),
-		DecisionNote: request.DecisionNote,
+	decided, err := s.store.Decide(ctx, id, store.DecisionInput{
+		Verdict: verdict, ExpectedVersion: request.GetExpectedVersion(), DecisionNote: request.DecisionNote,
 	}, operator)
 	if err != nil {
 		return nil, err

@@ -44,18 +44,14 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 		Bindings:   []store.BindingEvidence{{Namespace: testNamespace, Name: "test-binding", ResourceVersion: "7"}},
 		PolicySets: []store.PolicySetEvidence{{Namespace: testNamespace, Name: "test-set", Generation: 4}},
 		Matched: store.MatchedPolicy{
-			Namespace: testNamespace, PolicySet: "test-set", Source: store.PolicySourceRules, Index: 2,
-			Type:       store.PolicyGitHubRepository,
+			Namespace: testNamespace, PolicySet: "test-set", Index: 2, Type: store.PolicyGitHubRepository,
 			Repository: &store.MatchedRepository{Owner: "test-owner", Repository: "test-repository", ConfirmedPublic: true},
 		},
 	}
 	submitted, err := s.store.Submit(t.Context(), caller, store.ActionRequestInput{
 		IdempotencyKey: "test-voted", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 		Arguments: json.RawMessage(`{"test": ["argument", 1]}`), Title: "test title", Description: &description,
-	}, store.Admission{RequestID: uuid.New(), Vote: &store.ProviderVote{
-		Provider: "test-provider", Verdict: store.VerdictAllow, ReasonCode: "test_reason", ReasonDescription: &reason,
-		Evidence: evidence,
-	}})
+	}, store.Admission{RequestID: uuid.New(), Vote: &store.ProviderVote{ReasonDescription: &reason, Evidence: evidence}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,18 +90,17 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 		State:  action_servicepb.ActionState_ACTION_STATE_FAILED, Version: stored.Version,
 		CreatedAt: timestamppb.New(stored.CreatedAt), UpdatedAt: timestamppb.New(stored.UpdatedAt),
 		Decision: &action_servicepb.Decision{
-			Id: stored.Decision.ID.String(), Verdict: action_servicepb.Verdict_VERDICT_ALLOW, Provider: "test-provider",
-			ReasonCode: proto.String("test_reason"), ReasonDescription: &reason,
+			Id: stored.Decision.ID.String(), Verdict: action_servicepb.Verdict_VERDICT_ALLOW, ReasonDescription: &reason,
 			PolicyEvidence: &action_servicepb.PolicyEvidence{
 				Bindings:   []*action_servicepb.BindingEvidence{{Namespace: testNamespace, Name: "test-binding", ResourceVersion: "7"}},
 				PolicySets: []*action_servicepb.PolicySetEvidence{{Namespace: testNamespace, Name: "test-set", Generation: 4}},
 				Matched: &action_servicepb.MatchedPolicy{
-					Namespace: testNamespace, PolicySet: "test-set", Source: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
-					Index: 2, Type: action_servicepb.PolicyKind_POLICY_KIND_GITHUB_REPOSITORY,
+					Namespace: testNamespace, PolicySet: "test-set", Index: 2,
+					Type:       action_servicepb.PolicyKind_POLICY_KIND_GITHUB_REPOSITORY,
 					Repository: &action_servicepb.MatchedRepository{Owner: "test-owner", Repository: "test-repository", ConfirmedPublic: true},
 				},
 			},
-			IdempotencyKey: stored.Decision.IdempotencyKey, DecidedAt: timestamppb.New(stored.Decision.DecidedAt),
+			DecidedAt: timestamppb.New(stored.Decision.DecidedAt),
 		},
 		Execution: &action_servicepb.Execution{
 			Id: stored.Execution.ID.String(), State: action_servicepb.ExecutionState_EXECUTION_STATE_FAILED,
@@ -146,9 +141,7 @@ func TestAnOperatorsDecisionAndACallersCancellationNameWhoActed(t *testing.T) {
 		{Sequence: 1, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, At: timestamppb.New(stored[0].At)},
 		{
 			Sequence: 2, State: action_servicepb.ActionState_ACTION_STATE_CANCELLED, At: timestamppb.New(stored[1].At),
-			Actor: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{
-				Caller: &sandboxes.ServiceAccount{Namespace: testNamespace, Name: "test-caller"},
-			}},
+			Actor: &sandboxes.ServiceAccount{Namespace: testNamespace, Name: "test-caller"},
 		},
 	}
 	for name, tc := range map[string]struct {
@@ -208,7 +201,7 @@ func TestHistoryPagesTheDecidedRequestsAndCanLeaveOutThoseAPolicyAllowed(t *test
 	auto, err := s.store.Submit(t.Context(), caller, store.ActionRequestInput{
 		IdempotencyKey: "test-auto-allowed", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 		Arguments: json.RawMessage(`{}`), Title: "test title",
-	}, store.Admission{RequestID: uuid.New(), Vote: &store.ProviderVote{Provider: "test-provider", Verdict: store.VerdictAllow, ReasonCode: "test_reason"}})
+	}, store.Admission{RequestID: uuid.New(), Vote: &store.ProviderVote{}})
 	if err != nil {
 		t.Fatal(err)
 	}

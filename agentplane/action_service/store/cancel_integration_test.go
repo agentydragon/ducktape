@@ -37,15 +37,15 @@ func TestAPendingCancellationIsDurableAndIdempotent(t *testing.T) {
 	}
 	events := f.events(t, pending.ID)
 	if !slices.Equal(eventStates(events), []ActionState{StateDecisionPending, StateCancelled}) ||
-		events[1].Actor != caller || !events[1].At.Equal(result.Request.UpdatedAt) {
+		events[1].Actor == nil || *events[1].Actor != caller || !events[1].At.Equal(result.Request.UpdatedAt) {
 		t.Errorf("events %+v", events)
 	}
 
 	// Neither the version the operator saw nor a refreshed one authorizes a late approval.
-	if _, _, err := f.Decide(t.Context(), pending.ID, decision(pending, VerdictAllow, "test-decision"), operator); conflictReason(err) != ConflictVersionChanged {
+	if _, err := f.Decide(t.Context(), pending.ID, decision(pending, VerdictAllow), operator); conflictReason(err) != ConflictVersionChanged {
 		t.Errorf("approval of the version the operator saw: %v", err)
 	}
-	if _, _, err := f.Decide(t.Context(), pending.ID, decision(result.Request, VerdictAllow, "test-decision"), operator); conflictReason(err) != ConflictAlreadyDecided {
+	if _, err := f.Decide(t.Context(), pending.ID, decision(result.Request, VerdictAllow), operator); conflictReason(err) != ConflictAlreadyDecided {
 		t.Errorf("approval of the refreshed version: %v", err)
 	}
 }
@@ -76,9 +76,8 @@ func TestAnAllowedCancellationKeepsItsDecisionAndStopsDispatch(t *testing.T) {
 		t.Errorf("finishing the cancelled request: %v", err)
 	}
 
-	replay, dispatch, err := f.Decide(t.Context(), allowed.ID, decision(pending, VerdictAllow, "decision-allowed"), operator)
-	if err != nil || dispatch || replay.State != StateCancelled {
-		t.Errorf("replayed approval = %v, dispatch %v, %v", replay.State, dispatch, err)
+	if _, err := f.Decide(t.Context(), allowed.ID, decision(pending, VerdictAllow), operator); conflictReason(err) != ConflictVersionChanged {
+		t.Errorf("a repeated approval: %v", err)
 	}
 }
 
@@ -86,10 +85,8 @@ func TestOnlyTheOwnerCanCancel(t *testing.T) {
 	f := newFixture(t)
 	pending := f.submit(t, caller, "owned")
 
-	for name, principal := range map[string]Principal{"another caller": otherCaller, "an operator": operator} {
-		if _, err := f.Cancel(t.Context(), pending.ID, principal); !errors.Is(err, ErrNotFound) {
-			t.Errorf("%s: %v", name, err)
-		}
+	if _, err := f.Cancel(t.Context(), pending.ID, otherCaller); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another caller: %v", err)
 	}
 	if _, err := f.Cancel(t.Context(), uuid.New(), caller); !errors.Is(err, ErrNotFound) {
 		t.Errorf("an unknown request: %v", err)
@@ -99,8 +96,8 @@ func TestOnlyTheOwnerCanCancel(t *testing.T) {
 	}
 	f.cancel(t, pending.ID)
 	// A request that is already cancelled does not tell a non-owner so.
-	if _, err := f.Cancel(t.Context(), pending.ID, operator); !errors.Is(err, ErrNotFound) {
-		t.Errorf("an operator after the owner cancelled: %v", err)
+	if _, err := f.Cancel(t.Context(), pending.ID, otherCaller); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another caller after the owner cancelled: %v", err)
 	}
 }
 

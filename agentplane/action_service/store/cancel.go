@@ -10,17 +10,16 @@ import (
 	"github.com/google/uuid"
 )
 
-// Cancel withdraws a request that no executor has claimed. It confers no authority beyond the owner's: any other
-// principal, an operator included, does not find the request. The outcome says why a request that cannot be
-// withdrawn was left as it was.
-func (s *Store) Cancel(ctx context.Context, id uuid.UUID, principal Principal) (CancellationResult, error) {
+// Cancel withdraws a request of the caller's that no executor has claimed. Another caller does not find the
+// request. The outcome says why a request that cannot be withdrawn was left as it was.
+func (s *Store) Cancel(ctx context.Context, id uuid.UUID, caller CallerPrincipal) (CancellationResult, error) {
 	var result CancellationResult
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		row, err := getRequest(ctx, tx, id, true)
 		if err != nil {
 			return err
 		}
-		if caller, ok := principal.(CallerPrincipal); !ok || row.Caller != caller.Account {
+		if row.Caller != caller.Account {
 			return ErrNotFound
 		}
 		switch row.State {
@@ -37,7 +36,7 @@ func (s *Store) Cancel(ctx context.Context, id uuid.UUID, principal Principal) (
 					return err
 				}
 			}
-			if err := advance(ctx, tx, &row, StateCancelled, at, principal); err != nil {
+			if err := advance(ctx, tx, &row, StateCancelled, at, &caller); err != nil {
 				return err
 			}
 			result.Outcome = OutcomeCancelled

@@ -224,7 +224,6 @@ def proto_evidence(evidence: PolicyEvidence | None) -> Json | None:
         "matched": present(
             namespace=matched.namespace,
             policySet=matched.policy_set,
-            source=enum("POLICY_SOURCE", matched.source),
             index=matched.index,
             type=enum("POLICY_KIND", matched.type),
             repository=None
@@ -244,13 +243,10 @@ def proto_decision(decision: DecisionView | None) -> Json | None:
     return present(
         id=str(decision.id),
         verdict=enum("VERDICT", decision.verdict),
-        provider=decision.provider,
         operator=proto_operator(decision.operator),
         decisionNote=decision.decision_note,
-        reasonCode=decision.reason_code,
         reasonDescription=decision.reason_description,
         policyEvidence=proto_evidence(decision.policy_evidence),
-        idempotencyKey=decision.idempotency_key,
         decidedAt=timestamp(decision.decided_at),
     )
 
@@ -292,11 +288,11 @@ def proto_event(event: ActionEventView) -> Json:
     actor: Json | None = None
     match event.actor:
         case CallerPrincipal(account=account):
-            actor = {"caller": proto_account(account)}
-        case OperatorPrincipal():
-            actor = {"operator": proto_operator(event.actor)}
+            actor = proto_account(account)
         case None:
             pass
+        case _:
+            raise ValueError(f"the core names only a cancelling caller as an actor, not {event.actor!r}")
     return present(
         sequence=event.sequence, state=enum("ACTION_STATE", event.state), at=timestamp(event.at), actor=actor
     )
@@ -381,13 +377,7 @@ def proto_policy(view: CallerActionPolicyView) -> Json:
             ],
             "synced": view.synced,
             "autoApproveIf": [
-                {
-                    "binding": p.binding,
-                    "policySet": p.policy_set,
-                    "source": enum("POLICY_SOURCE", p.source),
-                    "index": p.index,
-                    "policy": proto_policy_kind(p),
-                }
+                {"binding": p.binding, "policySet": p.policy_set, "index": p.index, "policy": proto_policy_kind(p)}
                 for p in view.auto_approve_if
             ],
         }
@@ -437,10 +427,10 @@ def operator_decision(verdict: Verdict, note: str | None) -> DecisionView:
     )
 
 
-def policy_decision(verdict: Verdict, reason: str | None, *, repository: MatchedRepository | None) -> DecisionView:
+def policy_decision(reason: str | None, *, repository: MatchedRepository | None) -> DecisionView:
     return DecisionView(
         id=UUID(int=0xD2),
-        verdict=verdict,
+        verdict=Verdict.ALLOW,
         provider="action_policy_set",
         operator=None,
         decision_note=None,
@@ -524,14 +514,13 @@ def requests() -> dict[str, ActionRequestView]:
             ActionState.RUNNING,
             group="test-sandbox",
             name="exec",
-            decision=policy_decision(Verdict.ALLOW, "test allowed", repository=None),
+            decision=policy_decision("test allowed", repository=None),
             execution=execution(ExecutionState.RUNNING, completed=False),
         ),
         "succeeded over MCP": request(
             5,
             ActionState.SUCCEEDED,
             decision=policy_decision(
-                Verdict.ALLOW,
                 "test allowed",
                 repository=MatchedRepository(owner="test-owner", repository="test-repo", confirmed_public=False),
             ),
@@ -569,9 +558,6 @@ def requests() -> dict[str, ActionRequestView]:
         "denied by an operator": request(
             9, ActionState.DENIED, decision=operator_decision(Verdict.DENY, "test denial note é")
         ),
-        "denied by a policy": request(
-            10, ActionState.DENIED, decision=policy_decision(Verdict.DENY, "test policy reason", repository=None)
-        ),
         "denied without a reason": request(11, ActionState.DENIED, decision=operator_decision(Verdict.DENY, None)),
         "cancelled": request(12, ActionState.CANCELLED),
     }
@@ -582,7 +568,6 @@ def events() -> list[ActionEventView]:
         ActionEventView(sequence=1, state=ActionState.DECISION_PENDING, at=CREATED),
         ActionEventView(sequence=2, state=ActionState.ALLOWED, at=DECIDED),
         ActionEventView(sequence=3, state=ActionState.CANCELLED, at=COMPLETED, actor=CallerPrincipal(account=CALLER)),
-        ActionEventView(sequence=4, state=ActionState.DENIED, at=COMPLETED, actor=OPERATOR),
     ]
 
 
@@ -898,7 +883,7 @@ async def calls() -> list[JsonValue]:
         vectors.append(await call(f"{name}: result", "get_action_result", {"request_id": str(view.id)}, views=[view]))
     pending, allowed, running = views["decision pending"], views["allowed, not dispatched"], views["running"]
     succeeded, failed = views["succeeded over MCP"], views["failed"]
-    denied, cancelled, dispatching = views["denied by a policy"], views["cancelled"], views["dispatching"]
+    denied, cancelled, dispatching = views["denied by an operator"], views["cancelled"], views["dispatching"]
     gone = request(13, ActionState.SUCCEEDED, group="test-gone", execution=execution(ExecutionState.SUCCEEDED))
     vectors += [
         await call("compact receipt", "get_action_request", {"request_id": str(pending.id)}, views=[pending]),

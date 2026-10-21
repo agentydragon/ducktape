@@ -102,9 +102,9 @@ type matchedOutcome struct {
 	Repository  *store.MatchedRepository `json:"repository"`
 }
 
+// decisionOutcome is Python's ProviderOutcome without its `reason_code`, which the store writes for an Allow.
 type decisionOutcome struct {
 	Verdict           string                `json:"verdict"`
-	ReasonCode        string                `json:"reason_code"`
 	ReasonDescription *string               `json:"reason_description"`
 	Evidence          *store.PolicyEvidence `json:"evidence"`
 }
@@ -185,12 +185,8 @@ func TestTheProviderDecidesAsPythonDecides(t *testing.T) {
 			var got decisionOutcome
 			switch decision := provider.Decide(t.Context(), bindings, vector.Action, arguments(t, vector.Arguments)).(type) {
 			case Allow:
-				if decision.Vote.Provider != ProviderName {
-					t.Errorf("provider %q", decision.Vote.Provider)
-				}
 				got = decisionOutcome{
-					Verdict:           string(decision.Vote.Verdict),
-					ReasonCode:        decision.Vote.ReasonCode,
+					Verdict:           string(store.VerdictAllow),
 					ReasonDescription: decision.Vote.ReasonDescription,
 					Evidence:          decision.Vote.Evidence,
 				}
@@ -198,8 +194,7 @@ func TestTheProviderDecidesAsPythonDecides(t *testing.T) {
 					t.Errorf("the store refuses the vote: %v", err)
 				}
 			case NoOpinion:
-				// Python's reason code for no opinion; nothing records one.
-				got = decisionOutcome{Verdict: "no_opinion", ReasonCode: "no_auto_approve_match", ReasonDescription: &decision.ReasonDescription}
+				got = decisionOutcome{Verdict: "no_opinion", ReasonDescription: &decision.ReasonDescription}
 			}
 			if !reflect.DeepEqual(got, vector.Outcome) {
 				t.Errorf("Python decides\n%s\nGo\n%s", asJSON(t, vector.Outcome), asJSON(t, got))

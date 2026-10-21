@@ -50,7 +50,6 @@ py_library(
         "//agentplane:kubernetes_watch",
         "//agentplane:policy_sets",
         "//agentplane:subjects",
-        "//agentplane/action_service:models",
         "//agentplane/action_service:policy_evaluation",
         "//agentplane/action_service:policy_informer",
         "//agentplane/action_service:policy_view",

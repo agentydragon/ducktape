@@ -83,27 +83,24 @@ func TestWritesThatChangeWhatReadersFollowWakeThemAndOthersDoNot(t *testing.T) {
 		f.history(t, HistoryPage{Limit: 10})
 	})
 	check("refusing a stale decision", false, false, func() {
-		stale := decision(pending, VerdictAllow, "stale")
+		stale := decision(pending, VerdictAllow)
 		stale.ExpectedVersion++
-		if _, _, err := f.Decide(t.Context(), pending.ID, stale, operator); conflictReason(err) != ConflictVersionChanged {
+		if _, err := f.Decide(t.Context(), pending.ID, stale, operator); conflictReason(err) != ConflictVersionChanged {
 			t.Error(err)
 		}
 	})
 	var allowed ActionRequest
 	check("allowing", true, true, func() { allowed = f.decide(t, pending, VerdictAllow) })
-	check("replaying the decision", false, false, func() {
-		if _, dispatch, err := f.Decide(t.Context(), pending.ID, decision(pending, VerdictAllow, "decision-woken"), operator); err != nil || dispatch {
-			t.Errorf("replay dispatch %v, %v", dispatch, err)
+	check("repeating the decision", false, false, func() {
+		if _, err := f.Decide(t.Context(), pending.ID, decision(pending, VerdictAllow), operator); conflictReason(err) != ConflictVersionChanged {
+			t.Error(err)
 		}
 	})
 	check("cancelling an allowed request", true, false, func() { f.cancel(t, allowed.ID) })
 	check("cancelling a cancelled request", false, false, func() { f.cancel(t, allowed.ID) })
 	check("denying", true, false, func() { f.decide(t, f.submit(t, caller, "denied"), VerdictDeny) })
-	check("a submission a provider allowed", true, true, func() {
-		f.submitInput(t, caller, input("auto-allowed"), Admission{RequestID: uuid.New(), Vote: vote(VerdictAllow)})
-	})
-	check("a submission a provider denied", true, false, func() {
-		f.submitInput(t, caller, input("auto-denied"), Admission{RequestID: uuid.New(), Vote: vote(VerdictDeny)})
+	check("a submission policies allowed", true, true, func() {
+		f.submitInput(t, caller, input("auto-allowed"), Admission{RequestID: uuid.New(), Vote: &ProviderVote{}})
 	})
 }
 

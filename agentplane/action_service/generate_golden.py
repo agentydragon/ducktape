@@ -138,21 +138,18 @@ def decision_input(**fields: object) -> Json:
 
 
 def decision_inputs() -> dict[str, Json]:
+    # The Go store reads the verdict, the expected version and the note, not the key.
     return {
         "allow": decision_input(),
         "deny with a note": decision_input(verdict="deny", decision_note="not permitted"),
         "empty note": decision_input(decision_note=""),
-        "longest values": decision_input(
-            idempotency_key="k" * 200, decision_note="n" * 2000, expected_version=2**31 - 1
-        ),
+        "longest note, highest expected version": decision_input(decision_note="n" * 2000, expected_version=2**31 - 1),
         "multibyte note at the limit": decision_input(decision_note="🚀" * 2000),
         "unknown verdict": decision_input(verdict="maybe"),
         "no_opinion is not a verdict": decision_input(verdict="no_opinion"),
         "uppercase verdict": decision_input(verdict="ALLOW"),
         "expected version 0": decision_input(expected_version=0),
         "negative expected version": decision_input(expected_version=-1),
-        "empty idempotency key": decision_input(idempotency_key=""),
-        "idempotency key above 200 characters": decision_input(idempotency_key="k" * 201),
         "note above 2000 characters": decision_input(decision_note="n" * 2001),
         "multibyte note above 2000 characters": decision_input(decision_note="🚀" * 2001),
     }
@@ -224,36 +221,27 @@ def provider_outcome(**fields: object) -> Json:
 
 
 def provider_outcomes() -> dict[str, Json]:
+    # The Go store records only the policies' approval: its description and evidence.
     return {
         "allow": provider_outcome(),
-        "deny with a description": provider_outcome(verdict="deny", reason_description="why it was refused"),
         "allow with evidence": provider_outcome(evidence=evidence()),
-        "no opinion": provider_outcome(verdict="no_opinion"),
-        "longest values": provider_outcome(reason_code="c" * 64, reason_description="d" * 500),
-        "multibyte values at the limits": provider_outcome(reason_code="🚀" * 64, reason_description="名" * 500),
-        "empty reason code": provider_outcome(reason_code=""),
-        "reason code above 64 characters": provider_outcome(reason_code="c" * 65),
+        "longest description": provider_outcome(reason_description="d" * 500),
+        "multibyte description at the limit": provider_outcome(reason_description="名" * 500),
         "description above 500 characters": provider_outcome(reason_description="d" * 501),
-        "unknown verdict": provider_outcome(verdict="maybe"),
         "invalid evidence": provider_outcome(evidence=evidence(matched=matched(type="anything"))),
     }
 
 
 def actors() -> dict[str, dict[str, JsonValue]]:
+    # The store writes an actor only for a caller's cancellation.
     return {
         "caller": {"account": account()},
-        "operator": {"issuer": "https://issuer.test.example", "subject": "test-operator"},
         "unicode caller": {"account": account("名前空間", "アカウント-é")},
-        "unicode operator": {"issuer": "発行者", "subject": "オペレーター-é"},
         "empty object": {},
         "caller and operator fields": {"account": account(), "issuer": "i", "subject": "s"},
         "caller with an extra field": {"account": account(), "extra": 1},
         "caller without a name": {"account": {"namespace": "test-namespace"}},
         "caller with an empty namespace": {"account": account(namespace="")},
-        "operator with an empty issuer": {"issuer": "", "subject": "test-operator"},
-        "operator with an empty subject": {"issuer": "https://issuer.test.example", "subject": ""},
-        "operator without a subject": {"issuer": "https://issuer.test.example"},
-        "operator with an extra field": {"issuer": "i", "subject": "s", "extra": 1},
     }
 
 
@@ -349,21 +337,6 @@ def build() -> Json:
         }
         for name, case in policy_evidence().items()
     ]
-    outcome_vectors = []
-    for name, case in provider_outcomes().items():
-        if not accepted(ProviderOutcome, case):
-            outcome_vectors.append({"name": name, "input": case, "valid": False})
-            continue
-        outcome = ProviderOutcome.model_validate(case)
-        outcome_vectors.append(
-            {
-                "name": name,
-                "input": case,
-                "valid": True,
-                # The store records a Decision for a vote that decides; `no_opinion` defers to a human instead.
-                "decisive": outcome.verdict is not ProviderVerdict.NO_OPINION,
-            }
-        )
     actor_vectors = []
     for name, document in actors().items():
         try:
@@ -371,15 +344,7 @@ def build() -> Json:
         except ValidationError:
             actor_vectors.append({"name": name, "input": document, "valid": False})
         else:
-            actor_vectors.append(
-                {
-                    "name": name,
-                    "input": document,
-                    "valid": True,
-                    "kind": "caller" if "account" in document else "operator",
-                    "stored": actor_document(actor),
-                }
-            )
+            actor_vectors.append({"name": name, "input": document, "valid": True, "stored": actor_document(actor)})
     return {
         "enums": {
             "action_state": [member.value for member in ActionState],
@@ -395,7 +360,10 @@ def build() -> Json:
             {"name": name, "input": case, "valid": accepted(DecisionInput, case)}
             for name, case in decision_inputs().items()
         ],
-        "provider_outcomes": outcome_vectors,
+        "provider_outcomes": [
+            {"name": name, "input": case, "valid": accepted(ProviderOutcome, case)}
+            for name, case in provider_outcomes().items()
+        ],
         "policy_evidence": evidence_vectors,
         "actors": actor_vectors,
         "history_cursors": history_cursors(),

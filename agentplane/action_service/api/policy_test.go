@@ -202,7 +202,7 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 			Name: "test-binding", PolicySets: []*action_servicepb.ActionPolicySet{{Name: "test-set", Generation: set.Generation}},
 		}},
 		AutoApproveIf: []*action_servicepb.EffectivePolicy{{
-			Binding: "test-binding", PolicySet: "test-set", Source: action_servicepb.PolicySource_POLICY_SOURCE_RULES, Index: 0,
+			Binding: "test-binding", PolicySet: "test-set", Index: 0,
 			Policy: &action_servicepb.Policy{Kind: &action_servicepb.Policy_ExactActions{ExactActions: &action_servicepb.ExactActionsPolicy{
 				Actions: map[string]*action_servicepb.StringList{testGroup: {Values: []string{testAction}}},
 			}}},

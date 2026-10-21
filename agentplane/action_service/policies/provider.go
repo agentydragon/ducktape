@@ -12,13 +12,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
-const (
-	ProviderName      = "action_policy_set"
-	AutoApproveReason = "policy_set_auto_approve"
-	// descriptionLimit is the stored bound on a reason description, in code points; object names alone can approach
-	// it.
-	descriptionLimit = 500
-)
+// descriptionLimit is the stored bound on a reason description, in code points; object names alone can approach it.
+const descriptionLimit = 500
 
 // Binding is one PolicyBinding naming the caller, with the valid sets it names that exist, as the policy index held
 // them at admission. A later edit, expiry or deletion changes the next request's Decision, not this one's.
@@ -70,18 +65,13 @@ func (p *Provider) Decide(ctx context.Context, bindings []Binding, action store.
 				policy := numbered.Rule
 				switch outcome := policy.evaluate(ctx, action, arguments, p.visibility).(type) {
 				case Matched:
-					description := truncated(fmt.Sprintf("binding %s/%s set %s %s[%d] %s: %s",
-						binding.Namespace, binding.Name, set.Name, store.PolicySourceRules, numbered.Number,
-						policy.Kind.Type(), outcome.Explanation))
+					description := truncated(fmt.Sprintf("binding %s/%s set %s rules[%d] %s: %s",
+						binding.Namespace, binding.Name, set.Name, numbered.Number, policy.Kind.Type(), outcome.Explanation))
 					return Allow{Vote: store.ProviderVote{
-						Provider:          ProviderName,
-						Verdict:           store.VerdictAllow,
-						ReasonCode:        AutoApproveReason,
 						ReasonDescription: &description,
 						Evidence: evidence(bindings, store.MatchedPolicy{
 							Namespace:  set.Namespace,
 							PolicySet:  set.Name,
-							Source:     store.PolicySourceRules,
 							Index:      int64(numbered.Number),
 							Type:       policy.Kind.Type(),
 							Repository: outcome.Repository,
@@ -89,8 +79,8 @@ func (p *Provider) Decide(ctx context.Context, bindings []Binding, action store.
 					}}
 				case NotMatched:
 					if policy.lists(action) {
-						declined = append(declined, fmt.Sprintf("set %s %s[%d] %s: %s",
-							set.Name, store.PolicySourceRules, numbered.Number, policy.Kind.Type(), outcome.Reason))
+						declined = append(declined, fmt.Sprintf("set %s rules[%d] %s: %s",
+							set.Name, numbered.Number, policy.Kind.Type(), outcome.Reason))
 					}
 				}
 			}

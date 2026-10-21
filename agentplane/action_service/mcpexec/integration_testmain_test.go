@@ -285,8 +285,8 @@ func (f fixture) allowed(t *testing.T, action, arguments string) uuid.UUID {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.store.Decide(t.Context(), pending.ID, store.DecisionInput{
-		Verdict: store.VerdictAllow, ExpectedVersion: pending.Version, IdempotencyKey: "allow-" + key,
+	if _, err := f.store.Decide(t.Context(), pending.ID, store.DecisionInput{
+		Verdict: store.VerdictAllow, ExpectedVersion: pending.Version,
 	}, operator); err != nil {
 		t.Fatal(err)
 	}

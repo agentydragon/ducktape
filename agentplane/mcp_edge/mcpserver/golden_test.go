@@ -328,12 +328,36 @@ func TestToolCallsAnswerAsThePythonToolsDo(t *testing.T) {
 			if arrived() != len(vector.Core) {
 				t.Errorf("%d of the script's %d RPCs arrived", arrived(), len(vector.Core))
 			}
-			want := answerValue(t, vector.Result, true)
+			want := withoutRemovedFields(answerValue(t, vector.Result, true))
 			if got := answerValue(t, result, false); !reflect.DeepEqual(got, want) {
 				t.Errorf("answer =\n%s\nwant\n%s", indented(t, got), indented(t, want))
 			}
 		})
 	}
+}
+
+// withoutRemovedFields is a Python answer without what Go's views no longer carry. Deliberate difference: a Decision
+// has no provider, reason code or key, and a policy does not name the list it sits in.
+func withoutRemovedFields(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		if _, decision := value["decided_at"]; decision {
+			for _, field := range []string{"provider", "reason_code", "idempotency_key"} {
+				delete(value, field)
+			}
+		}
+		if _, policy := value["policy_set"]; policy {
+			delete(value, "source")
+		}
+		for _, field := range value {
+			withoutRemovedFields(field)
+		}
+	case []any:
+		for _, item := range value {
+			withoutRemovedFields(item)
+		}
+	}
+	return value
 }
 
 func TestToolsAreListedAsFastMCPListsThem(t *testing.T) {

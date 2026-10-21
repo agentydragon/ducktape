@@ -28,13 +28,8 @@ type ActionIdentity struct {
 // ServiceReaderPrincipal read every owner's.
 type ReadPrincipal interface{ isReadPrincipal() }
 
-// Principal is who authors Events: a CallerPrincipal or an OperatorPrincipal. It is stored as `action_event.actor`.
-type Principal interface {
-	ReadPrincipal
-	isPrincipal()
-}
-
-// CallerPrincipal is a workload that proved one ServiceAccount.
+// CallerPrincipal is a workload that proved one ServiceAccount. It is stored as `action_event.actor` of the
+// cancellation it authored.
 type CallerPrincipal struct {
 	Account ServiceAccount `json:"account"`
 }
@@ -53,8 +48,6 @@ type ServiceReaderPrincipal struct {
 func (CallerPrincipal) isReadPrincipal()        {}
 func (OperatorPrincipal) isReadPrincipal()      {}
 func (ServiceReaderPrincipal) isReadPrincipal() {}
-func (CallerPrincipal) isPrincipal()            {}
-func (OperatorPrincipal) isPrincipal()          {}
 
 // ActionState is where a request is. It is stored as text.
 type ActionState string
@@ -118,8 +111,9 @@ var policyKinds = []PolicyKind{
 	PolicyHomeAssistantEntityControl,
 }
 
-// PolicySourceRules is the only list of a PolicySet a matched policy sits in.
-const PolicySourceRules = "rules"
+// policySource is `policy_evidence.matched.source`, which Python's model requires: the PolicySet list a matched
+// policy sits in, of which `rules` is the only one.
+const policySource = "rules"
 
 // PolicyEvidence is what a policy-set Decision evaluated, as the objects stood at admission. It is stored as
 // `action_decision.policy_evidence`.
@@ -145,7 +139,6 @@ type PolicySetEvidence struct {
 type MatchedPolicy struct {
 	Namespace string     `json:"namespace"`
 	PolicySet string     `json:"policy_set"`
-	Source    string     `json:"source"`
 	Index     int64      `json:"index"`
 	Type      PolicyKind `json:"type"`
 	// Repository is set by the GitHub policy kinds.
@@ -169,13 +162,10 @@ type ActionRequestInput struct {
 	Description *string
 }
 
-// ProviderVote is the decisive outcome of admission's provider evaluation and the provider that cast it.
+// ProviderVote is the caller's policies auto-approving a request at admission.
 type ProviderVote struct {
-	Provider          string
-	Verdict           Verdict
-	ReasonCode        string
 	ReasonDescription *string
-	// Evidence is set when the provider decided from policy objects.
+	// Evidence is the policy objects the approval evaluated.
 	Evidence *PolicyEvidence
 }
 
@@ -193,7 +183,6 @@ type DecisionInput struct {
 	Verdict Verdict
 	// ExpectedVersion is the version of the request the operator decided on.
 	ExpectedVersion int64
-	IdempotencyKey  string
 	DecisionNote    *string
 }
 
@@ -217,18 +206,17 @@ type ActionRequest struct {
 	Execution *Execution
 }
 
-// Decision is the one verdict on a request.
+// Decision is the one verdict on a request: an operator's, or the caller's policies' auto-approval.
 type Decision struct {
-	ID       uuid.UUID
-	Verdict  Verdict
-	Provider string
-	// Operator is the human who decided; nil when a DecisionProvider did.
-	Operator          *OperatorPrincipal
-	DecisionNote      *string
-	ReasonCode        *string
+	ID      uuid.UUID
+	Verdict Verdict
+	// Operator is the human who decided; nil when policies approved.
+	Operator *OperatorPrincipal
+	// DecisionNote is the operator's note to the caller; nil when policies approved.
+	DecisionNote *string
+	// ReasonDescription and PolicyEvidence say why policies approved; nil for an operator's Decision.
 	ReasonDescription *string
 	PolicyEvidence    *PolicyEvidence
-	IdempotencyKey    string
 	DecidedAt         time.Time
 }
 
@@ -251,8 +239,8 @@ type Event struct {
 	Sequence int64
 	State    ActionState
 	At       time.Time
-	// Actor authenticated a cancellation; nil for every other transition.
-	Actor Principal
+	// Actor is the caller that cancelled the request; nil for every other transition.
+	Actor *CallerPrincipal
 }
 
 // CancellationOutcome is what cancelling a request did.
@@ -377,9 +365,6 @@ func (p OperatorPrincipal) validate() error {
 }
 
 func (e PolicyEvidence) validate() error {
-	if e.Matched.Source != PolicySourceRules {
-		return invalid("policy source must be %q", PolicySourceRules)
-	}
 	if !slices.Contains(policyKinds, e.Matched.Type) {
 		return invalid("unknown policy kind %q", e.Matched.Type)
 	}
@@ -424,9 +409,6 @@ func (i DecisionInput) Validate() error {
 	if i.ExpectedVersion < 1 {
 		return invalid("expected_version must be at least 1")
 	}
-	if err := bounded("idempotency_key", i.IdempotencyKey, 1, 200); err != nil {
-		return err
-	}
 	if i.DecisionNote != nil {
 		return bounded("decision_note", *i.DecisionNote, 0, 2000)
 	}
@@ -447,12 +429,6 @@ func (o ExecutionOutcome) Validate() error {
 }
 
 func (v ProviderVote) Validate() error {
-	if !v.Verdict.valid() {
-		return invalid("a vote that decides is allow or deny, not %q", v.Verdict)
-	}
-	if err := bounded("reason_code", v.ReasonCode, 1, 64); err != nil {
-		return err
-	}
 	if v.ReasonDescription != nil {
 		if err := bounded("reason_description", *v.ReasonDescription, 0, 500); err != nil {
 			return err
@@ -517,7 +493,27 @@ func (s *PolicySetEvidence) UnmarshalJSON(data []byte) error {
 
 func (m *MatchedPolicy) UnmarshalJSON(data []byte) error {
 	type plain MatchedPolicy
-	return decodeFields(data, (*plain)(m), "namespace", "policy_set", "source", "index", "type")
+	var stored struct {
+		plain
+		Source string `json:"source"`
+	}
+	if err := decodeFields(data, &stored, "namespace", "policy_set", "source", "index", "type"); err != nil {
+		return err
+	}
+	if stored.Source != policySource {
+		return invalid("policy source must be %q", policySource)
+	}
+	*m = MatchedPolicy(stored.plain)
+	return nil
+}
+
+// MarshalJSON writes the policy with the source the stored model requires.
+func (m MatchedPolicy) MarshalJSON() ([]byte, error) {
+	type plain MatchedPolicy
+	return json.Marshal(struct {
+		plain
+		Source string `json:"source"`
+	}{plain(m), policySource})
 }
 
 func (r *MatchedRepository) UnmarshalJSON(data []byte) error {
@@ -537,23 +533,11 @@ func (e PolicyEvidence) MarshalJSON() ([]byte, error) {
 	return json.Marshal(plain(e))
 }
 
-// decodeActor reads `action_event.actor`: a CallerPrincipal has an `account`, an OperatorPrincipal an `issuer`
-// and a `subject`.
-func decodeActor(data []byte) (Principal, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
+// decodeActor reads `action_event.actor`: the CallerPrincipal that cancelled the request.
+func decodeActor(data []byte) (*CallerPrincipal, error) {
+	var principal CallerPrincipal
+	if err := decodeFields(data, &principal, "account"); err != nil {
 		return nil, err
 	}
-	if _, caller := fields["account"]; caller {
-		var principal CallerPrincipal
-		if err := decodeFields(data, &principal, "account"); err != nil {
-			return nil, err
-		}
-		return principal, principal.Account.validate()
-	}
-	var principal OperatorPrincipal
-	if err := decodeFields(data, &principal, "issuer", "subject"); err != nil {
-		return nil, err
-	}
-	return principal, principal.validate()
+	return &principal, principal.Account.validate()
 }

@@ -111,9 +111,7 @@ func TestPolicyEvidencePythonStoredIsReadAndWrittenBack(t *testing.T) {
 				t.Errorf("read evidence %+v, want %+v", read, evidence)
 			}
 
-			written := f.submitInput(t, caller, input("go-decided"), Admission{RequestID: uuid.New(), Vote: &ProviderVote{
-				Provider: "test-provider", Verdict: VerdictDeny, ReasonCode: "test_reason", Evidence: &evidence,
-			}})
+			written := f.submitInput(t, caller, input("go-decided"), Admission{RequestID: uuid.New(), Vote: &ProviderVote{Evidence: &evidence}})
 			sameJSON(t, f.document(t, `SELECT policy_evidence FROM action_decision WHERE request_id = $1`, written.ID), vector.Stored)
 		})
 	}
@@ -129,24 +127,16 @@ func TestActorsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 			id := f.insertMinimalRequest(t, otherCaller.Account, "python-"+vector.Name)
 			f.exec(t, `INSERT INTO action_event (request_id, sequence, state, at, actor) VALUES ($1, 2, 'cancelled', now(), $2::jsonb)`,
 				id, string(vector.Stored))
-			events := f.events(t, id)
-			if len(events) != 2 || events[1].Actor == nil {
-				t.Fatalf("events %+v", events)
-			}
-			if _, isCaller := events[1].Actor.(CallerPrincipal); isCaller != (vector.Kind == "caller") {
-				t.Errorf("read a %T, want a %s", events[1].Actor, vector.Kind)
-			}
-
-			if vector.Kind != "caller" {
-				return
-			}
-			actor, err := decodeActor(vector.Input)
+			owner, err := decodeActor(vector.Input)
 			if err != nil {
 				t.Fatal(err)
 			}
-			owner := actor.(CallerPrincipal)
-			written := f.submitInput(t, owner, input("go-"+vector.Name), Admission{RequestID: uuid.New()})
-			if _, err := f.Cancel(t.Context(), written.ID, owner); err != nil {
+			if events := f.events(t, id); len(events) != 2 || events[1].Actor == nil || *events[1].Actor != *owner {
+				t.Fatalf("events %+v", events)
+			}
+
+			written := f.submitInput(t, *owner, input("go-"+vector.Name), Admission{RequestID: uuid.New()})
+			if _, err := f.Cancel(t.Context(), written.ID, *owner); err != nil {
 				t.Fatal(err)
 			}
 			sameJSON(t, f.document(t, `SELECT actor FROM action_event WHERE request_id = $1 AND sequence = 2`, written.ID), vector.Stored)
@@ -262,9 +252,9 @@ func TestRequestsPythonWroteCanBeDecidedAndCancelled(t *testing.T) {
 	toCancel := f.insertMinimalRequest(t, caller.Account, "python-to-cancel")
 
 	pending := f.get(t, toDecide)
-	decided, dispatch, err := f.Decide(t.Context(), toDecide, decision(pending, VerdictAllow, "test-decision"), operator)
-	if err != nil || !dispatch || decided.State != StateAllowed || decided.Version != 2 {
-		t.Fatalf("decision = %+v, dispatch %v, %v", decided, dispatch, err)
+	decided, err := f.Decide(t.Context(), toDecide, decision(pending, VerdictAllow), operator)
+	if err != nil || decided.State != StateAllowed || decided.Version != 2 || decided.Execution == nil {
+		t.Fatalf("decision = %+v, %v", decided, err)
 	}
 	cancelled := f.cancel(t, toCancel)
 	if cancelled.Outcome != OutcomeCancelled || cancelled.Request.Version != 2 {

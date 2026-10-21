@@ -98,9 +98,7 @@ func (f fixture) allowed(t *testing.T, owner CallerPrincipal, key string) Action
 
 func (f fixture) decide(t *testing.T, request ActionRequest, verdict Verdict) ActionRequest {
 	t.Helper()
-	decided, _, err := f.Decide(t.Context(), request.ID, DecisionInput{
-		Verdict: verdict, ExpectedVersion: request.Version, IdempotencyKey: "decision-" + request.IdempotencyKey,
-	}, operator)
+	decided, err := f.Decide(t.Context(), request.ID, decision(request, verdict), operator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +205,6 @@ func await[T any](t *testing.T, result <-chan T) T {
 }
 
 type decided struct {
-	request  ActionRequest
-	dispatch bool
-	err      error
+	request ActionRequest
+	err     error
 }

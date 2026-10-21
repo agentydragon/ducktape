@@ -323,27 +323,6 @@
     "sequence": 1,
     "state": "cancelled"
    }
-  },
-  {
-   "name": "operator actor",
-   "payload": {
-    "actor": {
-     "issuer": "https://issuer.test",
-     "subject": "test-operator"
-    },
-    "at": "2026-10-20T03:56:03Z",
-    "sequence": 1,
-    "state": "denied"
-   },
-   "wire": {
-    "actor": {
-     "issuer": "https://issuer.test",
-     "subject": "test-operator"
-    },
-    "at": "2026-10-20T03:56:03Z",
-    "sequence": 1,
-    "state": "denied"
-   }
   }
  ],
  "command_id": {
@@ -5529,26 +5508,15 @@
    }
   },
   {
-   "name": "operator actor without a subject",
+   "name": "operator actor",
    "wire": {
     "actor": {
-     "issuer": "https://issuer.test"
+     "issuer": "https://issuer.test",
+     "subject": "test-operator"
     },
     "at": "2026-10-20T03:56:03Z",
     "sequence": 1,
-    "state": "allowed"
-   }
-  },
-  {
-   "name": "operator actor with an empty issuer",
-   "wire": {
-    "actor": {
-     "issuer": "",
-     "subject": "s"
-    },
-    "at": "2026-10-20T03:56:03Z",
-    "sequence": 1,
-    "state": "allowed"
+    "state": "denied"
    }
   },
   {

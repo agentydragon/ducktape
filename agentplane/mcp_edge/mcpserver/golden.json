@@ -508,13 +508,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -622,13 +620,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -701,13 +697,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -810,13 +804,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -889,8 +881,6 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d2",
         "verdict": "VERDICT_ALLOW",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
         "reasonDescription": "test allowed",
         "policyEvidence": {
          "bindings": [
@@ -910,12 +900,10 @@
          "matched": {
           "namespace": "test-namespace",
           "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
           "index": 2,
           "type": "POLICY_KIND_EXACT_ACTIONS"
          }
         },
-        "idempotencyKey": "test-policy-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -1039,8 +1027,6 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d2",
         "verdict": "VERDICT_ALLOW",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
         "reasonDescription": "test allowed",
         "policyEvidence": {
          "bindings": [
@@ -1060,12 +1046,10 @@
          "matched": {
           "namespace": "test-namespace",
           "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
           "index": 2,
           "type": "POLICY_KIND_EXACT_ACTIONS"
          }
         },
-        "idempotencyKey": "test-policy-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -1139,8 +1123,6 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d2",
         "verdict": "VERDICT_ALLOW",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
         "reasonDescription": "test allowed",
         "policyEvidence": {
          "bindings": [
@@ -1160,7 +1142,6 @@
          "matched": {
           "namespace": "test-namespace",
           "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
           "index": 2,
           "type": "POLICY_KIND_GITHUB_REPOSITORY",
           "repository": {
@@ -1170,7 +1151,6 @@
           }
          }
         },
-        "idempotencyKey": "test-policy-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -1318,8 +1298,6 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d2",
         "verdict": "VERDICT_ALLOW",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
         "reasonDescription": "test allowed",
         "policyEvidence": {
          "bindings": [
@@ -1339,7 +1317,6 @@
          "matched": {
           "namespace": "test-namespace",
           "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
           "index": 2,
           "type": "POLICY_KIND_GITHUB_REPOSITORY",
           "repository": {
@@ -1349,7 +1326,6 @@
           }
          }
         },
-        "idempotencyKey": "test-policy-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -1448,13 +1424,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -1568,13 +1542,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -1663,13 +1635,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -1783,13 +1753,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -1869,13 +1837,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -1988,13 +1954,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -2074,13 +2038,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_DENY",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test denial note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        }
       }
@@ -2170,13 +2132,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_DENY",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test denial note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        }
       }
@@ -2192,236 +2152,6 @@
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000009",
-     "state": "denied"
-    },
-    "isError": true,
-    "resultType": "complete"
-   }
-  },
-  {
-   "name": "denied by a policy: full receipt",
-   "tool": "get_action_request",
-   "arguments": {
-    "request_id": "00000000-0000-0000-0000-00000000000a",
-    "include_fields": [
-     "id",
-     "state",
-     "version",
-     "created_at",
-     "updated_at",
-     "input",
-     "caller",
-     "decision",
-     "execution"
-    ]
-   },
-   "max_wait_seconds": 30.0,
-   "direct_wait_seconds": 0,
-   "core": [
-    {
-     "rpc": "GetActionRequest",
-     "request": {
-      "requestId": "00000000-0000-0000-0000-00000000000a"
-     },
-     "response": {
-      "actionRequest": {
-       "id": "00000000-0000-0000-0000-00000000000a",
-       "idempotencyKey": "test-key-10",
-       "action": {
-        "group": "test-mcp",
-        "name": "alpha"
-       },
-       "arguments": {},
-       "title": "test title 10",
-       "caller": {
-        "namespace": "test-namespace",
-        "name": "test-caller"
-       },
-       "state": "ACTION_STATE_DENIED",
-       "version": "10",
-       "createdAt": "2026-01-02T03:04:05Z",
-       "updatedAt": "2026-01-02T03:04:06.120000Z",
-       "decision": {
-        "id": "00000000-0000-0000-0000-0000000000d2",
-        "verdict": "VERDICT_DENY",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
-        "reasonDescription": "test policy reason",
-        "policyEvidence": {
-         "bindings": [
-          {
-           "namespace": "test-namespace",
-           "name": "test-binding",
-           "resourceVersion": "7"
-          }
-         ],
-         "policySets": [
-          {
-           "namespace": "test-namespace",
-           "name": "test-set",
-           "generation": "4"
-          }
-         ],
-         "matched": {
-          "namespace": "test-namespace",
-          "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
-          "index": 2,
-          "type": "POLICY_KIND_EXACT_ACTIONS"
-         }
-        },
-        "idempotencyKey": "test-policy-decision-key",
-        "decidedAt": "2026-01-02T03:04:06.120000Z"
-       }
-      }
-     }
-    }
-   ],
-   "result": {
-    "content": [
-     {
-      "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-00000000000a\",\"state\":\"denied\",\"version\":10,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-10\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 10\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"deny\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test policy reason\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"exact_actions\",\"repository\":null}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":null}"
-     }
-    ],
-    "structuredContent": {
-     "id": "00000000-0000-0000-0000-00000000000a",
-     "state": "denied",
-     "version": 10,
-     "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z",
-     "input": {
-      "idempotency_key": "test-key-10",
-      "action": {
-       "group": "test-mcp",
-       "name": "alpha"
-      },
-      "arguments": {},
-      "title": "test title 10",
-      "description": null
-     },
-     "caller": {
-      "namespace": "test-namespace",
-      "name": "test-caller"
-     },
-     "decision": {
-      "id": "00000000-0000-0000-0000-0000000000d2",
-      "verdict": "deny",
-      "provider": "action_policy_set",
-      "operator": null,
-      "decision_note": null,
-      "reason_code": "test_reason_code",
-      "reason_description": "test policy reason",
-      "policy_evidence": {
-       "bindings": [
-        {
-         "namespace": "test-namespace",
-         "name": "test-binding",
-         "resource_version": "7"
-        }
-       ],
-       "policy_sets": [
-        {
-         "namespace": "test-namespace",
-         "name": "test-set",
-         "generation": 4
-        }
-       ],
-       "matched": {
-        "namespace": "test-namespace",
-        "policy_set": "test-set",
-        "source": "rules",
-        "index": 2,
-        "type": "exact_actions",
-        "repository": null
-       }
-      },
-      "idempotency_key": "test-policy-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
-     },
-     "execution": null
-    },
-    "isError": false,
-    "resultType": "complete"
-   }
-  },
-  {
-   "name": "denied by a policy: result",
-   "tool": "get_action_result",
-   "arguments": {
-    "request_id": "00000000-0000-0000-0000-00000000000a"
-   },
-   "max_wait_seconds": 30.0,
-   "direct_wait_seconds": 0,
-   "core": [
-    {
-     "rpc": "GetActionRequest",
-     "request": {
-      "requestId": "00000000-0000-0000-0000-00000000000a"
-     },
-     "response": {
-      "actionRequest": {
-       "id": "00000000-0000-0000-0000-00000000000a",
-       "idempotencyKey": "test-key-10",
-       "action": {
-        "group": "test-mcp",
-        "name": "alpha"
-       },
-       "arguments": {},
-       "title": "test title 10",
-       "caller": {
-        "namespace": "test-namespace",
-        "name": "test-caller"
-       },
-       "state": "ACTION_STATE_DENIED",
-       "version": "10",
-       "createdAt": "2026-01-02T03:04:05Z",
-       "updatedAt": "2026-01-02T03:04:06.120000Z",
-       "decision": {
-        "id": "00000000-0000-0000-0000-0000000000d2",
-        "verdict": "VERDICT_DENY",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
-        "reasonDescription": "test policy reason",
-        "policyEvidence": {
-         "bindings": [
-          {
-           "namespace": "test-namespace",
-           "name": "test-binding",
-           "resourceVersion": "7"
-          }
-         ],
-         "policySets": [
-          {
-           "namespace": "test-namespace",
-           "name": "test-set",
-           "generation": "4"
-          }
-         ],
-         "matched": {
-          "namespace": "test-namespace",
-          "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
-          "index": 2,
-          "type": "POLICY_KIND_EXACT_ACTIONS"
-         }
-        },
-        "idempotencyKey": "test-policy-decision-key",
-        "decidedAt": "2026-01-02T03:04:06.120000Z"
-       }
-      }
-     }
-    }
-   ],
-   "result": {
-    "content": [
-     {
-      "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-00000000000a was denied and did not run. Reason: test policy reason"
-     }
-    ],
-    "structuredContent": {
-     "request_id": "00000000-0000-0000-0000-00000000000a",
      "state": "denied"
     },
     "isError": true,
@@ -2474,12 +2204,10 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_DENY",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        }
       }
@@ -2569,12 +2297,10 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_DENY",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        }
       }
@@ -2861,13 +2587,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -2949,8 +2673,6 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d2",
         "verdict": "VERDICT_ALLOW",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
         "reasonDescription": "test allowed",
         "policyEvidence": {
          "bindings": [
@@ -2970,7 +2692,6 @@
          "matched": {
           "namespace": "test-namespace",
           "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
           "index": 2,
           "type": "POLICY_KIND_GITHUB_REPOSITORY",
           "repository": {
@@ -2980,7 +2701,6 @@
           }
          }
         },
-        "idempotencyKey": "test-policy-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -3029,7 +2749,7 @@
    "name": "receipt of the decision",
    "tool": "get_action_request",
    "arguments": {
-    "request_id": "00000000-0000-0000-0000-00000000000a",
+    "request_id": "00000000-0000-0000-0000-000000000009",
     "include_fields": [
      "decision"
     ]
@@ -3040,56 +2760,34 @@
     {
      "rpc": "GetActionRequest",
      "request": {
-      "requestId": "00000000-0000-0000-0000-00000000000a"
+      "requestId": "00000000-0000-0000-0000-000000000009"
      },
      "response": {
       "actionRequest": {
-       "id": "00000000-0000-0000-0000-00000000000a",
-       "idempotencyKey": "test-key-10",
+       "id": "00000000-0000-0000-0000-000000000009",
+       "idempotencyKey": "test-key-9",
        "action": {
         "group": "test-mcp",
         "name": "alpha"
        },
        "arguments": {},
-       "title": "test title 10",
+       "title": "test title 9",
        "caller": {
         "namespace": "test-namespace",
         "name": "test-caller"
        },
        "state": "ACTION_STATE_DENIED",
-       "version": "10",
+       "version": "9",
        "createdAt": "2026-01-02T03:04:05Z",
        "updatedAt": "2026-01-02T03:04:06.120000Z",
        "decision": {
-        "id": "00000000-0000-0000-0000-0000000000d2",
+        "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_DENY",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
-        "reasonDescription": "test policy reason",
-        "policyEvidence": {
-         "bindings": [
-          {
-           "namespace": "test-namespace",
-           "name": "test-binding",
-           "resourceVersion": "7"
-          }
-         ],
-         "policySets": [
-          {
-           "namespace": "test-namespace",
-           "name": "test-set",
-           "generation": "4"
-          }
-         ],
-         "matched": {
-          "namespace": "test-namespace",
-          "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
-          "index": 2,
-          "type": "POLICY_KIND_EXACT_ACTIONS"
-         }
+        "operator": {
+         "issuer": "https://test-issuer.example",
+         "subject": "test-operator"
         },
-        "idempotencyKey": "test-policy-decision-key",
+        "decisionNote": "test denial note é",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        }
       }
@@ -3100,43 +2798,23 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"deny\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test policy reason\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"exact_actions\",\"repository\":null}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"}}"
+      "text": "{\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"deny\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test denial note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"}}"
      }
     ],
     "structuredContent": {
      "decision": {
-      "id": "00000000-0000-0000-0000-0000000000d2",
+      "id": "00000000-0000-0000-0000-0000000000d1",
       "verdict": "deny",
-      "provider": "action_policy_set",
-      "operator": null,
-      "decision_note": null,
-      "reason_code": "test_reason_code",
-      "reason_description": "test policy reason",
-      "policy_evidence": {
-       "bindings": [
-        {
-         "namespace": "test-namespace",
-         "name": "test-binding",
-         "resource_version": "7"
-        }
-       ],
-       "policy_sets": [
-        {
-         "namespace": "test-namespace",
-         "name": "test-set",
-         "generation": 4
-        }
-       ],
-       "matched": {
-        "namespace": "test-namespace",
-        "policy_set": "test-set",
-        "source": "rules",
-        "index": 2,
-        "type": "exact_actions",
-        "repository": null
-       }
+      "provider": "human_operator",
+      "operator": {
+       "issuer": "https://test-issuer.example",
+       "subject": "test-operator"
       },
-      "idempotency_key": "test-policy-decision-key",
+      "decision_note": "test denial note é",
+      "reason_code": null,
+      "reason_description": null,
+      "policy_evidence": null,
+      "idempotency_key": "test-decision-key",
       "decided_at": "2026-01-02T03:04:06.120000Z"
      }
     },
@@ -3180,8 +2858,6 @@
         "decision": {
          "id": "00000000-0000-0000-0000-0000000000d2",
          "verdict": "VERDICT_ALLOW",
-         "provider": "action_policy_set",
-         "reasonCode": "test_reason_code",
          "reasonDescription": "test allowed",
          "policyEvidence": {
           "bindings": [
@@ -3201,12 +2877,10 @@
           "matched": {
            "namespace": "test-namespace",
            "policySet": "test-set",
-           "source": "POLICY_SOURCE_RULES",
            "index": 2,
            "type": "POLICY_KIND_EXACT_ACTIONS"
           }
          },
-         "idempotencyKey": "test-policy-decision-key",
          "decidedAt": "2026-01-02T03:04:06.120000Z"
         },
         "execution": {
@@ -3245,8 +2919,6 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d2",
         "verdict": "VERDICT_ALLOW",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
         "reasonDescription": "test allowed",
         "policyEvidence": {
          "bindings": [
@@ -3266,12 +2938,10 @@
          "matched": {
           "namespace": "test-namespace",
           "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
           "index": 2,
           "type": "POLICY_KIND_EXACT_ACTIONS"
          }
         },
-        "idempotencyKey": "test-policy-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -3338,13 +3008,11 @@
         "decision": {
          "id": "00000000-0000-0000-0000-0000000000d1",
          "verdict": "VERDICT_ALLOW",
-         "provider": "human_operator",
          "operator": {
           "issuer": "https://test-issuer.example",
           "subject": "test-operator"
          },
          "decisionNote": "test note é",
-         "idempotencyKey": "test-decision-key",
          "decidedAt": "2026-01-02T03:04:06.120000Z"
         },
         "execution": {
@@ -3389,13 +3057,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -3643,8 +3309,6 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d2",
         "verdict": "VERDICT_ALLOW",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
         "reasonDescription": "test allowed",
         "policyEvidence": {
          "bindings": [
@@ -3664,12 +3328,10 @@
          "matched": {
           "namespace": "test-namespace",
           "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
           "index": 2,
           "type": "POLICY_KIND_EXACT_ACTIONS"
          }
         },
-        "idempotencyKey": "test-policy-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -3894,7 +3556,7 @@
    "name": "cancellation already_finished",
    "tool": "cancel_action_request",
    "arguments": {
-    "request_id": "00000000-0000-0000-0000-00000000000a",
+    "request_id": "00000000-0000-0000-0000-000000000009",
     "include_fields": [
      "id",
      "state",
@@ -3913,57 +3575,35 @@
     {
      "rpc": "CancelActionRequest",
      "request": {
-      "requestId": "00000000-0000-0000-0000-00000000000a"
+      "requestId": "00000000-0000-0000-0000-000000000009"
      },
      "response": {
       "outcome": "CANCELLATION_OUTCOME_ALREADY_FINISHED",
       "actionRequest": {
-       "id": "00000000-0000-0000-0000-00000000000a",
-       "idempotencyKey": "test-key-10",
+       "id": "00000000-0000-0000-0000-000000000009",
+       "idempotencyKey": "test-key-9",
        "action": {
         "group": "test-mcp",
         "name": "alpha"
        },
        "arguments": {},
-       "title": "test title 10",
+       "title": "test title 9",
        "caller": {
         "namespace": "test-namespace",
         "name": "test-caller"
        },
        "state": "ACTION_STATE_DENIED",
-       "version": "10",
+       "version": "9",
        "createdAt": "2026-01-02T03:04:05Z",
        "updatedAt": "2026-01-02T03:04:06.120000Z",
        "decision": {
-        "id": "00000000-0000-0000-0000-0000000000d2",
+        "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_DENY",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
-        "reasonDescription": "test policy reason",
-        "policyEvidence": {
-         "bindings": [
-          {
-           "namespace": "test-namespace",
-           "name": "test-binding",
-           "resourceVersion": "7"
-          }
-         ],
-         "policySets": [
-          {
-           "namespace": "test-namespace",
-           "name": "test-set",
-           "generation": "4"
-          }
-         ],
-         "matched": {
-          "namespace": "test-namespace",
-          "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
-          "index": 2,
-          "type": "POLICY_KIND_EXACT_ACTIONS"
-         }
+        "operator": {
+         "issuer": "https://test-issuer.example",
+         "subject": "test-operator"
         },
-        "idempotencyKey": "test-policy-decision-key",
+        "decisionNote": "test denial note é",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        }
       }
@@ -3974,25 +3614,25 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"outcome\":\"already_finished\",\"request\":{\"id\":\"00000000-0000-0000-0000-00000000000a\",\"state\":\"denied\",\"version\":10,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-10\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 10\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"deny\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test policy reason\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"exact_actions\",\"repository\":null}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":null}}"
+      "text": "{\"outcome\":\"already_finished\",\"request\":{\"id\":\"00000000-0000-0000-0000-000000000009\",\"state\":\"denied\",\"version\":9,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-9\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 9\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"deny\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test denial note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":null}}"
      }
     ],
     "structuredContent": {
      "outcome": "already_finished",
      "request": {
-      "id": "00000000-0000-0000-0000-00000000000a",
+      "id": "00000000-0000-0000-0000-000000000009",
       "state": "denied",
-      "version": 10,
+      "version": 9,
       "created_at": "2026-01-02T03:04:05Z",
       "updated_at": "2026-01-02T03:04:06.120000Z",
       "input": {
-       "idempotency_key": "test-key-10",
+       "idempotency_key": "test-key-9",
        "action": {
         "group": "test-mcp",
         "name": "alpha"
        },
        "arguments": {},
-       "title": "test title 10",
+       "title": "test title 9",
        "description": null
       },
       "caller": {
@@ -4000,38 +3640,18 @@
        "name": "test-caller"
       },
       "decision": {
-       "id": "00000000-0000-0000-0000-0000000000d2",
+       "id": "00000000-0000-0000-0000-0000000000d1",
        "verdict": "deny",
-       "provider": "action_policy_set",
-       "operator": null,
-       "decision_note": null,
-       "reason_code": "test_reason_code",
-       "reason_description": "test policy reason",
-       "policy_evidence": {
-        "bindings": [
-         {
-          "namespace": "test-namespace",
-          "name": "test-binding",
-          "resource_version": "7"
-         }
-        ],
-        "policy_sets": [
-         {
-          "namespace": "test-namespace",
-          "name": "test-set",
-          "generation": 4
-         }
-        ],
-        "matched": {
-         "namespace": "test-namespace",
-         "policy_set": "test-set",
-         "source": "rules",
-         "index": 2,
-         "type": "exact_actions",
-         "repository": null
-        }
+       "provider": "human_operator",
+       "operator": {
+        "issuer": "https://test-issuer.example",
+        "subject": "test-operator"
        },
-       "idempotency_key": "test-policy-decision-key",
+       "decision_note": "test denial note é",
+       "reason_code": null,
+       "reason_description": null,
+       "policy_evidence": null,
+       "idempotency_key": "test-decision-key",
        "decided_at": "2026-01-02T03:04:06.120000Z"
       },
       "execution": null
@@ -4088,13 +3708,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -4283,21 +3901,8 @@
         "state": "ACTION_STATE_CANCELLED",
         "at": "2026-01-02T03:05:00.999999Z",
         "actor": {
-         "caller": {
-          "namespace": "test-namespace",
-          "name": "test-caller"
-         }
-        }
-       },
-       {
-        "sequence": 4,
-        "state": "ACTION_STATE_DENIED",
-        "at": "2026-01-02T03:05:00.999999Z",
-        "actor": {
-         "operator": {
-          "issuer": "https://test-issuer.example",
-          "subject": "test-operator"
-         }
+         "namespace": "test-namespace",
+         "name": "test-caller"
         }
        }
       ]
@@ -4308,7 +3913,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"events\":[{\"sequence\":1,\"state\":\"decision_pending\",\"at\":\"2026-01-02T03:04:05Z\"},{\"sequence\":2,\"state\":\"allowed\",\"at\":\"2026-01-02T03:04:06.120000Z\"},{\"sequence\":3,\"state\":\"cancelled\",\"at\":\"2026-01-02T03:05:00.999999Z\",\"actor\":{\"account\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"}}},{\"sequence\":4,\"state\":\"denied\",\"at\":\"2026-01-02T03:05:00.999999Z\",\"actor\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"}}]}"
+      "text": "{\"events\":[{\"sequence\":1,\"state\":\"decision_pending\",\"at\":\"2026-01-02T03:04:05Z\"},{\"sequence\":2,\"state\":\"allowed\",\"at\":\"2026-01-02T03:04:06.120000Z\"},{\"sequence\":3,\"state\":\"cancelled\",\"at\":\"2026-01-02T03:05:00.999999Z\",\"actor\":{\"account\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"}}}]}"
      }
     ],
     "structuredContent": {
@@ -4332,15 +3937,6 @@
          "namespace": "test-namespace",
          "name": "test-caller"
         }
-       }
-      },
-      {
-       "sequence": 4,
-       "state": "denied",
-       "at": "2026-01-02T03:05:00.999999Z",
-       "actor": {
-        "issuer": "https://test-issuer.example",
-        "subject": "test-operator"
        }
       }
      ]
@@ -4382,10 +3978,8 @@
         "state": "ACTION_STATE_CANCELLED",
         "at": "2026-01-02T03:05:00.999999Z",
         "actor": {
-         "caller": {
-          "namespace": "test-namespace",
-          "name": "test-caller"
-         }
+         "namespace": "test-namespace",
+         "name": "test-caller"
         }
        }
       ]
@@ -4443,21 +4037,8 @@
         "state": "ACTION_STATE_CANCELLED",
         "at": "2026-01-02T03:05:00.999999Z",
         "actor": {
-         "caller": {
-          "namespace": "test-namespace",
-          "name": "test-caller"
-         }
-        }
-       },
-       {
-        "sequence": 4,
-        "state": "ACTION_STATE_DENIED",
-        "at": "2026-01-02T03:05:00.999999Z",
-        "actor": {
-         "operator": {
-          "issuer": "https://test-issuer.example",
-          "subject": "test-operator"
-         }
+         "namespace": "test-namespace",
+         "name": "test-caller"
         }
        }
       ]
@@ -4468,7 +4049,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"events\":[{\"sequence\":3,\"state\":\"cancelled\",\"at\":\"2026-01-02T03:05:00.999999Z\",\"actor\":{\"account\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"}}},{\"sequence\":4,\"state\":\"denied\",\"at\":\"2026-01-02T03:05:00.999999Z\",\"actor\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"}}]}"
+      "text": "{\"events\":[{\"sequence\":3,\"state\":\"cancelled\",\"at\":\"2026-01-02T03:05:00.999999Z\",\"actor\":{\"account\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"}}}]}"
      }
     ],
     "structuredContent": {
@@ -4482,15 +4063,6 @@
          "namespace": "test-namespace",
          "name": "test-caller"
         }
-       }
-      },
-      {
-       "sequence": 4,
-       "state": "denied",
-       "at": "2026-01-02T03:05:00.999999Z",
-       "actor": {
-        "issuer": "https://test-issuer.example",
-        "subject": "test-operator"
        }
       }
      ]
@@ -4829,13 +4401,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -5196,13 +4766,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -5990,8 +5558,6 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d2",
         "verdict": "VERDICT_ALLOW",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
         "reasonDescription": "test allowed",
         "policyEvidence": {
          "bindings": [
@@ -6011,7 +5577,6 @@
          "matched": {
           "namespace": "test-namespace",
           "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
           "index": 2,
           "type": "POLICY_KIND_GITHUB_REPOSITORY",
           "repository": {
@@ -6021,7 +5586,6 @@
           }
          }
         },
-        "idempotencyKey": "test-policy-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -6079,8 +5643,6 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d2",
         "verdict": "VERDICT_ALLOW",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
         "reasonDescription": "test allowed",
         "policyEvidence": {
          "bindings": [
@@ -6100,7 +5662,6 @@
          "matched": {
           "namespace": "test-namespace",
           "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
           "index": 2,
           "type": "POLICY_KIND_GITHUB_REPOSITORY",
           "repository": {
@@ -6110,7 +5671,6 @@
           }
          }
         },
-        "idempotencyKey": "test-policy-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -6203,13 +5763,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -6257,13 +5815,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -6346,8 +5902,6 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d2",
         "verdict": "VERDICT_ALLOW",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
         "reasonDescription": "test allowed",
         "policyEvidence": {
          "bindings": [
@@ -6367,12 +5921,10 @@
          "matched": {
           "namespace": "test-namespace",
           "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
           "index": 2,
           "type": "POLICY_KIND_EXACT_ACTIONS"
          }
         },
-        "idempotencyKey": "test-policy-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -6410,8 +5962,6 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d2",
         "verdict": "VERDICT_ALLOW",
-        "provider": "action_policy_set",
-        "reasonCode": "test_reason_code",
         "reasonDescription": "test allowed",
         "policyEvidence": {
          "bindings": [
@@ -6431,12 +5981,10 @@
          "matched": {
           "namespace": "test-namespace",
           "policySet": "test-set",
-          "source": "POLICY_SOURCE_RULES",
           "index": 2,
           "type": "POLICY_KIND_EXACT_ACTIONS"
          }
         },
-        "idempotencyKey": "test-policy-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -6504,13 +6052,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -6554,13 +6100,11 @@
        "decision": {
         "id": "00000000-0000-0000-0000-0000000000d1",
         "verdict": "VERDICT_ALLOW",
-        "provider": "human_operator",
         "operator": {
          "issuer": "https://test-issuer.example",
          "subject": "test-operator"
         },
         "decisionNote": "test note é",
-        "idempotencyKey": "test-decision-key",
         "decidedAt": "2026-01-02T03:04:06.120000Z"
        },
        "execution": {
@@ -7164,7 +6708,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 0,
          "policy": {
           "exactActions": {
@@ -7187,7 +6730,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 1,
          "policy": {
           "argumentSchema": {
@@ -7212,7 +6754,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 2,
          "policy": {
           "githubRepository": {
@@ -7237,7 +6778,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 3,
          "policy": {
           "githubPublicRepository": {
@@ -7254,7 +6794,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 4,
          "policy": {
           "homeAssistantEntityControl": {
@@ -7362,7 +6901,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 0,
          "policy": {
           "exactActions": {
@@ -7385,7 +6923,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 1,
          "policy": {
           "argumentSchema": {
@@ -7410,7 +6947,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 2,
          "policy": {
           "githubRepository": {
@@ -7435,7 +6971,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 3,
          "policy": {
           "githubPublicRepository": {
@@ -7452,7 +6987,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 4,
          "policy": {
           "homeAssistantEntityControl": {
@@ -7654,7 +7188,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 0,
          "policy": {
           "exactActions": {
@@ -7677,7 +7210,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 1,
          "policy": {
           "argumentSchema": {
@@ -7702,7 +7234,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 2,
          "policy": {
           "githubRepository": {
@@ -7727,7 +7258,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 3,
          "policy": {
           "githubPublicRepository": {
@@ -7744,7 +7274,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 4,
          "policy": {
           "homeAssistantEntityControl": {
@@ -7939,7 +7468,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 0,
          "policy": {
           "exactActions": {
@@ -7962,7 +7490,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 1,
          "policy": {
           "argumentSchema": {
@@ -7987,7 +7514,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 2,
          "policy": {
           "githubRepository": {
@@ -8012,7 +7538,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 3,
          "policy": {
           "githubPublicRepository": {
@@ -8029,7 +7554,6 @@
         {
          "binding": "test-binding",
          "policySet": "test-set",
-         "source": "POLICY_SOURCE_RULES",
          "index": 4,
          "policy": {
           "homeAssistantEntityControl": {

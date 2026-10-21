@@ -104,7 +104,7 @@ func TestActionEventsAreStoredAsPythonStoresThem(t *testing.T) {
 	}
 }
 
-func TestActionEventsPythonRefusesAreRefused(t *testing.T) {
+func TestInvalidActionEventsAreRefused(t *testing.T) {
 	for _, vector := range loadGolden(t).InvalidActionEvents {
 		t.Run(vector.Name, func(t *testing.T) {
 			var event ActionEvent

@@ -22,10 +22,7 @@ import (
 )
 
 const (
-	allowed = action_servicepb.ActionState_ACTION_STATE_ALLOWED
-	// The provider and reason a policy Decision is stored under, as the Python service stores them.
-	policyProvider   = "action_policy_set"
-	autoApproveCode  = "policy_set_auto_approve"
+	allowed          = action_servicepb.ActionState_ACTION_STATE_ALLOWED
 	testPolicyBinder = "test-binding"
 )
 
@@ -119,8 +116,7 @@ func TestASubmissionAPolicyAllowsArrivesAllowedWithTheObjectsItWasDecidedOn(t *t
 		t.Fatal(err)
 	}
 	decision := got.GetDecision()
-	if got.GetState() != allowed || decision.GetVerdict() != action_servicepb.Verdict_VERDICT_ALLOW ||
-		decision.GetProvider() != policyProvider || decision.GetReasonCode() != autoApproveCode || decision.GetOperator() != nil ||
+	if got.GetState() != allowed || decision.GetVerdict() != action_servicepb.Verdict_VERDICT_ALLOW || decision.GetOperator() != nil ||
 		got.GetExecution().GetState() != action_servicepb.ExecutionState_EXECUTION_STATE_PENDING_DISPATCH {
 		t.Errorf("receipt in %v, decision %v, execution %v; want allowed by the policy, awaiting dispatch",
 			got.GetState(), decision, got.GetExecution())
@@ -139,8 +135,7 @@ func TestASubmissionAPolicyAllowsArrivesAllowedWithTheObjectsItWasDecidedOn(t *t
 		Bindings:   []*action_servicepb.BindingEvidence{{Namespace: s.policy, Name: testPolicyBinder, ResourceVersion: evidence.GetBindings()[0].GetResourceVersion()}},
 		PolicySets: []*action_servicepb.PolicySetEvidence{{Namespace: s.policy, Name: "test-set", Generation: set.Generation}},
 		Matched: &action_servicepb.MatchedPolicy{
-			Namespace: s.policy, PolicySet: "test-set", Source: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
-			Index: 0, Type: action_servicepb.PolicyKind_POLICY_KIND_EXACT_ACTIONS,
+			Namespace: s.policy, PolicySet: "test-set", Index: 0, Type: action_servicepb.PolicyKind_POLICY_KIND_EXACT_ACTIONS,
 		},
 	}
 	if !proto.Equal(evidence, want) || evidence.GetBindings()[0].GetResourceVersion() == "" {

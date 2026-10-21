@@ -17,7 +17,6 @@ from pathlib import Path
 from pydantic import JsonValue
 
 from agentplane import policy_sets
-from agentplane.action_service.models import PolicySource
 from agentplane.action_service.policies.registry import Policy
 from agentplane.action_service.policies.resources import parse_action_rule
 from agentplane.action_service.policy_evaluation import auto_approvable, resolve_bindings
@@ -38,7 +37,6 @@ ARGUMENT_SCHEMA: Json = {
     "properties": {"message": {"type": "string", "maxLength": 5}, "count": {"type": "integer"}},
     "additionalProperties": False,
 }
-SOURCES = {PolicySource.RULES: "POLICY_SOURCE_RULES"}
 STATUSES = {
     policy_sets.ConditionStatus.TRUE: "CONDITION_STATUS_TRUE",
     policy_sets.ConditionStatus.FALSE: "CONDITION_STATUS_FALSE",
@@ -143,13 +141,7 @@ def policy_json(entry: EffectivePolicyView) -> Json:
     for name, value in view.items():
         key = "".join(word.capitalize() if i else word for i, word in enumerate(name.split("_")))
         parameters[key] = string_lists(value) if name in {"actions", "entities"} else value
-    return {
-        "binding": entry.binding,
-        "policySet": entry.policy_set,
-        "source": SOURCES[entry.source],
-        "index": entry.index,
-        "policy": {kind: parameters},
-    }
+    return {"binding": entry.binding, "policySet": entry.policy_set, "index": entry.index, "policy": {kind: parameters}}
 
 
 def ready_json(ready: ReadyConditionView | None) -> Json | None:

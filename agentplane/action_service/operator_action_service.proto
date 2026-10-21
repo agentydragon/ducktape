@@ -16,10 +16,9 @@ import "google/protobuf/timestamp.proto";
 //
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
 // expired. `INVALID_ARGUMENT` is a malformed request, or scopes the MCP server is not configured for. `NOT_FOUND` is a
-// request or MCP server that does not exist. `ALREADY_EXISTS` is a decision key already used for another decision.
-// `ABORTED` is an `expected_version` that is no longer current. `FAILED_PRECONDITION` is a state that refuses the
-// call: a request already decided, or an MCP server whose OAuth metadata cannot be used. `UNAVAILABLE` is a draining
-// service.
+// request or MCP server that does not exist. `ABORTED` is an `expected_version` that is no longer current.
+// `FAILED_PRECONDITION` is a state that refuses the call: a request already decided, or an MCP server whose OAuth
+// metadata cannot be used. `UNAVAILABLE` is a draining service.
 //
 // An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT`; a response never carries one.
 //
@@ -35,9 +34,8 @@ import "google/protobuf/timestamp.proto";
 service OperatorActionService {
   // Records the operator's Decision on a request waiting for one, and answers with the request as it now stands. An
   // allow queues the request for dispatch. `expected_version` must be the `version` the operator reviewed, else
-  // `ABORTED`. `idempotency_key` is unique per operator: an identical retry answers with the request as it now
-  // stands, and the key reused for another request or verdict fails `ALREADY_EXISTS`. A request no longer pending
-  // fails `FAILED_PRECONDITION`. A draining service fails `UNAVAILABLE`.
+  // `ABORTED`, so a repeated Decision fails `ABORTED`: the version it named is gone. A request no longer pending fails
+  // `FAILED_PRECONDITION`. A draining service fails `UNAVAILABLE`.
   rpc DecideActionRequest(DecideActionRequestRequest) returns (DecideActionRequestResponse) {
     option (google.api.http) = {post: "/v1/operator/action-requests/{request_id}/decision" body: "*"};
   }
@@ -68,8 +66,8 @@ message DecideActionRequestRequest {
   Verdict verdict = 2;
   // The request's `version` the operator reviewed.
   int64 expected_version = 3;
-  // Chosen by the caller, unique per operator: 1 to 200 characters.
-  string idempotency_key = 4;
+  reserved 4;
+  reserved "idempotency_key";
   // Shared unchanged with the caller and not secret: at most 2000 characters.
   optional string decision_note = 5;
 }

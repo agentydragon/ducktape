@@ -141,8 +141,7 @@
                 }
               }
             },
-            "policySet": "test-reads",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-reads"
           }
         ],
         "bindings": [
@@ -312,8 +311,7 @@
                 }
               }
             },
-            "policySet": "test-reads",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-reads"
           }
         ],
         "bindings": [
@@ -363,8 +361,7 @@
                 }
               }
             },
-            "policySet": "test-reads",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-reads"
           },
           {
             "binding": "test-twice",
@@ -378,8 +375,7 @@
                 }
               }
             },
-            "policySet": "test-reads",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-reads"
           }
         ],
         "bindings": [
@@ -492,8 +488,7 @@
                 }
               }
             },
-            "policySet": "test-reads",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-reads"
           },
           {
             "binding": "test-twice",
@@ -507,8 +502,7 @@
                 }
               }
             },
-            "policySet": "test-reads",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-reads"
           }
         ],
         "bindings": [
@@ -732,8 +726,7 @@
                 }
               }
             },
-            "policySet": "test-reads",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-reads"
           },
           {
             "binding": "test-b",
@@ -750,8 +743,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-b",
@@ -779,8 +771,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-b",
@@ -796,8 +787,7 @@
                 "repository": "test-repo"
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-b",
@@ -811,8 +801,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-b",
@@ -834,8 +823,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           }
         ],
         "bindings": [
@@ -1098,8 +1086,7 @@
                 }
               }
             },
-            "policySet": "test-reads",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-reads"
           },
           {
             "binding": "test-b",
@@ -1116,8 +1103,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-b",
@@ -1145,8 +1131,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-b",
@@ -1162,8 +1147,7 @@
                 "repository": "test-repo"
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-b",
@@ -1177,8 +1161,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-b",
@@ -1200,8 +1183,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           }
         ],
         "bindings": [
@@ -1280,8 +1262,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-grant",
@@ -1309,8 +1290,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-grant",
@@ -1326,8 +1306,7 @@
                 "repository": "test-repo"
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-grant",
@@ -1341,8 +1320,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-grant",
@@ -1364,8 +1342,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           }
         ],
         "bindings": [
@@ -1542,8 +1519,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-grant",
@@ -1571,8 +1547,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-grant",
@@ -1588,8 +1563,7 @@
                 "repository": "test-repo"
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-grant",
@@ -1603,8 +1577,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           },
           {
             "binding": "test-grant",
@@ -1626,8 +1599,7 @@
                 }
               }
             },
-            "policySet": "test-every-kind",
-            "source": "POLICY_SOURCE_RULES"
+            "policySet": "test-every-kind"
           }
         ],
         "bindings": [

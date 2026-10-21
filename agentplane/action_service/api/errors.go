@@ -26,7 +26,6 @@ func invalidRequest(format string, args ...any) error {
 // call can meet.
 var conflictCodes = map[store.ConflictReason]codes.Code{
 	store.ConflictIdempotencyKeyUsed: codes.AlreadyExists,
-	store.ConflictDecisionKeyReused:  codes.AlreadyExists,
 	store.ConflictVersionChanged:     codes.Aborted,
 	store.ConflictAlreadyDecided:     codes.FailedPrecondition,
 }

@@ -115,8 +115,9 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 Stage O also deletes the Python-parity golden generators and tests (`generate_golden.py`, `generate_mcp_golden.py`,
 `generate_mcp_executor_golden.py`, `generate_catalog_golden.py`, `policies/generate_golden.py` and their
 `test_*golden.py`) and the Go golden tests' lists of deliberate differences; a `golden.json` stays only where its Go
-test still earns it without the Python reference. Its migration drops `action_execution.heartbeat_at`, which only
-Python writes and nothing reads.
+test still earns it without the Python reference. Its migration drops the columns only Python reads,
+`action_decision.{provider,reason_code,idempotency_key}`, which the Go store stops filling (the `CLEANUP` in
+`store/decisions.go`), and `action_execution.heartbeat_at`, which only Python writes and nothing reads.
 
 ## Cutover
 

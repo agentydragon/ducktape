@@ -43,18 +43,11 @@ type golden struct {
 		vector
 		Stored storedRequest `json:"stored"`
 	} `json:"requests"`
-	DecisionInputs   []vector `json:"decision_inputs"`
-	ProviderOutcomes []struct {
-		vector
-		// Decisive is whether the outcome decides; `no_opinion` defers to a human.
-		Decisive bool `json:"decisive"`
-	} `json:"provider_outcomes"`
-	PolicyEvidence []storedVector `json:"policy_evidence"`
-	Actors         []struct {
-		storedVector
-		Kind string `json:"kind"`
-	} `json:"actors"`
-	HistoryCursors struct {
+	DecisionInputs   []vector       `json:"decision_inputs"`
+	ProviderOutcomes []vector       `json:"provider_outcomes"`
+	PolicyEvidence   []storedVector `json:"policy_evidence"`
+	Actors           []storedVector `json:"actors"`
+	HistoryCursors   struct {
 		Encoded []struct {
 			Name      string `json:"name"`
 			HistoryAt string `json:"history_at"`

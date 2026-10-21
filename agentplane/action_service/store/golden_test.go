@@ -18,7 +18,7 @@ func TestVocabulariesAreThoseOfTheStoredColumns(t *testing.T) {
 		"execution_state": toStrings(executionStates),
 		"verdict":         {string(VerdictAllow), string(VerdictDeny)},
 		"policy_kind":     toStrings(policyKinds),
-		"policy_source":   {PolicySourceRules},
+		"policy_source":   {policySource},
 	} {
 		if got := enums[column]; !slices.Equal(got, want) {
 			t.Errorf("%s: Python has %v, the store %v", column, got, want)
@@ -100,7 +100,6 @@ func TestDecisionInputsAreValidatedAsPythonDoes(t *testing.T) {
 			var wire struct {
 				Verdict         Verdict `json:"verdict"`
 				ExpectedVersion int64   `json:"expected_version"`
-				IdempotencyKey  string  `json:"idempotency_key"`
 				DecisionNote    *string `json:"decision_note"`
 			}
 			if err := json.Unmarshal(vector.Input, &wire); err != nil {
@@ -114,25 +113,19 @@ func TestDecisionInputsAreValidatedAsPythonDoes(t *testing.T) {
 	}
 }
 
-func TestVotesAreValidatedAsPythonValidatesOutcomes(t *testing.T) {
+func TestApprovalsAreValidatedAsPythonValidatesOutcomes(t *testing.T) {
 	for _, vector := range loadGolden(t).ProviderOutcomes {
 		t.Run(vector.Name, func(t *testing.T) {
 			var wire struct {
-				Verdict           Verdict         `json:"verdict"`
-				ReasonCode        string          `json:"reason_code"`
 				ReasonDescription *string         `json:"reason_description"`
 				Evidence          *PolicyEvidence `json:"evidence"`
 			}
-			// A vote is an outcome that decides: Python's ProviderVerdict adds `no_opinion`, which defers to a human.
 			err := json.Unmarshal(vector.Input, &wire)
 			if err == nil {
-				err = ProviderVote{
-					Provider: "test-provider", Verdict: wire.Verdict, ReasonCode: wire.ReasonCode,
-					ReasonDescription: wire.ReasonDescription, Evidence: wire.Evidence,
-				}.Validate()
+				err = ProviderVote(wire).Validate()
 			}
-			if want := vector.Valid && vector.Decisive; want != (err == nil) {
-				t.Errorf("a vote that decides = %v, Validate = %v", want, err)
+			if vector.Valid != (err == nil) {
+				t.Errorf("Python accepts it = %v, Validate = %v", vector.Valid, err)
 			}
 		})
 	}
@@ -176,9 +169,6 @@ func TestActorsAreReadAndWrittenAsPythonDoes(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatal(err)
-			}
-			if _, caller := actor.(CallerPrincipal); caller != (vector.Kind == "caller") {
-				t.Errorf("read a %T, want a %s", actor, vector.Kind)
 			}
 			written, err := json.Marshal(actor)
 			if err != nil {

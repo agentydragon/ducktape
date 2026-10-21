@@ -84,7 +84,7 @@ func (d *delivery) submit(t *testing.T, key string, allowed bool) store.ActionRe
 	t.Helper()
 	admission := store.Admission{RequestID: uuid.New()}
 	if allowed {
-		admission.Vote = &store.ProviderVote{Provider: "test-policy", Verdict: store.VerdictAllow, ReasonCode: "test-allow"}
+		admission.Vote = &store.ProviderVote{}
 	}
 	request, err := d.store.Submit(t.Context(), testCaller, store.ActionRequestInput{
 		IdempotencyKey: key, Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
@@ -98,8 +98,8 @@ func (d *delivery) submit(t *testing.T, key string, allowed bool) store.ActionRe
 
 func (d *delivery) deny(t *testing.T, request store.ActionRequest) {
 	t.Helper()
-	if _, _, err := d.store.Decide(t.Context(), request.ID, store.DecisionInput{
-		Verdict: store.VerdictDeny, ExpectedVersion: request.Version, IdempotencyKey: "deny-" + request.IdempotencyKey,
+	if _, err := d.store.Decide(t.Context(), request.ID, store.DecisionInput{
+		Verdict: store.VerdictDeny, ExpectedVersion: request.Version,
 	}, testOperator); err != nil {
 		t.Fatal(err)
 	}

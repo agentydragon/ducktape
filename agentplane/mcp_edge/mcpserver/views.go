@@ -66,13 +66,10 @@ type operator struct {
 type decision struct {
 	ID                uuid.UUID       `json:"id"`
 	Verdict           string          `json:"verdict"`
-	Provider          string          `json:"provider"`
 	Operator          *operator       `json:"operator"`
 	DecisionNote      *string         `json:"decision_note"`
-	ReasonCode        *string         `json:"reason_code"`
 	ReasonDescription *string         `json:"reason_description"`
 	PolicyEvidence    *policyEvidence `json:"policy_evidence"`
-	IdempotencyKey    string          `json:"idempotency_key"`
 	DecidedAt         time.Time       `json:"decided_at"`
 }
 
@@ -97,7 +94,6 @@ type policySetEvidence struct {
 type matchedPolicy struct {
 	Namespace  string             `json:"namespace"`
 	PolicySet  string             `json:"policy_set"`
-	Source     string             `json:"source"`
 	Index      int32              `json:"index"`
 	Type       string             `json:"type"`
 	Repository *matchedRepository `json:"repository"`
@@ -124,8 +120,8 @@ type event struct {
 	Sequence int32     `json:"sequence"`
 	State    string    `json:"state"`
 	At       time.Time `json:"at"`
-	// Actor is a callerActor or an operator; absent when no one is named.
-	Actor any `json:"actor,omitempty"`
+	// Actor is the caller that cancelled the request; absent for any other change.
+	Actor *callerActor `json:"actor,omitempty"`
 }
 
 type callerActor struct {
@@ -142,7 +138,6 @@ type policyView struct {
 type effectivePolicy struct {
 	Binding   string `json:"binding"`
 	PolicySet string `json:"policy_set"`
-	Source    string `json:"source"`
 	Index     int32  `json:"index"`
 	Policy    any    `json:"policy"`
 }
@@ -291,13 +286,10 @@ func (d *viewDecoder) decisionView(from *pb.Decision) *decision {
 	return &decision{
 		ID:                d.uuid(from.GetId()),
 		Verdict:           enum(d, from.GetVerdict(), "VERDICT_"),
-		Provider:          from.GetProvider(),
 		Operator:          by,
 		DecisionNote:      from.DecisionNote,
-		ReasonCode:        from.ReasonCode,
 		ReasonDescription: from.ReasonDescription,
 		PolicyEvidence:    d.evidenceView(from.GetPolicyEvidence()),
-		IdempotencyKey:    from.GetIdempotencyKey(),
 		DecidedAt:         d.time(from.GetDecidedAt()),
 	}
 }
@@ -328,7 +320,6 @@ func (d *viewDecoder) evidenceView(from *pb.PolicyEvidence) *policyEvidence {
 	view.Matched = matchedPolicy{
 		Namespace: matched.GetNamespace(),
 		PolicySet: matched.GetPolicySet(),
-		Source:    enum(d, matched.GetSource(), "POLICY_SOURCE_"),
 		Index:     matched.GetIndex(),
 		Type:      enum(d, matched.GetType(), "POLICY_KIND_"),
 	}
@@ -363,14 +354,8 @@ func (d *viewDecoder) eventView(from *pb.ActionEvent) event {
 		State:    enum(d, from.GetState(), "ACTION_STATE_"),
 		At:       d.time(from.GetAt()),
 	}
-	switch actor := from.GetActor().GetPrincipal().(type) {
-	case nil:
-	case *pb.Principal_Caller:
-		view.Actor = callerActor{Account: accountView(actor.Caller)}
-	case *pb.Principal_Operator:
-		view.Actor = operator{Issuer: actor.Operator.GetIssuer(), Subject: actor.Operator.GetSubject()}
-	default:
-		d.fail("core answered actor %T, outside the contract", actor)
+	if actor := from.GetActor(); actor != nil {
+		view.Actor = &callerActor{Account: accountView(actor)}
 	}
 	return view
 }
@@ -387,7 +372,6 @@ func (d *viewDecoder) policyView(policy *pb.CallerActionPolicy, fields []string)
 				effective = append(effective, effectivePolicy{
 					Binding:   entry.GetBinding(),
 					PolicySet: entry.GetPolicySet(),
-					Source:    enum(d, entry.GetSource(), "POLICY_SOURCE_"),
 					Index:     entry.GetIndex(),
 					Policy:    d.ruleView(entry.GetPolicy()),
 				})

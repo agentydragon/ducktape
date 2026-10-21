@@ -21,11 +21,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// decision is an operator's Decision on the request at the version it was submitted at, under a key of its own.
+// decision is an operator's Decision on the request at the version it was submitted at.
 func decision(request store.ActionRequest, verdict action_servicepb.Verdict) *operator_action_servicepb.DecideActionRequestRequest {
 	return &operator_action_servicepb.DecideActionRequestRequest{
 		RequestId: request.ID.String(), Verdict: verdict, ExpectedVersion: request.Version,
-		IdempotencyKey: "test-decision-" + request.IdempotencyKey,
 	}
 }
 
@@ -49,8 +48,8 @@ func TestAnOperatorsDecisionIsRecordedAndAnAllowQueuesTheDispatch(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetState() != action_servicepb.ActionState_ACTION_STATE_ALLOWED ||
-		got.GetDecision().GetVerdict() != allow || got.GetDecision().GetDecisionNote() != "test note for the caller" ||
+	if got.GetState() != action_servicepb.ActionState_ACTION_STATE_ALLOWED || got.GetDecision().GetVerdict() != allow ||
+		got.GetDecision().GetDecisionNote() != "test note for the caller" ||
 		!proto.Equal(got.GetDecision().GetOperator(), &action_servicepb.Operator{Issuer: s.issuer.url, Subject: operatorSubject}) ||
 		got.GetExecution().GetState() != action_servicepb.ExecutionState_EXECUTION_STATE_PENDING_DISPATCH {
 		t.Errorf("the allowed request: %v", got)
@@ -58,11 +57,9 @@ func TestAnOperatorsDecisionIsRecordedAndAnAllowQueuesTheDispatch(t *testing.T) 
 	if !s.claimable(t, allowed) {
 		t.Error("the allowed request awaits no dispatch")
 	}
-	// An identical retry answers with the request as it now stands, and dispatches nothing more.
-	retried, err := s.decideAs(t, s.operatorToken, allowing)
-	if err != nil || retried.GetState() != action_servicepb.ActionState_ACTION_STATE_DISPATCHING {
-		t.Errorf("the retry: %v, %v", retried, err)
-	}
+	// A repeated Decision names a version that is gone.
+	_, err = s.decideAs(t, s.operatorToken, allowing)
+	wantCode(t, "the repeated decision", err, codes.Aborted)
 
 	denied := s.submit(t, caller, "test-denied")
 	got, err = s.decideAs(t, s.operatorToken, decision(denied, deny))
@@ -90,22 +87,14 @@ func TestADecisionThatCannotBeRecordedFails(t *testing.T) {
 		"a request already decided": {func(r *operator_action_servicepb.DecideActionRequestRequest) {
 			r.RequestId, r.ExpectedVersion = decided.ID.String(), decided.Version+1
 		}, s.operatorToken, codes.FailedPrecondition},
-		"a version the operator did not review": {func(r *operator_action_servicepb.DecideActionRequestRequest) { r.ExpectedVersion++ }, s.operatorToken, codes.Aborted},
-		"a key used on another request": {func(r *operator_action_servicepb.DecideActionRequestRequest) {
-			r.IdempotencyKey = "test-decision-test-decided"
-		}, s.operatorToken, codes.AlreadyExists},
-		"a key used for another verdict": {func(r *operator_action_servicepb.DecideActionRequestRequest) {
-			r.RequestId, r.Verdict, r.IdempotencyKey = decided.ID.String(), deny, "test-decision-test-decided"
-		}, s.operatorToken, codes.AlreadyExists},
+		"a version the operator did not review": {func(r *operator_action_servicepb.DecideActionRequestRequest) {
+			r.ExpectedVersion++
+		}, s.operatorToken, codes.Aborted},
 		"an unknown request":   {func(r *operator_action_servicepb.DecideActionRequestRequest) { r.RequestId = uuid.NewString() }, s.operatorToken, codes.NotFound},
 		"a malformed request":  {func(r *operator_action_servicepb.DecideActionRequestRequest) { r.RequestId = "test-not-a-uuid" }, s.operatorToken, codes.InvalidArgument},
 		"no verdict":           {func(r *operator_action_servicepb.DecideActionRequestRequest) { r.Verdict = 0 }, s.operatorToken, codes.InvalidArgument},
 		"an undefined verdict": {func(r *operator_action_servicepb.DecideActionRequestRequest) { r.Verdict = 99 }, s.operatorToken, codes.InvalidArgument},
 		"no version":           {func(r *operator_action_servicepb.DecideActionRequestRequest) { r.ExpectedVersion = 0 }, s.operatorToken, codes.InvalidArgument},
-		"no key":               {func(r *operator_action_servicepb.DecideActionRequestRequest) { r.IdempotencyKey = "" }, s.operatorToken, codes.InvalidArgument},
-		"a long key": {func(r *operator_action_servicepb.DecideActionRequestRequest) {
-			r.IdempotencyKey = strings.Repeat("k", 201)
-		}, s.operatorToken, codes.InvalidArgument},
 		"a long note": {func(r *operator_action_servicepb.DecideActionRequestRequest) {
 			r.DecisionNote = proto.String(strings.Repeat("n", 2001))
 		}, s.operatorToken, codes.InvalidArgument},
@@ -117,11 +106,11 @@ func TestADecisionThatCannotBeRecordedFails(t *testing.T) {
 		_, err := s.decideAs(t, tc.token, request)
 		wantCode(t, name, err, tc.code)
 	}
-	// The longest key and note are accepted.
+	// The longest note is accepted.
 	longest := decision(pending, deny)
-	longest.IdempotencyKey, longest.DecisionNote = strings.Repeat("k", 200), proto.String(strings.Repeat("n", 2000))
+	longest.DecisionNote = proto.String(strings.Repeat("n", 2000))
 	if _, err := s.decideAs(t, s.operatorToken, longest); err != nil {
-		t.Errorf("the longest key and note: %v", err)
+		t.Errorf("the longest note: %v", err)
 	}
 }
 
@@ -240,6 +229,7 @@ func TestTheHTTPFacadeDecidesAndCancels(t *testing.T) {
 	}
 	decided := s.submit(t, caller, "test-decided")
 	path := "/v1/operator/action-requests/" + decided.ID.String() + "/decision"
+	// A client built before the Decision lost its key still sends it, and still decides.
 	body := `{"verdict": "VERDICT_DENY", "expected_version": 1, "idempotency_key": "test-http-decision"}`
 	if code, answer := post(path, callerToken, body); code != http.StatusUnauthorized {
 		t.Errorf("a caller's decision: %d %s", code, answer)

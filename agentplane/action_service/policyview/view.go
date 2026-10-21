@@ -52,8 +52,7 @@ func View(index *informer.Index, subject policyapi.ServiceAccountRef, viewer Rea
 		for _, set := range bound.Sets {
 			for _, numbered := range set.Rules {
 				view.AutoApproveIf = append(view.AutoApproveIf, &action_servicepb.EffectivePolicy{
-					Binding: bound.Binding.Name, PolicySet: set.Name, Source: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
-					Index: int32(numbered.Number), Policy: policy(numbered.Rule),
+					Binding: bound.Binding.Name, PolicySet: set.Name, Index: int32(numbered.Number), Policy: policy(numbered.Rule),
 				})
 				for group, names := range numbered.Rule.Actions {
 					for name := range names {

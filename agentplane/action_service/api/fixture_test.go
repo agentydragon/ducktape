@@ -432,9 +432,7 @@ func (s *served) submit(t *testing.T, owner store.CallerPrincipal, key string) s
 // decide records the operator's Decision on a pending request.
 func (s *served) decide(t *testing.T, request store.ActionRequest, verdict store.Verdict) store.ActionRequest {
 	t.Helper()
-	decided, _, err := s.store.Decide(t.Context(), request.ID, store.DecisionInput{
-		Verdict: verdict, ExpectedVersion: request.Version, IdempotencyKey: "decision-" + request.IdempotencyKey,
-	}, s.issuer.operator())
+	decided, err := s.store.Decide(t.Context(), request.ID, store.DecisionInput{Verdict: verdict, ExpectedVersion: request.Version}, s.issuer.operator())
 	if err != nil {
 		t.Fatal(err)
 	}

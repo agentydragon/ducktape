@@ -59,7 +59,8 @@ type golden struct {
 		Wire    json.RawMessage `json:"wire"`
 		Payload json.RawMessage `json:"payload"`
 	} `json:"action_events"`
-	// InvalidActionEvents are events Python refuses to read.
+	// InvalidActionEvents are events Python refuses to read, and one naming an operator as its actor, which only a
+	// caller's cancellation names.
 	InvalidActionEvents []struct {
 		Name string          `json:"name"`
 		Wire json.RawMessage `json:"wire"`

@@ -58,10 +58,6 @@ var policyKinds = map[store.PolicyKind]action_servicepb.PolicyKind{
 	store.PolicyHomeAssistantEntityControl: action_servicepb.PolicyKind_POLICY_KIND_HOME_ASSISTANT_ENTITY_CONTROL,
 }
 
-var policySources = map[string]action_servicepb.PolicySource{
-	store.PolicySourceRules: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
-}
-
 // lookup is a stored value's message form; a value the API has no form for is a stored request it cannot show.
 func lookup[Stored comparable, View any](views map[Stored]View, field string, value Stored) (View, error) {
 	view, known := views[value]
@@ -141,9 +137,8 @@ func decisionView(decision *store.Decision) (*action_servicepb.Decision, error) 
 		return nil, err
 	}
 	view := &action_servicepb.Decision{
-		Id: decision.ID.String(), Verdict: verdict, Provider: decision.Provider, DecisionNote: decision.DecisionNote,
-		ReasonCode: decision.ReasonCode, ReasonDescription: decision.ReasonDescription,
-		IdempotencyKey: decision.IdempotencyKey, DecidedAt: timestamppb.New(decision.DecidedAt),
+		Id: decision.ID.String(), Verdict: verdict, DecisionNote: decision.DecisionNote,
+		ReasonDescription: decision.ReasonDescription, DecidedAt: timestamppb.New(decision.DecidedAt),
 	}
 	if decision.Operator != nil {
 		view.Operator = operator(*decision.Operator)
@@ -169,10 +164,6 @@ func evidenceView(evidence store.PolicyEvidence) (*action_servicepb.PolicyEviden
 		})
 	}
 	matched := evidence.Matched
-	source, err := lookup(policySources, "policy source", matched.Source)
-	if err != nil {
-		return nil, err
-	}
 	kind, err := lookup(policyKinds, "policy kind", matched.Type)
 	if err != nil {
 		return nil, err
@@ -181,7 +172,7 @@ func evidenceView(evidence store.PolicyEvidence) (*action_servicepb.PolicyEviden
 		return nil, fmt.Errorf("%w: policy index %d", errStoredRequest, matched.Index)
 	}
 	view.Matched = &action_servicepb.MatchedPolicy{
-		Namespace: matched.Namespace, PolicySet: matched.PolicySet, Source: source, Index: int32(matched.Index), Type: kind,
+		Namespace: matched.Namespace, PolicySet: matched.PolicySet, Index: int32(matched.Index), Type: kind,
 	}
 	if repository := matched.Repository; repository != nil {
 		view.Matched.Repository = &action_servicepb.MatchedRepository{
@@ -228,11 +219,8 @@ func eventView(event store.Event) (*action_servicepb.ActionEvent, error) {
 		return nil, fmt.Errorf("%w: event sequence %d", errStoredRequest, event.Sequence)
 	}
 	view := &action_servicepb.ActionEvent{Sequence: int32(event.Sequence), State: state, At: timestamppb.New(event.At)}
-	switch actor := event.Actor.(type) {
-	case store.CallerPrincipal:
-		view.Actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: serviceAccount(actor.Account)}}
-	case store.OperatorPrincipal:
-		view.Actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: operator(actor)}}
+	if event.Actor != nil {
+		view.Actor = serviceAccount(event.Actor.Account)
 	}
 	return view, nil
 }

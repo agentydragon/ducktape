@@ -72,8 +72,6 @@ type ConflictReason int
 const (
 	// ConflictIdempotencyKeyUsed is a submission whose key the caller already spent, whatever else it says.
 	ConflictIdempotencyKeyUsed ConflictReason = iota + 1
-	// ConflictDecisionKeyReused is a Decision key already used for another request or verdict.
-	ConflictDecisionKeyReused
 	// ConflictVersionChanged is a Decision made on a version that is no longer the request's.
 	ConflictVersionChanged
 	// ConflictAlreadyDecided is a Decision on a request that is no longer awaiting one.

@@ -244,8 +244,8 @@ func (r running) allow(t *testing.T, caller store.ServiceAccount, action store.A
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := r.store.Decide(t.Context(), pending.ID, store.DecisionInput{
-		Verdict: store.VerdictAllow, ExpectedVersion: pending.Version, IdempotencyKey: "test-allow",
+	if _, err := r.store.Decide(t.Context(), pending.ID, store.DecisionInput{
+		Verdict: store.VerdictAllow, ExpectedVersion: pending.Version,
 	}, testOperator); err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +510,7 @@ func TestTheServiceGatesTheOperatorServicesOverGRPCAndHTTP(t *testing.T) {
 	defer cancel()
 	asReader := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken)
 	decision := &operator_action_servicepb.DecideActionRequestRequest{
-		RequestId: uuid.NewString(), Verdict: action_servicepb.Verdict_VERDICT_ALLOW, ExpectedVersion: 1, IdempotencyKey: "test-decision",
+		RequestId: uuid.NewString(), Verdict: action_servicepb.Verdict_VERDICT_ALLOW, ExpectedVersion: 1,
 	}
 	if _, err := service.operators.DecideActionRequest(asReader, decision); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("a reader's Decision over gRPC: %v", err)
@@ -521,7 +521,7 @@ func TestTheServiceGatesTheOperatorServicesOverGRPCAndHTTP(t *testing.T) {
 	for _, route := range []struct{ method, path, body string }{
 		{
 			http.MethodPost, "/v1/operator/action-requests/" + decision.GetRequestId() + "/decision",
-			`{"verdict": "VERDICT_ALLOW", "expected_version": 1, "idempotency_key": "test-decision"}`,
+			`{"verdict": "VERDICT_ALLOW", "expected_version": 1}`,
 		},
 		{http.MethodGet, "/v1/operator/connections", ""},
 	} {

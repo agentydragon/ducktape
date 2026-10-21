@@ -84,7 +84,7 @@ func TestRecordActionEventsAppendsTheNewEventsAndMovesTheSubscriptionOn(t *testi
 		t.Fatal("the new subscription is not due")
 	}
 	events := eventsThrough(1, 3)
-	events[2].Actor = CallerActor{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-sandbox"}}
+	events[2].Actor = &CallerActor{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-sandbox"}}
 
 	before := time.Now()
 	if err := f.RecordActionEvents(t.Context(), claim, *due, events); err != nil {
