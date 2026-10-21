@@ -35,7 +35,7 @@ async def test_a_new_follow_resumes_from_the_cursor_without_gap_or_duplicate(
     assert second.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
     assert second.attached.active_turn_id == events.of_kind(first.seen, "turn_started")[-1].event.turn_started.turn_id
     request = await model.request()
-    assert "wait_finished" in request.tool_outputs[0].text
+    assert request.tool_outputs[0].contains("wait_finished")
     await model.reply(request, Text("RECONNECTED_OK"))
     done = await second.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED

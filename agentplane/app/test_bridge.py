@@ -655,7 +655,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
         )
         recovered_output = _folded_body(chunks, recovered.output_ref)
         if recovered_output and recovered.state["recovery"] != event_pb2.RECOVERY_DISPOSITION_ABSENT:
-            assert any(recovered_output in output.text for output in request.tool_outputs)
+            assert any(output.contains(recovered_output) for output in request.tool_outputs)
         assert marker.read_text().splitlines() == [token]
         await model.reply(request, Text("TOOL_RECOVERY_DONE"))
         await _stored_events(
@@ -698,7 +698,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         request = await _next_model_request(model)
         await model.reply(request, ShellCall("completed-tool", command))
         continuation = await _next_model_request(model)
-        assert any(tool_output in result.text for result in continuation.tool_outputs)
+        assert any(result.contains(tool_output) for result in continuation.tool_outputs)
         assert marker.read_text().splitlines() == [token]
         await model.hold_after_first_delta(continuation, Text(partial))
         await _stored_events(
@@ -757,7 +757,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
             recovered_tool = items[completed_tools[0].entity_id]
             assert recovered_tool.state["tool_succeeded"] is True
             assert tool_output in _folded_body(chunks, recovered_tool.output_ref)
-            assert any(tool_output in result.text for result in request.tool_outputs) == (
+            assert any(result.contains(tool_output) for result in request.tool_outputs) == (
                 recovered_tool.state["recovery"] == event_pb2.RECOVERY_DISPOSITION_RETAINED
             )
             assert marker.read_text().splitlines() == [token]

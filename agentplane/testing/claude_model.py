@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import itertools
 
-from agentplane.native.claude.blocks import ToolResultBlock
+from agentplane.native.claude.blocks import ResultBlock, TextBlock, ToolResultBlock
 from agentplane.native.claude.testing import anthropic_sse
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.claude.testing.model import MODEL
@@ -44,7 +44,7 @@ class ClaudeModel(ScriptedModel[MessagesRequest]):
             assistant_texts=request.texts("assistant"),
             reasoning_texts=[block.thinking for block in request.thinking_blocks],
             tool_outputs=[
-                ToolOutput(block.tool_use_id, block.text)
+                ToolOutput(block.tool_use_id, _texts(block.content))
                 for message in request.messages
                 for block in message.blocks
                 if isinstance(block, ToolResultBlock)
@@ -72,3 +72,15 @@ def _block(item: Item) -> anthropic_sse.Block:
             return anthropic_sse.Thinking(text, next(_signatures))
         case ShellCall(call_id, command):
             return anthropic_sse.ToolUse(call_id, "Bash", {"command": command})
+
+
+def _texts(content: str | list[ResultBlock]) -> list[str]:
+    if isinstance(content, str):
+        return [content]
+    return [_text(block) for block in content]
+
+
+def _text(block: ResultBlock) -> str:
+    if not isinstance(block, TextBlock):
+        raise ValueError(f"The scripted model reads only text tool results: {block=}")
+    return block.text

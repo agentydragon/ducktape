@@ -46,7 +46,9 @@ async def test_shell_call_runs_through_exec(
     request = await model.request()
     (result,) = request.tool_outputs
     assert result.call_id == "call_test_1"
-    assert output in result.text
+    # Codex's status header, then what the script passed to `text()`.
+    _, emitted = result.blocks
+    assert emitted == output
     await model.reply(request, Text("TOOL_DONE"))
 
     done = await session.until(events.turn_completed)

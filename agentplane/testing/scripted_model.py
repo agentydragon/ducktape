@@ -37,7 +37,11 @@ Item = Text | Reasoning | ShellCall
 @dataclass(frozen=True)
 class ToolOutput:
     call_id: str
-    text: str
+    # The result's text blocks in order, as the harness sent them; a plain-string result is one block.
+    blocks: list[str]
+
+    def contains(self, text: str) -> bool:
+        return any(text in block for block in self.blocks)
 
 
 @dataclass(frozen=True)

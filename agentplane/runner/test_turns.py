@@ -107,7 +107,7 @@ async def test_tool_call_reports_arguments_and_result(
     request = await model.request()
     (output,) = request.tool_outputs
     assert output.call_id == "call_test_1"
-    assert "TOOL_OUTPUT" in output.text
+    assert output.contains("TOOL_OUTPUT")
     await model.reply(request, Text("TOOL_DONE"))
 
     done = await session.until(events.turn_completed)
@@ -211,7 +211,7 @@ async def test_failed_tool_is_reported_as_failed(
     await model.reply(request, ShellCall("call_test_1", "sh -c 'printf failing; exit 23'"))
     request = await model.request()
     (output,) = request.tool_outputs
-    assert "failing" in output.text
+    assert output.contains("failing")
     await model.reply(request, Text("SEEN_FAILURE"))
 
     await session.until(events.turn_completed)
@@ -243,10 +243,9 @@ async def test_codex_input_during_a_turn_joins_it(
     )
 
     request = await model.request()
-    assert "wait_finished" in request.tool_outputs[0].text
-    assert any(
-        "SECOND_INPUT_OBSERVED" in text
-        for text in request.user_texts + [output.text for output in request.tool_outputs]
+    assert request.tool_outputs[0].contains("wait_finished")
+    assert any("SECOND_INPUT_OBSERVED" in text for text in request.user_texts) or any(
+        output.contains("SECOND_INPUT_OBSERVED") for output in request.tool_outputs
     )
     await model.reply(request, Text("SECOND_INPUT_OBSERVED"))
 
@@ -274,9 +273,9 @@ async def test_claude_inputs_during_a_tool_are_confirmed_from_the_started_cohort
     await session.submit_input("input-3", "Reply ONLY THIRD_INPUT_OBSERVED after your current work.")
 
     request = await model.request()
-    assert "wait_finished" in request.tool_outputs[0].text
-    assert "SECOND_INPUT_OBSERVED" in request.tool_outputs[0].text
-    assert "THIRD_INPUT_OBSERVED" in request.tool_outputs[0].text
+    assert request.tool_outputs[0].contains("wait_finished")
+    assert request.tool_outputs[0].contains("SECOND_INPUT_OBSERVED")
+    assert request.tool_outputs[0].contains("THIRD_INPUT_OBSERVED")
     await model.reply(request, Text("SECOND_INPUT_OBSERVED"))
 
     done = await session.until(events.turn_completed)

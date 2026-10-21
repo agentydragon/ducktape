@@ -460,7 +460,7 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
     )
     tool_result_request = await model.request()
     assert any(
-        result.call_id == "acceptance-side-effect" and "SIDE_EFFECT_OUTPUT" in result.text
+        result.call_id == "acceptance-side-effect" and result.contains("SIDE_EFFECT_OUTPUT")
         for result in tool_result_request.tool_outputs
     )
     await model.hold(tool_result_request)
@@ -479,7 +479,7 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
     assert retried.user_texts.count(target_text) == 2
     assert "<turn_aborted>" in retried.user_texts[-2]
     assert any(
-        result.call_id == "acceptance-side-effect" and "SIDE_EFFECT_OUTPUT" in result.text
+        result.call_id == "acceptance-side-effect" and result.contains("SIDE_EFFECT_OUTPUT")
         for result in retried.tool_outputs
     )
     # Native resume retains the completed call/output without executing that old call again.

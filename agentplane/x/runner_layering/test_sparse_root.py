@@ -100,7 +100,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     tool_result = await model.request()
     (output,) = tool_result.tool_outputs
     stderr = "\n".join(entry.event.harness_stderr.text for entry in events.of_kind(session.seen, "harness_stderr"))
-    assert "WORKLOAD_IMAGE_TOOL_OK" in output.text, f"tool output: {output.text}\nharness stderr:\n{stderr}"
+    assert output.contains("WORKLOAD_IMAGE_TOOL_OK"), f"tool output: {output.blocks}\nharness stderr:\n{stderr}"
     await model.reply(tool_result, Text("WORKLOAD_IMAGE_TOOL_DONE"))
     tool_done = await session.until(events.turn_completed)
     assert tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
@@ -148,8 +148,8 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     resumed_stderr = "\n".join(
         entry.event.harness_stderr.text for entry in events.of_kind(second.seen, "harness_stderr")
     )
-    assert "WORKLOAD_IMAGE_TOOL_OK" in resumed_output.text, (
-        f"resumed tool output: {resumed_output.text}\nharness stderr:\n{resumed_stderr}"
+    assert resumed_output.contains("WORKLOAD_IMAGE_TOOL_OK"), (
+        f"resumed tool output: {resumed_output.blocks}\nharness stderr:\n{resumed_stderr}"
     )
     assert workload_proof.read_text() == "WORKLOAD_IMAGE_TOOL_OK\n"
     await model.reply(resumed_tool_result, Text("WORKLOAD_IMAGE_TOOL_AFTER_RESUME_DONE"))

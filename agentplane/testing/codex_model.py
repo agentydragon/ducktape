@@ -38,13 +38,11 @@ class CodexModel(ScriptedModel[ResponsesRequest]):
             assistant_texts=[message.text for message in request.messages("assistant")],
             reasoning_texts=[part.text for item in request.reasoning for part in item.summary],
             tool_outputs=[
-                *(ToolOutput(output.call_id, output.output) for output in request.function_call_outputs),
+                *(ToolOutput(output.call_id, [output.output]) for output in request.function_call_outputs),
                 *(
                     ToolOutput(
                         output.call_id,
-                        output.output
-                        if isinstance(output.output, str)
-                        else "".join(part.text for part in output.output),
+                        [output.output] if isinstance(output.output, str) else [part.text for part in output.output],
                     )
                     for output in request.custom_tool_call_outputs
                 ),
