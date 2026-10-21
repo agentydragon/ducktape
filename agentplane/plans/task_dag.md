@@ -38,7 +38,7 @@ flowchart LR
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
     end
     subgraph K3S_TRACK[k3s acceptance, retiring agentplane-testing]
-        K3S_VM_ACCEPTANCE[In flight: KubeVirt emulation on k3s]
+        K3S_VM_ACCEPTANCE[Candidate: VM scenarios on the emulated k3s stack]
         K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
         TESTING_ROLLOUT_ROLE[Decision: what replaces testing]
         TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
@@ -631,13 +631,11 @@ flowchart LR
     VM_HARNESS_RESOURCE_LIMITS[Blocked: accept VM per-harness resource limits]
     VM_INTRA_SANDBOX_HARDENING[Deferred: optional intra-Sandbox process/state hardening]
     RUNNER_LAYERING_VM[In flight: slim VM runtime, section 7]
-    K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     VM_HARNESS_RESOURCE_LIMITS --> VM_LIFECYCLE
     VM_GUEST_BUDGET_DERIVE --> VM_HARNESS_RESOURCE_LIMITS
     RUNNER_LAYERING_VM --> VM_HARNESS_RESOURCE_LIMITS
-    K3S_VM_IMAGE -. optional VM test fixture .-> VM_HARNESS_RESOURCE_LIMITS
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
     VM_GUEST_MEMORY[Parked: 8 GiB PR held for workload-image prototype]
     VM_GUEST_BUDGET_DERIVE[Candidate: guest budgets derive from the VM spec]
@@ -647,7 +645,7 @@ flowchart LR
 
 ### `VM_HARNESS_RESOURCE_LIMITS` — accept per-harness resource limits on the VM guest
 
-**Blocked on `VM_GUEST_BUDGET_DERIVE` and `RUNNER_LAYERING_VM`; `K3S_VM_IMAGE` is an optional fixture.**
+**Blocked on `VM_GUEST_BUDGET_DERIVE` and `RUNNER_LAYERING_VM`; the k3s test guest (`agentplane/x/k3s_env/guest`) is an optional fixture.**
 The guest already places each native harness and its tool descendants in a delegated cgroup with CPU,
 memory, task and workspace I/O limits. Exercise those limits on the slim guest: resource pressure must
 respect the aggregate and per-harness budgets, and exhausting one harness's memory group must terminate
@@ -1258,8 +1256,6 @@ flowchart TD
     RUNNER_LAYERING_SPIKE_EXIT --> RUNNER_IMAGE_LAYERING_DESIGN
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_SPIKE_RETIRE
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[In flight: a guest takes runner and tools from separate images]
-    RUNNER_LAYERING_VM --> K3S_VM_IMAGE[Blocked: build a lightweight guest disk in Bazel]
-    RUNNER_HARNESS_DELIVERY_DESIGN[harness delivery, section 5] -. related .-> K3S_VM_IMAGE
 ```
 
 ### `SANDBOX_GENERIC_SPLIT` — separate the generic Sandbox from the runner's sealing
@@ -1383,31 +1379,9 @@ reserve, stage 2 gets the rest.
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from
 their chosen layer, and the tools-heavy environment separate. The layering decision still owns exact
 disk placement. `VM_HARNESS_RESOURCE_LIMITS` acceptance waits for this slim runtime; existing guest
-resource controls remain in place while it is prepared.
-
-### `K3S_VM_IMAGE` — build a lightweight guest disk in Bazel for the k3s integration test
-
-**Blocked on the VM split; operator, 2026-10-15 PDT.** The k3s spike cannot exercise a VM Sandbox at all:
-the direct K3s chart omits the `runner-vm` SandboxTemplate because the template needs
-KubeVirt, and the fixture runs without KubeVirt CRDs. So the VM path has no integration coverage in
-the disposable environment, and pulling the real guest is
-unattractive because `agentplane/runner/container-disk.nix` builds it from a NixOS qcow2 — the heavy
-artifact the spike exists to avoid, and one that cannot carry the code under test.
-
-Make the test build a guest disk itself, so it runs the runner **from the tree under test** rather than a
-published image. The Pod-side pattern already exists there: `//agentplane/x/k3s_env:runner_image` is
-`debian_trixie_slim` plus the Bazel-built runner without native harnesses; `:runner_claude_image` adds
-only pinned Claude for the model smoke. Neither needs a registry credential. Build the guest from the
-tree under test and supply the required harness through the layering design. An image the test boots
-— with KubeVirt installed in the spike, or the VM path exercised
-against the host's KVM — is the deliverable, not a bigger image. Retain the production guest's
-delegated cgroup resource limits if this fixture exercises `VM_HARNESS_RESOURCE_LIMITS`: a lightweight
-test must not omit the limits being accepted.
-
-Worth stating in the design, because it argues past the spike: a Bazel-built guest is worth more than the
-test. Once a guest root filesystem is an `oci_image` target, `RUNNER_LAYERING_VM` needs no Nix to build a
-candidate runtime, CI can build a guest without Attic, and a runtime experiment becomes an additive target
-rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` before adding image weight to that environment.
+resource controls remain in place while it is prepared. The k3s test guest (`agentplane/x/k3s_env/guest`)
+shows a guest root filesystem can be an `oci_image` target: a candidate runtime then needs no Nix or Attic
+and is an additive target rather than a second release pipeline.
 
 ### `IDLE_SUSPEND_UI_DRIVE` — finish the VM staging UI drive
 
@@ -1715,7 +1689,6 @@ flowchart LR
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a PostgreSQL-free K3s tier]
-    K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
@@ -1723,7 +1696,6 @@ flowchart LR
     RUNNER_HARNESS_OBJECTS_DESIGN --> RUNNER_CODEX_SHARED_PROCESS[Blocked: share at most one Codex app-server per Runner]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -.- DISPATCHER_QUEUE_OPTIONAL[Unscheduled: the combined service runs without its queue]
-    K3S_VM_IMAGE -. real VM path prerequisite .-> CNPG_FREE_K3S_INTEGRATION_TIER
 ```
 
 ### `DISPATCHER_PERSISTENCE_MODEL_DESIGN` — choose the queue's role: always on, or optional in one service
@@ -1763,22 +1735,21 @@ is required and off.
 
 ### `CNPG_FREE_K3S_INTEGRATION_TIER` — add a narrow database-independent integration tier
 
-**Blocked on the reviewed execution-persistence contract, actual removal of execution-database
-dependencies from the flows under test, and the real VM fixture.** Add a K3s integration tier for
+**Blocked on the reviewed execution-persistence contract and actual removal of execution-database
+dependencies from the flows under test.** Add a K3s integration tier for
 independently usable, loosely coupled Agentplane components; it is not a full-stack parity
 environment or a replacement for CNPG. Exercise only flows that can run without the removed
 dependencies. The tier may omit Notifications, History, Electric, the CNPG operator and PostgreSQL,
 without requiring those absent services' behavior in this suite or implying that every other service
 is database-free.
 
-Cover Pod and VM runner flows, adding test ingress where a selected flow needs it. Require a real
-supported VM fixture via `K3S_VM_IMAGE`; the existing k3s suite runs without KubeVirt and is not VM
-execution coverage. Keep this test target separate from runtime database removal;
+Cover Pod and VM runner flows, adding test ingress where a selected flow needs it; VM flows use the
+k3s stack's VM rendering (KubeVirt under emulation, the Bazel-built test guest). Keep this test target separate from runtime database removal;
 scope its included flows, omitted services and remaining state owners explicitly. A direct-admission
 contract, if selected, remains online-only and does not wake suspended Sandboxes; the durable-queue
 mode remains the owner of wake-to-deliver.
 
-The existing `agentplane/x/k3s_env` suite already runs without the CNPG operator, KubeVirt, Cilium or cert-manager,
+The existing `agentplane/x/k3s_env` suite already runs without the CNPG operator, Cilium or cert-manager (and KubeVirt outside its VM rendering),
 against one plain PostgreSQL Deployment and the Runner Gateway; this node is about removing the PostgreSQL dependency
 itself. Direct admission and new sender grants remain separate decisions.
 
@@ -1993,12 +1964,10 @@ changes.
 flowchart LR
     K3S_MODEL_CREDENTIALS[Decision: model key for k3s acceptance]
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
-    K3S_VM_ACCEPTANCE[In flight: KubeVirt emulation spike on k3s]
-    K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
+    K3S_VM_ACCEPTANCE[Candidate: VM scenarios on the emulated k3s stack]
     TESTING_ROLLOUT_ROLE[Decision: what replaces testing before staging]
     TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
     K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
-    K3S_VM_IMAGE -. the emulation spike needs it .-> K3S_VM_ACCEPTANCE
     K3S_VM_ACCEPTANCE --> TESTING_ENVIRONMENT_RETIRE
     TESTING_ROLLOUT_ROLE --> TESTING_ENVIRONMENT_RETIRE
 ```
@@ -2026,16 +1995,21 @@ have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-b
 The `test_egress` probe's `_k3s_real` target binds a fixture-only credential PolicySet, not staging's
 `github-agentydragon-agent`.
 
-### `K3S_VM_ACCEPTANCE` — where VM acceptance runs
+### `K3S_VM_ACCEPTANCE` — VM acceptance on k3s
 
-**In flight: the emulation spike (operator, 2026-10-21 06:42).** The RBE Firecracker guest has no
-KVM (probed 2026-10-21: kernel 5.15.0, no `/dev/kvm`, `CONFIG_KVM` unset). The spike installs
-KubeVirt with `useEmulation` in the k3s fixture and boots the `K3S_VM_IMAGE` guest. If one boot is
-too slow to be a test, the same VM scenarios run against staging as an operator-run target;
-self-hosted BuildBuddy executors with KVM are Enterprise-only per the
-[self-hosting notes](../../docs/buildbuddy_selfhost.md).
+**Candidate; VM acceptance runs on k3s (operator, 2026-10-21 06:42 and 08:31).** The RBE Firecracker
+guest has no KVM, so the k3s stack's VM rendering runs KubeVirt with `useEmulation` and boots the
+Bazel-built test guest (`agentplane/x/k3s_env/guest`), not production's NixOS image.
+`//agentplane/x/k3s_env:test_vm_lifecycle` boots a `runner-vm` Sandbox to Ready, suspends and resumes
+it ([timings](../x/k3s_env/README.md#vm-lifecycle-timings-2026-10-21)): KubeVirt's image pulls take
+about 3 minutes, the VM itself under 2.
 
-Exit: a VM scenario passes on k3s with its boot time recorded, or the staging fallback is chosen.
+Remaining: give the VM cases (`test_vm_sandbox`, `test_vm_workspace_ownership`, the `test_suspend_resume`
+and `test_storage_deployed` VM cases) `_k3s` targets on the VM rendering, then delete
+`test_vm_lifecycle`. The `test_suspend_resume` change goes through the k3s tests lane, which owns that
+file.
+
+Exit: the VM cases pass on k3s.
 
 ### `TESTING_ROLLOUT_ROLE` — what replaces testing as the stage before staging
 
@@ -2070,7 +2044,7 @@ flowchart LR
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s, section 14] --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
     K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
-    K3S_VM_ACCEPTANCE[In flight: KubeVirt emulation on k3s, section 14] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
+    K3S_VM_ACCEPTANCE[Candidate: VM scenarios on the emulated k3s stack, section 14] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE
 ```
 

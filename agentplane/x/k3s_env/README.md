@@ -94,6 +94,32 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 existing eventual k3s outcomes cover the requested lifecycle checks; no extra transition assertions
 or expensive rerun were needed. New quiesce behavior still needs its own focused regression tests.
 
+## VM Sandboxes
+
+[`test_vm_lifecycle`](test_vm_lifecycle.py) creates a Sandbox on the `runner-vm` template, waits for
+Ready, suspends it and resumes it. Its stack is rendered with VM Sandboxes (`rendered/none-vm.json`), so
+[`vm_sandboxes.py`](vm_sandboxes.py) installs production's KubeVirt release with `useEmulation` (QEMU
+TCG; the executor has no `/dev/kvm`) and Kyverno's admission controller, which adds the egress relay to
+each launcher Pod as in production. The fixture applies once KubeVirt's VirtualMachine API is served:
+the Sandbox Controller looks for it only at start.
+
+The template boots the [test guest](guest/BUILD.bazel) instead of production's NixOS image, which sits
+in a private registry and would boot for minutes without KVM: a Debian cloud kernel that KubeVirt boots
+directly, a busybox initramfs that mounts an erofs root under a tmpfs overlay, and an init that gives
+the runner what [`vm.nix`](../../runner/vm.nix) does. The runner comes from the production runner disk,
+as in a Pod; Codex is pinned in the root disk.
+
+**Gotcha:** KubeVirt's and Kyverno's images are pulled from quay.io and ghcr.io when the stack starts.
+
+### VM lifecycle timings, 2026-10-21
+
+One passing run ([invocation](https://app.buildbuddy.io/invocation/989d9e78-957b-4e0c-8f54-717e5f679e59)):
+405 s of action time, 368 s of it in pytest. KubeVirt was Available 3 min 23 s after it was applied,
+4 min 2 s after k3s started; that wait gates the test. Create, Ready, suspend, resume and Ready again
+took under 2 minutes; the resumed VM was running 14 s after its VMI was created. In the preceding
+run, a Sandbox's VM was scheduled 18 s after creation and running 3 s later; the emulated guest
+reached `/init` at 6 s, and the runner started about 14 s after the VM was running.
+
 ## Lifecycle measurements
 
 The harness comparison measures the Go Gateway/Dispatcher fixture with shared typed service
@@ -661,7 +687,7 @@ remaining OCI/containerd import and unpack cost, while keeping lifecycle asserti
 unchanged. Do not use this one pair to justify moving the expensive workflow into general CI.
 
 The separate workflow runs only the model-free lifecycle target. Its bare-cluster fixtures do not
-provide real KubeVirt, Cilium or OIDC/Dex coverage, and this target is not
+provide Cilium or OIDC/Dex coverage (KubeVirt runs only in `test_vm_lifecycle`), and this target is not
 Dispatcher multi-replica acceptance. Keep the `agentplane-testing` environment and fixture/spike
 cleanup as separate future work until those coverage gaps have an explicit owner and replacement.
 

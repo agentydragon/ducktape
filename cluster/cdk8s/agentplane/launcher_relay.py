@@ -120,6 +120,8 @@ class LauncherRelayPolicy(ClusterPolicy):
         pod_spec = runner_pod["spec"]
         relay = dict(one(c for c in pod_spec["containers"] if c["name"] == sidecar_config.CONTAINER_NAME))
         token_volume = sandbox_pod.EGRESS_TOKEN_VOLUME_NAME
+        # A deployment that pulls without credentials (the k3s fixture) has none to copy.
+        pull_secrets = {"imagePullSecrets": pod_spec["imagePullSecrets"]} if "imagePullSecrets" in pod_spec else {}
         # A runner Pod sets these Pod-wide; the launcher's own Pod security context is KubeVirt's.
         relay["securityContext"] = {
             **relay["securityContext"],
@@ -221,7 +223,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                             "spec": {
                                 "serviceAccountName": "{{account.metadata.name}}",
                                 "automountServiceAccountToken": False,
-                                "imagePullSecrets": pod_spec["imagePullSecrets"],
+                                **pull_secrets,
                                 "containers": [relay],
                                 "volumes": [
                                     one(v for v in pod_spec["volumes"] if v["name"] == token_volume),

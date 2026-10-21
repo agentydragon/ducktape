@@ -1,0 +1,27 @@
+#!/bin/busybox sh
+# The test guest's first PID 1: load the drivers the Debian cloud kernel builds as modules, mount the
+# root disk (an erofs on the containerDisk of serial `guest-root`; a virtio serial holds at most 20
+# bytes) under a tmpfs overlay and switch to it. The runner fsyncs directories up to `/`, which erofs
+# refuses and an overlay answers, as the NixOS guest's writable root does.
+set -eu
+/bin/busybox --install -s /bin
+mkdir -p /dev /proc /sys /lower /upper /newroot
+mount -t devtmpfs devtmpfs /dev
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+while read -r module; do
+	insmod "/lib/modules/$module.ko"
+done </lib/modules/order
+for block in /sys/block/vd*; do
+	if [ "$(cat "$block/serial")" = guest-root ]; then
+		root="/dev/${block##*/}"
+	fi
+done
+mount -t erofs -o ro "$root" /lower
+mount -t tmpfs -o mode=0755 tmpfs /upper
+mkdir /upper/data /upper/work
+mount -t overlay -o lowerdir=/lower,upperdir=/upper/data,workdir=/upper/work overlay /newroot
+for mount in /dev /proc /sys; do
+	mount --move "$mount" "/newroot$mount"
+done
+exec switch_root /newroot /sbin/agentplane-guest-init

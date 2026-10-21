@@ -30,7 +30,7 @@ depends on.
 
 The reshuffle this implies:
 
-- **`K3S_VM_ACCEPTANCE`.** VM Sandboxes need KubeVirt on k3s without KVM (finding 3).
+- **`K3S_VM_ACCEPTANCE`.** VM Sandboxes run on k3s under KubeVirt's emulation, without KVM (finding 3).
 
 ## Where the k3s tests are
 
@@ -73,7 +73,7 @@ layer (−40%) and the harness-free runner image (−35%).
    starts ([measurements](../x/k3s_env/README.md#fixture-chart-rendered-at-build-time-2026-10-21)).
 3. **What the RBE executor can run** (probed 2026-10-21 with `bb execute`, the k3s target's
    isolation properties): kernel 5.15.0, no `/dev/kvm` (`CONFIG_KVM` unset, only
-   `CONFIG_KVM_GUEST`), no BPF JIT. So no KubeVirt with hardware virtualization and no Cilium.
+   `CONFIG_KVM_GUEST`), no BPF JIT. So no Cilium, and KubeVirt only with software emulation.
    kube-proxy runs, and the fixture uses ClusterIP Services.
 
 ## What `agentplane-testing` covers today
@@ -84,7 +84,7 @@ layer (−40%) and the harness-free runner image (−35%).
 | `test_storage_deployed`, Pod case                                                                                | Sandbox-owned PVCs                                                                                    | runs on k3s (#11330)                                               |
 | `test_egress`, `test_session_instructions`, `test_launch_presets`, `test_suspend_resume` Pod case                | turns on both harnesses, the egress ring, kubectl                                                     | scripted (no key); the real-model set needs a key                  |
 | `test_mcp`, `test_dcr`                                                                                           | Dex operator login, `mcp-everything`, the Dex-backed `example` OAuth server, a browser for Dex's form | runs on k3s with the MCP fixtures                                  |
-| VM cases: `test_vm_sandbox`, `test_vm_workspace_ownership`, `test_suspend_resume` VM, `test_storage_deployed` VM | KubeVirt, KVM                                                                                         | no KVM on RBE (finding 3)                                          |
+| VM cases: `test_vm_sandbox`, `test_vm_workspace_ownership`, `test_suspend_resume` VM, `test_storage_deployed` VM | KubeVirt, KVM                                                                                         | emulated KubeVirt on the test guest; no `_k3s` targets yet         |
 | `test_thread_latency`                                                                                            | browser, Electric, frontend; ceilings for the deployed system                                         | no Electric in the fixture; RBE timings are not deployment latency |
 | `test_ollama_routes`                                                                                             | the GPU Ollama                                                                                        | not reachable from RBE                                             |
 
@@ -189,13 +189,11 @@ Ordered by what unblocks what. Speed work runs alongside and shortens PR CI, whi
    - Recommended: the `_k3s_real` targets run post-merge on `devel`, not on PRs. They judge
      Agentplane's instructions against a model, a signal to watch rather than a gate for a code
      change, and fork PRs never get the key.
-2. **`K3S_VM_ACCEPTANCE`**: where VM-Sandbox acceptance runs with no testing cluster.
-   - In flight: a spike of KubeVirt with software emulation (`useEmulation`) inside the RBE k3s, on
-     the Bazel-built guest (`K3S_VM_IMAGE`) (operator, 2026-10-21 06:42).
-   - If a guest boot under emulation is too slow to be a test, VM acceptance runs against staging
-     as an operator-run check: the same scenarios, a different target.
-   - Executors with `/dev/kvm` would need self-hosted BuildBuddy executors, which
-     [the self-hosting notes](../../docs/buildbuddy_selfhost.md) list as Enterprise-only.
+2. **`K3S_VM_ACCEPTANCE`**: VM-Sandbox acceptance on k3s.
+   - KubeVirt with software emulation (`useEmulation`) inside the RBE k3s boots the Bazel-built
+     test guest; `test_vm_lifecycle` starts, suspends and resumes a VM Sandbox in one 405 s action
+     ([timings](../x/k3s_env/README.md#vm-lifecycle-timings-2026-10-21)).
+   - Left: `_k3s` targets for the VM cases on the stack's VM rendering.
 3. **`TESTING_ROLLOUT_ROLE`** (decision). Testing is also the stage that risky rollouts hit before
    staging.
    - Recommended: the k3s acceptance suite on the exact commit gates the staging image pins, and

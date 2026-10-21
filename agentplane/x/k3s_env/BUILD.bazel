@@ -59,6 +59,7 @@ pkg_tar(
     mode = "0755",
     package_dir = "/opt/harnesses",
     strip_prefix = ".",
+    visibility = ["//agentplane/x/k3s_env/guest:__pkg__"],
 )
 
 pkg_tar(
@@ -192,6 +193,7 @@ py_library(
     deps = [
         ":bootstrap",
         ":rendered_fixture",
+        ":vm_sandboxes",
         "//agentplane/acceptance:conftest",
         "//agentplane/testing:tls",
         "//util/bazel:runfiles",
@@ -264,6 +266,43 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_vm_lifecycle",
+    size = "enormous",
+    srcs = ["test_vm_lifecycle.py"],
+    data = [
+        ":lifecycle/runner_layout",
+        ":rendered/none-vm.json",
+        "//agentplane/x/k3s_env/guest:vm_guest_boot_layout",
+        "//agentplane/x/k3s_env/guest:vm_guest_root_layout",
+        "@kubevirt_operator_bundle//file",
+        "@kyverno_install//file",
+        K3S_BINARY,
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/none-vm.json)",
+        "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath :lifecycle/runner_layout)",
+        "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
+        "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES,
+    tags = K3S_TAGS,
+    deps = [
+        ":stack",
+        ":vm_sandboxes",
+        "//:conftest",
+        "//agentplane:sandbox_resource",
+        "//agentplane/acceptance:conftest",
+        "//agentplane/app:sandbox_models",
+        "//agentplane/app/testing:client",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
 py_library(
     name = "fixture_chart",
     testonly = True,
@@ -298,6 +337,7 @@ py_library(
         "//cluster/cdk8s/agentplane:runner_gateway",
         "//cluster/cdk8s/agentplane:runner_gateway_workload",
         "//cluster/cdk8s/agentplane:runner_sandbox",
+        "//cluster/cdk8s/agentplane:runner_vm",
         "//cluster/cdk8s/agentplane:sandbox_controller",
         "//cluster/cdk8s/agentplane:sandbox_pod",
         "//cluster/cdk8s/agentplane:session_dispatcher",
@@ -349,6 +389,7 @@ genrule(
         "rendered/local-model.json",
         "rendered/local-model-mcp-fixtures.json",
         "rendered/none.json",
+        "rendered/none-vm.json",
         "rendered/public-litellm.json",
     ],
     cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
@@ -379,4 +420,13 @@ py_library(
 py_library(
     name = "bootstrap",
     srcs = ["bootstrap.py"],
+)
+
+py_library(
+    name = "vm_sandboxes",
+    srcs = ["vm_sandboxes.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pyyaml",
+    ],
 )

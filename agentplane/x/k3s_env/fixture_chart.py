@@ -63,6 +63,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     runner_gateway_workload,
     runner_sandbox,
+    runner_vm,
     sandbox_controller,
     sandbox_pod,
     session_dispatcher,
@@ -103,6 +104,10 @@ _DEX_TLS_SECRET = "test-dex-tls"
 _TRUST_BUNDLE = "test-fixture-ca"
 _TRUST_BUNDLE_KEY = "ca-certificates.crt"
 _TRUST_BUNDLE_DIR = "/etc/test-fixture-ca"
+_VM_GUEST_BOOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset"
+_VM_GUEST_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
+# The serial guest/initramfs_init mounts as the root.
+_VM_GUEST_ROOT_SERIAL = "guest-root"
 
 
 def _password(length: int = 40) -> str:
@@ -122,16 +127,23 @@ def _secret(
 
 
 def objects(
-    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, mcp: McpInputs | None
+    *,
+    ca_cert: str,
+    ca_key: str,
+    system_roots: str,
+    cluster_ca: str,
+    models: Models,
+    mcp: McpInputs | None,
+    vm_sandboxes: bool,
 ) -> list[dict[str, Any]]:
     """Synthesize only the objects the one-node, operator-light k3s fixture deploys; Dex, the MCP
     servers `test_mcp` calls and the Action Service's OAuth server only given `mcp`, whose images then
-    need importing."""
+    need importing; the VM template, on the test guest, and its launcher relay only with `vm_sandboxes`."""
     operator_oidc = testing.operator_oidc(issuer=DEX_ISSUER, app_client_id=_APP_LOGIN.id)
     oauth, oauth_files = _actions_oauth(mcp.actions_origin) if mcp is not None else (None, {})
     env = replace(
         testing.ENV,
-        vm_sandboxes=False,
+        vm_sandboxes=vm_sandboxes,
         # The scenarios' own preset in place of the deployment's, which an operator uses.
         app_config=testing.ENV.app_config.model_copy(
             update={
@@ -430,7 +442,35 @@ def objects(
     policy_controller_rbac.PolicyControllerRbac(
         chart, "policy-controller-rbac", env, account=controller.account, assignable_grants=[tool_config_grant]
     )
-    return list(Testing.synth(chart))
+    synthesized = list(Testing.synth(chart))
+    if vm_sandboxes:
+        _boot_test_guest(synthesized)
+    return synthesized
+
+
+def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
+    """Put the test guest (guest/) in the VM template in place of production's NixOS image, which boots
+    too slowly without KVM. KubeVirt boots the guest's kernel directly; its initramfs finds the root disk
+    by serial."""
+    template = one(
+        doc for doc in objects if doc["kind"] == "SandboxTemplate" and doc["metadata"]["name"] == runner_vm.NAME
+    )
+    spec = template["spec"]["vm"]["template"]["spec"]
+    spec["domain"]["firmware"] = {
+        "kernelBoot": {
+            "kernelArgs": "console=ttyS0",
+            "container": {
+                "image": _VM_GUEST_BOOT_IMAGE,
+                "kernelPath": "/boot/vmlinuz",
+                "initrdPath": "/boot/initramfs.cpio",
+                "imagePullPolicy": "IfNotPresent",
+            },
+        }
+    }
+    root = one(disk for disk in spec["domain"]["devices"]["disks"] if "bootOrder" in disk)
+    root["serial"] = _VM_GUEST_ROOT_SERIAL
+    volume = one(volume for volume in spec["volumes"] if volume["name"] == root["name"])
+    volume["containerDisk"]["image"] = _VM_GUEST_ROOT_IMAGE
 
 
 def browser_services(*, mcp_fixtures: bool) -> list[ServiceRef]:

@@ -1,6 +1,6 @@
 """Render the fixture chart into `$K3S_FIXTURE_DIR`, at build time: `<backend>.json` for each model
-backend, and `local-model-mcp-fixtures.json` with Dex, the MCP servers `test_mcp` calls and the Action
-Service's OAuth server `test_dcr` registers with.
+backend, `local-model-mcp-fixtures.json` with Dex, the MCP servers `test_mcp` calls and the Action
+Service's OAuth server `test_dcr` registers with, and `none-vm.json` with VM Sandboxes.
 
 Takes no arguments: the app's `Settings`, which the chart code builds, parses `sys.argv` as its own.
 """
@@ -24,10 +24,11 @@ from agentplane.x.k3s_env.rendered_fixture import (
 )
 
 
-def _render(output: Path, backend: Backend, mcp: McpInputs | None) -> None:
+def _render(output: Path, backend: Backend, mcp: McpInputs | None, *, vm_sandboxes: bool) -> None:
     models = MODEL_PLACEHOLDERS[backend]
     fixture = RenderedFixture(
         backend=backend,
+        vm_sandboxes=vm_sandboxes,
         namespace=fixture_chart.NAMESPACE,
         app_origin=fixture_chart.APP_ORIGIN,
         browser_services=[
@@ -44,7 +45,7 @@ def _render(output: Path, backend: Backend, mcp: McpInputs | None) -> None:
             if mcp is not None
             else None
         ),
-        objects=fixture_chart.objects(**asdict(PLACEHOLDERS), models=models, mcp=mcp),
+        objects=fixture_chart.objects(**asdict(PLACEHOLDERS), models=models, mcp=mcp, vm_sandboxes=vm_sandboxes),
     )
     text = fixture.model_dump_json()
     placeholders = list(asdict(PLACEHOLDERS).values())
@@ -56,14 +57,16 @@ def _render(output: Path, backend: Backend, mcp: McpInputs | None) -> None:
     # The chart transformed a placeholder (encoded it, say), so filling it in would miss.
     if missing := [placeholder for placeholder in placeholders if placeholder not in text]:
         raise ValueError(f"{backend=} renders without {missing=}")
-    (output / f"{backend}{'-mcp-fixtures' if mcp is not None else ''}.json").write_text(text)
+    variant = f"{'-mcp-fixtures' if mcp is not None else ''}{'-vm' if vm_sandboxes else ''}"
+    (output / f"{backend}{variant}.json").write_text(text)
 
 
 def main() -> None:
     output = Path(os.environ["K3S_FIXTURE_DIR"])
     for backend in Backend:
-        _render(output, backend, None)
-    _render(output, Backend.LOCAL_MODEL, MCP_PLACEHOLDERS)
+        _render(output, backend, None, vm_sandboxes=False)
+    _render(output, Backend.LOCAL_MODEL, MCP_PLACEHOLDERS, vm_sandboxes=False)
+    _render(output, Backend.NONE, None, vm_sandboxes=True)
 
 
 if __name__ == "__main__":

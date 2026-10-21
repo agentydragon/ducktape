@@ -24,7 +24,7 @@ from agentplane.x.k3s_env.stack import node_ip, running_stack
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """The stack runs no VM Sandboxes: the RBE executor has no `/dev/kvm`."""
+    """The stack is rendered without VM Sandboxes; only `test_vm_lifecycle` runs one on k3s so far."""
     vm = [item for item in items if item.get_closest_marker("vm_sandboxes") is not None]
     config.hook.pytest_deselected(items=vm)
     items[:] = [item for item in items if item not in vm]

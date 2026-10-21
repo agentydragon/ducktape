@@ -558,6 +558,22 @@ apt.install(
     ],
 )
 
+# The k3s fixture's VM test guest (agentplane/x/k3s_env/guest): busybox for its init, and what the init
+# runs to format and hand over the workspace.
+apt.install(
+    dependency_set = "trixie_vm_guest",
+    packages = [
+        "acl",
+        "busybox-static",
+        "e2fsprogs",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
 # Budget exporter image: git + ca-certificates on debian:trixie-slim so the
 # export_ledger CronJob can clone/commit/push the Beancount ledger repo.
 apt.install(
@@ -585,7 +601,7 @@ apt.install(
         "trixie-security",
     ],
 )
-use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_wayback_cache")
+use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_vm_guest", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -1333,6 +1349,14 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_cleanuppolicies.yaml"],
 )
 
+# The k3s fixture's Kyverno (agentplane/x/k3s_env/vm_sandboxes.py).
+http_file(
+    name = "kyverno_install",
+    downloaded_file_path = "install.yaml",
+    sha256 = "d3322cb346d3d42dd0f41e230b0d1d7bc5619960e1c36fdac4d9151d724b88e6",
+    urls = ["https://github.com/kyverno/kyverno/releases/download/v1.19.1/install.yaml"],
+)
+
 # Match the volsync chart 0.16.0 in cluster/cdk8s/volsync.py; the chart templates these CRDs verbatim.
 http_file(
     name = "volsync_replicationdestination_crd",
@@ -1625,6 +1649,15 @@ http_archive(
     build_file_content = 'exports_files(["release-v1.12.1-x86_64/firecracker-v1.12.1-x86_64"])',
     sha256 = "0a75e67ef6e4c540a2cf248b06822b0be9820cbba9fe19f9e0321200fe76ff6b",
     urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.12.1/firecracker-v1.12.1-x86_64.tgz"],
+)
+
+# The Debian cloud kernel of the k3s fixture's VM test guest (agentplane/x/k3s_env/guest), which builds
+# virtio-pci, virtiofs and ext4 in.
+http_file(
+    name = "vm_guest_kernel_deb",
+    downloaded_file_path = "linux-image-cloud-amd64.deb",
+    sha256 = "35da0f2338242760a9dcde72340bf063601c1a8507402ddf3e88bf154fbc1d06",
+    urls = ["https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/l/linux-signed-amd64/linux-image-6.12.63+deb13-cloud-amd64_6.12.63-1_amd64.deb"],
 )
 
 # Firecracker v1.12 CI's x86_64 ELF guest kernel, pinned for the local runner-layering VM probe.

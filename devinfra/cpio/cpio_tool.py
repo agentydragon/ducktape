@@ -7,6 +7,7 @@ Only "file" entries are supported. Non-zero uid/gid and user/group names
 """
 
 import sys
+from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 
 from pkg.private import manifest as pkg_manifest
@@ -44,16 +45,34 @@ def _entry(ino: int, mode: int, nlink: int, name: str, data: bytes) -> bytes:
     return header + name_bytes + bytes(_pad4(110 + namesize)) + data + bytes(_pad4(filesize))
 
 
+def write_archive(output: Path, files: Mapping[str, tuple[int, bytes]]) -> None:
+    """Write `files`, archive path to (permission bits, contents), with every parent directory."""
+    directory_names = {"."}
+    for name in files:
+        _check_dest(name)
+        directory_names.update(str(parent) for parent in PurePosixPath(name).parents if str(parent) != ".")
+    if conflicting_dirs := directory_names & files.keys():
+        sys.exit(f"archive paths are both files and directories: {sorted(conflicting_dirs)!r}")
+    # newc extraction does not create missing parent directories. Emit them explicitly,
+    # shallowest first, so nested package destinations exist when the kernel unpacks files.
+    cpio_entries = [
+        (name, 0o040755, 2, b"")
+        for name in sorted(directory_names, key=lambda item: (len(PurePosixPath(item).parts), item))
+    ]
+    cpio_entries.extend((name, 0o100000 | mode, 1, data) for name, (mode, data) in files.items())
+    with output.open("wb") as out:
+        for ino, (name, mode, nlink, data) in enumerate(cpio_entries, start=1):
+            out.write(_entry(ino, mode, nlink, name, data))
+        out.write(_entry(0, 0, 1, "TRAILER!!!", b""))
+
+
 def main() -> None:
     if len(sys.argv) != 3:
         sys.exit(f"Usage: {sys.argv[0]} <output.cpio> <manifest.json>")
 
     output_path, manifest_path = sys.argv[1], sys.argv[2]
-    entries = pkg_manifest.read_entries_from(manifest_path)
-
-    directory_names = {"."}
-    file_entries = []
-    for e in entries:
+    files = {}
+    for e in pkg_manifest.read_entries_from(manifest_path):
         if e.type != pkg_manifest.ENTRY_IS_FILE:
             sys.exit(f"{e.dest!r}: unsupported entry type {e.type!r} (only 'file' is supported)")
         if e.user is not None:
@@ -64,27 +83,8 @@ def main() -> None:
             sys.exit(f"{e.dest!r}: uid={e.uid!r} not supported (only uid=0 is supported)")
         if e.gid not in (None, 0):
             sys.exit(f"{e.dest!r}: gid={e.gid!r} not supported (only gid=0 is supported)")
-        _check_dest(e.dest)
-        path = PurePosixPath(e.dest)
-        directory_names.update(str(parent) for parent in path.parents if str(parent) != ".")
-        file_entries.append((e.dest, e.src, 0o100000 | int(e.mode or "0755", 8), 1))
-
-    # newc extraction does not create missing parent directories. Emit them explicitly,
-    # shallowest first, so nested package destinations exist when the kernel unpacks files.
-    cpio_entries = [
-        (name, None, 0o040755, 2)
-        for name in sorted(directory_names, key=lambda item: (len(PurePosixPath(item).parts), item))
-    ]
-    file_names = {name for name, _, _, _ in file_entries}
-    conflicting_dirs = directory_names & file_names
-    if conflicting_dirs:
-        sys.exit(f"archive paths are both files and directories: {sorted(conflicting_dirs)!r}")
-    cpio_entries.extend(file_entries)
-    with Path(output_path).open("wb") as out:
-        for ino, (name, src_file, mode, nlink) in enumerate(cpio_entries, start=1):
-            data = Path(src_file).read_bytes() if src_file else b""
-            out.write(_entry(ino, mode, nlink, name, data))
-        out.write(_entry(0, 0, 1, "TRAILER!!!", b""))
+        files[e.dest] = (int(e.mode or "0755", 8), Path(e.src).read_bytes())
+    write_archive(Path(output_path), files)
 
 
 if __name__ == "__main__":

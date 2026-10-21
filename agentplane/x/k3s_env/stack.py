@@ -33,7 +33,7 @@ import yaml
 
 from agentplane.acceptance.conftest import AUDIENCE, TESTING_SERVICE_ACCOUNT
 from agentplane.testing import tls
-from agentplane.x.k3s_env import rendered_fixture
+from agentplane.x.k3s_env import rendered_fixture, vm_sandboxes
 from agentplane.x.k3s_env.bootstrap import Bootstrap
 from util.bazel.runfiles import get_required_path
 
@@ -354,7 +354,8 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
 
     The manifest is the build's rendering for `models`' backend, `K3S_FIXTURE_RLOCATION`. A rendering
     with the MCP fixtures takes their image layouts from `K3S_MCP_FIXTURE_LAYOUTS`, space-separated
-    runfiles paths of `.rloc` files.
+    runfiles paths of `.rloc` files. A rendering with VM Sandboxes also runs what they need
+    (`vm_sandboxes`) and the test guest's images.
     """
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]))
@@ -381,9 +382,14 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
             models,
             mcp,
         )
+        if fixture.vm_sandboxes:
+            vm_sandboxes.install(k3s.kubectl)
+            layouts += sorted(get_required_path("_main/agentplane/x/k3s_env/guest").glob("*_layout.rloc"))
         k3s.import_images(layouts, required_images=_deployment_images(fixture.objects))
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
+        if fixture.vm_sandboxes:
+            vm_sandboxes.wait_for_apis(k3s.kubectl)
         # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
         namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
         rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
@@ -405,6 +411,8 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
         if failed:
             print(k3s.report(fixture.namespace))
             raise RuntimeError(f"Deployments not Available: {failed}")
+        if fixture.vm_sandboxes:
+            vm_sandboxes.wait_until_ready(k3s.kubectl)
         _resolve_on_node(k3s, fixture)
         access = None
         if mcp is not None and fixture.mcp_fixtures is not None:

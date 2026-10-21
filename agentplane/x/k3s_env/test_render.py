@@ -34,6 +34,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         cluster_ca="cluster-ca\n",
         models=None,
         mcp=_MCP,
+        vm_sandboxes=False,
     )
     assert all(
         doc["kind"]

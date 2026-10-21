@@ -1,0 +1,68 @@
+#!/usr/bin/busybox sh
+# The test guest's init on its root disk. It gives the runner what agentplane/runner/vm.nix does, without
+# systemd: the disks vm.nix mounts by serial, the workspace formatted on first use, masquerade networking,
+# busybox's tools and Codex in the NixOS system profile the runner puts on PATH, and the cgroup systemd
+# delegates to `agentplane-runner.service` with the runner in its `runner` subgroup. It restarts the
+# runner when it exits. vm.nix's sandboxing of the runner unit (capability bounding set, read-only system)
+# is absent.
+set -eux
+profile=/run/current-system/sw/bin
+export PATH=$profile:/usr/sbin:/usr/bin
+busybox mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
+busybox mkdir -p $profile
+busybox --install -s $profile
+ln -s /opt/harnesses/external/+http_archive+agentplane_codex_cli_linux_x64/bin/codex $profile/codex
+mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /tmp
+mount -t tmpfs -o mode=0700 tmpfs /root
+mount -t cgroup2 cgroup2 /sys/fs/cgroup
+
+# udev's by-id links: the mounts below and the runner's workspace I/O limit name disks by them.
+mkdir -p /dev/disk/by-id
+for block in /sys/block/vd*; do
+	ln -s "../../${block##*/}" "/dev/disk/by-id/virtio-$(cat "$block/serial")"
+done
+
+runtime=/run/agentplane
+for disk in config launch trust; do
+	mkdir -p "$runtime/$disk"
+	mount -t iso9660 -o ro,nosuid,nodev,noexec "/dev/disk/by-id/virtio-agentplane-$disk" "$runtime/$disk"
+done
+for file in config/config.json config/kubeconfig launch/launch.json trust/ca-certificates.crt trust/ca-certificates.p12; do
+	ln -s "$file" "$runtime/${file#*/}"
+done
+mkdir "$runtime/runner"
+mount -t erofs -o ro,nosuid,nodev /dev/disk/by-id/virtio-agentplane-runner "$runtime/runner"
+
+mount -t virtiofs -o noatime,nodev,nosuid state /state
+workspace=/state/workspaces
+device=/dev/disk/by-id/virtio-workspace
+mkdir -p "$workspace"
+dumpe2fs -h "$device" >/dev/null 2>&1 || mkfs.ext4 -q "$device"
+mount -t ext4 -o noatime,nodev,nosuid "$device" "$workspace"
+mkdir -p "$workspace/.home"
+chown 107:107 "$workspace" "$workspace/.home"
+chmod 2770 "$workspace"
+chmod 0700 "$workspace/.home"
+setfacl -m d:user:107:rwx,d:group:107:rwx "$workspace"
+
+ip link set lo up
+ip link set eth0 up
+ip addr add 10.0.2.2/24 dev eth0
+ip route add default via 10.0.2.1
+
+controllers="+cpu +io +memory +pids"
+service=/sys/fs/cgroup/system.slice/agentplane-runner.service
+mkdir -p "$service/runner"
+for group in /sys/fs/cgroup /sys/fs/cgroup/system.slice "$service"; do
+	echo "$controllers" >"$group/cgroup.subtree_control"
+done
+
+umask 0007
+export ANTHROPIC_AUTH_TOKEN=agentplane-credential-agentplane-workload
+export OPENAI_API_KEY=agentplane-credential-agentplane-workload
+while :; do
+	# The inner shell enters the runner's cgroup, then becomes the runner.
+	sh -c "echo \$\$ >$service/runner/cgroup.procs && exec $runtime/runner/bin/agentplane-runner-vm" ||
+		echo "agentplane-runner-vm exited $?; restarting"
+	sleep 2
+done
