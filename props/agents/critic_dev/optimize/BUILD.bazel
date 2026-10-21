@@ -5,9 +5,9 @@ Build targets:
     bazel run //props/agents/critic_dev/optimize:push  -- Push to local registry (localhost:8000)
 """
 
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
+load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_test")
 
 # Container-specific binary using aspect_rules_py (py_image_layer requires it).
@@ -18,9 +18,14 @@ aspect_py_binary(
     deps = ["//props/agents/critic_dev:main"],
 )
 
-py_image_layer(
+filegroup(
     name = "layers",
-    binary = ":optimize",
+    srcs = shared_py_image_layers(
+        name = "optimize_layers",
+        binary = ":optimize",
+        group = "0",
+        owner = "0",
+    ),
     visibility = ["//props:__subpackages__"],
 )
 
