@@ -29,7 +29,6 @@ from agentplane.acceptance import mcp_servers
 from agentplane.acceptance.agent import Agent
 from agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
 from agentplane.acceptance.operator_login import (
-    IdentityProvider,
     LoginBlockedError,
     OperatorCredentials,
     app_origin,
@@ -320,7 +319,7 @@ async def operator_bff(base_url: str, operator_credentials: OperatorCredentials)
         origin = str(app_origin(base_url)).rstrip("/")
         async with httpx.AsyncClient(base_url=origin, timeout=30, follow_redirects=False) as http:
             try:
-                await login_operator(http, operator_credentials, provider=IdentityProvider.DEX)
+                await login_operator(http, operator_credentials)
             except LoginBlockedError as exc:
                 pytest.fail(str(exc), pytrace=False)
             except httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError:

@@ -1,9 +1,5 @@
-"""Dedicated acceptance operator bootstrap; no client-side OIDC/session implementation.
-
-Authentik 2026.2.1's FlowExecutor passes the UI query as `query`, and solves
-identification/password challenges with the component token and Django CSRF cookie.
-Only that non-interactive path is supported; other stages require operator action.
-"""
+"""Dedicated acceptance operator bootstrap through Dex's local password form; no client-side
+OIDC/session implementation."""
 
 import base64
 import binascii
@@ -12,7 +8,6 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
-from enum import StrEnum
 from http import HTTPStatus
 from urllib.parse import parse_qs
 from uuid import uuid4
@@ -24,14 +19,9 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 from agentplane.app.action_federation import UpstreamFailure
 from agentplane.app.oidc import INSECURE_COOKIE, SECURE_COOKIE
 
-KUBE_PROXY = "https://haku-kubeapi.allegedly.works"
-# A Sandbox's kubeconfig names its own workload ServiceAccount, so it is as scoped as the proxy's.
-IN_CLUSTER_API = "https://kubernetes.default.svc.cluster.local"
 # The k3s fixture's own apiserver (`agentplane/x/k3s_env`), which holds only its test operator.
 K3S_FIXTURE_API = "https://127.0.0.1:6443"
 SECRET_PATH_ENV = "AGENTPLANE_OPERATOR_SECRET_PATH"
-DEFAULT_SECRET_PATH = "/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator"
-SECRET_PATH = DEFAULT_SECRET_PATH
 _DEX_AUTHORIZATION_PATH = "/dex/auth"
 _DEX_LOCAL_FORM_PATH = re.compile(r"/dex/auth/local(?:/login)?/?")
 _DEX_LOCAL_LOGIN_PATH = re.compile(r"/dex/auth/local/login/?")
@@ -42,13 +32,6 @@ def _transport_allowed(url: httpx.URL) -> bool:
     """HTTPS, or http to a cluster-internal Service name: the k3s fixture serves its app and Dex so,
     and its test process reaches them on the node."""
     return url.scheme == "https" or (url.scheme == "http" and url.host.endswith(".svc"))
-
-
-# CLEANUP(added 2026-10-21): Remove the Authentik adapter and this enum: `test_mcp`, its last
-#   caller, logs in only through the k3s fixture's Dex once the PR moving it there lands.
-class IdentityProvider(StrEnum):
-    AUTHENTIK = "authentik"
-    DEX = "dex"
 
 
 class LoginBlockedError(Exception):
@@ -103,23 +86,19 @@ def _kubectl(*args: str) -> bytes:
             timeout=30,
         )
     except OSError, subprocess.TimeoutExpired:
-        raise LoginBlockedError("BLOCKED: kubectl/kubeconfig unavailable or Kubernetes proxy timed out") from None
+        raise LoginBlockedError("BLOCKED: kubectl/kubeconfig unavailable or the apiserver timed out") from None
     if result.returncode:
-        raise LoginBlockedError(
-            "BLOCKED: proxied named Secret GET unavailable; check kubeconfig, proxy, RBAC and reflection"
-        )
+        raise LoginBlockedError("BLOCKED: named Secret GET unavailable; check kubeconfig and RBAC")
     return result.stdout
 
 
 def read_operator_credentials() -> OperatorCredentials:
     __tracebackhide__ = True
-    # Project only the active server, never raw kubeconfig credentials. Reject direct cluster access.
+    # Project only the active server, never raw kubeconfig credentials. Reject any other cluster.
     server = _kubectl("config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}")
-    if server.strip() not in {KUBE_PROXY.encode(), IN_CLUSTER_API.encode(), K3S_FIXTURE_API.encode()}:
-        raise LoginBlockedError(
-            "BLOCKED: current kubeconfig must use the Haku Console Kubernetes proxy, a Sandbox's or the k3s fixture's"
-        )
-    secret_path = os.environ.get(SECRET_PATH_ENV, DEFAULT_SECRET_PATH)
+    if server.strip() != K3S_FIXTURE_API.encode():
+        raise LoginBlockedError("BLOCKED: current kubeconfig must use the k3s fixture's apiserver")
+    secret_path = os.environ[SECRET_PATH_ENV]
     if (
         re.fullmatch(
             r"/api/v1/namespaces/[a-z0-9]([-a-z0-9]*[a-z0-9])?/secrets/[a-z0-9]([-a-z0-9]*[a-z0-9])?", secret_path
@@ -139,7 +118,7 @@ def read_operator_credentials() -> OperatorCredentials:
         return OperatorCredentials(**{key: SecretStr(value) for key, value in values.items()})
     except KeyError, TypeError, ValueError, binascii.Error:
         raise LoginBlockedError(
-            "BLOCKED: reflected operator Secret requires nonempty base64 login/username/password/issuer/subject"
+            "BLOCKED: operator Secret requires nonempty base64 login/username/password/issuer/subject"
         ) from None
 
 
@@ -158,31 +137,16 @@ def app_origin(base_url: str) -> httpx.URL:
     return _origin(url)
 
 
-def _destination(
-    source: httpx.URL, location: str, app: httpx.URL, idp: httpx.URL, provider: IdentityProvider
-) -> httpx.URL:
+def _destination(source: httpx.URL, location: str, app: httpx.URL, dex: httpx.URL) -> httpx.URL:
     __tracebackhide__ = True
     url = source.join(location)
     if not _transport_allowed(url) or url.userinfo or url.fragment:
         raise LoginBlockedError("BLOCKED: unsafe OIDC redirect")
-    if _origin(url) == app and url.path == "/auth/callback":
-        return url
-    if _origin(url) == idp and (
-        url.path == "/application/o/authorize/"
-        or re.fullmatch(r"/if/flow/[a-zA-Z0-9_-]+/", url.path)
-        # stage_ok returns a same-executor 302, followed as GET by Authentik's fetch client.
-        or (
-            _origin(source) == idp
-            and url.path == source.path
-            and re.fullmatch(r"/api/v3/flows/executor/[a-zA-Z0-9_-]+/", url.path)
-        )
-        or (
-            provider is IdentityProvider.DEX
-            and re.fullmatch(r"/dex/(auth|auth/local|auth/local/login|approval|callback)/?", url.path)
-        )
+    if (_origin(url) == app and url.path == "/auth/callback") or (
+        _origin(url) == dex and _DEX_OAUTH_PATH.fullmatch(url.path)
     ):
         return url
-    raise LoginBlockedError("BLOCKED: OIDC redirect outside the app callback or Authentik authorization/flow endpoints")
+    raise LoginBlockedError("BLOCKED: OIDC redirect outside the app callback or Dex authorization endpoints")
 
 
 @dataclass
@@ -313,12 +277,7 @@ async def follow_dex_authorization(
     raise LoginBlockedError("BLOCKED: Dex authorization exceeded its redirect bound")
 
 
-async def login_operator(
-    http: httpx.AsyncClient,
-    credentials: OperatorCredentials,
-    *,
-    provider: IdentityProvider = IdentityProvider.AUTHENTIK,
-) -> None:
+async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentials) -> None:
     """Follow app-created state/PKCE/nonce unchanged; callback alone issues the logged-in cookie.
 
     Caller must suppress HTTP logging and local-variable dumps for this sensitive exchange.
@@ -329,19 +288,16 @@ async def login_operator(
     issuer = httpx.URL(credentials.issuer.get_secret_value())
     if not _transport_allowed(issuer) or issuer.userinfo or issuer.query or issuer.fragment:
         raise LoginBlockedError("BLOCKED: operator Secret has an invalid HTTPS issuer")
-    idp = _origin(issuer)
-    if app.host == idp.host or app.host.endswith(f".{idp.host}") or idp.host.endswith(f".{app.host}"):
-        raise LoginBlockedError("BLOCKED: app and Authentik require separate, non-overlapping cookie hosts")
+    dex = _origin(issuer)
+    if app.host == dex.host or app.host.endswith(f".{dex.host}") or dex.host.endswith(f".{app.host}"):
+        raise LoginBlockedError("BLOCKED: app and Dex require separate, non-overlapping cookie hosts")
     if http.cookies or "Authorization" in http.headers:
         raise LoginBlockedError("BLOCKED: OIDC login requires a fresh cookie jar without bearer authentication")
     response = await http.get("/auth/login")
-    identified = False
-    password_sent = False
-    dex_password_login = DexPasswordLogin(idp)
-    # Bounds include both HTTP redirects and FlowExecutor stages; never retry a rejected password.
+    password_login = DexPasswordLogin(dex)
     for _ in range(20):
         # Refuse broad-domain cookies before another request can send them to the other origin.
-        if any(cookie.domain_specified or cookie.domain not in (app.host, idp.host) for cookie in http.cookies.jar):
+        if any(cookie.domain_specified or cookie.domain not in (app.host, dex.host) for cookie in http.cookies.jar):
             raise LoginBlockedError("BLOCKED: login returned a cookie spanning untrusted origins")
         if _origin(response.url) == app and response.url.path == "/auth/callback":
             if response.status_code != 303 or response.headers.get("location") != "/":
@@ -357,53 +313,11 @@ async def login_operator(
             return
         if response.is_redirect:
             if response.request.method == "POST" and response.status_code in (307, 308):
-                raise LoginBlockedError("BLOCKED: Authentik requested replay of a credential POST")
-            target = _destination(response.url, response.headers["location"], app, idp, provider)
-            response = await http.get(target)
+                raise LoginBlockedError("BLOCKED: Dex requested replay of a credential POST")
+            response = await http.get(_destination(response.url, response.headers["location"], app, dex))
             continue
         if response.status_code != 200:
-            stage = "app login" if _origin(response.url) == app else f"{provider} authorization"
+            stage = "app login" if _origin(response.url) == app else "Dex authorization"
             raise LoginBlockedError(f"BLOCKED: {stage} returned HTTP {response.status_code}")
-        if provider is IdentityProvider.DEX and _DEX_LOCAL_FORM_PATH.fullmatch(response.url.path):
-            response = await dex_password_login.submit(http, response, credentials)
-            continue
-        if re.fullmatch(r"/if/flow/[a-zA-Z0-9_-]+/", response.url.path):
-            # GET the UI first to obtain Authentik's normal session/CSRF cookies, then do what its UI does.
-            flow_page = response.url
-            slug = flow_page.path.split("/")[-2]
-            executor = idp.join(f"/api/v3/flows/executor/{slug}/").copy_merge_params(
-                {"query": flow_page.query.decode()}
-            )
-            response = await http.get(executor)
-            continue
-        challenge = response.json()
-        if not isinstance(challenge, dict) or challenge.get("response_errors"):
-            raise LoginBlockedError("BLOCKED: Authentik challenge rejected the dedicated operator login")
-        if challenge.get("captcha_stage"):
-            raise LoginBlockedError("BLOCKED: Authentik requires an interactive CAPTCHA challenge")
-        component = challenge.get("component")
-        if component == "xak-flow-redirect":
-            target = _destination(response.url, challenge["to"], app, idp, provider)
-            response = await http.get(target)
-            continue
-        payload: dict[str, str] = {}
-        if component == "ak-stage-identification" and not identified:
-            payload = {"component": component, "uid_field": credentials.login.get_secret_value()}
-            identified = True
-            if challenge.get("password_fields"):
-                payload["password"] = credentials.password.get_secret_value()
-                password_sent = True
-        elif component == "ak-stage-password" and identified and not password_sent:
-            payload = {"component": component, "password": credentials.password.get_secret_value()}
-            password_sent = True
-        else:
-            raise LoginBlockedError("BLOCKED: Authentik requires an unsupported interactive/MFA/consent challenge")
-        # Authentik 2026.2's flow executor may not issue its CSRF cookie for an OIDC login
-        # started through /application/o/authorize/. When it does issue one, echo it through
-        # Authentik's current header; the app's state/nonce/PKCE checks remain mandatory either way.
-        csrf = http.cookies.get("authentik_csrf", domain=idp.host, path="/")
-        headers = {"Origin": str(idp).rstrip("/"), "Referer": str(flow_page)}
-        if csrf:
-            headers["X-Authentik-CSRF"] = csrf
-        response = await http.post(executor, json=payload, headers=headers)
-    raise LoginBlockedError("BLOCKED: Authentik login exceeded its redirect/stage bound")
+        response = await password_login.submit(http, response, credentials)
+    raise LoginBlockedError("BLOCKED: Dex login exceeded its redirect bound")

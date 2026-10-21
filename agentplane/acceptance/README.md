@@ -205,26 +205,22 @@ harness sent the model.
   protected tool.
 
 These cases read only the operator Secret the k3s target publishes (`AGENTPLANE_OPERATOR_SECRET_PATH`)
-via `kubectl get --raw`, with a kubeconfig naming the Haku Console Kubernetes proxy
-(`https://haku-kubeapi.allegedly.works`), a Sandbox's in-cluster API server or the k3s fixture's.
-No pre-issued cookie is used. Missing proxy/RBAC/reflection or malformed Secret data fails
-**BLOCKED**, without printing kubectl output or decoded values.
+via `kubectl get --raw`, with a kubeconfig naming the k3s fixture's apiserver. No pre-issued cookie is
+used. A missing Secret or malformed Secret data fails **BLOCKED**, without printing kubectl output or
+decoded values.
 
-The Secret's `login` is the identifier submitted to the identity provider; `username`
+The Secret's `login` is the identifier submitted to Dex; `username`
 is the expected operator name returned by the app. Dex's local password connector
 uses the configured email for login, which is distinct from its display username.
 The k3s fixture chart writes these fields beside Dex's config.
 
-A fresh `httpx` cookie jar starts at the app's `/auth/login`, follows the configured
-OIDC provider's redirects and returns to the app's `/auth/callback`. The app owns OAuth
+A fresh `httpx` cookie jar starts at the app's `/auth/login`, follows Dex's redirects through
+its ordinary local password form and returns to the app's `/auth/callback`. The app owns OAuth
 state, nonce, PKCE, token exchange and server-side session storage. Mutation requests use
-the app's exact same-origin `Origin`. Authentik staging uses its pinned FlowExecutor
-adapter and fails **BLOCKED** for MFA, consent or browser-only challenges. The testing
-instance uses Dex's ordinary local password form; the test does not reproduce an
-Authentik-specific web flow and still exercises the app's real authorization-code/session
-boundary. The test never fabricates a cookie or inserts a session. On k3s the app (over http) and
-Dex (over TLS from a CA the stack makes and the test trusts) serve on their in-cluster Service names,
-which the stack resolves for the test process; `operator_login` allows http only to such names.
+the app's exact same-origin `Origin`. The test never fabricates a cookie or inserts a session.
+The app (over http) and Dex (over TLS from a CA the stack makes and the test trusts) serve on
+their in-cluster Service names, which the stack resolves for the test process; `operator_login`
+allows http only to such names.
 
 Credentials stay in process memory. HTTP logging is suppressed for the BFF client's
 lifetime; pytest local-variable dumps are refused before Secret access. Do not add
