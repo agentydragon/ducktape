@@ -18,8 +18,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/authtest"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -37,25 +37,35 @@ const (
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
 
-	sandboxName       = "test-sandbox"
-	sandboxUID        = "test-sandbox-uid"
-	otherSandboxName  = "other-sandbox"
-	otherSandboxUID   = "other-sandbox-uid"
-	operatorName      = "test-operator"
-	testSession       = "test-session"
-	sandboxToken      = "test-token-sandbox"
-	otherSandboxToken = "test-token-other-sandbox"
-	operatorToken     = "test-token-operator"
-	outsiderToken     = "test-token-outsider"
+	sandboxName      = "test-sandbox"
+	sandboxUID       = "test-sandbox-uid"
+	otherSandboxName = "other-sandbox"
+	otherSandboxUID  = "other-sandbox-uid"
+	operatorName     = "test-operator"
+	testSession      = "test-session"
 )
 
-// Bearer -> ServiceAccount. Test literals, not real credentials. A Sandbox runs as the ServiceAccount of its own
-// name.
-var testAccounts = map[string]authtest.Account{
-	sandboxToken:      {Namespace: testNamespace, Name: sandboxName, UID: "test-sandbox-account-uid"},
-	otherSandboxToken: {Namespace: testNamespace, Name: otherSandboxName, UID: "test-other-sandbox-account-uid"},
-	operatorToken:     {Namespace: testNamespace, Name: operatorName, UID: "test-operator-account-uid"},
-	outsiderToken:     {Namespace: "test-elsewhere", Name: sandboxName, UID: "test-outsider-account-uid"},
+var (
+	kube *kubeapiserver.Server
+	// A Sandbox runs as the ServiceAccount of its own name: sandboxToken and otherSandboxToken prove
+	// those of the two Sandboxes, operatorToken the operator's, and outsiderToken one named like the
+	// first Sandbox's in another namespace.
+	sandboxToken, otherSandboxToken, operatorToken, outsiderToken string
+)
+
+func useAPIServer(server *kubeapiserver.Server) (err error) {
+	kube = server
+	for token, account := range map[*string]auth.Account{
+		&sandboxToken:      {Namespace: testNamespace, Name: sandboxName},
+		&otherSandboxToken: {Namespace: testNamespace, Name: otherSandboxName},
+		&operatorToken:     {Namespace: testNamespace, Name: operatorName},
+		&outsiderToken:     {Namespace: "test-elsewhere", Name: sandboxName},
+	} {
+		if *token, err = server.WorkloadToken(context.Background(), account, testAudience); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // fakeRunner holds the Sessions each Sandbox's runner reports.
@@ -242,7 +252,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { hub.Close() })
-	resolver, err := auth.NewResolver(authtest.Reviews{Audience: testAudience, Accounts: testAccounts}, testAudience, []string{testNamespace})
+	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}

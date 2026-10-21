@@ -17,8 +17,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/authtest"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -30,16 +30,25 @@ import (
 const (
 	testAudience  = "test-history-service"
 	testNamespace = "test-reader-namespace"
-	readerToken   = "test-token-reader"
-	strangerToken = "test-token-stranger"
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
 )
 
-// Bearer -> ServiceAccount. Test literals, not real credentials.
-var testAccounts = map[string]authtest.Account{
-	readerToken:   {Namespace: testNamespace, Name: "test-reader", UID: "test-reader-uid"},
-	strangerToken: {Namespace: testNamespace, Name: "test-stranger", UID: "test-stranger-uid"},
+var (
+	kube *kubeapiserver.Server
+	// readerToken proves test-reader, an allowed caller; strangerToken proves test-stranger, which is
+	// not.
+	readerToken, strangerToken string
+)
+
+func useAPIServer(server *kubeapiserver.Server) (err error) {
+	kube = server
+	ctx := context.Background()
+	if readerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: testNamespace, Name: "test-reader"}, testAudience); err != nil {
+		return err
+	}
+	strangerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: testNamespace, Name: "test-stranger"}, testAudience)
+	return err
 }
 
 var testWriter = storage.Writer{Namespace: testNamespace, Name: "test-writer", UID: "test-writer-uid"}
@@ -71,7 +80,7 @@ func newServerTimingOut(t *testing.T, lease, requestTimeout time.Duration) testS
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { hub.Close() })
-	resolver, err := auth.NewResolver(authtest.Reviews{Audience: testAudience, Accounts: testAccounts}, testAudience, []string{testNamespace})
+	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -31,7 +31,6 @@ import (
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/authtest"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -50,21 +49,12 @@ const (
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
 
-	sandboxName  = "test-sandbox"
-	sandboxUID   = "test-sandbox-uid"
-	sandboxToken = "test-token-sandbox"
-	otherName    = "test-other"
-	otherToken   = "test-token-other"
-	testSession  = "test-session"
-	webhookKey   = "test-webhook-secret-of-sixteen-or-more"
+	sandboxName = "test-sandbox"
+	sandboxUID  = "test-sandbox-uid"
+	otherName   = "test-other"
+	testSession = "test-session"
+	webhookKey  = "test-webhook-secret-of-sixteen-or-more"
 )
-
-// Bearer -> ServiceAccount. Test literals, not real credentials. A Sandbox runs as the ServiceAccount of its own
-// name.
-var testAccounts = map[string]authtest.Account{
-	sandboxToken: {Namespace: testNamespace, Name: sandboxName, UID: "test-sandbox-account-uid"},
-	otherToken:   {Namespace: testNamespace, Name: otherName, UID: "test-other-account-uid"},
-}
 
 // serveGRPC serves a fake peer on a loopback port and returns its address.
 func serveGRPC(t *testing.T, register func(*grpc.Server)) string {
@@ -169,7 +159,7 @@ func restart(t *testing.T, tune func(*config)) running {
 		t.Fatal(err)
 	}
 	deps := kubeDeps{
-		Reviews: authtest.Reviews{Audience: testAudience, Accounts: testAccounts},
+		Reviews: kube.TokenReviews(),
 		Sandboxes: clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(
 			&sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID}},
 		).Build(),

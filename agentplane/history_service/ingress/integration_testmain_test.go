@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/history_service/migrations"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	_ "github.com/lib/pq"
 )
@@ -34,7 +35,7 @@ func runIntegrationTests(m *testing.M) int {
 	}
 	integrationDatabase = database
 
-	code := m.Run()
+	code := kubeapiserver.Run(m, useAPIServer)
 	if err := database.Close(); err != nil {
 		fmt.Fprintln(os.Stderr, "close PostgreSQL fixture:", err)
 		if code == 0 {

@@ -15,8 +15,8 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/authtest"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -31,15 +31,28 @@ const (
 	testNamespace = "test-sandbox-namespace"
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
-	writerToken  = "test-token-sandbox-a"
 )
 
-// Bearer -> ServiceAccount. Test literals, not real credentials.
-var testAccounts = map[string]authtest.Account{
-	writerToken:            {Namespace: testNamespace, Name: "test-sandbox-a", UID: "test-account-a-uid"},
-	"test-token-sandbox-b": {Namespace: testNamespace, Name: "test-sandbox-b", UID: "test-account-b-uid"},
-	// Sandbox A's account deleted and recreated under the same name.
-	"test-token-sandbox-a-recreated": {Namespace: testNamespace, Name: "test-sandbox-a", UID: "test-account-a-recreated-uid"},
+var (
+	kube *kubeapiserver.Server
+	// writerToken proves Sandbox A's ServiceAccount.
+	writerToken string
+)
+
+func useAPIServer(server *kubeapiserver.Server) (err error) {
+	kube = server
+	writerToken, err = server.WorkloadToken(context.Background(), auth.Account{Namespace: testNamespace, Name: "test-sandbox-a"}, testAudience)
+	return err
+}
+
+// workloadToken is a token for testAudience bound to a new Pod running as account.
+func workloadToken(t *testing.T, account auth.Account) string {
+	t.Helper()
+	token, err := kube.WorkloadToken(t.Context(), account, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
 }
 
 // testTiming is short enough to wait out, long enough that a loaded runner does not end a live call.
@@ -79,7 +92,7 @@ func newService(t *testing.T, timing Timing) (*Service, *sql.DB) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	principals, err := auth.NewResolver(authtest.Reviews{Audience: testAudience, Accounts: testAccounts}, testAudience, []string{testNamespace})
+	principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,12 +433,24 @@ func TestOutOfOrderAndConflictingPushesAreRefused(t *testing.T) {
 }
 
 func TestASessionTakesPushesOnlyFromItsFirstWriter(t *testing.T) {
-	for _, token := range []string{"test-token-sandbox-b", "test-token-sandbox-a-recreated"} {
-		t.Run(token, func(t *testing.T) {
+	writer := auth.Account{Namespace: testNamespace, Name: "test-first-writer"}
+	for name, otherWriter := range map[string]func(*testing.T) string{
+		"another account": func(t *testing.T) string {
+			return workloadToken(t, auth.Account{Namespace: testNamespace, Name: "test-sandbox-b"})
+		},
+		"the writer's account deleted and recreated under its name": func(t *testing.T) string {
+			if err := kube.RecreateServiceAccount(t.Context(), writer); err != nil {
+				t.Fatal(err)
+			}
+			return workloadToken(t, writer)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
 			ingress, sessionID := newIngress(t), uuid.New()
-			first := ingress.push(t, append([]*runneringresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
+			first := ingress.open(t, workloadToken(t, writer))
+			first.send(append([]*runneringresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
 			first.acknowledged(1, false)
-			other := ingress.open(t, token)
+			other := ingress.open(t, otherWriter(t))
 			other.send(append([]*runneringresspb.PushFrame{announce(sessionID, 0, "")}, entries(1, 2)...)...)
 			if got := other.refused(); got != codes.PermissionDenied {
 				t.Fatalf("refused with %v, want PermissionDenied", got)

@@ -21,8 +21,8 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/authtest"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -33,17 +33,25 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const (
-	readerToken = "test-token-reader"
-	writerToken = "test-token-writer"
-	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
-	callDeadline = 30 * time.Second
+// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
+const callDeadline = 30 * time.Second
+
+var (
+	kube *kubeapiserver.Server
+	// readerToken proves the reader's ServiceAccount and writerToken a Sandbox's, each for both the
+	// read API's audience and the ingress's.
+	readerToken, writerToken string
 )
 
-// Bearer -> ServiceAccount. Test literals, not real credentials.
-var testAccounts = map[string]authtest.Account{
-	readerToken: {Namespace: "test-reader-namespace", Name: "test-reader", UID: "test-reader-uid"},
-	writerToken: {Namespace: "test-sandbox-namespace", Name: "test-sandbox", UID: "test-sandbox-uid"},
+func useAPIServer(server *kubeapiserver.Server) (err error) {
+	kube = server
+	ctx := context.Background()
+	audiences := []string{"test-history-service", "test-runner-ingress"}
+	if readerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: "test-reader-namespace", Name: "test-reader"}, audiences...); err != nil {
+		return err
+	}
+	writerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: "test-sandbox-namespace", Name: "test-sandbox"}, audiences...)
+	return err
 }
 
 // running is a served History Service: the read API and the runner ingress, each on its own port.
@@ -78,7 +86,7 @@ func start(t *testing.T, tune func(*config)) running {
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
 	go func() {
-		served <- serve(ctx, c, authtest.Reviews{Accounts: testAccounts}, readsListener, ingressListener)
+		served <- serve(ctx, c, kube.TokenReviews(), readsListener, ingressListener)
 	}()
 	var stopped bool
 	stop := func() error {
@@ -357,7 +365,7 @@ func TestAListenerThatFailsEndsTheServiceWithItsError(t *testing.T) {
 	closed.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	if err := serve(ctx, c, authtest.Reviews{Accounts: testAccounts}, readsListener, closed); err == nil || errors.Is(err, context.Canceled) {
+	if err := serve(ctx, c, kube.TokenReviews(), readsListener, closed); err == nil || errors.Is(err, context.Canceled) {
 		t.Errorf("serve returned %v, want the listener's error", err)
 	}
 }
