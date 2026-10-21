@@ -1464,7 +1464,6 @@ spec:
         - /llms.txt
         - /docs/agents/**
         - /openapi.json
-        - /v1/sources
         - /v1/subscriptions
         - /v1/subscriptions/**
         - /v1/inboxes
