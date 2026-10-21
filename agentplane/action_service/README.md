@@ -80,9 +80,10 @@ Notes are not a secret channel: do not put credentials in them. Human decisions 
 `EnrollmentAuthority` accepts trusted, framework-validated authorization metadata from the OAuth
 adapter. Only an opaque enrollment handle crosses to the integration-app URL; PostgreSQL stores
 its hash. The operator-authenticated `/v1/operator/connection-enrollments/{handle}/preview` and
-`/decision` routes bind the interaction to the app's server-side per-session browser secret and
-the independently verified operator principal. The app enforces browser Origin/CSRF protection;
-the service compares the browser-binding hash and operator on every decision.
+`/decision` routes bind the interaction to the browser binding the caller sends and the
+independently verified operator principal. The app enforces browser Origin/CSRF protection and
+sends one binding for every browser, so only the operator distinguishes callers; the service
+compares the browser-binding hash and operator on every decision.
 
 Preview returns client presentation and expiry, not the held upstream URL or PKCE challenge.
 Allow stores the selected ServiceAccount and either a new name or an explicitly confirmed

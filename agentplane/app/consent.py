@@ -2,8 +2,8 @@
 
 A browser session's interactions live in its row's payload, and each step reads and changes them
 under the row lock rather than through `request.session`: two previews of one handle racing on one
-session must share its browser binding, since the Action Service keeps the first it sees. The lock
-is never held across an Action Service call, whose exchange may need it to renew the login.
+session must share its CSRF token and the version the first preview read. The lock is never held
+across an Action Service call, whose exchange may need it to renew the login.
 """
 
 from __future__ import annotations
@@ -35,6 +35,11 @@ from agentplane.subjects import ServiceAccountRef
 EnrollmentHandle = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{43}$")]
 _SESSION_KEY = "connection_enrollments_v2"
 _MAX_INTERACTIONS = 32
+# CLEANUP(added 2026-10-21): Remove once the app's consent calls the Go ConnectionService, whose requests carry no
+#   browser binding.
+# The Python Action Service requires a browser binding and refuses any but the first preview's: one value for every
+# browser leaves only its check of the operator.
+_BROWSER_BINDING = "agentplane-app-consent-binds-no-browser"
 
 
 class ConsentAllow(BaseModel):
@@ -67,7 +72,6 @@ class ConsentPreview(BaseModel):
 
 
 class _Interaction(BaseModel):
-    browser_binding: str
     csrf_token: str
     expires_at: float
     idempotency_key: str
@@ -102,17 +106,13 @@ async def preview_enrollment(row: SessionRow, handle: str, client: OperatorActio
             if len(entries) >= _MAX_INTERACTIONS:
                 raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many open connection authorizations")
             interaction = _Interaction(
-                browser_binding=secrets.token_urlsafe(32),
                 csrf_token=secrets.token_urlsafe(32),
                 expires_at=datetime.now(UTC).timestamp() + 15 * 60,
                 idempotency_key=str(uuid4()),
             )
             entries[handle] = interaction
-            # Persist even if the upstream response is lost after it accepted this binding.
             _save(payload, entries)
-    preview = await client.preview_enrollment(
-        handle, EnrollmentPreviewInput(browser_binding=interaction.browser_binding)
-    )
+    preview = await client.preview_enrollment(handle, EnrollmentPreviewInput(browser_binding=_BROWSER_BINDING))
     async with _held(row) as payload:
         entries = _interactions(payload)
         # As it is now: a decision may have been attempted meanwhile.
@@ -147,7 +147,7 @@ async def decide_enrollment(
         interaction.attempted_decision = body
         _save(payload, entries)
     common = {
-        "browser_binding": interaction.browser_binding,
+        "browser_binding": _BROWSER_BINDING,
         "expected_version": interaction.version,
         "idempotency_key": interaction.idempotency_key,
     }

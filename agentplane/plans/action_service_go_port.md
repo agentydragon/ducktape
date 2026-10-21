@@ -89,10 +89,11 @@ enrollments) and `WebPushService`. They live in files apart from `action_service
 
 "Schema unchanged" is not "stored data unchanged":
 
-- Go neither reads nor writes `connection_enrollment.decision_digest` or `external_connection_grant`'s
-  `request_digest` and `activation_deadline`: a repeated decision is compared with the decision's own columns, and a
-  grant is created active in the transaction that issues its tokens, which nothing retries.
-- `handle_hash`, `browser_hash` and `mcp_linkage_flow.state_hash` are `sha256` hex of the raw string, and the PKCE
+- Go neither reads nor writes `connection_enrollment`'s `decision_digest` and `browser_hash`, or
+  `external_connection_grant`'s `request_digest` and `activation_deadline`: consent is pinned to its operator alone,
+  a repeated decision is compared with the decision's own columns, and a grant is created active in the transaction
+  that issues its tokens, which nothing retries.
+- `handle_hash` and `mcp_linkage_flow.state_hash` are `sha256` hex of the raw string, and the PKCE
   challenge is the unpadded URL-safe base64 of `sha256` of the verifier.
 - `action_request.arguments`, `action_event.actor`, `action_execution.result` and `error`, and the scope lists are
   JSONB documents the Go store must read back and write in the same shapes.
@@ -105,12 +106,12 @@ and asserts the Go values against them before any Go code writes to a shared dat
 
 Each stage is a small PR or a few, in dependency order. The service keeps serving from Python until the cutover.
 
-| Stage | Change                                                                                                                                                                                                                                                                                       |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| L     | Callers, prepared against the protos and merged with the cutover: the app's Action routes and relays, `OperatorActionServiceClient`, the CLI's generated client, the Go Notification Service's HTTP client, acceptance tests.                                                                |
-| M     | Testing cutover: soak the Go migrator the roster publishes, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                                                                                                                |
-| N     | Staging cutover, below.                                                                                                                                                                                                                                                                      |
-| O     | Python retirement: delete the Python service, tests, Alembic directory, migration image, `agentplane_oauth_kv`, `connection_enrollment.decision_digest` and `external_connection_grant`'s `request_digest` and `activation_deadline` (a migration), the `fastmcp` pin and CI roster entries. |
+| Stage | Change                                                                                                                                                                                                                                                                                                           |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L     | Callers, prepared against the protos and merged with the cutover: the app's Action routes and relays, `OperatorActionServiceClient`, the CLI's generated client, the Go Notification Service's HTTP client, acceptance tests.                                                                                    |
+| M     | Testing cutover: soak the Go migrator the roster publishes, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                                                                                                                                    |
+| N     | Staging cutover, below.                                                                                                                                                                                                                                                                                          |
+| O     | Python retirement: delete the Python service, tests, Alembic directory, migration image, `agentplane_oauth_kv`, `connection_enrollment`'s `decision_digest` and `browser_hash`, `external_connection_grant`'s `request_digest` and `activation_deadline` (a migration), the `fastmcp` pin and CI roster entries. |
 
 Stage O also deletes the Python-parity golden generators and tests (`generate_golden.py`, `generate_mcp_golden.py`,
 `generate_mcp_executor_golden.py`, `generate_catalog_golden.py`, `policies/generate_golden.py` and their

@@ -258,19 +258,8 @@ func (s *Service) UnbindConnection(ctx context.Context, request *pb.UnbindConnec
 	return &pb.UnbindConnectionResponse{Connection: view}, nil
 }
 
-// checkBrowserBinding refuses a binding a browser could not have chosen: 32 to 200 characters.
-func checkBrowserBinding(binding string) error {
-	if count := utf8.RuneCountInString(binding); count < 32 || count > 200 {
-		return invalid("browser_binding must be 32 to 200 characters")
-	}
-	return nil
-}
-
 func (s *Service) PreviewConnectionEnrollment(ctx context.Context, request *pb.PreviewConnectionEnrollmentRequest) (*pb.PreviewConnectionEnrollmentResponse, error) {
-	if err := checkBrowserBinding(request.GetBrowserBinding()); err != nil {
-		return nil, err
-	}
-	e, err := s.store.previewEnrollment(ctx, request.GetHandle(), request.GetBrowserBinding(), s.operator(ctx))
+	e, err := s.store.previewEnrollment(ctx, request.GetHandle(), s.operator(ctx))
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
@@ -282,13 +271,10 @@ func (s *Service) PreviewConnectionEnrollment(ctx context.Context, request *pb.P
 
 // parseDecision reads the decision the request makes.
 func parseDecision(request *pb.DecideConnectionEnrollmentRequest) (decision, error) {
-	if err := checkBrowserBinding(request.GetBrowserBinding()); err != nil {
-		return decision{}, err
-	}
 	if err := checkVersion("expected_version", request.GetExpectedVersion()); err != nil {
 		return decision{}, err
 	}
-	d := decision{browserBinding: request.GetBrowserBinding(), expectedVersion: request.GetExpectedVersion()}
+	d := decision{expectedVersion: request.GetExpectedVersion()}
 	switch choice := request.GetDecision().(type) {
 	case *pb.DecideConnectionEnrollmentRequest_Deny:
 		return d, nil

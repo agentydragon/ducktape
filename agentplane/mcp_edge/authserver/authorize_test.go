@@ -30,7 +30,7 @@ func TestAnAuthorizationRequestRecordsItsEnrollmentAndSendsTheBrowserToConsent(t
 	}
 	// Consent previews the client, as the authorization request named it.
 	preview := must(h.connections.PreviewConnectionEnrollment(as(t, testOperator), &pb.PreviewConnectionEnrollmentRequest{
-		Handle: handle, BrowserBinding: testBrowser,
+		Handle: handle,
 	}))(t)
 	if preview.GetClientId() != r.clientID || preview.GetClientName() != "Test DCR client" ||
 		preview.GetRedirectUri() != testRedirectURI {

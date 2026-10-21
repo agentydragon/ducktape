@@ -30,7 +30,7 @@ func (s *served) createEnrollment(t *testing.T, e NewEnrollment) (string, error)
 	return handle, err
 }
 
-// authorize creates an enrollment as the authorization server does and previews it as testOperator from testBrowser.
+// authorize creates an enrollment as the authorization server does and previews it as testOperator.
 func (s *served) authorize(t *testing.T) (uuid.UUID, string) {
 	t.Helper()
 	id := uuid.New()
@@ -41,7 +41,7 @@ func (s *served) authorize(t *testing.T) (uuid.UUID, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.preview(t, testOperator, handle, testBrowser); err != nil {
+	if _, err := s.preview(t, testOperator, handle); err != nil {
 		t.Fatal(err)
 	}
 	return id, handle

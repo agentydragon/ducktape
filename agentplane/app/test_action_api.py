@@ -934,7 +934,6 @@ async def test_consent_requires_operator_same_origin_and_preview_csrf(
     assert preview["enrollment"]["redirect_uri"] == "https://external-client.test/callback"
     assert preview["service_accounts"] == [PERSONAL.model_dump()]
     assert preview["attempted_decision"] is None
-    assert "browser_binding" not in response.text
     assert "access_token" not in response.text
     assert "server-held-state" not in response.text
     assert (await browser.post(f"{path}/decision", json=body)).status_code == 403
@@ -989,19 +988,21 @@ async def test_consent_allow_round_trip_replays_across_app_replicas(review: Revi
     assert set(review.exchanged_subjects) == {SUBJECT_A}
 
 
-async def test_consent_browser_binding_survives_replica_but_not_another_login(review: Review) -> None:
+async def test_consent_is_pinned_to_its_operator_not_their_session(review: Review) -> None:
     path = await enrollment_path(review)
     a, b = review.browser, review.second_browser
     await a.get("/auth/login")
-    preview = (await a.post(f"{path}/preview")).json()
+    assert (await a.post(f"{path}/preview")).status_code == 200
+    review.login_as(SUBJECT_B)
     await b.get("/auth/login")
     assert (await b.post(f"{path}/preview")).status_code == 403
-    assert (
-        await b.post(f"{path}/decision", json={"verdict": "deny", "csrf_token": preview["csrf_token"]})
-    ).status_code == 403
+    review.login_as(SUBJECT_A)
     await a.post("/auth/logout")
     await a.get("/auth/login")
-    assert (await a.post(f"{path}/preview")).status_code == 403
+    preview = await a.post(f"{path}/preview")
+    assert preview.status_code == 200, preview.text
+    denied = await a.post(f"{path}/decision", json={"verdict": "deny", "csrf_token": preview.json()["csrf_token"]})
+    assert denied.status_code == 200, denied.text
 
 
 async def test_existing_connection_consent_requires_confirmation_and_preserves_reviewed_version(review: Review) -> None:
@@ -1062,11 +1063,7 @@ async def test_consent_interactions_have_distinct_csrf_and_reject_extra_authorit
     assert (
         await browser.post(f"{second}/decision", json={"verdict": "deny", "csrf_token": one["csrf_token"]})
     ).status_code == 403
-    for extra in (
-        {"redirect_url": "https://evil.test"},
-        {"browser_binding": "attacker-supplied"},
-        {"service_account": PERSONAL.model_dump()},
-    ):
+    for extra in ({"redirect_url": "https://evil.test"}, {"service_account": PERSONAL.model_dump()}):
         response = await browser.post(
             f"{first}/decision", json={"verdict": "deny", "csrf_token": one["csrf_token"], **extra}
         )

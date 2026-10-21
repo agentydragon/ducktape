@@ -3,7 +3,6 @@ package connections
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -17,8 +16,8 @@ import (
 )
 
 // An enrollment is the consent of one OAuth authorization in flight. The authorization server creates it and later
-// turns an allowed one into a grant; between the two, the operator who previews it first, from one browser, decides
-// it. Only hashes of the handle in the consent URL and of the browser's binding are stored.
+// turns an allowed one into a grant; between the two, the operator who previews it first decides it. Only a hash of
+// the handle in the consent URL is stored.
 
 // Operator is a person who decides enrollments: the issuer of their token and its subject.
 type Operator struct{ Issuer, Subject string }
@@ -40,9 +39,8 @@ type enrollment struct {
 	redirectURI, upstreamURL string
 	expiresAt                time.Time
 	version                  int64
-	// browserHash and the operator are those of the first preview; nil until then.
-	browserHash *string
-	operator    *Operator
+	// operator is the first preview's; nil until then.
+	operator *Operator
 	// verdict is nil until the enrollment is decided, and allowed is nil unless it was allowed.
 	verdict *verdict
 	allowed *allowance
@@ -52,7 +50,6 @@ type enrollment struct {
 
 // decision is an operator's decision on an enrollment.
 type decision struct {
-	browserBinding  string
 	expectedVersion int64
 	// allow is nil for a refusal.
 	allow *allowance
@@ -87,7 +84,7 @@ type decisionResult struct {
 var (
 	errEnrollmentNotFound = status.Error(codes.NotFound, "enrollment not found")
 	errEnrollmentExpired  = status.Error(codes.FailedPrecondition, "enrollment expired; restart authorization")
-	errOtherBrowser       = status.Error(codes.PermissionDenied, "enrollment is bound to another browser or operator")
+	errOtherOperator      = status.Error(codes.PermissionDenied, "enrollment is pinned to another operator")
 )
 
 func digest(value string) string {
@@ -118,14 +115,12 @@ func lockEnrollmentWhere(ctx context.Context, tx *sql.Tx, column string, value a
 	var connectionVersion *int64
 	err := tx.QueryRowContext(
 		ctx, `
-		SELECT id, issuer, client_id, client_name, redirect_uri, upstream_url, expires_at, version, browser_hash,
-			operator_issuer, operator_subject, verdict, caller, display_name, connection_id, connection_version,
-			exchange_claimed_at
+		SELECT id, issuer, client_id, client_name, redirect_uri, upstream_url, expires_at, version, operator_issuer,
+			operator_subject, verdict, caller, display_name, connection_id, connection_version, exchange_claimed_at
 		FROM connection_enrollment WHERE `+column+` = $1 FOR UPDATE`, value,
 	).Scan(
 		&e.id, &e.issuer, &e.clientID, &e.clientName, &e.redirectURI, &e.upstreamURL, &e.expiresAt, &e.version,
-		&e.browserHash, &issuer, &subject, &e.verdict, &caller, &displayName, &connectionID, &connectionVersion,
-		&e.claimedAt,
+		&issuer, &subject, &e.verdict, &caller, &displayName, &connectionID, &connectionVersion, &e.claimedAt,
 	)
 	if err != nil {
 		return e, err
@@ -151,34 +146,32 @@ func lockEnrollmentWhere(ctx context.Context, tx *sql.Tx, column string, value a
 	return e, nil
 }
 
-// requireBrowser refuses all but the browser and operator of the enrollment's first preview.
-func (e enrollment) requireBrowser(browserBinding string, by Operator) error {
-	if e.browserHash == nil || subtle.ConstantTimeCompare([]byte(*e.browserHash), []byte(digest(browserBinding))) != 1 ||
-		e.operator == nil || *e.operator != by {
-		return errOtherBrowser
+// requireOperator refuses all but the operator of the enrollment's first preview.
+func (e enrollment) requireOperator(by Operator) error {
+	if e.operator == nil || *e.operator != by {
+		return errOtherOperator
 	}
 	return nil
 }
 
-// previewEnrollment shows the operator the enrollment, which the first preview binds to its browser and operator.
-func (s *Store) previewEnrollment(ctx context.Context, handle, browserBinding string, by Operator) (enrollment, error) {
+// previewEnrollment shows the operator the enrollment, which the first preview pins to its operator.
+func (s *Store) previewEnrollment(ctx context.Context, handle string, by Operator) (enrollment, error) {
 	var previewed enrollment
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		e, err := lockEnrollment(ctx, tx, handle)
 		if err != nil {
 			return err
 		}
-		if e.browserHash == nil {
-			hash := digest(browserBinding)
+		if e.operator == nil {
 			if _, err := tx.ExecContext(ctx, `
-				UPDATE connection_enrollment SET browser_hash = $2, operator_issuer = $3, operator_subject = $4
-				WHERE id = $1`, e.id, hash, by.Issuer, by.Subject); err != nil {
+				UPDATE connection_enrollment SET operator_issuer = $2, operator_subject = $3 WHERE id = $1`,
+				e.id, by.Issuer, by.Subject); err != nil {
 				return err
 			}
-			e.browserHash, e.operator = &hash, &by
+			e.operator = &by
 		}
 		previewed = e
-		return e.requireBrowser(browserBinding, by)
+		return e.requireOperator(by)
 	})
 	return previewed, err
 }
@@ -201,7 +194,7 @@ func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision,
 		if err != nil {
 			return err
 		}
-		if err := e.requireBrowser(d.browserBinding, by); err != nil {
+		if err := e.requireOperator(by); err != nil {
 			return err
 		}
 		if e.verdict != nil {

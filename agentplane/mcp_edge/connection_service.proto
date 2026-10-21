@@ -20,8 +20,8 @@ import "google/protobuf/timestamp.proto";
 // `ABORTED` is an `expected_version` that is no longer current, or a Connection that changed after the operator
 // reviewed it. `FAILED_PRECONDITION` is a state that refuses the call: a Connection without an active grant or bound
 // caller, a ServiceAccount no longer labeled as an Action caller, or an enrollment that expired or already holds a
-// different decision. `PERMISSION_DENIED` is an enrollment bound to another browser or operator. `UNAVAILABLE` is a
-// draining service or a lost change notification.
+// different decision. `PERMISSION_DENIED` is an enrollment pinned to another operator. `UNAVAILABLE` is a draining
+// service or a lost change notification.
 //
 // An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT`; a response never carries one.
 //
@@ -75,10 +75,9 @@ service ConnectionService {
     option (google.api.http) = {get: "/v1/operator/connections:watch"};
   }
 
-  // Shows an operator the OAuth authorization they are asked to consent to, and binds the enrollment to their
-  // browser: the first preview records `browser_binding` and the operator, and any other browser or operator then
-  // fails `PERMISSION_DENIED`. An enrollment that does not exist fails `NOT_FOUND`, an expired one
-  // `FAILED_PRECONDITION`.
+  // Shows an operator the OAuth authorization they are asked to consent to, and pins the enrollment to them: the
+  // first preview records the operator, and any other operator then fails `PERMISSION_DENIED`. An enrollment that
+  // does not exist fails `NOT_FOUND`, an expired one `FAILED_PRECONDITION`.
   rpc PreviewConnectionEnrollment(PreviewConnectionEnrollmentRequest) returns (PreviewConnectionEnrollmentResponse) {
     option (google.api.http) = {post: "/v1/operator/connection-enrollments/{handle}/preview" body: "*"};
   }
@@ -216,9 +215,8 @@ enum GrantStatus {
 message PreviewConnectionEnrollmentRequest {
   // The enrollment's handle, from the consent URL.
   string handle = 1;
-  // An unguessable value the browser keeps, 32 to 200 characters. Only the browser and operator of the first preview
-  // can decide.
-  string browser_binding = 2;
+  reserved 2;
+  reserved "browser_binding";
 }
 
 message PreviewConnectionEnrollmentResponse {
@@ -234,8 +232,8 @@ message PreviewConnectionEnrollmentResponse {
 message DecideConnectionEnrollmentRequest {
   // The enrollment's handle, from the consent URL.
   string handle = 1;
-  // The value the preview bound.
-  string browser_binding = 2;
+  reserved 2;
+  reserved "browser_binding";
   // The preview's `version`.
   int64 expected_version = 3;
   reserved 4;

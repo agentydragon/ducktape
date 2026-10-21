@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,13 +15,9 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-const (
-	testBrowser      = "test-browser-binding-0123456789abcdef"
-	testOtherBrowser = "test-other-browser-binding-0123456789"
-	testUpstreamURL  = "https://test-actions.example/authorize/continue"
-)
+const testUpstreamURL = "https://test-actions.example/authorize/continue"
 
-// sha256Hex is how the authorization server stores a handle, and how both services store a browser binding.
+// sha256Hex is how the authorization server stores a handle.
 func sha256Hex(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
@@ -43,18 +38,16 @@ func (s *served) enroll(t *testing.T, expiresAt time.Time) string {
 	return handle
 }
 
-func (s *served) preview(t *testing.T, subject, handle, browser string) (*pb.PreviewConnectionEnrollmentResponse, error) {
+func (s *served) preview(t *testing.T, subject, handle string) (*pb.PreviewConnectionEnrollmentResponse, error) {
 	t.Helper()
-	return s.client.PreviewConnectionEnrollment(as(t, subject), &pb.PreviewConnectionEnrollmentRequest{
-		Handle: handle, BrowserBinding: browser,
-	})
+	return s.client.PreviewConnectionEnrollment(as(t, subject), &pb.PreviewConnectionEnrollmentRequest{Handle: handle})
 }
 
-// previewed is an enrollment testOperator previewed from testBrowser.
+// previewed is an enrollment testOperator previewed.
 func (s *served) previewed(t *testing.T) string {
 	t.Helper()
 	handle := s.enroll(t, time.Now().Add(15*time.Minute))
-	if _, err := s.preview(t, testOperator, handle, testBrowser); err != nil {
+	if _, err := s.preview(t, testOperator, handle); err != nil {
 		t.Fatal(err)
 	}
 	return handle
@@ -62,7 +55,7 @@ func (s *served) previewed(t *testing.T) string {
 
 func allowNew(handle string) *pb.DecideConnectionEnrollmentRequest {
 	return &pb.DecideConnectionEnrollmentRequest{
-		Handle: handle, BrowserBinding: testBrowser, ExpectedVersion: 1,
+		Handle: handle, ExpectedVersion: 1,
 		Decision: &pb.DecideConnectionEnrollmentRequest_Allow{Allow: &pb.EnrollmentAllow{
 			ServiceAccount: message(callerAccount),
 			Connection: &pb.EnrollmentAllow_NewConnection{
@@ -74,7 +67,7 @@ func allowNew(handle string) *pb.DecideConnectionEnrollmentRequest {
 
 func deny(handle string) *pb.DecideConnectionEnrollmentRequest {
 	return &pb.DecideConnectionEnrollmentRequest{
-		Handle: handle, BrowserBinding: testBrowser, ExpectedVersion: 1,
+		Handle: handle, ExpectedVersion: 1,
 		Decision: &pb.DecideConnectionEnrollmentRequest_Deny{Deny: &emptypb.Empty{}},
 	}
 }
@@ -112,11 +105,11 @@ func (s *served) storedDecision(t *testing.T, handle string) storedDecision {
 	return d
 }
 
-func TestTheFirstPreviewBindsAnEnrollmentToItsBrowserAndOperator(t *testing.T) {
+func TestTheFirstPreviewPinsAnEnrollmentToItsOperator(t *testing.T) {
 	s := serve(t)
 	expiresAt := now().Add(15 * time.Minute)
 	handle := s.enroll(t, expiresAt)
-	got, err := s.preview(t, testOperator, handle, testBrowser)
+	got, err := s.preview(t, testOperator, handle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,39 +118,35 @@ func TestTheFirstPreviewBindsAnEnrollmentToItsBrowserAndOperator(t *testing.T) {
 		got.GetVersion() != 1 {
 		t.Errorf("preview %v", got)
 	}
-	// The authorization server reads the binding back as these columns.
-	var browserHash, issuer, subject string
+	// The authorization server reads the operator back as these columns.
+	var issuer, subject string
 	if err := s.db.QueryRowContext(t.Context(), `
-		SELECT browser_hash, operator_issuer, operator_subject FROM connection_enrollment WHERE handle_hash = $1`,
-		sha256Hex(handle)).Scan(&browserHash, &issuer, &subject); err != nil {
+		SELECT operator_issuer, operator_subject FROM connection_enrollment WHERE handle_hash = $1`,
+		sha256Hex(handle)).Scan(&issuer, &subject); err != nil {
 		t.Fatal(err)
 	}
-	if browserHash != sha256Hex(testBrowser) || issuer != testIssuer || subject != testOperator {
-		t.Errorf("bound to %s, %s, %s", browserHash, issuer, subject)
+	if issuer != testIssuer || subject != testOperator {
+		t.Errorf("pinned to %s, %s", issuer, subject)
 	}
-	if _, err := s.preview(t, testOperator, handle, testBrowser); err != nil {
-		t.Errorf("a second preview from the bound browser: %v", err)
+	if _, err := s.preview(t, testOperator, handle); err != nil {
+		t.Errorf("a second preview by the pinned operator: %v", err)
 	}
-	_, err = s.preview(t, testOperator, handle, testOtherBrowser)
-	wantCode(t, "a preview from another browser", err, codes.PermissionDenied)
-	_, err = s.preview(t, testOtherOperator, handle, testBrowser)
+	_, err = s.preview(t, testOtherOperator, handle)
 	wantCode(t, "a preview by another operator", err, codes.PermissionDenied)
 	_, err = s.client.DecideConnectionEnrollment(as(t, testOtherOperator), deny(handle))
 	wantCode(t, "a decision by another operator", err, codes.PermissionDenied)
 
-	// Only a preview binds an enrollment: a decision on one nobody previewed is refused.
+	// Only a preview pins an enrollment: a decision on one nobody previewed is refused.
 	_, err = s.client.DecideConnectionEnrollment(as(t, testOperator), deny(s.enroll(t, expiresAt)))
 	wantCode(t, "a decision before any preview", err, codes.PermissionDenied)
 }
 
-func TestAPreviewRefusesAnUnknownOrExpiredEnrollmentAndAMalformedBinding(t *testing.T) {
+func TestAPreviewRefusesAnUnknownOrExpiredEnrollment(t *testing.T) {
 	s := serve(t)
-	_, err := s.preview(t, testOperator, "test-unknown-handle", testBrowser)
+	_, err := s.preview(t, testOperator, "test-unknown-handle")
 	wantCode(t, "an unknown handle", err, codes.NotFound)
-	_, err = s.preview(t, testOperator, s.enroll(t, time.Now().Add(-time.Second)), testBrowser)
+	_, err = s.preview(t, testOperator, s.enroll(t, time.Now().Add(-time.Second)))
 	wantCode(t, "an expired enrollment", err, codes.FailedPrecondition)
-	_, err = s.preview(t, testOperator, s.enroll(t, time.Now().Add(time.Minute)), strings.Repeat("b", 31))
-	wantCode(t, "a binding of 31 characters", err, codes.InvalidArgument)
 }
 
 func TestAnAllowIsRecordedOnceAndAnExactRetryGetsItsAnswer(t *testing.T) {
@@ -242,7 +231,6 @@ func TestAMalformedDecisionIsAnInvalidArgument(t *testing.T) {
 	handle := s.previewed(t)
 	for name, change := range map[string]func(*pb.DecideConnectionEnrollmentRequest){
 		"no decision":               func(r *pb.DecideConnectionEnrollmentRequest) { r.Decision = nil },
-		"a short browser binding":   func(r *pb.DecideConnectionEnrollmentRequest) { r.BrowserBinding = "test-short" },
 		"version 0":                 func(r *pb.DecideConnectionEnrollmentRequest) { r.ExpectedVersion = 0 },
 		"an allow of no account":    func(r *pb.DecideConnectionEnrollmentRequest) { r.GetAllow().ServiceAccount = nil },
 		"an allow of no Connection": func(r *pb.DecideConnectionEnrollmentRequest) { r.GetAllow().Connection = nil },

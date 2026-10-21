@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -51,7 +50,7 @@ async def _stored(row: SessionRow) -> dict[str, Any]:
     return interactions
 
 
-async def test_lost_response_preserves_binding_and_exact_decision(operator_sessions: OperatorSessionStore) -> None:
+async def test_lost_response_preserves_the_exact_decision(operator_sessions: OperatorSessionStore) -> None:
     previews: list[dict] = []
     decisions: list[dict] = []
 
@@ -93,7 +92,6 @@ async def test_lost_response_preserves_binding_and_exact_decision(operator_sessi
         assert changed.value.status_code == 409
         result = await decide_enrollment(row, "handle", decision, client)
         assert decisions[0] == decisions[1]
-        assert decisions[0]["browser_binding"] == previews[0]["browser_binding"]
         assert "csrf_token" not in decisions[0]
         assert result.redirect_url == "https://idp.test/held"
 
@@ -126,9 +124,7 @@ async def test_session_storage_is_bounded_and_expired_interactions_are_pruned(
 
 async def test_concurrent_previews_on_one_session_lose_no_interaction(operator_sessions: OperatorSessionStore) -> None:
     """Previews of one session interleaving, as two tabs' do, each keep their interaction, and two of
-    one handle present one browser binding: the Action Service keeps the first it sees, so the
-    session must not end up holding another."""
-    bindings: defaultdict[str, set[str]] = defaultdict(set)
+    one handle share it."""
     parked: asyncio.Queue[None] = asyncio.Queue()
     release = asyncio.Event()
 
@@ -137,7 +133,6 @@ async def test_concurrent_previews_on_one_session_lose_no_interaction(operator_s
             return httpx.Response(200, json=[])
         if request.url.path.endswith("/decision"):
             return httpx.Response(200, json={"verdict": "deny", "redirect_url": None})
-        bindings[request.url.path.split("/")[-2]].add(json.loads(request.content)["browser_binding"])
         parked.put_nowait(None)
         await release.wait()
         return httpx.Response(200, json=_preview())
@@ -152,8 +147,6 @@ async def test_concurrent_previews_on_one_session_lose_no_interaction(operator_s
         release.set()
         one, two, two_again = await asyncio.gather(*previews)
 
-        assert bindings.keys() == {"one", "two"}
-        assert all(len(each) == 1 for each in bindings.values())
         assert two.csrf_token == two_again.csrf_token
         for handle, preview in (("one", one), ("two", two)):
             await decide_enrollment(row, handle, ConsentDeny(verdict="deny", csrf_token=preview.csrf_token), client)

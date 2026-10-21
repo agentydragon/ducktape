@@ -67,7 +67,6 @@ const (
 	testOperator       = "test-operator"
 	testOtherOperator  = "test-other-operator"
 	testConsentURL     = "https://test-console.example"
-	testBrowser        = "test-browser-binding-0123456789abcdef"
 	testUpstreamClient = "test-upstream-client"
 	testUpstreamSecret = "test-upstream-secret"
 	// testUpstreamSubject is the pinned operator's upstream account; testUpstreamStranger is anyone else's.
@@ -506,8 +505,8 @@ func reconnection(account workloadauth.Account, c *pb.Connection) *pb.Enrollment
 	return allow
 }
 
-// consent follows the authorization request to its consent page, where the operator, from testBrowser, decides as
-// allow says, or denies when it is nil.
+// consent follows the authorization request to its consent page, where the operator decides as allow says, or denies
+// when it is nil.
 func (h *harness) consent(ctx context.Context, authorizeURL, operator string, allow *pb.EnrollmentAllow) (*pb.DecideConnectionEnrollmentResponse, error) {
 	location, err := h.follow(authorizeURL)
 	if err != nil {
@@ -518,14 +517,12 @@ func (h *harness) consent(ctx context.Context, authorizeURL, operator string, al
 		return nil, fmt.Errorf("the authorization request redirected to %s, want consent", location)
 	}
 	ctx = context.WithValue(ctx, operatorKey{}, operator)
-	preview, err := h.connections.PreviewConnectionEnrollment(ctx, &pb.PreviewConnectionEnrollmentRequest{
-		Handle: handle, BrowserBinding: testBrowser,
-	})
+	preview, err := h.connections.PreviewConnectionEnrollment(ctx, &pb.PreviewConnectionEnrollmentRequest{Handle: handle})
 	if err != nil {
 		return nil, err
 	}
 	decision := &pb.DecideConnectionEnrollmentRequest{
-		Handle: handle, BrowserBinding: testBrowser, ExpectedVersion: preview.GetVersion(),
+		Handle: handle, ExpectedVersion: preview.GetVersion(),
 		Decision: &pb.DecideConnectionEnrollmentRequest_Deny{Deny: &emptypb.Empty{}},
 	}
 	if allow != nil {
