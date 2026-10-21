@@ -32,6 +32,16 @@ from agentplane.app.testing.dispatcher import runner_proxy_backed_dispatcher
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.notifications_operator import FakeNotificationsOperator
+from agentplane.app.testing.runner_gateway import (
+    app_token_file,
+    dispatcher_database_url,
+    gateway_service,
+    history_writer_namespaces,
+    runner,
+    sandbox,
+    sandbox_control,
+    session_dispatcher,
+)
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
@@ -51,7 +61,6 @@ from agentplane.history_service.testing.fixtures import (
     history_kubeconfig,
     history_on,
     history_service,
-    history_writer_namespaces,
     service_database_template,
     service_history_db_url,
 )
@@ -68,7 +77,7 @@ from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 # gazelle:include_dep @pypi//protobuf
 # The bridge tests run one script against a local runner over both harnesses; those fixtures live
 # with the runner.
-from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, runner_gateway, spec, workspace
+from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.testing.runner_peer import Endpoint, runner_peer
 from agentplane.sandboxes.inventory import SandboxInventory

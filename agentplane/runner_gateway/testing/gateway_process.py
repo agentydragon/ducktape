@@ -19,10 +19,8 @@ from sqlalchemy.engine import make_url
 
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
-from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
-from agentplane.sandboxes.guest_config import Endpoint
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import pick_free_port
@@ -104,21 +102,6 @@ class GatewayProcess:
             if remaining <= 0:
                 raise TimeoutError(f"Runner proxy did not connect to Sandbox {destination.sandbox}")
             await asyncio.sleep(min(0.05, remaining))
-
-    @asynccontextmanager
-    async def connected_runner(
-        self, runner: RunningRunner, *, token: str, proxy_client: SandboxControlClient, destination: SandboxDestination
-    ) -> AsyncIterator[None]:
-        """Restart the native process against this Gateway and wait for proxy readiness."""
-        previous_control = runner.control_endpoint
-        await runner.restart(control_endpoint=Endpoint(target=self.target, bearer=token))
-        try:
-            await self.wait_for_runner(proxy_client, destination)
-            yield
-        finally:
-            # The caller's runner fixture still owns the process after this temporary route.
-            # Restarting it restores the public local test peer for teardown and follow-up checks.
-            await runner.restart(control_endpoint=previous_control)
 
     async def stop(self) -> None:
         if self.process.returncode is not None:

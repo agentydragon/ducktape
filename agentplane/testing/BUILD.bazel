@@ -6,6 +6,7 @@ package(
         "//agentplane/acceptance:__pkg__",
         "//agentplane/action_service:__pkg__",
         "//agentplane/app:__pkg__",
+        "//agentplane/app/testing:__pkg__",
         "//agentplane/app/threads:__pkg__",
         "//agentplane/crds:__pkg__",
         "//agentplane/egress:__pkg__",

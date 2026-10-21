@@ -113,13 +113,6 @@ class RunningRunner:
     def entries(self, session_id: str, after: int = 0) -> list[event_log_pb2.EventEntry]:
         return self.gateway.ingress.since(session_id, after)
 
-    async def kill_harness(self, session_id: str) -> None:
-        status = await (await self.control()).GetStatus(runner_pb2.GetStatusRequest())
-        process = next(row for row in status.processes if session_id in row.assigned_session_ids)
-        assert process.HasField("pid")
-        os.kill(process.pid, signal.SIGKILL)
-        await asyncio.wait_for(wait_for_exit(process.pid), timeout=10)
-
     async def crash(self) -> None:
         status = await (await self.control()).GetStatus(runner_pb2.GetStatusRequest())
         os.killpg(self.process.pid, signal.SIGKILL)
@@ -128,3 +121,11 @@ class RunningRunner:
             if not process.HasField("pid"):
                 continue
             await asyncio.wait_for(wait_for_exit(process.pid), timeout=10)
+
+
+async def kill_harness(status: runner_pb2.RunnerStatus, session_id: str) -> None:
+    """SIGKILL the harness process `status` assigns `session_id` to, and wait until it is gone."""
+    process = next(row for row in status.processes if session_id in row.assigned_session_ids)
+    assert process.HasField("pid")
+    os.kill(process.pid, signal.SIGKILL)
+    await asyncio.wait_for(wait_for_exit(process.pid), timeout=10)

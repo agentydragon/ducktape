@@ -274,3 +274,30 @@ py_library(
         "@pypi//protobuf",
     ],
 )
+
+py_library(
+    name = "runner_gateway",
+    srcs = ["runner_gateway.py"],
+    deps = [
+        "//agentplane:subjects",
+        "//agentplane/app:live",
+        "//agentplane/app/threads:dispatcher_client",
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/runner/testing:config",
+        "//agentplane/runner/testing:failure_journal",
+        "//agentplane/runner/testing:gateway",
+        "//agentplane/runner/testing:process",
+        "//agentplane/runner_gateway:client",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes:guest_config",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//util/testing:postgres",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//tenacity",
+    ],
+)

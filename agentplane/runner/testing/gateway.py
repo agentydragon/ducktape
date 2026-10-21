@@ -136,6 +136,10 @@ class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
         self.sealed: dict[str, int] = {}
         self._sealing_incarnation: dict[str, str] = {}
         self._cursor: dict[str, int] = {}
+        # Forwarded entries History has not acknowledged yet. They outlive their Push stream: a runner
+        # that exits right after sending learns of History's commit only from its next stream's resume
+        # cursor, and does not send the entry again.
+        self._pending: dict[str, dict[int, event_log_pb2.EventEntry]] = {}
         self._changed = asyncio.Condition()
         self._forward_target: tuple[str, str] | None = None
         self._forward_pause_lock = asyncio.Lock()
@@ -154,6 +158,7 @@ class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
         self.sealed.clear()
         self._sealing_incarnation.clear()
         self._cursor.clear()
+        self._pending.clear()
         self._forward_target = (target, bearer)
         self._route_changed.set()
 
@@ -275,7 +280,7 @@ class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
         if target is None:
             raise RuntimeError("History ingress forwarding was disabled before the stream started")
         address, bearer = target
-        pending: dict[int, event_log_pb2.EventEntry] = {}
+        pending = self._pending.setdefault(session_id, {})
         pending_seal: runner_ingress_pb2.PushFrame | None = None
 
         async def frames() -> AsyncIterator[runner_ingress_pb2.PushFrame]:

@@ -15,9 +15,14 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.sandboxes.inventory import SandboxInventory
+from agentplane.sandboxes.launch import SandboxIdentity
+from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.kubernetes import CustomObjectsClient
+
+# gazelle:include_dep @pypi//protobuf
 
 SANDBOX = "test-runner"
 _MERGE_PATCH = "application/merge-patch+json"
@@ -32,6 +37,25 @@ class SandboxCluster:
     # The UIDs the API server gave the Sandbox and its Pod.
     uid: str
     pod_uid: str
+
+    @property
+    def identity(self) -> SandboxIdentity:
+        return SandboxIdentity(namespace=self.namespace, name=SANDBOX, uid=self.uid)
+
+    @property
+    def owner(self) -> ServiceAccountRef:
+        """The Sandbox's own ServiceAccount, which its runner Pod runs as."""
+        return ServiceAccountRef(namespace=self.namespace, name=SANDBOX)
+
+    @property
+    def destination(self) -> SandboxDestination:
+        return SandboxDestination(
+            owner=ServiceAccount(namespace=self.namespace, name=SANDBOX), sandbox=SANDBOX, sandbox_uid=self.uid
+        )
+
+    async def pod_token(self, audience: str) -> str:
+        """A token bound to the runner Pod, as its runner container holds one."""
+        return await self.server.pod_token(self.namespace, SANDBOX, [audience])
 
     @property
     def custom_objects(self) -> CustomObjectsClient:
