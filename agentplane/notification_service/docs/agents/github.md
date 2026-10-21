@@ -42,4 +42,5 @@ success or merging. A check on an earlier head is not evidence for the latest on
 
 Use the same [inbox retrieval and contiguous acknowledgement](inbox_handling.md) workflow as other
 sources. Inspect subscription errors and expiry; cancel monitoring when its purpose is complete.
-Notifications cannot start a stopped harness or Sandbox, and delivery errors can prevent a new turn.
+Delivery errors can prevent a new turn, and a notice to a suspended Sandbox waits until the Sandbox runs again
+unless the Sandbox has wake on message turned on.

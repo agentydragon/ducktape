@@ -17,7 +17,8 @@ grants.
 After confirming a subscription, continue independent work. When none remains, report the wait and
 end your turn; a later notice can start another turn. A healthy subscription replaces repeated
 polling, including GitHub activity. Delivery errors can prevent continuation; inspect monitoring
-health before relying on it. Notifications cannot start a stopped harness or Sandbox.
+health before relying on it. A notice to a suspended Sandbox waits until the Sandbox runs again unless the
+Sandbox has wake on message turned on.
 
 ## Workflows
 

@@ -53,6 +53,12 @@ independent facts:
 - `inboxRetired`: the recipient's inbox was retired, as when its Sandbox was deleted. A message no notice
   covered will never be noticed.
 
+A suspended Sandbox accepts messages, and the notice is prepared, so `covered` turns true, but the recipient
+reads it only once its Sandbox runs again: at once if the Sandbox has wake on message turned on, otherwise when
+someone resumes it. Neither the send nor the receipt says whether the recipient is running; the `Sandbox`
+resource does, if your access includes reading Sandboxes in that namespace. Permission to send never grants
+that.
+
 `NOT_FOUND` means no record: an unknown ID, or an inbox purged after retirement. It is not evidence that a
 message was not delivered. A reply arrives in your own inbox like any entry, only if the recipient may
 send to you.

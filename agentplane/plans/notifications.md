@@ -106,8 +106,8 @@ Review these alternatives with the operator:
 - **Agent fallback:** explicitly document best-effort delivery and provide a bounded authoritative
   recheck schedule for shepherding, optionally using cron notifications. Define who owns the timer,
   when checks stop, and what happens when the harness is unavailable. A prompt to “remember to poll”
-  without a runnable mechanism is not eventual delivery. Scheduled notices still cannot wake a
-  stopped harness under the current contract.
+  without a runnable mechanism is not eventual delivery. A scheduled notice to a suspended Sandbox
+  would wait unless the Sandbox has wake on message turned on.
 - **Combination:** state reconciliation can close common missed-state updates while agents still
   verify the current head/check/review/merge state before declaring a PR ready or done. No method
   should treat silence or a stale check payload as evidence of current completion.

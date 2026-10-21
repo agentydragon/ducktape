@@ -50,7 +50,7 @@ and expiry: the text line shows `expires TIME` and `error KIND` while a failure 
 has `errorKind`, `error`, `errorSince` and `retryAt`. On inbox reads, `inbox.deliveryError` says why a
 notice could not be delivered and `notice` how far the latest one got. If creation or delivery fails,
 use a bounded status check or explain the limitation; do not claim monitoring is active.
-Notifications cannot start a stopped harness or Sandbox.
+A notice to a suspended Sandbox waits until the Sandbox runs again unless the Sandbox has wake on message turned on.
 
 Subscriptions expire unless renewed: `agentplane notifications renew ID --lifetime-days N`
 (OpenAPI has the limits). Exit `4` means the subscription was cancelled or changed since `renew` read

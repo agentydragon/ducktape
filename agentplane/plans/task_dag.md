@@ -267,7 +267,7 @@ flowchart TD
     HISTORY_SANDBOX_UID[Blocked: History records and checks the Sandbox UID]
     APP_THREAD_SANDBOX_UID[Blocked: the app stores each Thread's Sandbox UID]
     HISTORY_SESSION_REKEY[Blocked: key History by Sandbox UID and Session ID]
-    AGENT_MESSAGE_RECEPTION[Candidate: receiving, recovery and acknowledgement]
+    AGENT_MESSAGE_RECEPTION[Candidate: hide a deleted Sandbox's inboxes from its namesake]
     AGENT_MESSAGING[Capstone: end-to-end agent messaging]
     THREAD_CREATE_POLICY[Decision: opening a session in an existing Sandbox]
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
@@ -431,21 +431,16 @@ deleted Sandboxes follow the review's answer.
 
 ### `AGENT_MESSAGE_RECEPTION` — delivery, recovery and acknowledgement
 
-**Candidate.** Messages already reach the recipient as inbox entries, carried by the existing
-listing, notices and acknowledgement ([send contract](../notification_service/docs/api.md#messages)).
-Delegated inbox reading and acknowledgement remain frozen. Test peer-message owner-scoped read/ack,
-recipient-access revocation, deleted recipients,
-ordinary offline catch-up and duplicate delivery without leaking payloads. Accepted correspondence
-survives sender send-permission revocation, subject to recipient inbox permissions and retention;
-cover unread messages across that boundary. Notices use the current trusted
-Notifications-to-Dispatcher path and per-Sandbox wake-on-message policy; do not require a separate
-peer/source wake grant. Deletion never retargets mail to a replacement Sandbox.
-Explain suspended-recipient and wake behavior to agents; support scoped destination-Sandbox CR
-reads where configured, independently of send permission.
+**Candidate.** Messages reach the recipient as inbox entries, carried by the existing listing, notices
+and acknowledgement ([send contract](../notification_service/docs/api.md#messages)). Delegated inbox
+reading and acknowledgement remain frozen. Remaining: deletion never retargets mail to a replacement
+Sandbox, but inboxes are owned by ServiceAccount name, so a Sandbox recreated under a deleted one's name
+reads and acknowledges its inboxes. **Operator, 2026-10-21 07:48 UTC: hide them.** Record the owner
+ServiceAccount's UID when an inbox opens, and require it for listing, reading and acknowledging.
 
 ### `AGENT_MESSAGING` — integrated messaging capstone
 
-**Blocked on ingress and reception.** Demonstrate an authorized pair exchanging a message through
+**Blocked on reception.** Demonstrate an authorized pair exchanging a message through
 the selected API, with correct provenance and distinct receipt/ack states. Security-negative and
 multi-replica retry cases belong in automated tests; no real provider outage requirement.
 

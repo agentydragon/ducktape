@@ -62,6 +62,26 @@ func (a ownedActions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // command is what a Dispatcher was asked to deliver.
 type command struct{ sandbox, session, id, text string }
 
+// noticeHint is all a notice tells its Session: the inbox to read, and how far it was acknowledged and filled when
+// the notice was prepared.
+type noticeHint struct {
+	InboxID                   string `json:"inbox_id"`
+	AcknowledgedAtPreparation int64  `json:"acknowledged_at_preparation"`
+	ThroughAtPreparation      int64  `json:"through_at_preparation"`
+}
+
+// hint decodes a notice's text, failing the test on anything the hint does not hold.
+func hint(t *testing.T, text string) noticeHint {
+	t.Helper()
+	decoder := json.NewDecoder(strings.NewReader(strings.TrimPrefix(text, "Agentplane inbox notice: ")))
+	decoder.DisallowUnknownFields()
+	var decoded noticeHint
+	if err := decoder.Decode(&decoded); err != nil {
+		t.Fatalf("notice %q: %v", text, err)
+	}
+	return decoded
+}
+
 // losingDispatcher stores every command it is sent, and tells the caller of the first that the call failed: the
 // command is committed and its response is lost.
 type losingDispatcher struct {
@@ -278,14 +298,8 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 	if submitted[0].sandbox != sandboxName || submitted[0].session != testSession {
 		t.Errorf("the notice went to %q/%q", submitted[0].sandbox, submitted[0].session)
 	}
-	var hint struct {
-		InboxID                   string `json:"inbox_id"`
-		AcknowledgedAtPreparation int64  `json:"acknowledged_at_preparation"`
-		ThroughAtPreparation      int64  `json:"through_at_preparation"`
-	}
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(submitted[0].text, "Agentplane inbox notice: ")), &hint); err != nil ||
-		hint.InboxID != inboxID || hint.AcknowledgedAtPreparation != 0 || hint.ThroughAtPreparation != 2 {
-		t.Errorf("notice %q (%v), want a hint naming inbox %s and two entries", submitted[0].text, err, inboxID)
+	if got := hint(t, submitted[0].text); got != (noticeHint{InboxID: inboxID, ThroughAtPreparation: 2}) {
+		t.Errorf("notice %+v, want a hint naming inbox %s and two entries", got, inboxID)
 	}
 
 	// A new process has only the rows to go on. The runner admits the command and the harness confirms it.
@@ -396,7 +410,7 @@ func grantSend(t *testing.T, account string) *policyapi.PolicyBinding {
 
 // An agent messages another Sandbox's Session through the HTTP routes under a PolicyBinding the service watches:
 // the recipient is notified and acknowledges the message, the sender follows it to the acknowledgement, and once
-// the binding is gone the sender may send no more.
+// the binding is gone the sender may send no more, while what it sent before stays the recipient's to read.
 func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgement(t *testing.T) {
 	dispatcher, history := &losingDispatcher{}, &journal{}
 	historyAddress := serveGRPC(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })
@@ -425,40 +439,61 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 		t.Errorf("the message went to %v, want the Sandbox's current incarnation", at(t, sent, "message", "destinationRef"))
 	}
 
-	// The recipient Session is told of its inbox, which holds the message.
-	eventually(t, "a notice to be submitted", func() bool {
+	// The recipient Session is told of its inbox and nothing more: neither the notice nor its retry after the lost
+	// response carries the message.
+	eventually(t, "the notice to be submitted twice", func() bool {
 		wake(t, service)
-		return len(dispatcher.commands()) > 0
+		return len(dispatcher.commands()) >= 2
 	})
-	if notice := dispatcher.commands()[0]; notice.sandbox != sandboxName || notice.session != testSession {
-		t.Errorf("the notice went to %q/%q", notice.sandbox, notice.session)
+	_, inboxes := agentCall(t, service, http.MethodGet, "/v1/inboxes", sandboxToken, nil)
+	inboxID := at(t, inboxes, "inboxes", 0, "id").(string)
+	for _, notice := range dispatcher.commands() {
+		if notice.sandbox != sandboxName || notice.session != testSession || hint(t, notice.text).InboxID != inboxID {
+			t.Errorf("notice %+v, want one naming inbox %s to %q/%q", notice, inboxID, sandboxName, testSession)
+		}
 	}
-	receipt := func() map[string]any {
+	receipt := func(id string) map[string]any {
 		code, followed := agentCall(t, service, http.MethodGet, "/v1/messages/"+id, otherToken, nil)
 		if code != http.StatusOK {
 			t.Fatalf("get message = %d %v", code, followed)
 		}
 		return at(t, followed, "message").(map[string]any)
 	}
-	if got := receipt(); got["covered"] != true || got["acknowledged"] != false {
+	if got := receipt(id); got["covered"] != true || got["acknowledged"] != false {
 		t.Errorf("once notified: %v", got)
 	}
-	_, inboxes := agentCall(t, service, http.MethodGet, "/v1/inboxes", sandboxToken, nil)
-	inboxID := at(t, inboxes, "inboxes", 0, "id").(string)
-	_, page := agentCall(t, service, http.MethodGet, "/v1/inboxes/"+inboxID+"/entries?limit=128&after_cursor=0", sandboxToken, nil)
-	entry := at(t, page, "entries", 0)
+	entries := func(afterCursor string) map[string]any {
+		_, page := agentCall(t, service, http.MethodGet, "/v1/inboxes/"+inboxID+"/entries?limit=128&after_cursor="+afterCursor, sandboxToken, nil)
+		return at(t, page, "entries", 0).(map[string]any)
+	}
+	acknowledge := func(token string, through any) int {
+		code, _ := agentCall(t, service, http.MethodPut, "/v1/inboxes/"+inboxID+"/acknowledgement", token, map[string]any{"throughCursor": through})
+		return code
+	}
+	entry := entries("0")
 	if at(t, entry, "event", "message", "messageId") != id || at(t, entry, "event", "message", "sender", "name") != otherName ||
 		at(t, entry, "payload", "body") != "Please review the change." || at(t, entry, "payload", "from_session") != "test-from-session" {
 		t.Errorf("entry = %v", entry)
 	}
-	if code, acknowledged := agentCall(t, service, http.MethodPut, "/v1/inboxes/"+inboxID+"/acknowledgement", sandboxToken,
-		map[string]any{"throughCursor": at(t, entry, "cursor")}); code != http.StatusOK {
-		t.Fatalf("acknowledge = %d %v", code, acknowledged)
+	// The inbox is the recipient's alone: the sender can neither read nor acknowledge it.
+	if code, _ := agentCall(t, service, http.MethodGet, "/v1/inboxes/"+inboxID+"/entries?limit=128&after_cursor=0", otherToken, nil); code != http.StatusNotFound {
+		t.Errorf("the sender reading the recipient's inbox = %d, want 404", code)
 	}
-	if got := receipt(); got["acknowledged"] != true {
+	if code := acknowledge(otherToken, entry["cursor"]); code != http.StatusNotFound {
+		t.Errorf("the sender acknowledging the recipient's inbox = %d, want 404", code)
+	}
+	if code := acknowledge(sandboxToken, entry["cursor"]); code != http.StatusOK {
+		t.Fatalf("acknowledge = %d", code)
+	}
+	if got := receipt(id); got["acknowledged"] != true {
 		t.Errorf("once acknowledged: %v", got)
 	}
 
+	code, sent = agentCall(t, service, http.MethodPost, "/v1/messages", otherToken, message("follow-up"))
+	if code != http.StatusOK {
+		t.Fatalf("send = %d %v", code, sent)
+	}
+	followUp := at(t, sent, "message", "id").(string)
 	if err := apiClient.Delete(t.Context(), binding); err != nil {
 		t.Fatal(err)
 	}
@@ -466,5 +501,12 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 		code, _ := agentCall(t, service, http.MethodPost, "/v1/messages", otherToken, message("after-revocation"))
 		return code == http.StatusForbidden
 	})
-	receipt()
+	if unread := entries(entry["cursor"].(string)); at(t, unread, "event", "message", "messageId") != followUp {
+		t.Fatalf("after the revocation the inbox holds %v, want the unread follow-up", unread)
+	} else if code := acknowledge(sandboxToken, unread["cursor"]); code != http.StatusOK {
+		t.Fatalf("acknowledge the follow-up = %d", code)
+	}
+	if got := receipt(followUp); got["acknowledged"] != true {
+		t.Errorf("the follow-up once acknowledged: %v", got)
+	}
 }

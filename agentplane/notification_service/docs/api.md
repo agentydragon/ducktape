@@ -87,7 +87,9 @@ only; accepted messages stay in the inbox. The recipient needs no subscription o
 
 A send names the Sandbox (namespace and name; `uid` optional) and the Session ID, as a subscription does. The
 service pins the UID of the Sandbox it finds and refuses a missing Sandbox, one outside its namespace or another
-incarnation than a given `uid` as `NOT_FOUND`; it never retargets. A suspended Sandbox accepts messages. The
+incarnation than a given `uid` as `NOT_FOUND`; it never retargets. A suspended Sandbox accepts messages; its
+notice waits in the Dispatcher until the Sandbox runs again, and resumes it only when the Sandbox has
+`spec.wakeOnSend` and the deployment lists this service among the Dispatcher's wake callers. The
 inbox is the Sandbox ServiceAccount's inbox for that Session. When it does not exist yet, the service first asks
 the History Service which Sandbox wrote the Session (`SessionSummary.sandbox`) and refuses a Session recorded for
 no Sandbox or another one as `NOT_FOUND`, so invented Session IDs cannot use up the recipient's inbox quota.
