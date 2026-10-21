@@ -14,6 +14,7 @@ go_library(
         "//agentplane/egress/presentation",
         "//agentplane/egress/resources",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/reader",
     ],
 )
 
@@ -22,7 +23,6 @@ go_test(
     srcs = [
         "effective_test.go",
         "evaluate_test.go",
-        "index_test.go",
     ],
     embed = [":policy"],
     deps = [

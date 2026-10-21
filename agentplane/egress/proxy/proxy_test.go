@@ -29,6 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"golang.org/x/net/http2"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -164,10 +165,10 @@ func newLab(t *testing.T) *lab {
 		upstreamCA: upstreamCA,
 		lookup:     func(string) []netip.Addr { return []netip.Addr{netip.MustParseAddr("127.0.0.1")} },
 	}
-	for _, kind := range []policy.Kind{policy.Credentials, policy.PolicySets, policy.Bindings, policy.Secrets} {
-		l.index.RecordCycle(kind, time.Now())
+	for _, kind := range []reader.Kind{policy.Credentials, reader.PolicySets, reader.PolicyBindings, policy.Secrets} {
+		l.index.Freshness.RecordCycle(kind, time.Now())
 	}
-	l.index.MarkSynced()
+	l.index.Freshness.MarkSynced()
 	l.index.PutCredential(keyCredential)
 	l.index.PutSecret(resources.NewSecret("keys", map[string]string{"key": "real-secret"}))
 	l.allow(policyapi.Rule{
@@ -199,10 +200,10 @@ func newLab(t *testing.T) *lab {
 
 // allow grants the runner ServiceAccount exactly rules, replacing what it was granted.
 func (l *lab) allow(rules ...policyapi.Rule) {
-	l.index.PutPolicySet(&policyapi.PolicySet{
+	l.index.Rules.PutPolicySet(&policyapi.PolicySet{
 		ObjectMeta: metav1.ObjectMeta{Name: "egress", Namespace: "rules"}, Spec: policyapi.PolicySetSpec{Rules: rules},
 	})
-	l.index.PutBinding(&policyapi.PolicyBinding{
+	l.index.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: "rules"},
 		Spec: policyapi.PolicyBindingSpec{
 			Subject: policyapi.ServiceAccountRef{Namespace: "workloads", Name: "runner"}, PolicySets: []string{"egress"},
@@ -577,7 +578,7 @@ func TestRevocationDuringDNSAndMixedForbiddenAnswersNeverDial(t *testing.T) {
 			upstream, counted := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("denied DNS admission reached upstream") }))
 			l.lookup = func(string) []netip.Addr {
 				if scenario == "revoked-during-dns" {
-					l.index.DeleteBinding("runner")
+					l.index.Rules.DeleteBinding("runner")
 				}
 				addresses := []netip.Addr{netip.MustParseAddr("127.0.0.1")}
 				if scenario == "mixed-answers" {
@@ -614,9 +615,9 @@ func TestExistingConnectionRevocationStalenessAndAuthCleanup(t *testing.T) {
 			}
 			switch change {
 			case "binding":
-				l.index.DeleteBinding("runner")
+				l.index.Rules.DeleteBinding("runner")
 			case "stale":
-				l.index.RecordCycle(policy.Secrets, time.Now().Add(-2*staleAfter))
+				l.index.Freshness.RecordCycle(policy.Secrets, time.Now().Add(-2*staleAfter))
 			case "changed-principal":
 				l.hop.bind("valid", "replacement-pod")
 			}

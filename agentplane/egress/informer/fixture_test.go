@@ -3,14 +3,10 @@ package informer
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"reflect"
-	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,9 +16,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -34,7 +30,7 @@ import (
 
 const (
 	// watchPeriod is short so a few cycles fit in a test; the staleness bound is StaleAfterCycles of it.
-	watchPeriod = minWatchPeriod
+	watchPeriod = reader.MinWatchPeriod
 	host        = "api.informer-test.invalid"
 )
 
@@ -93,119 +89,9 @@ func runWithAPIServer(m *testing.M) int {
 	return m.Run()
 }
 
-// faults is a transport under the informer's own, where a test can hold back a kind's requests, cut
-// the watches a kind has open, and make its next watch answer that the point it resumes from is gone.
-type faults struct {
-	mu      sync.Mutex
-	held    map[policy.Kind]chan struct{}
-	expired map[policy.Kind]bool
-	open    map[policy.Kind][]io.Closer
-	// lists counts how many times each kind was read in full, by LIST or by a streaming list.
-	lists map[policy.Kind]int
-	// patches counts the writes to each binding's status.
-	patches map[string]int
-}
-
-func newFaults() *faults {
-	return &faults{
-		held: map[policy.Kind]chan struct{}{}, expired: map[policy.Kind]bool{}, open: map[policy.Kind][]io.Closer{},
-		lists: map[policy.Kind]int{}, patches: map[string]int{},
-	}
-}
-
-func (f *faults) wrap(next http.RoundTripper) http.RoundTripper {
-	return roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		if request.Method == http.MethodPatch {
-			f.mu.Lock()
-			f.patches[path.Base(path.Dir(request.URL.Path))]++
-			f.mu.Unlock()
-			return next.RoundTrip(request)
-		}
-		kind := policy.Kind(path.Base(request.URL.Path))
-		f.mu.Lock()
-		gate := f.held[kind]
-		f.mu.Unlock()
-		if gate != nil {
-			select {
-			case <-gate:
-			case <-request.Context().Done():
-				return nil, request.Context().Err()
-			}
-		}
-		query := request.URL.Query()
-		watching, streamingList := query.Get("watch") == "true", query.Get("sendInitialEvents") == "true"
-		f.mu.Lock()
-		if !watching || streamingList {
-			f.lists[kind]++
-		}
-		expire := watching && !streamingList && f.expired[kind]
-		delete(f.expired, kind)
-		f.mu.Unlock()
-		if expire {
-			const gone = `{"type":"ERROR","object":{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"Expired","code":410}}` + "\n"
-			return &http.Response{
-				StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
-				Body: io.NopCloser(strings.NewReader(gone)), Request: request,
-			}, nil
-		}
-		response, err := next.RoundTrip(request)
-		if err == nil && watching {
-			f.mu.Lock()
-			f.open[kind] = append(f.open[kind], response.Body)
-			f.mu.Unlock()
-		}
-		return response, err
-	})
-}
-
-// hold makes every request for kind wait until the returned release is called.
-func (f *faults) hold(kind policy.Kind) (release func()) {
-	gate := make(chan struct{})
-	f.mu.Lock()
-	f.held[kind] = gate
-	f.mu.Unlock()
-	return func() {
-		f.mu.Lock()
-		delete(f.held, kind)
-		f.mu.Unlock()
-		close(gate)
-	}
-}
-
-// sever cuts the watches kind has open, as a lost connection does.
-func (f *faults) sever(kind policy.Kind) {
-	f.mu.Lock()
-	streams := f.open[kind]
-	delete(f.open, kind)
-	f.mu.Unlock()
-	for _, stream := range streams {
-		_ = stream.Close()
-	}
-}
-
-// expire makes the next watch of kind resuming from a version answer that it is too old.
-func (f *faults) expire(kind policy.Kind) {
-	f.mu.Lock()
-	f.expired[kind] = true
-	f.mu.Unlock()
-}
-
-func (f *faults) listCount(kind policy.Kind) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.lists[kind]
-}
-
-func (f *faults) patchCount(binding string) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.patches[binding]
-}
-
 // fixture is one test's namespaces, its Index, and an Informer against the shared API server.
 type fixture struct {
 	t        *testing.T
-	faults   *faults
 	index    *policy.Index
 	informer *Informer
 	started  time.Time
@@ -217,7 +103,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	prefix := fmt.Sprintf("test-%d", fixtures.Add(1))
 	f := &fixture{
-		t: t, faults: newFaults(), rules: prefix + "-rules", credentials: prefix + "-credentials", elsewhere: prefix + "-elsewhere",
+		t: t, rules: prefix + "-rules", credentials: prefix + "-credentials", elsewhere: prefix + "-elsewhere",
 	}
 	for _, namespace := range []string{f.rules, f.credentials, f.elsewhere} {
 		f.create(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}})
@@ -229,11 +115,9 @@ func newFixture(t *testing.T) *fixture {
 func (f *fixture) start() {
 	f.t.Helper()
 	f.started = time.Now()
-	f.index = policy.NewIndex(StaleAfterCycles * watchPeriod)
-	base := rest.CopyConfig(apiConfig)
-	base.Wrap(f.faults.wrap)
+	f.index = policy.NewIndex(reader.StaleAfterCycles * watchPeriod)
 	var err error
-	f.informer, err = New(base, Config{
+	f.informer, err = New(apiConfig, Config{
 		Index: f.index, RulesNamespace: f.rules, CredentialsNamespace: f.credentials, WatchPeriod: watchPeriod,
 	})
 	if err != nil {
@@ -279,32 +163,6 @@ func (f *fixture) remove(object client.Object) {
 	if err := apiClient.Delete(context.Background(), object); err != nil {
 		f.t.Fatal(err)
 	}
-}
-
-func (f *fixture) binding(name string) *policyapi.PolicyBinding {
-	f.t.Helper()
-	binding := &policyapi.PolicyBinding{}
-	if err := apiClient.Get(context.Background(), client.ObjectKey{Namespace: f.rules, Name: name}, binding); err != nil {
-		f.t.Fatal(err)
-	}
-	return binding
-}
-
-// egressReady reads the EgressReady condition the API server holds for a binding, or nil.
-func (f *fixture) egressReady(name string) *metav1.Condition {
-	f.t.Helper()
-	return meta.FindStatusCondition(f.binding(name).Status.Conditions, EgressReady)
-}
-
-// eventuallyEgressReady waits for the binding's EgressReady to satisfy accept, and returns it.
-func (f *fixture) eventuallyEgressReady(name string, accept func(*metav1.Condition) bool) *metav1.Condition {
-	f.t.Helper()
-	var condition *metav1.Condition
-	f.eventually("EgressReady of "+name, func() bool {
-		condition = f.egressReady(name)
-		return condition != nil && accept(condition)
-	})
-	return condition
 }
 
 func (f *fixture) policySet(name string, rules ...policyapi.Rule) *policyapi.PolicySet {

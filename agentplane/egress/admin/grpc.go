@@ -12,7 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
-	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -39,7 +39,7 @@ type HistoryHealth interface {
 
 // Index is read once per call, so the verdict and the ages it rests on agree.
 type Index interface {
-	Status(now time.Time) policy.Status
+	Status(now time.Time) reader.Status
 }
 
 // Service is the admin gRPC API. Every RPC admits only the allowed callers, each proving a

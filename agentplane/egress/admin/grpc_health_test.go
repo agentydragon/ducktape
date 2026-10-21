@@ -7,6 +7,7 @@ import (
 
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
@@ -62,7 +63,7 @@ func TestGetHealthCarriesTheVerdictAndItsFacts(t *testing.T) {
 
 func rounded() fakeIndex {
 	index := healthyIndex()
-	index.Ages = map[policy.Kind]time.Duration{policy.Secrets: 1234 * time.Millisecond}
+	index.Ages = map[reader.Kind]time.Duration{policy.Secrets: 1234 * time.Millisecond}
 	return index
 }
 

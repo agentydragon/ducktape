@@ -23,9 +23,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
-	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"golang.org/x/net/http2"
 )
 
@@ -111,7 +111,7 @@ func TestRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 		},
 		"no rule for the path": {bearerHeader, "/elsewhere", nil, 403, decision.NoRule, true},
 		"no binding": {
-			bearerHeader, "/allowed", func(l *lab) { l.index.DeleteBinding("runner") }, 403, decision.NoBinding, true,
+			bearerHeader, "/allowed", func(l *lab) { l.index.Rules.DeleteBinding("runner") }, 403, decision.NoBinding, true,
 		},
 		"another credential's placeholder": {
 			header("Proxy-Authorization", "Bearer valid", "x-api-key", "agentplane-credential-other"), "/allowed",
@@ -138,7 +138,7 @@ func TestRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 			403, decision.AddressForbidden, true,
 		},
 		"stale policy": {
-			bearerHeader, "/allowed", func(l *lab) { l.index.RecordCycle(policy.Bindings, time.Now().Add(-2*staleAfter)) },
+			bearerHeader, "/allowed", func(l *lab) { l.index.Freshness.RecordCycle(reader.PolicyBindings, time.Now().Add(-2*staleAfter)) },
 			502, decision.Unavailable, true,
 		},
 	} {
@@ -339,7 +339,7 @@ func TestDrainWaitsForRequestsInFlightButNotForIdleTunnels(t *testing.T) {
 
 	drained := make(chan error, 1)
 	go func() { drained <- l.proxy.Drain(context.Background()) }()
-	for ctx := bounded(t); l.index.Available(time.Now()) && ctx.Err() == nil; {
+	for ctx := bounded(t); l.index.Freshness.Available(time.Now()) && ctx.Err() == nil; {
 		runtime.Gosched()
 	}
 	// Admission stops at once, while the request already in flight is left to finish.
@@ -441,10 +441,10 @@ func TestConnectRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 			"Proxy-Authorization: Bearer unreviewable\r\n", "", func(l *lab) { l.hop.bind("unreviewable", unreachable) },
 			502, decision.Unavailable, false,
 		},
-		"no binding":           {validBearer, "", func(l *lab) { l.index.DeleteBinding("runner") }, 403, decision.NoBinding, true},
+		"no binding":           {validBearer, "", func(l *lab) { l.index.Rules.DeleteBinding("runner") }, 403, decision.NoBinding, true},
 		"no rule for the host": {validBearer, "other.test", nil, 403, decision.NoRule, true},
 		"stale policy": {
-			validBearer, "", func(l *lab) { l.index.RecordCycle(policy.Bindings, time.Now().Add(-2*staleAfter)) },
+			validBearer, "", func(l *lab) { l.index.Freshness.RecordCycle(reader.PolicyBindings, time.Now().Add(-2*staleAfter)) },
 			502, decision.Unavailable, true,
 		},
 		"private address under an exact-host rule": {validBearer, "", privateAddress, 403, decision.AddressForbidden, true},

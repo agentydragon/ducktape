@@ -85,8 +85,8 @@ func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 
 func TestGetRulesNamesEachTargetByItsOwnFields(t *testing.T) {
 	index := policy.NewIndex(0)
-	index.PutPolicySet(policySet("all-targets", githubRule))
-	index.PutBinding(binding("sb", "b", "all-targets"))
+	index.Rules.PutPolicySet(policySet("all-targets", githubRule))
+	index.Rules.PutBinding(binding("sb", "b", "all-targets"))
 	index.PutCredential(resources.Credential{
 		Name: "github-pat", Description: description, Source: resources.AuthenticatedWorkloadToken{},
 		Targets: []resources.Target{
@@ -126,10 +126,10 @@ func TestGetRulesNamesEachTargetByItsOwnFields(t *testing.T) {
 
 func TestGetRulesKeepsAnEmptyListDistinctFromAnAbsentOne(t *testing.T) {
 	index := policy.NewIndex(0)
-	index.PutPolicySet(policySet("none", policyapi.Rule{
+	index.Rules.PutPolicySet(policySet("none", policyapi.Rule{
 		Type: resources.EgressRuleType, Hosts: []string{"a.example.com"}, Methods: []string{}, Paths: []string{},
 	}))
-	index.PutBinding(binding("sb", "b", "none"))
+	index.Rules.PutBinding(binding("sb", "b", "none"))
 	client, _ := serveGRPC(t, map[string]string{"token-sb": "sb"}, index)
 
 	got, err := client.GetRules(metadataOf("authorization", "Bearer token-sb"), &egressrulespb.GetRulesRequest{})

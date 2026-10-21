@@ -1,4 +1,4 @@
-package informer
+package reader
 
 import (
 	"errors"
@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"testing"
 	"time"
-
-	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 )
 
 type fakeClock struct{ now time.Time }
@@ -48,8 +46,8 @@ func TestOnlyAWatchTheServerEndsOnScheduleIsACycle(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			clock := &fakeClock{now: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
-			index := policy.NewIndex(time.Hour)
-			transport := cycleRecorder{index: index, now: clock.Now}.wrap(roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			freshness := NewFreshness(time.Hour, PolicySets)
+			transport := cycleRecorder{freshness: freshness, now: clock.Now}.wrap(roundTripFunc(func(request *http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: http.StatusOK, Body: endingBody{clock, tc.after, tc.err}, Request: request}, nil
 			}))
 			request, err := http.NewRequest(http.MethodGet, tc.url, nil)
@@ -63,7 +61,7 @@ func TestOnlyAWatchTheServerEndsOnScheduleIsACycle(t *testing.T) {
 			if _, err := response.Body.Read(nil); !errors.Is(err, tc.err) {
 				t.Fatalf("the stream ended with %v, want %v", err, tc.err)
 			}
-			if _, recorded := index.Status(clock.now).Ages[policy.PolicySets]; recorded != tc.cycles {
+			if _, recorded := freshness.Status(clock.now).Ages[PolicySets]; recorded != tc.cycles {
 				t.Errorf("a cycle of policysets was recorded = %v, want %v", recorded, tc.cycles)
 			}
 		})

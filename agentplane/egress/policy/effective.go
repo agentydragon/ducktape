@@ -23,11 +23,12 @@ type EffectiveRule struct {
 // bindings by name, each binding's sets as it lists them. A set granted by two bindings appears
 // under each.
 func (i *Index) ListEffectivePolicies(caller policyapi.ServiceAccountRef) []EffectivePolicy {
+	grants := i.Rules.Grants(caller)
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	var policies []EffectivePolicy
-	for _, granted := range i.grants(caller) {
-		for _, set := range granted.sets {
+	for _, granted := range grants {
+		for _, set := range granted.Sets {
 			policy := EffectivePolicy{Name: set.Name}
 			for _, numbered := range set.Rules {
 				effective := EffectiveRule{Rule: numbered.Rule}

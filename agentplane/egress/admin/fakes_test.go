@@ -7,6 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/google/uuid"
 )
 
@@ -31,16 +32,16 @@ type fakeHistory history.Health
 
 func (f fakeHistory) Health() history.Health { return history.Health(f) }
 
-type fakeIndex policy.Status
+type fakeIndex reader.Status
 
-func (f fakeIndex) Status(time.Time) policy.Status { return policy.Status(f) }
+func (f fakeIndex) Status(time.Time) reader.Status { return reader.Status(f) }
 
 func healthyIndex() fakeIndex {
-	return fakeIndex{Available: true, Synced: true, StaleAfter: 15 * time.Minute, Ages: map[policy.Kind]time.Duration{policy.Secrets: 0}}
+	return fakeIndex{Available: true, Synced: true, StaleAfter: 15 * time.Minute, Ages: map[reader.Kind]time.Duration{policy.Secrets: 0}}
 }
 
 func staleIndex() fakeIndex {
-	return fakeIndex{Synced: true, StaleAfter: 15 * time.Minute, Ages: map[policy.Kind]time.Duration{policy.Secrets: 20 * time.Minute}}
+	return fakeIndex{Synced: true, StaleAfter: 15 * time.Minute, Ages: map[reader.Kind]time.Duration{policy.Secrets: 20 * time.Minute}}
 }
 
 func drainingIndex() fakeIndex {

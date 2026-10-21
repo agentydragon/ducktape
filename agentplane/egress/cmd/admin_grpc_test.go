@@ -13,7 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
-	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -61,8 +61,8 @@ func (quietChanges) Follow(ctx context.Context, changed func() error) error {
 
 type readyIndex struct{}
 
-func (readyIndex) Status(time.Time) policy.Status {
-	return policy.Status{Available: true, Synced: true}
+func (readyIndex) Status(time.Time) reader.Status {
+	return reader.Status{Available: true, Synced: true}
 }
 
 type idleHistory struct{}

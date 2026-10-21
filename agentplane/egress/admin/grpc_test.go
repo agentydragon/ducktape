@@ -12,7 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
-	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
@@ -123,9 +123,9 @@ func clockAtStart() time.Time { return started }
 // unreadIndex fails the test when it is read.
 type unreadIndex struct{ t *testing.T }
 
-func (i unreadIndex) Status(time.Time) policy.Status {
+func (i unreadIndex) Status(time.Time) reader.Status {
 	i.t.Error("index read before the caller was admitted")
-	return policy.Status{}
+	return reader.Status{}
 }
 
 func bearing(token string) context.Context {

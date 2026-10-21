@@ -87,7 +87,7 @@ func (p *Proxy) decide(
 	refused := func(reason decision.Reason) outcome {
 		return outcome{decision: policy.Denied{Reason: reason}, caller: who}
 	}
-	if !p.options.Policy.Available(time.Now()) {
+	if !p.options.Policy.Freshness.Available(time.Now()) {
 		return refused(decision.Unavailable)
 	}
 	caller := policyapi.ServiceAccountRef{Namespace: who.principal.Account.Namespace, Name: who.principal.Account.Name}
@@ -117,7 +117,7 @@ func (p *Proxy) decide(
 	}
 	// Identity and DNS awaited I/O. Reading policy and readiness again after the last await is what
 	// keeps a revocation, expiry or staleness during admission from authorizing the dial.
-	if !p.options.Policy.Available(time.Now()) ||
+	if !p.options.Policy.Freshness.Available(time.Now()) ||
 		!reflect.DeepEqual(p.options.Policy.Evaluate(caller, request, workload), first) {
 		return refused(decision.Unavailable)
 	}

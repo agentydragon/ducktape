@@ -76,10 +76,10 @@ func newIndex(
 ) *Index {
 	index := NewIndex(0)
 	for _, set := range sets {
-		index.PutPolicySet(set)
+		index.Rules.PutPolicySet(set)
 	}
 	for _, binding := range bindings {
-		index.PutBinding(binding)
+		index.Rules.PutBinding(binding)
 	}
 	for _, credential := range credentials {
 		index.PutCredential(credential)
@@ -397,7 +397,7 @@ func TestABlanketRequiresABindingAndRespectsMethodAndPath(t *testing.T) {
 
 	assertDecision(t, index.Evaluate(caller, onRoute, nil), Denied{decision.NoBinding})
 
-	index.PutBinding(binding("b", "public"))
+	index.Rules.PutBinding(binding("b", "public"))
 	assertDecision(t, index.Evaluate(caller, onRoute, nil), Allowed{Binding: "b", Policy: "public"})
 	assertDecision(t, index.Evaluate(caller, outbound(host("arbitrary.example.org"), path("/private")), nil), Denied{decision.NoRule})
 	assertDecision(t, index.Evaluate(caller, outbound(host("arbitrary.example.org"), path("/public/file"), method("POST")), nil),
@@ -476,7 +476,7 @@ func TestAJSONRouteFailsClosedForInvalidBodyMissingSecretOrRevokedBinding(t *tes
 	index.DeleteSecret("pat")
 	assertDecision(t, index.Evaluate(caller, matrixRequest(), nil), Denied{decision.CredentialUnavailable})
 
-	index.DeleteBinding("b")
+	index.Rules.DeleteBinding("b")
 	assertDecision(t, index.Evaluate(caller, matrixRequest(), nil), Denied{decision.NoBinding})
 }
 
@@ -487,7 +487,7 @@ func TestNonJSONUploadsToUnrelatedRoutesAreUnchanged(t *testing.T) {
 
 func TestABodyCredentialIsKnownEvenWithoutABindingNamingIt(t *testing.T) {
 	index := matrixIndex()
-	index.PutPolicySet(policySet("matrix", egress([]string{"matrix.test"}, nil, nil, "")))
+	index.Rules.PutPolicySet(policySet("matrix", egress([]string{"matrix.test"}, nil, nil, "")))
 
 	assertDecision(t, index.Evaluate(caller, matrixRequest(), nil), Denied{decision.PlaceholderUnresolved})
 }
@@ -525,7 +525,7 @@ func TestARefusedPolicySetGrantsNothing(t *testing.T) {
 	index := standardIndex([]*policyapi.PolicySet{policySet("github", githubRule)}, binding("b", "github"))
 	assertDecision(t, index.Evaluate(caller, outbound(), nil), Allowed{Binding: "b", Policy: "github"})
 
-	index.PutPolicySet(broken)
+	index.Rules.PutPolicySet(broken)
 
 	assertDecision(t, index.Evaluate(caller, outbound(), nil), Denied{decision.NoBinding})
 }

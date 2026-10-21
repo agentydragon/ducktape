@@ -24,17 +24,19 @@ One Go package per concern:
   Every request passes identity, policy, credential and address checks before anything is dialed.
 - `identity`: the shared `workload_auth` resolver behind a proxied connection, translating a refused
   bearer into the reason the client sees.
-- `policy`: the pure decision over an in-memory `Index` — subject bindings, the matching egress rule the
-  request's placeholder directs it to, substitution, binding resolution. No I/O.
+- `policy`: the pure decision over an in-memory `Index` — the matching egress rule the request's
+  placeholder directs it to, and substitution. The bindings and their egress rules are a
+  `../policy/reader` index. No I/O.
 - `presentation`: one parse per declared target, shared by detection and substitution — where a
   credential's placeholder sits in a request, and how to put the real value there.
 - `resources`: the boundary types of `EgressCredential`, the egress rules of a `PolicySet`, and Secrets
   as read off the API server; the derivation of a credential's placeholder from its name.
 - `upstream`: the admitted host resolved by the proxy, refused when it points anywhere not globally
   reachable, and pinned so the dial goes to the address checked.
-- `informer`: list-and-watch of those kinds into each replica's `Index`, and the `EgressReady`
-  condition on each `PolicyBinding`. It uses Kubernetes-generated clients, listers and shared
-  informers from `client/` and `../policy/client/`; a list-options tweak bounds watch periods.
+- `informer`: list-and-watch of those kinds into each replica's `Index`. `../policy/reader` watches
+  the PolicySets and PolicyBindings, keeps the `EgressReady` condition on each binding, and bounds
+  watch periods for every kind; this package adds EgressCredentials and Secrets through
+  Kubernetes-generated clients and shared informers from `client/`.
 - `rules`: the agent-facing `egress.agentplane-staging.svc.cluster.local/v1/rules` API, on its own
   independently authenticated listener: the gRPC `EgressRules` service and its generated HTTP/JSON facade,
   beside the agent documentation.

@@ -10,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
 // Request is one admission as the proxy sees it: the connection target, never the Host header.
@@ -80,9 +81,7 @@ type match struct {
 // came. So a placeholder is never forwarded, and widening what a subject may reach never takes a
 // credential away from it.
 func (i *Index) Evaluate(caller policyapi.ServiceAccountRef, request Request, workload *WorkloadContext) Decision {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
-	grants := i.grants(caller)
+	grants := i.Rules.Grants(caller)
 	if len(grants) == 0 {
 		return Denied{decision.NoBinding}
 	}
@@ -90,6 +89,8 @@ func (i *Index) Evaluate(caller policyapi.ServiceAccountRef, request Request, wo
 	if len(matches) == 0 {
 		return Denied{decision.NoRule}
 	}
+	i.mu.RLock()
+	defer i.mu.RUnlock()
 	// A CONNECT is decided on host alone: its headers belong to the tunnel, and the requests
 	// inside it are decided one by one, which is where a target applies.
 	var body *presentation.JSONObject
@@ -225,14 +226,14 @@ func (i *Index) credentialValue(
 
 // matchingRules returns every rule that admits the request, in walk order: bindings by name, then
 // each binding's sets and their rules as listed.
-func matchingRules(grants []grant, request Request) []match {
+func matchingRules(grants []reader.Grant[resources.Rule], request Request) []match {
 	var matches []match
 	for _, granted := range grants {
-		for _, set := range granted.sets {
+		for _, set := range granted.Sets {
 			for _, numbered := range set.Rules {
 				if ruleMatches(numbered.Rule, request) {
 					matches = append(matches, match{
-						binding: granted.binding, policy: set.Name, number: numbered.Number, rule: numbered.Rule,
+						binding: granted.Binding, policy: set.Name, number: numbered.Number, rule: numbered.Rule,
 					})
 				}
 			}

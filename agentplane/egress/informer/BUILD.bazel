@@ -2,11 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "informer",
-    srcs = [
-        "cycles.go",
-        "informer.go",
-        "readiness.go",
-    ],
+    srcs = ["informer.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/informer",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
@@ -15,30 +11,17 @@ go_library(
         "//agentplane/egress/client:informer_version",
         "//agentplane/egress/policy",
         "//agentplane/egress/resources",
-        "//agentplane/policy/api/v1alpha1",
-        "//agentplane/policy/client:clientset",
-        "//agentplane/policy/client:informer_version",
-        "//agentplane/policy/client:listers",
-        "//agentplane/policy/client:typed",
-        "//agentplane/policy/client/apply",
+        "//agentplane/policy/reader",
         "@io_k8s_api//core/v1:core",
-        "@io_k8s_apimachinery//pkg/api/errors",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/labels",
-        "@io_k8s_apimachinery//pkg/runtime",
-        "@io_k8s_apimachinery//pkg/util/wait",
         "@io_k8s_client_go//informers/core/v1:core",
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//rest",
-        "@io_k8s_client_go//tools/cache",
-        "@io_k8s_client_go//util/workqueue",
     ],
 )
 
 go_test(
     name = "informer_test",
     srcs = [
-        "cycles_test.go",
         "fixture_test.go",
         "informer_test.go",
     ],
@@ -54,9 +37,9 @@ go_test(
         "//agentplane/egress/presentation",
         "//agentplane/egress/resources",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/reader",
         "@io_bazel_rules_go//go/runfiles",
         "@io_k8s_api//core/v1:core",
-        "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/util/wait",
