@@ -1,6 +1,5 @@
-// Package mcpserver serves the Action Service's MCP endpoint, /mcp, to callers on an external Connection: the
-// tools, schemas and answers of the Python service's FastMCP server, over stateless Streamable HTTP. It reaches the
-// Action Service only through its workload API.
+// Package mcpserver serves the Action Service's MCP endpoint, /mcp, to callers on an external Connection: the Action
+// tools over stateless Streamable HTTP. It reaches the Action Service only through its workload API.
 package mcpserver
 
 import (
@@ -18,7 +17,7 @@ import (
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 )
 
-// toolsJSON is the tool definitions FastMCP lists: names, descriptions, input schemas and annotations.
+// toolsJSON is the tool definitions: names, descriptions, input schemas and annotations.
 // `//agentplane/action_service:test_mcp_golden` holds it to the Python tools.
 //
 //go:embed tools.json
@@ -34,45 +33,32 @@ type toolDefinition struct {
 
 // Options configures the /mcp handler.
 type Options struct {
-	// MaxWaitSeconds bounds wait.wait_seconds, as the Python service's max_wait_seconds setting does.
+	// MaxWaitSeconds bounds wait.wait_seconds.
 	MaxWaitSeconds float64
 	// ResourceMetadataURL is the protected resource metadata a refused request's challenge names; empty names none.
 	ResourceMetadataURL string
 	Logger              *slog.Logger
 }
 
-// NewHandler serves /mcp. A request needs one Authorization header whose bearer verifier accepts; the tools call
-// core with that request's context, which carries the verified auth.TokenInfo, and attach no credential of their
-// own.
+// NewHandler serves /mcp. A request needs a bearer the verifier accepts; the tools call core with that request's
+// context, which carries the verified auth.TokenInfo, and attach no credential of their own. Cross-origin browser
+// requests are refused, and go-sdk's DNS-rebinding protection guards a loopback listener.
 func NewHandler(core pb.ActionServiceClient, verifier auth.TokenVerifier, options Options) http.Handler {
 	server := newServer(&tools{core: core, maxWaitSeconds: options.MaxWaitSeconds}, options)
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
 		Stateless: true,
 		Logger:    options.Logger,
-		// guardHostAndOrigin is FastMCP's equivalent, which also checks Origin.
-		DisableLocalhostProtection: true,
 	})
-	return guardHostAndOrigin(allowMethods(requireCaller(verifier, options.ResourceMetadataURL, options.Logger,
-		withTransportContext(transport))))
-}
-
-// allowMethods answers 405 for anything FastMCP's stateless route does not take.
-func allowMethods(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost && r.Method != http.MethodDelete {
-			w.Header().Set("Allow", "POST, DELETE")
-			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	return http.NewCrossOriginProtection().Handler(
+		requireCaller(verifier, options.ResourceMetadataURL, options.Logger, withTransportContext(transport)),
+	)
 }
 
 func instructions(maxWaitSeconds float64) string {
 	return "Discover Action identifiers, fetch details only when needed, then submit each request once under a fresh " +
 		"idempotency key. A pending receipt is not execution success. A repeated key is refused; recover a lost " +
 		"response with get_action_request(idempotency_key=...), never with a replacement key. This instance allows " +
-		"wait.wait_seconds up to " + pythonG(maxWaitSeconds) + " seconds."
+		"wait.wait_seconds up to " + seconds(maxWaitSeconds) + " seconds."
 }
 
 func newServer(t *tools, options Options) *mcp.Server {
@@ -97,25 +83,11 @@ func newServer(t *tools, options Options) *mcp.Server {
 	addTool(server, known["get_action_result"], logger, t.getActionResult)
 	addTool(server, known["cancel_action_request"], logger, t.cancelActionRequest)
 	addTool(server, known["list_action_request_events"], logger, t.listActionRequestEvents)
-	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
-		return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
-			// FastMCP answers a call of a tool it does not have with an error result, not a protocol error.
-			if call, ok := request.(*mcp.CallToolRequest); ok {
-				if _, found := known[call.Params.Name]; !found {
-					return &mcp.CallToolResult{
-						Content: []mcp.Content{&mcp.TextContent{Text: "Unknown tool: " + pythonRepr(call.Params.Name)}},
-						IsError: true,
-					}, nil
-				}
-			}
-			return next(ctx, method, request)
-		}
-	})
 	return server
 }
 
-// addTool registers one tool. A toolError reaches the caller as written; any other failure is logged and answered
-// as FastMCP masks it. The tool runs on a context a disconnect does not cancel, as in FastMCP: only a wait ends
+// addTool registers one tool. A toolError reaches the caller as written; any other failure is logged and masked.
+// The tool runs on a context a disconnect does not cancel, so a call that changes state finishes: only a wait ends
 // with its caller.
 func addTool[In any](server *mcp.Server, definition toolDefinition, logger *slog.Logger,
 	handle func(context.Context, In) (*mcp.CallToolResult, error),

@@ -1,28 +1,188 @@
 package mcpserver
 
 import (
+	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
-// receiptFields are a receipt's top-level fields in the order it lists them; include_fields picks among them.
-var receiptFields = []string{
-	"id", "state", "version", "created_at", "updated_at", "input", "caller", "decision", "execution",
+// The views below are what the tools answer: the core's records under the tool schemas' snake_case names and
+// lower-case enum values. Free-form values (arguments, schemas, errors) stay structpb values, which marshal
+// themselves.
+
+var defaultReceiptFields = []string{"id", "state", "version", "created_at", "updated_at"}
+
+// shown is a field include_fields selects: one left unselected is omitted, and one selected but absent reads null.
+type shown[T any] struct {
+	value T
+	ok    bool
 }
 
-var defaultReceiptFields = receiptFields[:5]
+func show[T any](value T) shown[T] { return shown[T]{value: value, ok: true} }
 
-// viewDecoder turns core answers into the views the Python tools answered with, keeping the first answer it
-// could not read: an enum outside the contract, an unparsable id or a missing timestamp fails the call.
+func (s shown[T]) IsZero() bool { return !s.ok }
+
+func (s shown[T]) MarshalJSON() ([]byte, error) { return json.Marshal(s.value) }
+
+type receipt struct {
+	ID        shown[uuid.UUID]      `json:"id,omitzero"`
+	State     shown[string]         `json:"state,omitzero"`
+	Version   shown[int64]          `json:"version,omitzero"`
+	CreatedAt shown[time.Time]      `json:"created_at,omitzero"`
+	UpdatedAt shown[time.Time]      `json:"updated_at,omitzero"`
+	Input     shown[requestInput]   `json:"input,omitzero"`
+	Caller    shown[serviceAccount] `json:"caller,omitzero"`
+	Decision  shown[*decision]      `json:"decision,omitzero"`
+	Execution shown[*execution]     `json:"execution,omitzero"`
+}
+
+type requestInput struct {
+	IdempotencyKey string           `json:"idempotency_key"`
+	Action         actionIdentity   `json:"action"`
+	Arguments      *structpb.Struct `json:"arguments"`
+	Title          string           `json:"title"`
+	Description    *string          `json:"description"`
+}
+
+type serviceAccount struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
+type operator struct {
+	Issuer  string `json:"issuer"`
+	Subject string `json:"subject"`
+}
+
+type decision struct {
+	ID                uuid.UUID       `json:"id"`
+	Verdict           string          `json:"verdict"`
+	Provider          string          `json:"provider"`
+	Operator          *operator       `json:"operator"`
+	DecisionNote      *string         `json:"decision_note"`
+	ReasonCode        *string         `json:"reason_code"`
+	ReasonDescription *string         `json:"reason_description"`
+	PolicyEvidence    *policyEvidence `json:"policy_evidence"`
+	IdempotencyKey    string          `json:"idempotency_key"`
+	DecidedAt         time.Time       `json:"decided_at"`
+}
+
+type policyEvidence struct {
+	Bindings   []bindingEvidence   `json:"bindings"`
+	PolicySets []policySetEvidence `json:"policy_sets"`
+	Matched    matchedPolicy       `json:"matched"`
+}
+
+type bindingEvidence struct {
+	Namespace       string `json:"namespace"`
+	Name            string `json:"name"`
+	ResourceVersion string `json:"resource_version"`
+}
+
+type policySetEvidence struct {
+	Namespace  string `json:"namespace"`
+	Name       string `json:"name"`
+	Generation int64  `json:"generation"`
+}
+
+type matchedPolicy struct {
+	Namespace  string             `json:"namespace"`
+	PolicySet  string             `json:"policy_set"`
+	Source     string             `json:"source"`
+	Index      int32              `json:"index"`
+	Type       string             `json:"type"`
+	Repository *matchedRepository `json:"repository"`
+}
+
+type matchedRepository struct {
+	Owner           string `json:"owner"`
+	Repository      string `json:"repository"`
+	ConfirmedPublic bool   `json:"confirmed_public"`
+}
+
+// execution is an Execution as a receipt reports it: never its result, which only the tool answer carries.
+type execution struct {
+	ID           uuid.UUID        `json:"id"`
+	State        string           `json:"state"`
+	Error        *structpb.Struct `json:"error"`
+	CreatedAt    time.Time        `json:"created_at"`
+	StartedAt    *time.Time       `json:"started_at"`
+	CompletedAt  *time.Time       `json:"completed_at"`
+	ReconciledAt *time.Time       `json:"reconciled_at"`
+}
+
+type event struct {
+	Sequence int32     `json:"sequence"`
+	State    string    `json:"state"`
+	At       time.Time `json:"at"`
+	// Actor is a callerActor or an operator; absent when no one is named.
+	Actor any `json:"actor,omitempty"`
+}
+
+type callerActor struct {
+	Account serviceAccount `json:"account"`
+}
+
+type policyView struct {
+	Synced        shown[bool]              `json:"synced,omitzero"`
+	AutoApproveIf shown[[]effectivePolicy] `json:"auto_approve_if,omitzero"`
+	Subject       shown[serviceAccount]    `json:"subject,omitzero"`
+	Bindings      shown[[]callerBinding]   `json:"bindings,omitzero"`
+}
+
+type effectivePolicy struct {
+	Binding   string `json:"binding"`
+	PolicySet string `json:"policy_set"`
+	Source    string `json:"source"`
+	Index     int32  `json:"index"`
+	Policy    any    `json:"policy"`
+}
+
+type callerBinding struct {
+	Name       string     `json:"name"`
+	ExpiresAt  *time.Time `json:"expires_at"`
+	PolicySets []string   `json:"policy_sets"`
+}
+
+// actionLists maps a group to the names of its Actions a policy lists, or an entity to its services.
+type actionLists map[string][]string
+
+// actionsRule is a rule that names only Actions: exact_actions and github_public_repository.
+type actionsRule struct {
+	Type    string      `json:"type"`
+	Actions actionLists `json:"actions"`
+}
+
+type argumentSchemaRule struct {
+	Type           string           `json:"type"`
+	Actions        actionLists      `json:"actions"`
+	ArgumentSchema *structpb.Struct `json:"argument_schema"`
+}
+
+type githubRepositoryRule struct {
+	Type       string      `json:"type"`
+	Actions    actionLists `json:"actions"`
+	Owner      string      `json:"owner"`
+	Repository string      `json:"repository"`
+}
+
+type homeAssistantEntityControlRule struct {
+	Type     string      `json:"type"`
+	Actions  actionLists `json:"actions"`
+	Entities actionLists `json:"entities"`
+}
+
+// viewDecoder turns core answers into views, keeping the first answer it could not read: an enum outside the
+// contract, an unparsable id or a missing timestamp fails the call.
 type viewDecoder struct {
 	err error
 }
@@ -38,7 +198,7 @@ type protoEnum interface {
 	String() string
 }
 
-// enum is a proto enum value as Python's StrEnum spells it: the name without its prefix, in lower case.
+// enum is a proto enum value as the tool schemas spell it: the name without its prefix, in lower case.
 func enum[E protoEnum](d *viewDecoder, value E, prefix string) string {
 	name, ok := strings.CutPrefix(value.String(), prefix)
 	if value == 0 || !ok {
@@ -48,274 +208,239 @@ func enum[E protoEnum](d *viewDecoder, value E, prefix string) string {
 	return strings.ToLower(name)
 }
 
-func (d *viewDecoder) uuid(text string) string {
+func (d *viewDecoder) uuid(text string) uuid.UUID {
 	id, err := uuid.Parse(text)
 	if err != nil {
 		d.fail("core answered id %q: %w", text, err)
-		return ""
 	}
-	return id.String()
+	return id
 }
 
-// time is a timestamp as Pydantic writes an aware UTC datetime.
-func (d *viewDecoder) time(at *timestamppb.Timestamp) string {
+func (d *viewDecoder) time(at *timestamppb.Timestamp) time.Time {
 	if at == nil {
 		d.fail("core answered without a required timestamp")
-		return ""
+		return time.Time{}
 	}
-	return pythonDatetime(at.AsTime())
+	return at.AsTime()
 }
 
-func (d *viewDecoder) optionalTime(at *timestamppb.Timestamp) any {
+func (d *viewDecoder) optionalTime(at *timestamppb.Timestamp) *time.Time {
 	if at == nil {
 		return nil
 	}
-	return d.time(at)
+	value := d.time(at)
+	return &value
 }
 
-func pythonDatetime(at time.Time) string {
-	at = at.UTC()
-	text := at.Format("2006-01-02T15:04:05")
-	if micros := at.Nanosecond() / 1000; micros != 0 {
-		text += fmt.Sprintf(".%06d", micros)
+func accountView(account *sandboxes.ServiceAccount) serviceAccount {
+	return serviceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}
+}
+
+// object is a free-form object the contract always carries, as an empty one when the core left it out.
+func object(value *structpb.Struct) *structpb.Struct {
+	if value == nil {
+		return &structpb.Struct{}
 	}
-	return text + "Z"
+	return value
 }
 
-func optionalString(text *string) any {
-	if text == nil {
-		return nil
-	}
-	return *text
-}
-
-func serviceAccountView(account *sandboxes.ServiceAccount) jsonObject {
-	return jsonObject{{"namespace", account.GetNamespace()}, {"name", account.GetName()}}
-}
-
-func identityView(identity *pb.ActionIdentity) jsonObject {
-	return jsonObject{{"group", identity.GetGroup()}, {"name", identity.GetName()}}
-}
-
-// receiptView is the receipt of a request with only the named fields, in the receipt's own field order.
-func (d *viewDecoder) receiptView(request *pb.ActionRequest, fields []string) jsonObject {
-	view := jsonObject{}
-	for _, field := range receiptFields {
-		if !slices.Contains(fields, field) {
-			continue
-		}
-		var value any
+// receiptView is a request's receipt with only the named fields.
+func (d *viewDecoder) receiptView(request *pb.ActionRequest, fields []string) receipt {
+	var view receipt
+	for _, field := range fields {
 		switch field {
 		case "id":
-			value = d.uuid(request.GetId())
+			view.ID = show(d.uuid(request.GetId()))
 		case "state":
-			value = enum(d, request.GetState(), "ACTION_STATE_")
+			view.State = show(enum(d, request.GetState(), "ACTION_STATE_"))
 		case "version":
-			value = request.GetVersion()
+			view.Version = show(request.GetVersion())
 		case "created_at":
-			value = d.time(request.GetCreatedAt())
+			view.CreatedAt = show(d.time(request.GetCreatedAt()))
 		case "updated_at":
-			value = d.time(request.GetUpdatedAt())
+			view.UpdatedAt = show(d.time(request.GetUpdatedAt()))
 		case "input":
-			value = jsonObject{
-				{"idempotency_key", request.GetIdempotencyKey()},
-				{"action", identityView(request.GetAction())},
-				{"arguments", freeFormObject(request.GetArguments())},
-				{"title", request.GetTitle()},
-				{"description", optionalString(request.Description)},
-			}
+			view.Input = show(requestInput{
+				IdempotencyKey: request.GetIdempotencyKey(),
+				Action:         actionIdentity{Group: request.GetAction().GetGroup(), Name: request.GetAction().GetName()},
+				Arguments:      object(request.GetArguments()),
+				Title:          request.GetTitle(),
+				Description:    request.Description,
+			})
 		case "caller":
-			value = serviceAccountView(request.GetCaller())
+			view.Caller = show(accountView(request.GetCaller()))
 		case "decision":
-			value = d.decisionView(request.GetDecision())
+			view.Decision = show(d.decisionView(request.GetDecision()))
 		case "execution":
-			value = d.executionView(request.GetExecution())
+			view.Execution = show(d.executionView(request.GetExecution()))
+		default:
+			d.fail("receipt field %q", field)
 		}
-		view = append(view, jsonMember{field, value})
 	}
 	return view
 }
 
-func (d *viewDecoder) decisionView(decision *pb.Decision) any {
-	if decision == nil {
+func (d *viewDecoder) decisionView(from *pb.Decision) *decision {
+	if from == nil {
 		return nil
 	}
-	var operator any
-	if decision.GetOperator() != nil {
-		operator = jsonObject{{"issuer", decision.GetOperator().GetIssuer()}, {"subject", decision.GetOperator().GetSubject()}}
+	var by *operator
+	if from.GetOperator() != nil {
+		by = &operator{Issuer: from.GetOperator().GetIssuer(), Subject: from.GetOperator().GetSubject()}
 	}
-	return jsonObject{
-		{"id", d.uuid(decision.GetId())},
-		{"verdict", enum(d, decision.GetVerdict(), "VERDICT_")},
-		{"provider", decision.GetProvider()},
-		{"operator", operator},
-		{"decision_note", optionalString(decision.DecisionNote)},
-		{"reason_code", optionalString(decision.ReasonCode)},
-		{"reason_description", optionalString(decision.ReasonDescription)},
-		{"policy_evidence", d.evidenceView(decision.GetPolicyEvidence())},
-		{"idempotency_key", decision.GetIdempotencyKey()},
-		{"decided_at", d.time(decision.GetDecidedAt())},
+	return &decision{
+		ID:                d.uuid(from.GetId()),
+		Verdict:           enum(d, from.GetVerdict(), "VERDICT_"),
+		Provider:          from.GetProvider(),
+		Operator:          by,
+		DecisionNote:      from.DecisionNote,
+		ReasonCode:        from.ReasonCode,
+		ReasonDescription: from.ReasonDescription,
+		PolicyEvidence:    d.evidenceView(from.GetPolicyEvidence()),
+		IdempotencyKey:    from.GetIdempotencyKey(),
+		DecidedAt:         d.time(from.GetDecidedAt()),
 	}
 }
 
-func (d *viewDecoder) evidenceView(evidence *pb.PolicyEvidence) any {
-	if evidence == nil {
+func (d *viewDecoder) evidenceView(from *pb.PolicyEvidence) *policyEvidence {
+	if from == nil {
 		return nil
 	}
-	bindings := []any{}
-	for _, binding := range evidence.GetBindings() {
-		bindings = append(bindings, jsonObject{
-			{"namespace", binding.GetNamespace()},
-			{"name", binding.GetName()},
-			{"resource_version", binding.GetResourceVersion()},
+	view := &policyEvidence{
+		Bindings:   make([]bindingEvidence, 0, len(from.GetBindings())),
+		PolicySets: make([]policySetEvidence, 0, len(from.GetPolicySets())),
+	}
+	for _, binding := range from.GetBindings() {
+		view.Bindings = append(view.Bindings, bindingEvidence{
+			Namespace:       binding.GetNamespace(),
+			Name:            binding.GetName(),
+			ResourceVersion: binding.GetResourceVersion(),
 		})
 	}
-	sets := []any{}
-	for _, set := range evidence.GetPolicySets() {
-		sets = append(sets, jsonObject{
-			{"namespace", set.GetNamespace()},
-			{"name", set.GetName()},
-			{"generation", set.GetGeneration()},
+	for _, set := range from.GetPolicySets() {
+		view.PolicySets = append(view.PolicySets, policySetEvidence{
+			Namespace:  set.GetNamespace(),
+			Name:       set.GetName(),
+			Generation: set.GetGeneration(),
 		})
 	}
-	matched := evidence.GetMatched()
-	var repository any
-	if matched.GetRepository() != nil {
-		repository = jsonObject{
-			{"owner", matched.GetRepository().GetOwner()},
-			{"repository", matched.GetRepository().GetRepository()},
-			{"confirmed_public", matched.GetRepository().GetConfirmedPublic()},
+	matched := from.GetMatched()
+	view.Matched = matchedPolicy{
+		Namespace: matched.GetNamespace(),
+		PolicySet: matched.GetPolicySet(),
+		Source:    enum(d, matched.GetSource(), "POLICY_SOURCE_"),
+		Index:     matched.GetIndex(),
+		Type:      enum(d, matched.GetType(), "POLICY_KIND_"),
+	}
+	if repository := matched.GetRepository(); repository != nil {
+		view.Matched.Repository = &matchedRepository{
+			Owner:           repository.GetOwner(),
+			Repository:      repository.GetRepository(),
+			ConfirmedPublic: repository.GetConfirmedPublic(),
 		}
 	}
-	return jsonObject{
-		{"bindings", bindings},
-		{"policy_sets", sets},
-		{"matched", jsonObject{
-			{"namespace", matched.GetNamespace()},
-			{"policy_set", matched.GetPolicySet()},
-			{"source", enum(d, matched.GetSource(), "POLICY_SOURCE_")},
-			{"index", int64(matched.GetIndex())},
-			{"type", enum(d, matched.GetType(), "POLICY_KIND_")},
-			{"repository", repository},
-		}},
-	}
+	return view
 }
 
-// executionView is an Execution as a receipt reports it: never its result, which only the tool answer carries.
-func (d *viewDecoder) executionView(execution *pb.Execution) any {
-	if execution == nil {
+func (d *viewDecoder) executionView(from *pb.Execution) *execution {
+	if from == nil {
 		return nil
 	}
-	var failure any
-	if execution.GetError() != nil {
-		failure = freeFormObject(execution.GetError())
-	}
-	return jsonObject{
-		{"id", d.uuid(execution.GetId())},
-		{"state", enum(d, execution.GetState(), "EXECUTION_STATE_")},
-		{"error", failure},
-		{"created_at", d.time(execution.GetCreatedAt())},
-		{"started_at", d.optionalTime(execution.GetStartedAt())},
-		{"completed_at", d.optionalTime(execution.GetCompletedAt())},
-		{"reconciled_at", d.optionalTime(execution.GetReconciledAt())},
+	return &execution{
+		ID:           d.uuid(from.GetId()),
+		State:        enum(d, from.GetState(), "EXECUTION_STATE_"),
+		Error:        from.GetError(),
+		CreatedAt:    d.time(from.GetCreatedAt()),
+		StartedAt:    d.optionalTime(from.GetStartedAt()),
+		CompletedAt:  d.optionalTime(from.GetCompletedAt()),
+		ReconciledAt: d.optionalTime(from.GetReconciledAt()),
 	}
 }
 
-func (d *viewDecoder) eventView(event *pb.ActionEvent) jsonObject {
-	view := jsonObject{
-		{"sequence", int64(event.GetSequence())},
-		{"state", enum(d, event.GetState(), "ACTION_STATE_")},
-		{"at", d.time(event.GetAt())},
+func (d *viewDecoder) eventView(from *pb.ActionEvent) event {
+	view := event{
+		Sequence: from.GetSequence(),
+		State:    enum(d, from.GetState(), "ACTION_STATE_"),
+		At:       d.time(from.GetAt()),
 	}
-	switch actor := event.GetActor().GetPrincipal().(type) {
+	switch actor := from.GetActor().GetPrincipal().(type) {
 	case nil:
 	case *pb.Principal_Caller:
-		view = append(view, jsonMember{"actor", jsonObject{{"account", serviceAccountView(actor.Caller)}}})
+		view.Actor = callerActor{Account: accountView(actor.Caller)}
 	case *pb.Principal_Operator:
-		view = append(view, jsonMember{"actor", jsonObject{
-			{"issuer", actor.Operator.GetIssuer()},
-			{"subject", actor.Operator.GetSubject()},
-		}})
+		view.Actor = operator{Issuer: actor.Operator.GetIssuer(), Subject: actor.Operator.GetSubject()}
 	default:
 		d.fail("core answered actor %T, outside the contract", actor)
 	}
 	return view
 }
 
-// policyFields are get_action_policy's top-level fields in the order Python's view lists them.
-var policyFields = []string{"synced", "auto_approve_if", "subject", "bindings"}
-
-func (d *viewDecoder) policyView(policy *pb.CallerActionPolicy, fields []string) jsonObject {
-	view := jsonObject{}
-	for _, field := range policyFields {
-		if !slices.Contains(fields, field) {
-			continue
-		}
-		var value any
+func (d *viewDecoder) policyView(policy *pb.CallerActionPolicy, fields []string) policyView {
+	var view policyView
+	for _, field := range fields {
 		switch field {
 		case "synced":
-			value = policy.GetSynced()
+			view.Synced = show(policy.GetSynced())
 		case "auto_approve_if":
-			effective := []any{}
+			effective := make([]effectivePolicy, 0, len(policy.GetAutoApproveIf()))
 			for _, entry := range policy.GetAutoApproveIf() {
-				effective = append(effective, jsonObject{
-					{"binding", entry.GetBinding()},
-					{"policy_set", entry.GetPolicySet()},
-					{"source", enum(d, entry.GetSource(), "POLICY_SOURCE_")},
-					{"index", int64(entry.GetIndex())},
-					{"policy", d.ruleView(entry.GetPolicy())},
+				effective = append(effective, effectivePolicy{
+					Binding:   entry.GetBinding(),
+					PolicySet: entry.GetPolicySet(),
+					Source:    enum(d, entry.GetSource(), "POLICY_SOURCE_"),
+					Index:     entry.GetIndex(),
+					Policy:    d.ruleView(entry.GetPolicy()),
 				})
 			}
-			value = effective
+			view.AutoApproveIf = show(effective)
 		case "subject":
-			value = serviceAccountView(policy.GetSubject())
+			view.Subject = show(accountView(policy.GetSubject()))
 		case "bindings":
-			bindings := []any{}
+			bindings := make([]callerBinding, 0, len(policy.GetBindings()))
 			for _, binding := range policy.GetBindings() {
-				sets := []string{}
+				// A caller's view of a binding is its name, expiry and the names of its sets.
+				sets := make([]string, 0, len(binding.GetPolicySets()))
 				for _, set := range binding.GetPolicySets() {
 					sets = append(sets, set.GetName())
 				}
-				bindings = append(bindings, jsonObject{
-					{"name", binding.GetName()},
-					{"expires_at", d.optionalTime(binding.GetExpiresAt())},
-					{"policy_sets", sets},
+				bindings = append(bindings, callerBinding{
+					Name:       binding.GetName(),
+					ExpiresAt:  d.optionalTime(binding.GetExpiresAt()),
+					PolicySets: sets,
 				})
 			}
-			value = bindings
+			view.Bindings = show(bindings)
+		default:
+			d.fail("policy field %q", field)
 		}
-		view = append(view, jsonMember{field, value})
 	}
 	return view
 }
 
-func (d *viewDecoder) ruleView(policy *pb.Policy) jsonObject {
+func (d *viewDecoder) ruleView(policy *pb.Policy) any {
 	switch kind := policy.GetKind().(type) {
 	case *pb.Policy_ExactActions:
-		return jsonObject{{"type", "exact_actions"}, {"actions", sortedLists(kind.ExactActions.GetActions())}}
+		return actionsRule{Type: "exact_actions", Actions: sortedLists(kind.ExactActions.GetActions())}
 	case *pb.Policy_ArgumentSchema:
-		return jsonObject{
-			{"type", "argument_schema"},
-			{"actions", sortedLists(kind.ArgumentSchema.GetActions())},
-			{"argument_schema", freeFormObject(kind.ArgumentSchema.GetArgumentSchema())},
+		return argumentSchemaRule{
+			Type:           "argument_schema",
+			Actions:        sortedLists(kind.ArgumentSchema.GetActions()),
+			ArgumentSchema: object(kind.ArgumentSchema.GetArgumentSchema()),
 		}
 	case *pb.Policy_GithubRepository:
-		return jsonObject{
-			{"type", "github_repository"},
-			{"actions", sortedLists(kind.GithubRepository.GetActions())},
-			{"owner", kind.GithubRepository.GetOwner()},
-			{"repository", kind.GithubRepository.GetRepository()},
+		return githubRepositoryRule{
+			Type:       "github_repository",
+			Actions:    sortedLists(kind.GithubRepository.GetActions()),
+			Owner:      kind.GithubRepository.GetOwner(),
+			Repository: kind.GithubRepository.GetRepository(),
 		}
 	case *pb.Policy_GithubPublicRepository:
-		return jsonObject{
-			{"type", "github_public_repository"},
-			{"actions", sortedLists(kind.GithubPublicRepository.GetActions())},
-		}
+		return actionsRule{Type: "github_public_repository", Actions: sortedLists(kind.GithubPublicRepository.GetActions())}
 	case *pb.Policy_HomeAssistantEntityControl:
-		return jsonObject{
-			{"type", "home_assistant_entity_control"},
-			{"actions", sortedLists(kind.HomeAssistantEntityControl.GetActions())},
-			{"entities", sortedLists(kind.HomeAssistantEntityControl.GetEntities())},
+		return homeAssistantEntityControlRule{
+			Type:     "home_assistant_entity_control",
+			Actions:  sortedLists(kind.HomeAssistantEntityControl.GetActions()),
+			Entities: sortedLists(kind.HomeAssistantEntityControl.GetEntities()),
 		}
 	default:
 		d.fail("core answered policy %T, outside the contract", kind)
@@ -323,11 +448,11 @@ func (d *viewDecoder) ruleView(policy *pb.Policy) jsonObject {
 	}
 }
 
-// sortedLists is a map of name lists with its keys and each list sorted, as Python's policy view sorts them.
-func sortedLists(lists map[string]*pb.StringList) jsonObject {
-	view := jsonObject{}
-	for _, key := range slices.Sorted(maps.Keys(lists)) {
-		view = append(view, jsonMember{key, slices.Sorted(slices.Values(lists[key].GetValues()))})
+// sortedLists is a policy's name lists, each sorted.
+func sortedLists(lists map[string]*pb.StringList) actionLists {
+	view := actionLists{}
+	for key, list := range lists {
+		view[key] = slices.Sorted(slices.Values(list.GetValues()))
 	}
 	return view
 }

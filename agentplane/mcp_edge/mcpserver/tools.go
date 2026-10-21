@@ -29,7 +29,7 @@ type actionIdentity struct {
 	Name  string `json:"name"`
 }
 
-// waitOptions is Python's WaitOptions; the input schema supplies its defaults and bounds its values.
+// waitOptions is a call's wait object; the input schema supplies its defaults and bounds its values.
 type waitOptions struct {
 	WaitSeconds float64 `json:"wait_seconds"`
 	WaitUntil   string  `json:"wait_until"`
@@ -127,9 +127,7 @@ func (t *tools) listActions(ctx context.Context, input listActionsInput) (*mcp.C
 	if input.After != nil && input.Group != nil && input.After.Group != *input.Group {
 		return nil, afterElsewhere
 	}
-	page := []any{}
-	var last actionIdentity
-	var nextAfter any
+	view := actionPage{Actions: []actionSummary{}}
 scan:
 	for _, group := range groups {
 		if input.Group != nil && group.GetKey() != *input.Group {
@@ -142,19 +140,20 @@ scan:
 			if input.After != nil && !after(group.GetKey(), action.GetName(), *input.After) {
 				continue
 			}
-			if len(page) == input.Limit {
-				nextAfter = jsonObject{{"group", last.Group}, {"name", last.Name}}
+			if len(view.Actions) == input.Limit {
+				last := view.Actions[len(view.Actions)-1]
+				view.NextAfter = &actionIdentity{Group: last.Group, Name: last.Name}
 				break scan
 			}
-			page = append(page, actionSummary(group.GetKey(), group.GetAvailable(), action, input.IncludeFields))
-			last = actionIdentity{Group: group.GetKey(), Name: action.GetName()}
+			view.Actions = append(view.Actions, summarize(group.GetKey(), group.GetAvailable(), action, input.IncludeFields))
 		}
 	}
-	view := jsonObject{{"actions", page}}
-	if nextAfter != nil {
-		view = append(view, jsonMember{"next_after", nextAfter})
-	}
-	return structuredResult(view), nil
+	return structuredResult(view)
+}
+
+type actionPage struct {
+	Actions   []actionSummary `json:"actions"`
+	NextAfter *actionIdentity `json:"next_after,omitempty"`
 }
 
 // after reports whether group/name comes after the cursor in (group, name) order.
@@ -165,13 +164,21 @@ func after(group, name string, cursor actionIdentity) bool {
 	return name > cursor.Name
 }
 
-func actionSummary(group string, available bool, action *pb.Action, fields []string) jsonObject {
-	view := jsonObject{{"group", group}, {"name", action.GetName()}, {"available", available}}
+type actionSummary struct {
+	Group       string                  `json:"group"`
+	Name        string                  `json:"name"`
+	Available   bool                    `json:"available"`
+	InputSchema shown[*structpb.Struct] `json:"input_schema,omitzero"`
+	Description shown[string]           `json:"description,omitzero"`
+}
+
+func summarize(group string, available bool, action *pb.Action, fields []string) actionSummary {
+	view := actionSummary{Group: group, Name: action.GetName(), Available: available}
 	if slices.Contains(fields, "input_schema") {
-		view = append(view, jsonMember{"input_schema", freeFormObject(action.GetInputSchema())})
+		view.InputSchema = show(object(action.GetInputSchema()))
 	}
 	if slices.Contains(fields, "description") {
-		view = append(view, jsonMember{"description", action.GetDescription()})
+		view.Description = show(action.GetDescription())
 	}
 	return view
 }
@@ -182,7 +189,7 @@ func (t *tools) getAction(ctx context.Context, input getActionInput) (*mcp.CallT
 		return nil, actionError(err, input.Group, input.Name)
 	}
 	// The core answers UNAVAILABLE for a group that is not available.
-	return structuredResult(actionSummary(input.Group, true, response.GetAction(), input.IncludeFields)), nil
+	return structuredResult(summarize(input.Group, true, response.GetAction(), input.IncludeFields))
 }
 
 func (t *tools) getActionPolicy(ctx context.Context, input getActionPolicyInput) (*mcp.CallToolResult, error) {
@@ -195,7 +202,7 @@ func (t *tools) getActionPolicy(ctx context.Context, input getActionPolicyInput)
 	if d.err != nil {
 		return nil, d.err
 	}
-	return structuredResult(view), nil
+	return structuredResult(view)
 }
 
 func (t *tools) requestAction(ctx context.Context, input requestActionInput) (*mcp.CallToolResult, error) {
@@ -262,7 +269,7 @@ func receiptResult(request *pb.ActionRequest, fields []string) (*mcp.CallToolRes
 	if d.err != nil {
 		return nil, d.err
 	}
-	return structuredResult(view), nil
+	return structuredResult(view)
 }
 
 func (t *tools) getActionRequest(ctx context.Context, input getActionRequestInput) (*mcp.CallToolResult, error) {
@@ -323,7 +330,7 @@ func (t *tools) namedReceipt(ctx context.Context, input namedRequest) (*pb.Actio
 func parseRequestID(text string) (string, error) {
 	id, err := uuid.Parse(text)
 	if err != nil {
-		return "", toolError(fmt.Sprintf(`validating "arguments": request_id: %v`, err))
+		return "", toolError(fmt.Sprintf("request_id %q is not a UUID: %v", text, err))
 	}
 	return id.String(), nil
 }
@@ -342,6 +349,11 @@ func (t *tools) executor(ctx context.Context, group string) (pb.ExecutorKind, bo
 	return 0, false, nil
 }
 
+type cancellation struct {
+	Outcome string  `json:"outcome"`
+	Request receipt `json:"request"`
+}
+
 func (t *tools) cancelActionRequest(ctx context.Context, input cancelActionRequestInput) (*mcp.CallToolResult, error) {
 	requestID, err := parseRequestID(input.RequestID)
 	if err != nil {
@@ -352,14 +364,19 @@ func (t *tools) cancelActionRequest(ctx context.Context, input cancelActionReque
 		return nil, requestError(err)
 	}
 	d := &viewDecoder{}
-	view := jsonObject{
-		{"outcome", enum(d, response.GetOutcome(), "CANCELLATION_OUTCOME_")},
-		{"request", d.receiptView(response.GetActionRequest(), input.IncludeFields)},
+	view := cancellation{
+		Outcome: enum(d, response.GetOutcome(), "CANCELLATION_OUTCOME_"),
+		Request: d.receiptView(response.GetActionRequest(), input.IncludeFields),
 	}
 	if d.err != nil {
 		return nil, d.err
 	}
-	return structuredResult(view), nil
+	return structuredResult(view)
+}
+
+type eventPage struct {
+	Events            []event `json:"events"`
+	NextAfterSequence *int32  `json:"next_after_sequence,omitempty"`
 }
 
 func (t *tools) listActionRequestEvents(ctx context.Context, input listActionRequestEventsInput) (*mcp.CallToolResult, error) {
@@ -380,16 +397,16 @@ func (t *tools) listActionRequestEvents(ctx context.Context, input listActionReq
 	}
 	events := response.GetEvents()
 	d := &viewDecoder{}
-	page := []any{}
-	for _, event := range events[:min(len(events), input.Limit)] {
-		page = append(page, d.eventView(event))
+	view := eventPage{Events: []event{}}
+	for _, from := range events[:min(len(events), input.Limit)] {
+		view.Events = append(view.Events, d.eventView(from))
 	}
-	view := jsonObject{{"events", page}}
 	if len(events) > input.Limit {
-		view = append(view, jsonMember{"next_after_sequence", int64(events[input.Limit-1].GetSequence())})
+		next := events[input.Limit-1].GetSequence()
+		view.NextAfterSequence = &next
 	}
 	if d.err != nil {
 		return nil, d.err
 	}
-	return structuredResult(view), nil
+	return structuredResult(view)
 }

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
+	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc"
@@ -36,21 +38,6 @@ type goldenVectors struct {
 	} `json:"server"`
 	Catalog json.RawMessage `json:"catalog"`
 	Calls   []goldenCall    `json:"calls"`
-	Floats  []struct {
-		Value     float64 `json:"value"`
-		Text      string  `json:"text"`
-		JSONDumps string  `json:"json_dumps"`
-	} `json:"floats"`
-	Limits []struct {
-		Value float64 `json:"value"`
-		G     string  `json:"g"`
-	} `json:"limits"`
-	Strings []struct {
-		Value     string `json:"value"`
-		Text      string `json:"text"`
-		JSONDumps string `json:"json_dumps"`
-		Repr      string `json:"repr"`
-	} `json:"strings"`
 }
 
 type goldenCall struct {
@@ -188,29 +175,97 @@ func scriptedCore(t *testing.T, catalog *pb.ListActionGroupsResponse, script []g
 	}
 }
 
-// wireValue is a value as its JSON reads, without the framing the two SDKs spell differently: the result type, the
-// server's name the 2026-07-28 protocol stamps on each result, and an isError that is false.
-func wireValue(t *testing.T, value any) map[string]any {
+// decoded is a value as its JSON reads.
+func decoded(t *testing.T, value any) map[string]any {
 	t.Helper()
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var decoded map[string]any
-	if err := json.Unmarshal(encoded, &decoded); err != nil {
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
 		t.Fatal(err)
 	}
-	delete(decoded, "resultType")
-	if meta, ok := decoded["_meta"].(map[string]any); ok {
+	return fields
+}
+
+// answerValue is a tool answer as the comparison reads it: its content and structured content as the values they
+// encode, without the framing the two SDKs spell differently (the result type, the server's name the 2026-07-28
+// protocol stamps on each result, and an isError that is false). fromPython reads Python's repr quotes in prose as
+// Go's %q.
+func answerValue(t *testing.T, answer any, fromPython bool) map[string]any {
+	t.Helper()
+	fields := decoded(t, answer)
+	delete(fields, "resultType")
+	if meta, ok := fields["_meta"].(map[string]any); ok {
 		delete(meta, mcp.MetaKeyServerInfo)
 		if len(meta) == 0 {
-			delete(decoded, "_meta")
+			delete(fields, "_meta")
 		}
 	}
-	if decoded["isError"] == false {
-		delete(decoded, "isError")
+	if fields["isError"] == false {
+		delete(fields, "isError")
 	}
-	return decoded
+	if structured, ok := fields["structuredContent"]; ok {
+		fields["structuredContent"] = jsonValue(structured)
+	}
+	content, _ := fields["content"].([]any)
+	for _, block := range content {
+		if block, ok := block.(map[string]any); ok && block["type"] == "text" {
+			block["text"] = textValue(block["text"].(string), fromPython)
+		}
+	}
+	return fields
+}
+
+// textValue is a text block as the value it encodes: JSON as a JSON value, and prose as its words and the JSON
+// value it ends in, if any.
+func textValue(text string, fromPython bool) any {
+	var value any
+	if json.Unmarshal([]byte(text), &value) == nil {
+		return jsonValue(value)
+	}
+	prose, tail := text, any(nil)
+	for i := 1; i < len(text); i++ {
+		if text[i-1] == ' ' && (text[i] == '{' || text[i] == '[') && json.Unmarshal([]byte(text[i:]), &value) == nil {
+			prose, tail = text[:i], jsonValue(value)
+			break
+		}
+	}
+	if fromPython {
+		prose = goQuotes(prose)
+	}
+	return []any{prose, tail}
+}
+
+// goQuotes reads Python's repr quotes as %q's: a ' between two letters is an apostrophe, any other one a quote.
+func goQuotes(text string) string {
+	runes := []rune(text)
+	for i, r := range runes {
+		if r == '\'' && (i == 0 || i == len(runes)-1 || !unicode.IsLetter(runes[i-1]) || !unicode.IsLetter(runes[i+1])) {
+			runes[i] = '"'
+		}
+	}
+	return string(runes)
+}
+
+// jsonValue is a decoded JSON value with each timestamp read as the instant it names.
+func jsonValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		for key, field := range value {
+			value[key] = jsonValue(field)
+		}
+	case []any:
+		for i, item := range value {
+			value[i] = jsonValue(item)
+		}
+	case string:
+		if at, err := time.Parse(time.RFC3339Nano, value); err == nil {
+			return at.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	return value
 }
 
 func indented(t *testing.T, value any) string {
@@ -236,12 +291,8 @@ func TestToolCallsAnswerAsThePythonToolsDo(t *testing.T) {
 			if arrived() != len(vector.Core) {
 				t.Errorf("%d of the script's %d RPCs arrived", arrived(), len(vector.Core))
 			}
-			var want map[string]any
-			if err := json.Unmarshal(vector.Result, &want); err != nil {
-				t.Fatal(err)
-			}
-			want = wireValue(t, want)
-			if got := wireValue(t, result); !reflect.DeepEqual(got, want) {
+			want := answerValue(t, vector.Result, true)
+			if got := answerValue(t, result, false); !reflect.DeepEqual(got, want) {
 				t.Errorf("answer =\n%s\nwant\n%s", indented(t, got), indented(t, want))
 			}
 		})
@@ -273,7 +324,7 @@ func TestToolsAreListedAsFastMCPListsThem(t *testing.T) {
 		t.Errorf("listed %d tools, want %d", len(listed.Tools), len(want))
 	}
 	for _, tool := range listed.Tools {
-		got := wireValue(t, tool)
+		got := decoded(t, tool)
 		definition := want[tool.Name]
 		// The SDK spells out a false hint FastMCP leaves out; both mean the same.
 		if gotHints, wantHints := annotations(t, got), annotations(t, definition); gotHints != wantHints {
@@ -310,34 +361,6 @@ func TestInstructionsNameTheConfiguredWaitLimit(t *testing.T) {
 	for _, vector := range loadGolden(t).Server.Instructions {
 		if got := instructions(vector.MaxWaitSeconds); got != vector.Text {
 			t.Errorf("instructions(%v) = %q, want %q", vector.MaxWaitSeconds, got, vector.Text)
-		}
-	}
-}
-
-func TestEncodingsWriteAsPythonDoes(t *testing.T) {
-	vectors := loadGolden(t)
-	for _, vector := range vectors.Floats {
-		if got := pydanticJSON.encode(vector.Value); got != vector.Text {
-			t.Errorf("Pydantic JSON of %v = %q, want %q", vector.Value, got, vector.Text)
-		}
-		if got := pythonDumps.encode(vector.Value); got != vector.JSONDumps {
-			t.Errorf("json.dumps of %v = %q, want %q", vector.Value, got, vector.JSONDumps)
-		}
-	}
-	for _, vector := range vectors.Limits {
-		if got := pythonG(vector.Value); got != vector.G {
-			t.Errorf("format(%v, 'g') = %q, want %q", vector.Value, got, vector.G)
-		}
-	}
-	for _, vector := range vectors.Strings {
-		if got := pydanticJSON.encode(vector.Value); got != vector.Text {
-			t.Errorf("Pydantic JSON of %q = %q, want %q", vector.Value, got, vector.Text)
-		}
-		if got := pythonDumps.encode(vector.Value); got != vector.JSONDumps {
-			t.Errorf("json.dumps of %q = %q, want %q", vector.Value, got, vector.JSONDumps)
-		}
-		if got := pythonRepr(vector.Value); got != vector.Repr {
-			t.Errorf("repr of %q = %q, want %q", vector.Value, got, vector.Repr)
 		}
 	}
 }

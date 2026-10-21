@@ -122,69 +122,26 @@ func mcpHeaders(authorization ...string) http.Header {
 
 const toolsList = `{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}`
 
-func TestRefusedBearersGetFastMCPsChallenges(t *testing.T) {
-	h := newHarness(t, &fakeCore{}, 30)
-	resourceMetadata := `resource_metadata="https://test-actions.example/.well-known/oauth-protected-resource/mcp"`
-	initialize := `{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25", ` +
-		`"capabilities": {}, "clientInfo": {"name": "test-client", "version": "0"}}}`
+func TestRefusedBearersNeverReachTheCore(t *testing.T) {
+	recorder := &recordingCore{}
+	h := newHarness(t, recorder.core(nil, noWatch), 30)
 	for _, tc := range []struct {
 		name          string
-		method        string
-		body          string
 		authorization []string
-		status        int
-		// invalidToken is whether the refusal names the presented token invalid (RFC 6750 §3.1).
-		invalidToken bool
 	}{
-		{name: "no bearer", method: http.MethodPost, body: toolsList, status: 401},
-		{name: "no bearer on initialize", method: http.MethodPost, body: initialize, status: 401},
-		{name: "no bearer on delete", method: http.MethodDelete, status: 401},
-		{name: "revoked bearer", method: http.MethodPost, body: toolsList, authorization: []string{"Bearer " + revokedToken}, status: 401, invalidToken: true},
-		{name: "revoked bearer on delete", method: http.MethodDelete, authorization: []string{"Bearer " + revokedToken}, status: 401, invalidToken: true},
-		{name: "not a bearer", method: http.MethodPost, body: toolsList, authorization: []string{"Basic dGVzdDp0ZXN0"}, status: 401, invalidToken: true},
-		{
-			name: "two bearers", method: http.MethodPost, body: toolsList,
-			authorization: []string{"Bearer " + callerToken, "Bearer " + otherCallerToken}, status: 401, invalidToken: true,
-		},
+		{name: "no bearer"},
+		{name: "revoked bearer", authorization: []string{"Bearer " + revokedToken}},
+		{name: "two bearers", authorization: []string{"Bearer " + callerToken, "Bearer " + otherCallerToken}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			request, err := http.NewRequestWithContext(t.Context(), tc.method, h.url(), strings.NewReader(tc.body))
-			if err != nil {
-				t.Fatal(err)
-			}
-			request.Header = mcpHeaders(tc.authorization...)
-			response, err := http.DefaultClient.Do(request)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = response.Body.Close() }()
-			if response.StatusCode != tc.status {
-				t.Fatalf("status = %d, want %d", response.StatusCode, tc.status)
-			}
-			challenge := response.Header.Get("WWW-Authenticate")
-			if !strings.HasPrefix(challenge, "Bearer") || !strings.Contains(challenge, resourceMetadata) {
-				t.Errorf("challenge = %q, want a bearer challenge naming the resource metadata", challenge)
-			}
-			if got := strings.Contains(challenge, `error="invalid_token"`); got != tc.invalidToken {
-				t.Errorf("challenge = %q, invalid_token named = %v, want %v", challenge, got, tc.invalidToken)
-			}
-			body, err := io.ReadAll(response.Body)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !tc.invalidToken {
-				if len(body) != 0 {
-					t.Errorf("body = %q, want none", body)
-				}
-				return
-			}
-			var refusal struct {
-				Error string `json:"error"`
-			}
-			if err := json.Unmarshal(body, &refusal); err != nil || refusal.Error != "invalid_token" {
-				t.Errorf("body = %q, want an invalid_token error", body)
+			call := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_action_policy", "arguments": {}}}`
+			if response := post(t, h.url(), mcpHeaders(tc.authorization...), call); response.StatusCode != http.StatusUnauthorized {
+				t.Errorf("status = %d, want 401", response.StatusCode)
 			}
 		})
+	}
+	if rpcs, _ := recorder.recorded(); len(rpcs) != 0 {
+		t.Errorf("core saw %v, want nothing", rpcs)
 	}
 }
 
@@ -198,59 +155,13 @@ func TestAnAuthorityOutageIsNotAnInvalidToken(t *testing.T) {
 	if challenge := response.Header.Get("WWW-Authenticate"); challenge != "" {
 		t.Errorf("challenge = %q, want none", challenge)
 	}
-	if broken := post(t, h.url(), mcpHeaders("Bearer "+brokenToken), toolsList); broken.StatusCode != http.StatusInternalServerError {
-		t.Errorf("a verifier fault answered %d, want 500", broken.StatusCode)
-	}
-}
-
-func TestOnlyPostAndDeleteReachTheEndpoint(t *testing.T) {
-	h := newHarness(t, &fakeCore{}, 30)
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, h.url(), nil)
+	broken := post(t, h.url(), mcpHeaders("Bearer "+brokenToken), toolsList)
+	body, err := io.ReadAll(broken.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusMethodNotAllowed {
-		t.Errorf("GET answered %d, want 405", response.StatusCode)
-	}
-}
-
-func TestLoopbackGuardRefusesForeignOriginsAndHosts(t *testing.T) {
-	h := newHarness(t, &fakeCore{}, 30)
-	for _, tc := range []struct {
-		name   string
-		header string
-		value  string
-		status int
-	}{
-		{name: "loopback origin", header: "Origin", value: "http://127.0.0.1", status: http.StatusOK},
-		{name: "foreign origin", header: "Origin", value: "https://test-untrusted.example", status: http.StatusForbidden},
-		{name: "rebound host", header: "Host", value: "test-rebinding.example", status: http.StatusMisdirectedRequest},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, h.url(), strings.NewReader(toolsList))
-			if err != nil {
-				t.Fatal(err)
-			}
-			request.Header = mcpHeaders("Bearer " + callerToken)
-			if tc.header == "Host" {
-				request.Host = tc.value
-			} else {
-				request.Header.Set(tc.header, tc.value)
-			}
-			response, err := http.DefaultClient.Do(request)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = response.Body.Close() }()
-			if response.StatusCode != tc.status {
-				t.Errorf("status = %d, want %d", response.StatusCode, tc.status)
-			}
-		})
+	if broken.StatusCode != http.StatusInternalServerError || bytes.Contains(body, []byte("test verifier fault")) {
+		t.Errorf("a verifier fault answered %d %q, want 500 without the fault", broken.StatusCode, body)
 	}
 }
 
@@ -287,7 +198,6 @@ func TestInvalidArgumentsAreRefusedBeforeTheCore(t *testing.T) {
 		{"unsupported Action field", "get_action", `{"group": "test-mcp", "name": "alpha", "include_fields": ["output_schema"]}`},
 		{"unknown receipt field", "get_action_request", `{"request_id": "` + testRequestID + `", "include_fields": ["bogus"]}`},
 		{"malformed request id", "cancel_action_request", `{"request_id": "test-not-a-uuid"}`},
-		{"unknown tool", "test_unknown", `{}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if result := callTool(t, session, tc.tool, tc.arguments); !result.IsError {

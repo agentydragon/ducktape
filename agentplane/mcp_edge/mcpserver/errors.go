@@ -1,15 +1,13 @@
 package mcpserver
 
 import (
-	"errors"
 	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// toolError is a refusal the caller reads as written, as FastMCP passes a ToolError's text. Every other failure is
-// logged and masked.
+// toolError is a refusal the caller reads as written. Every other failure is logged and masked.
 type toolError string
 
 func (e toolError) Error() string { return string(e) }
@@ -33,16 +31,16 @@ const (
 )
 
 func waitTooLong(maxWaitSeconds float64) toolError {
-	return toolError(fmt.Sprintf("wait.wait_seconds must be at most %s seconds for this instance.", pythonG(maxWaitSeconds)))
+	return toolError(fmt.Sprintf("wait.wait_seconds must be at most %s seconds for this instance.", seconds(maxWaitSeconds)))
 }
 
 func unknownAction(group, name string) toolError {
-	return toolError(fmt.Sprintf("unknown group/action (%s, %s)", pythonRepr(group), pythonRepr(name)))
+	return toolError(fmt.Sprintf("unknown group/action (%q, %q)", group, name))
 }
 
-// maskedError is what FastMCP answers for a failure it does not pass through.
+// maskedError answers a failure whose detail is not the caller's to read.
 func maskedError(tool string) error {
-	return errors.New("Error calling tool " + pythonRepr(tool))
+	return fmt.Errorf("Error calling tool %q", tool)
 }
 
 // requestError maps a failed read or cancellation of one of the caller's requests.

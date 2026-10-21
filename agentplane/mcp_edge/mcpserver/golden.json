@@ -9,14 +9,6 @@
    {
     "max_wait_seconds": 2.5,
     "text": "Discover Action identifiers, fetch details only when needed, then submit each request once under a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; recover a lost response with get_action_request(idempotency_key=...), never with a replacement key. This instance allows wait.wait_seconds up to 2.5 seconds."
-   },
-   {
-    "max_wait_seconds": 1234567.0,
-    "text": "Discover Action identifiers, fetch details only when needed, then submit each request once under a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; recover a lost response with get_action_request(idempotency_key=...), never with a replacement key. This instance allows wait.wait_seconds up to 1.23457e+06 seconds."
-   },
-   {
-    "max_wait_seconds": 0.0001,
-    "text": "Discover Action identifiers, fetch details only when needed, then submit each request once under a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; recover a lost response with get_action_request(idempotency_key=...), never with a replacement key. This instance allows wait.wait_seconds up to 0.0001 seconds."
    }
   ]
  },
@@ -46,21 +38,21 @@
       "description": "test-alpha-description é 🚀",
       "inputSchema": {
        "type": "object",
+       "properties": {
+        "message": {
+         "type": "string",
+         "description": "test message",
+         "default": null
+        },
+        "count": {
+         "type": "number",
+         "minimum": 0.5,
+         "maximum": 10
+        }
+       },
        "required": [
         "message"
        ],
-       "properties": {
-        "count": {
-         "type": "number",
-         "maximum": 10,
-         "minimum": 0.5
-        },
-        "message": {
-         "type": "string",
-         "default": null,
-         "description": "test message"
-        }
-       },
        "additionalProperties": false
       }
      },
@@ -132,8 +124,21 @@
         "name": "alpha"
        },
        "arguments": {
-        "": "empty key",
+        "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
         "int": 42,
+        "negative": -7,
+        "zero": 0,
+        "fraction": 1.5,
+        "negative fraction": -0.25,
+        "small": 1.5e-07,
+        "tiny": 0.0001,
+        "large": 1e+20,
+        "precise": 123.456789012345,
+        "true": true,
+        "false": false,
+        "null": null,
+        "empty object": {},
+        "empty list": [],
         "list": [
          1,
          "two",
@@ -144,30 +149,17 @@
           ]
          }
         ],
-        "null": null,
-        "tiny": 0.0001,
-        "true": true,
-        "zero": 0,
-        "false": false,
-        "large": 1e+20,
-        "small": 1.5e-07,
         "nested": {
          "b": {
-          "a": 1,
           "aa": [
            {
             "c": "d"
            }
-          ]
+          ],
+          "a": 1
          }
         },
-        "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-        "precise": 123.456789012345,
-        "fraction": 1.5,
-        "negative": -7,
-        "empty list": [],
-        "empty object": {},
-        "negative fraction": -0.25
+        "": "empty key"
        },
        "title": "test title 1",
        "caller": {
@@ -186,7 +178,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000001\",\"state\":\"decision_pending\",\"version\":1,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-1\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{\"\":\"empty key\",\"int\":42,\"list\":[1,\"two\",null,{\"three\":[3.5]}],\"null\":null,\"tiny\":0.0001,\"true\":true,\"zero\":0,\"false\":false,\"large\":1e+20,\"small\":1.5e-7,\"nested\":{\"b\":{\"a\":1,\"aa\":[{\"c\":\"d\"}]}},\"message\":\"line one\\nline two\\ttabbed \\\"quoted\\\" back\\\\slash </script> & é 名 🚀    \\u0001\",\"precise\":123.456789012345,\"fraction\":1.5,\"negative\":-7,\"empty list\":[],\"empty object\":{},\"negative fraction\":-0.25},\"title\":\"test title 1\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":null,\"execution\":null}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000001\",\"state\":\"decision_pending\",\"version\":1,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-1\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{\"message\":\"line one\\nline two\\ttabbed \\\"quoted\\\" back\\\\slash </script> & é 名 🚀    \\u0001\",\"int\":42,\"negative\":-7,\"zero\":0,\"fraction\":1.5,\"negative fraction\":-0.25,\"small\":1.5e-7,\"tiny\":0.0001,\"large\":1e+20,\"precise\":123.456789012345,\"true\":true,\"false\":false,\"null\":null,\"empty object\":{},\"empty list\":[],\"list\":[1,\"two\",null,{\"three\":[3.5]}],\"nested\":{\"b\":{\"aa\":[{\"c\":\"d\"}],\"a\":1}},\"\":\"empty key\"},\"title\":\"test title 1\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":null,\"execution\":null}"
      }
     ],
     "structuredContent": {
@@ -202,8 +194,21 @@
        "name": "alpha"
       },
       "arguments": {
-       "": "empty key",
+       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
        "int": 42,
+       "negative": -7,
+       "zero": 0,
+       "fraction": 1.5,
+       "negative fraction": -0.25,
+       "small": 1.5e-07,
+       "tiny": 0.0001,
+       "large": 1e+20,
+       "precise": 123.456789012345,
+       "true": true,
+       "false": false,
+       "null": null,
+       "empty object": {},
+       "empty list": [],
        "list": [
         1,
         "two",
@@ -214,30 +219,17 @@
          ]
         }
        ],
-       "null": null,
-       "tiny": 0.0001,
-       "true": true,
-       "zero": 0,
-       "false": false,
-       "large": 1e+20,
-       "small": 1.5e-07,
        "nested": {
         "b": {
-         "a": 1,
          "aa": [
           {
            "c": "d"
           }
-         ]
+         ],
+         "a": 1
         }
        },
-       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-       "precise": 123.456789012345,
-       "fraction": 1.5,
-       "negative": -7,
-       "empty list": [],
-       "empty object": {},
-       "negative fraction": -0.25
+       "": "empty key"
       },
       "title": "test title 1",
       "description": null
@@ -275,8 +267,21 @@
         "name": "alpha"
        },
        "arguments": {
-        "": "empty key",
+        "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
         "int": 42,
+        "negative": -7,
+        "zero": 0,
+        "fraction": 1.5,
+        "negative fraction": -0.25,
+        "small": 1.5e-07,
+        "tiny": 0.0001,
+        "large": 1e+20,
+        "precise": 123.456789012345,
+        "true": true,
+        "false": false,
+        "null": null,
+        "empty object": {},
+        "empty list": [],
         "list": [
          1,
          "two",
@@ -287,30 +292,17 @@
           ]
          }
         ],
-        "null": null,
-        "tiny": 0.0001,
-        "true": true,
-        "zero": 0,
-        "false": false,
-        "large": 1e+20,
-        "small": 1.5e-07,
         "nested": {
          "b": {
-          "a": 1,
           "aa": [
            {
             "c": "d"
            }
-          ]
+          ],
+          "a": 1
          }
         },
-        "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-        "precise": 123.456789012345,
-        "fraction": 1.5,
-        "negative": -7,
-        "empty list": [],
-        "empty object": {},
-        "negative fraction": -0.25
+        "": "empty key"
        },
        "title": "test title 1",
        "caller": {
@@ -1053,21 +1045,21 @@
         "result": {
          "content": [
           {
-           "text": "test caption é",
-           "type": "text"
+           "type": "text",
+           "text": "test caption é"
           },
           {
-           "data": "dGVzdC1pbWFnZS1ieXRlcw==",
            "type": "image",
+           "data": "dGVzdC1pbWFnZS1ieXRlcw==",
            "mimeType": "image/png"
           }
          ],
-         "isError": true,
-         "resultType": "complete",
          "structuredContent": {
           "width": 1,
           "height": 2.5
-         }
+         },
+         "isError": true,
+         "resultType": "complete"
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
         "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -1231,21 +1223,21 @@
         "result": {
          "content": [
           {
-           "text": "test caption é",
-           "type": "text"
+           "type": "text",
+           "text": "test caption é"
           },
           {
-           "data": "dGVzdC1pbWFnZS1ieXRlcw==",
            "type": "image",
+           "data": "dGVzdC1pbWFnZS1ieXRlcw==",
            "mimeType": "image/png"
           }
          ],
-         "isError": true,
-         "resultType": "complete",
          "structuredContent": {
           "width": 1,
           "height": 2.5
-         }
+         },
+         "isError": true,
+         "resultType": "complete"
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
         "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -1337,8 +1329,8 @@
           "kind": "exited",
           "exit_code": 1
          },
-         "stderr": "test-missing-file",
          "stdout": "test output é\n",
+         "stderr": "test-missing-file",
          "duration_seconds": 0.5
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
@@ -1456,8 +1448,8 @@
           "kind": "exited",
           "exit_code": 1
          },
-         "stderr": "test-missing-file",
          "stdout": "test output é\n",
+         "stderr": "test-missing-file",
          "duration_seconds": 0.5
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
@@ -1472,7 +1464,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"exit\":{\"kind\":\"exited\",\"exit_code\":1},\"stderr\":\"test-missing-file\",\"stdout\":\"test output é\\n\",\"duration_seconds\":0.5}"
+      "text": "{\"exit\":{\"kind\":\"exited\",\"exit_code\":1},\"stdout\":\"test output é\\n\",\"stderr\":\"test-missing-file\",\"duration_seconds\":0.5}"
      }
     ],
     "structuredContent": {
@@ -1480,8 +1472,8 @@
       "kind": "exited",
       "exit_code": 1
      },
-     "stderr": "test-missing-file",
      "stdout": "test output é\n",
+     "stderr": "test-missing-file",
      "duration_seconds": 0.5
     },
     "isError": false,
@@ -1547,8 +1539,8 @@
         "state": "EXECUTION_STATE_FAILED",
         "error": {
          "kind": "sandbox_unavailable",
-         "retry": 1.5,
-         "message": "test box é 🚀 \"not\" ready\n"
+         "message": "test box é 🚀 \"not\" ready\n",
+         "retry": 1.5
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
         "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -1562,7 +1554,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000007\",\"state\":\"failed\",\"version\":7,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-7\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 7\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"failed\",\"error\":{\"kind\":\"sandbox_unavailable\",\"retry\":1.5,\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"},\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000007\",\"state\":\"failed\",\"version\":7,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-7\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 7\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"failed\",\"error\":{\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\",\"retry\":1.5},\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
      }
     ],
     "structuredContent": {
@@ -1605,8 +1597,8 @@
       "state": "failed",
       "error": {
        "kind": "sandbox_unavailable",
-       "retry": 1.5,
-       "message": "test box é 🚀 \"not\" ready\n"
+       "message": "test box é 🚀 \"not\" ready\n",
+       "retry": 1.5
       },
       "created_at": "2026-01-02T03:04:06.120000Z",
       "started_at": "2026-01-02T03:04:07.000005Z",
@@ -1666,8 +1658,8 @@
         "state": "EXECUTION_STATE_FAILED",
         "error": {
          "kind": "sandbox_unavailable",
-         "retry": 1.5,
-         "message": "test box é 🚀 \"not\" ready\n"
+         "message": "test box é 🚀 \"not\" ready\n",
+         "retry": 1.5
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
         "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -1681,7 +1673,7 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\": \"sandbox_unavailable\", \"retry\": 1.5, \"message\": \"test box \\u00e9 \\ud83d\\ude80 \\\"not\\\" ready\\n\"}"
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\": \"sandbox_unavailable\", \"message\": \"test box \\u00e9 \\ud83d\\ude80 \\\"not\\\" ready\\n\", \"retry\": 1.5}"
      }
     ],
     "structuredContent": {
@@ -2609,8 +2601,21 @@
         "name": "alpha"
        },
        "arguments": {
-        "": "empty key",
+        "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
         "int": 42,
+        "negative": -7,
+        "zero": 0,
+        "fraction": 1.5,
+        "negative fraction": -0.25,
+        "small": 1.5e-07,
+        "tiny": 0.0001,
+        "large": 1e+20,
+        "precise": 123.456789012345,
+        "true": true,
+        "false": false,
+        "null": null,
+        "empty object": {},
+        "empty list": [],
         "list": [
          1,
          "two",
@@ -2621,30 +2626,17 @@
           ]
          }
         ],
-        "null": null,
-        "tiny": 0.0001,
-        "true": true,
-        "zero": 0,
-        "false": false,
-        "large": 1e+20,
-        "small": 1.5e-07,
         "nested": {
          "b": {
-          "a": 1,
           "aa": [
            {
             "c": "d"
            }
-          ]
+          ],
+          "a": 1
          }
         },
-        "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-        "precise": 123.456789012345,
-        "fraction": 1.5,
-        "negative": -7,
-        "empty list": [],
-        "empty object": {},
-        "negative fraction": -0.25
+        "": "empty key"
        },
        "title": "test title 1",
        "caller": {
@@ -2845,21 +2837,21 @@
         "result": {
          "content": [
           {
-           "text": "test caption é",
-           "type": "text"
+           "type": "text",
+           "text": "test caption é"
           },
           {
-           "data": "dGVzdC1pbWFnZS1ieXRlcw==",
            "type": "image",
+           "data": "dGVzdC1pbWFnZS1ieXRlcw==",
            "mimeType": "image/png"
           }
          ],
-         "isError": true,
-         "resultType": "complete",
          "structuredContent": {
           "width": 1,
           "height": 2.5
-         }
+         },
+         "isError": true,
+         "resultType": "complete"
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
         "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -3205,8 +3197,8 @@
          "state": "EXECUTION_STATE_FAILED",
          "error": {
           "kind": "sandbox_unavailable",
-          "retry": 1.5,
-          "message": "test box é 🚀 \"not\" ready\n"
+          "message": "test box é 🚀 \"not\" ready\n",
+          "retry": 1.5
          },
          "createdAt": "2026-01-02T03:04:06.120000Z",
          "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -3256,8 +3248,8 @@
         "state": "EXECUTION_STATE_FAILED",
         "error": {
          "kind": "sandbox_unavailable",
-         "retry": 1.5,
-         "message": "test box é 🚀 \"not\" ready\n"
+         "message": "test box é 🚀 \"not\" ready\n",
+         "retry": 1.5
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
         "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -3271,7 +3263,7 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\": \"sandbox_unavailable\", \"retry\": 1.5, \"message\": \"test box \\u00e9 \\ud83d\\ude80 \\\"not\\\" ready\\n\"}"
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\": \"sandbox_unavailable\", \"message\": \"test box \\u00e9 \\ud83d\\ude80 \\\"not\\\" ready\\n\", \"retry\": 1.5}"
      }
     ],
     "structuredContent": {
@@ -4374,8 +4366,21 @@
       "name": "alpha"
      },
      "arguments": {
-      "": "empty key",
+      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
       "int": 42,
+      "negative": -7,
+      "zero": 0,
+      "fraction": 1.5,
+      "negative fraction": -0.25,
+      "small": 1.5e-07,
+      "tiny": 0.0001,
+      "large": 1e+20,
+      "precise": 123.456789012345,
+      "true": true,
+      "false": false,
+      "null": null,
+      "empty object": {},
+      "empty list": [],
       "list": [
        1,
        "two",
@@ -4386,30 +4391,17 @@
         ]
        }
       ],
-      "null": null,
-      "tiny": 0.0001,
-      "true": true,
-      "zero": 0,
-      "false": false,
-      "large": 1e+20,
-      "small": 1.5e-07,
       "nested": {
        "b": {
-        "a": 1,
         "aa": [
          {
           "c": "d"
          }
-        ]
+        ],
+        "a": 1
        }
       },
-      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-      "precise": 123.456789012345,
-      "fraction": 1.5,
-      "negative": -7,
-      "empty list": [],
-      "empty object": {},
-      "negative fraction": -0.25
+      "": "empty key"
      },
      "title": "test title"
     }
@@ -4425,8 +4417,21 @@
        "name": "alpha"
       },
       "arguments": {
-       "": "empty key",
+       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
        "int": 42,
+       "negative": -7,
+       "zero": 0,
+       "fraction": 1.5,
+       "negative fraction": -0.25,
+       "small": 1.5e-07,
+       "tiny": 0.0001,
+       "large": 1e+20,
+       "precise": 123.456789012345,
+       "true": true,
+       "false": false,
+       "null": null,
+       "empty object": {},
+       "empty list": [],
        "list": [
         1,
         "two",
@@ -4437,30 +4442,17 @@
          ]
         }
        ],
-       "null": null,
-       "tiny": 0.0001,
-       "true": true,
-       "zero": 0,
-       "false": false,
-       "large": 1e+20,
-       "small": 1.5e-07,
        "nested": {
         "b": {
-         "a": 1,
          "aa": [
           {
            "c": "d"
           }
-         ]
+         ],
+         "a": 1
         }
        },
-       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-       "precise": 123.456789012345,
-       "fraction": 1.5,
-       "negative": -7,
-       "empty list": [],
-       "empty object": {},
-       "negative fraction": -0.25
+       "": "empty key"
       },
       "title": "test title"
      },
@@ -4473,8 +4465,21 @@
         "name": "alpha"
        },
        "arguments": {
-        "": "empty key",
+        "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
         "int": 42,
+        "negative": -7,
+        "zero": 0,
+        "fraction": 1.5,
+        "negative fraction": -0.25,
+        "small": 1.5e-07,
+        "tiny": 0.0001,
+        "large": 1e+20,
+        "precise": 123.456789012345,
+        "true": true,
+        "false": false,
+        "null": null,
+        "empty object": {},
+        "empty list": [],
         "list": [
          1,
          "two",
@@ -4485,30 +4490,17 @@
           ]
          }
         ],
-        "null": null,
-        "tiny": 0.0001,
-        "true": true,
-        "zero": 0,
-        "false": false,
-        "large": 1e+20,
-        "small": 1.5e-07,
         "nested": {
          "b": {
-          "a": 1,
           "aa": [
            {
             "c": "d"
            }
-          ]
+          ],
+          "a": 1
          }
         },
-        "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-        "precise": 123.456789012345,
-        "fraction": 1.5,
-        "negative": -7,
-        "empty list": [],
-        "empty object": {},
-        "negative fraction": -0.25
+        "": "empty key"
        },
        "title": "test title 1",
        "caller": {
@@ -4549,8 +4541,21 @@
       "name": "alpha"
      },
      "arguments": {
-      "": "empty key",
+      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
       "int": 42,
+      "negative": -7,
+      "zero": 0,
+      "fraction": 1.5,
+      "negative fraction": -0.25,
+      "small": 1.5e-07,
+      "tiny": 0.0001,
+      "large": 1e+20,
+      "precise": 123.456789012345,
+      "true": true,
+      "false": false,
+      "null": null,
+      "empty object": {},
+      "empty list": [],
       "list": [
        1,
        "two",
@@ -4561,30 +4566,17 @@
         ]
        }
       ],
-      "null": null,
-      "tiny": 0.0001,
-      "true": true,
-      "zero": 0,
-      "false": false,
-      "large": 1e+20,
-      "small": 1.5e-07,
       "nested": {
        "b": {
-        "a": 1,
         "aa": [
          {
           "c": "d"
          }
-        ]
+        ],
+        "a": 1
        }
       },
-      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-      "precise": 123.456789012345,
-      "fraction": 1.5,
-      "negative": -7,
-      "empty list": [],
-      "empty object": {},
-      "negative fraction": -0.25
+      "": "empty key"
      },
      "title": "test title",
      "description": "test description é"
@@ -4601,8 +4593,21 @@
        "name": "alpha"
       },
       "arguments": {
-       "": "empty key",
+       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
        "int": 42,
+       "negative": -7,
+       "zero": 0,
+       "fraction": 1.5,
+       "negative fraction": -0.25,
+       "small": 1.5e-07,
+       "tiny": 0.0001,
+       "large": 1e+20,
+       "precise": 123.456789012345,
+       "true": true,
+       "false": false,
+       "null": null,
+       "empty object": {},
+       "empty list": [],
        "list": [
         1,
         "two",
@@ -4613,30 +4618,17 @@
          ]
         }
        ],
-       "null": null,
-       "tiny": 0.0001,
-       "true": true,
-       "zero": 0,
-       "false": false,
-       "large": 1e+20,
-       "small": 1.5e-07,
        "nested": {
         "b": {
-         "a": 1,
          "aa": [
           {
            "c": "d"
           }
-         ]
+         ],
+         "a": 1
         }
        },
-       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-       "precise": 123.456789012345,
-       "fraction": 1.5,
-       "negative": -7,
-       "empty list": [],
-       "empty object": {},
-       "negative fraction": -0.25
+       "": "empty key"
       },
       "title": "test title",
       "description": "test description é"
@@ -4679,8 +4671,8 @@
           "kind": "exited",
           "exit_code": 1
          },
-         "stderr": "test-missing-file",
          "stdout": "test output é\n",
+         "stderr": "test-missing-file",
          "duration_seconds": 0.5
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
@@ -4695,7 +4687,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"exit\":{\"kind\":\"exited\",\"exit_code\":1},\"stderr\":\"test-missing-file\",\"stdout\":\"test output é\\n\",\"duration_seconds\":0.5}"
+      "text": "{\"exit\":{\"kind\":\"exited\",\"exit_code\":1},\"stdout\":\"test output é\\n\",\"stderr\":\"test-missing-file\",\"duration_seconds\":0.5}"
      }
     ],
     "structuredContent": {
@@ -4703,8 +4695,8 @@
       "kind": "exited",
       "exit_code": 1
      },
-     "stderr": "test-missing-file",
      "stdout": "test output é\n",
+     "stderr": "test-missing-file",
      "duration_seconds": 0.5
     },
     "isError": false,
@@ -4722,8 +4714,21 @@
       "name": "alpha"
      },
      "arguments": {
-      "": "empty key",
+      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
       "int": 42,
+      "negative": -7,
+      "zero": 0,
+      "fraction": 1.5,
+      "negative fraction": -0.25,
+      "small": 1.5e-07,
+      "tiny": 0.0001,
+      "large": 1e+20,
+      "precise": 123.456789012345,
+      "true": true,
+      "false": false,
+      "null": null,
+      "empty object": {},
+      "empty list": [],
       "list": [
        1,
        "two",
@@ -4734,30 +4739,17 @@
         ]
        }
       ],
-      "null": null,
-      "tiny": 0.0001,
-      "true": true,
-      "zero": 0,
-      "false": false,
-      "large": 1e+20,
-      "small": 1.5e-07,
       "nested": {
        "b": {
-        "a": 1,
         "aa": [
          {
           "c": "d"
          }
-        ]
+        ],
+        "a": 1
        }
       },
-      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-      "precise": 123.456789012345,
-      "fraction": 1.5,
-      "negative": -7,
-      "empty list": [],
-      "empty object": {},
-      "negative fraction": -0.25
+      "": "empty key"
      },
      "title": "test title"
     },
@@ -4774,8 +4766,21 @@
        "name": "alpha"
       },
       "arguments": {
-       "": "empty key",
+       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
        "int": 42,
+       "negative": -7,
+       "zero": 0,
+       "fraction": 1.5,
+       "negative fraction": -0.25,
+       "small": 1.5e-07,
+       "tiny": 0.0001,
+       "large": 1e+20,
+       "precise": 123.456789012345,
+       "true": true,
+       "false": false,
+       "null": null,
+       "empty object": {},
+       "empty list": [],
        "list": [
         1,
         "two",
@@ -4786,30 +4791,17 @@
          ]
         }
        ],
-       "null": null,
-       "tiny": 0.0001,
-       "true": true,
-       "zero": 0,
-       "false": false,
-       "large": 1e+20,
-       "small": 1.5e-07,
        "nested": {
         "b": {
-         "a": 1,
          "aa": [
           {
            "c": "d"
           }
-         ]
+         ],
+         "a": 1
         }
        },
-       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-       "precise": 123.456789012345,
-       "fraction": 1.5,
-       "negative": -7,
-       "empty list": [],
-       "empty object": {},
-       "negative fraction": -0.25
+       "": "empty key"
       },
       "title": "test title"
      },
@@ -4822,8 +4814,21 @@
         "name": "alpha"
        },
        "arguments": {
-        "": "empty key",
+        "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
         "int": 42,
+        "negative": -7,
+        "zero": 0,
+        "fraction": 1.5,
+        "negative fraction": -0.25,
+        "small": 1.5e-07,
+        "tiny": 0.0001,
+        "large": 1e+20,
+        "precise": 123.456789012345,
+        "true": true,
+        "false": false,
+        "null": null,
+        "empty object": {},
+        "empty list": [],
         "list": [
          1,
          "two",
@@ -4834,30 +4839,17 @@
           ]
          }
         ],
-        "null": null,
-        "tiny": 0.0001,
-        "true": true,
-        "zero": 0,
-        "false": false,
-        "large": 1e+20,
-        "small": 1.5e-07,
         "nested": {
          "b": {
-          "a": 1,
           "aa": [
            {
             "c": "d"
            }
-          ]
+          ],
+          "a": 1
          }
         },
-        "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-        "precise": 123.456789012345,
-        "fraction": 1.5,
-        "negative": -7,
-        "empty list": [],
-        "empty object": {},
-        "negative fraction": -0.25
+        "": "empty key"
        },
        "title": "test title 1",
        "caller": {
@@ -4901,8 +4893,21 @@
       "name": "alpha"
      },
      "arguments": {
-      "": "empty key",
+      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
       "int": 42,
+      "negative": -7,
+      "zero": 0,
+      "fraction": 1.5,
+      "negative fraction": -0.25,
+      "small": 1.5e-07,
+      "tiny": 0.0001,
+      "large": 1e+20,
+      "precise": 123.456789012345,
+      "true": true,
+      "false": false,
+      "null": null,
+      "empty object": {},
+      "empty list": [],
       "list": [
        1,
        "two",
@@ -4913,30 +4918,17 @@
         ]
        }
       ],
-      "null": null,
-      "tiny": 0.0001,
-      "true": true,
-      "zero": 0,
-      "false": false,
-      "large": 1e+20,
-      "small": 1.5e-07,
       "nested": {
        "b": {
-        "a": 1,
         "aa": [
          {
           "c": "d"
          }
-        ]
+        ],
+        "a": 1
        }
       },
-      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-      "precise": 123.456789012345,
-      "fraction": 1.5,
-      "negative": -7,
-      "empty list": [],
-      "empty object": {},
-      "negative fraction": -0.25
+      "": "empty key"
      },
      "title": "test title"
     },
@@ -4964,8 +4956,21 @@
        "name": "alpha"
       },
       "arguments": {
-       "": "empty key",
+       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
        "int": 42,
+       "negative": -7,
+       "zero": 0,
+       "fraction": 1.5,
+       "negative fraction": -0.25,
+       "small": 1.5e-07,
+       "tiny": 0.0001,
+       "large": 1e+20,
+       "precise": 123.456789012345,
+       "true": true,
+       "false": false,
+       "null": null,
+       "empty object": {},
+       "empty list": [],
        "list": [
         1,
         "two",
@@ -4976,30 +4981,17 @@
          ]
         }
        ],
-       "null": null,
-       "tiny": 0.0001,
-       "true": true,
-       "zero": 0,
-       "false": false,
-       "large": 1e+20,
-       "small": 1.5e-07,
        "nested": {
         "b": {
-         "a": 1,
          "aa": [
           {
            "c": "d"
           }
-         ]
+         ],
+         "a": 1
         }
        },
-       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-       "precise": 123.456789012345,
-       "fraction": 1.5,
-       "negative": -7,
-       "empty list": [],
-       "empty object": {},
-       "negative fraction": -0.25
+       "": "empty key"
       },
       "title": "test title"
      },
@@ -5114,8 +5106,21 @@
       "name": "alpha"
      },
      "arguments": {
-      "": "empty key",
+      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
       "int": 42,
+      "negative": -7,
+      "zero": 0,
+      "fraction": 1.5,
+      "negative fraction": -0.25,
+      "small": 1.5e-07,
+      "tiny": 0.0001,
+      "large": 1e+20,
+      "precise": 123.456789012345,
+      "true": true,
+      "false": false,
+      "null": null,
+      "empty object": {},
+      "empty list": [],
       "list": [
        1,
        "two",
@@ -5126,30 +5131,17 @@
         ]
        }
       ],
-      "null": null,
-      "tiny": 0.0001,
-      "true": true,
-      "zero": 0,
-      "false": false,
-      "large": 1e+20,
-      "small": 1.5e-07,
       "nested": {
        "b": {
-        "a": 1,
         "aa": [
          {
           "c": "d"
          }
-        ]
+        ],
+        "a": 1
        }
       },
-      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-      "precise": 123.456789012345,
-      "fraction": 1.5,
-      "negative": -7,
-      "empty list": [],
-      "empty object": {},
-      "negative fraction": -0.25
+      "": "empty key"
      },
      "title": "test title"
     },
@@ -5181,8 +5173,21 @@
       "name": "alpha"
      },
      "arguments": {
-      "": "empty key",
+      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
       "int": 42,
+      "negative": -7,
+      "zero": 0,
+      "fraction": 1.5,
+      "negative fraction": -0.25,
+      "small": 1.5e-07,
+      "tiny": 0.0001,
+      "large": 1e+20,
+      "precise": 123.456789012345,
+      "true": true,
+      "false": false,
+      "null": null,
+      "empty object": {},
+      "empty list": [],
       "list": [
        1,
        "two",
@@ -5193,30 +5198,17 @@
         ]
        }
       ],
-      "null": null,
-      "tiny": 0.0001,
-      "true": true,
-      "zero": 0,
-      "false": false,
-      "large": 1e+20,
-      "small": 1.5e-07,
       "nested": {
        "b": {
-        "a": 1,
         "aa": [
          {
           "c": "d"
          }
-        ]
+        ],
+        "a": 1
        }
       },
-      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-      "precise": 123.456789012345,
-      "fraction": 1.5,
-      "negative": -7,
-      "empty list": [],
-      "empty object": {},
-      "negative fraction": -0.25
+      "": "empty key"
      },
      "title": "test title"
     },
@@ -5248,8 +5240,21 @@
       "name": "alpha"
      },
      "arguments": {
-      "": "empty key",
+      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
       "int": 42,
+      "negative": -7,
+      "zero": 0,
+      "fraction": 1.5,
+      "negative fraction": -0.25,
+      "small": 1.5e-07,
+      "tiny": 0.0001,
+      "large": 1e+20,
+      "precise": 123.456789012345,
+      "true": true,
+      "false": false,
+      "null": null,
+      "empty object": {},
+      "empty list": [],
       "list": [
        1,
        "two",
@@ -5260,30 +5265,17 @@
         ]
        }
       ],
-      "null": null,
-      "tiny": 0.0001,
-      "true": true,
-      "zero": 0,
-      "false": false,
-      "large": 1e+20,
-      "small": 1.5e-07,
       "nested": {
        "b": {
-        "a": 1,
         "aa": [
          {
           "c": "d"
          }
-        ]
+        ],
+        "a": 1
        }
       },
-      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-      "precise": 123.456789012345,
-      "fraction": 1.5,
-      "negative": -7,
-      "empty list": [],
-      "empty object": {},
-      "negative fraction": -0.25
+      "": "empty key"
      },
      "title": "test title"
     }
@@ -5299,8 +5291,21 @@
        "name": "alpha"
       },
       "arguments": {
-       "": "empty key",
+       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
        "int": 42,
+       "negative": -7,
+       "zero": 0,
+       "fraction": 1.5,
+       "negative fraction": -0.25,
+       "small": 1.5e-07,
+       "tiny": 0.0001,
+       "large": 1e+20,
+       "precise": 123.456789012345,
+       "true": true,
+       "false": false,
+       "null": null,
+       "empty object": {},
+       "empty list": [],
        "list": [
         1,
         "two",
@@ -5311,30 +5316,17 @@
          ]
         }
        ],
-       "null": null,
-       "tiny": 0.0001,
-       "true": true,
-       "zero": 0,
-       "false": false,
-       "large": 1e+20,
-       "small": 1.5e-07,
        "nested": {
         "b": {
-         "a": 1,
          "aa": [
           {
            "c": "d"
           }
-         ]
+         ],
+         "a": 1
         }
        },
-       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-       "precise": 123.456789012345,
-       "fraction": 1.5,
-       "negative": -7,
-       "empty list": [],
-       "empty object": {},
-       "negative fraction": -0.25
+       "": "empty key"
       },
       "title": "test title"
      },
@@ -5364,8 +5356,21 @@
       "name": "alpha"
      },
      "arguments": {
-      "": "empty key",
+      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
       "int": 42,
+      "negative": -7,
+      "zero": 0,
+      "fraction": 1.5,
+      "negative fraction": -0.25,
+      "small": 1.5e-07,
+      "tiny": 0.0001,
+      "large": 1e+20,
+      "precise": 123.456789012345,
+      "true": true,
+      "false": false,
+      "null": null,
+      "empty object": {},
+      "empty list": [],
       "list": [
        1,
        "two",
@@ -5376,30 +5381,17 @@
         ]
        }
       ],
-      "null": null,
-      "tiny": 0.0001,
-      "true": true,
-      "zero": 0,
-      "false": false,
-      "large": 1e+20,
-      "small": 1.5e-07,
       "nested": {
        "b": {
-        "a": 1,
         "aa": [
          {
           "c": "d"
          }
-        ]
+        ],
+        "a": 1
        }
       },
-      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-      "precise": 123.456789012345,
-      "fraction": 1.5,
-      "negative": -7,
-      "empty list": [],
-      "empty object": {},
-      "negative fraction": -0.25
+      "": "empty key"
      },
      "title": "test title"
     }
@@ -5415,8 +5407,21 @@
        "name": "alpha"
       },
       "arguments": {
-       "": "empty key",
+       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
        "int": 42,
+       "negative": -7,
+       "zero": 0,
+       "fraction": 1.5,
+       "negative fraction": -0.25,
+       "small": 1.5e-07,
+       "tiny": 0.0001,
+       "large": 1e+20,
+       "precise": 123.456789012345,
+       "true": true,
+       "false": false,
+       "null": null,
+       "empty object": {},
+       "empty list": [],
        "list": [
         1,
         "two",
@@ -5427,30 +5432,17 @@
          ]
         }
        ],
-       "null": null,
-       "tiny": 0.0001,
-       "true": true,
-       "zero": 0,
-       "false": false,
-       "large": 1e+20,
-       "small": 1.5e-07,
        "nested": {
         "b": {
-         "a": 1,
          "aa": [
           {
            "c": "d"
           }
-         ]
+         ],
+         "a": 1
         }
        },
-       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-       "precise": 123.456789012345,
-       "fraction": 1.5,
-       "negative": -7,
-       "empty list": [],
-       "empty object": {},
-       "negative fraction": -0.25
+       "": "empty key"
       },
       "title": "test title"
      },
@@ -5480,8 +5472,21 @@
       "name": "alpha"
      },
      "arguments": {
-      "": "empty key",
+      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
       "int": 42,
+      "negative": -7,
+      "zero": 0,
+      "fraction": 1.5,
+      "negative fraction": -0.25,
+      "small": 1.5e-07,
+      "tiny": 0.0001,
+      "large": 1e+20,
+      "precise": 123.456789012345,
+      "true": true,
+      "false": false,
+      "null": null,
+      "empty object": {},
+      "empty list": [],
       "list": [
        1,
        "two",
@@ -5492,30 +5497,17 @@
         ]
        }
       ],
-      "null": null,
-      "tiny": 0.0001,
-      "true": true,
-      "zero": 0,
-      "false": false,
-      "large": 1e+20,
-      "small": 1.5e-07,
       "nested": {
        "b": {
-        "a": 1,
         "aa": [
          {
           "c": "d"
          }
-        ]
+        ],
+        "a": 1
        }
       },
-      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-      "precise": 123.456789012345,
-      "fraction": 1.5,
-      "negative": -7,
-      "empty list": [],
-      "empty object": {},
-      "negative fraction": -0.25
+      "": "empty key"
      },
      "title": "test title"
     }
@@ -5531,8 +5523,21 @@
        "name": "alpha"
       },
       "arguments": {
-       "": "empty key",
+       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
        "int": 42,
+       "negative": -7,
+       "zero": 0,
+       "fraction": 1.5,
+       "negative fraction": -0.25,
+       "small": 1.5e-07,
+       "tiny": 0.0001,
+       "large": 1e+20,
+       "precise": 123.456789012345,
+       "true": true,
+       "false": false,
+       "null": null,
+       "empty object": {},
+       "empty list": [],
        "list": [
         1,
         "two",
@@ -5543,30 +5548,17 @@
          ]
         }
        ],
-       "null": null,
-       "tiny": 0.0001,
-       "true": true,
-       "zero": 0,
-       "false": false,
-       "large": 1e+20,
-       "small": 1.5e-07,
        "nested": {
         "b": {
-         "a": 1,
          "aa": [
           {
            "c": "d"
           }
-         ]
+         ],
+         "a": 1
         }
        },
-       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-       "precise": 123.456789012345,
-       "fraction": 1.5,
-       "negative": -7,
-       "empty list": [],
-       "empty object": {},
-       "negative fraction": -0.25
+       "": "empty key"
       },
       "title": "test title"
      },
@@ -5596,8 +5588,21 @@
       "name": "alpha"
      },
      "arguments": {
-      "": "empty key",
+      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
       "int": 42,
+      "negative": -7,
+      "zero": 0,
+      "fraction": 1.5,
+      "negative fraction": -0.25,
+      "small": 1.5e-07,
+      "tiny": 0.0001,
+      "large": 1e+20,
+      "precise": 123.456789012345,
+      "true": true,
+      "false": false,
+      "null": null,
+      "empty object": {},
+      "empty list": [],
       "list": [
        1,
        "two",
@@ -5608,30 +5613,17 @@
         ]
        }
       ],
-      "null": null,
-      "tiny": 0.0001,
-      "true": true,
-      "zero": 0,
-      "false": false,
-      "large": 1e+20,
-      "small": 1.5e-07,
       "nested": {
        "b": {
-        "a": 1,
         "aa": [
          {
           "c": "d"
          }
-        ]
+        ],
+        "a": 1
        }
       },
-      "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-      "precise": 123.456789012345,
-      "fraction": 1.5,
-      "negative": -7,
-      "empty list": [],
-      "empty object": {},
-      "negative fraction": -0.25
+      "": "empty key"
      },
      "title": "test title"
     }
@@ -5647,8 +5639,21 @@
        "name": "alpha"
       },
       "arguments": {
-       "": "empty key",
+       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
        "int": 42,
+       "negative": -7,
+       "zero": 0,
+       "fraction": 1.5,
+       "negative fraction": -0.25,
+       "small": 1.5e-07,
+       "tiny": 0.0001,
+       "large": 1e+20,
+       "precise": 123.456789012345,
+       "true": true,
+       "false": false,
+       "null": null,
+       "empty object": {},
+       "empty list": [],
        "list": [
         1,
         "two",
@@ -5659,30 +5664,17 @@
          ]
         }
        ],
-       "null": null,
-       "tiny": 0.0001,
-       "true": true,
-       "zero": 0,
-       "false": false,
-       "large": 1e+20,
-       "small": 1.5e-07,
        "nested": {
         "b": {
-         "a": 1,
          "aa": [
           {
            "c": "d"
           }
-         ]
+         ],
+         "a": 1
         }
        },
-       "message": "line one\nline two\ttabbed \"quoted\" back\\slash </script> & é 名 🚀    \u0001",
-       "precise": 123.456789012345,
-       "fraction": 1.5,
-       "negative": -7,
-       "empty list": [],
-       "empty object": {},
-       "negative fraction": -0.25
+       "": "empty key"
       },
       "title": "test title"
      },
@@ -5870,7 +5862,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"actions\":[{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true,\"input_schema\":{\"type\":\"object\",\"required\":[\"message\"],\"properties\":{\"count\":{\"type\":\"number\",\"maximum\":10,\"minimum\":0.5},\"message\":{\"type\":\"string\",\"default\":null,\"description\":\"test message\"}},\"additionalProperties\":false},\"description\":\"test-alpha-description é 🚀\"},{\"group\":\"test-mcp\",\"name\":\"beta\",\"available\":true,\"input_schema\":{},\"description\":\"test-beta-description\"},{\"group\":\"test-sandbox\",\"name\":\"exec\",\"available\":true,\"input_schema\":{\"type\":\"object\"},\"description\":\"test-exec\"}]}"
+      "text": "{\"actions\":[{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"message\":{\"type\":\"string\",\"description\":\"test message\",\"default\":null},\"count\":{\"type\":\"number\",\"minimum\":0.5,\"maximum\":10}},\"required\":[\"message\"],\"additionalProperties\":false},\"description\":\"test-alpha-description é 🚀\"},{\"group\":\"test-mcp\",\"name\":\"beta\",\"available\":true,\"input_schema\":{},\"description\":\"test-beta-description\"},{\"group\":\"test-sandbox\",\"name\":\"exec\",\"available\":true,\"input_schema\":{\"type\":\"object\"},\"description\":\"test-exec\"}]}"
      }
     ],
     "structuredContent": {
@@ -5881,21 +5873,21 @@
        "available": true,
        "input_schema": {
         "type": "object",
+        "properties": {
+         "message": {
+          "type": "string",
+          "description": "test message",
+          "default": null
+         },
+         "count": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 10
+         }
+        },
         "required": [
          "message"
         ],
-        "properties": {
-         "count": {
-          "type": "number",
-          "maximum": 10,
-          "minimum": 0.5
-         },
-         "message": {
-          "type": "string",
-          "default": null,
-          "description": "test message"
-         }
-        },
         "additionalProperties": false
        },
        "description": "test-alpha-description é 🚀"
@@ -6006,7 +5998,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true,\"input_schema\":{\"type\":\"object\",\"required\":[\"message\"],\"properties\":{\"count\":{\"type\":\"number\",\"maximum\":10,\"minimum\":0.5},\"message\":{\"type\":\"string\",\"default\":null,\"description\":\"test message\"}},\"additionalProperties\":false},\"description\":\"test-alpha-description é 🚀\"}"
+      "text": "{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"message\":{\"type\":\"string\",\"description\":\"test message\",\"default\":null},\"count\":{\"type\":\"number\",\"minimum\":0.5,\"maximum\":10}},\"required\":[\"message\"],\"additionalProperties\":false},\"description\":\"test-alpha-description é 🚀\"}"
      }
     ],
     "structuredContent": {
@@ -6015,21 +6007,21 @@
      "available": true,
      "input_schema": {
       "type": "object",
+      "properties": {
+       "message": {
+        "type": "string",
+        "description": "test message",
+        "default": null
+       },
+       "count": {
+        "type": "number",
+        "minimum": 0.5,
+        "maximum": 10
+       }
+      },
       "required": [
        "message"
       ],
-      "properties": {
-       "count": {
-        "type": "number",
-        "maximum": 10,
-        "minimum": 0.5
-       },
-       "message": {
-        "type": "string",
-        "default": null,
-        "description": "test message"
-       }
-      },
       "additionalProperties": false
      },
      "description": "test-alpha-description é 🚀"
@@ -7164,231 +7156,6 @@
     "isError": false,
     "resultType": "complete"
    }
-  }
- ],
- "floats": [
-  {
-   "value": 0.1,
-   "text": "0.1",
-   "json_dumps": "0.1"
-  },
-  {
-   "value": 0.5,
-   "text": "0.5",
-   "json_dumps": "0.5"
-  },
-  {
-   "value": -0.25,
-   "text": "-0.25",
-   "json_dumps": "-0.25"
-  },
-  {
-   "value": 1.5,
-   "text": "1.5",
-   "json_dumps": "1.5"
-  },
-  {
-   "value": 123.456789012345,
-   "text": "123.456789012345",
-   "json_dumps": "123.456789012345"
-  },
-  {
-   "value": 123456789.125,
-   "text": "123456789.125",
-   "json_dumps": "123456789.125"
-  },
-  {
-   "value": 0.0001,
-   "text": "0.0001",
-   "json_dumps": "0.0001"
-  },
-  {
-   "value": 0.00015,
-   "text": "0.00015",
-   "json_dumps": "0.00015"
-  },
-  {
-   "value": 1e-05,
-   "text": "0.00001",
-   "json_dumps": "1e-05"
-  },
-  {
-   "value": 1.5e-05,
-   "text": "0.000015",
-   "json_dumps": "1.5e-05"
-  },
-  {
-   "value": 1e-06,
-   "text": "1e-6",
-   "json_dumps": "1e-06"
-  },
-  {
-   "value": -1.5e-07,
-   "text": "-1.5e-7",
-   "json_dumps": "-1.5e-07"
-  },
-  {
-   "value": 5e-324,
-   "text": "5e-324",
-   "json_dumps": "5e-324"
-  },
-  {
-   "value": 1000000000000000.5,
-   "text": "1000000000000000.5",
-   "json_dumps": "1000000000000000.5"
-  },
-  {
-   "value": 9007199254740994.0,
-   "text": "9007199254740994.0",
-   "json_dumps": "9007199254740994.0"
-  },
-  {
-   "value": 1e+16,
-   "text": "1e+16",
-   "json_dumps": "1e+16"
-  },
-  {
-   "value": 1.5e+16,
-   "text": "1.5e+16",
-   "json_dumps": "1.5e+16"
-  },
-  {
-   "value": 1e+17,
-   "text": "1e+17",
-   "json_dumps": "1e+17"
-  },
-  {
-   "value": 1.2345678901234568e+17,
-   "text": "1.2345678901234568e+17",
-   "json_dumps": "1.2345678901234568e+17"
-  },
-  {
-   "value": 1e+20,
-   "text": "1e+20",
-   "json_dumps": "1e+20"
-  },
-  {
-   "value": 1e+21,
-   "text": "1e+21",
-   "json_dumps": "1e+21"
-  },
-  {
-   "value": 1e+22,
-   "text": "1e+22",
-   "json_dumps": "1e+22"
-  },
-  {
-   "value": 1.7976931348623157e+308,
-   "text": "1.7976931348623157e+308",
-   "json_dumps": "1.7976931348623157e+308"
-  }
- ],
- "limits": [
-  {
-   "value": 30.0,
-   "g": "30"
-  },
-  {
-   "value": 180.0,
-   "g": "180"
-  },
-  {
-   "value": 2.5,
-   "g": "2.5"
-  },
-  {
-   "value": 0.5,
-   "g": "0.5"
-  },
-  {
-   "value": 0.1,
-   "g": "0.1"
-  },
-  {
-   "value": 0.0001,
-   "g": "0.0001"
-  },
-  {
-   "value": 1e-05,
-   "g": "1e-05"
-  },
-  {
-   "value": 100000.0,
-   "g": "100000"
-  },
-  {
-   "value": 1000000.0,
-   "g": "1e+06"
-  },
-  {
-   "value": 1234567.0,
-   "g": "1.23457e+06"
-  },
-  {
-   "value": 1e+16,
-   "g": "1e+16"
-  }
- ],
- "strings": [
-  {
-   "value": "plain",
-   "text": "\"plain\"",
-   "json_dumps": "\"plain\"",
-   "repr": "'plain'"
-  },
-  {
-   "value": "it's",
-   "text": "\"it's\"",
-   "json_dumps": "\"it's\"",
-   "repr": "\"it's\""
-  },
-  {
-   "value": "say \"hi\"",
-   "text": "\"say \\\"hi\\\"\"",
-   "json_dumps": "\"say \\\"hi\\\"\"",
-   "repr": "'say \"hi\"'"
-  },
-  {
-   "value": "it's \"both\"",
-   "text": "\"it's \\\"both\\\"\"",
-   "json_dumps": "\"it's \\\"both\\\"\"",
-   "repr": "'it\\'s \"both\"'"
-  },
-  {
-   "value": "back\\slash",
-   "text": "\"back\\\\slash\"",
-   "json_dumps": "\"back\\\\slash\"",
-   "repr": "'back\\\\slash'"
-  },
-  {
-   "value": "line\nbreak\ttab\rreturn\bback\fform",
-   "text": "\"line\\nbreak\\ttab\\rreturn\\bback\\fform\"",
-   "json_dumps": "\"line\\nbreak\\ttab\\rreturn\\bback\\fform\"",
-   "repr": "'line\\nbreak\\ttab\\rreturn\\x08back\\x0cform'"
-  },
-  {
-   "value": "\u0000\u0001\u001f ",
-   "text": "\"\\u0000\\u0001\\u001f \"",
-   "json_dumps": "\"\\u0000\\u0001\\u001f\\u007f\\u0080\\u009f\\u00a0\"",
-   "repr": "'\\x00\\x01\\x1f\\x7f\\x80\\x9f\\xa0'"
-  },
-  {
-   "value": "é 名 🚀",
-   "text": "\"é 名 🚀\"",
-   "json_dumps": "\"\\u00e9 \\u540d \\ud83d\\ude80\"",
-   "repr": "'é 名 🚀'"
-  },
-  {
-   "value": "  ",
-   "text": "\"  \"",
-   "json_dumps": "\"\\u2028\\u2029\"",
-   "repr": "'\\u2028\\u2029'"
-  },
-  {
-   "value": "</script> & <b>",
-   "text": "\"</script> & <b>\"",
-   "json_dumps": "\"</script> & <b>\"",
-   "repr": "'</script> & <b>'"
   }
  ]
 }

@@ -5,8 +5,6 @@ go_library(
     srcs = [
         "bearer.go",
         "errors.go",
-        "hostguard.go",
-        "pyjson.go",
         "results.go",
         "server.go",
         "tools.go",

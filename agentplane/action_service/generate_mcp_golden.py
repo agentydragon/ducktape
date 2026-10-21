@@ -6,9 +6,6 @@ protojson, or the gRPC status code and message that stand for the exception this
 `CallToolResult` this service's own tool function answers when its collaborators return the same records. The listing vectors are the
 eight tools as FastMCP lists them, and the server's instructions.
 
-Free-form JSON (arguments, schemas, results, errors) is given with object keys in the order PostgreSQL's JSONB
-returns them in, shortest key first, then bytewise: the order both services read stored values in.
-
 Regenerate both files with
 `bb run //agentplane/action_service:generate_mcp_golden_bin -- "$PWD/agentplane/mcp_edge/mcpserver"`.
 """
@@ -25,7 +22,6 @@ from uuid import UUID
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import FastMCPError
-from fastmcp.tools.base import default_serializer
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.types import CallToolResult, ImageContent, TextContent, ToolAnnotations
@@ -91,44 +87,28 @@ STARTED = datetime(2026, 1, 2, 3, 4, 7, 5, tzinfo=UTC)
 COMPLETED = datetime(2026, 1, 2, 3, 5, 0, 999999, tzinfo=UTC)
 
 
-def jsonb(value: JsonValue) -> JsonValue:
-    """`value` as JSONB returns it: object keys shortest first, then bytewise."""
-    if isinstance(value, dict):
-        return {key: jsonb(value[key]) for key in sorted(value, key=lambda key: (len(key.encode()), key.encode()))}
-    if isinstance(value, list):
-        return [jsonb(item) for item in value]
-    return value
-
-
-def jsonb_object(value: Json) -> Json:
-    ordered = jsonb(value)
-    assert isinstance(ordered, dict)
-    return ordered
-
-
-# Every JSON kind the Go server re-encodes, with the characters whose escaping differs between encoders.
-EVERY_JSON_KIND = jsonb_object(
-    {
-        "message": 'line one\nline two\ttabbed "quoted" back\\slash </script> & é 名 🚀 \u2028 \x7f \x01',
-        "int": 42,
-        "negative": -7,
-        "zero": 0,
-        "fraction": 1.5,
-        "negative fraction": -0.25,
-        "small": 1.5e-7,
-        "tiny": 0.0001,
-        "large": 1e20,
-        "precise": 123.456789012345,
-        "true": True,
-        "false": False,
-        "null": None,
-        "empty object": {},
-        "empty list": [],
-        "list": [1, "two", None, {"three": [3.5]}],
-        "nested": {"b": {"aa": [{"c": "d"}], "a": 1}},
-        "": "empty key",
-    }
-)
+# Every JSON kind, with characters JSON encoders escape differently, as arguments carried through
+# `google.protobuf.Struct`.
+EVERY_JSON_KIND: Json = {
+    "message": 'line one\nline two\ttabbed "quoted" back\\slash </script> & é 名 🚀 \u2028 \x7f \x01',
+    "int": 42,
+    "negative": -7,
+    "zero": 0,
+    "fraction": 1.5,
+    "negative fraction": -0.25,
+    "small": 1.5e-7,
+    "tiny": 0.0001,
+    "large": 1e20,
+    "precise": 123.456789012345,
+    "true": True,
+    "false": False,
+    "null": None,
+    "empty object": {},
+    "empty list": [],
+    "list": [1, "two", None, {"three": [3.5]}],
+    "nested": {"b": {"aa": [{"c": "d"}], "a": 1}},
+    "": "empty key",
+}
 
 
 def catalog() -> ActionCatalog:
@@ -143,17 +123,15 @@ def catalog() -> ActionCatalog:
                 actions={
                     "alpha": ActionDefinition(
                         description="test-alpha-description é 🚀",
-                        input_schema=jsonb_object(
-                            {
-                                "type": "object",
-                                "properties": {
-                                    "message": {"type": "string", "description": "test message", "default": None},
-                                    "count": {"type": "number", "minimum": 0.5, "maximum": 10},
-                                },
-                                "required": ["message"],
-                                "additionalProperties": False,
-                            }
-                        ),
+                        input_schema={
+                            "type": "object",
+                            "properties": {
+                                "message": {"type": "string", "description": "test message", "default": None},
+                                "count": {"type": "number", "minimum": 0.5, "maximum": 10},
+                            },
+                            "required": ["message"],
+                            "additionalProperties": False,
+                        },
                     ),
                     "beta": ActionDefinition(
                         description="test-beta-description",
@@ -406,7 +384,7 @@ def request(
         id=UUID(int=number),
         idempotency_key=f"test-key-{number}",
         action=ActionIdentity(group=group, name=name),
-        arguments=jsonb_object(arguments or {}),
+        arguments=arguments or {},
         title=f"test title {number}",
         description=description,
         caller=CALLER,
@@ -472,8 +450,8 @@ def execution(
     return ExecutionView(
         id=UUID(int=0xE1),
         state=state,
-        result=jsonb(result),
-        error=None if error is None else jsonb_object(error),
+        result=result,
+        error=error,
         created_at=DECIDED,
         started_at=STARTED if started else None,
         completed_at=COMPLETED if completed else None,
@@ -590,7 +568,7 @@ def policy() -> CallerActionPolicyView:
         ArgumentSchemaView(
             type=PolicyKind.ARGUMENT_SCHEMA,
             actions={"test-mcp": ["alpha"]},
-            argument_schema=jsonb_object({"type": "object", "properties": {"count": {"maximum": 2.5}}}),
+            argument_schema={"type": "object", "properties": {"count": {"maximum": 2.5}}},
         ),
         GitHubRepositoryView(
             type=PolicyKind.GITHUB_REPOSITORY, actions=actions, owner="test-owner", repository="test-repo"
@@ -1031,69 +1009,17 @@ async def calls() -> list[JsonValue]:
     return vectors
 
 
-# Floats as each of this service's encoders writes them. A whole number at most 2**53 is left out: JSON read
-# through `google.protobuf.Struct` cannot tell 3.0 from 3, so the Go server writes such a number as an integer.
-FLOATS = (
-    0.1,
-    0.5,
-    -0.25,
-    1.5,
-    123.456789012345,
-    123456789.125,
-    1e-4,
-    1.5e-4,
-    1e-5,
-    1.5e-5,
-    1e-6,
-    -1.5e-7,
-    5e-324,
-    1e15 + 0.5,
-    2.0**53 + 2,
-    1e16,
-    1.5e16,
-    1e17,
-    1.2345678901234568e17,
-    1e20,
-    1e21,
-    1e22,
-    1.7976931348623157e308,
-)
-# Limits as an operator configures them, which texts write with `:g`.
-LIMITS = (30.0, 180.0, 2.5, 0.5, 0.1, 0.0001, 1e-5, 100000.0, 1000000.0, 1234567.0, 1e16)
-# Strings whose escaping differs between encoders.
-STRINGS = (
-    "plain",
-    "it's",
-    'say "hi"',
-    'it\'s "both"',
-    "back\\slash",
-    "line\nbreak\ttab\rreturn\bback\fform",
-    "\x00\x01\x1f\x7f\x80\x9f\xa0",
-    "é 名 🚀",
-    "\u2028\u2029",
-    "</script> & <b>",
-)
-
-
 async def build() -> Json:
     return {
         "server": {
             "name": server(Core([]), MAX_WAIT_SECONDS).name,
             "instructions": [
                 {"max_wait_seconds": seconds, "text": server(Core([]), seconds).instructions}
-                for seconds in (MAX_WAIT_SECONDS, 2.5, 1234567.0, 0.0001)
+                for seconds in (MAX_WAIT_SECONDS, 2.5)
             ],
         },
         "catalog": proto_groups(catalog()),
         "calls": await calls(),
-        "floats": [
-            {"value": value, "text": default_serializer(value), "json_dumps": json.dumps(value)} for value in FLOATS
-        ],
-        "limits": [{"value": value, "g": f"{value:g}"} for value in LIMITS],
-        "strings": [
-            {"value": value, "text": default_serializer(value), "json_dumps": json.dumps(value), "repr": repr(value)}
-            for value in STRINGS
-        ],
     }
 
 
