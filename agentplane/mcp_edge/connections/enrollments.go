@@ -20,8 +20,8 @@ import (
 // turns an allowed one into a grant; between the two, the operator who previews it first, from one browser, decides
 // it. Only hashes of the handle in the consent URL and of the browser's binding are stored.
 
-// operator is the person an operator call acts for: the issuer of their token and its subject.
-type operator struct{ issuer, subject string }
+// Operator is a person who decides enrollments: the issuer of their token and its subject.
+type Operator struct{ Issuer, Subject string }
 
 type verdict string
 
@@ -32,19 +32,22 @@ const (
 
 // enrollment is a consent as an operator previews and decides it.
 type enrollment struct {
-	id         uuid.UUID
-	clientID   string
-	clientName *string
+	id uuid.UUID
+	// issuer and clientID are the authorization server's and its client's.
+	issuer, clientID string
+	clientName       *string
 	// redirectURI is the OAuth client's; upstreamURL is where an allowed consent sends the browser next.
 	redirectURI, upstreamURL string
 	expiresAt                time.Time
 	version                  int64
 	// browserHash and the operator are those of the first preview; nil until then.
 	browserHash *string
-	operator    *operator
+	operator    *Operator
 	// verdict is nil until the enrollment is decided, and allowed is nil unless it was allowed.
 	verdict *verdict
 	allowed *allowance
+	// claimedAt is when a code exchange turned the allowed enrollment into a grant; nil until then.
+	claimedAt *time.Time
 }
 
 // decision is an operator's decision on an enrollment.
@@ -94,20 +97,7 @@ func digest(value string) string {
 
 // lockEnrollment reads the live enrollment the handle names and locks it.
 func lockEnrollment(ctx context.Context, tx *sql.Tx, handle string) (enrollment, error) {
-	var e enrollment
-	var issuer, subject, displayName *string
-	var caller []byte
-	var connectionID *uuid.UUID
-	var connectionVersion *int64
-	err := tx.QueryRowContext(
-		ctx, `
-		SELECT id, client_id, client_name, redirect_uri, upstream_url, expires_at, version, browser_hash, operator_issuer,
-			operator_subject, verdict, caller, display_name, connection_id, connection_version
-		FROM connection_enrollment WHERE handle_hash = $1 FOR UPDATE`, digest(handle),
-	).Scan(
-		&e.id, &e.clientID, &e.clientName, &e.redirectURI, &e.upstreamURL, &e.expiresAt, &e.version, &e.browserHash,
-		&issuer, &subject, &e.verdict, &caller, &displayName, &connectionID, &connectionVersion,
-	)
+	e, err := lockEnrollmentWhere(ctx, tx, "handle_hash", digest(handle))
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return e, errEnrollmentNotFound
@@ -116,8 +106,32 @@ func lockEnrollment(ctx context.Context, tx *sql.Tx, handle string) (enrollment,
 	case !e.expiresAt.After(time.Now()):
 		return e, errEnrollmentExpired
 	}
+	return e, nil
+}
+
+// lockEnrollmentWhere reads the enrollment whose column holds the value, live or not, and locks it.
+func lockEnrollmentWhere(ctx context.Context, tx *sql.Tx, column string, value any) (enrollment, error) {
+	var e enrollment
+	var issuer, subject, displayName *string
+	var caller []byte
+	var connectionID *uuid.UUID
+	var connectionVersion *int64
+	err := tx.QueryRowContext(
+		ctx, `
+		SELECT id, issuer, client_id, client_name, redirect_uri, upstream_url, expires_at, version, browser_hash,
+			operator_issuer, operator_subject, verdict, caller, display_name, connection_id, connection_version,
+			exchange_claimed_at
+		FROM connection_enrollment WHERE `+column+` = $1 FOR UPDATE`, value,
+	).Scan(
+		&e.id, &e.issuer, &e.clientID, &e.clientName, &e.redirectURI, &e.upstreamURL, &e.expiresAt, &e.version,
+		&e.browserHash, &issuer, &subject, &e.verdict, &caller, &displayName, &connectionID, &connectionVersion,
+		&e.claimedAt,
+	)
+	if err != nil {
+		return e, err
+	}
 	if issuer != nil && subject != nil {
-		e.operator = &operator{issuer: *issuer, subject: *subject}
+		e.operator = &Operator{Issuer: *issuer, Subject: *subject}
 	}
 	if caller != nil {
 		account, err := decodeAccount(caller)
@@ -138,7 +152,7 @@ func lockEnrollment(ctx context.Context, tx *sql.Tx, handle string) (enrollment,
 }
 
 // requireBrowser refuses all but the browser and operator of the enrollment's first preview.
-func (e enrollment) requireBrowser(browserBinding string, by operator) error {
+func (e enrollment) requireBrowser(browserBinding string, by Operator) error {
 	if e.browserHash == nil || subtle.ConstantTimeCompare([]byte(*e.browserHash), []byte(digest(browserBinding))) != 1 ||
 		e.operator == nil || *e.operator != by {
 		return errOtherBrowser
@@ -147,7 +161,7 @@ func (e enrollment) requireBrowser(browserBinding string, by operator) error {
 }
 
 // previewEnrollment shows the operator the enrollment, which the first preview binds to its browser and operator.
-func (s *Store) previewEnrollment(ctx context.Context, handle, browserBinding string, by operator) (enrollment, error) {
+func (s *Store) previewEnrollment(ctx context.Context, handle, browserBinding string, by Operator) (enrollment, error) {
 	var previewed enrollment
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		e, err := lockEnrollment(ctx, tx, handle)
@@ -158,7 +172,7 @@ func (s *Store) previewEnrollment(ctx context.Context, handle, browserBinding st
 			hash := digest(browserBinding)
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE connection_enrollment SET browser_hash = $2, operator_issuer = $3, operator_subject = $4
-				WHERE id = $1`, e.id, hash, by.issuer, by.subject); err != nil {
+				WHERE id = $1`, e.id, hash, by.Issuer, by.Subject); err != nil {
 				return err
 			}
 			e.browserHash, e.operator = &hash, &by
@@ -180,7 +194,7 @@ func (d decision) repeats(e enrollment) bool {
 // decideEnrollment records the operator's decision once. A repeat of the recorded decision, such as a retry after a lost
 // answer, answers with its result; any other decision after one is refused. An allow records the account and the Connection: it grants nothing until the
 // authorization server turns it into a grant.
-func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision, by operator) (decisionResult, error) {
+func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision, by Operator) (decisionResult, error) {
 	var result decisionResult
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		e, err := lockEnrollment(ctx, tx, handle)

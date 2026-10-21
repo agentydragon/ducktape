@@ -1,4 +1,4 @@
-"""The Goose baseline equals the schema the Alembic history built, and takes over a database that history built."""
+"""Goose takes over a database the Alembic history built, and leaves it the schema it builds from scratch."""
 
 import subprocess
 from collections.abc import Iterator
@@ -87,32 +87,31 @@ def _engine(url: str) -> Iterator[Engine]:
         engine.dispose()
 
 
-def test_baseline_matches_the_alembic_head(postgres_admin_url: str, database_names: DatabaseNames) -> None:
+def test_goose_builds_over_the_alembic_head_what_it_builds_from_scratch(
+    postgres_admin_url: str, database_names: DatabaseNames
+) -> None:
     with (
         create_temporary_database(postgres_admin_url, database_names()) as alembic_url,
         create_temporary_database(postgres_admin_url, database_names()) as goose_url,
     ):
         RUNNER.apply(alembic_url)
+        _migrate(alembic_url)
         _migrate(goose_url)
         with _engine(alembic_url) as alembic, _engine(goose_url) as goose:
-            expected = _catalog(alembic)
+            expected = _catalog(goose)
             assert expected["columns"]
-            assert _catalog(goose) == expected
+            assert _catalog(alembic) == expected
 
 
-def test_goose_leaves_an_alembic_database_and_its_rows_as_they_were(
-    postgres_admin_url: str, database_names: DatabaseNames
-) -> None:
+def test_goose_keeps_the_rows_of_an_alembic_database(postgres_admin_url: str, database_names: DatabaseNames) -> None:
     ids = {name: uuid4() for name in ("request", "decision", "execution", "connection", "token")}
     with create_temporary_database(postgres_admin_url, database_names()) as url, _engine(url) as engine:
         RUNNER.apply(url)
         with engine.begin() as conn:
             for insert in _ROWS.values():
                 conn.execute(text(insert), ids)
-        before = _catalog(engine)
         _migrate(url)
         _migrate(url)
-        assert _catalog(engine) == before
         with engine.connect() as conn:
             assert {table: conn.scalar(text(f"SELECT count(*) FROM {table}")) for table in _ROWS} == dict.fromkeys(
                 _ROWS, 1

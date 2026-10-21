@@ -66,9 +66,9 @@ func invalid(format string, args ...any) error {
 	return status.Error(codes.InvalidArgument, fmt.Sprintf(format, args...))
 }
 
-func (s *Service) operator(ctx context.Context) operator {
+func (s *Service) operator(ctx context.Context) Operator {
 	issuer, subject := s.gate.Operator(ctx)
-	return operator{issuer: issuer, subject: subject}
+	return Operator{Issuer: issuer, Subject: subject}
 }
 
 func parseConnectionID(value string) (uuid.UUID, error) {
@@ -141,7 +141,7 @@ func connectionView(c connection) (*pb.Connection, error) {
 		view.Grants = append(view.Grants, &pb.Grant{
 			Id: g.id.String(), ConnectionId: g.connectionID.String(), Revision: g.revision,
 			Caller: serviceAccount(g.caller), Issuer: g.issuer, ClientId: g.clientID, Status: grantStatus,
-			ActivationDeadline: timestamppb.New(g.activationDeadline), CreatedAt: timestamppb.New(g.createdAt),
+			ActivationDeadline: timestamp(g.activationDeadline), CreatedAt: timestamppb.New(g.createdAt),
 			ActivatedAt: timestamp(g.activatedAt), RevokedAt: timestamp(g.revokedAt),
 		})
 	}

@@ -126,9 +126,17 @@ func (c *testCallers) goStale() {
 	c.stale = true
 }
 
+// label makes the accounts the labeled ones, as the view sees labels added or removed.
+func (c *testCallers) label(accounts ...auth.Account) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.accounts = accounts
+}
+
 // served is the service over a database of its own, on a gRPC server with its HTTP facade.
 type served struct {
 	db      *sql.DB
+	store   *Store
 	gate    *testGate
 	callers *testCallers
 	client  pb.ConnectionServiceClient
@@ -162,8 +170,9 @@ func serve(t *testing.T) *served {
 		gate:    &testGate{refused: map[string]bool{}, draining: make(chan struct{})},
 		callers: &testCallers{accounts: []auth.Account{callerAccount, otherAccount}},
 	}
+	s.store = NewStore(db, s.callers)
 	server := grpc.NewServer()
-	pb.RegisterConnectionServiceServer(server, NewService(NewStore(db, s.callers), s.gate, updates))
+	pb.RegisterConnectionServiceServer(server, NewService(s.store, s.gate, updates))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

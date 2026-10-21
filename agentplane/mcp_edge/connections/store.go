@@ -63,11 +63,14 @@ type grant struct {
 	id, connectionID uuid.UUID
 	revision         int32
 	// caller is the ServiceAccount consent chose; a rebind changes the Connection's boundCaller, not this.
-	caller                        auth.Account
-	issuer, clientID              string
-	status                        grantStatus
-	activationDeadline, createdAt time.Time
-	activatedAt, revokedAt        *time.Time
+	caller           auth.Account
+	issuer, clientID string
+	status           grantStatus
+	// activationDeadline is set only on a grant the Python service bound pending, which could not be activated after
+	// it; the Go authorization server creates a grant active.
+	activationDeadline     *time.Time
+	createdAt              time.Time
+	activatedAt, revokedAt *time.Time
 }
 
 // connection is a Connection with every grant it has had, oldest revision first.
@@ -282,43 +285,57 @@ func (s *Store) find(ctx context.Context, ids []uuid.UUID) ([]connection, error)
 	return connections, err
 }
 
-// change locks the Connection, lets f change it, and writes it back and notifies UpdatesChannel when f reports that
-// it did. A Connection's grants are changed only under its lock.
+// change runs changeConnection in a transaction of its own.
 func (s *Store) change(ctx context.Context, id uuid.UUID, f func(*sql.Tx, *connection) (bool, error)) (connection, error) {
 	var changed connection
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
-		found, err := scanConnections(ctx, tx, `SELECT `+connectionColumns+` FROM external_connection WHERE id = $1 FOR UPDATE`, id)
-		if err != nil {
-			return err
-		}
-		if len(found) == 0 {
-			return errConnectionNotFound
-		}
-		changed = found[0]
-		wrote, err := f(tx, &changed)
-		if err != nil || !wrote {
-			return err
-		}
-		changed.version++
-		changed.updatedAt = now()
-		// NULL while the Connection is unbound.
-		var bound any
-		if changed.boundCaller != nil {
-			document, err := encodeAccount(*changed.boundCaller)
-			if err != nil {
-				return err
-			}
-			bound = document
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE external_connection SET display_name = $2, bound_caller = $3::jsonb, version = $4, updated_at = $5
-			WHERE id = $1`, changed.id, changed.displayName, bound, changed.version, changed.updatedAt); err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `SELECT pg_notify($1, '')`, UpdatesChannel)
+		var err error
+		changed, err = changeConnection(ctx, tx, id, f)
 		return err
 	})
 	return changed, err
+}
+
+// changeConnection locks the Connection, lets f change it, and writes it back and notifies UpdatesChannel when f
+// reports that it did. A Connection's grants are changed only under its lock.
+func changeConnection(
+	ctx context.Context, tx *sql.Tx, id uuid.UUID, f func(*sql.Tx, *connection) (bool, error),
+) (connection, error) {
+	found, err := scanConnections(ctx, tx, `SELECT `+connectionColumns+` FROM external_connection WHERE id = $1 FOR UPDATE`, id)
+	if err != nil {
+		return connection{}, err
+	}
+	if len(found) == 0 {
+		return connection{}, errConnectionNotFound
+	}
+	changed := found[0]
+	wrote, err := f(tx, &changed)
+	if err != nil || !wrote {
+		return changed, err
+	}
+	changed.version++
+	changed.updatedAt = now()
+	// NULL while the Connection is unbound.
+	var bound any
+	if changed.boundCaller != nil {
+		document, err := encodeAccount(*changed.boundCaller)
+		if err != nil {
+			return changed, err
+		}
+		bound = document
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE external_connection SET display_name = $2, bound_caller = $3::jsonb, version = $4, updated_at = $5
+		WHERE id = $1`, changed.id, changed.displayName, bound, changed.version, changed.updatedAt); err != nil {
+		return changed, err
+	}
+	return changed, notify(ctx, tx)
+}
+
+// notify wakes the readers of UpdatesChannel when tx commits.
+func notify(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `SELECT pg_notify($1, '')`, UpdatesChannel)
+	return err
 }
 
 func requireVersion(c *connection, expected int64) error {

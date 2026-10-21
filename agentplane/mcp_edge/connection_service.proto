@@ -198,7 +198,8 @@ message Grant {
   string issuer = 5;
   string client_id = 6;
   GrantStatus status = 7;
-  // A pending grant cannot authorize calls, and cannot be activated after this.
+  // Present only on a grant the Python service bound pending: a pending grant cannot authorize calls, and could not be
+  // activated after this.
   google.protobuf.Timestamp activation_deadline = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp activated_at = 10;

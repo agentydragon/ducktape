@@ -123,13 +123,13 @@ func TestAWatchSendsEveryConnectionInBoundedChunksThenEachChange(t *testing.T) {
 	if got := upsert(t, stream); got.GetId() != rebound.GetId() || *accountOf(got.GetBoundCaller()) != otherAccount {
 		t.Errorf("upsert %v, want the rebind of %s", got, rebound.GetId())
 	}
-	// A Connection the authorization server creates, which notifies UpdatesChannel as it commits.
-	created := s.connect(t, "test-created", now(), &callerAccount, storedGrant{caller: callerAccount, status: grantPending})
-	if _, err := s.db.ExecContext(t.Context(), `SELECT pg_notify($1, '')`, UpdatesChannel); err != nil {
+	// A Connection the authorization server's code exchange creates.
+	created := s.allowed(t, callerAccount)
+	if err := s.activate(t, created, approver); err != nil {
 		t.Fatal(err)
 	}
-	if got := upsert(t, stream); got.GetId() != created.String() {
-		t.Errorf("upsert %v, want the created %s", got, created)
+	if got := upsert(t, stream); len(got.GetGrants()) != 1 || got.GetGrants()[0].GetId() != created.String() {
+		t.Errorf("upsert %v, want the Connection of grant %s", got, created)
 	}
 }
 
