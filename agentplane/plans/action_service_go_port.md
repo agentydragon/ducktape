@@ -63,10 +63,11 @@ operator chose a toolkit inside the service (2026-10-19 PDT) and then `zitadel/o
 (maintained: `v3.51.16` on 2026-10-15, against `fosite`'s last tag in December 2024). Ory Hydra and a Python OAuth
 edge were rejected.
 
-Stage K opens with a one-day spike that implements `authorize` and `token` for a CIMD client against a PostgreSQL
-storage and answers what is unverified: whether the `openid` scope and id token can be left out for plain OAuth
-clients, whether the client lookup resolves a CIMD URL, and whether RFC 8707 `resource` and RFC 9207 `iss` fit.
-If the OIDC-first shape fights plain OAuth the fallback is `fosite`.
+The stage K spike (2026-10-21) kept `zitadel/oidc` v3: go-sdk's MCP client authorized end to end against it with a
+CIMD client, PKCE, RFC 8707 `resource` and RFC 9207 `iss`. `op` always mints an id token and refuses an authorize
+with no `scope`, so the server overrides code exchange, refresh and authorize-request checks through `LegacyServer`
+(experimental until v4: pin v3), and mints and stores its own tokens. Fetching CIMD documents, DCR, `resource`,
+`iss`, revocation and introspection are ours.
 
 Defaults inside it:
 
@@ -91,16 +92,11 @@ only an operator does is in three services, one per destination, so a later move
 enrollments) and `WebPushService`. They live in files apart from `action_service.proto`, so the OpenAPI document
 `proto_openapi` renders from it describes only what an agent may call. What the servicers and callers still owe the protos:
 
-- The rendered document is served at `/openapi.json`, linked from `/llms.txt`, and replaces
-  `docs/agents/http_api.md` (stage D).
-- `WatchActionRequest` streams the receipt now and on each change and ends at the terminal or decision condition
-  or the client's deadline. It replaces `wait_seconds` and `wait_until`; the CLI and the MCP tools' bounded waits
-  move in the same change.
-- The set watches send a state-filtered snapshot in bounded chunks, then one `upsert` per changed item.
-  The server keeps `id -> version` for the filtered set, diffs on each wakeup and fetches only changed rows, so
-  NOTIFY stays a wakeup and no migration is needed. A watch ends at the bearer's expiry with `UNAUTHENTICATED`, which
-  retires the app's `_renewed` and `_without_repeated_snapshots`. A resume cursor is one migration later if the
-  re-snapshot proves too chatty.
+- `/openapi.json`, which `/llms.txt` already links, replaces `docs/agents/http_api.md` (stage L).
+- The CLI's receipt wait moves to `WatchActionRequest`, which ends at the terminal or decision condition or the
+  client's deadline, and `wait_seconds` and `wait_until` go (stage L).
+- The app's `_renewed` and `_without_repeated_snapshots` go when it reads the set watches, which end at the
+  bearer's expiry with `UNAUTHENTICATED` (stage L).
 - Hand-written HTTP stays: `/mcp`, the OAuth endpoints and well-known documents, `/oauth/client-metadata.json`,
   `/v1/mcp-linkage/callback`. `/healthz` and `/readyz` become `grpc.health.v1`; `/metrics` stays.
 - The `_ERRORS` table becomes one interceptor mapping each domain error to a gRPC code and detail. Drain answers
@@ -129,10 +125,7 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 
 | Stage | Change                                                                                                                                                                                                                        |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D     | Workload auth, catalog, decision providers and policy kinds with the GitHub visibility lookup, `ActionService`, the receipt stream, `docs/agents/`, `/openapi.json`.                                                          |
-| E     | Operator JWT as `ActionService`'s second principal with its wider reads, the set watches, the decision RPC.                                                                                                                   |
 | H     | Outbound linkage, its callback and the CIMD document; MCP-server RPCs; refreshing linked tokens, and waking an MCP group's supervisor when its linkage changes.                                                               |
-| J     | `/mcp` on `go-sdk` and the resource-server `TokenVerifier`, calling the core only through the `ActionService` interface.                                                                                                      |
 | K     | Authorization server: spike, then authorize, consent redirect, token, refresh, revoke, metadata.                                                                                                                              |
 | L     | Callers, prepared against the protos and merged with the cutover: the app's Action routes and relays, `OperatorActionServiceClient`, the CLI's generated client, the Go Notification Service's HTTP client, acceptance tests. |
 | M     | Testing cutover: repoint `devinfra/ci/image_targets.json`, soak the migrator, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                               |
@@ -180,8 +173,6 @@ test still earns it without the Python reference.
 - **Authorization server correctness** is security-sensitive: a toolkit for the protocol, the `test_oauth.py` cases
   ported, and real-client acceptance on testing before staging.
 - **`go-sdk` states no API stability.** Pin the version and keep its use in the `/mcp`, executor and one auth file.
-- **Per-request direct tools** need a server built per request from the caller's catalog and policy reads.
-  `go-sdk`'s `NewStreamableHTTPHandler` takes a server-per-request function; confirm in stage J.
 - **Outbound linkage versus the `go-sdk` handler.** Its `AuthorizationCodeFetcher` returns the code synchronously,
   which suits a CLI, not an operator click that finishes in a callback on another replica. Stage H uses `oauthex` for
   discovery and registration and `x/oauth2` for the two-phase flow unless a spike shows otherwise.
@@ -194,6 +185,5 @@ test still earns it without the Python reference.
 
 Change any of these by saying so; none holds a stage.
 
-- Fixes to the Python service land in Python until stage C starts; after that a fix waits for the Go store or is
-  ported with it.
+- A fix to the Python service is ported to the Go service in the same change, or waits for it.
 - The MCP tools' bounded wait uses the same receipt stream in process, so there is one wait implementation.
