@@ -88,9 +88,10 @@ go_test(
     data = [":server"],
     embed = [":server_lib"],
     deps = [
+        "//agentplane/testing/kubeapiserver",
         "//agentplane/workload_auth/go/auth",
         "@io_bazel_rules_go//go/runfiles",
-        "@io_k8s_api//authentication/v1:authentication",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_client_go//rest",
     ],
 )
