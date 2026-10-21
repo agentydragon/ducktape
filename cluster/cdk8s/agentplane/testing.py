@@ -8,7 +8,6 @@ generated file, holding this chart and `litellm/credentials.py`'s, and the hand-
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import cast
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -31,8 +30,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from pydantic import AnyHttpUrl
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
-from agentplane.action_service.mcp_settings import McpOAuthServer
+from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import DirectFederationSettings
@@ -53,11 +51,12 @@ from cluster.cdk8s.agentplane import (
     sandbox_pod,
 )
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
-    MCP_EVERYTHING_NAME,
-    MCP_EVERYTHING_PORT,
     OAUTH_FIXTURE_NAME,
     OAUTH_FIXTURE_PORT,
     add_testing_fixtures,
+    everything_group,
+    oauth_fixture_group,
+    oauth_fixture_server,
 )
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import TESTING_CREDENTIALS_NAMESPACE, EgressCredentials
@@ -88,60 +87,36 @@ _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
 # The Terraform-owned key, replicated into this namespace by `litellm/credentials.py`'s
 # ExternalSecret.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
-_OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{TESTING_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
-_FEDERATION_TARGET = OperatorOidcSettings(
-    issuer=_DEX_ISSUER,
-    audience="agentplane-testing",
-    jwks_uri=f"{_DEX_ISSUER}/keys",
-    token_profile=OperatorTokenProfile.DEX,
-)
-_ACTION_FEDERATION = DirectFederationSettings(
-    mode="direct",
-    service_url=AnyHttpUrl(actions.service(TESTING_NAMESPACE).url),
-    login_jwks_uri=f"{_DEX_ISSUER}/keys",
-    login_token_profile=OperatorTokenProfile.DEX,
-    target=_FEDERATION_TARGET,
-    scope="openid",
-)
+
+def operator_oidc(*, issuer: str, app_client_id: str) -> OperatorOidcSettings:
+    """The Action Service's view of operators logged in to the app's Dex client `app_client_id`."""
+    return OperatorOidcSettings(
+        issuer=issuer, audience=app_client_id, jwks_uri=f"{issuer}/keys", token_profile=OperatorTokenProfile.DEX
+    )
+
+
+def action_federation(target: OperatorOidcSettings) -> DirectFederationSettings:
+    """The app hands the Action Service the operator's own Dex token, which `target` verifies."""
+    return DirectFederationSettings(
+        mode="direct",
+        service_url=AnyHttpUrl(actions.service(TESTING_NAMESPACE).url),
+        login_jwks_uri=target.jwks_uri,
+        login_token_profile=OperatorTokenProfile.DEX,
+        target=target,
+        scope="openid",
+    )
+
+
+_FEDERATION_TARGET = operator_oidc(issuer=_DEX_ISSUER, app_client_id="agentplane-testing")
 _MCP_SERVERS = {
-    "example": McpOAuthServer(
-        server_id="example",
-        server_url=_OAUTH_FIXTURE_MCP_URL,
-        client_id="agentplane-testing-mcp",
-        client_secret_file=Path("/etc/agentplane-mcp/client-secret"),
-        redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
-        scopes=["openid"],
+    "example": oauth_fixture_server(
+        "example", client_id="agentplane-testing-mcp", redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback"
     )
 }
 _ACTION_GROUPS = {
-    "everything": ActionGroup(
-        title="Upstream Everything",
-        description="Credentialless MCP reference server for testing acceptance.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="Community-built Everything image; no user account, workload token, or mounted credentials.",
-            config={
-                "transport": "streamable-http",
-                "url": f"http://{MCP_EVERYTHING_NAME}.{TESTING_NAMESPACE}.svc.cluster.local:{MCP_EVERYTHING_PORT}/mcp",
-                "auth": "none",
-            },
-        ),
-    ),
-    "example": ActionGroup(
-        title="OAuth Example",
-        description="Dex-backed OAuth-linked MCP fixture for testing acceptance of the linkage flow.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="MCP tool protected by Dex-issued JWTs; no real credentials.",
-            config={
-                "transport": "streamable-http",
-                "url": _OAUTH_FIXTURE_MCP_URL,
-                "server_id": "example",
-                "auth": "oauth",
-            },
-        ),
-    ),
+    "everything": everything_group(),
+    "example": oauth_fixture_group("example"),
     "sandbox": ActionGroup(
         title="Sandbox",
         description="Boxes that run as the calling ServiceAccount, and bounded commands in them.",
@@ -173,7 +148,7 @@ ENV = Environment(
         namespace=TESTING_NAMESPACE,
         models=TESTING_APP_MODELS,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
-        action_federation=_ACTION_FEDERATION,
+        action_federation=action_federation(_FEDERATION_TARGET),
         public_coder_policy_sets=[],
         default_policy_sets=set(egress.DEFAULT_POLICIES),
     ),
@@ -187,7 +162,9 @@ ENV = Environment(
     egress=EgressProps(
         ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_CREDENTIALS_NAMESPACE
     ),
-    app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
+    app=AppProps(
+        origin=f"https://{_HOSTNAME}", oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None
+    ),
     actions=ActionsProps(
         hostname="agentplane-actions-testing.allegedly.works",
         operator_oidc=_FEDERATION_TARGET,
@@ -431,7 +408,7 @@ def chart(app: App) -> Chart:
         ingress=[egress.proxy("agentplane-staging").pods.admit(app_service.pod_port)],
     )
     add_testing_fixtures(chart)
-    dex.Dex(chart, "dex")
+    dex.Dex(chart, "dex").add_platform_resources()
     # Testing composes and materializes only the tool-config set; its controller workload and RBAC
     # are separate constructs, like staging's.
     tool_config_grant = sandbox_pod.tool_config_grant(ENV.namespace)

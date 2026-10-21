@@ -333,7 +333,7 @@ ENV = Environment(
         external_workload_namespaces=(public_coder_egress.NAMESPACE,),
     ),
     app=AppProps(
-        hostname=_HOSTNAME,
+        origin=f"https://{_HOSTNAME}",
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
         reach_incluster_authentik=True,
         runner_zone=node_scheduling.HIL_OVH_ZONE,

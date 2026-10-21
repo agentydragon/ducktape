@@ -4,6 +4,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:exclude test_dispatcher_deployed.py
 # gazelle:exclude test_egress.py
 # gazelle:exclude test_launch_presets.py
+# gazelle:exclude test_mcp.py
 # gazelle:exclude test_session_instructions.py
 # gazelle:exclude test_storage_deployed.py
 # gazelle:exclude test_suspend_resume.py
@@ -298,28 +299,19 @@ py_test(
     ],
 )
 
-# Live testing, using the same real-agent fixtures and execution boundary as this suite.
-py_test(
+acceptance_test(
     name = "test_mcp",
-    timeout = "eternal",
     srcs = ["test_mcp.py"],
-    env_inherit = [
-        "AGENTPLANE_ACCEPTANCE_IDP",
-        "AGENTPLANE_ACCEPTANCE_TOKEN",
-        "AGENTPLANE_ACCEPTANCE_URL",
-        "AGENTPLANE_OPERATOR_SECRET_PATH",
-        "HOME",
-        "KUBECONFIG",
-    ],
-    tags = [
-        "manual",
-        "no-remote-exec",
-    ],
+    deployed = False,
+    k3s = "scripted",
+    mcp_fixtures = True,
     deps = [
         ":agent",
         ":conftest",
+        ":mcp_servers",
         ":operator_login",
-        "//:conftest",
+        ":scripted_upstream",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
         "//agentplane/action_service:mcp_linkage",
@@ -331,13 +323,20 @@ py_test(
         "//agentplane/app:sandbox_models",
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/testing:scripted_model",
         "@pypi//httpx",
+        "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
+)
+
+py_library(
+    name = "mcp_servers",
+    srcs = ["mcp_servers.py"],
 )
 
 py_library(

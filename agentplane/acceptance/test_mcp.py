@@ -1,22 +1,31 @@
-"""Real testing agents discover, submit, poll and report an MCP-backed Action."""
+"""Agents submit MCP-backed Actions with the `agentplane` CLI; an operator links an OAuth-protected MCP
+server through Dex and decides what waits for them. The model is scripted: each turn runs one CLI command,
+whose receipt the scenario reads back from what the harness sent the model. The k3s target runs Dex, the
+MCP servers and the Action groups (`mcp_servers.py`)."""
 
+from __future__ import annotations
+
+import asyncio
 import json
 import logging
 import os
+import shlex
 import subprocess
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 import pytest_bazel
-from pydantic import BaseModel, ConfigDict, JsonValue
+from more_itertools import one
+from pydantic import JsonValue
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.acceptance import mcp_servers
 from agentplane.acceptance.agent import Agent
 from agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
 from agentplane.acceptance.operator_login import (
@@ -29,6 +38,7 @@ from agentplane.acceptance.operator_login import (
     read_operator_credentials,
     verify_action_federation,
 )
+from agentplane.acceptance.scripted_upstream import ScriptedUpstream
 from agentplane.action_service.mcp_linkage import McpLinkageStatus, McpLinkageView
 from agentplane.action_service.models import (
     ActionRequestView,
@@ -50,6 +60,7 @@ from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2
+from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -57,48 +68,65 @@ from agentplane.proto import runner_pb2
 # A status write follows the informer's next watch event; the bound covers a relist after a
 # dropped watch, not a healthy round trip.
 POLICY_READY_SECONDS = 120.0
+# Where the runner disk mounts the CLI in a Sandbox Pod (`agentplane/runner/BUILD.bazel`).
+CLI = "/run/agentplane/runner/bin/agentplane"
 
 
-class McpReport(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    request_id: UUID
-    state: Literal["succeeded"]
-    output: dict[str, JsonValue]
-
-
-class PendingMcpReport(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    request_id: UUID
-    state: Literal["decision_pending"]
+def _assert_echoed(result: JsonValue, message: str) -> None:
+    """A call of either MCP server's echo tool recorded its text; the OAuth fixture, a FastMCP server,
+    records structured content and metadata beside it."""
+    assert isinstance(result, dict), result
+    assert (result["content"], result["isError"]) == ([{"type": "text", "text": f"Echo: {message}"}], False)
 
 
-def _execute_echo(group: str, message: str) -> str:
-    """A prompt to run echo to its terminal result, answered as an `McpReport`."""
-    return f"""
-This is an Agentplane infrastructure test. Use the Actions Service to execute the echo Action in
-the {group} group with message {message}. Wait for its terminal result. Return only JSON with
-exactly request_id, state, and output, where output is the request's execution result. Do not
-infer or fabricate a result.
-"""
+@dataclass(frozen=True)
+class ScriptedAgent:
+    """A session whose model the scenario plays: each turn runs one `agentplane` command."""
 
+    agent: Agent
+    model: ScriptedModel[Any]
 
-def _queue_echo(message: str) -> str:
-    """A prompt to submit an echo that waits for the operator, answered as a `PendingMcpReport`."""
-    return f"""
-This is an Agentplane infrastructure test. Request the echo Action in the everything group with
-message {message}. This request requires operator approval. Confirm that it is queued for approval;
-return only JSON with exactly request_id and state, where state must be decision_pending. Do not
-wait for an operator decision in this turn.
-"""
+    @classmethod
+    async def open(
+        cls,
+        client: Client,
+        sandbox: SandboxView,
+        *,
+        harness: runner_pb2.Harness,
+        model: str,
+        upstream: ScriptedUpstream,
+    ) -> ScriptedAgent:
+        assert sandbox.pod is not None
+        agent = await Agent.open(client, sandbox=sandbox.name, harness=harness, model=model)
+        return cls(agent=agent, model=upstream.model(sandbox.pod.name, harness))
 
+    async def run(self, *args: str) -> ActionRequestView:
+        """The receipt `agentplane --json ARGS` printed, as the harness reported it to the model."""
+        call_id = f"agentplane-{uuid4().hex[:8]}"
+        command = shlex.join([CLI, "--json", *args])
+        async with asyncio.TaskGroup() as turns:
+            turns.create_task(self.agent.run(f"Run {command}"))
+            request = await self.model.request()
+            await self.model.reply(request, ShellCall(call_id=call_id, command=command))
+            request = await self.model.request()
+            output = one(reported.text for reported in request.tool_outputs if reported.call_id == call_id)
+            await self.model.reply(request, Text("Done."))
+        # A harness frames the command's output with its own lines; `--json` prints the receipt as one.
+        return ActionRequestView.model_validate_json(one(line for line in output.splitlines() if line.startswith("{")))
 
-def operator_idp() -> IdentityProvider:
-    value = os.environ.get("AGENTPLANE_ACCEPTANCE_IDP", IdentityProvider.DEX)
-    if value not in set(IdentityProvider):
-        pytest.fail("BLOCKED: AGENTPLANE_ACCEPTANCE_IDP must be authentik or dex", pytrace=False)
-    return IdentityProvider(value)
+    async def submit_echo(self, group: str, message: str, *, wait: bool) -> ActionRequestView:
+        return await self.run(
+            "actions",
+            "submit",
+            f"{group}/{mcp_servers.ECHO}",
+            "--title",
+            "Echo a test marker",
+            "--arguments",
+            json.dumps({"message": message}),
+            "--key",
+            str(uuid4()),
+            *(["--wait"] if wait else []),
+        )
 
 
 class KubectlError(Exception):
@@ -201,31 +229,40 @@ def policy_objects() -> Iterator[PolicyObjects]:
         objects.delete_all()
 
 
+@pytest.mark.scripted_model
 async def test_agent_executes_mcp_action(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str, policy_objects: PolicyObjects
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
+    policy_objects: PolicyObjects,
 ) -> None:
     view = await sandbox(f"accept-mcp-{harness}")
-    policy_objects.bind(view, "exact-echo", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}])
-    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
-    marker = f"MCP0-{uuid4()}"
-    turn = await agent.run(_execute_echo("everything", marker))
-    report = turn.report(McpReport)
-    assert report.output == {"content": [{"type": "text", "text": f"Echo: {marker}"}], "isError": False}, (
-        turn.transcript
+    policy_objects.bind(
+        view, "exact-echo", [{"type": "exact_actions", "actions": {mcp_servers.EVERYTHING_GROUP: [mcp_servers.ECHO]}}]
     )
+    agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
+    marker = f"MCP0-{uuid4()}"
+    receipt = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=True)
+    assert receipt.state is ActionState.SUCCEEDED
+    assert receipt.execution is not None
+    _assert_echoed(receipt.execution.result, marker)
 
 
+@pytest.mark.scripted_model
 async def test_operator_links_oauth_mcp_server(
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
     client: Client,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
-    model: str,
+    offered_model: str,
+    scripted: ScriptedUpstream,
     policy_objects: PolicyObjects,
 ) -> None:
-    """Links the `example` MCP server through Dex and executes its protected tool."""
-    server_id = "example"
+    """Links the OAuth-protected MCP server through Dex and executes its protected tool."""
+    server_id = mcp_servers.OAUTH
     start_response = await operator_bff.post(f"/mcp-servers/{server_id}/linkage/start", json={"scopes": []})
     assert start_response.status_code == HTTPStatus.OK, start_response.text
     authorization_url = start_response.json()["authorization_url"]
@@ -251,14 +288,15 @@ async def test_operator_links_oauth_mcp_server(
     assert linkage.status is McpLinkageStatus.LINKED
 
     view = await sandbox(f"accept-oauth-mcp-{harness}")
-    policy_objects.bind(view, "oauth-example", [{"type": "exact_actions", "actions": {"example": ["echo"]}}])
-    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
-    marker = f"MCP-OAUTH-{uuid4()}"
-    turn = await agent.run(_execute_echo("example", marker))
-    report = turn.report(McpReport)
-    assert report.output == {"content": [{"type": "text", "text": f"Echo: {marker}"}], "isError": False}, (
-        turn.transcript
+    policy_objects.bind(
+        view, "oauth-echo", [{"type": "exact_actions", "actions": {mcp_servers.OAUTH: [mcp_servers.ECHO]}}]
     )
+    agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
+    marker = f"MCP-OAUTH-{uuid4()}"
+    receipt = await agent.submit_echo(mcp_servers.OAUTH, marker, wait=True)
+    assert receipt.state is ActionState.SUCCEEDED
+    assert receipt.execution is not None
+    _assert_echoed(receipt.execution.result, marker)
 
 
 @pytest.fixture
@@ -282,7 +320,7 @@ async def operator_bff(base_url: str, operator_credentials: OperatorCredentials)
         origin = str(app_origin(base_url)).rstrip("/")
         async with httpx.AsyncClient(base_url=origin, timeout=30, follow_redirects=False) as http:
             try:
-                await login_operator(http, operator_credentials, provider=operator_idp())
+                await login_operator(http, operator_credentials, provider=IdentityProvider.DEX)
             except LoginBlockedError as exc:
                 pytest.fail(str(exc), pytrace=False)
             except httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError:
@@ -296,14 +334,6 @@ async def operator_bff(base_url: str, operator_credentials: OperatorCredentials)
         logging.disable(previous_logging)
 
 
-class DecidedMcpReport(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    request_id: UUID
-    state: Literal["succeeded", "denied"]
-    result: JsonValue
-
-
 def _bff_request(response: httpx.Response) -> ActionRequestView:
     """Validation errors must not render the response's operator identity into test artifacts."""
     __tracebackhide__ = True
@@ -313,6 +343,7 @@ def _bff_request(response: httpx.Response) -> ActionRequestView:
         pytest.fail("BFF returned an invalid ActionRequestView; response body withheld", pytrace=False)
 
 
+@pytest.mark.scripted_model
 @pytest.mark.parametrize("verdict", list(Verdict))
 async def test_agent_mcp_bff_decision(
     operator_bff: httpx.AsyncClient,
@@ -320,23 +351,24 @@ async def test_agent_mcp_bff_decision(
     client: Client,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
-    model: str,
+    offered_model: str,
+    scripted: ScriptedUpstream,
     verdict: Verdict,
 ) -> None:
     view = await sandbox(f"accept-mcp-{harness}-{verdict}")
-    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
+    agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
     # Nothing binds this Sandbox to a policy set, so every Action of its waits for the operator.
     marker = f"MCP-BFF-{uuid4()}-" + "x" * 201
-    submitted = await agent.run(_queue_echo(marker))
-    submitted_report = submitted.report(PendingMcpReport)
-    request_id = submitted_report.request_id
+    submitted = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=False)
+    assert submitted.state is ActionState.DECISION_PENDING
+    request_id = submitted.id
     path = f"/actions/{request_id}"
     pending_response = await operator_bff.get(path)
     assert pending_response.status_code == HTTPStatus.OK
     pending = _bff_request(pending_response)
     assert pending.id == request_id
     assert pending.idempotency_key
-    assert (pending.action.group, pending.action.name) == ("everything", "echo")
+    assert (pending.action.group, pending.action.name) == (mcp_servers.EVERYTHING_GROUP, mcp_servers.ECHO)
     assert pending.arguments == {"message": marker}
     assert pending.state is ActionState.DECISION_PENDING
     assert pending.version == 1
@@ -360,11 +392,6 @@ async def test_agent_mcp_bff_decision(
         pytest.fail("Decision operator identity differs from the dedicated Secret", pytrace=False)
     assert decided.decision.idempotency_key == decision.idempotency_key
     expected_state = ActionState.SUCCEEDED if verdict is Verdict.ALLOW else ActionState.DENIED
-    expected_result = (
-        {"content": [{"type": "text", "text": f"Echo: {marker}"}], "isError": False}
-        if verdict is Verdict.ALLOW
-        else None
-    )
     if verdict is Verdict.ALLOW:
         assert decided.state is ActionState.ALLOWED
         assert decided.execution is not None
@@ -372,16 +399,10 @@ async def test_agent_mcp_bff_decision(
         assert decided.state is ActionState.DENIED
         assert decided.execution is None
 
-    completed = await agent.run(f"""
-Resume Action request {request_id}. The operator has decided {verdict}. Determine its terminal
-outcome without submitting or deciding anything. Return only JSON with exactly request_id, state,
-and result. Copy result from execution when it exists; otherwise use null. Do not infer or fabricate it.
-""")
-    # Unlike Turn.report, reject fences and surrounding prose here.
-    report = DecidedMcpReport.model_validate_json(completed.answer)
-    assert report.request_id == request_id
-    assert report.state == expected_state
-    assert report.result == expected_result
+    # What the agent learns of the operator's decision.
+    completed = await agent.run("actions", "wait", str(request_id))
+    assert completed.id == request_id
+    assert completed.state is expected_state
     terminal_response = await operator_bff.get(path)
     assert terminal_response.status_code == HTTPStatus.OK
     terminal = _bff_request(terminal_response)
@@ -398,10 +419,12 @@ and result. Copy result from execution when it exists; otherwise use null. Do no
         assert decided.execution is not None
         assert terminal.execution.id == decided.execution.id
         assert terminal.execution.state is ExecutionState.SUCCEEDED
-        assert terminal.execution.result == expected_result
+        _assert_echoed(terminal.execution.result, marker)
         assert terminal.execution.error is None
+        assert completed.execution == terminal.execution
     else:
         assert terminal.execution is None
+        assert completed.execution is None
 
     # Replay the original version/key after completion: same Decision and Execution, no new dispatch.
     duplicate = await operator_bff.post(f"{path}/decision", json=decision.model_dump(mode="json"))
@@ -429,12 +452,14 @@ async def _deny_pending(operator_bff: httpx.AsyncClient, request_id: UUID) -> Ac
     return receipt
 
 
+@pytest.mark.scripted_model
 async def test_policy_binding_auto_approves_the_bound_sandbox(
     operator_bff: httpx.AsyncClient,
     client: Client,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
-    model: str,
+    offered_model: str,
+    scripted: ScriptedUpstream,
     policy_objects: PolicyObjects,
 ) -> None:
     """A set and a binding written through the Kubernetes API for the Sandbox this test launches:
@@ -448,7 +473,7 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
         [
             {
                 "type": "argument_schema",
-                "actions": {"everything": ["echo"]},
+                "actions": {mcp_servers.EVERYTHING_GROUP: [mcp_servers.ECHO]},
                 "schema": {
                     "type": "object",
                     "required": ["message"],
@@ -458,13 +483,14 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
             }
         ],
     )
-    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
+    agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
 
     marker = f"MCP-POLICY-{uuid4()}"
-    approved = await agent.run(_execute_echo("everything", marker))
-    report = approved.report(McpReport)
-    assert report.output == {"content": [f"Echo: {marker}"]}, approved.transcript
-    receipt = _bff_request(await operator_bff.get(f"/actions/{report.request_id}"))
+    approved = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=True)
+    assert approved.state is ActionState.SUCCEEDED
+    assert approved.execution is not None
+    _assert_echoed(approved.execution.result, marker)
+    receipt = _bff_request(await operator_bff.get(f"/actions/{approved.id}"))
     assert receipt.state is ActionState.SUCCEEDED
     assert receipt.decision is not None
     assert receipt.decision.provider == PROVIDER_NAME
@@ -484,14 +510,14 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     assert receipt.execution.state is ExecutionState.SUCCEEDED
 
     too_long = f"MCP-POLICY-{uuid4()}-" + "x" * 201
-    missed = await agent.run(_queue_echo(too_long))
-    await _deny_pending(operator_bff, missed.report(PendingMcpReport).request_id)
+    missed = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, too_long, wait=False)
+    await _deny_pending(operator_bff, missed.id)
 
     policy_objects.expire_binding(binding_name)
     await _wait_unbound(operator_bff, view, binding_name)
     after_expiry = f"MCP-POLICY-{uuid4()}"
-    expired = await agent.run(_queue_echo(after_expiry))
-    await _deny_pending(operator_bff, expired.report(PendingMcpReport).request_id)
+    expired = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, after_expiry, wait=False)
+    await _deny_pending(operator_bff, expired.id)
 
 
 async def _wait_unbound(operator_bff: httpx.AsyncClient, sandbox: SandboxView, binding_name: str) -> None:
@@ -510,7 +536,7 @@ async def _wait_unbound(operator_bff: httpx.AsyncClient, sandbox: SandboxView, b
             policy = CallerGrantView.model_validate(response.json()).action_policy
             if not isinstance(policy, ActionPolicyView) or not policy.synced:
                 raise PolicyBindingPresentError(f"{account}: Action policy not synced: {policy}")
-            if binding_name in {binding.name for binding in policy.bindings}:
+            if binding_name in {effective.binding for effective in policy.auto_approve_if}:
                 raise PolicyBindingPresentError(f"{account} still resolves {binding_name}")
 
 

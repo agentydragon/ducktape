@@ -3,6 +3,10 @@
 The fixture keeps the service contracts and settings authored in cluster/cdk8s/agentplane.
 It supplies bare-k3s dependencies (Secrets, local-path storage) as inputs
 and never reads or edits the production generated manifest.
+
+Browsers and services reach the app and Dex by their in-cluster Service names: Pods through the
+cluster DNS, the test process on the node through `/etc/hosts` (`stack.py`). The app answers over http;
+Dex over TLS, as the app and the Action Service accept a plain-http issuer only on loopback.
 """
 
 from __future__ import annotations
@@ -12,29 +16,37 @@ import string
 from dataclasses import replace
 from typing import Any
 
+import bcrypt
 from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRulesMethods
 from cdk8s import ApiObjectMetadata, Chart, Size, Testing
 from cdk8s_plus_34 import (
+    ConfigMap,
     ContainerProps,
     ContainerResources,
     ContainerSecurityContextProps,
     Cpu,
     CpuResources,
+    Deployment,
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
+    Volume,
     k8s,
 )
+from constructs import Construct
+from more_itertools import one
 
-from agentplane.acceptance import launch_preset, runtime_grant
+from agentplane.acceptance import launch_preset, mcp_servers, runtime_grant
 from agentplane.subjects import ServiceAccountRef
 from agentplane.x.k3s_env import fixture_database
-from agentplane.x.k3s_env.rendered_fixture import LocalModel, Models, PublicLiteLLM
+from agentplane.x.k3s_env.rendered_fixture import LocalModel, McpInputs, Models, PublicLiteLLM
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
     actions,
+    actions_testing_fixtures,
     app as app_component,
     command_sandbox,
+    dex,
     egress,
     history_service,
     llm_ingress,
@@ -64,6 +76,24 @@ QUEUE_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gatewa
 DISPATCHER_PORT = 8080
 EGRESS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset"
 EGRESS_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate:unset"
+DEX_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-dex:unset"
+MCP_EVERYTHING_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset"
+APP_ORIGIN = app_component.service(NAMESPACE).url
+DEX_HOST = dex.service().host
+DEX_ISSUER = dex.issuer(f"https://{DEX_HOST}:{dex.HTTPS_PORT.number}")
+# Test-only Dex clients and operator in place of testing's, which an operator's deployment uses.
+_APP_LOGIN = dex.StaticClient(id="test-app-login", name="Test app login", redirect_uri=f"{APP_ORIGIN}/auth/callback")
+_MCP_LINKAGE = dex.StaticClient(
+    id="test-mcp-linkage", name="Test MCP linkage", redirect_uri=f"{APP_ORIGIN}/mcp-linkage/callback"
+)
+_OPERATOR = dex.Operator(email="test-operator@k3s-fixture.invalid", username="test-operator", user_id="test-operator")
+# Dex's config and the operator's login, which `agentplane/acceptance/operator_login.py` reads.
+OPERATOR_SECRET = "test-operator-login"
+_DEX_TLS_SECRET = "test-dex-tls"
+# The system roots and the CA of Dex's certificate, for the Pods that call Dex.
+_TRUST_BUNDLE = "test-fixture-ca"
+_TRUST_BUNDLE_KEY = "ca-certificates.crt"
+_TRUST_BUNDLE_DIR = "/etc/test-fixture-ca"
 
 
 def _password(length: int = 40) -> str:
@@ -82,8 +112,12 @@ def _secret(
     )
 
 
-def objects(*, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models) -> list[dict[str, Any]]:
-    """Synthesize only the objects the one-node, operator-light k3s fixture deploys."""
+def objects(
+    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, mcp: McpInputs | None
+) -> list[dict[str, Any]]:
+    """Synthesize only the objects the one-node, operator-light k3s fixture deploys; Dex and the MCP
+    servers `test_mcp` calls only given `mcp`, whose images then need importing."""
+    operator_oidc = testing.operator_oidc(issuer=DEX_ISSUER, app_client_id=_APP_LOGIN.id)
     env = replace(
         testing.ENV,
         vm_sandboxes=False,
@@ -98,7 +132,24 @@ def objects(*, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, mo
                         template=runner_sandbox.NAME, policy_sets=[egress.PACKAGES_POLICY]
                     )
                 },
+                "action_federation": testing.action_federation(operator_oidc),
             }
+        ),
+        app=replace(testing.ENV.app, origin=APP_ORIGIN, oidc_issuer=DEX_ISSUER),
+        # The scenarios' own MCP server and Action groups in place of the deployment's.
+        actions=replace(
+            testing.ENV.actions,
+            operator_oidc=operator_oidc,
+            mcp_servers={
+                mcp_servers.OAUTH: actions_testing_fixtures.oauth_fixture_server(
+                    mcp_servers.OAUTH, client_id=_MCP_LINKAGE.id, redirect_uri=_MCP_LINKAGE.redirect_uri
+                )
+            },
+            action_groups={
+                mcp_servers.EVERYTHING_GROUP: actions_testing_fixtures.everything_group(),
+                mcp_servers.OAUTH: actions_testing_fixtures.oauth_fixture_group(mcp_servers.OAUTH),
+                "sandbox": testing.ENV.actions.action_groups["sandbox"],
+            },
         ),
     )
     if isinstance(models, LocalModel):
@@ -222,7 +273,7 @@ def objects(*, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, mo
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         migrate_memory_limit=None,
     )
-    app_component.App(
+    app_service = app_component.App(
         chart,
         "app",
         env,
@@ -263,7 +314,7 @@ def objects(*, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, mo
         registry_secret_name=None,
         memory_limit=None,
     )
-    actions.Actions(
+    action_service = actions.Actions(
         chart,
         "actions",
         env,
@@ -304,14 +355,17 @@ def objects(*, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, mo
         image_pull_secret_name=None,
         trust_mounts=sandbox_pod.egress_proxy_mounts(),
     )
-    # The Action Service and app still read their normal Secret names. Dex is deliberately
-    # absent; the lifecycle and model smoke authenticate with a service-account token.
+    # The app, the Action Service and Dex read their normal Secret names.
     _secret(
         chart,
-        "agentplane-oidc",
-        {"client-id": "agentplane-testing", "client-secret": _password(), "session-secret": _password(64)},
+        app_component.oidc_secret(NAMESPACE).name,
+        {"client-id": _APP_LOGIN.id, "client-secret": _password(), "session-secret": _password(64)},
     )
-    _secret(chart, "agentplane-mcp-oauth", {"client-id": "agentplane-testing-mcp", "client-secret": _password()})
+    _secret(
+        chart, actions.mcp_oauth_secret(NAMESPACE).name, {"client-id": _MCP_LINKAGE.id, "client-secret": _password()}
+    )
+    if mcp is not None:
+        _add_mcp_fixtures(chart, mcp, system_roots=system_roots, dex_clients=[app_service, action_service])
     _secret(
         chart,
         "agentplane-testing-egress-ca",
@@ -365,6 +419,76 @@ def objects(*, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, mo
         chart, "policy-controller-rbac", env, account=controller.account, assignable_grants=[tool_config_grant]
     )
     return list(Testing.synth(chart))
+
+
+def browser_services(*, mcp_fixtures: bool) -> list[ServiceRef]:
+    """The Services a browser reaches by name: the app, and Dex for the operator's login."""
+    return [app_component.service(NAMESPACE), *([dex.service()] if mcp_fixtures else [])]
+
+
+def _add_mcp_fixtures(chart: Chart, mcp: McpInputs, *, system_roots: str, dex_clients: list[Construct]) -> None:
+    """Dex with the operator's password login, trusted by `dex_clients`, and the MCP servers the Action
+    groups call."""
+    password = _password()
+    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=10, prefix=b"2a")).decode()
+    _secret(
+        chart,
+        OPERATOR_SECRET,
+        {
+            **dex.operator_login_data(_OPERATOR, password=password, issuer=DEX_ISSUER),
+            dex.CONFIG_KEY: dex.config_yaml(
+                issuer=DEX_ISSUER,
+                app_login=_APP_LOGIN,
+                mcp_linkage=_MCP_LINKAGE,
+                operator=_OPERATOR,
+                password_hash=password_hash,
+                serve_tls=True,
+            ),
+        },
+    )
+    _secret(chart, _DEX_TLS_SECRET, {"tls.crt": mcp.dex_cert, "tls.key": mcp.dex_key}, kind="kubernetes.io/tls")
+    trust_bundle = ConfigMap(
+        chart,
+        "trust-bundle",
+        metadata=ApiObjectMetadata(name=_TRUST_BUNDLE, namespace=NAMESPACE),
+        data={_TRUST_BUNDLE_KEY: system_roots + mcp.dex_ca_cert},
+    )
+    for client in dex_clients:
+        _trust(client, trust_bundle)
+    dex.Dex(
+        chart,
+        "dex",
+        image=DEX_IMAGE,
+        config_secret=OPERATOR_SECRET,
+        cpu_limit=None,
+        memory_limit=None,
+        tls_secret=_DEX_TLS_SECRET,
+    )
+    actions_testing_fixtures.add_mcp_everything(
+        chart,
+        image=MCP_EVERYTHING_IMAGE,
+        image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        cpu_limit=None,
+        memory_limit=None,
+    )
+    actions_testing_fixtures.add_oauth_fixture(
+        chart,
+        authorization_server=DEX_ISSUER,
+        # As in testing, the fixture fetches signing keys over Dex's plain-http port.
+        jwks_uri=f"{dex.issuer(dex.service().url)}/keys",
+        audience=_MCP_LINKAGE.id,
+        registry_secret_name=None,
+        image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        cpu_limit=None,
+        memory_limit=None,
+    )
+
+
+def _trust(workload: Construct, bundle: ConfigMap) -> None:
+    """Python's TLS clients in `workload`'s one container verify with `bundle` (`SSL_CERT_FILE`)."""
+    container = one(one(child for child in workload.node.find_all() if isinstance(child, Deployment)).containers)
+    container.mount(_TRUST_BUNDLE_DIR, Volume.from_config_map(workload, "trust-bundle", bundle), read_only=True)
+    container.env.add_variable("SSL_CERT_FILE", EnvValue.from_value(f"{_TRUST_BUNDLE_DIR}/{_TRUST_BUNDLE_KEY}"))
 
 
 def _litellm_url(models: Models) -> str:

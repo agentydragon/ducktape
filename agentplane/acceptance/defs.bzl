@@ -10,10 +10,17 @@ _RUNNER_LAYOUTS = {
     "scripted": "//agentplane/x/k3s_env:harnesses/runner_layout",
 }
 
-# The stack's manifest, LLM ingress forwarding to the scenario's scripted model.
+# The stack's manifest, LLM ingress forwarding to the scenario's scripted model; and with Dex and the
+# MCP servers `test_mcp` calls, whose image layouts the stack then imports too.
 _FIXTURE = "//agentplane/x/k3s_env:rendered/local-model.json"
+_MCP_FIXTURE = "//agentplane/x/k3s_env:rendered/local-model-mcp-fixtures.json"
+_MCP_FIXTURE_LAYOUTS = [
+    "//agentplane/x/k3s_env:mcp_fixtures/dex_layout",
+    "//agentplane/x/k3s_env:mcp_fixtures/mcp_everything_layout",
+    "//agentplane/x/k3s_env:mcp_fixtures/oauth_fixture_layout",
+]
 
-def acceptance_test(name, srcs, deps, k3s = None, deployed = True, size = "small", timeout = None):
+def acceptance_test(name, srcs, deps, k3s = None, deployed = True, mcp_fixtures = False, size = "small", timeout = None):
     """Generates `name` unless `deployed` is False, and `name + "_k3s"` when `k3s` names its
     scenarios' kind.
 
@@ -22,7 +29,8 @@ def acceptance_test(name, srcs, deps, k3s = None, deployed = True, size = "small
     `scripted_model` cases has nothing to run there and passes `deployed = False`. `name + "_k3s"`
     starts its own stack in one RBE action (`agentplane.x.k3s_env.acceptance_target`) and runs the
     `scripted_model` scenarios and the unmarked ones; `k3s` is `"model_free"` when none runs a turn,
-    else `"scripted"`. `size` and `timeout` apply to `name`.
+    else `"scripted"`; `mcp_fixtures` adds Dex and the MCP servers to its stack. `size` and `timeout`
+    apply to `name`.
 
     A hidden library owns the source, so both targets share one compiled copy. Gazelle does not
     manage macro rules: exclude the source in the BUILD file and keep `deps` by hand.
@@ -61,18 +69,21 @@ def acceptance_test(name, srcs, deps, k3s = None, deployed = True, size = "small
     if k3s == None:
         return
     runner_layout = _RUNNER_LAYOUTS[k3s]
+    fixture = _MCP_FIXTURE if mcp_fixtures else _FIXTURE
+    mcp_fixture_layouts = _MCP_FIXTURE_LAYOUTS if mcp_fixtures else []
     py_test(
         name = name + "_k3s",
         size = "enormous",
         data = [
             runner_layout,
-            _FIXTURE,
+            fixture,
             K3S_BINARY,
-        ],
+        ] + mcp_fixture_layouts,
         env = {
             "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
             "AGENTPLANE_ACCEPTANCE_MODEL_BACKEND": "scripted_model",
-            "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + _FIXTURE + ")",
+            "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + fixture + ")",
+            "K3S_MCP_FIXTURE_LAYOUTS": " ".join(["$(rlocationpath " + layout + ")" for layout in mcp_fixture_layouts]),
             "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath " + runner_layout + ")",
             "PYTEST_PLUGINS": "agentplane.x.k3s_env.acceptance_target",
         },

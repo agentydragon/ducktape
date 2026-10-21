@@ -33,7 +33,10 @@ from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeh
 from agentplane.egress.settings import Settings
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
-from agentplane.egress.testing.tls import (
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
+from agentplane.subjects import ServiceAccountRef
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
+from agentplane.testing.tls import (
     CertificateAuthority,
     client_tls_context,
     issue_leaf,
@@ -41,9 +44,6 @@ from agentplane.egress.testing.tls import (
     server_tls_context,
     write_ca,
 )
-from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
-from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
 from util.kubernetes import CustomObjectsClient
 
 # Three namespaces, all different, so that a proxy reading one from the wrong one fails.

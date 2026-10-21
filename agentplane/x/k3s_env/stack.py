@@ -3,6 +3,10 @@
 Starts k3s with kube-proxy and no Cilium, loads the Bazel-built service images, applies the composed
 manifest and yields the app's address and a token once every Deployment is Available. It fails at the
 first Deployment that does not, with the Pod states and logs of whatever did not start.
+
+The test process reaches the app (and Dex) by their in-cluster Service names, which it resolves
+through `/etc/hosts`: OIDC redirects name them, and the action is discarded after the test. Dex's
+certificate comes from a CA made per stack, which `McpFixtureAccess.ca_bundle` adds to the system roots.
 """
 
 import contextlib
@@ -24,6 +28,7 @@ from typing import Any
 import yaml
 
 from agentplane.acceptance.conftest import AUDIENCE, TESTING_SERVICE_ACCOUNT
+from agentplane.testing import tls
 from agentplane.x.k3s_env import rendered_fixture
 from agentplane.x.k3s_env.bootstrap import Bootstrap
 from util.bazel.runfiles import get_required_path
@@ -258,11 +263,40 @@ def _openssl_ca(work: Path) -> tuple[str, str]:
 
 
 @dataclass(frozen=True)
+class McpFixtureAccess:
+    # The system roots and the CA of Dex's certificate.
+    ca_bundle: Path
+    # The Secret with the operator's Dex login.
+    operator_secret: str
+
+
+@dataclass(frozen=True)
 class Stack:
     k3s: K3s
     namespace: str
     base_url: str
     token: str
+    mcp_fixtures: McpFixtureAccess | None
+
+
+def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
+    ca = tls.make_ca("test-k3s-fixture-ca")
+    cert, key = tls.issue_leaf(ca, dex_host, work)
+    return rendered_fixture.McpInputs(
+        dex_ca_cert=ca.cert_pem.decode(), dex_cert=cert.read_text(), dex_key=key.read_text()
+    )
+
+
+def _resolve_on_node(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
+    """Resolve the Services a browser reaches by name for this process, as the cluster DNS does for Pods."""
+    with Path("/etc/hosts").open("a") as hosts:
+        # The RBE executor's file ends without a newline.
+        hosts.write("\n")
+        for service in fixture.browser_services:
+            address = k3s.kubectl(
+                "get", "service", "-n", fixture.namespace, service.name, "-o", "jsonpath={.spec.clusterIP}"
+            )
+            hosts.write(f"{address} {service.host} {service.fqdn}\n")
 
 
 def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
@@ -281,11 +315,16 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
 def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
     """The stack with every Deployment Available, LLM ingress forwarding to `models`.
 
-    The manifest is the build's rendering for `models`' backend, `K3S_FIXTURE_RLOCATION`.
+    The manifest is the build's rendering for `models`' backend, `K3S_FIXTURE_RLOCATION`. A rendering
+    with the MCP fixtures takes their image layouts from `K3S_MCP_FIXTURE_LAYOUTS`, space-separated
+    runfiles paths of `.rloc` files.
     """
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
+    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]))
     layouts = sorted(get_required_path("_main/agentplane/x/k3s_env").glob("*_layout.rloc"))
     layouts.append(get_required_path(os.environ["K3S_RUNNER_LAYOUT_RLOCATION"]))
+    if fixture.mcp_fixtures is not None:
+        layouts.extend(get_required_path(path) for path in os.environ["K3S_MCP_FIXTURE_LAYOUTS"].split())
 
     work = Path(tempfile.mkdtemp())
     k3s = K3s(work, get_required_path(os.environ["K3S_BINARY_RLOCATION"]))
@@ -293,15 +332,15 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
     try:
         ca_cert, ca_key = _openssl_ca(work)
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
-        fixture = rendered_fixture.load(
-            get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]),
+        system_roots = Path("/etc/ssl/certs/ca-certificates.crt").read_text()
+        mcp = _mcp_inputs(work, fixture.mcp_fixtures.dex_host) if fixture.mcp_fixtures is not None else None
+        fixture = rendered_fixture.fill(
+            fixture,
             rendered_fixture.RuntimeInputs(
-                ca_cert=ca_cert,
-                ca_key=ca_key,
-                system_roots=Path("/etc/ssl/certs/ca-certificates.crt").read_text(),
-                cluster_ca=cluster_ca,
+                ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca
             ),
             models,
+            mcp,
         )
         k3s.import_images(layouts, required_images=_deployment_images(fixture.objects))
         for crd in crds:
@@ -327,15 +366,17 @@ def running_stack(*, models: rendered_fixture.Models) -> Iterator[Stack]:
         if failed:
             print(k3s.report(fixture.namespace))
             raise RuntimeError(f"Deployments not Available: {failed}")
-        app_ip = k3s.kubectl(
-            "get", "pod", "-n", fixture.namespace, "-l", "app.kubernetes.io/name=app",
-            "-o", "jsonpath={.items[0].status.podIP}",
-        )  # fmt: skip
+        _resolve_on_node(k3s, fixture)
+        access = None
+        if mcp is not None and fixture.mcp_fixtures is not None:
+            ca_bundle = work / "ca-certificates.crt"
+            ca_bundle.write_text(system_roots + mcp.dex_ca_cert)
+            access = McpFixtureAccess(ca_bundle=ca_bundle, operator_secret=fixture.mcp_fixtures.operator_secret)
         token = k3s.kubectl(
             "-n", fixture.namespace, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
         ).strip()
         print("memory:", run("free", "-m"))
-        yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=f"http://{app_ip}:8080", token=token)
+        yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         print(k3s.report(fixture.namespace))
     finally:
         process.terminate()

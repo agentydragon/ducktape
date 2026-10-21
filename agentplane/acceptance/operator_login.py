@@ -22,11 +22,14 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 from agentplane.app.action_federation import UpstreamFailure
-from agentplane.app.oidc import SECURE_COOKIE
+from agentplane.app.oidc import INSECURE_COOKIE, SECURE_COOKIE
 
 KUBE_PROXY = "https://haku-kubeapi.allegedly.works"
 # A Sandbox's kubeconfig names its own workload ServiceAccount, so it is as scoped as the proxy's.
 IN_CLUSTER_API = "https://kubernetes.default.svc.cluster.local"
+# The k3s fixture's own apiserver (`agentplane/x/k3s_env`), which holds only its test operator.
+K3S_FIXTURE_API = "https://127.0.0.1:6443"
+SECRET_PATH_ENV = "AGENTPLANE_OPERATOR_SECRET_PATH"
 DEFAULT_SECRET_PATH = "/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator"
 SECRET_PATH = DEFAULT_SECRET_PATH
 _DEX_AUTHORIZATION_PATH = "/dex/auth"
@@ -35,6 +38,14 @@ _DEX_LOCAL_LOGIN_PATH = re.compile(r"/dex/auth/local/login/?")
 _DEX_OAUTH_PATH = re.compile(r"/dex/(auth|auth/local|auth/local/login|approval|callback)/?")
 
 
+def _transport_allowed(url: httpx.URL) -> bool:
+    """HTTPS, or http to a cluster-internal Service name: the k3s fixture serves its app and Dex so,
+    and its test process reaches them on the node."""
+    return url.scheme == "https" or (url.scheme == "http" and url.host.endswith(".svc"))
+
+
+# CLEANUP(added 2026-10-21): Remove the Authentik adapter and this enum: `test_mcp`, its last
+#   caller, logs in only through the k3s fixture's Dex once the PR moving it there lands.
 class IdentityProvider(StrEnum):
     AUTHENTIK = "authentik"
     DEX = "dex"
@@ -104,9 +115,11 @@ def read_operator_credentials() -> OperatorCredentials:
     __tracebackhide__ = True
     # Project only the active server, never raw kubeconfig credentials. Reject direct cluster access.
     server = _kubectl("config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}")
-    if server.strip() not in {KUBE_PROXY.encode(), IN_CLUSTER_API.encode()}:
-        raise LoginBlockedError("BLOCKED: current kubeconfig must use the Haku Console Kubernetes proxy or a Sandbox's")
-    secret_path = os.environ.get("AGENTPLANE_OPERATOR_SECRET_PATH", DEFAULT_SECRET_PATH)
+    if server.strip() not in {KUBE_PROXY.encode(), IN_CLUSTER_API.encode(), K3S_FIXTURE_API.encode()}:
+        raise LoginBlockedError(
+            "BLOCKED: current kubeconfig must use the Haku Console Kubernetes proxy, a Sandbox's or the k3s fixture's"
+        )
+    secret_path = os.environ.get(SECRET_PATH_ENV, DEFAULT_SECRET_PATH)
     if (
         re.fullmatch(
             r"/api/v1/namespaces/[a-z0-9]([-a-z0-9]*[a-z0-9])?/secrets/[a-z0-9]([-a-z0-9]*[a-z0-9])?", secret_path
@@ -140,7 +153,7 @@ def app_origin(base_url: str) -> httpx.URL:
         url = httpx.URL(base_url)
     except httpx.InvalidURL:
         raise LoginBlockedError("BLOCKED: invalid BFF app origin") from None
-    if url.scheme != "https" or url.userinfo or url.query or url.fragment or url.path != "/":
+    if not _transport_allowed(url) or url.userinfo or url.query or url.fragment or url.path != "/":
         raise LoginBlockedError("BLOCKED: BFF acceptance requires an HTTPS app origin without credentials or path")
     return _origin(url)
 
@@ -150,7 +163,7 @@ def _destination(
 ) -> httpx.URL:
     __tracebackhide__ = True
     url = source.join(location)
-    if url.scheme != "https" or url.userinfo or url.fragment:
+    if not _transport_allowed(url) or url.userinfo or url.fragment:
         raise LoginBlockedError("BLOCKED: unsafe OIDC redirect")
     if _origin(url) == app and url.path == "/auth/callback":
         return url
@@ -198,7 +211,7 @@ class DexPasswordLogin:
             raise LoginBlockedError("BLOCKED: Dex login form was not found")
         target = response.url.join(str(form["action"]))
         if (
-            target.scheme != "https"
+            not _transport_allowed(target)
             or target.userinfo
             or target.fragment
             or _origin(target) != self.dex
@@ -250,12 +263,12 @@ async def follow_dex_authorization(
         issuer = httpx.URL(credentials.issuer.get_secret_value())
     except httpx.InvalidURL:
         raise LoginBlockedError("BLOCKED: Dex authorization URL or operator issuer is invalid") from None
-    if issuer.scheme != "https" or issuer.userinfo or issuer.query or issuer.fragment:
+    if not _transport_allowed(issuer) or issuer.userinfo or issuer.query or issuer.fragment:
         raise LoginBlockedError("BLOCKED: operator Secret has an invalid HTTPS issuer")
     dex = _origin(issuer)
     app = app_origin(str(callback_app))
     if (
-        authorization.scheme != "https"
+        not _transport_allowed(authorization)
         or authorization.userinfo
         or authorization.fragment
         or _origin(authorization) != dex
@@ -283,7 +296,7 @@ async def follow_dex_authorization(
             if not location:
                 raise LoginBlockedError("BLOCKED: Dex returned a redirect without a location")
             target = response.url.join(location)
-            if target.scheme != "https" or target.userinfo or target.fragment:
+            if not _transport_allowed(target) or target.userinfo or target.fragment:
                 raise LoginBlockedError("BLOCKED: Dex returned an unsafe MCP authorization redirect")
             if _origin(target) == dex and _DEX_OAUTH_PATH.fullmatch(target.path):
                 response = await browser.get(target)
@@ -314,7 +327,7 @@ async def login_operator(
     __tracebackhide__ = True
     app = app_origin(str(http.base_url))
     issuer = httpx.URL(credentials.issuer.get_secret_value())
-    if issuer.scheme != "https" or issuer.userinfo or issuer.query or issuer.fragment:
+    if not _transport_allowed(issuer) or issuer.userinfo or issuer.query or issuer.fragment:
         raise LoginBlockedError("BLOCKED: operator Secret has an invalid HTTPS issuer")
     idp = _origin(issuer)
     if app.host == idp.host or app.host.endswith(f".{idp.host}") or idp.host.endswith(f".{app.host}"):
@@ -333,7 +346,9 @@ async def login_operator(
         if _origin(response.url) == app and response.url.path == "/auth/callback":
             if response.status_code != 303 or response.headers.get("location") != "/":
                 raise LoginBlockedError("BLOCKED: app OIDC callback rejected authorization")
-            cookie = http.cookies.get(SECURE_COOKIE, domain=app.host, path="/")
+            # The app names its session cookie by its own origin's scheme (`OIDCSettings.cookie_name`).
+            cookie_name = SECURE_COOKIE if app.scheme == "https" else INSECURE_COOKIE
+            cookie = http.cookies.get(cookie_name, domain=app.host, path="/")
             if not cookie:
                 raise LoginBlockedError("BLOCKED: app callback did not issue an operator session cookie")
             me = await http.get("/auth/me")

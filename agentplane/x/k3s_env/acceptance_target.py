@@ -4,7 +4,8 @@ An acceptance scenario's `_k3s` target loads it by name (`PYTEST_PLUGINS`). Befo
 fixture runs, it starts the stack and publishes it the way an operator names a deployment: the
 `AGENTPLANE_ACCEPTANCE_*` variables the acceptance `conftest` reads, `KUBECONFIG`, and `kubectl` on
 `PATH`. LLM ingress forwards to the scenario's scripted model on the node, which the scenario starts
-on the published address (`scripted_upstream`).
+on the published address (`scripted_upstream`). A stack with the MCP fixtures also publishes the
+operator's login Secret for `operator_login`, and trusts Dex's CA (`SSL_CERT_FILE`).
 """
 
 import os
@@ -15,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from agentplane.acceptance import scripted_upstream
+from agentplane.acceptance import operator_login, scripted_upstream
 from agentplane.acceptance.conftest import BASE_URL, NAMESPACE, TOKEN
 from agentplane.x.k3s_env.rendered_fixture import LocalModel
 from agentplane.x.k3s_env.stack import node_ip, running_stack
@@ -48,4 +49,10 @@ def k3s_deployment() -> Iterator[None]:
         environment.setenv(TOKEN, stack.token)
         environment.setenv(NAMESPACE, stack.namespace)
         environment.setenv(scripted_upstream.ADDRESS, f"{host}:{port}")
+        if stack.mcp_fixtures is not None:
+            environment.setenv("SSL_CERT_FILE", str(stack.mcp_fixtures.ca_bundle))
+            environment.setenv(
+                operator_login.SECRET_PATH_ENV,
+                f"/api/v1/namespaces/{stack.namespace}/secrets/{stack.mcp_fixtures.operator_secret}",
+            )
         yield

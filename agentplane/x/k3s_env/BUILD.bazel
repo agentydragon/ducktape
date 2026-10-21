@@ -117,6 +117,22 @@ _IMAGES = {
     for name, image in _IMAGES.items()
 ]
 
+# Dex and the MCP servers `test_mcp` calls, imported only by targets that run them
+# (`acceptance_test(mcp_fixtures = True)`): a subdirectory, so `stack.py`'s glob skips them.
+[
+    oci_layout_rloc(
+        name = "mcp_fixtures/" + name + "_layout",
+        testonly = True,
+        image = image,
+        visibility = ["//agentplane/acceptance:__pkg__"],
+    )
+    for name, image in {
+        "dex": "@dex_linux_amd64",
+        "mcp_everything": "@mcp_everything_linux_amd64",
+        "oauth_fixture": "//agentplane/action_service/testing:oauth_mcp_server_image",
+    }.items()
+]
+
 py_test(
     name = "test_render",
     # cdk8s/jsii startup dominates this one-case test on RBE; see debug/render_startup.md.
@@ -127,9 +143,11 @@ py_test(
     deps = [
         ":fixture_chart",
         ":fixture_database",
+        ":rendered_fixture",
         "//:conftest",
         "//agentplane/runner_gateway:settings",
         "//util:settings_contract",
+        "@pypi//bcrypt",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -144,6 +162,7 @@ py_library(
         ":rendered_fixture",
         ":stack",
         "//agentplane/acceptance:conftest",
+        "//agentplane/acceptance:operator_login",
         "//agentplane/acceptance:scripted_upstream",
         "@pypi//pytest",
     ],
@@ -166,6 +185,7 @@ py_library(
         ":bootstrap",
         ":rendered_fixture",
         "//agentplane/acceptance:conftest",
+        "//agentplane/testing:tls",
         "//util/bazel:runfiles",
         "@pypi//pyyaml",
     ],
@@ -245,15 +265,18 @@ py_library(
         ":rendered_fixture",
         "//agentplane:subjects",
         "//agentplane/acceptance:launch_preset",
+        "//agentplane/acceptance:mcp_servers",
         "//agentplane/acceptance:runtime_grant",
         "//agentplane/crds:policyset",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/agentplane:actions",
+        "//cluster/cdk8s/agentplane:actions_testing_fixtures",
         "//cluster/cdk8s/agentplane:app",
         "//cluster/cdk8s/agentplane:chart",
         "//cluster/cdk8s/agentplane:command_sandbox",
+        "//cluster/cdk8s/agentplane:dex",
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:egress_credentials",
         "//cluster/cdk8s/agentplane:history_service",
@@ -270,8 +293,11 @@ py_library(
         "//cluster/cdk8s/agentplane:testing",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//model_catalog:catalog",
+        "@pypi//bcrypt",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+        "@pypi//more_itertools",
     ],
 )
 
@@ -299,13 +325,16 @@ py_binary(
     deps = [":render_fixture"],
 )
 
-# The fixture chart for each model backend, rendered once per build so no test action starts Node or
-# compiles the chart code. The values only the test action knows are placeholders it fills in.
+# The fixture chart for each model backend, and for the local model with the MCP fixtures (Dex and the
+# MCP servers of `acceptance_test(mcp_fixtures = True)` targets), rendered once per build so no test
+# action starts Node or compiles the chart code. The values only the test action knows are
+# placeholders it fills in.
 genrule(
     name = "rendered",
     testonly = True,
     outs = [
         "rendered/local-model.json",
+        "rendered/local-model-mcp-fixtures.json",
         "rendered/none.json",
         "rendered/public-litellm.json",
     ],

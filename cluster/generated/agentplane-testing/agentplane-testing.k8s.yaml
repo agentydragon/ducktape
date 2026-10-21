@@ -5966,6 +5966,136 @@ spec:
             - port: "8080"
               protocol: TCP
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    secret.reloader.stakater.com/reload: agentplane-testing-acceptance-operator,agentplane-oidc,agentplane-mcp-oauth
+  labels:
+    app.kubernetes.io/name: agentplane-testing-dex
+  name: dex
+  namespace: agentplane-testing
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-dex-deployment-c825a328
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-testing-dex
+        cdk8s.io/metadata.addr: agentplane-dex-deployment-c825a328
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - dex
+            - serve
+            - /etc/dex/config.yaml
+          env:
+            - name: DEX_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client-id
+                  name: agentplane-oidc
+            - name: DEX_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client-secret
+                  name: agentplane-oidc
+            - name: MCP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client-secret
+                  name: agentplane-mcp-oauth
+          image: ghcr.io/dexidp/dex:v2.45.1
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /dex/healthz
+              port: 5556
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          name: dex
+          ports:
+            - containerPort: 5556
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /dex/healthz
+              port: 5556
+              scheme: HTTP
+            initialDelaySeconds: 0
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/dex
+              name: secret-agentplane-testing-acceptance-operator
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      restartPolicy: Always
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: secret-agentplane-testing-acceptance-operator
+          secret:
+            items:
+              - key: config.yaml
+                path: config.yaml
+            secretName: agentplane-testing-acceptance-operator
+        - emptyDir: {}
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dex
+  namespace: agentplane-testing
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 5556
+      protocol: TCP
+      targetPort: 5556
+  selector:
+    cdk8s.io/metadata.addr: agentplane-dex-deployment-c825a328
+  type: ClusterIP
+---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
@@ -6142,136 +6272,6 @@ spec:
           reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
           reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: public-coder-agent
       type: Opaque
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  annotations:
-    secret.reloader.stakater.com/reload: agentplane-testing-acceptance-operator,agentplane-oidc,agentplane-mcp-oauth
-  labels:
-    app.kubernetes.io/name: agentplane-testing-dex
-  name: dex
-  namespace: agentplane-testing
-spec:
-  minReadySeconds: 0
-  progressDeadlineSeconds: 600
-  replicas: 1
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      cdk8s.io/metadata.addr: agentplane-dex-deployment-c825a328
-  strategy:
-    type: Recreate
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: agentplane-testing-dex
-        cdk8s.io/metadata.addr: agentplane-dex-deployment-c825a328
-    spec:
-      automountServiceAccountToken: false
-      containers:
-        - args:
-            - dex
-            - serve
-            - /etc/dex/config.yaml
-          env:
-            - name: DEX_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  key: client-id
-                  name: agentplane-oidc
-            - name: DEX_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  key: client-secret
-                  name: agentplane-oidc
-            - name: MCP_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  key: client-secret
-                  name: agentplane-mcp-oauth
-          image: ghcr.io/dexidp/dex:v2.45.1
-          imagePullPolicy: IfNotPresent
-          livenessProbe:
-            failureThreshold: 3
-            httpGet:
-              path: /dex/healthz
-              port: 5556
-              scheme: HTTP
-            initialDelaySeconds: 10
-            periodSeconds: 30
-          name: dex
-          ports:
-            - containerPort: 5556
-              name: http
-              protocol: TCP
-          readinessProbe:
-            failureThreshold: 3
-            httpGet:
-              path: /dex/healthz
-              port: 5556
-              scheme: HTTP
-            initialDelaySeconds: 0
-            periodSeconds: 5
-          resources:
-            limits:
-              cpu: 100m
-              memory: 128Mi
-            requests:
-              cpu: 10m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-          volumeMounts:
-            - mountPath: /etc/dex
-              name: secret-agentplane-testing-acceptance-operator
-              readOnly: true
-            - mountPath: /tmp
-              name: tmp
-      dnsPolicy: ClusterFirst
-      hostNetwork: false
-      restartPolicy: Always
-      securityContext:
-        fsGroupChangePolicy: Always
-        runAsGroup: 1001
-        runAsNonRoot: true
-        runAsUser: 1001
-        seccompProfile:
-          type: RuntimeDefault
-      setHostnameAsFQDN: false
-      shareProcessNamespace: false
-      terminationGracePeriodSeconds: 30
-      volumes:
-        - name: secret-agentplane-testing-acceptance-operator
-          secret:
-            items:
-              - key: config.yaml
-                path: config.yaml
-            secretName: agentplane-testing-acceptance-operator
-        - emptyDir: {}
-          name: tmp
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: dex
-  namespace: agentplane-testing
-spec:
-  externalIPs: []
-  ports:
-    - name: http
-      port: 5556
-      protocol: TCP
-      targetPort: 5556
-  selector:
-    cdk8s.io/metadata.addr: agentplane-dex-deployment-c825a328
-  type: ClusterIP
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

@@ -233,6 +233,9 @@ dependencies = [
     # Mako template rendering
     "mako>=1.3",
 
+    # agentplane/x/k3s_env: the bcrypt hash of the operator password in the fixture's Dex config.
+    "bcrypt>=5.0.0",
+
     # gterm-theme
     "dbus-python>=1.3.0",
     "PyGObject>=3.40.0",

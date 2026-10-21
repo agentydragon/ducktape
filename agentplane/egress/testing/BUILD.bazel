@@ -6,12 +6,6 @@ package(
 )
 
 py_library(
-    name = "tls",
-    srcs = ["tls.py"],
-    deps = ["@pypi//cryptography"],
-)
-
-py_library(
     name = "sidecar_process",
     srcs = ["sidecar_process.py"],
     deps = [

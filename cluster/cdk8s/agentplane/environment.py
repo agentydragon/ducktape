@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy
@@ -64,7 +65,8 @@ class EgressProps:
 
 @dataclass(frozen=True)
 class AppProps:
-    hostname: str
+    # Where a browser reaches the app, which OIDC redirects return to.
+    origin: str
     oidc_issuer: str
     # staging's OIDC provider is the in-cluster Authentik Service, reached both by its
     # public hostname and directly; testing's Dex is reached only by its public hostname.
@@ -74,6 +76,12 @@ class AppProps:
     # The OIDC client secret and the session signing key can have separate owners.
     # Testing leaves this at `agentplane-oidc`; staging uses an ESO-generated Secret.
     oidc_session_secret_name: str = "agentplane-oidc"
+
+    @property
+    def hostname(self) -> str:
+        hostname = urlsplit(self.origin).hostname
+        assert hostname is not None, f"app origin has no hostname: {self.origin!r}"
+        return hostname
 
 
 @dataclass(frozen=True)

@@ -28,7 +28,7 @@ bbr test //agentplane/acceptance:test_dispatcher_deployed_k3s //agentplane/accep
 
 Fast offline driver tests cover login choreography (`test_operator_login`), startup retries and
 terminal-turn handling (`test_agent`). They create no Sandbox and do not prove that a deployed IdP,
-Agentplane, or harness is reachable. Deployed login remains setup for the MCP vertical scenario.
+Agentplane, or harness is reachable. Operator login is setup for the MCP scenario.
 
 `Agent.run` returns only for `TURN_STATUS_COMPLETED`. Any other terminal status fails immediately
 with the turn id, status and quoted runner diagnostic, before scenario assertions about tool effects.
@@ -181,59 +181,39 @@ distinct wake generations per authenticated caller per rolling minute.
 
 ## MCP integration
 
-`//agentplane/acceptance:test_mcp` belongs to this deployed suite. Both real harnesses
-receive the Action API URL and public workload placeholder, discover the `everything`
-group's `echo` Action, submit a structured group/name request, poll until terminal,
-and report JSON. The test checks the reported result against the fresh marker's exact
-upstream echo output. It uses the existing sandbox setup/teardown and `Agent` fixtures.
-Testing GitOps (`cluster/generated/agentplane-testing/`) wires the upstream image, ActionGroup
-and discovery egress; nothing there auto-approves. `test_agent_executes_mcp_action` first binds
-its Sandbox to an `exact_actions` set naming `everything/echo`, written through the Kubernetes
-API as below. Run after the PR's images and manifests have rolled out; remote adapter tests are
-not evidence that the real-agent deployed test has run.
+`test_mcp_k3s` runs on a stack with Dex, `mcp-everything` and the Dex-backed OAuth MCP fixture
+(`acceptance_test(mcp_fixtures = True)`), configured under test-only names
+([`mcp_servers.py`](mcp_servers.py)). The scripted model runs one `agentplane --json actions …`
+command per turn, on each harness, and the scenario reads the printed receipt back from what the
+harness sent the model.
 
-`test_policy_binding_auto_approves_the_bound_sandbox` writes, with the caller's own kubeconfig,
-a `PolicySet` whose `action_auto_approve` rule approves `everything/echo` with a string `message`
-of at most 200 characters and a `PolicyBinding` naming the ServiceAccount of the Sandbox it
-launched, then waits for the Action Service's `ActionsReady` condition on the binding. A matching
-echo comes back auto-approved and executed, and the BFF receipt's Decision names the binding, the
-set and the matching rule; an over-long message waits for the operator; after the binding is
-patched to an expiry in the past, the Policy Controller deletes it and the BFF's caller grants stop
-listing it, a match waits too. The objects are deleted at teardown; the pending requests are
-denied through the BFF so nothing lingers. The role in
-`../../cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml`
-grants create/get/patch/delete on the two kinds for this.
+- `test_agent_executes_mcp_action` binds its Sandbox to an `exact_actions` set naming the
+  `mcp-everything` echo, submits it with `--wait` and checks the exact upstream echo result.
+- `test_policy_binding_auto_approves_the_bound_sandbox` writes a `PolicySet` approving that echo
+  with a `message` of at most 200 characters and a `PolicyBinding` naming the Sandbox's
+  ServiceAccount, then waits for the binding's `ActionsReady`. A match comes back auto-approved, and
+  the BFF receipt's Decision names the binding, the set and the rule; an over-long message waits for
+  the operator; once the expired binding is deleted, a match waits too. Pending requests are denied
+  through the BFF.
+- `test_agent_mcp_bff_decision` submits from an unbound Sandbox, decides allow or deny through the
+  app's `/actions/{id}` BFF, and has the agent `wait` for the outcome. It checks the
+  request/Decision/Execution snapshots, the operator's identity, duplicate-decision idempotency and
+  stale-version rejection.
+- `test_operator_links_oauth_mcp_server` links the OAuth fixture through the BFF, following Dex's
+  local-password form in a separate fresh browser that stops at the linkage callback; the BFF then
+  validates the unchanged state and completes its own token exchange. The agent then calls the
+  protected tool.
 
-`test_agent_mcp_bff_decision` adds allow/deny cases on each harness: turn 1 submits
-an echo from a Sandbox nothing binds, so it waits for the operator, and returns only
-its UUID; Python inspects and decides through the app's `/actions/{id}` BFF; the
-same Agent polls in turn 2 and returns strict JSON. Python independently checks
-durable request/Decision/Execution snapshots, exact arguments/result, operator
-identity, duplicate-decision idempotency and stale-version rejection. No canonical operator API fallback is used.
-
-`test_operator_links_oauth_mcp_server` exercises the operator-managed MCP OAuth linkage flow
-end to end against a real, deployed, OAuth-protected MCP server -- the `example` server, a
-Dex-backed fixture with one `echo` tool, deployed the same way as `everything`. It starts the
-linkage through the BFF, then follows Dex's ordinary local-password form in a separate fresh
-browser. Dex 2.45.1 does not establish reusable SSO cookies for this password-connector path, so
-the app session is never copied to Dex. The separate browser stops at the exact linkage callback;
-the BFF then validates the unchanged state and completes its own callback/token boundary. The test
-asserts the server reaches `linked` status and executes the protected tool through a real
-Agentplane agent. Unlike the real GitHub/Kubernetes providers linked in staging, nothing here is
-mocked or fabricated: this is the same code path an operator uses to link any OAuth MCP server,
-run against a server this repo controls end to end.
-
-These cases read only `public-coder-agent/agentplane-testing-acceptance-operator` via
-`kubectl get --raw=/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator`
-using the existing kubeconfig and either the Haku Console Kubernetes proxy
-(`https://haku-kubeapi.allegedly.works`) or a Sandbox's in-cluster API server. No operator environment variables or
-pre-issued cookie are used. Missing proxy/RBAC/reflection or malformed Secret data
-fails **BLOCKED**, without printing kubectl output or decoded values.
+These cases read only the operator Secret the k3s target publishes (`AGENTPLANE_OPERATOR_SECRET_PATH`)
+via `kubectl get --raw`, with a kubeconfig naming the Haku Console Kubernetes proxy
+(`https://haku-kubeapi.allegedly.works`), a Sandbox's in-cluster API server or the k3s fixture's.
+No pre-issued cookie is used. Missing proxy/RBAC/reflection or malformed Secret data fails
+**BLOCKED**, without printing kubectl output or decoded values.
 
 The Secret's `login` is the identifier submitted to the identity provider; `username`
 is the expected operator name returned by the app. Dex's local password connector
 uses the configured email for login, which is distinct from its display username.
-Both the testing ESO definition and staging Terraform definition supply these fields.
+The k3s fixture chart writes these fields beside Dex's config.
 
 A fresh `httpx` cookie jar starts at the app's `/auth/login`, follows the configured
 OIDC provider's redirects and returns to the app's `/auth/callback`. The app owns OAuth
@@ -242,7 +222,9 @@ the app's exact same-origin `Origin`. Authentik staging uses its pinned FlowExec
 adapter and fails **BLOCKED** for MFA, consent or browser-only challenges. The testing
 instance uses Dex's ordinary local password form; the test does not reproduce an
 Authentik-specific web flow and still exercises the app's real authorization-code/session
-boundary. The test never fabricates a cookie or inserts a session.
+boundary. The test never fabricates a cookie or inserts a session. On k3s the app (over http) and
+Dex (over TLS from a CA the stack makes and the test trusts) serve on their in-cluster Service names,
+which the stack resolves for the test process; `operator_login` allows http only to such names.
 
 Credentials stay in process memory. HTTP logging is suppressed for the BFF client's
 lifetime; pytest local-variable dumps are refused before Secret access. Do not add
@@ -273,8 +255,8 @@ runs the other egress cases with the scripted model: the model call goes through
 PolicySet bound to a running Sandbox takes effect. The latter binds the fixture's own PolicySet
 ([`runtime_grant.py`](runtime_grant.py)), not one a deployment's Sandboxes use.
 
-Run the other live scenarios by their explicit targets: `:test_session_instructions`, `:test_mcp`,
-and `:test_thread_latency`.
+Run the other live scenarios by their explicit targets: `:test_session_instructions` and
+`:test_thread_latency`.
 
 `//agentplane/acceptance:test_ollama_routes` exercises every configured Ollama chat
 route offered by the committed testing app ConfigMap, on each harness that offers it,
@@ -308,11 +290,8 @@ Override any of it through the environment:
 | `AGENTPLANE_ACCEPTANCE_TOKEN`           | minted with `kubectl`                        |
 | `AGENTPLANE_ACCEPTANCE_NAMESPACE`       | `agentplane-testing`                         |
 | `AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT` | `agentplane-agent`                           |
-| `AGENTPLANE_ACCEPTANCE_IDP`             | `dex`                                        |
-| `AGENTPLANE_OPERATOR_SECRET_PATH`       | testing acceptance Secret path               |
 
-Staging remains available for ad hoc click-through tests by overriding the URL, namespace,
-IDP, and operator Secret path to the Authentik deployment. The shipped default is Dex/testing.
+Staging remains available for ad hoc click-through tests by overriding the URL and namespace.
 The testing environment is Flux-managed and exposes the app and Dex HTTPS routes needed for the
 browser authorization-code flow plus the Action Service's `/mcp` and OAuth surface at
 `agentplane-actions-testing.allegedly.works`; the `mcp-everything` fixture itself is

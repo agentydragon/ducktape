@@ -1960,7 +1960,7 @@ changes.
 flowchart LR
     K3S_MODEL_CREDENTIALS[Decision: model key for k3s acceptance]
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
-    K3S_FIXTURE_IDENTITY[Proposed: Dex and MCP fixtures in the k3s chart]
+    K3S_FIXTURE_IDENTITY[In flight: test_dcr on the k3s chart's Dex and MCP fixtures]
     K3S_VM_ACCEPTANCE[In flight: KubeVirt emulation spike on k3s]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     TESTING_ROLLOUT_ROLE[Decision: what replaces testing before staging]
@@ -1998,16 +1998,12 @@ have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-b
 
 ### `K3S_FIXTURE_IDENTITY` — Dex and MCP fixtures in the k3s chart
 
-**Proposed.** Add to the fixture chart:
+**In flight.** The fixture chart runs Dex, `mcp-everything` and the Dex-backed OAuth MCP server
+for targets that ask (`acceptance_test(mcp_fixtures = True)`), and `test_mcp` runs there with the
+scripted model. Left: `test_dcr` on k3s, which needs the Action Service's OAuth server configured in
+the fixture and its MCP URL from the environment in place of the hardcoded testing one.
 
-- Dex, with a plain config Secret.
-- `mcp-everything`.
-- The Dex-backed `example` OAuth server.
-
-Let the operator-login kubeconfig guard accept the fixture's apiserver, and drop `test_dcr`'s
-hardcoded testing MCP URL.
-
-Exit: `test_mcp` and `test_dcr` pass on k3s with whichever model backend exists by then.
+Exit: `test_dcr_k3s` passes.
 
 ### `K3S_VM_ACCEPTANCE` — where VM acceptance runs
 

@@ -16,6 +16,7 @@ package(
         "//agentplane/runner:__subpackages__",
         "//agentplane/runner_gateway:__subpackages__",
         "//agentplane/sandboxes:__subpackages__",
+        "//agentplane/x/k3s_env:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
     ],
 )
@@ -93,4 +94,10 @@ py_library(
     name = "scripted_model",
     srcs = ["scripted_model.py"],
     deps = ["//agentplane/native/testing:model_endpoint"],
+)
+
+py_library(
+    name = "tls",
+    srcs = ["tls.py"],
+    deps = ["@pypi//cryptography"],
 )

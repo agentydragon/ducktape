@@ -197,7 +197,7 @@ class App(Construct):
                 else {}
             ),
             env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
-            env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.env.app.hostname}"),
+            env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(self.env.app.origin),
             env_name(OIDCSettings, "client_id"): self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
             env_name(OIDCSettings, "client_secret"): self.oidc.key("client-secret").env_value(
                 self, "oidc-client-secret-ref"

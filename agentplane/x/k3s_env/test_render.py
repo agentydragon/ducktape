@@ -1,14 +1,19 @@
 """The direct cdk8s fixture keeps the Go listeners and their authentication wired."""
 
+from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
+import bcrypt
 import pytest_bazel
 import yaml
 
 from agentplane.runner_gateway.settings import Settings
 from agentplane.x.k3s_env import fixture_chart, fixture_database
+from agentplane.x.k3s_env.rendered_fixture import McpInputs
 from util.settings_contract import env_name
+
+_MCP = McpInputs(dex_ca_cert="dex-ca\n", dex_cert="dex-cert\n", dex_key="dex-key\n")
 
 
 def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -24,6 +29,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         system_roots="system-roots\n",
         cluster_ca="cluster-ca\n",
         models=None,
+        mcp=_MCP,
     )
     assert all(
         doc["kind"]
@@ -213,6 +219,25 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     build_pod = _resource(docs, "PodTemplate", "sandbox-build")["template"]["spec"]
     home = next(volume for volume in build_pod["volumes"] if volume["name"] == "home")
     assert home["emptyDir"]["sizeLimit"] == "20Gi"
+
+    # Dex accepts the operator's password: its hash is bcrypt of the password the Secret hands the test,
+    # at no less than the cost Dex requires.
+    operator = _resource(docs, "Secret", fixture_chart.OPERATOR_SECRET)["stringData"]
+    (user,) = yaml.safe_load(operator["config.yaml"])["staticPasswords"]
+    assert bcrypt.checkpw(operator["password"].encode(), user["hash"].encode())
+    assert int(user["hash"].split("$")[2]) >= 10
+
+    # The Dex clients' TLS verifies with a mounted bundle that holds the CA of Dex's certificate.
+    for workload in ("app", "actions"):
+        pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
+        (container,) = pod_spec["containers"]
+        cert_file = PurePosixPath(
+            next(entry["value"] for entry in container["env"] if entry["name"] == "SSL_CERT_FILE")
+        )
+        mount = next(mount for mount in container["volumeMounts"] if mount["mountPath"] == str(cert_file.parent))
+        volume = next(volume for volume in pod_spec["volumes"] if volume["name"] == mount["name"])
+        bundle = _resource(docs, "ConfigMap", volume["configMap"]["name"])["data"][cert_file.name]
+        assert bundle.endswith(_MCP.dex_ca_cert), workload
 
 
 if __name__ == "__main__":

@@ -14,6 +14,16 @@ is the pytest plugin that starts it and publishes it as the deployment under tes
 forwarding to the scenario's scripted model on the node. Scripted targets take the
 `harnesses/runner_layout` image, which carries both pinned harnesses.
 
+A target declared with `mcp_fixtures = True` takes the `rendered/local-model-mcp-fixtures.json`
+rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture
+(`mcp_fixtures/*_layout`), with test-only Dex clients, operator, MCP server and Action groups. Dex
+reads a config Secret the chart writes, holding the bcrypt hash of a generated operator password.
+The app and Dex serve on their in-cluster Service names, which OIDC redirects carry;
+[`stack.py`](stack.py) adds the Services' addresses to the node's `/etc/hosts` so the test process
+reaches the same names. The app serves http. Dex serves TLS too, because the app and the Action
+Service accept a plain-http issuer only on loopback: a CA made per stack signs its certificate, and
+the app, the Action Service and the test process trust it through `SSL_CERT_FILE`.
+
 Both targets drive the app's REST/SSE API and omit Electric and the browser frontend. Tests of the
 frontend sync protocol run Electric separately. The database bootstrap still creates the `electric`
 role required by the existing migrations; it does not start an Electric process.
@@ -686,7 +696,7 @@ result for the new Go composition. Breaks found on the way, in order:
 - **Namespaces:** the manifest's Roles live in `litellm` and `ollama`, so empty ones are created.
 - **Dex dropped:** its config reached the Pod through an ExternalSecret template (`regexReplaceAll`, `htpasswd`
   are External Secrets functions). The old YAML rewrite could not evaluate that template, and the image's
-  gomplate rejected it. The direct fixture also leaves Dex out.
+  gomplate rejected it. The direct fixture writes Dex's config Secret itself, for targets with `mcp_fixtures`.
 
 - **Runner image:** the fixture builds the runner from source on a debian-slim base without the
   deployed Nix toolbox or private registry credentials. The model smoke adds the pinned Claude

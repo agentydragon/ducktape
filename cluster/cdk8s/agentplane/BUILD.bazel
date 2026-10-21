@@ -520,6 +520,8 @@ py_library(
     srcs = ["actions_testing_fixtures.py"],
     deps = [
         ":dex",
+        "//agentplane/action_service:catalog",
+        "//agentplane/action_service:mcp_settings",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
@@ -749,7 +751,6 @@ py_library(
         ":sandbox_pod",
         "//agentplane:crd_group",
         "//agentplane/action_service:catalog",
-        "//agentplane/action_service:mcp_settings",
         "//agentplane/action_service:operator_oidc_settings",
         "//agentplane/action_service/sandbox:binding",
         "//agentplane/app:action_federation_settings",

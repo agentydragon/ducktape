@@ -13,6 +13,7 @@ from pydantic import JsonValue, SecretStr
 
 from agentplane.acceptance.operator_login import (
     IN_CLUSTER_API,
+    K3S_FIXTURE_API,
     KUBE_PROXY,
     SECRET_PATH,
     IdentityProvider,
@@ -151,7 +152,7 @@ async def _follow_mcp_linkage(browser: httpx.AsyncClient) -> tuple[str, str]:
     )
 
 
-@pytest.mark.parametrize("server", [KUBE_PROXY, IN_CLUSTER_API])
+@pytest.mark.parametrize("server", [KUBE_PROXY, IN_CLUSTER_API, K3S_FIXTURE_API])
 def test_secret_is_one_named_get_through_current_proxy(monkeypatch: pytest.MonkeyPatch, server: str) -> None:
     data = {name: base64.b64encode(value.get_secret_value().encode()).decode() for name, value in CREDENTIALS}
     run = Mock(
@@ -538,6 +539,12 @@ async def test_login_refuses_unsafe_or_unsupported_flow(failure: str) -> None:
 
 def test_origin_normalization() -> None:
     assert app_origin(APP) == app_origin(f"{APP}/")
+
+
+def test_http_reaches_only_a_cluster_internal_name() -> None:
+    assert app_origin("http://app.test-namespace.svc:8080") == httpx.URL("http://app.test-namespace.svc:8080/")
+    with pytest.raises(LoginBlockedError, match="HTTPS app origin"):
+        app_origin("http://app.test.invalid")
 
 
 if __name__ == "__main__":

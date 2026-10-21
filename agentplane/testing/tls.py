@@ -1,8 +1,9 @@
-"""Throwaway certificate authorities for the proxy tests.
+"""Throwaway certificate authorities and the server certificates they sign, for tests.
 
-Two distinct CAs stand in for the two trust relationships the deployed proxy has: the interception
-CA, whose leaves the client sees and which the runner container trusts, and an upstream CA, which
-signs the scripted upstream's certificate and which the proxy is told to trust for the far leg.
+The egress proxy tests use two CAs for the two trust relationships the deployed proxy has: the
+interception CA, whose leaves the client sees and which the runner container trusts, and an upstream
+CA, which signs the scripted upstream's certificate and which the proxy is told to trust for the far
+leg. The k3s fixture signs Dex's serving certificate with one.
 """
 
 from __future__ import annotations
@@ -86,6 +87,8 @@ def issue_leaf(ca: CertificateAuthority, hostname: str, directory: Path) -> tupl
         .not_valid_before(not_before)
         .not_valid_after(not_after)
         .add_extension(x509.SubjectAlternativeName([x509.DNSName(hostname)]), critical=False)
+        # Python's default context verifies strictly (`ssl.VERIFY_X509_STRICT`) and refuses a leaf without it.
+        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca.key.public_key()), critical=False)
         .sign(ca.key, hashes.SHA256())
     )
     cert_path = directory / f"{hostname}-cert.pem"

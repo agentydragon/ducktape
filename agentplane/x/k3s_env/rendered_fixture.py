@@ -55,6 +55,23 @@ PLACEHOLDERS = RuntimeInputs(
     system_roots="k3s-env-placeholder-system-roots",
     cluster_ca="k3s-env-placeholder-cluster-ca",
 )
+
+
+@dataclass(frozen=True)
+class McpInputs:
+    """Dex's TLS for the MCP fixtures, as PEM: the CA its clients trust, and the certificate and key it
+    signs for `McpFixtures.dex_host`."""
+
+    dex_ca_cert: str
+    dex_cert: str
+    dex_key: str
+
+
+MCP_PLACEHOLDERS = McpInputs(
+    dex_ca_cert="k3s-env-placeholder-dex-ca-cert",
+    dex_cert="k3s-env-placeholder-dex-cert",
+    dex_key="k3s-env-placeholder-dex-key",
+)
 MODEL_PLACEHOLDERS: dict[Backend, Models] = {
     Backend.NONE: None,
     Backend.LOCAL_MODEL: LocalModel(url="http://k3s-env-placeholder-model.invalid:4000"),
@@ -62,9 +79,28 @@ MODEL_PLACEHOLDERS: dict[Backend, Models] = {
 }
 
 
+class BrowserService(BaseModel):
+    """A Service the test process reaches by the names OIDC redirects carry."""
+
+    name: str
+    host: str
+    fqdn: str
+
+
+class McpFixtures(BaseModel):
+    """Dex and the MCP servers, as rendered: the name Dex's certificate is for, and the Secret with the
+    operator's login."""
+
+    dex_host: str
+    operator_secret: str
+
+
 class RenderedFixture(BaseModel):
     backend: Backend
     namespace: str
+    app_origin: str
+    browser_services: list[BrowserService]
+    mcp_fixtures: McpFixtures | None
     objects: list[dict[str, Any]]
 
 
@@ -81,9 +117,16 @@ def _replace(value: Any, replacements: dict[str, str]) -> Any:
     return value
 
 
-def load(rendered: Path, inputs: RuntimeInputs, models: Models) -> RenderedFixture:
-    fixture = RenderedFixture.model_validate_json(rendered.read_text())
+def read(rendered: Path) -> RenderedFixture:
+    return RenderedFixture.model_validate_json(rendered.read_text())
+
+
+def fill(fixture: RenderedFixture, inputs: RuntimeInputs, models: Models, mcp: McpInputs | None) -> RenderedFixture:
     replacements = dict(zip(asdict(PLACEHOLDERS).values(), asdict(inputs).values(), strict=True))
+    if (fixture.mcp_fixtures is None) != (mcp is None):
+        raise ValueError(f"{fixture.mcp_fixtures=} does not match {mcp is None=}")
+    if mcp is not None:
+        replacements |= dict(zip(asdict(MCP_PLACEHOLDERS).values(), asdict(mcp).values(), strict=True))
     match MODEL_PLACEHOLDERS[fixture.backend], models:
         case None, None:
             pass
@@ -92,5 +135,5 @@ def load(rendered: Path, inputs: RuntimeInputs, models: Models) -> RenderedFixtu
         case PublicLiteLLM(key=placeholder), PublicLiteLLM(key=key):
             replacements[placeholder] = key
         case _:
-            raise ValueError(f"{rendered=} is rendered for {fixture.backend=}, not for {models=}")
+            raise ValueError(f"{fixture.backend=} is not rendered for {models=}")
     return fixture.model_copy(update={"objects": _replace(fixture.objects, replacements)})
