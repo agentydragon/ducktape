@@ -16,8 +16,9 @@ The port moves the service into one Go binary shaped by its destination, on the 
 - **Web Push and the executors** stay in `actions` as packages behind one interface each: `push` reads pending
   approvals from the lifecycle, and the executors use the lease protocol.
 
-Out of scope: any schema change, dropping DCR, a watch resume cursor, `SERVICE_SETTINGS_RETHINK`, renaming a table,
-channel or setting key, and `WEB_PUSH_SERVICE`.
+Out of scope: dropping DCR, a watch resume cursor, `SERVICE_SETTINGS_RETHINK`, renaming a table, channel or setting
+key, `WEB_PUSH_SERVICE`, and any schema change but the authorization server's tables and the grant columns Go stops
+writing ([below](#stored-data-the-port-must-read-and-write-exactly)).
 
 ## What moves
 
@@ -52,8 +53,6 @@ channel or setting key, and `WEB_PUSH_SERVICE`.
 | Pod exec                                                    | client-go `tools/remotecommand`                                                                                 |
 | Settings, logs, metrics, retry, single flight               | Viper with `ExperimentalBindStruct`, `slog` JSON, `prometheus/client_golang`, `go-retry`, `x/sync/singleflight` |
 
-`zitadel/oidc` is not in `third_party/go.mod` yet; the stage that first imports it adds it.
-
 ## The authorization server
 
 External MCP clients authorize against the edge's authorization server, which runs in the Go binary beside `/mcp`
@@ -62,22 +61,6 @@ resource-server and client halves, and `fosite` and `zitadel/oidc` are protocol 
 operator chose a toolkit inside the service (2026-10-19 PDT) and then `zitadel/oidc` `op` over `fosite`
 (maintained: `v3.51.16` on 2026-10-15, against `fosite`'s last tag in December 2024). Ory Hydra and a Python OAuth
 edge were rejected.
-
-The stage K spike (2026-10-21) kept `zitadel/oidc` v3: go-sdk's MCP client authorized end to end against it with a
-CIMD client, PKCE, RFC 8707 `resource` and RFC 9207 `iss`. `op` always mints an id token and refuses an authorize
-with no `scope`, so the server overrides code exchange, refresh and authorize-request checks through `LegacyServer`
-(experimental until v4: pin v3), and mints and stores its own tokens. Fetching CIMD documents, DCR, `resource`,
-`iss`, revocation and introspection are ours.
-
-Defaults inside it:
-
-- **Opaque tokens, not JWTs.** Every admission already resolves the grant in PostgreSQL, so the signature buys
-  nothing, and the signing key file goes.
-- **CIMD and DCR both at cutover**; DCR goes in a later PR once we know which clients still use it.
-- **Match Python on the upstream check**: the pinned operator is verified at exchange and refresh, and the grant
-  stores the upstream token's expiry and refuses after it lapses.
-- The Fernet KV table `agentplane_oauth_kv` is dropped with the Python service; `mcp_oauth_token_state` holds
-  plaintext tokens and survives.
 
 ## Contract
 
@@ -106,10 +89,9 @@ enrollments) and `WebPushService`. They live in files apart from `action_service
 
 "Schema unchanged" is not "stored data unchanged":
 
-- `external_connection.request_digest` is `sha256` of Pydantic's `request.model_dump_json()`; an idempotent retry
-  after cutover compares against it. A different serialization turns every retry into a conflict.
-  (Go neither reads nor writes `connection_enrollment.decision_digest`: a repeated decision is compared with the
-  decision's own columns.)
+- Go neither reads nor writes `connection_enrollment.decision_digest` or `external_connection_grant`'s
+  `request_digest` and `activation_deadline`: a repeated decision is compared with the decision's own columns, and a
+  grant is created active in the transaction that issues its tokens, which nothing retries.
 - `handle_hash`, `browser_hash` and `mcp_linkage_flow.state_hash` are `sha256` hex of the raw string, and the PKCE
   challenge is the unpadded URL-safe base64 of `sha256` of the verifier.
 - `action_request.arguments`, `action_event.actor`, `action_execution.result` and `error`, and the scope lists are
@@ -123,13 +105,12 @@ and asserts the Go values against them before any Go code writes to a shared dat
 
 Each stage is a small PR or a few, in dependency order. The service keeps serving from Python until the cutover.
 
-| Stage | Change                                                                                                                                                                                                                        |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| K     | Authorization server: spike, then authorize, consent redirect, token, refresh, revoke, metadata.                                                                                                                              |
-| L     | Callers, prepared against the protos and merged with the cutover: the app's Action routes and relays, `OperatorActionServiceClient`, the CLI's generated client, the Go Notification Service's HTTP client, acceptance tests. |
-| M     | Testing cutover: repoint `devinfra/ci/image_targets.json`, soak the migrator, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                               |
-| N     | Staging cutover, below.                                                                                                                                                                                                       |
-| O     | Python retirement: delete the Python service, tests, Alembic directory, migration image, `agentplane_oauth_kv` and `connection_enrollment.decision_digest` (a migration), the `fastmcp` pin and CI roster entries.            |
+| Stage | Change                                                                                                                                                                                                                                                                                       |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L     | Callers, prepared against the protos and merged with the cutover: the app's Action routes and relays, `OperatorActionServiceClient`, the CLI's generated client, the Go Notification Service's HTTP client, acceptance tests.                                                                |
+| M     | Testing cutover: repoint `devinfra/ci/image_targets.json`, soak the migrator, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                                                                                              |
+| N     | Staging cutover, below.                                                                                                                                                                                                                                                                      |
+| O     | Python retirement: delete the Python service, tests, Alembic directory, migration image, `agentplane_oauth_kv`, `connection_enrollment.decision_digest` and `external_connection_grant`'s `request_digest` and `activation_deadline` (a migration), the `fastmcp` pin and CI roster entries. |
 
 Stage O also deletes the Python-parity golden generators and tests (`generate_golden.py`, `generate_mcp_golden.py`,
 `generate_mcp_executor_golden.py`, `generate_catalog_golden.py`, `policies/generate_golden.py` and their
@@ -169,8 +150,7 @@ test still earns it without the Python reference.
 
 ## Risks
 
-- **Authorization server correctness** is security-sensitive: a toolkit for the protocol, the `test_oauth.py` cases
-  ported, and real-client acceptance on testing before staging.
+- **Authorization server correctness** is security-sensitive: real-client acceptance on testing before staging.
 - **`go-sdk` states no API stability.** Pin the version and keep its use in the `/mcp`, executor and one auth file.
 - **Tests.** Port the tests of our logic; `STYLE.md` says to delete library-basics tests, which drops a large
   share of the Python suite.
