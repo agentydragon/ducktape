@@ -59,7 +59,8 @@ type Principal struct {
 }
 
 // TokenReviews is the Kubernetes TokenReview Create operation. The production implementation
-// is authenticationv1.TokenReviewInterface; a small interface keeps policy tests deterministic.
+// is authenticationv1.TokenReviewInterface; a small interface lets tests inject the faults a real API
+// server cannot be made to produce.
 type TokenReviews interface {
 	Create(context.Context, *authenticationv1.TokenReview, metav1.CreateOptions) (*authenticationv1.TokenReview, error)
 }

@@ -22,7 +22,9 @@ go_test(
     srcs = ["auth_test.go"],
     embed = [":auth"],
     deps = [
+        "//agentplane/testing/kubeapiserver",
         "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
