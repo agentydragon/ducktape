@@ -7,7 +7,13 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 # gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
 
 # Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
-# Manual only: it runs k3s as root.
+# Its own tests run only by name (the model smoke needs a key; the lifecycle run has its own
+# workflow), and rerun rather than cache, as the spike's timings need fresh runs.
+_SPIKE_TAGS = K3S_TAGS + [
+    "external",
+    "manual",
+    "no-cache",
+]
 
 # The runner Pod's tools image. It keeps Debian's shell utilities for bootstrap and process-lifecycle
 # fixtures, plus curl and git (the `trixie_e2e` package set) for scripted commands; the Nix-built
@@ -210,7 +216,7 @@ py_test(
     },
     env_inherit = ["LITELLM_QWEN_KEY"],
     exec_properties = K3S_EXEC_PROPERTIES,
-    tags = K3S_TAGS,
+    tags = _SPIKE_TAGS,
     deps = [
         ":rendered_fixture",
         ":stack",
@@ -243,7 +249,7 @@ py_test(
         "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath :lifecycle/runner_layout)",
     },
     exec_properties = K3S_EXEC_PROPERTIES,
-    tags = K3S_TAGS,
+    tags = _SPIKE_TAGS,
     deps = [
         ":stack",
         "//:conftest",

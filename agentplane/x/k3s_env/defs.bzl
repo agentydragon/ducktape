@@ -7,12 +7,9 @@ K3S_EXEC_PROPERTIES = {
     "EstimatedFreeDiskBytes": "50GB",
 }
 
-K3S_TAGS = [
-    "external",
-    "manual",
-    "no-cache",
-    "requires-network",
-]
+# A test that runs a k3s stack in its action. Such a test is an ordinary target otherwise: PR CI
+# runs it when its inputs change, and a pass caches.
+K3S_TAGS = ["requires-network"]
 
 K3S_BINARY = "@k3s_linux_amd64//file:k3s"
 

@@ -11,7 +11,8 @@ and the caller's kubeconfig, testing by default. A scenario declared with
 `acceptance_test(k3s = ...)` ([`defs.bzl`](defs.bzl)) also gets a `<scenario>_k3s` target: one
 RBE action that starts its own [k3s stack](../x/k3s_env/README.md) and publishes it through the same
 variables ([`acceptance_target.py`](../x/k3s_env/acceptance_target.py)), so it needs no cluster
-credentials. That stack runs no VM Sandboxes; it deselects cases marked `vm_sandboxes`.
+credentials and runs in PR CI whenever its inputs change. That stack runs no VM Sandboxes; it
+deselects cases marked `vm_sandboxes`.
 
 The model backend is the target's too (`AGENTPLANE_ACCEPTANCE_MODEL_BACKEND`). A deployment serves a
 real model. On the k3s stack, LLM ingress forwards to the scenario itself, which plays the model
@@ -239,9 +240,9 @@ Malformed or unexpected responses fail without exposing their contents.
 Not in CI, and not on RBE: the target is `manual`, so `//...` never selects it, and it needs a
 kubeconfig and a route to the cluster.
 
-Bazel excludes `manual` targets from package patterns, so `:all` only runs the fast
-offline driver tests. It does not run any deployed vertical scenario. Name the live
-scenario explicitly. Start with the egress vertical slice:
+Bazel excludes `manual` targets from package patterns, so `:all` runs the fast offline driver
+tests and the `_k3s` targets, not any deployed vertical scenario. Name the live scenario
+explicitly. Start with the egress vertical slice:
 
 ```bash
 bazelisk test //agentplane/acceptance:test_egress --test_output=streamed --test_arg=-s

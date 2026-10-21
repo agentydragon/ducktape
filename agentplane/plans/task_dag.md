@@ -2003,12 +2003,10 @@ flowchart LR
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     TESTING_ROLLOUT_ROLE[Decision: what replaces testing before staging]
     TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
-    K3S_CI_TIER[Decision: which k3s targets run in CI]
     K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
     K3S_VM_IMAGE -. the emulation spike needs it .-> K3S_VM_ACCEPTANCE
     K3S_VM_ACCEPTANCE --> TESTING_ENVIRONMENT_RETIRE
     TESTING_ROLLOUT_ROLE --> TESTING_ENVIRONMENT_RETIRE
-    K3S_CI_TIER -. if the k3s suite gates staging pins .-> TESTING_ENVIRONMENT_RETIRE
 ```
 
 ### `K3S_MODEL_CREDENTIALS` — model key for k3s acceptance
@@ -2061,20 +2059,6 @@ down is better than staging down). Recommendation:
 Three PRs: recipes, docs and RBAC that name testing; the Flux kustomization, generated manifests,
 DNS and routes; the testing databases and volumes, a data drop that waits for the operator's word.
 `test_thread_latency` and `test_ollama_routes` remain staging-only manual checks. Preserve staging.
-
-### `K3S_CI_TIER` — which k3s targets run in CI
-
-**Decision.** A target enters CI when its slowest of 10 fresh runs
-fits the budget the operator sets and 20 consecutive fresh runs pass. Fork PRs never get the model
-key.
-
-Recommendation:
-
-- On PRs: the model-free and scripted-model targets.
-- Post-merge on `devel`: the real-model targets.
-- Drop the `external` tag so unchanged inputs cache.
-
-Question: the time budget.
 
 ## 15. Cleanups after the current tracks
 

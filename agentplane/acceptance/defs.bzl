@@ -28,9 +28,9 @@ def acceptance_test(name, srcs, deps, k3s = None, deployed = True, mcp_fixtures 
     testing by default) with the caller's kubeconfig and a real model, off RBE; a scenario with only
     `scripted_model` cases has nothing to run there and passes `deployed = False`. `name + "_k3s"`
     starts its own stack in one RBE action (`agentplane.x.k3s_env.acceptance_target`) and runs the
-    `scripted_model` scenarios and the unmarked ones; `k3s` is `"model_free"` when none runs a turn,
-    else `"scripted"`; `mcp_fixtures` adds Dex and the MCP servers to its stack. `size` and `timeout`
-    apply to `name`.
+    `scripted_model` scenarios and the unmarked ones, in PR CI like any test; `k3s` is `"model_free"`
+    when none runs a turn, else `"scripted"`; `mcp_fixtures` adds Dex and the MCP servers to its
+    stack. `size` and `timeout` apply to `name`.
 
     A hidden library owns the source, so both targets share one compiled copy. Gazelle does not
     manage macro rules: exclude the source in the BUILD file and keep `deps` by hand.

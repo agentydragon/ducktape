@@ -158,12 +158,12 @@ Decided 2026-10-21 05:38 (operator).
 - **Bazel targets.** `acceptance_test` makes one target for each (target, backend) pair the
   scenario has:
 
-  | Target                                | Backend  | Bazel target                                                              |
-  | ------------------------------------- | -------- | ------------------------------------------------------------------------- |
-  | Deployed (testing, or staging by env) | real     | `<scenario>`, manual and local, as now                                    |
-  | k3s                                   | scripted | `<scenario>_k3s`, on RBE; with the model-free scenarios, the CI candidate |
-  | k3s                                   | real     | `<scenario>_k3s_real`, after `K3S_MODEL_CREDENTIALS`                      |
-  | Deployed                              | scripted | not scheduled                                                             |
+  | Target                                | Backend  | Bazel target                                         |
+  | ------------------------------------- | -------- | ---------------------------------------------------- |
+  | Deployed (testing, or staging by env) | real     | `<scenario>`, manual and local, as now               |
+  | k3s                                   | scripted | `<scenario>_k3s`, on RBE, in PR CI                   |
+  | k3s                                   | real     | `<scenario>_k3s_real`, after `K3S_MODEL_CREDENTIALS` |
+  | Deployed                              | scripted | not scheduled                                        |
 
 - **The scripted upstream** is [`scripted_upstream.py`](../acceptance/scripted_upstream.py), in place
   of LiteLLM behind LLM ingress on the k3s stack ([acceptance README](../acceptance/README.md)).
@@ -172,7 +172,8 @@ Decided 2026-10-21 05:38 (operator).
 
 ## The program
 
-Ordered by what unblocks what. Speed work runs alongside and blocks only the CI tier.
+Ordered by what unblocks what. Speed work runs alongside and shortens PR CI, which runs every
+`_k3s` target (operator, 2026-10-21 08:05).
 
 1. **`K3S_MODEL_CREDENTIALS`** (decision), then **`K3S_MODEL_SCENARIOS`**: the real-model set on
    k3s. Until then that set runs against testing or staging.
@@ -185,6 +186,9 @@ Ordered by what unblocks what. Speed work runs alongside and blocks only the CI 
      tests.
    - Deliver the key as a BuildBuddy secret rather than a flag. BuildBuddy RBE secrets are unused
      in this repo so far.
+   - Recommended: the `_k3s_real` targets run post-merge on `devel`, not on PRs. They judge
+     Agentplane's instructions against a model, a signal to watch rather than a gate for a code
+     change, and fork PRs never get the key.
 2. **`K3S_VM_ACCEPTANCE`**: where VM-Sandbox acceptance runs with no testing cluster.
    - In flight: a spike of KubeVirt with software emulation (`useEmulation`) inside the RBE k3s, on
      the Bazel-built guest (`K3S_VM_IMAGE`) (operator, 2026-10-21 06:42).
@@ -215,22 +219,3 @@ Speed, in parallel:
   behind service boundaries, and the app has no port plan. This program schedules neither.
 - **Go image bytes**: 313 MiB over eight images that share nothing. Measured here only; no node
   until the operator wants one.
-
-## CI tier
-
-**`K3S_CI_TIER`** (decision, after the scripted backend). What blocks CI:
-
-- **Time on slow workers.** Set the budget on the slowest of 10 fresh runs, not the median.
-- **Reliability.** Each admitted target needs 20 consecutive fresh green runs
-  (`--runs_per_test=20 --nocache_test_results`) with no flake.
-- **Credentials.** Fork PRs never get the model key. Real-model scenarios run only where the key is.
-- **Selection.** Every Agentplane image is an input, so bazel-diff selects these targets on most
-  Agentplane PRs. Drop the `external` tag so unchanged inputs cache, and keep each target one
-  action.
-
-Recommended:
-
-- On PRs: the model-free and scripted-model k3s targets, once they meet the budget.
-- `x/k3s_env` leaves `x/` in the PR that admits its first target to CI.
-- Post-merge on `devel`: the real-model targets. They judge Agentplane's instructions against a
-  model, which is a signal to watch rather than a gate for a code change.

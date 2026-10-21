@@ -9,7 +9,8 @@ directly with `bbr test //agentplane/x/k3s_env:test_lifecycle --test_output=all`
 `test_env` model smoke remains manual and requires `LITELLM_QWEN_KEY`.
 
 Acceptance scenarios run on the same stack as `<scenario>_k3s` targets in
-[`agentplane/acceptance`](../../acceptance/README.md): [`acceptance_target.py`](acceptance_target.py)
+[`agentplane/acceptance`](../../acceptance/README.md), which PR CI runs:
+[`acceptance_target.py`](acceptance_target.py)
 is the pytest plugin that starts it and publishes it as the deployment under test, with LLM ingress
 forwarding to the scenario's scripted model on the node. Scripted targets take the
 `harnesses/runner_layout` image, which carries both pinned harnesses.
