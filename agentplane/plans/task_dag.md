@@ -804,7 +804,30 @@ flowchart LR
     PLATFORM_SERVICE_NAMES_DESIGN[Decision, unscheduled: reserved sidecar names for platform services]
     PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
+    STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
+    STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
 ```
+
+### `STRUCTURED_TOOL_OUTPUT` — tool results as ordered text and image parts
+
+**Unscheduled; operator, 2026-10-21 07:11 UTC: "fidelity improvements like images for Claude let's put on task
+dag".** Tool results become ordered parts (text, image) in the harness-neutral vocabulary instead of one string.
+Today `event.proto` carries `ToolResult.output`, `ToolOutputDelta.text` and `RecoveredContent.output` as strings,
+the Claude adapter's `resultText()` (`runner/go/claude/protocol.go`) joins text blocks and drops images, and the
+History fold's `FieldOutput` is one text field that deltas append to. Scope: the proto, both runner adapters, the
+History fold with its storage and reads, the app API, the frontend tool cards, and the fold, span and visual
+fixtures. Archived event logs and History rows hold `output` strings and sealed archives cannot be rewritten; the
+default under "deployed state is disposable" is to drop that data in its own data-deletion PR, which is the
+operator's call. Exit: an image a Claude tool returns renders in its tool card.
+
+### `CODEX_CODE_MODE_CELLS` — Codex code-mode cells as runner items
+
+**Unscheduled; operator, 2026-10-21 07:11 UTC: "It would be nice if we could get the code mode also out of codex
+app server for fidelity but I'm guessing that might not be trivial".** Surface Codex code-mode `exec` cells (the
+script and what it emitted) as runner items. Codex app-server has no `ThreadItem` for them, in 0.157.0 or on
+`openai/codex` main at `c7234c11` (2026-10-21), and core emits the call output only to hooks, so the runner sees
+only the nested `commandExecution`. Needs upstream support, or reading the rollout or the native frames. Multi-block
+cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 
 ### `SANDBOX_FORM_TERMINOLOGY` — distinguish launch presets from runtime templates
 
