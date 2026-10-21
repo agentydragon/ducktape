@@ -35,6 +35,9 @@ const (
 // testOwner owns the inboxes: a Sandbox runs as the ServiceAccount of its own name.
 var testOwner = store.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
+// testIncarnation is testOwner as the Sandbox the destinations name.
+var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}
+
 func ptr[T any](v T) *T { return &v }
 
 func matchingSandbox() sandboxreader.View {
@@ -427,7 +430,7 @@ func (h *harness) row(t *testing.T, inboxID uuid.UUID) inboxRow {
 
 func (h *harness) page(t *testing.T, inboxID uuid.UUID) store.InboxPage {
 	t.Helper()
-	page, err := h.store.Read(t.Context(), testOwner, inboxID, 0, 128)
+	page, err := h.store.Read(t.Context(), testIncarnation, inboxID, 0, 128)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +448,7 @@ func (h *harness) notice(t *testing.T, inboxID uuid.UUID) store.Notice {
 
 func (h *harness) subscription(t *testing.T, id uuid.UUID) store.Subscription {
 	t.Helper()
-	subscription, err := h.store.GetSubscription(t.Context(), testOwner, id)
+	subscription, err := h.store.GetSubscription(t.Context(), testIncarnation, id)
 	if err != nil {
 		t.Fatal(err)
 	}

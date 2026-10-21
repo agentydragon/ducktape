@@ -69,7 +69,7 @@ func TestRunReadsTheRowsAgainOnceWorkIsSignalled(t *testing.T) {
 
 	// Renewing commits a subscription that is due now. Run has nothing to do before the signal, which an
 	// unbuffered channel only accepts once Run is waiting for it, or about to read the rows anyway.
-	if _, err := h.store.Renew(t.Context(), testOwner, subscription.ID, subscription.Version, 7); err != nil {
+	if _, err := h.store.Renew(t.Context(), testIncarnation, subscription.ID, subscription.Version, 7); err != nil {
 		t.Fatal(err)
 	}
 	select {

@@ -39,7 +39,7 @@ func TestAGitHubSubscriptionIsBoundToTheAccessItWasAuthorizedUnder(t *testing.T)
 	if _, err := f.Subscribe(t.Context(), f.owner, body("actions"), &access); err == nil {
 		t.Error("an Actions subscription was created bound to GitHub access")
 	}
-	inboxes, err := f.ListInboxes(t.Context(), f.owner)
+	inboxes, err := f.ListInboxes(t.Context(), f.incarnation())
 	if err != nil {
 		t.Fatal(err)
 	}

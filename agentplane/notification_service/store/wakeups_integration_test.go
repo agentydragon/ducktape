@@ -81,12 +81,12 @@ func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
 	check("cancelling", true, func() { f.cancel(t, subscription.ID) })
 	check("cancelling a cancelled subscription", false, func() { f.cancel(t, subscription.ID) })
 	check("retiring", true, func() {
-		if err := f.Retire(t.Context(), f.owner, subscription.InboxID); err != nil {
+		if err := f.Retire(t.Context(), f.incarnation(), subscription.InboxID); err != nil {
 			t.Error(err)
 		}
 	})
 	check("retiring a retired inbox", false, func() {
-		if err := f.Retire(t.Context(), f.owner, subscription.InboxID); err != nil {
+		if err := f.Retire(t.Context(), f.incarnation(), subscription.InboxID); err != nil {
 			t.Error(err)
 		}
 	})

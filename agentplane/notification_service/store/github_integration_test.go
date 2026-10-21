@@ -43,7 +43,7 @@ func newGitHubFixture(t *testing.T) githubFixture {
 	t.Helper()
 	f := newFixture(t, defaultQuotas())
 	base := 1<<41 + rand.Int64N(1<<40)
-	ref := DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-uid"}
+	ref := DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID}
 	return githubFixture{
 		fixture: f, app: base, installation: base + 1, repository: base + 2, destination: ref,
 		inbox: f.insertInbox(t, DestinationKey(ref, "test-session"), ref, "test-session"),

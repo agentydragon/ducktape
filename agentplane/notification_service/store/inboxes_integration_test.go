@@ -66,10 +66,10 @@ func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *tes
 	if got := f.acknowledge(t, a.InboxID, 1).Acknowledged; got != 2 {
 		t.Fatalf("acknowledged = %d after a lower cursor, want 2", got)
 	}
-	if _, err := f.Acknowledge(t.Context(), f.owner, a.InboxID, 4); !errors.Is(err, ErrCursorOutOfRange) {
+	if _, err := f.Acknowledge(t.Context(), f.incarnation(), a.InboxID, 4); !errors.Is(err, ErrCursorOutOfRange) {
 		t.Fatalf("error = %v, want ErrCursorOutOfRange", err)
 	}
-	if _, err := f.Acknowledge(t.Context(), newOwner(), a.InboxID, 1); !errors.Is(err, ErrNotFound) {
+	if _, err := f.Acknowledge(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, a.InboxID, 1); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
 }
@@ -78,17 +78,17 @@ func TestReadIsBoundedAndOwned(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, body("first"))
 	for _, limit := range []int{0, 129} {
-		if _, err := f.Read(t.Context(), f.owner, subscription.InboxID, 0, limit); !errors.Is(err, ErrInvalid) {
+		if _, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, limit); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("limit %d: error = %v, want ErrInvalid", limit, err)
 		}
 	}
-	if _, err := f.Read(t.Context(), f.owner, subscription.InboxID, -1, 128); !errors.Is(err, ErrInvalid) {
+	if _, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, -1, 128); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("error = %v, want ErrInvalid", err)
 	}
-	if _, err := f.Read(t.Context(), f.owner, uuid.New(), 0, 128); !errors.Is(err, ErrNotFound) {
+	if _, err := f.Read(t.Context(), f.incarnation(), uuid.New(), 0, 128); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
-	if _, err := f.Acknowledge(t.Context(), f.owner, subscription.InboxID, -1); !errors.Is(err, ErrInvalid) {
+	if _, err := f.Acknowledge(t.Context(), f.incarnation(), subscription.InboxID, -1); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("error = %v, want ErrInvalid", err)
 	}
 	page := f.read(t, subscription.InboxID, 0)
@@ -150,14 +150,14 @@ func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 	event := ActionsEvent{RequestID: creation.Source.(ActionsSource).RequestID, Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 
-	if err := f.Retire(t.Context(), newOwner(), subscription.InboxID); !errors.Is(err, ErrNotFound) {
+	if err := f.Retire(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, subscription.InboxID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account retired the inbox: %v", err)
 	}
-	if err := f.Retire(t.Context(), f.owner, subscription.InboxID); err != nil {
+	if err := f.Retire(t.Context(), f.incarnation(), subscription.InboxID); err != nil {
 		t.Fatal(err)
 	}
 	// Retiring a retired inbox changes nothing.
-	if err := f.Retire(t.Context(), f.owner, subscription.InboxID); err != nil {
+	if err := f.Retire(t.Context(), f.incarnation(), subscription.InboxID); err != nil {
 		t.Fatal(err)
 	}
 	if retired := f.get(t, subscription.ID); !retired.Cancelled || retired.Version != 2 {
@@ -167,7 +167,7 @@ func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 	if !page.Inbox.Retired || page.Inbox.Acknowledged != 0 || len(page.Entries) != 1 {
 		t.Fatalf("page = %+v", page)
 	}
-	inboxes, err := f.ListInboxes(t.Context(), f.owner)
+	inboxes, err := f.ListInboxes(t.Context(), f.incarnation())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,10 +181,10 @@ func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, ErrInboxRetired) {
 		t.Fatalf("replayed subscribe: error = %v, want ErrInboxRetired", err)
 	}
-	if _, err := f.Renew(t.Context(), f.owner, subscription.ID, 2, 7); !errors.Is(err, ErrInboxRetired) {
+	if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, 2, 7); !errors.Is(err, ErrInboxRetired) {
 		t.Fatalf("renew: error = %v, want ErrInboxRetired", err)
 	}
-	if _, err := f.Cancel(t.Context(), f.owner, subscription.ID); !errors.Is(err, ErrInboxRetired) {
+	if _, err := f.Cancel(t.Context(), f.incarnation(), subscription.ID); !errors.Is(err, ErrInboxRetired) {
 		t.Fatalf("cancel: error = %v, want ErrInboxRetired", err)
 	}
 }
@@ -199,7 +199,7 @@ func TestInboxesAreListedForTheirOwnerOnly(t *testing.T) {
 	f.subscribe(t, second)
 	other.subscribe(t, first)
 
-	inboxes, err := f.ListInboxes(t.Context(), f.owner)
+	inboxes, err := f.ListInboxes(t.Context(), f.incarnation())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,14 +271,14 @@ func TestInboxesRetiredLongAgoAreDeletedWithTheirRows(t *testing.T) {
 	recent := f.subscribe(t, func() Subscribe { other := creation; other.SessionID = "recently-retired"; return other }())
 
 	for _, inboxID := range []uuid.UUID{subscription.InboxID, recent.InboxID} {
-		if err := f.Retire(t.Context(), f.owner, inboxID); err != nil {
+		if err := f.Retire(t.Context(), f.incarnation(), inboxID); err != nil {
 			t.Fatal(err)
 		}
 	}
 	f.exec(t, `UPDATE inbox SET updated_at = $2 WHERE id = $1`, subscription.InboxID, time.Now().Add(-31*24*time.Hour))
 	f.cleanAll(t)
 
-	inboxes, err := f.ListInboxes(t.Context(), f.owner)
+	inboxes, err := f.ListInboxes(t.Context(), f.incarnation())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,5 +289,40 @@ func TestInboxesRetiredLongAgoAreDeletedWithTheirRows(t *testing.T) {
 		if got := f.count(t, `SELECT count(*) FROM `+table+` WHERE inbox_id = $1`, subscription.InboxID); got != 0 {
 			t.Fatalf("%d %s rows of the deleted inbox remain", got, table)
 		}
+	}
+}
+
+func TestASandboxRecreatedUnderTheNameOwnsNoneOfItsPredecessorsInboxes(t *testing.T) {
+	quotas := defaultQuotas()
+	quotas.InboxesPerAccount = 1
+	f := newFixture(t, quotas)
+	predecessor := f.subscribe(t, body("predecessor"))
+	successor := Owner{Account: f.owner, SandboxUID: "test-successor-uid"}
+
+	if inboxes, err := f.ListInboxes(t.Context(), successor); err != nil || len(inboxes) != 0 {
+		t.Fatalf("listed %+v, %v", inboxes, err)
+	}
+	if subscriptions, err := f.ListSubscriptions(t.Context(), successor, nil); err != nil || len(subscriptions) != 0 {
+		t.Fatalf("listed %+v, %v", subscriptions, err)
+	}
+	for name, call := range map[string]func() error{
+		"read":        func() error { _, err := f.Read(t.Context(), successor, predecessor.InboxID, 0, 128); return err },
+		"acknowledge": func() error { _, err := f.Acknowledge(t.Context(), successor, predecessor.InboxID, 0); return err },
+		"retire":      func() error { return f.Retire(t.Context(), successor, predecessor.InboxID) },
+		"get":         func() error { _, err := f.GetSubscription(t.Context(), successor, predecessor.ID); return err },
+		"renew":       func() error { _, err := f.Renew(t.Context(), successor, predecessor.ID, 1, 7); return err },
+		"cancel":      func() error { _, err := f.Cancel(t.Context(), successor, predecessor.ID); return err },
+	} {
+		if err := call(); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s: error = %v, want ErrNotFound", name, err)
+		}
+	}
+
+	// The predecessor's inbox takes none of the successor's quota.
+	creation := body("successor")
+	creation.DestinationRef.UID = successor.SandboxUID
+	subscription := f.subscribe(t, creation)
+	if inboxes, err := f.ListInboxes(t.Context(), successor); err != nil || len(inboxes) != 1 || inboxes[0].ID != subscription.InboxID {
+		t.Fatalf("listed %+v, %v; want only the successor's inbox", inboxes, err)
 	}
 }

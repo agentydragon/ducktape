@@ -478,7 +478,7 @@ func TestAMatchingPageIsNotCappedByTheHistoryOfAssociations(t *testing.T) {
 
 	// A full page makes the subscription due again at once.
 	h.reconcile(claim)
-	page, err := h.store.Read(t.Context(), testOwner, subscription.InboxID, store.GitHubDeliveryPageSize, store.GitHubDeliveryPageSize)
+	page, err := h.store.Read(t.Context(), testIncarnation, subscription.InboxID, store.GitHubDeliveryPageSize, store.GitHubDeliveryPageSize)
 	if err != nil || len(page.Entries) != 2 || page.Inbox.LastCursor != 130 {
 		t.Fatalf("second page = %+v, %v; want the last 2 of 130 entries", page, err)
 	}

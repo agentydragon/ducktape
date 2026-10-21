@@ -23,12 +23,16 @@ import (
 )
 
 const (
-	testNamespace = "test-namespace"
-	testSandbox   = "test-sandbox"
+	testNamespace  = "test-namespace"
+	testSandbox    = "test-sandbox"
+	testSandboxUID = "test-uid"
 )
 
 // testOwner owns the inboxes: a Sandbox runs as the ServiceAccount of its own name.
 var testOwner = store.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
+
+// testIncarnation is testOwner as the Sandbox the destinations name.
+var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}
 
 const testOwnerJSON = `{"namespace": "test-namespace", "name": "test-sandbox"}`
 
@@ -142,7 +146,7 @@ func (f fixture) client(t *testing.T, timeoutSeconds float64) *Client {
 func (f fixture) subscribe(t *testing.T) store.Subscription {
 	t.Helper()
 	subscription, err := f.store.Subscribe(t.Context(), testOwner, store.Subscribe{
-		DestinationRef: store.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: "test-uid"},
+		DestinationRef: store.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID},
 		SessionID:      "test-session",
 		IdempotencyKey: "test-key",
 		Source:         store.ActionsSource{RequestID: uuid.New()},
@@ -183,7 +187,7 @@ func (f fixture) reconcileWith(t *testing.T, source *Source, claim store.Claim) 
 
 func (f fixture) entries(t *testing.T, inboxID uuid.UUID) []store.Entry {
 	t.Helper()
-	page, err := f.store.Read(t.Context(), testOwner, inboxID, 0, 128)
+	page, err := f.store.Read(t.Context(), testIncarnation, inboxID, 0, 128)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +197,7 @@ func (f fixture) entries(t *testing.T, inboxID uuid.UUID) []store.Entry {
 // lastCursor is the cursor of the inbox's newest entry, which is how many entries it holds.
 func (f fixture) lastCursor(t *testing.T, inboxID uuid.UUID) int64 {
 	t.Helper()
-	page, err := f.store.Read(t.Context(), testOwner, inboxID, 0, 1)
+	page, err := f.store.Read(t.Context(), testIncarnation, inboxID, 0, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

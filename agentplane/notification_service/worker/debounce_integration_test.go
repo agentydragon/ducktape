@@ -26,7 +26,7 @@ func TestNoticeWaitsOutTheQuietWindowAcrossRestartsWhileReadsAreImmediate(t *tes
 	requireEqual(t, h.page(t, subscription.InboxID).Inbox.LastCursor, int64(2))
 	// Without source deadlines, only the notice schedules the inbox.
 	for _, id := range []uuid.UUID{subscription.ID, overlap.ID} {
-		if _, err := h.store.Cancel(t.Context(), testOwner, id); err != nil {
+		if _, err := h.store.Cancel(t.Context(), testIncarnation, id); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -122,10 +122,10 @@ func TestMaxWaitCapsTheQuietWindowAndANoticeInFlightIsNotExtended(t *testing.T) 
 	requireEqual(t, h.notice(t, inbox).CommandID, notice.CommandID)
 	requireEqual(t, len(h.dispatcher.submitted()), 2)
 
-	if _, err := h.store.Cancel(t.Context(), testOwner, subscription.ID); err != nil {
+	if _, err := h.store.Cancel(t.Context(), testIncarnation, subscription.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.store.Acknowledge(t.Context(), testOwner, inbox, 3); err != nil {
+	if _, err := h.store.Acknowledge(t.Context(), testIncarnation, inbox, 3); err != nil {
 		t.Fatal(err)
 	}
 	h.makeDue(t, inbox)

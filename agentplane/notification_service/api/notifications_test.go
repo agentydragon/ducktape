@@ -373,21 +373,9 @@ func TestListSubscriptionsContinuesAfterTheLastIDOfAPage(t *testing.T) {
 	requireCode(t, err, codes.InvalidArgument)
 }
 
-func TestAnotherAccountSeesNoSubscriptionOrInboxOfTheCaller(t *testing.T) {
-	server := newServer(t)
-	subscription := server.subscribe(t, "private")
-	server.record(t, subscription, 1)
-	stranger := func(t *testing.T) context.Context { return bearing(t, otherSandboxToken) }
-
-	subscriptions, err := server.client.ListSubscriptions(stranger(t), &notificationspb.ListSubscriptionsRequest{})
-	if err != nil || len(subscriptions.GetSubscriptions()) != 0 {
-		t.Errorf("listed %v, %v", subscriptions, err)
-	}
-	inboxes, err := server.client.ListInboxes(stranger(t), &notificationspb.ListInboxesRequest{})
-	if err != nil || len(inboxes.GetInboxes()) != 0 {
-		t.Errorf("listed %v, %v", inboxes, err)
-	}
-	calls := map[string]func(context.Context) error{
+// ownedCalls are the calls about a subscription and its inbox, each of which only their owner may make.
+func ownedCalls(server testServer, subscription *notificationspb.Subscription) map[string]func(context.Context) error {
+	return map[string]func(context.Context) error{
 		"GetSubscription": func(ctx context.Context) error {
 			_, err := server.client.GetSubscription(ctx, &notificationspb.GetSubscriptionRequest{SubscriptionId: subscription.GetId()})
 			return err
@@ -413,13 +401,60 @@ func TestAnotherAccountSeesNoSubscriptionOrInboxOfTheCaller(t *testing.T) {
 			return err
 		},
 	}
-	for name, call := range calls {
+}
+
+func TestAnotherAccountSeesNoSubscriptionOrInboxOfTheCaller(t *testing.T) {
+	server := newServer(t)
+	subscription := server.subscribe(t, "private")
+	server.record(t, subscription, 1)
+	stranger := func(t *testing.T) context.Context { return bearing(t, otherSandboxToken) }
+
+	subscriptions, err := server.client.ListSubscriptions(stranger(t), &notificationspb.ListSubscriptionsRequest{})
+	if err != nil || len(subscriptions.GetSubscriptions()) != 0 {
+		t.Errorf("listed %v, %v", subscriptions, err)
+	}
+	inboxes, err := server.client.ListInboxes(stranger(t), &notificationspb.ListInboxesRequest{})
+	if err != nil || len(inboxes.GetInboxes()) != 0 {
+		t.Errorf("listed %v, %v", inboxes, err)
+	}
+	for name, call := range ownedCalls(server, subscription) {
 		t.Run(name, func(t *testing.T) { requireCode(t, call(stranger(t)), codes.NotFound) })
 	}
 	// None of it touched the owner's.
 	read, err := server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{InboxId: subscription.GetInboxId()})
 	if err != nil || len(read.GetEntries()) != 1 || read.GetInbox().GetAcknowledged() != 0 || read.GetInbox().GetRetired() {
 		t.Errorf("read = %v, %v", read, err)
+	}
+}
+
+func TestASandboxRecreatedUnderTheNameSeesNoneOfItsPredecessorsInboxes(t *testing.T) {
+	server := newServer(t)
+	subscription := server.subscribe(t, "predecessor")
+	server.record(t, subscription, 1)
+	server.recreateSandbox(t)
+
+	subscriptions, err := server.client.ListSubscriptions(bearing(t, sandboxToken), &notificationspb.ListSubscriptionsRequest{})
+	if err != nil || len(subscriptions.GetSubscriptions()) != 0 {
+		t.Errorf("listed %v, %v", subscriptions, err)
+	}
+	inboxes, err := server.client.ListInboxes(bearing(t, sandboxToken), &notificationspb.ListInboxesRequest{})
+	if err != nil || len(inboxes.GetInboxes()) != 0 {
+		t.Errorf("listed %v, %v", inboxes, err)
+	}
+	for name, call := range ownedCalls(server, subscription) {
+		t.Run(name, func(t *testing.T) { requireCode(t, call(bearing(t, sandboxToken)), codes.NotFound) })
+	}
+
+	// What the successor opens is its own.
+	request := createRequest("successor")
+	request.DestinationRef.Uid = successorUID
+	created, err := server.client.CreateSubscription(bearing(t, sandboxToken), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inboxes, err = server.client.ListInboxes(bearing(t, sandboxToken), &notificationspb.ListInboxesRequest{})
+	if err != nil || len(inboxes.GetInboxes()) != 1 || inboxes.GetInboxes()[0].GetId() != created.GetSubscription().GetInboxId() {
+		t.Errorf("listed %v, %v; want only the successor's inbox", inboxes, err)
 	}
 }
 

@@ -92,12 +92,14 @@ func (f fixture) insertSubscription(t *testing.T, inboxID uuid.UUID, creation js
 func TestInboxesPythonCreatedAreFoundByTheirDestinationKey(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	stored := 0
+	incarnations := map[string]bool{}
 	for _, vector := range loadGolden(t).DestinationKeys {
 		// PostgreSQL cannot store a NUL, so no inbox row has a destination key made from one.
 		if strings.ContainsRune(vector.SessionID+vector.DestinationRef.Namespace+vector.DestinationRef.Name+vector.DestinationRef.UID, 0) {
 			continue
 		}
 		stored++
+		incarnations[vector.DestinationRef.UID] = true
 		t.Run(vector.Name, func(t *testing.T) {
 			inboxID := f.insertInbox(t, vector.Key, vector.DestinationRef, vector.SessionID)
 			creation := body("first")
@@ -108,12 +110,16 @@ func TestInboxesPythonCreatedAreFoundByTheirDestinationKey(t *testing.T) {
 			}
 		})
 	}
-	inboxes, err := f.ListInboxes(t.Context(), f.owner)
-	if err != nil {
-		t.Fatal(err)
+	listed := 0
+	for uid := range incarnations {
+		inboxes, err := f.ListInboxes(t.Context(), Owner{Account: f.owner, SandboxUID: uid})
+		if err != nil {
+			t.Fatal(err)
+		}
+		listed += len(inboxes)
 	}
-	if len(inboxes) != stored {
-		t.Fatalf("%d inboxes, want the %d Python created", len(inboxes), stored)
+	if listed != stored {
+		t.Fatalf("%d inboxes, want the %d Python created", listed, stored)
 	}
 }
 
@@ -147,7 +153,7 @@ func TestSubscriptionsPythonCreatedAreReadAndFoundByTheirKey(t *testing.T) {
 			} else if read.GitHub != nil {
 				t.Errorf("GitHub status = %+v, want none", read.GitHub)
 			}
-			listed, err := f.ListSubscriptions(t.Context(), f.owner, nil)
+			listed, err := f.ListSubscriptions(t.Context(), Owner{Account: f.owner, SandboxUID: sent.DestinationRef.UID}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

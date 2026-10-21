@@ -20,7 +20,7 @@ const WorkChannel = "agentplane_notification_work"
 // Quotas bound what one owner, inbox or subscription set may hold. The service's config holds them under its
 // `quotas` key, named by the mapstructure tags.
 type Quotas struct {
-	// InboxesPerAccount is the most inboxes one owning ServiceAccount retains.
+	// InboxesPerAccount is the most inboxes one owning ServiceAccount retains for one Sandbox incarnation.
 	InboxesPerAccount int `mapstructure:"inboxes_per_account"`
 	// ActiveSubscriptionsPerInbox is the most subscriptions of an inbox that are neither cancelled nor expired.
 	ActiveSubscriptionsPerInbox int `mapstructure:"active_subscriptions_per_inbox"`
@@ -32,10 +32,18 @@ type Quotas struct {
 	UnacknowledgedMessagesPerSender int `mapstructure:"unacknowledged_messages_per_sender"`
 }
 
-// ServiceAccount is the owner of inboxes and subscriptions: the account a caller's workloads run as.
+// ServiceAccount is the account a caller's workloads run as.
 type ServiceAccount struct {
 	Namespace string
 	Name      string
+}
+
+// Owner is whom an inbox and its subscriptions belong to: the account, as the Sandbox incarnation the inbox was
+// opened for. A Sandbox runs as the ServiceAccount of its own name, so a Sandbox recreated under a deleted one's
+// name is the same account but another incarnation, and the deleted one's inboxes are not its own.
+type Owner struct {
+	Account    ServiceAccount
+	SandboxUID string
 }
 
 // Errors the store distinguishes, one per gRPC status code a caller maps it to. Quota failures are *QuotaError.

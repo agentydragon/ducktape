@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -39,6 +40,7 @@ const (
 
 	sandboxName      = "test-sandbox"
 	sandboxUID       = "test-sandbox-uid"
+	successorUID     = "test-successor-sandbox-uid" // the test Sandbox's incarnation after recreateSandbox
 	otherSandboxName = "other-sandbox"
 	otherSandboxUID  = "other-sandbox-uid"
 	operatorName     = "test-operator"
@@ -224,7 +226,9 @@ type testServer struct {
 	// policy is current and grants nothing until a test grants.
 	policy  *inboxaccess.Policy
 	history *fakeHistory
-	config  serverConfig
+	// kube holds the Sandboxes the service reads.
+	kube   client.Client
+	config serverConfig
 }
 
 // newServer serves both APIs over the shared database, emptied of earlier tests' inboxes, with a hub listening to
@@ -260,10 +264,11 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	sandboxes, err := sandboxreader.New(testNamespace, clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	kube := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		&sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID}},
 		&sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: otherSandboxName, UID: otherSandboxUID}},
-	).Build())
+	).Build()
+	sandboxes, err := sandboxreader.New(testNamespace, kube)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,6 +287,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		history: &fakeHistory{sandboxes: map[string]*historypb.SandboxRef{
 			testSession: {Namespace: testNamespace, Name: sandboxName},
 		}},
+		kube: kube,
 	}
 	server.policy.Freshness.MarkSynced()
 	server.policy.Freshness.RecordCycle(reader.PolicySets, time.Now())
@@ -373,6 +379,17 @@ func (s testServer) subscribe(t *testing.T, key string, sessionID ...string) *no
 		t.Fatal(err)
 	}
 	return response.GetSubscription()
+}
+
+// recreateSandbox deletes the test Sandbox and creates another under its name, whose UID is successorUID.
+func (s testServer) recreateSandbox(t *testing.T) {
+	t.Helper()
+	if err := s.kube.Delete(t.Context(), &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.kube.Create(t.Context(), &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: successorUID}}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // grantSend binds a set of one rule, allowing send_message to the targets, to the account of the given name.

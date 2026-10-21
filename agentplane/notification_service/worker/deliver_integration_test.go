@@ -68,7 +68,7 @@ func requireInvalidHistory(t *testing.T, err error) {
 func TestAcknowledgementBeforeDispatchSuppressesTheNotice(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
 	claim, subscription, notice := h.prepared(t, 1)
-	if _, err := h.store.Acknowledge(t.Context(), testOwner, subscription.InboxID, notice.ThroughCursor); err != nil {
+	if _, err := h.store.Acknowledge(t.Context(), testIncarnation, subscription.InboxID, notice.ThroughCursor); err != nil {
 		t.Fatal(err)
 	}
 

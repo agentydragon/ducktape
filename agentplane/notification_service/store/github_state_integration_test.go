@@ -273,7 +273,7 @@ func TestSharedFailuresAreProjectedWithoutBeingCopiedIntoSubscriptions(t *testin
 		t.Fatal(err)
 	}
 
-	listed, err := g.ListSubscriptions(t.Context(), g.owner, nil)
+	listed, err := g.ListSubscriptions(t.Context(), g.incarnation(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

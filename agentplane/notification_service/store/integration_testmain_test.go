@@ -46,11 +46,12 @@ func defaultQuotas() Quotas {
 }
 
 // fixture is a Store over the shared database, for an owner no other test uses, so tests do not see each
-// other's inboxes.
+// other's inboxes. The owner acts as the Sandbox incarnation sandboxUID, at first the one body's destination names.
 type fixture struct {
 	*Store
-	db    *sql.DB
-	owner ServiceAccount
+	db         *sql.DB
+	owner      ServiceAccount
+	sandboxUID string
 }
 
 func newFixture(t *testing.T, quotas Quotas) fixture {
@@ -60,18 +61,26 @@ func newFixture(t *testing.T, quotas Quotas) fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return fixture{Store: New(db, quotas), db: db, owner: newOwner()}
+	return fixture{Store: New(db, quotas), db: db, owner: newOwner(), sandboxUID: testSandboxUID}
 }
 
 func newOwner() ServiceAccount {
 	return ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
 }
 
+// testSandboxUID is the Sandbox incarnation body's destination names.
+const testSandboxUID = "test-uid"
+
+// incarnation is the fixture's owner as its Sandbox incarnation.
+func (f fixture) incarnation() Owner {
+	return Owner{Account: f.owner, SandboxUID: f.sandboxUID}
+}
+
 // body is a creation following one Action request, for the fixture's one Session. Copies keep the request and
 // change what they set.
 func body(key string) Subscribe {
 	return Subscribe{
-		DestinationRef: DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-uid"},
+		DestinationRef: DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID},
 		SessionID:      "test-session",
 		IdempotencyKey: key,
 		Source:         ActionsSource{RequestID: uuid.New()},
@@ -90,7 +99,7 @@ func (f fixture) subscribe(t *testing.T, creation Subscribe) Subscription {
 
 func (f fixture) renew(t *testing.T, id uuid.UUID, version, lifetimeDays int64) Subscription {
 	t.Helper()
-	subscription, err := f.Renew(t.Context(), f.owner, id, version, lifetimeDays)
+	subscription, err := f.Renew(t.Context(), f.incarnation(), id, version, lifetimeDays)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +108,7 @@ func (f fixture) renew(t *testing.T, id uuid.UUID, version, lifetimeDays int64) 
 
 func (f fixture) cancel(t *testing.T, id uuid.UUID) Subscription {
 	t.Helper()
-	subscription, err := f.Cancel(t.Context(), f.owner, id)
+	subscription, err := f.Cancel(t.Context(), f.incarnation(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +117,7 @@ func (f fixture) cancel(t *testing.T, id uuid.UUID) Subscription {
 
 func (f fixture) get(t *testing.T, id uuid.UUID) Subscription {
 	t.Helper()
-	subscription, err := f.GetSubscription(t.Context(), f.owner, id)
+	subscription, err := f.GetSubscription(t.Context(), f.incarnation(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +126,7 @@ func (f fixture) get(t *testing.T, id uuid.UUID) Subscription {
 
 func (f fixture) read(t *testing.T, inboxID uuid.UUID, after int64) InboxPage {
 	t.Helper()
-	page, err := f.Read(t.Context(), f.owner, inboxID, after, 128)
+	page, err := f.Read(t.Context(), f.incarnation(), inboxID, after, 128)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +135,7 @@ func (f fixture) read(t *testing.T, inboxID uuid.UUID, after int64) InboxPage {
 
 func (f fixture) acknowledge(t *testing.T, inboxID uuid.UUID, through int64) Inbox {
 	t.Helper()
-	inbox, err := f.Acknowledge(t.Context(), f.owner, inboxID, through)
+	inbox, err := f.Acknowledge(t.Context(), f.incarnation(), inboxID, through)
 	if err != nil {
 		t.Fatal(err)
 	}

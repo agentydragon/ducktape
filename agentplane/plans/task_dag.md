@@ -84,7 +84,7 @@ point.** The service (`agentplane/notification_service/`) has grown to several r
   since the last notice or acknowledgement.
 
 Decide which stay, which move to other services, and what the remaining service is called. The inbox
-messaging nodes of section 3 (`AGENT_MESSAGE_RECEPTION` and the nodes after it) record the service name as
+messaging nodes of section 3 (`AGENT_MESSAGING` and the nodes after it) record the service name as
 open and keep v1 in one deployment; this node is the later restructuring, not a prerequisite for them.
 Related: whether notice delivery belongs with the Dispatcher
 ([freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership)),
@@ -267,7 +267,6 @@ flowchart TD
     HISTORY_SANDBOX_UID[Blocked: History records and checks the Sandbox UID]
     APP_THREAD_SANDBOX_UID[Blocked: the app stores each Thread's Sandbox UID]
     HISTORY_SESSION_REKEY[Blocked: key History by Sandbox UID and Session ID]
-    AGENT_MESSAGE_RECEPTION[Candidate: hide a deleted Sandbox's inboxes from its namesake]
     AGENT_MESSAGING[Capstone: end-to-end agent messaging]
     THREAD_CREATE_POLICY[Decision: opening a session in an existing Sandbox]
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
@@ -283,8 +282,7 @@ flowchart TD
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
     HISTORY_SANDBOX_UID --> APP_THREAD_SANDBOX_UID
     APP_THREAD_SANDBOX_UID --> HISTORY_SESSION_REKEY
-    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities, section 2] -. related .-> AGENT_MESSAGE_RECEPTION
-    AGENT_MESSAGE_RECEPTION --> AGENT_MESSAGING
+    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities, section 2] -. related .-> AGENT_MESSAGING
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
@@ -429,18 +427,9 @@ announces the pair; the app and Notifications pass the UID they hold. The ingres
 Sandbox UID up as part of the key. Electric shape handles reset, so verify a browser reconnects. Rows of
 deleted Sandboxes follow the review's answer.
 
-### `AGENT_MESSAGE_RECEPTION` — delivery, recovery and acknowledgement
-
-**Candidate.** Messages reach the recipient as inbox entries, carried by the existing listing, notices
-and acknowledgement ([send contract](../notification_service/docs/api.md#messages)). Delegated inbox
-reading and acknowledgement remain frozen. Remaining: deletion never retargets mail to a replacement
-Sandbox, but inboxes are owned by ServiceAccount name, so a Sandbox recreated under a deleted one's name
-reads and acknowledges its inboxes. **Operator, 2026-10-21 07:48 UTC: hide them.** Record the owner
-ServiceAccount's UID when an inbox opens, and require it for listing, reading and acknowledging.
-
 ### `AGENT_MESSAGING` — integrated messaging capstone
 
-**Blocked on reception.** Demonstrate an authorized pair exchanging a message through
+**Candidate.** Demonstrate an authorized pair exchanging a message through
 the selected API, with correct provenance and distinct receipt/ack states. Security-negative and
 multi-replica retry cases belong in automated tests; no real provider outage requirement.
 

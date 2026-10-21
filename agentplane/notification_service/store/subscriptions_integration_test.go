@@ -80,7 +80,7 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 				requireQuota(t, err, ActiveSubscriptionsPerInbox, limit)
 
 				if inactive == "expired" {
-					_, err := f.Renew(t.Context(), f.owner, renewed.ID, retained.Version, 7)
+					_, err := f.Renew(t.Context(), f.incarnation(), renewed.ID, retained.Version, 7)
 					requireQuota(t, err, ActiveSubscriptionsPerInbox, limit)
 					// A rejected revival leaves the old record and its version as they were.
 					requireEqual(t, f.get(t, renewed.ID), retained)
@@ -121,7 +121,7 @@ func TestCreationAndExpiredRenewalShareTheLastActiveSlot(t *testing.T) {
 	}()
 	go func() {
 		defer wg.Done()
-		_, results[1] = f.Renew(t.Context(), f.owner, expired.ID, 1, 7)
+		_, results[1] = f.Renew(t.Context(), f.incarnation(), expired.ID, 1, 7)
 	}()
 	wg.Wait()
 
@@ -212,13 +212,13 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 			t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 		}
 	}
-	if _, err := f.Read(t.Context(), newOwner(), subscription.InboxID, 0, 128); !errors.Is(err, ErrNotFound) {
+	if _, err := f.Read(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account read the inbox: %v", err)
 	}
-	if _, err := f.GetSubscription(t.Context(), newOwner(), subscription.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.GetSubscription(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, subscription.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account read the subscription: %v", err)
 	}
-	if _, err := f.GetSubscription(t.Context(), f.owner, uuid.New()); !errors.Is(err, ErrNotFound) {
+	if _, err := f.GetSubscription(t.Context(), f.incarnation(), uuid.New()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("an unknown subscription was found: %v", err)
 	}
 
@@ -227,7 +227,7 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 	if renewed.Version != 2 || renewed.ExpiresAt.Before(before.Add(30*24*time.Hour)) || renewed.ExpiresAt.After(time.Now().Add(30*24*time.Hour)) {
 		t.Fatalf("renewed = %+v", renewed)
 	}
-	if _, err := f.Renew(t.Context(), f.owner, subscription.ID, 1, 7); !errors.Is(err, ErrVersionChanged) {
+	if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, 1, 7); !errors.Is(err, ErrVersionChanged) {
 		t.Fatalf("error = %v, want ErrVersionChanged", err)
 	}
 	cancelled := f.cancel(t, subscription.ID)
@@ -237,7 +237,7 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 	requireEqual(t, f.cancel(t, subscription.ID), cancelled)
 	// The cancelled subscription answers its creation key; it is not replaced.
 	requireEqual(t, f.subscribe(t, first), cancelled)
-	if _, err := f.Renew(t.Context(), f.owner, subscription.ID, cancelled.Version, 7); !errors.Is(err, ErrVersionChanged) {
+	if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, cancelled.Version, 7); !errors.Is(err, ErrVersionChanged) {
 		t.Fatalf("error = %v, want ErrVersionChanged", err)
 	}
 }
@@ -255,14 +255,14 @@ func TestSubscriptionsAreListedInPagesInIDOrder(t *testing.T) {
 	// Another account's subscriptions are not listed.
 	newFixture(t, quotas).subscribe(t, base)
 
-	first, err := f.ListSubscriptions(t.Context(), f.owner, nil)
+	first, err := f.ListSubscriptions(t.Context(), f.incarnation(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(first) != 128 {
 		t.Fatalf("first page holds %d, want 128", len(first))
 	}
-	second, err := f.ListSubscriptions(t.Context(), f.owner, &first[len(first)-1].ID)
+	second, err := f.ListSubscriptions(t.Context(), f.incarnation(), &first[len(first)-1].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,11 +290,11 @@ func TestACreationBeyondItsBoundsIsRefused(t *testing.T) {
 	}
 	subscription := f.subscribe(t, body("renewed"))
 	for _, lifetimeDays := range []int64{0, 31} {
-		if _, err := f.Renew(t.Context(), f.owner, subscription.ID, 1, lifetimeDays); !errors.Is(err, ErrInvalid) {
+		if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, 1, lifetimeDays); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("lifetime %d: error = %v, want ErrInvalid", lifetimeDays, err)
 		}
 	}
-	if _, err := f.Renew(t.Context(), f.owner, subscription.ID, 0, 7); !errors.Is(err, ErrInvalid) {
+	if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, 0, 7); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("error = %v, want ErrInvalid", err)
 	}
 }

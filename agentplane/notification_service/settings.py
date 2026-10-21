@@ -110,7 +110,7 @@ class QuotaSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     inboxes_per_account: int = Field(
-        default=64, ge=1, description="Maximum retained inboxes per owning ServiceAccount."
+        default=64, ge=1, description="Maximum retained inboxes per owning ServiceAccount and Sandbox incarnation."
     )
     active_subscriptions_per_inbox: int = Field(
         default=64, ge=1, description="Maximum non-cancelled, unexpired subscriptions per inbox."

@@ -274,12 +274,12 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 }
 
 // ListSubscriptions returns the owner's subscriptions in ID order after afterID, at most 128.
-func (s *Store) ListSubscriptions(ctx context.Context, owner ServiceAccount, afterID *uuid.UUID) ([]Subscription, error) {
+func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uuid.UUID) ([]Subscription, error) {
 	viewedAt := now()
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+subscriptionColumns+` FROM subscription s JOIN inbox i ON i.id = s.inbox_id
-		WHERE i.owner_namespace = $1 AND i.owner_name = $2 AND s.id > $3
-		ORDER BY s.id LIMIT 128`, owner.Namespace, owner.Name, startAfter(afterID))
+		WHERE i.owner_namespace = $1 AND i.owner_name = $2 AND i.destination_ref ->> 'uid' = $3 AND s.id > $4
+		ORDER BY s.id LIMIT 128`, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, startAfter(afterID))
 	if err != nil {
 		return nil, err
 	}
@@ -304,11 +304,11 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner ServiceAccount, aft
 }
 
 // GetSubscription returns one of the owner's subscriptions.
-func (s *Store) GetSubscription(ctx context.Context, owner ServiceAccount, id uuid.UUID) (Subscription, error) {
+func (s *Store) GetSubscription(ctx context.Context, owner Owner, id uuid.UUID) (Subscription, error) {
 	subscription, err := scanSubscription(s.db.QueryRowContext(ctx, `
 		SELECT `+subscriptionColumns+` FROM subscription s JOIN inbox i ON i.id = s.inbox_id
-		WHERE s.id = $1 AND i.owner_namespace = $2 AND i.owner_name = $3`,
-		id, owner.Namespace, owner.Name), now())
+		WHERE s.id = $1 AND i.owner_namespace = $2 AND i.owner_name = $3 AND i.destination_ref ->> 'uid' = $4`,
+		id, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID), now())
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subscription{}, ErrNotFound
 	}
@@ -320,7 +320,7 @@ func (s *Store) GetSubscription(ctx context.Context, owner ServiceAccount, id uu
 
 // lockSubscription is the owner's subscription read once its inbox is locked for update, so that nothing else
 // changes either while the caller does. A retired inbox fails with ErrInboxRetired.
-func lockSubscription(ctx context.Context, tx *sql.Tx, owner ServiceAccount, id uuid.UUID, viewedAt time.Time) (Subscription, error) {
+func lockSubscription(ctx context.Context, tx *sql.Tx, owner Owner, id uuid.UUID, viewedAt time.Time) (Subscription, error) {
 	var inboxID uuid.UUID
 	err := tx.QueryRowContext(ctx, `SELECT inbox_id FROM subscription WHERE id = $1`, id).Scan(&inboxID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -342,7 +342,7 @@ func lockSubscription(ctx context.Context, tx *sql.Tx, owner ServiceAccount, id 
 // Renew extends a subscription to lifetimeDays from now. version must be the one last read: a changed version
 // or a cancelled subscription fails with ErrVersionChanged. Renewing an expired subscription takes an active
 // slot, subject to the same quota as creating one.
-func (s *Store) Renew(ctx context.Context, owner ServiceAccount, id uuid.UUID, version, lifetimeDays int64) (Subscription, error) {
+func (s *Store) Renew(ctx context.Context, owner Owner, id uuid.UUID, version, lifetimeDays int64) (Subscription, error) {
 	if version < 1 {
 		return Subscription{}, invalid("version must be at least 1")
 	}
@@ -383,7 +383,7 @@ func (s *Store) Renew(ctx context.Context, owner ServiceAccount, id uuid.UUID, v
 
 // Cancel cancels a subscription. Cancelling a cancelled one returns it unchanged. Entries it already delivered
 // stay in the inbox.
-func (s *Store) Cancel(ctx context.Context, owner ServiceAccount, id uuid.UUID) (Subscription, error) {
+func (s *Store) Cancel(ctx context.Context, owner Owner, id uuid.UUID) (Subscription, error) {
 	var cancelled Subscription
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		written := now()

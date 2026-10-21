@@ -76,12 +76,13 @@ func (f fixture) entryCreatedAt(t *testing.T, inboxID uuid.UUID, cursor int64) t
 func TestSandboxStatusIsPinnedToTheSandboxIncarnationAndListsEveryOwnersInboxes(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	ref := uniqueSandbox()
+	f.sandboxUID = ref.UID
 	second := f.subscribeIn(t, "second", "b-session", ref)
 	first := f.subscribeIn(t, "first", "a-session", ref)
 	other := f
 	other.owner = newOwner()
 	retired := other.subscribeIn(t, "retired", "c-session", ref)
-	if err := other.Retire(t.Context(), other.owner, retired.InboxID); err != nil {
+	if err := other.Retire(t.Context(), other.incarnation(), retired.InboxID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -114,6 +115,7 @@ func TestSandboxStatusIsPinnedToTheSandboxIncarnationAndListsEveryOwnersInboxes(
 func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	ref := uniqueSandbox()
+	f.sandboxUID = ref.UID
 	subscription := f.subscribeIn(t, "first", uniqueSession(), ref)
 	request := subscription.Source.(ActionsSource).RequestID
 	for sequence := int64(1); sequence <= 3; sequence++ {
@@ -156,6 +158,7 @@ func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *te
 func TestSandboxStatusDescribesAtMostAHundredPendingEntries(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	ref := uniqueSandbox()
+	f.sandboxUID = ref.UID
 	subscription := f.subscribeIn(t, "first", uniqueSession(), ref)
 	f.addEvents(t, subscription, 1, maxPendingEntrySummaries+1)
 
@@ -169,6 +172,7 @@ func TestSandboxStatusDescribesAtMostAHundredPendingEntries(t *testing.T) {
 func TestSandboxStatusShowsEachSubscriptionAndWhenItsSourceIsNextRead(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	ref := uniqueSandbox()
+	f.sandboxUID = ref.UID
 	session := uniqueSession()
 	failing := f.subscribeIn(t, "failing", session, ref)
 	cancelled := f.subscribeIn(t, "cancelled", session, ref)
@@ -205,6 +209,7 @@ func TestSandboxStatusShowsEachSubscriptionAndWhenItsSourceIsNextRead(t *testing
 func TestSandboxStatusSaysWhyTheNextNoticeWaits(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	ref := uniqueSandbox()
+	f.sandboxUID = ref.UID
 	subscription := f.subscribeIn(t, "first", uniqueSession(), ref)
 	wait := func() NoticeWait { return f.onlyInbox(t, ref).NoticeWait }
 	reason := func(want NoticeWaitReason) {
@@ -236,7 +241,7 @@ func TestSandboxStatusSaysWhyTheNextNoticeWaits(t *testing.T) {
 	f.setNotice(t, subscription.InboxID, Notice{Attempted: true, Error: ptr("runner command failed")})
 	reason(WaitNoticeError)
 
-	if err := f.Retire(t.Context(), f.owner, subscription.InboxID); err != nil {
+	if err := f.Retire(t.Context(), f.incarnation(), subscription.InboxID); err != nil {
 		t.Fatal(err)
 	}
 	reason(WaitRetired)
@@ -331,7 +336,7 @@ func TestSessionNoticeStatesAreLiveInboxesOfTheNamedSessionsInTheNamespaceWhoeve
 	owned := f.subscribeIn(t, "owned", sessions[0], body("owned").DestinationRef)
 	others := other.subscribeIn(t, "others", sessions[1], body("others").DestinationRef)
 	retired := other.subscribeIn(t, "retired", sessions[2], body("retired").DestinationRef)
-	if err := other.Retire(t.Context(), other.owner, retired.InboxID); err != nil {
+	if err := other.Retire(t.Context(), other.incarnation(), retired.InboxID); err != nil {
 		t.Fatal(err)
 	}
 	elsewhere := body("elsewhere").DestinationRef

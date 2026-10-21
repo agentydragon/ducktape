@@ -200,7 +200,7 @@ func TestRecordActionEventsIsFencedOnTheClaim(t *testing.T) {
 			f.exec(t, `UPDATE inbox SET claim_until = now() - interval '1 second' WHERE id = $1`, subscription.InboxID)
 		},
 		"inbox retired": func(f fixture, t *testing.T, subscription Subscription) {
-			if err := f.Retire(t.Context(), f.owner, subscription.InboxID); err != nil {
+			if err := f.Retire(t.Context(), f.incarnation(), subscription.InboxID); err != nil {
 				t.Fatal(err)
 			}
 		},

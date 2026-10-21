@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
@@ -64,6 +65,25 @@ func serve[Request, Response any](
 	return response, nil
 }
 
+// serveOwned is serve for a request about the caller's inboxes and subscriptions: those opened for the Sandbox that
+// runs as its account now. A Sandbox runs as the ServiceAccount of its own name, so one recreated under a deleted
+// Sandbox's name sees none of the deleted one's. An account no Sandbox runs as gets none, or NOT_FOUND if none is nil.
+func serveOwned[Request, Response any](
+	ctx context.Context, s *Notifications, request *Request, none *Response,
+	handle func(context.Context, store.Owner, *Request) (*Response, error),
+) (*Response, error) {
+	return serve(ctx, s, request, func(ctx context.Context, account store.ServiceAccount, request *Request) (*Response, error) {
+		sandbox, err := s.sandbox(ctx, store.DestinationRef{Namespace: account.Namespace, Name: account.Name})
+		if errors.Is(err, errSandboxMissing) && none != nil {
+			return none, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return handle(ctx, store.Owner{Account: account, SandboxUID: sandbox.UID}, request)
+	})
+}
+
 func (s *Notifications) CreateSubscription(ctx context.Context, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
 	return serve(ctx, s, request, s.createSubscription)
 }
@@ -85,10 +105,10 @@ func (s *Notifications) createSubscription(ctx context.Context, owner store.Serv
 }
 
 func (s *Notifications) ListSubscriptions(ctx context.Context, request *notificationspb.ListSubscriptionsRequest) (*notificationspb.ListSubscriptionsResponse, error) {
-	return serve(ctx, s, request, s.listSubscriptions)
+	return serveOwned(ctx, s, request, &notificationspb.ListSubscriptionsResponse{}, s.listSubscriptions)
 }
 
-func (s *Notifications) listSubscriptions(ctx context.Context, owner store.ServiceAccount, request *notificationspb.ListSubscriptionsRequest) (*notificationspb.ListSubscriptionsResponse, error) {
+func (s *Notifications) listSubscriptions(ctx context.Context, owner store.Owner, request *notificationspb.ListSubscriptionsRequest) (*notificationspb.ListSubscriptionsResponse, error) {
 	after, err := parseOptionalID("after_id", request.AfterId)
 	if err != nil {
 		return nil, err
@@ -109,10 +129,10 @@ func (s *Notifications) listSubscriptions(ctx context.Context, owner store.Servi
 }
 
 func (s *Notifications) GetSubscription(ctx context.Context, request *notificationspb.GetSubscriptionRequest) (*notificationspb.GetSubscriptionResponse, error) {
-	return serve(ctx, s, request, s.getSubscription)
+	return serveOwned(ctx, s, request, nil, s.getSubscription)
 }
 
-func (s *Notifications) getSubscription(ctx context.Context, owner store.ServiceAccount, request *notificationspb.GetSubscriptionRequest) (*notificationspb.GetSubscriptionResponse, error) {
+func (s *Notifications) getSubscription(ctx context.Context, owner store.Owner, request *notificationspb.GetSubscriptionRequest) (*notificationspb.GetSubscriptionResponse, error) {
 	id, err := parseID("subscription_id", request.GetSubscriptionId())
 	if err != nil {
 		return nil, err
@@ -126,10 +146,10 @@ func (s *Notifications) getSubscription(ctx context.Context, owner store.Service
 }
 
 func (s *Notifications) RenewSubscription(ctx context.Context, request *notificationspb.RenewSubscriptionRequest) (*notificationspb.RenewSubscriptionResponse, error) {
-	return serve(ctx, s, request, s.renewSubscription)
+	return serveOwned(ctx, s, request, nil, s.renewSubscription)
 }
 
-func (s *Notifications) renewSubscription(ctx context.Context, owner store.ServiceAccount, request *notificationspb.RenewSubscriptionRequest) (*notificationspb.RenewSubscriptionResponse, error) {
+func (s *Notifications) renewSubscription(ctx context.Context, owner store.Owner, request *notificationspb.RenewSubscriptionRequest) (*notificationspb.RenewSubscriptionResponse, error) {
 	id, err := parseID("subscription_id", request.GetSubscriptionId())
 	if err != nil {
 		return nil, err
@@ -143,10 +163,10 @@ func (s *Notifications) renewSubscription(ctx context.Context, owner store.Servi
 }
 
 func (s *Notifications) CancelSubscription(ctx context.Context, request *notificationspb.CancelSubscriptionRequest) (*notificationspb.CancelSubscriptionResponse, error) {
-	return serve(ctx, s, request, s.cancelSubscription)
+	return serveOwned(ctx, s, request, nil, s.cancelSubscription)
 }
 
-func (s *Notifications) cancelSubscription(ctx context.Context, owner store.ServiceAccount, request *notificationspb.CancelSubscriptionRequest) (*notificationspb.CancelSubscriptionResponse, error) {
+func (s *Notifications) cancelSubscription(ctx context.Context, owner store.Owner, request *notificationspb.CancelSubscriptionRequest) (*notificationspb.CancelSubscriptionResponse, error) {
 	id, err := parseID("subscription_id", request.GetSubscriptionId())
 	if err != nil {
 		return nil, err
@@ -160,10 +180,10 @@ func (s *Notifications) cancelSubscription(ctx context.Context, owner store.Serv
 }
 
 func (s *Notifications) ListInboxes(ctx context.Context, request *notificationspb.ListInboxesRequest) (*notificationspb.ListInboxesResponse, error) {
-	return serve(ctx, s, request, s.listInboxes)
+	return serveOwned(ctx, s, request, &notificationspb.ListInboxesResponse{}, s.listInboxes)
 }
 
-func (s *Notifications) listInboxes(ctx context.Context, owner store.ServiceAccount, _ *notificationspb.ListInboxesRequest) (*notificationspb.ListInboxesResponse, error) {
+func (s *Notifications) listInboxes(ctx context.Context, owner store.Owner, _ *notificationspb.ListInboxesRequest) (*notificationspb.ListInboxesResponse, error) {
 	inboxes, err := s.store.ListInboxes(ctx, owner)
 	if err != nil {
 		return nil, err
@@ -176,10 +196,10 @@ func (s *Notifications) listInboxes(ctx context.Context, owner store.ServiceAcco
 }
 
 func (s *Notifications) ReadInbox(ctx context.Context, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
-	return serve(ctx, s, request, s.readInbox)
+	return serveOwned(ctx, s, request, nil, s.readInbox)
 }
 
-func (s *Notifications) readInbox(ctx context.Context, owner store.ServiceAccount, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
+func (s *Notifications) readInbox(ctx context.Context, owner store.Owner, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
 	id, err := parseID("inbox_id", request.GetInboxId())
 	if err != nil {
 		return nil, err
@@ -200,10 +220,10 @@ func (s *Notifications) readInbox(ctx context.Context, owner store.ServiceAccoun
 }
 
 func (s *Notifications) AcknowledgeInbox(ctx context.Context, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
-	return serve(ctx, s, request, s.acknowledgeInbox)
+	return serveOwned(ctx, s, request, nil, s.acknowledgeInbox)
 }
 
-func (s *Notifications) acknowledgeInbox(ctx context.Context, owner store.ServiceAccount, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
+func (s *Notifications) acknowledgeInbox(ctx context.Context, owner store.Owner, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
 	id, err := parseID("inbox_id", request.GetInboxId())
 	if err != nil {
 		return nil, err
@@ -216,10 +236,10 @@ func (s *Notifications) acknowledgeInbox(ctx context.Context, owner store.Servic
 }
 
 func (s *Notifications) RetireInbox(ctx context.Context, request *notificationspb.RetireInboxRequest) (*notificationspb.RetireInboxResponse, error) {
-	return serve(ctx, s, request, s.retireInbox)
+	return serveOwned(ctx, s, request, nil, s.retireInbox)
 }
 
-func (s *Notifications) retireInbox(ctx context.Context, owner store.ServiceAccount, request *notificationspb.RetireInboxRequest) (*notificationspb.RetireInboxResponse, error) {
+func (s *Notifications) retireInbox(ctx context.Context, owner store.Owner, request *notificationspb.RetireInboxRequest) (*notificationspb.RetireInboxResponse, error) {
 	id, err := parseID("inbox_id", request.GetInboxId())
 	if err != nil {
 		return nil, err

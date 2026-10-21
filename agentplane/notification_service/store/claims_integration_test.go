@@ -119,7 +119,7 @@ func TestClaimTakesTheDueInboxThatHasWaitedLongest(t *testing.T) {
 	older := f.subscribe(t, sessionBody("older", "older"))
 	later := f.subscribe(t, sessionBody("later", "later"))
 	retired := f.subscribe(t, sessionBody("retired", "retired"))
-	if err := f.Retire(t.Context(), f.owner, retired.InboxID); err != nil {
+	if err := f.Retire(t.Context(), f.incarnation(), retired.InboxID); err != nil {
 		t.Fatal(err)
 	}
 	f.exec(t, `UPDATE inbox SET next_attempt = now() - interval '10 seconds' WHERE id = $1`, newer.InboxID)
@@ -218,7 +218,7 @@ func TestEveryWriteOfAClaimIsFencedByTheLease(t *testing.T) {
 			f.claim(t)
 		},
 		"inbox retired": func(t *testing.T, f fixture, claim Claim) {
-			if err := f.Retire(t.Context(), f.owner, claim.ID); err != nil {
+			if err := f.Retire(t.Context(), f.incarnation(), claim.ID); err != nil {
 				t.Fatal(err)
 			}
 		},
@@ -265,7 +265,7 @@ func TestInboxesWithNothingToWatchAreNotWorkedAgain(t *testing.T) {
 	t.Run("retired", func(t *testing.T) {
 		f := newClaimFixture(t)
 		subscription := f.subscribe(t, body("first"))
-		if err := f.Retire(t.Context(), f.owner, subscription.InboxID); err != nil {
+		if err := f.Retire(t.Context(), f.incarnation(), subscription.InboxID); err != nil {
 			t.Fatal(err)
 		}
 		f.requireNoneDue(t)

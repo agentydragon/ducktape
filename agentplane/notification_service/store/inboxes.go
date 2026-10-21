@@ -86,12 +86,13 @@ func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 }
 
 // owned is the owner's inbox, locked for update when lock is set. An inbox of another owner is not found.
-func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner ServiceAccount, lock bool) (Inbox, error) {
-	query := `SELECT ` + inboxColumns + ` FROM inbox WHERE id = $1 AND owner_namespace = $2 AND owner_name = $3`
+func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock bool) (Inbox, error) {
+	query := `SELECT ` + inboxColumns + ` FROM inbox
+		WHERE id = $1 AND owner_namespace = $2 AND owner_name = $3 AND destination_ref ->> 'uid' = $4`
 	if lock {
 		query += ` FOR UPDATE`
 	}
-	inbox, err := scanInbox(tx.QueryRowContext(ctx, query, inboxID, owner.Namespace, owner.Name))
+	inbox, err := scanInbox(tx.QueryRowContext(ctx, query, inboxID, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Inbox{}, ErrNotFound
 	}
@@ -112,8 +113,9 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner ServiceAccoun
 		owner.Namespace, owner.Name, key).Scan(&existing)
 	if errors.Is(err, sql.ErrNoRows) {
 		var count int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM inbox WHERE owner_namespace = $1 AND owner_name = $2`,
-			owner.Namespace, owner.Name).Scan(&count); err != nil {
+		if err := tx.QueryRowContext(ctx, `
+			SELECT count(*) FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_ref ->> 'uid' = $3`,
+			owner.Namespace, owner.Name, ref.UID).Scan(&count); err != nil {
 			return Inbox{}, err
 		}
 		if count >= s.quotas.InboxesPerAccount {
@@ -147,10 +149,11 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner ServiceAccoun
 }
 
 // ListInboxes lists the owner's inboxes in ID order, retired ones included, at most 1000.
-func (s *Store) ListInboxes(ctx context.Context, owner ServiceAccount) ([]Inbox, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+inboxColumns+` FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 ORDER BY id LIMIT 1000`,
-		owner.Namespace, owner.Name)
+func (s *Store) ListInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT `+inboxColumns+` FROM inbox
+		WHERE owner_namespace = $1 AND owner_name = $2 AND destination_ref ->> 'uid' = $3 ORDER BY id LIMIT 1000`,
+		owner.Account.Namespace, owner.Account.Name, owner.SandboxUID)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +172,7 @@ func (s *Store) ListInboxes(ctx context.Context, owner ServiceAccount) ([]Inbox,
 // Read returns up to limit entries with a cursor after both `after` and the inbox's expired prefix, oldest
 // first, with the latest notice. The inbox is locked for the read, so entries and prefix metadata are one
 // snapshot. Reading acknowledges nothing.
-func (s *Store) Read(ctx context.Context, owner ServiceAccount, inboxID uuid.UUID, after int64, limit int) (InboxPage, error) {
+func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after int64, limit int) (InboxPage, error) {
 	if after < 0 {
 		return InboxPage{}, invalid("after_cursor must not be negative")
 	}
@@ -271,7 +274,7 @@ func latestNotice(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID) (*Notice, 
 
 // Acknowledge marks the inbox handled through a cursor. It never moves backwards, and a cursor beyond the
 // inbox's last entry fails with ErrCursorOutOfRange.
-func (s *Store) Acknowledge(ctx context.Context, owner ServiceAccount, inboxID uuid.UUID, through int64) (Inbox, error) {
+func (s *Store) Acknowledge(ctx context.Context, owner Owner, inboxID uuid.UUID, through int64) (Inbox, error) {
 	if through < 0 {
 		return Inbox{}, invalid("through_cursor must not be negative")
 	}
@@ -297,7 +300,7 @@ func (s *Store) Acknowledge(ctx context.Context, owner ServiceAccount, inboxID u
 
 // Retire cancels the inbox's subscriptions and stops all work for it. Entries and payloads stay readable.
 // Retiring a retired inbox changes nothing.
-func (s *Store) Retire(ctx context.Context, owner ServiceAccount, inboxID uuid.UUID) error {
+func (s *Store) Retire(ctx context.Context, owner Owner, inboxID uuid.UUID) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		inbox, err := owned(ctx, tx, inboxID, owner, true)
 		if err != nil || inbox.Retired {

@@ -7,6 +7,8 @@ For setup and configuration, see the [service README](../README.md).
 Workload bearer authentication uses TokenReview. Owner authority is the
 verified ServiceAccount, shared by its workloads. Every creation specifies `destination_ref`
 (namespace/name/UID) and `session_id`; inbox and subscription IDs identify subsequent operations.
+The caller's inboxes and subscriptions are those opened for the Sandbox that runs as its account now: a Sandbox
+recreated under a deleted one's name sees none of the deleted one's, and an account no Sandbox runs as has none.
 
 - `POST /v1/subscriptions`: immutable provider-owned source/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Actions replay defaults to sequence zero;
@@ -148,14 +150,14 @@ There is no exactly-once native execution claim. Coverage is independent of ackn
 reminders for unacknowledged entries, including after a worker restart. Only a running harness can receive
 input; this service never calls CreateSession, ResumeSession, or sandbox provisioning APIs.
 
-Default limits: 64 inboxes per account; 64 active (not cancelled and not expired) subscriptions per inbox; 10000
-source-event identities per inbox lifetime; 128 unacknowledged messages per sender and inbox; 128 entries per
-read/poll/replay step; subscriptions last
-7 days by default and can be renewed up to 30 days at a time. A full inbox stops source progress with
-an observable error rather than dropping events. Provider payloads expire after 30 days, preserving
-identity tombstones to prevent replay duplicates. `expired_through` reports the resulting prefix gap
-without advancing acknowledgement. Explicitly retired inboxes are purged after 30 days. After purge,
-a new explicit subscription can establish a fresh inbox epoch; there is no implicit successor routing.
+Default limits: 64 inboxes per account and Sandbox incarnation; 64 active (not cancelled and not expired)
+subscriptions per inbox; 10000 source-event identities per inbox lifetime; 128 unacknowledged messages per sender
+and inbox; 128 entries per read/poll/replay step; subscriptions last 7 days by default and can be renewed up to 30
+days at a time. A full inbox stops source progress with an observable error rather than dropping events. Provider
+payloads expire after 30 days, preserving identity tombstones to prevent replay duplicates. `expired_through`
+reports the resulting prefix gap without advancing acknowledgement. Explicitly retired inboxes are purged after 30
+days. After purge, a new explicit subscription can establish a fresh inbox epoch; there is no implicit successor
+routing.
 
 ## Resource quotas
 

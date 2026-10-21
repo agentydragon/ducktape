@@ -137,6 +137,8 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 var (
 	testOwner       = store.ServiceAccount{Namespace: "test", Name: "owner"}
 	testDestination = store.DestinationRef{Namespace: "test", Name: "sandbox", UID: "uid"}
+	// testIncarnation is testOwner as the Sandbox testDestination names.
+	testIncarnation = store.Owner{Account: testOwner, SandboxUID: testDestination.UID}
 	// baseAccess is the access to the repository the tests follow.
 	baseAccess = store.GitHubAccessKey{AppID: testAppID, InstallationID: baseInstallation, RepositoryID: baseRepository}
 	forkAccess = store.GitHubAccessKey{AppID: testAppID, InstallationID: forkInstallation, RepositoryID: forkRepository}
@@ -299,7 +301,7 @@ func (h *harness) reconcileAll(claim store.Claim) {
 
 func (h *harness) page(inboxID uuid.UUID) store.InboxPage {
 	h.t.Helper()
-	page, err := h.store.Read(h.t.Context(), testOwner, inboxID, 0, 128)
+	page, err := h.store.Read(h.t.Context(), testIncarnation, inboxID, 0, 128)
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -308,7 +310,7 @@ func (h *harness) page(inboxID uuid.UUID) store.InboxPage {
 
 func (h *harness) subscription(id uuid.UUID) store.Subscription {
 	h.t.Helper()
-	subscription, err := h.store.GetSubscription(h.t.Context(), testOwner, id)
+	subscription, err := h.store.GetSubscription(h.t.Context(), testIncarnation, id)
 	if err != nil {
 		h.t.Fatal(err)
 	}

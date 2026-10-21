@@ -53,7 +53,7 @@ func (f fixture) sentMessage(t *testing.T, sender ServiceAccount, id uuid.UUID) 
 
 func (f fixture) recipientInbox(t *testing.T) Inbox {
 	t.Helper()
-	inboxes, err := f.ListInboxes(t.Context(), f.owner)
+	inboxes, err := f.ListInboxes(t.Context(), f.incarnation())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestARetiredInboxTakesNoNewMessageAndItsPurgeEndsTheReceipts(t *testing.T) 
 	message := f.message(sender, "first", "test body")
 	sent := f.send(t, message)
 	inbox := f.recipientInbox(t)
-	if err := f.Retire(t.Context(), f.owner, inbox.ID); err != nil {
+	if err := f.Retire(t.Context(), f.incarnation(), inbox.ID); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.sentMessage(t, sender, sent.ID); !got.InboxRetired || got.Covered {
