@@ -52,7 +52,7 @@ flowchart LR
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
     ACTION_SERVICE_GO_PORT --> ACTION_MCP_EDGE_SPLIT
-    K3S_TRACK --> ACCEPTANCE_OPERATOR_CREDENTIALS_RETIRE[Blocked: retire the acceptance operator login]
+    K3S_TRACK -. left behind .-> ACCEPTANCE_OPERATOR_CREDENTIALS_RETIRE[Candidate: retire the acceptance operator login]
     K3S_TRACK --> K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
     K3S_MODEL_SCENARIOS --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
     K3S_VM_ACCEPTANCE --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
@@ -2105,7 +2105,7 @@ produce are named at the fake and are not cleanups.
 flowchart LR
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
-    K3S_FIXTURE_IDENTITY[In flight: Dex and MCP fixtures, section 14] --> ACCEPTANCE_OPERATOR_CREDENTIALS_RETIRE[Blocked: retire the acceptance operator login]
+    ACCEPTANCE_OPERATOR_CREDENTIALS_RETIRE[Candidate: retire the acceptance operator login]
     K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s, section 14] --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
     K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
     K3S_VM_ACCEPTANCE[In flight: KubeVirt emulation on k3s, section 14] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
@@ -2142,8 +2142,8 @@ the runner fixtures push straight to `GoHistoryService`'s ingress, and both stan
 
 ### `ACCEPTANCE_OPERATOR_CREDENTIALS_RETIRE` — retire the deployed-run operator login
 
-**Blocked on `K3S_FIXTURE_IDENTITY` and its Authentik login cleanup PR.** Once no acceptance run logs in as the
-deployed operator, these have no reader. Callers-gone removals, after that PR:
+**Candidate; no acceptance run logs in as the deployed operator since #11389 (merged 2026-10-21 09:25 UTC).** These
+have no reader left. Callers-gone removals:
 
 - The Authentik user `agentplane-acceptance-operator`, its policy bindings and reflected Secret
   (`tf/gitops/sso-providers/agentplane_acceptance_operator.tf`, staging Authentik, outside
