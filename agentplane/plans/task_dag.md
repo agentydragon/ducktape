@@ -2043,10 +2043,9 @@ cannot.
 
 **Candidate (operator, 2026-10-21 06:41: [test tiers](k3s_acceptance.md#test-tiers)).** Component
 tests use envtest (Python: [`kubernetes_apiserver.py`](../testing/kubernetes_apiserver.py), which
-mints Pod-bound tokens; Go: [`testing/envtest`](../testing/envtest)) in place of:
+mints Pod-bound tokens; Go: [`testing/kubeapiserver`](../testing/kubeapiserver)) in place of:
 
-- `agentplane/sandboxes/testing/fake_inventory.py`, behind the app tests;
-- TokenReview stubs in Go tests, such as `runner_gateway/gateway/control_test.go`'s.
+- `agentplane/sandboxes/testing/fake_inventory.py`, behind the app tests.
 
 A fake stays only for a fault the real API server cannot be made to produce, such as a forced
 watch close for an informer's relist, named at the fake. One PR per fake.
