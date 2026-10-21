@@ -186,7 +186,11 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
 async def _seed_navigation_threads(
     event_logs: SeededEventLogStore, history: History, store: ThreadStore
 ) -> tuple[list[UUID], list[ReplicationSource]]:
-    """Two threads of 130 messages, "Thread N message M", named "Test navigation thread N"."""
+    """Two threads of 130 messages, "Thread N message M", named "Test navigation thread N".
+
+    Every message's row is numbered above the rows of the thread's opening and view state, so the newest 120 rows
+    are messages 129 down to 10.
+    """
     threads: list[UUID] = []
     sources: list[ReplicationSource] = []
     for number in range(2):
@@ -208,7 +212,10 @@ async def _seed_navigation_threads(
             )
         thread = await event_logs.seed(SANDBOX, source.attached.session_id)
         await history.set_attached(thread, source.attached)
-        await history.record(thread, source.entries)
+        # The fold numbers the view state's row after the rows of the first page it folds, which holds whatever the
+        # ingress had committed of a push by then. Folding the opening alone first keeps the row below every message.
+        await history.record(thread, source.entries[:2])
+        await history.record(thread, source.entries[2:])
         await store.rename(thread, f"Test navigation thread {number}")
         threads.append(thread)
         sources.append(source)
@@ -367,8 +374,8 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
         await expect_projected_cursor(page, sources[0].entries[-1].cursor)
         await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
-        # Before the reader scrolls: the window reads the bodies of every row it holds (its 90 rows hold 89
-        # messages), not only those the view mounted.
+        # Before the reader scrolls: the window reads the bodies of every row it holds (its 90 rows are messages),
+        # not only those the view mounted.
         async with asyncio.timeout(30):
             while _bodies_read(of(threads[0])) < 60:
                 await chunks_read.wait()
