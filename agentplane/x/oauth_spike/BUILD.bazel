@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "oauth_spike",
+    srcs = [
+        "cimd.go",
+        "schema.go",
+        "server.go",
+        "storage.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/x/oauth_spike",
+    deps = [
+        "@com_github_go_jose_go_jose_v4//:go-jose",
+        "@com_github_lib_pq//:pq",
+        "@com_github_modelcontextprotocol_go_sdk//oauthex",
+        "@com_github_zitadel_oidc_v3//pkg/http",
+        "@com_github_zitadel_oidc_v3//pkg/oidc",
+        "@com_github_zitadel_oidc_v3//pkg/op",
+    ],
+)
+
+go_test(
+    name = "integration_test",
+    size = "medium",
+    srcs = [
+        "flow_test.go",
+        "integration_testmain_test.go",
+    ],
+    embed = [":oauth_spike"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/testing/postgres",
+        "@com_github_modelcontextprotocol_go_sdk//auth",
+        "@com_github_modelcontextprotocol_go_sdk//oauthex",
+        "@com_github_zitadel_oidc_v3//pkg/oidc",
+        "@com_github_zitadel_oidc_v3//pkg/op",
+        "@org_golang_x_oauth2//:oauth2",
+    ],
+)
