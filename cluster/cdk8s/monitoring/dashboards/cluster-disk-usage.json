@@ -257,7 +257,7 @@
             "configRefId": "MaxDisk",
             "mappings": [
               {
-                "fieldName": "Value",
+                "fieldName": "Value #MaxDisk",
                 "handlerKey": "max"
               },
               {
@@ -276,7 +276,7 @@
           "options": {
             "columnField": "component",
             "rowField": "disk",
-            "valueField": "Value",
+            "valueField": "Value #A",
             "emptyValue": "null"
           }
         },
