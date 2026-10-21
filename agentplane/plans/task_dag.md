@@ -19,6 +19,51 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
+### Current tracks and what they leave behind
+
+One group per track that has work in flight (2026-10-21), holding its open nodes; the nodes after a group are the
+cleanups due once that track finishes, each in [section 15](#15-cleanups-after-the-current-tracks) unless it names
+another. Tracks whose PRs leave nothing behind (the Electric cache headers, the Action grant-recheck drop, the Codex
+code-mode fixture) have no group. `REFACTOR_COHERENCE_AUDIT` sweeps what remains after all of them.
+
+```mermaid
+flowchart LR
+    subgraph ACTION_TRACK[Action Service Go port]
+        ACTION_SERVICE_GO_PORT[In flight: port, cutover and Python retirement]
+        ACTION_MCP_EDGE_SPLIT[Blocked: split mcp-edge out after the flip]
+    end
+    subgraph MESSAGING_TRACK[Agent messaging]
+        SANDBOX_INBOX_TAGS[Candidate: app presets set a launch's inbox tags]
+        AGENT_MESSAGING[Capstone: end-to-end agent messaging]
+        NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
+    end
+    subgraph K3S_TRACK[k3s acceptance, retiring agentplane-testing]
+        K3S_VM_ACCEPTANCE[In flight: KubeVirt emulation on k3s]
+        K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
+        TESTING_ROLLOUT_ROLE[Decision: what replaces testing]
+        TESTING_ENVIRONMENT_RETIRE[Blocked: retire agentplane-testing]
+    end
+    subgraph TIER_TRACK[Test tiers: envtest and the bridge split]
+        FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
+        APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
+    end
+    subgraph DISPATCH_TRACK[Dispatcher and Gateway merge]
+        DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
+        DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
+    end
+    ACTION_SERVICE_GO_PORT --> ACTION_MCP_EDGE_SPLIT
+    K3S_TRACK --> ACCEPTANCE_OPERATOR_CREDENTIALS_RETIRE[Blocked: retire the acceptance operator login]
+    K3S_TRACK --> K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
+    K3S_MODEL_SCENARIOS --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
+    K3S_VM_ACCEPTANCE --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
+    RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE
+    ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
+    MESSAGING_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
+    K3S_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
+    TIER_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
+    DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
+```
+
 ## 1. Session schema and identity follow-up
 
 ```mermaid
@@ -98,7 +143,7 @@ a message has a sender, which is another agent or an event source such as GitHub
 structured, like a GitHub webhook, or unstructured text; a subscription connects an inbox to an event
 source, with its configuration (which pull requests, for example). Today's terms to reconcile with it
 include entries and their event identities (`actions`, `github`, `message`), notices, sources and
-`DestinationRef`.
+`DestinationRef`. The `InboxesPerAccount` quota now counts per Sandbox incarnation, so its name goes with this rethink.
 
 ### `COMMAND_WATCH_SUBSCRIPTION_DESIGN` — a subscription kind that runs an agent's command on a schedule
 
@@ -1823,6 +1868,7 @@ flowchart LR
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
     ACTION_SERVICE_GO_PORT -. related .-> WEB_PUSH_SERVICE
+    ACTION_SERVICE_GO_PORT --> ACTION_MCP_EDGE_SPLIT[Blocked: split mcp-edge out after the flip]
 ```
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
@@ -1847,6 +1893,14 @@ token. The MCP endpoint, OAuth metadata and consent callbacks stay hand-written 
 Python service today; the port keeps them, and a server stream of receipts that ends at the condition replaces the wait
 with the CLI updated in the same change. Stages, stored-data risks and cutover: [Action Service Go
 port](action_service_go_port.md).
+
+### `ACTION_MCP_EDGE_SPLIT` — split `mcp-edge` out of the Action Service
+
+**Blocked on `ACTION_SERVICE_GO_PORT`'s staging cutover; destination approved by the operator, 2026-10-20 PDT.** The
+OAuth server, Connections, grants and enrollments move to their own `mcp-edge` deployment and database, which mints
+tokens for the bound ServiceAccounts with audience `actions`; `actions` then has one token admission path and stops
+being public. Steps, each its own PR: [after the flip](action_service_go_port.md#after-the-flip-the-edge-split).
+External MCP clients do not re-authorize again. The tables leave the `actions` database in a separate data change.
 
 ### `WEB_PUSH_SERVICE` — Web Push as its own sender
 
@@ -1979,6 +2033,9 @@ have a real-model version ([which](k3s_acceptance.md#two-axes-target-and-model-b
 - `test_session_instructions`
 - The `test_egress` probe
 
+The `test_egress` probe's `_k3s_real` target binds a fixture-only credential PolicySet, not staging's
+`github-agentydragon-agent`.
+
 ### `K3S_VM_ACCEPTANCE` — where VM acceptance runs
 
 **In flight: the emulation spike (operator, 2026-10-21 06:42).** The RBE Firecracker guest has no
@@ -2033,3 +2090,87 @@ Recommendation:
 - Drop the `external` tag so unchanged inputs cache.
 
 Question: the time budget.
+
+## 15. Cleanups after the current tracks
+
+Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
+lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the Python Action Service, its
+parity harnesses and the workload `/mcp` egress path in
+[the Action port's stages and cutover](action_service_go_port.md#stages); testing's Dex MCP client, Action groups and
+`TESTING_NAMESPACE` default in `TESTING_ENVIRONMENT_RETIRE`. The overview's graph is in
+[Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
+produce are named at the fake and are not cleanups.
+
+```mermaid
+flowchart LR
+    FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
+    APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
+    K3S_FIXTURE_IDENTITY[In flight: Dex and MCP fixtures, section 14] --> ACCEPTANCE_OPERATOR_CREDENTIALS_RETIRE[Blocked: retire the acceptance operator login]
+    K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s, section 14] --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
+    K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
+    K3S_VM_ACCEPTANCE[In flight: KubeVirt emulation on k3s, section 14] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
+    RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE
+```
+
+### `FAKE_CLIENTS_TO_ENVTEST` — the remaining fake API clients move to envtest
+
+**Candidate; any time (standing rule: Go tests that talk only to Go code use envtest).** These still build fake
+Kubernetes clients for state envtest can hold:
+
+- Go `clientfake` or `kubernetes/fake`: `notification_service/api/fixture_test.go` (Sandboxes, inbox tags,
+  `recreateSandbox`), `notification_service/main_test.go`, `runner_gateway/gateway/records_test.go`,
+  `runner_gateway/dispatcher/sandbox_kubernetes_test.go`, `sandboxes/sandboxreader/reader_test.go`.
+- Python: `app/testing/replication_process.py`, the browser tests' app process, reads `SandboxAccess` from
+  `FakeCustomObjectsApi` and `FakeCoreV1Api`, seeded from the envtest Sandbox.
+
+One PR per file. Exit: each reads from `testing/kubeapiserver` (Go) or `testing/kubernetes_apiserver.py` (Python), or
+keeps only a fault it injects, named at the fake.
+
+### `APP_TEST_RUNNER_FIXTURES_GO` — app tests reach runners through the Go Gateway and History ingress
+
+**Candidate; left by the app bridge test split.** Two Python stand-ins remain in app tests:
+
+- `runner_gateway/testing/runner_peer.py`, a runner peer with no Gateway authentication, Sandbox lookup or fencing,
+  used by the app conftest's `gateway` and `runners` fixtures, `test_history_gateway`'s
+  `test_runner_client_does_not_fall_back_after_peer_stops`, and `runner_gateway`'s `test_client` and
+  `test_grpc_native`.
+- `runner/testing/gateway.py`'s `IngressStore`: the native runner pushes its journal there and the tests forward it
+  to History.
+
+Exit: those users go through the Go Gateway's runner proxy (`sandbox_control` in `app/testing/runner_gateway.py`),
+the runner fixtures push straight to `GoHistoryService`'s ingress, and both stand-ins are deleted.
+
+### `ACCEPTANCE_OPERATOR_CREDENTIALS_RETIRE` — retire the deployed-run operator login
+
+**Blocked on `K3S_FIXTURE_IDENTITY` and its Authentik login cleanup PR.** Once no acceptance run logs in as the
+deployed operator, these have no reader. Callers-gone removals, after that PR:
+
+- The Authentik user `agentplane-acceptance-operator`, its policy bindings and reflected Secret
+  (`tf/gitops/sso-providers/agentplane_acceptance_operator.tf`, staging Authentik, outside
+  `TESTING_ENVIRONMENT_RETIRE`).
+- public-coder-agent's `get` on `agentplane-acceptance-operator` and `agentplane-testing-acceptance-operator` (Role
+  `agentplane-testing-login-reader` in `cluster/cdk8s/public_coder/app.py`), with
+  `cluster/validation/test_cluster_integration.py`, the public_coder `test_app` assertion and
+  `cluster/docs/agent_rbac.md`.
+- The reflector annotations and login, password, issuer and subject keys in testing Dex's ExternalSecret
+  (`cluster/cdk8s/agentplane/dex.py`); Dex still reads `config.yaml` from it.
+
+### `K3S_SPIKE_TARGETS_RETIRE` — delete the k3s spike targets
+
+**Blocked on `K3S_MODEL_SCENARIOS` and the acceptance scenarios covering `test_lifecycle`'s cases.** Delete
+`x/k3s_env`'s `test_env` (the real-model smoke that needs `LITELLM_QWEN_KEY`) once the `_k3s_real` targets land, and
+`test_lifecycle` with `.github/workflows/agentplane-k3s-lifecycle.yml` once acceptance `_k3s` scenarios cover its four
+cases (check suspend/resume and storage).
+
+### `K3S_ENV_OUT_OF_X` — the k3s stack leaves `x/`
+
+**Blocked on its targets running in PR CI (#11370), after which it is no longer experimental, and on the fixture and
+VM lanes no longer editing it.** Move `agentplane/x/k3s_env` to a stable home and update every reference (BUILD labels, acceptance
+targets, docs, workflows).
+
+### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
+
+**Blocked on `K3S_VM_ACCEPTANCE` and `RUNNER_LAYERING_VM`.** The KubeVirt emulation work adds a Bazel-built test
+guest under `x/k3s_env/guest`, a second copy of `runner/vm.nix`'s guest contract (disks by serial, workspace format,
+cgroup delegation, Codex path). Delete it once the production guest is Bazel-built and boots in seconds under
+emulation, and point the k3s VM scenarios at that guest.

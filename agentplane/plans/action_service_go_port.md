@@ -142,6 +142,10 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 | N     | Staging cutover, below.                                                                                                                                                                                                       |
 | O     | Python retirement: delete the Python service, tests, Alembic directory, migration image, `agentplane_oauth_kv` (a migration), the `fastmcp` pin and CI roster entries.                                                        |
 
+Stage O also deletes the Python-parity golden generators and tests (`generate_golden.py`, `generate_mcp_golden.py`,
+`generate_catalog_golden.py`, `policies/generate_golden.py` and their `test_*golden.py`) and the Go golden tests' lists of
+deliberate differences; a `golden.json` stays only where its Go test still earns it without the Python reference.
+
 ## Cutover
 
 - **Testing, then staging**, with staging's image pins held while testing soaks, as for History.
@@ -156,6 +160,9 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 - **External MCP clients re-authorize once**, at the flip and not again at the edge split. Their FastMCP-issued
   tokens cannot be honored. Connections and grants survive in the same tables and the existing reconnect path binds
   the new authorization to the old Connection after the operator confirms it. Say so in the cutover PR.
+- **Workload `/mcp` egress.** The `agentplane-workload` rule in `cluster/cdk8s/agentplane/egress.py` lets Sandboxes
+  reach `/mcp`, which no in-repo client calls and the Go service serves only to OAuth callers. The path leaves the
+  rule, with its `test_egress.py` assertion, at the staging cutover.
 - **Live Sandboxes.** A Sandbox started before the cutover has the old CLI and guides, which cannot talk to the
   receipt stream until it restarts. That is the "decision card before PRs breaking live Sandboxes" case: ask at
   stage L, with the number of live Sandboxes in hand.
