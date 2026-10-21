@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
@@ -35,7 +36,10 @@ var conflictCodes = map[store.ConflictReason]codes.Code{
 // one this service wrote; a fault of the database or of a collaborator gets a fixed message, and its cause is
 // logged.
 func failure(ctx context.Context, err error) error {
-	var conflict *store.ConflictError
+	var (
+		conflict *store.ConflictError
+		unusable *linkage.UnusableError
+	)
 	switch {
 	case err == nil:
 		return nil
@@ -50,6 +54,10 @@ func failure(ctx context.Context, err error) error {
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, catalog.ErrUnavailable):
 		return status.Error(codes.Unavailable, catalog.ErrUnavailable.Error())
+	case errors.Is(err, linkage.ErrUnknownServer):
+		return status.Error(codes.NotFound, linkage.ErrUnknownServer.Error())
+	case errors.Is(err, linkage.ErrUnconfiguredScopes):
+		return status.Error(codes.InvalidArgument, linkage.ErrUnconfiguredScopes.Error())
 	case errors.As(err, &conflict) && conflictCodes[conflict.Reason] != codes.OK:
 		return status.Error(conflictCodes[conflict.Reason], conflict.Message)
 	case errors.Is(err, push.ErrUnsupportedEndpoint):
@@ -66,6 +74,9 @@ func failure(ctx context.Context, err error) error {
 		return status.Error(codes.DeadlineExceeded, "action request deadline expired")
 	case ctx.Err() != nil:
 		return status.FromContextError(ctx.Err()).Err()
+	case errors.As(err, &unusable):
+		// After the call's own end: discovery fails once the call is cancelled, and that is not the server's fault.
+		return status.Error(codes.FailedPrecondition, unusable.Reason)
 	case errors.Is(err, auth.ErrUnavailable):
 		slog.WarnContext(ctx, "workload authentication unavailable", "error", err)
 		return status.Error(codes.Unavailable, auth.ErrUnavailable.Error())

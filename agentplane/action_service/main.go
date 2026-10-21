@@ -1,10 +1,11 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
 // `ActionService`'s submission, request reads, watches and cancellation, its catalog reads and watch and the Action
-// policy, `OperatorActionService`'s Decisions, `WebPushService`, and the MCP edge's `ConnectionService` until the
-// edge is split out, over gRPC and their HTTP facade under /v1/, the agent documentation, the standard gRPC health
-// service and the process's Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the
-// sandbox groups and of the MCP groups, pushes the requests awaiting a Decision to operators' browsers when Web Push
-// is configured, and keeps its policy index equal to the API server's. The other RPCs answer UNIMPLEMENTED.
+// policy, `OperatorActionService`'s Decisions and MCP server linkages, `WebPushService`, and the MCP edge's
+// `ConnectionService` until the edge is split out, over gRPC and their HTTP facade under /v1/, the MCP linkage's OAuth
+// callback and Client ID Metadata Document, the agent documentation, the standard gRPC health service and the process's
+// Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the sandbox groups and of the MCP
+// groups, refreshes the linked OAuth tokens, pushes the requests awaiting a Decision to operators' browsers when Web
+// Push is configured, and keeps its policy index equal to the API server's.
 package main
 
 import (
@@ -28,6 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/mcpexec"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
@@ -246,9 +248,9 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 	return api.NewGate(options), nil
 }
 
-// newRoutes is the listener's HTTP routes: the HTTP form of the gRPC services under /v1/ (served by httpFacade), the
-// agent documentation, which needs neither the database nor a peer, and the metrics.
-func newRoutes(httpFacade http.Handler) (http.Handler, error) {
+// newRoutes is the listener's HTTP routes but the linkages': the HTTP form of the gRPC services under /v1/ (served by
+// httpFacade), the agent documentation, which needs neither the database nor a peer, and the metrics.
+func newRoutes(httpFacade http.Handler) (*http.ServeMux, error) {
 	docs, err := fs.Sub(agentDocs, "docs/agents")
 	if err != nil {
 		return nil, err
@@ -260,10 +262,10 @@ func newRoutes(httpFacade http.Handler) (http.Handler, error) {
 	return routes, nil
 }
 
-// serve answers on listener, runs the dispatch worker, supervises the MCP groups' sessions, delivers Web Push and keeps
-// the policy index until ctx ends or the listener fails. gRPC and the HTTP routes share the listener. The worker, the
-// MCP groups and Web Push delivery drain from then on, beside the listener's shutdown, and serve returns once they have
-// and the policy watches have stopped.
+// serve answers on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked
+// tokens, delivers Web Push and keeps the policy index until ctx ends or the listener fails. gRPC and the HTTP routes
+// share the listener. The worker, the MCP groups, the refreshes and Web Push delivery drain from then on, beside the
+// listener's shutdown, and serve returns once they have and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	watchPeriod := c.policyWatchPeriod()
 	policy := informer.NewIndex(reader.StaleAfterCycles*watchPeriod, c.CallerServiceAccountNamespaces)
@@ -278,6 +280,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	defer db.Close()
 	hub, err := wakeups.Listen(
 		ctx, c.DatabaseURL, store.UpdatesChannel, store.DispatchChannel, push.UpdatesChannel, connections.UpdatesChannel,
+		linkage.UpdatesChannel,
 	)
 	if err != nil {
 		return fmt.Errorf("Action Service PostgreSQL listener unavailable: %w", err)
@@ -289,12 +292,24 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		return err
 	}
 	defer unsubscribe()
+	linkageChanges, unsubscribeLinkages, err := hub.Subscribe(linkage.UpdatesChannel)
+	if err != nil {
+		return err
+	}
+	defer unsubscribeLinkages()
+	linkages, err := linkage.New(db, c.MCPServers, c.MCPClientMetadata)
+	if err != nil {
+		return err
+	}
+	if err := linkages.RemoveUnconfigured(ctx); err != nil {
+		return fmt.Errorf("removing the linkages of unconfigured MCP servers: %w", err)
+	}
 	byGroup, err := sandboxExecutors(ctx, c.ActionGroups, d.Kube)
 	if err != nil {
 		return err
 	}
 	requests := store.New(db)
-	supervisors, err := mcpExecutors(c.ActionGroups, requests)
+	supervisors, err := mcpExecutors(c.ActionGroups, linkages)
 	if err != nil {
 		return err
 	}
@@ -350,7 +365,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	action_servicepb.RegisterActionServiceServer(grpcServer, api.NewService(requests, hub, c.ActionGroups, admission, policy, api.Submissions{
 		Executors: actions, Provider: policies.NewProvider(visibility),
 	}))
-	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests))
+	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests, hub, admission, linkages))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, api.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
 	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connections.NewStore(db, policy), admission, hub))
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
@@ -372,6 +387,9 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	if err != nil {
 		return err
 	}
+	// The OAuth provider's redirect to the callback and the authorization server's fetch of the document carry no
+	// bearer, so they are plain HTTP beside the facade.
+	linkages.Mount(routes)
 	server := &http.Server{Handler: routes, ReadHeaderTimeout: readHeaderTimeout}
 	facade.MountGRPC(server, grpcServer)
 
@@ -380,6 +398,20 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	for _, executor := range supervisors {
 		supervising.Go(func() { executor.Run(working) })
 	}
+	supervising.Go(func() { linkages.Run(working) })
+	// A commit to a linkage, on any replica, may make an OAuth-backed group usable or unusable.
+	supervising.Go(func() {
+		for {
+			select {
+			case <-working.Done():
+				return
+			case <-linkageChanges:
+				for _, executor := range supervisors {
+					executor.LinkageChanged()
+				}
+			}
+		}
+	})
 	if notifier != nil {
 		supervising.Go(func() { notifier.Run(working, pushChanges) })
 	}

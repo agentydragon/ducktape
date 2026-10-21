@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,9 +19,11 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -379,6 +382,85 @@ func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
 	request := service.ended(t, id)
 	if request.State != store.StateSucceeded {
 		t.Fatalf("the request is %s with execution error %s", request.State, request.Execution.Error)
+	}
+}
+
+// fetch is the answer to a GET of address.
+func fetch(t *testing.T, address string) (int, []byte) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.StatusCode, body
+}
+
+// The service finishes a link at its callback, and a group the linkage authorizes follows it: a change another replica
+// commits reaches the group at once, not at its next refresh minutes later. The service also serves the shared Client
+// ID Metadata Document.
+func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
+	var down atomic.Bool
+	groups := newCatalog(t, `{"test-linked": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e",
+		"config": {"transport": "streamable-http", "url": "`+echoUpstream(t, &down)+`", "server_id": "test-linked", "auth": "oauth"}}}}`)
+	provider := oauthprovider.New(t, oauthprovider.Options{ExpiresIn: 3600})
+	shared := provider.Server("test-shared")
+	shared.ClientID, shared.UseSharedCIMD = nil, true
+	servers := map[string]linkage.Server{"test-linked": provider.Server("test-linked"), "test-shared": shared}
+	metadata := linkage.ClientMetadata{URL: "https://test-actions.example" + linkage.ClientMetadataPath, ClientName: "Test application"}
+	var databaseURL string
+	service := startConfigured(t, kube.Config, groups, func(c *config, _ *deps) {
+		c.MCPServers, c.MCPClientMetadata, databaseURL = servers, metadata, c.DatabaseURL
+	})
+	unlinked := func(h *action_servicepb.McpHealth) bool { return h.GetDetail() == "no account is linked" }
+	awaitMCPHealth(t, groups, "test-linked", unlinked)
+
+	// The replica the operator started the flow on.
+	db, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	replica, err := linkage.New(db, servers, metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := replica.Start(t.Context(), "test-linked", nil, testOperator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, body := fetch(t, service.url+linkage.CallbackPath+"?"+url.Values{
+		"state": {oauthprovider.State(t, started.GetAuthorizationUrl())}, "code": {"test-code"},
+	}.Encode())
+	linked := &operator_action_servicepb.McpServerLinkage{}
+	if code != http.StatusOK || protojson.Unmarshal(body, linked) != nil ||
+		linked.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED {
+		t.Fatalf("the callback answered %d %s", code, body)
+	}
+	awaitMCPHealth(t, groups, "test-linked", func(h *action_servicepb.McpHealth) bool {
+		return h.GetState() == action_servicepb.McpLifecycle_MCP_LIFECYCLE_AVAILABLE
+	})
+	if _, err := replica.Disconnect(t.Context(), "test-linked"); err != nil {
+		t.Fatal(err)
+	}
+	awaitMCPHealth(t, groups, "test-linked", unlinked)
+
+	code, body = fetch(t, service.url+linkage.ClientMetadataPath)
+	var document struct {
+		ClientID string `json:"client_id"`
+	}
+	if code != http.StatusOK || json.Unmarshal(body, &document) != nil || document.ClientID != metadata.URL {
+		t.Errorf("the Client ID Metadata Document answered %d %s", code, body)
 	}
 }
 

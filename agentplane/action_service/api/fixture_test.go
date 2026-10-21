@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -153,6 +154,8 @@ type served struct {
 	url string
 	// operatorToken is a token the issuer signed for the operator.
 	operatorToken string
+	// linkages are the OAuth linkages of the MCP servers the API serves.
+	linkages *linkage.Authority
 }
 
 // updatesConnection is the application name of the LISTEN connection that wakes the watches.
@@ -163,13 +166,13 @@ func serve(t *testing.T) *served {
 	return serveWith(t, kube.TokenReviews(), newCatalog(t, submissionCatalog))
 }
 
-// serveWith serves the API over the groups, with workload tokens reviewed by reviews, and a policy index of a
-// namespace of its own.
-func serveWith(t *testing.T, reviews auth.TokenReviews, groups *catalog.Catalog) *served {
+// serveWith serves the API over the groups and the linkages of the MCP servers, with workload tokens reviewed by
+// reviews, and a policy index of a namespace of its own.
+func serveWith(t *testing.T, reviews auth.TokenReviews, groups *catalog.Catalog, servers ...linkage.Server) *served {
 	t.Helper()
 	namespace := newPolicyNamespace(t)
 	index, _ := namespace.watch(t)
-	return serveWithPolicy(t, reviews, groups, namespace, index)
+	return serveWithPolicy(t, reviews, groups, namespace, index, servers...)
 }
 
 // policyNamespace is a namespace of one test's own, for its PolicySets and PolicyBindings.
@@ -297,10 +300,11 @@ func (s *served) submissions(t *testing.T) Submissions {
 	return Submissions{Executors: s.routes, Provider: policies.NewProvider(visibility)}
 }
 
-// serveWithPolicy serves the API over the groups with workload tokens reviewed by reviews, reading Action policy from
-// index, which holds the namespace's policy objects.
+// serveWithPolicy serves the API over the groups and the linkages of the MCP servers with workload tokens reviewed by
+// reviews, reading Action policy from index, which holds the namespace's policy objects.
 func serveWithPolicy(
 	t *testing.T, reviews auth.TokenReviews, groups *catalog.Catalog, namespace policyNamespace, index *informer.Index,
+	servers ...linkage.Server,
 ) *served {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
@@ -317,7 +321,7 @@ func serveWithPolicy(
 	query := listening.Query()
 	query.Set("application_name", updatesConnection)
 	listening.RawQuery = query.Encode()
-	updates, err := wakeups.Listen(t.Context(), listening.String(), store.UpdatesChannel)
+	updates, err := wakeups.Listen(t.Context(), listening.String(), store.UpdatesChannel, linkage.UpdatesChannel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,6 +330,16 @@ func serveWithPolicy(
 		store: store.New(db), db: db, issuer: newIssuer(t), policy: string(namespace), index: index, databaseURL: dsn,
 	}
 	s.operatorToken = s.issuer.token(t, nil)
+	configured := map[string]linkage.Server{}
+	for _, server := range servers {
+		configured[server.ServerID] = server
+	}
+	if err := linkage.Validate(configured, linkage.ClientMetadata{}); err != nil {
+		t.Fatal(err)
+	}
+	if s.linkages, err = linkage.New(db, configured, linkage.ClientMetadata{}); err != nil {
+		t.Fatal(err)
+	}
 	// Every call asks the TokenReview API again, so a revoked token is refused once the API server refuses it.
 	workloads, err := auth.NewResolver(reviews, testAudience, []string{testNamespace}, auth.WithVerdictTTL(0))
 	if err != nil {
@@ -341,7 +355,7 @@ func serveWithPolicy(
 	})
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, groups, s.gate, index, s.submissions(t)))
-	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store))
+	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store, updates, s.gate, s.linkages))
 	// gRPC runs no interceptor for a service it does not serve, so a stub stands behind the Gate.
 	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connection_servicepb.UnimplementedConnectionServiceServer{})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

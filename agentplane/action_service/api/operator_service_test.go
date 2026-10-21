@@ -133,13 +133,14 @@ func TestAWorkloadsBearerNeverReachesTheOperatorService(t *testing.T) {
 		_, err := s.decideAs(t, token, decision(request, allow))
 		wantCode(t, "a workload's decision", err, codes.Unauthenticated)
 		_, err = s.operators.ListMcpServers(as(t, token), &operator_action_servicepb.ListMcpServersRequest{})
-		wantCode(t, "a workload's call of an RPC not served yet", err, codes.Unauthenticated)
+		wantCode(t, "a workload's listing of the MCP servers", err, codes.Unauthenticated)
 	}
 	if calls := reviews.Calls.Load(); calls != 0 {
 		t.Errorf("%d workload tokens reviewed", calls)
 	}
-	_, err := s.operators.ListMcpServers(as(t, s.operatorToken), &operator_action_servicepb.ListMcpServersRequest{})
-	wantCode(t, "an operator's call of an RPC not served yet", err, codes.Unimplemented)
+	if _, err := s.operators.ListMcpServers(as(t, s.operatorToken), &operator_action_servicepb.ListMcpServersRequest{}); err != nil {
+		t.Errorf("an operator's listing of the MCP servers: %v", err)
+	}
 }
 
 func TestOfTwoOperatorsDecidingAtOnceOneDecidesAndTheOtherIsTold(t *testing.T) {

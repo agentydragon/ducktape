@@ -1,0 +1,10 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "oauthprovider",
+    testonly = True,
+    srcs = ["oauthprovider.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider",
+    visibility = ["//agentplane/action_service:__subpackages__"],
+    deps = ["//agentplane/action_service/linkage"],
+)

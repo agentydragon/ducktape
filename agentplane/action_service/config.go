@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -55,6 +56,10 @@ type config struct {
 	WebPush push.Settings `mapstructure:"web_push"`
 	// ActionGroups is read from the file alone; see settingsFile.
 	ActionGroups *catalog.Catalog `mapstructure:"-"`
+	// MCPServers are the MCP servers an operator links an account to, by server ID.
+	MCPServers map[string]linkage.Server `mapstructure:"mcp_servers"`
+	// MCPClientMetadata is the client identity of the servers that use the shared Client ID Metadata Document.
+	MCPClientMetadata linkage.ClientMetadata `mapstructure:"mcp_client_metadata"`
 }
 
 type gitHubVisibility struct {
@@ -97,6 +102,14 @@ func loadConfig() (config, error) {
 			return config{}, errors.New("action_groups is read from the settings file only")
 		}
 	}
+	// Unmarshal reads a map setting as one key, whose value from the file would replace the environment's overrides of
+	// the keys under it (viper v1.21.0, ExperimentalBindStruct). Setting each of those keys to its value keeps them: a
+	// set value comes first.
+	for _, key := range settings.AllKeys() {
+		if strings.HasPrefix(key, "mcp_servers.") {
+			settings.Set(key, settings.Get(key))
+		}
+	}
 	// The errors name no value: a setting can be a Secret.
 	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
 		return config{}, errors.New("invalid Action Service settings")
@@ -137,6 +150,9 @@ func (c *config) validate() error {
 		if err := c.WebPush.Validate(); err != nil {
 			return err
 		}
+	}
+	if err := linkage.Validate(c.MCPServers, c.MCPClientMetadata); err != nil {
+		return err
 	}
 	if c.operatorsEnabled() {
 		return c.OperatorOIDC.Validate()

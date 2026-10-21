@@ -60,7 +60,8 @@ type Executor struct {
 	linkages Linkages
 	timing   Timing
 	client   *mcp.Client
-	// wakeups asks the supervisor to try again now: the tools changed, or a session failed under an Execution.
+	// wakeups asks the supervisor to try again now: the tools or the linkage changed, or a session failed under an
+	// Execution.
 	wakeups chan struct{}
 
 	mu sync.Mutex
@@ -106,10 +107,8 @@ func New(groups *catalog.Catalog, key string, binding catalog.MCPBinding, linkag
 	if err != nil {
 		return nil, fmt.Errorf("ActionGroup %s has an invalid MCP binding: %w", key, err)
 	}
-	if http, isHTTP := server.(httpServer); isHTTP && linkages == nil {
-		if _, linked := http.credential.(linkedAccount); linked {
-			return nil, fmt.Errorf("ActionGroup %s is authorized by an OAuth linkage, and no linkages were given", key)
-		}
+	if _, linked := linkedAccountOf(server); linked && linkages == nil {
+		return nil, fmt.Errorf("ActionGroup %s is authorized by an OAuth linkage, and no linkages were given", key)
 	}
 	if timing.Refresh <= 0 || timing.Lifecycle <= 0 || timing.Execution <= 0 || timing.Stable < 0 {
 		return nil, fmt.Errorf("MCP executor intervals must be positive: %+v", timing)
@@ -163,27 +162,25 @@ func (e *Executor) attempt(ctx context.Context) {
 	e.mu.Lock()
 	e.retryAt = time.Time{}
 	e.mu.Unlock()
-	if http, isHTTP := e.server.(httpServer); isHTTP {
-		if account, linked := http.credential.(linkedAccount); linked {
-			reading, cancel := context.WithTimeout(ctx, e.timing.Lifecycle)
-			problem, err := linkageProblem(reading, e.linkages, account.serverID)
-			cancel()
-			if ctx.Err() != nil {
-				return
-			}
-			if err != nil {
-				// Database errors can carry request material; the type names the failure.
-				slog.Warn("MCP OAuth linkage read failed; the group stays unavailable", "group", e.key,
-					"error_type", fmt.Sprintf("%T", err))
-				problem = "reading the OAuth linkage failed: " + e.describe(err)
-			}
-			if problem != "" {
-				e.mu.Lock()
-				defer e.mu.Unlock()
-				e.withdraw(action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_LINKAGE_UNAVAILABLE.Enum(), problem)
-				e.retire()
-				return
-			}
+	if account, linked := linkedAccountOf(e.server); linked {
+		reading, cancel := context.WithTimeout(ctx, e.timing.Lifecycle)
+		problem, err := linkageProblem(reading, e.linkages, account.serverID)
+		cancel()
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			// Database errors can carry request material; the type names the failure.
+			slog.Warn("MCP OAuth linkage read failed; the group stays unavailable", "group", e.key,
+				"error_type", fmt.Sprintf("%T", err))
+			problem = "reading the OAuth linkage failed: " + e.describe(err)
+		}
+		if problem != "" {
+			e.mu.Lock()
+			defer e.mu.Unlock()
+			e.withdraw(action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_LINKAGE_UNAVAILABLE.Enum(), problem)
+			e.retire()
+			return
 		}
 	}
 	e.mu.Lock()
@@ -294,6 +291,15 @@ func (e *Executor) sleep(ctx context.Context, d time.Duration) {
 	case <-ctx.Done():
 	case <-e.wakeups:
 	case <-timer.C:
+	}
+}
+
+// LinkageChanged tells a group authorized by an OAuth linkage that its linkage may have changed: the supervisor reads
+// it again now, so a linked, refreshed or lost account takes effect without waiting for the next attempt. Any other
+// group ignores it.
+func (e *Executor) LinkageChanged() {
+	if _, linked := linkedAccountOf(e.server); linked {
+		e.wake()
 	}
 }
 

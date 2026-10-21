@@ -9,7 +9,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
-	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -189,14 +188,6 @@ func TestADrainingServiceRefusesEveryCall(t *testing.T) {
 	wantCode(t, "a cancellation while draining", err, codes.Unavailable)
 	_, err = s.decideAs(t, s.operatorToken, decision(request, allow))
 	wantCode(t, "a Decision while draining", err, codes.Unavailable)
-}
-
-func TestAnRPCNotServedYetIsUnimplementedOnceAdmitted(t *testing.T) {
-	s := serve(t)
-	_, err := s.operators.ListMcpServers(as(t, s.operatorToken), &operator_action_servicepb.ListMcpServersRequest{})
-	wantCode(t, "an admitted operator", err, codes.Unimplemented)
-	_, err = s.operators.ListMcpServers(as(t, "test-token-unknown"), &operator_action_servicepb.ListMcpServersRequest{})
-	wantCode(t, "an unknown token", err, codes.Unauthenticated)
 }
 
 // The Gate admits the MCP edge's Connection service as it admits the operator service: an operator's call passes it

@@ -1,5 +1,5 @@
 // Package store holds the Action Service's ActionRequests, Events, Decisions and Executions in its PostgreSQL
-// database, and reads the OAuth linkages of its MCP servers there.
+// database.
 //
 // Every write is one transaction, and a commit that changes what a reader follows sends a NOTIFY in it:
 // `UpdatesChannel` with the request's ID for every Event, `DispatchChannel` for every Execution that awaits

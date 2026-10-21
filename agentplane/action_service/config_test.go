@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
@@ -190,6 +191,48 @@ func TestWebPushIsOffUnlessConfiguredAndReadsItsKeyFromTheEnvironment(t *testing
 	}
 }
 
+func TestTheMCPServersAreRead(t *testing.T) {
+	c, err := loadTestConfig(t, requiredFile+`mcp_client_metadata:
+  url: https://test-actions.example/oauth/client-metadata.json
+  client_name: Test application
+mcp_servers:
+  test_registered:
+    server_id: test_registered
+    server_url: https://test-mcp.example/mcp
+    client_id: test-placeholder
+    client_secret_file: /test/client-secret
+    redirect_uri: https://test-app.example/mcp-linkage/callback
+    scopes: [test-read]
+  test_shared:
+    server_id: test_shared
+    server_url: https://test-other-mcp.example/mcp
+    token_endpoint: https://test-other-mcp.example/token
+    use_shared_cimd: true
+    redirect_uri: https://test-app.example/mcp-linkage/callback
+    scopes: [test-write]
+`, settingPrefix+"MCP_SERVERS__TEST_REGISTERED__CLIENT_ID=test-client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]linkage.Server{
+		"test_registered": {
+			ServerID: "test_registered", ServerURL: "https://test-mcp.example/mcp", ClientID: new("test-client"),
+			ClientSecretFile: new("/test/client-secret"), RedirectURI: "https://test-app.example/mcp-linkage/callback",
+			Scopes: []string{"test-read"},
+		},
+		"test_shared": {
+			ServerID: "test_shared", ServerURL: "https://test-other-mcp.example/mcp",
+			TokenEndpoint: new("https://test-other-mcp.example/token"), UseSharedCIMD: true,
+			RedirectURI: "https://test-app.example/mcp-linkage/callback", Scopes: []string{"test-write"},
+		},
+	}
+	if !reflect.DeepEqual(c.MCPServers, want) || c.MCPClientMetadata != (linkage.ClientMetadata{
+		URL: "https://test-actions.example/oauth/client-metadata.json", ClientName: "Test application",
+	}) {
+		t.Errorf("MCP settings: %+v, %+v", c.MCPServers, c.MCPClientMetadata)
+	}
+}
+
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
 		"unknown key":             requiredFile + "test_unknown_setting: never-print-this\n",
@@ -225,6 +268,20 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"web push without its key":           requiredFile + testWebPush,
 		"web push key not PEM":               requiredFile + testWebPush + "  private_key_pem: never-print-this\n",
 		"unknown web push key":               requiredFile + testWebPush + "  vapid_claims: never-print-this\n",
+		"MCP server without a client": requiredFile + `mcp_servers:
+  test_server:
+    server_id: test_server
+    server_url: https://never-print-this.example/mcp
+    redirect_uri: https://test-app.example/mcp-linkage/callback
+`,
+		"unknown MCP server field": requiredFile + `mcp_servers:
+  test_server:
+    server_id: test_server
+    server_url: https://test-mcp.example/mcp
+    client_id: test-client
+    redirect_uri: https://test-app.example/mcp-linkage/callback
+    client_secret: never-print-this
+`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadTestConfig(t, file)

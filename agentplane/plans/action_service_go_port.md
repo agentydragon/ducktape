@@ -125,7 +125,6 @@ Each stage is a small PR or a few, in dependency order. The service keeps servin
 
 | Stage | Change                                                                                                                                                                                                                        |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| H     | Outbound linkage, its callback and the CIMD document; MCP-server RPCs; refreshing linked tokens, and waking an MCP group's supervisor when its linkage changes.                                                               |
 | K     | Authorization server: spike, then authorize, consent redirect, token, refresh, revoke, metadata.                                                                                                                              |
 | L     | Callers, prepared against the protos and merged with the cutover: the app's Action routes and relays, `OperatorActionServiceClient`, the CLI's generated client, the Go Notification Service's HTTP client, acceptance tests. |
 | M     | Testing cutover: repoint `devinfra/ci/image_targets.json`, soak the migrator, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                               |
@@ -173,11 +172,6 @@ test still earns it without the Python reference.
 - **Authorization server correctness** is security-sensitive: a toolkit for the protocol, the `test_oauth.py` cases
   ported, and real-client acceptance on testing before staging.
 - **`go-sdk` states no API stability.** Pin the version and keep its use in the `/mcp`, executor and one auth file.
-- **Outbound linkage versus the `go-sdk` handler.** Its `AuthorizationCodeFetcher` returns the code synchronously,
-  which suits a CLI, not an operator click that finishes in a callback on another replica. Stage H uses `oauthex` for
-  discovery and registration and `x/oauth2` for the two-phase flow unless a spike shows otherwise.
-- **GitHub's OAuth replies** are form-encoded or 200-with-error; confirm `x/oauth2` and `oauthex` cope before
-  keeping the Python workaround out.
 - **Tests.** Port the tests of our logic; `STYLE.md` says to delete library-basics tests, which drops a large
   share of the Python suite.
 

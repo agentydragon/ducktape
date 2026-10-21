@@ -38,11 +38,13 @@ func satisfies(until action_servicepb.WatchUntil) (func(store.ActionState) bool,
 	}
 }
 
-// follower is a watch's subscription to the changes of what it shows: the commits of requests, or the catalog's next
-// change.
+// follower is a watch's subscription to the changes of what it shows: the commits of requests or linkages, or the
+// catalog's next change.
 type follower struct {
 	gate    *Gate
 	updates <-chan struct{}
+	// due fires when what the watch shows changes with the clock alone; nil when nothing does.
+	due <-chan time.Time
 }
 
 // follow subscribes to the commits of requests. The watch reads after it, so a commit in between is not missed.
@@ -54,16 +56,18 @@ func (s *Service) follow() (follower, func(), error) {
 	return follower{gate: s.gate, updates: updates}, unsubscribe, nil
 }
 
-// changed blocks until a change may have changed what the watch shows. The wakeup that follows a reconnection of
-// the LISTEN connection is one, so a commit made while it was down is read late but not missed. Between changes it
-// checks the bearer again every recheckInterval. It fails once the bearer is no longer accepted, the service drains
-// (errDraining), or the call ends.
+// changed blocks until a change may have changed what the watch shows: a wakeup, or due. The wakeup that follows a
+// reconnection of the LISTEN connection is one, so a commit made while it was down is read late but not missed.
+// Between changes it checks the bearer again every recheckInterval. It fails once the bearer is no longer accepted,
+// the service drains (errDraining), or the call ends.
 func (f follower) changed(ctx context.Context) error {
 	recheck := time.NewTicker(recheckInterval)
 	defer recheck.Stop()
 	for {
 		select {
 		case <-f.updates:
+			return nil
+		case <-f.due:
 			return nil
 		case <-f.gate.draining.Done():
 			return errDraining

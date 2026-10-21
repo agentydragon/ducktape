@@ -59,6 +59,16 @@ func (noCredential) isCredential()  {}
 func (linkedAccount) isCredential() {}
 func (mountedBearer) isCredential() {}
 
+// linkedAccountOf is the linked account that authorizes s, if one does.
+func linkedAccountOf(s server) (linkedAccount, bool) {
+	http, isHTTP := s.(httpServer)
+	if !isHTTP {
+		return linkedAccount{}, false
+	}
+	account, linked := http.credential.(linkedAccount)
+	return account, linked
+}
+
 // parseServer reads an MCP binding's config, refusing what the Python service refuses: an unknown field, a null
 // where a value is required, and an Authorization header, which the credential owns. Its errors name fields, never
 // a value: the config can hold a credential.

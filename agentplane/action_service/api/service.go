@@ -1,12 +1,12 @@
 // Package api serves the Action Service's request RPCs over its store and its catalog: `ActionService`'s submission,
 // reads and watches of requests and their events, a caller's cancellation, the reads and watch of the ActionGroups and
-// the Action policy over the policy index, `OperatorActionService`'s Decisions, and `WebPushService`'s subscriptions
-// of an operator's browsers.
+// the Action policy over the policy index, `OperatorActionService`'s Decisions and MCP server linkages, and
+// `WebPushService`'s subscriptions of an operator's browsers.
 //
 // A Gate admits every call before it runs (agentplane/docs/grpc_services.md). The bearer picks the principal, as
 // action_service.proto says: a workload of a labeled ServiceAccount submits, reads and cancels its own account's
-// requests, a service reader reads every account's, and an operator reads every account's, decides them and keeps
-// its own push subscriptions.
+// requests, a service reader reads every account's, and an operator reads every account's, decides them, links the
+// MCP servers and keeps its own push subscriptions.
 package api
 
 import (

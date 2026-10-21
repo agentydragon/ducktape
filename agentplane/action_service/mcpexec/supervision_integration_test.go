@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -190,15 +191,32 @@ func (f fixture) link(t *testing.T, serverID, token string, expiresAt *time.Time
 	}
 }
 
+// linkages are the OAuth linkages of the database, where testGroup is the one server configured.
+func (f fixture) linkages(t *testing.T) *linkage.Authority {
+	t.Helper()
+	authority, err := linkage.New(f.db, map[string]linkage.Server{testGroup: {
+		ServerID: testGroup, ServerURL: "https://mcp.test.example/mcp", ClientID: new("test-client"),
+		RedirectURI: "https://actions.test.example/callback",
+	}}, linkage.ClientMetadata{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return authority
+}
+
+func oauthConfig(url string) string {
+	return `{"transport": "streamable-http", "url": "` + url + `", "auth": "oauth", "server_id": "` + testGroup + `"}`
+}
+
+var linkageUnavailable = action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_LINKAGE_UNAVAILABLE
+
 func TestAnOAuthGroupWaitsForItsLinkageAndSendsItsCurrentToken(t *testing.T) {
 	f := newFixture(t)
 	server := newServer()
 	server.AddTool(&mcp.Tool{Name: "test_tool", InputSchema: objectSchema}, answering(&calls{}, textResult("unused")))
 	u := newUpstream(t, server, nil)
-	groups := mcpGroup(t, `{"transport": "streamable-http", "url": "`+u.url()+`", "auth": "oauth",
-		"server_id": "`+testGroup+`"}`)
-	supervise(t, groups, f.store, executorTiming())
-	linkageUnavailable := action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_LINKAGE_UNAVAILABLE
+	groups := mcpGroup(t, oauthConfig(u.url()))
+	supervise(t, groups, f.linkages(t), executorTiming())
 	awaitGroup(t, groups, unavailableFor(linkageUnavailable, func(detail string) bool { return detail == "no account is linked" }))
 
 	expired := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -232,6 +250,22 @@ func TestAnOAuthGroupWaitsForItsLinkageAndSendsItsCurrentToken(t *testing.T) {
 	}) {
 		t.Error("no request carried the refreshed token")
 	}
+}
+
+// An offered group reads its tools again only every five minutes, so only the change tells it its account is lost.
+func TestAGroupReadsItsLinkageAgainWhenToldItChanged(t *testing.T) {
+	f := newFixture(t)
+	server := newServer()
+	server.AddTool(&mcp.Tool{Name: "test_tool", InputSchema: objectSchema}, answering(&calls{}, textResult("unused")))
+	groups := mcpGroup(t, oauthConfig(newUpstream(t, server, nil).url()))
+	f.link(t, testGroup, "test-token", nil, nil)
+	s := supervise(t, groups, f.linkages(t), executorTiming())
+	awaitGroup(t, groups, offering("test_tool"))
+	f.link(t, testGroup, "test-token", nil, new("reconnect"))
+	s.LinkageChanged()
+	awaitGroup(t, groups, unavailableFor(linkageUnavailable, func(detail string) bool {
+		return strings.Contains(detail, "link the account again")
+	}))
 }
 
 func TestAStdioServerRunsWithoutThisProcesssEnvironment(t *testing.T) {

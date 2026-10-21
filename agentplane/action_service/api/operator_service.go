@@ -3,18 +3,25 @@ package api
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 )
 
 // OperatorService is the OperatorActionService server.
 type OperatorService struct {
 	operator_action_servicepb.UnimplementedOperatorActionServiceServer
 	store *store.Store
+	// updates wakes a watch of the MCP servers on each commit to a linkage: it listens on linkage.UpdatesChannel.
+	updates *wakeups.Hub
+	// gate admitted each call; a watch asks it again before every frame.
+	gate     *Gate
+	linkages *linkage.Authority
 }
 
-func NewOperatorService(requests *store.Store) *OperatorService {
-	return &OperatorService{store: requests}
+func NewOperatorService(requests *store.Store, updates *wakeups.Hub, gate *Gate, linkages *linkage.Authority) *OperatorService {
+	return &OperatorService{store: requests, updates: updates, gate: gate, linkages: linkages}
 }
 
 // DecideActionRequest records the Decision. The store queues an allowed request for dispatch in the same
