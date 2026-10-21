@@ -5049,7 +5049,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: actions-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-client-bearer,ha-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,agentplane-staging-web-push-vapid,google-mcp-bearer,ha-mcp-client-bearer,haku-console-github-mcp-client-credentials,ssh-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat
   labels:
     app.kubernetes.io/name: actions
   name: actions
@@ -5175,23 +5175,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-actions
-            - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
-              value: '[{"namespace": "agentplane-staging", "name": "notifications"}]'
-            - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
-              valueFrom:
-                secretKeyRef:
-                  key: private-key-pem
-                  name: agentplane-staging-web-push-vapid
-            - name: AGENTPLANE_ACTIONS_OAUTH
-              valueFrom:
-                secretKeyRef:
-                  key: oauth
-                  name: agentplane-mcp-oauth
-            - name: AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  key: client_id
-                  name: haku-console-github-mcp-client-credentials
           image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:unset
           imagePullPolicy: Always
           name: migrate
@@ -5338,7 +5321,6 @@ rules:
     resources:
       - policysets
     verbs:
-      - get
       - list
       - watch
   - apiGroups:
@@ -5346,7 +5328,6 @@ rules:
     resources:
       - policybindings
     verbs:
-      - get
       - list
       - watch
   - apiGroups:
@@ -5360,7 +5341,6 @@ rules:
     resources:
       - serviceaccounts
     verbs:
-      - get
       - list
       - watch
   - apiGroups:
@@ -5418,7 +5398,6 @@ rules:
     resources:
       - serviceaccounts
     verbs:
-      - get
       - list
       - watch
 ---
@@ -5650,6 +5629,13 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
             app.kubernetes.io/name: notifications
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -5672,6 +5658,19 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: actions
+  namespace: agentplane-staging
+spec:
+  endpoints:
+    - path: /metrics
+      port: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actions
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

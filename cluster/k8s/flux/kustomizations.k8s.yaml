@@ -3625,7 +3625,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, Actions fixtures, app, runner template, and operator RBAC.
+    description: Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, Actions, app, runner template, and operator RBAC.
   name: agentplane-testing
   namespace: ducktape-flux
 spec:
@@ -3707,14 +3707,6 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: notifications
-      namespace: agentplane-testing
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: mcp-everything
-      namespace: agentplane-testing
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: oauth-fixture
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment

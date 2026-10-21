@@ -190,13 +190,11 @@ Operator/OIDC bearers remain confined to `/v1/operator/...`; configured external
 also accepted by `/mcp`. Both are verified by FastMCP's own bearer layer (`CallerTokenVerifier` in
 `caller_auth.py`): a request without a bearer gets 401 with the protected-resource metadata
 challenge, a refused bearer 401 `invalid_token`, and tools receive the verified identity through
-FastMCP's `CurrentAccessToken` dependency, never from request state. Staging and testing publish
+FastMCP's `CurrentAccessToken` dependency, never from request state. Staging publishes
 `/mcp`, `/register`, `/authorize`, `/token`, `/revoke`, `/auth/callback`, and the OAuth well-known
-paths through an `HTTPRoute` at
-`agentplane-actions-{staging,testing}.allegedly.works`
-(the `AgentplaneActions` construct's `HTTPRoute` in
-`cluster/cdk8s/agentplane/actions.py`); REST and operator endpoints
-stay off that origin. FastMCP's automatic Host/Origin guard protects loopback access without
+paths through an `HTTPRoute` at `agentplane-actions-staging.allegedly.works` (the `Actions`
+construct's `HTTPRoute` in `cluster/cdk8s/agentplane/actions.py`); testing has no public route. REST
+and operator endpoints stay off that origin. FastMCP's automatic Host/Origin guard protects loopback access without
 categorically rejecting requests carrying Origin; authority comes from the explicit validated
 bearer, not Origin or browser cookies.
 The `basic` `PolicySet` admits a Sandbox to every route of the service with the same workload
@@ -471,7 +469,7 @@ the redacted `CallerActionPolicyView`, and
 present, refused or missing. Both carry `synced`; the integration app's Sandbox page reads the
 operator form.
 
-The deployed proof is `//agentplane/acceptance:test_mcp`, which creates the set and binding
+The end-to-end proof is `//agentplane/acceptance:test_mcp_k3s`, which creates the set and binding
 for the Sandbox it launches through the Kubernetes API (see [the acceptance README](../acceptance/README.md))
 against the upstream `mcp-everything` image described in
 [the fixture guide](testing/README.md); `test_runtime` drives the same production

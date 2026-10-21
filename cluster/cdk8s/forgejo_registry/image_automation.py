@@ -49,7 +49,6 @@ IMAGES = (
     "agentplane-llm-ingress",
     "agentplane-notification-service",
     "agentplane-notification-service-migrate",
-    "agentplane-oauth-fixture",
     "agentplane-policy-controller",
     "agentplane-runner-disk",
     "agentplane-runner-gateway",

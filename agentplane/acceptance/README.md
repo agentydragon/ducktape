@@ -292,9 +292,8 @@ Override any of it through the environment:
 
 Staging remains available for ad hoc click-through tests by overriding the URL and namespace.
 The testing environment is Flux-managed and exposes the app and Dex HTTPS routes needed for the
-browser authorization-code flow plus the Action Service's `/mcp` and OAuth surface at
-`agentplane-actions-testing.allegedly.works`; the `mcp-everything` fixture itself is
-cluster-internal. Do not copy credentials into the checkout or pass them as command-line arguments.
+browser authorization-code flow. Do not copy credentials into the checkout or pass them as
+command-line arguments.
 
 ### Controlled-host preflight
 

@@ -354,15 +354,7 @@ ENV = Environment(
             allowed_push_hosts=_WEB_PUSH_ALLOWED_HOSTS,
             secret_name=_WEB_PUSH_SECRET,
         ),
-        extra_reload_secrets=(
-            _GITHUB_MCP_CLIENT_SECRET,
-            _WEB_PUSH_SECRET,
-            _SSH_MCP_BEARER_SECRET,
-            _HA_MCP_BEARER_SECRET,
-            _TANA_MCP_BEARER_SECRET,
-            _GOOGLE_MCP_BEARER_SECRET,
-        ),
-        # The full OAuth linkage triad; testing mounts only the one MCP client's secret.
+        # The full OAuth linkage triad.
         oauth_secret_items=("client-secret", "jwt-signing-key", "encryption-key"),
         github_mcp_client_secret_name=_GITHUB_MCP_CLIENT_SECRET,
         bearer_mcp_mounts=[

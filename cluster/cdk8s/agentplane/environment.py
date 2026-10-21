@@ -112,19 +112,17 @@ class ActionsProps:
     """This environment's values of agentplane/action_service `Settings` fields, and how its
     Deployment reaches their secrets."""
 
-    hostname: str
     operator_oidc: OperatorOidcSettings
     # Its own namespace included; the Action Service watches policies in its own.
     caller_service_account_namespaces: frozenset[str]
     mcp_servers: Mapping[Key, McpOAuthServer]
     action_groups: Mapping[Key, ActionGroup]
+    # The public origin of its MCP and OAuth surface; None gives it no HTTPRoute and no Gateway ingress.
+    hostname: str | None = None
     mcp_client_metadata: McpClientMetadataSettings | None = None
     web_push: WebPushProps | None = None
-    # Secrets whose rotation should roll the Deployment, beyond agentplane-mcp-oauth
-    # (always reloaded).
-    extra_reload_secrets: Sequence[str] = ()
-    # Keys mounted from the agentplane-mcp-oauth Secret at /etc/agentplane-mcp.
-    oauth_secret_items: Sequence[str] = ("client-secret",)
+    # Keys mounted from the agentplane-mcp-oauth Secret at /etc/agentplane-mcp; none mounts nothing.
+    oauth_secret_items: Sequence[str] = ()
     # None omits the corresponding env var, volume, and mount.
     github_mcp_client_secret_name: str | None = None
     bearer_mcp_mounts: Sequence[BearerMcpMount] = ()

@@ -1,6 +1,6 @@
 """The Action Service: its Deployment (+ Alembic migrate initContainer), RBAC, ConfigMaps,
-Service, HTTPRoute, NetworkPolicy, and optional PodDisruptionBudget. Environment-only
-objects (staging's policy sets, testing's MCP fixtures) come from `Environment.extra`.
+Service, NetworkPolicy, ServiceMonitor, optional PodDisruptionBudget, and the public HTTPRoute of
+an environment with an Action Service hostname. Staging's policy sets are added by its chart.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from constructs import Construct
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from agentplane.action_service.settings import Settings
 from agentplane.crd_group import GROUP
@@ -40,6 +41,7 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -77,14 +79,15 @@ def service(namespace: str) -> ServiceRef:
 
 
 def mcp_oauth_secret(namespace: str) -> SecretRef:
-    """The MCP OAuth linkage Secret the Action Service reads; in testing, Dex writes it (dex.py)."""
+    """The MCP OAuth linkage Secret the Action Service reads: staging's from Terraform
+    (tf/gitops/sso-providers), the k3s fixture's its own."""
     return SecretRef(namespace=namespace, name="agentplane-mcp-oauth")
 
 
 class Actions(Construct):
     """ServiceAccount, RBAC, ConfigMaps, Deployment (+ migrate initContainer), Service,
-    and optional PodDisruptionBudget for the Action Service. The fleet route and network
-    policy are added by `add_platform_resources`.
+    and optional PodDisruptionBudget for the Action Service. The fleet network policy, metrics
+    scrape and public route are added by `add_platform_resources`.
     """
 
     def __init__(
@@ -154,9 +157,21 @@ class Actions(Construct):
         self._add_rbac(workload.account)
 
     def add_platform_resources(self) -> None:
-        """Add the public route and Cilium policy used by fleet environments."""
-        self._add_http_route()
-        self._add_network_policy()
+        """Add the Cilium policy and metrics scrape used by fleet environments, and the public route
+        of one with a `hostname`."""
+        hostname = self.env.actions.hostname
+        if hostname is not None:
+            self._add_http_route(hostname)
+        elif self.env.actions.mcp_client_metadata is not None:
+            raise ValueError("mcp_client_metadata needs an Action Service hostname to publish it")
+        self._add_network_policy(public=hostname is not None)
+        ServiceMonitor(
+            self,
+            "service-monitor",
+            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
+            selector=ServiceMonitorSpecSelector(match_labels=self.service.labels),
+            endpoints=[Endpoint.plain(port=self.service.port.name)],
+        )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
@@ -172,19 +187,20 @@ class Actions(Construct):
         )
         # The runtime policy and caller watch scopes are independent. Keep the policy
         # CR permissions in the policy namespace, and grant only ServiceAccount reads in
-        # caller namespaces. No Secrets or serviceaccounts/token permissions are needed.
+        # caller namespaces. No Secrets or serviceaccounts/token permissions are needed. The
+        # policy informer lists and watches both and reads only what it holds: no `get`.
         rules_by_namespace: dict[str, list[RolePolicyRule]] = {
             namespace: [
                 RolePolicyRule(
                     resources=[custom_resource(GROUP, resource) for resource in ("policysets", "policybindings")],
-                    verbs=["get", "list", "watch"],
+                    verbs=["list", "watch"],
                 ),
                 RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
             ]
         }
         for caller_namespace in self.env.actions.caller_service_account_namespaces:
             rules_by_namespace.setdefault(caller_namespace, []).append(
-                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"])
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["list", "watch"])
             )
 
         # The sandbox ActionGroup creates its boxes as plain Pods from its PodTemplates, running as
@@ -247,9 +263,20 @@ class Actions(Construct):
             )
         return env | dict(self.container_env)
 
+    def _reload_secrets(self) -> list[str]:
+        """The Secrets `_container_env` and `_add_workload` wire in, so rotating any rolls the Deployment."""
+        props = self.env.actions
+        names = {mount.secret_name for mount in props.bearer_mcp_mounts}
+        if props.web_push is not None:
+            names.add(props.web_push.secret_name)
+        if props.github_mcp_client_secret_name is not None:
+            names |= {self.mcp_oauth.name, props.github_mcp_client_secret_name}
+        if props.oauth_secret_items:
+            names.add(self.mcp_oauth.name)
+        return sorted(names)
+
     def _add_workload(self, settings: SettingsFile) -> ServiceWorkload:
-        env = self._container_env()
-        secret_reload = ",".join([self.mcp_oauth.name, *self.env.actions.extra_reload_secrets])
+        reload_secrets = self._reload_secrets()
         workload = add_service_workload(
             self,
             self.env,
@@ -258,7 +285,7 @@ class Actions(Construct):
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=self.image_pull_policy,
             args=cli_args(Settings, host="0.0.0.0", port=self.service.pod_port),
-            env_variables=env,
+            env_variables=self._container_env(),
             readiness=http_probe(
                 "/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10, timeout_seconds=5
             ),
@@ -274,14 +301,14 @@ class Actions(Construct):
             migrate=migrate_init_container(
                 f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
                 name="migrate",
-                env_variables=env,
+                env_variables=self._database_env(),
                 image_pull_policy=self.migrate_pull_policy,
                 memory_limit=self.migrate_memory_limit,
             ),
             placement=self.placement,
             registry_secret_name=self.registry_secret_name,
             annotations={
-                "secret.reloader.stakater.com/reload": secret_reload,
+                **({"secret.reloader.stakater.com/reload": ",".join(reload_secrets)} if reload_secrets else {}),
                 # No configMapGenerator hash rolls the Deployment on settings changes
                 # (cluster/docs/cdk8s.md); reloader does.
                 "configmap.reloader.stakater.com/reload": settings.config_map.name,
@@ -289,15 +316,16 @@ class Actions(Construct):
         )
         container = workload.container
 
-        oauth_secret = Secret.from_secret_name(self, "mcp-oauth-secret", self.mcp_oauth.name)
-        oauth_volume = Volume.from_secret(
-            self,
-            "oauth-volume",
-            oauth_secret,
-            default_mode=0o440,
-            items={key: PathMapping(path=key) for key in self.env.actions.oauth_secret_items},
-        )
-        container.mount(MCP_OAUTH_DIR, oauth_volume, read_only=True)
+        if self.env.actions.oauth_secret_items:
+            oauth_secret = Secret.from_secret_name(self, "mcp-oauth-secret", self.mcp_oauth.name)
+            oauth_volume = Volume.from_secret(
+                self,
+                "oauth-volume",
+                oauth_secret,
+                default_mode=0o440,
+                items={key: PathMapping(path=key) for key in self.env.actions.oauth_secret_items},
+            )
+            container.mount(MCP_OAUTH_DIR, oauth_volume, read_only=True)
         settings.mount_into(container, env=Settings.config_file_env)
         if self.env.actions.github_mcp_client_secret_name is not None:
             github_secret = Secret.from_secret_name(
@@ -325,14 +353,14 @@ class Actions(Construct):
             container.mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
         return workload
 
-    def _add_http_route(self) -> None:
+    def _add_http_route(self, hostname: str) -> None:
         # The Actions service owns OAuth and bearer verification; no browser forward-auth
         # hop. Keep REST/operator endpoints off this public origin.
         client_metadata_paths = []
         client_metadata = self.env.actions.mcp_client_metadata
         if client_metadata is not None:
             metadata_url = client_metadata.url
-            if metadata_url.host != self.env.actions.hostname or metadata_url.port != 443:
+            if metadata_url.host != hostname or metadata_url.port != 443:
                 raise ValueError("mcp_client_metadata.url must use this Action Service's HTTPS hostname")
             assert metadata_url.path is not None
             client_metadata_paths.append(metadata_url.path)
@@ -340,13 +368,14 @@ class Actions(Construct):
             self,
             "httproute",
             metadata=ApiObjectMetadata(name=f"{_NAME}-mcp", namespace=self.env.namespace),
-            hostnames=[self.env.actions.hostname],
+            hostnames=[hostname],
             backend=self.service,
             paths=(*_MCP_PATHS, *sorted(set(client_metadata_paths))),
             timeout="3600s",
         )
 
-    def _add_network_policy(self) -> None:
+    def _add_network_policy(self, *, public: bool) -> None:
+        """`public` admits the Gateway, which serves the public route."""
         namespace = self.env.namespace
         NetworkPolicy(
             self,
@@ -354,7 +383,8 @@ class Actions(Construct):
             metadata=ApiObjectMetadata(name=_NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[
-                IngressRule.from_gateway(self.service.pod_port),
+                *([IngressRule.from_gateway(self.service.pod_port)] if public else []),
+                cilium.SCRAPERS.admit(self.service.pod_port),
                 notifications.service(namespace).pods.admit(self.service.pod_port),
                 # egress.py and app.py import this module, so their Pods are named here.
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "egress"), ports=[self.service.pod_port]),

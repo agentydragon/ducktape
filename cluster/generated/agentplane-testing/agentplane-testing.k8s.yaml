@@ -4210,37 +4210,8 @@ data:
       - agentplane-testing
     direct_wait_seconds: 30
     max_wait_seconds: 180
-    mcp_servers:
-      example:
-        server_id: example
-        server_url: http://oauth-fixture.agentplane-testing.svc.cluster.local:8080/mcp
-        client_id: agentplane-testing-mcp
-        client_secret_file: /etc/agentplane-mcp/client-secret
-        redirect_uri: https://agentplane-testing.allegedly.works/mcp-linkage/callback
-        scopes:
-          - openid
+    mcp_servers: {}
     action_groups:
-      everything:
-        title: Upstream Everything
-        description: Credentialless MCP reference server for testing acceptance.
-        executor:
-          kind: mcp
-          description: Community-built Everything image; no user account, workload token, or mounted credentials.
-          config:
-            transport: streamable-http
-            url: http://mcp-everything.agentplane-testing.svc.cluster.local:3001/mcp
-            auth: none
-      example:
-        title: OAuth Example
-        description: Dex-backed OAuth-linked MCP fixture for testing acceptance of the linkage flow.
-        executor:
-          kind: mcp
-          description: MCP tool protected by Dex-issued JWTs; no real credentials.
-          config:
-            transport: streamable-http
-            url: http://oauth-fixture.agentplane-testing.svc.cluster.local:8080/mcp
-            server_id: example
-            auth: oauth
       sandbox:
         title: Sandbox
         description: Boxes that run as the calling ServiceAccount, and bounded commands in them.
@@ -4265,7 +4236,6 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: actions-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth
   labels:
     app.kubernetes.io/name: actions
   name: actions
@@ -4341,9 +4311,6 @@ spec:
             readOnlyRootFilesystem: false
             runAsNonRoot: true
           volumeMounts:
-            - mountPath: /etc/agentplane-mcp
-              name: secret-agentplane-mcp-oauth
-              readOnly: true
             - mountPath: /etc/agentplane-actions
               name: configmap-actions-settings
               readOnly: true
@@ -4358,8 +4325,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-actions
-            - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
-              value: '[{"namespace": "agentplane-testing", "name": "notifications"}]'
           image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:unset
           imagePullPolicy: Always
           name: migrate
@@ -4393,13 +4358,6 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
       volumes:
-        - name: secret-agentplane-mcp-oauth
-          secret:
-            defaultMode: 288
-            items:
-              - key: client-secret
-                path: client-secret
-            secretName: agentplane-mcp-oauth
         - configMap:
             name: actions-settings
           name: configmap-actions-settings
@@ -4459,7 +4417,6 @@ rules:
     resources:
       - policysets
     verbs:
-      - get
       - list
       - watch
   - apiGroups:
@@ -4467,7 +4424,6 @@ rules:
     resources:
       - policybindings
     verbs:
-      - get
       - list
       - watch
   - apiGroups:
@@ -4481,7 +4437,6 @@ rules:
     resources:
       - serviceaccounts
     verbs:
-      - get
       - list
       - watch
   - apiGroups:
@@ -4528,57 +4483,6 @@ subjects:
     name: actions
     namespace: agentplane-testing
 ---
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: actions-mcp
-  namespace: agentplane-testing
-spec:
-  hostnames:
-    - agentplane-actions-testing.allegedly.works
-  parentRefs:
-    - name: cluster-gateway
-      namespace: gateway-system
-      sectionName: https-wildcard
-  rules:
-    - backendRefs:
-        - name: actions
-          port: 8080
-      filters:
-        - responseHeaderModifier:
-            set:
-              - name: Strict-Transport-Security
-                value: max-age=31536000
-          type: ResponseHeaderModifier
-      matches:
-        - path:
-            type: Exact
-            value: /mcp
-        - path:
-            type: Exact
-            value: /.well-known/oauth-authorization-server
-        - path:
-            type: Exact
-            value: /.well-known/oauth-protected-resource/mcp
-        - path:
-            type: Exact
-            value: /register
-        - path:
-            type: Exact
-            value: /authorize
-        - path:
-            type: Exact
-            value: /token
-        - path:
-            type: Exact
-            value: /revoke
-        - path:
-            type: Exact
-            value: /auth/callback
-      timeouts:
-        backendRequest: 3600s
-        request: 3600s
----
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -4618,20 +4522,13 @@ spec:
               protocol: TCP
           serverNames:
             - agentplane-dex-testing.allegedly.works
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: oauth-fixture
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: actions
   ingress:
-    - fromEntities:
-        - ingress
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
       toPorts:
         - ports:
             - port: "8080"
@@ -4660,6 +4557,19 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: actions
+  namespace: agentplane-testing
+spec:
+  endpoints:
+    - path: /metrics
+      port: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actions
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -5649,293 +5559,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mcp-everything
-  namespace: agentplane-testing
-spec:
-  minReadySeconds: 0
-  progressDeadlineSeconds: 600
-  replicas: 1
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      cdk8s.io/metadata.addr: agentplane-mcp-everything-deployment-c8e2d559
-  strategy:
-    type: Recreate
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: mcp-everything
-        cdk8s.io/metadata.addr: agentplane-mcp-everything-deployment-c8e2d559
-    spec:
-      automountServiceAccountToken: false
-      containers:
-        - command:
-            - node
-            - dist/index.js
-            - streamableHttp
-          image: docker.io/tzolov/mcp-everything-server@sha256:96c4aa07420dd2a8dee0315763a8ea27de72fd054483c781894f6280cd3f56e7
-          imagePullPolicy: Always
-          livenessProbe:
-            failureThreshold: 3
-            initialDelaySeconds: 20
-            periodSeconds: 30
-            tcpSocket:
-              port: 3001
-          name: fixture
-          ports:
-            - containerPort: 3001
-              name: http
-              protocol: TCP
-          readinessProbe:
-            failureThreshold: 3
-            periodSeconds: 5
-            tcpSocket:
-              port: 3001
-          resources:
-            limits:
-              cpu: 250m
-              ephemeral-storage: 1Gi
-              memory: 256Mi
-            requests:
-              cpu: 25m
-              ephemeral-storage: 1Gi
-              memory: 128Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-      dnsPolicy: ClusterFirst
-      hostNetwork: false
-      restartPolicy: Always
-      securityContext:
-        fsGroupChangePolicy: Always
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      setHostnameAsFQDN: false
-      shareProcessNamespace: false
-      terminationGracePeriodSeconds: 30
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mcp-everything
-  namespace: agentplane-testing
-spec:
-  externalIPs: []
-  ports:
-    - name: http
-      port: 3001
-      protocol: TCP
-      targetPort: 3001
-  selector:
-    cdk8s.io/metadata.addr: agentplane-mcp-everything-deployment-c8e2d559
-  type: ClusterIP
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: mcp-everything
-  namespace: agentplane-testing
-spec:
-  egressDeny:
-    - toEntities:
-        - all
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: mcp-everything
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: app
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-        - matchLabels:
-            app.kubernetes.io/name: actions
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "3001"
-              protocol: TCP
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: mcp-everything-callers
-  namespace: agentplane-testing
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: mcp-everything
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "3001"
-              protocol: TCP
-  endpointSelector:
-    matchExpressions:
-      - key: app.kubernetes.io/name
-        operator: In
-        values:
-          - app
-          - actions
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
   annotations:
-    description: Dex-backed OAuth-protected MCP server for acceptance-testing MCP OAuth linkage; the fixture verifies Dex JWTs locally and has no credentials.
-  name: oauth-fixture
-  namespace: agentplane-testing
-spec:
-  minReadySeconds: 0
-  progressDeadlineSeconds: 600
-  replicas: 1
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      cdk8s.io/metadata.addr: agentplane-oauth-fixture-deployment-c8e17e96
-  strategy:
-    type: Recreate
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: oauth-fixture
-        cdk8s.io/metadata.addr: agentplane-oauth-fixture-deployment-c8e17e96
-    spec:
-      automountServiceAccountToken: false
-      containers:
-        - env:
-            - name: OAUTH_FIXTURE_BASE_URL
-              value: http://oauth-fixture.agentplane-testing.svc.cluster.local:8080
-            - name: OAUTH_FIXTURE_AUTHORIZATION_SERVER
-              value: https://agentplane-dex-testing.allegedly.works/dex
-            - name: OAUTH_FIXTURE_JWKS_URI
-              value: http://dex.agentplane-testing.svc.cluster.local:5556/dex/keys
-            - name: OAUTH_FIXTURE_AUDIENCE
-              value: agentplane-testing-mcp
-          image: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:unset
-          imagePullPolicy: Always
-          livenessProbe:
-            failureThreshold: 3
-            initialDelaySeconds: 15
-            periodSeconds: 30
-            tcpSocket:
-              port: 8080
-          name: fixture
-          ports:
-            - containerPort: 8080
-              name: http
-              protocol: TCP
-          readinessProbe:
-            failureThreshold: 3
-            periodSeconds: 5
-            tcpSocket:
-              port: 8080
-          resources:
-            limits:
-              cpu: 250m
-              ephemeral-storage: 1Gi
-              memory: 256Mi
-            requests:
-              cpu: 25m
-              ephemeral-storage: 1Gi
-              memory: 128Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
-      dnsPolicy: ClusterFirst
-      hostNetwork: false
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      restartPolicy: Always
-      securityContext:
-        fsGroupChangePolicy: Always
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      setHostnameAsFQDN: false
-      shareProcessNamespace: false
-      terminationGracePeriodSeconds: 30
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: oauth-fixture
-  namespace: agentplane-testing
-spec:
-  externalIPs: []
-  ports:
-    - name: http
-      port: 8080
-      protocol: TCP
-      targetPort: 8080
-  selector:
-    cdk8s.io/metadata.addr: agentplane-oauth-fixture-deployment-c8e17e96
-  type: ClusterIP
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: oauth-fixture
-  namespace: agentplane-testing
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            k8s-app: kube-dns
-            k8s:io.kubernetes.pod.namespace: kube-system
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-          rules:
-            dns:
-              - matchPattern: "*"
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-testing-dex
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "5556"
-              protocol: TCP
-  egressDeny:
-    - toEntities:
-        - all
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: oauth-fixture
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: actions
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  annotations:
-    secret.reloader.stakater.com/reload: agentplane-testing-acceptance-operator,agentplane-oidc,agentplane-mcp-oauth
+    secret.reloader.stakater.com/reload: agentplane-testing-acceptance-operator,agentplane-oidc
   labels:
     app.kubernetes.io/name: agentplane-testing-dex
   name: dex
@@ -5973,11 +5598,6 @@ spec:
                 secretKeyRef:
                   key: client-secret
                   name: agentplane-oidc
-            - name: MCP_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  key: client-secret
-                  name: agentplane-mcp-oauth
           image: ghcr.io/dexidp/dex:v2.45.1
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -6088,18 +5708,6 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
-  name: agentplane-testing-mcp-client-secret
-  namespace: agentplane-testing
-spec:
-  allowRepeat: true
-  digits: 12
-  length: 48
-  noUpper: false
-  symbols: 0
----
-apiVersion: generators.external-secrets.io/v1alpha1
-kind: Password
-metadata:
   name: agentplane-testing-agentplane-session-secret
   namespace: agentplane-testing
 spec:
@@ -6152,35 +5760,6 @@ apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   annotations:
-    description: ESO-generated credentials for the testing MCP client registered in Dex.
-  name: agentplane-mcp-oauth
-  namespace: agentplane-testing
-spec:
-  dataFrom:
-    - rewrite:
-        - regexp:
-            source: password
-            target: client-secret
-      sourceRef:
-        generatorRef:
-          apiVersion: generators.external-secrets.io/v1alpha1
-          kind: Password
-          name: agentplane-testing-mcp-client-secret
-  refreshInterval: 8760h
-  target:
-    creationPolicy: Owner
-    deletionPolicy: Retain
-    name: agentplane-mcp-oauth
-    template:
-      data:
-        client-id: agentplane-testing-mcp
-        client-secret: '{{ index . "client-secret" }}'
-      type: Opaque
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  annotations:
     description: Generates the acceptance password and Dex config together from one password value.
   name: agentplane-testing-acceptance-operator
   namespace: agentplane-testing
@@ -6213,11 +5792,6 @@ spec:
               secretEnv: DEX_CLIENT_SECRET
               redirectURIs:
                 - https://agentplane-testing.allegedly.works/auth/callback
-            - id: agentplane-testing-mcp
-              name: Agentplane MCP testing
-              secretEnv: MCP_CLIENT_SECRET
-              redirectURIs:
-                - https://agentplane-testing.allegedly.works/mcp-linkage/callback
           staticPasswords:
             - email: test-user@agentplane-testing.invalid
               hash: '{{ regexReplaceAll "^test-user:" (htpasswd "test-user" .password "bcrypt") "" }}'
@@ -6288,14 +5862,6 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: app
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "5556"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: oauth-fixture
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:

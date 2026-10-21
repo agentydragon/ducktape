@@ -27,13 +27,10 @@ _MCP_PROTOCOL_PATHS = {
 }
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_public_route_exposes_protocol_paths_only(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
+def test_public_route_exposes_protocol_paths_only(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
     route = one(
         doc
-        for doc in agentplane_manifests[namespace]
+        for doc in agentplane_manifests["agentplane-staging"]
         if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "actions-mcp"
     )
     paths = set()

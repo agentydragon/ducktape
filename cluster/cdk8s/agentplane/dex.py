@@ -1,5 +1,5 @@
 """Dex, the OIDC provider of agentplane-testing and of the k3s fixture: its config, Deployment and
-Service. Testing adds the ESO-generated credentials (4 Password generators + 3 ExternalSecrets, one
+Service. Testing adds the ESO-generated credentials (3 Password generators + 2 ExternalSecrets, one
 carrying the inline Dex config.yaml), HTTPRoute and NetworkPolicy with `add_platform_resources`; the
 k3s fixture writes the config Secret itself. Staging federates directly to the shared Authentik.
 """
@@ -60,7 +60,8 @@ _SERVICE = ServiceRef(
     port=Port(name="http", number=5556),
     pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _POD_LABEL),)),
 )
-# The client Secrets this Dex reads, which the app and the Action Service read too.
+# The client Secrets this Dex reads, which the app and (for the k3s fixture's MCP linkage) the Action
+# Service read too.
 _OIDC = app_component.oidc_secret(_NAMESPACE)
 _MCP_OAUTH = actions.mcp_oauth_secret(_NAMESPACE)
 # The environment variables the static clients' `secretEnv` name, set from those Secrets.
@@ -133,15 +134,15 @@ def config_yaml(
     *,
     issuer: str,
     app_login: StaticClient,
-    mcp_linkage: StaticClient,
     operator: Operator,
     password_hash: str,
+    mcp_linkage: StaticClient | None = None,
     serve_tls: bool = False,
 ) -> str:
-    """Dex's config: an in-memory store, the app's login client and the Action Service's MCP
-    linkage client, whose secrets come from `app.oidc_secret` and `actions.mcp_oauth_secret`, and
-    `operator`, whose password has the bcrypt `password_hash`. `serve_tls` adds `HTTPS_PORT`, for a
-    Dex given `tls_secret`."""
+    """Dex's config: an in-memory store, the app's login client, whose secret comes from
+    `app.oidc_secret`, and `operator`, whose password has the bcrypt `password_hash`. `mcp_linkage`
+    adds the Action Service's MCP linkage client, whose secret comes from `actions.mcp_oauth_secret`,
+    for a Dex given `mcp_linkage`; `serve_tls` adds `HTTPS_PORT`, for a Dex given `tls_secret`."""
     web = {"http": f"0.0.0.0:{_SERVICE.pod_port}"}
     if serve_tls:
         web |= {
@@ -149,6 +150,9 @@ def config_yaml(
             "tlsCert": f"{_TLS_DIR}/tls.crt",
             "tlsKey": f"{_TLS_DIR}/tls.key",
         }
+    clients = [(app_login, _APP_LOGIN_SECRET_ENV)]
+    if mcp_linkage is not None:
+        clients.append((mcp_linkage, _MCP_LINKAGE_SECRET_ENV))
     return yaml_config(
         {
             "issuer": issuer,
@@ -158,7 +162,7 @@ def config_yaml(
             "enablePasswordDB": True,
             "staticClients": [
                 {"id": client.id, "name": client.name, "secretEnv": secret_env, "redirectURIs": [client.redirect_uri]}
-                for client, secret_env in ((app_login, _APP_LOGIN_SECRET_ENV), (mcp_linkage, _MCP_LINKAGE_SECRET_ENV))
+                for client, secret_env in clients
             ],
             "staticPasswords": [
                 {
@@ -178,11 +182,6 @@ def _testing_config_yaml() -> str:
         issuer=_ISSUER,
         app_login=StaticClient(
             id="agentplane-testing", name="Agentplane testing", redirect_uri=f"{_APP_ORIGIN}/auth/callback"
-        ),
-        mcp_linkage=StaticClient(
-            id="agentplane-testing-mcp",
-            name="Agentplane MCP testing",
-            redirect_uri=f"{_APP_ORIGIN}/mcp-linkage/callback",
         ),
         operator=_TESTING_OPERATOR,
         # The ExternalSecret template hashes the generated password.
@@ -206,14 +205,6 @@ def _add_credentials(scope: Construct) -> None:
         scope,
         "dex-client-secret-generator",
         name="agentplane-testing-dex-client-secret",
-        namespace=_NAMESPACE,
-        length=48,
-        digits=12,
-    )
-    mcp_client_secret = password_generator(
-        scope,
-        "mcp-client-secret-generator",
-        name="agentplane-testing-mcp-client-secret",
         namespace=_NAMESPACE,
         length=48,
         digits=12,
@@ -261,24 +252,6 @@ def _add_credentials(scope: Construct) -> None:
 
     ExternalSecret(
         scope,
-        "mcp-oauth-credentials",
-        metadata=ApiObjectMetadata(
-            name=_MCP_OAUTH.name,
-            namespace=_MCP_OAUTH.namespace,
-            annotations={"description": "ESO-generated credentials for the testing MCP client registered in Dex."},
-        ),
-        refresh_interval="8760h",
-        data_from=[rewrite(mcp_client_secret, "client-secret")],
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(
-            type="Opaque",
-            data={"client-id": "agentplane-testing-mcp", "client-secret": '{{ index . "client-secret" }}'},
-        ),
-    )
-
-    ExternalSecret(
-        scope,
         "acceptance-operator-credentials",
         metadata=ApiObjectMetadata(
             name=_ACCEPTANCE_OPERATOR.name,
@@ -318,9 +291,10 @@ def operator_login_data(operator: Operator, *, password: str, issuer: str) -> di
 
 class Dex(Construct):
     """Dex's Deployment and Service, serving the `config.yaml` of the Secret `config_secret` with the
-    client secrets of `app.oidc_secret` and `actions.mcp_oauth_secret`; given the `kubernetes.io/tls`
-    Secret `tls_secret`, its certificate on `HTTPS_PORT` too, for a config that `serve_tls`. Testing's
-    credentials, route and network policy are added by `add_platform_resources`.
+    client secret of `app.oidc_secret`; given `mcp_linkage`, that of `actions.mcp_oauth_secret` too,
+    for a config with an `mcp_linkage` client; given the `kubernetes.io/tls` Secret `tls_secret`, its
+    certificate on `HTTPS_PORT` too, for a config that `serve_tls`. Testing's credentials, route and
+    network policy are added by `add_platform_resources`.
     """
 
     def __init__(
@@ -333,8 +307,19 @@ class Dex(Construct):
         cpu_limit: Cpu | None = _CPU_LIMIT,
         memory_limit: Size | None = _MEMORY_LIMIT,
         tls_secret: str | None = None,
+        mcp_linkage: bool = False,
     ) -> None:
         super().__init__(scope, id)
+        env_variables = {
+            "DEX_CLIENT_ID": _OIDC.key("client-id").env_value(self, "oidc-client-id-ref"),
+            _APP_LOGIN_SECRET_ENV: _OIDC.key("client-secret").env_value(self, "oidc-client-secret-ref"),
+        }
+        client_secrets = [_OIDC.name]
+        if mcp_linkage:
+            env_variables[_MCP_LINKAGE_SECRET_ENV] = _MCP_OAUTH.key("client-secret").env_value(
+                self, "mcp-oauth-client-secret-ref"
+            )
+            client_secrets.append(_MCP_OAUTH.name)
         deployment = Deployment(
             self,
             "deployment",
@@ -344,7 +329,7 @@ class Dex(Construct):
                 labels=_SERVICE.pods.selector,
                 annotations={
                     # Dex reads its generated config and client secret only at startup.
-                    "secret.reloader.stakater.com/reload": ",".join((config_secret, _OIDC.name, _MCP_OAUTH.name))
+                    "secret.reloader.stakater.com/reload": ",".join((config_secret, *client_secrets))
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_SERVICE.pods.selector),
@@ -358,11 +343,7 @@ class Dex(Construct):
             # A specific pinned release, not a floating tag -- avoid re-pulling on every restart.
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             args=["dex", "serve", f"{_CONFIG_DIR}/{CONFIG_KEY}"],
-            env_variables={
-                "DEX_CLIENT_ID": _OIDC.key("client-id").env_value(self, "oidc-client-id-ref"),
-                _APP_LOGIN_SECRET_ENV: _OIDC.key("client-secret").env_value(self, "oidc-client-secret-ref"),
-                _MCP_LINKAGE_SECRET_ENV: _MCP_OAUTH.key("client-secret").env_value(self, "mcp-oauth-client-secret-ref"),
-            },
+            env_variables=env_variables,
             ports=[_SERVICE.port.container_port(), *([HTTPS_PORT.container_port()] if tls_secret is not None else [])],
             readiness=http_probe("/dex/healthz", port=_SERVICE.pod_port, initial_delay_seconds=0, period_seconds=5),
             liveness=http_probe("/dex/healthz", port=_SERVICE.pod_port, initial_delay_seconds=10, period_seconds=30),
@@ -413,9 +394,6 @@ class Dex(Construct):
             ingress=[
                 IngressRule.from_gateway(_SERVICE.pod_port),
                 app_component.service(_NAMESPACE).pods.admit(_SERVICE.pod_port),
-                IngressRule.from_endpoints(
-                    cilium.endpoint_labels(_NAMESPACE, "oauth-fixture"), ports=[_SERVICE.pod_port]
-                ),
             ],
             egress=[cilium.dns_egress()],
             egress_deny=deny_all_egress(),

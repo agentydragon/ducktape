@@ -173,7 +173,7 @@ def objects(
                 mcp_servers.OAUTH: actions_testing_fixtures.oauth_fixture_group(mcp_servers.OAUTH),
                 "sandbox": testing.ENV.actions.action_groups["sandbox"],
             },
-            oauth_secret_items=(*testing.ENV.actions.oauth_secret_items, *oauth_files),
+            oauth_secret_items=("client-secret", *oauth_files),
         ),
     )
     sandbox_sidecar_resources = k8s.ResourceRequirements(
@@ -521,24 +521,15 @@ def _add_mcp_fixtures(chart: Chart, mcp: McpInputs, *, system_roots: str, dex_cl
         cpu_limit=None,
         memory_limit=None,
         tls_secret=_DEX_TLS_SECRET,
+        mcp_linkage=True,
     )
-    actions_testing_fixtures.add_mcp_everything(
-        chart,
-        image=MCP_EVERYTHING_IMAGE,
-        image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        cpu_limit=None,
-        memory_limit=None,
-    )
+    actions_testing_fixtures.add_mcp_everything(chart, image=MCP_EVERYTHING_IMAGE)
     actions_testing_fixtures.add_oauth_fixture(
         chart,
         authorization_server=DEX_ISSUER,
-        # As in testing, the fixture fetches signing keys over Dex's plain-http port.
+        # The fixture fetches signing keys over Dex's plain-http port.
         jwks_uri=f"{dex.issuer(dex.service().url)}/keys",
         audience=_MCP_LINKAGE.id,
-        registry_secret_name=None,
-        image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        cpu_limit=None,
-        memory_limit=None,
     )
 
 

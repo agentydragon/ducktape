@@ -1,5 +1,5 @@
-"""agentplane-testing: one replica of everything, its own Dex for operator login, and
-credentialless MCP fixtures in place of the real action groups.
+"""agentplane-testing: one replica of everything, its own Dex for operator login, and only the
+sandbox action group.
 
 One Flux Kustomization (`agentplane_testing`) applies the whole environment: the
 generated file, holding this chart and `litellm/credentials.py`'s, and the hand-written
@@ -50,14 +50,6 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     sandbox_pod,
 )
-from cluster.cdk8s.agentplane.actions_testing_fixtures import (
-    OAUTH_FIXTURE_NAME,
-    OAUTH_FIXTURE_PORT,
-    add_testing_fixtures,
-    everything_group,
-    oauth_fixture_group,
-    oauth_fixture_server,
-)
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import TESTING_CREDENTIALS_NAMESPACE, EgressCredentials
 from cluster.cdk8s.agentplane.egress_testing_credentials import add_testing_egress_credentials
@@ -78,7 +70,7 @@ from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_selections import TESTING_APP_MODELS, model_configs
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
 _HOSTNAME = "agentplane-testing.allegedly.works"
@@ -109,14 +101,7 @@ def action_federation(target: OperatorOidcSettings) -> DirectFederationSettings:
 
 
 _FEDERATION_TARGET = operator_oidc(issuer=_DEX_ISSUER, app_client_id="agentplane-testing")
-_MCP_SERVERS = {
-    "example": oauth_fixture_server(
-        "example", client_id="agentplane-testing-mcp", redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback"
-    )
-}
 _ACTION_GROUPS = {
-    "everything": everything_group(),
-    "example": oauth_fixture_group("example"),
     "sandbox": ActionGroup(
         title="Sandbox",
         description="Boxes that run as the calling ServiceAccount, and bounded commands in them.",
@@ -126,7 +111,7 @@ _ACTION_GROUPS = {
             namespace=TESTING_NAMESPACE,
             templates=command_sandbox.TEMPLATES,
         ),
-    ),
+    )
 }
 
 
@@ -137,7 +122,7 @@ ENV = Environment(
     ),
     flux_description=(
         "Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, "
-        "Actions fixtures, app, runner template, and operator RBAC."
+        "Actions, app, runner template, and operator RBAC."
     ),
     output_dir=f"{GENERATED_ROOT}/{TESTING_NAMESPACE}",
     image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
@@ -166,18 +151,13 @@ ENV = Environment(
         origin=f"https://{_HOSTNAME}", oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None
     ),
     actions=ActionsProps(
-        hostname="agentplane-actions-testing.allegedly.works",
         operator_oidc=_FEDERATION_TARGET,
         caller_service_account_namespaces=frozenset({TESTING_NAMESPACE}),
-        mcp_servers=_MCP_SERVERS,
+        mcp_servers={},
         action_groups=_ACTION_GROUPS,
         extra_egress=[
             # The direct federation verifier fetches Dex's JWKS over the public-origin Gateway path.
-            cilium.egress_via_gateway(_DEX_HOSTNAME),
-            # MCP OAuth discovery/token exchange/tool calls for the linked "example" fixture:
-            # cluster-internal only, unlike the real GitHub/Kubernetes MCP OAuth providers
-            # linked in staging.
-            EgressRule.to_endpoints(cilium.endpoint_labels(TESTING_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
+            cilium.egress_via_gateway(_DEX_HOSTNAME)
         ],
     ),
     vm_sandboxes=True,
@@ -320,8 +300,8 @@ class AgentRbac(Construct):
     without a human: Sandbox lifecycle, exec/port-forward into runner Pods, the
     token used to call the app's own API, and what the Dispatcher acceptance probes need.
 
-    **Testing only, deliberately.** `agentplane-testing` runs Dex-backed fake OAuth and
-    credentialless MCP fixtures -- nothing here reaches a real account. `agentplane-staging`
+    **Testing only, deliberately.** `agentplane-testing` runs Dex-backed fake operator login
+    and no MCP group -- nothing here reaches a real account. `agentplane-staging`
     is the opposite: real Authentik-federated operator login, real GitHub/Kubernetes MCP
     OAuth linkage, and `claude-ai` Sandboxes carry the real read-only Google
     `google-readonly` egress credential (`egress_staging_credentials.py`). An agent identity holding this
@@ -407,7 +387,6 @@ def chart(app: App) -> Chart:
         endpoint_selector=app_service.pods.selector,
         ingress=[egress.proxy("agentplane-staging").pods.admit(app_service.pod_port)],
     )
-    add_testing_fixtures(chart)
     dex.Dex(chart, "dex").add_platform_resources()
     # Testing composes and materializes only the tool-config set; its controller workload and RBAC
     # are separate constructs, like staging's.
