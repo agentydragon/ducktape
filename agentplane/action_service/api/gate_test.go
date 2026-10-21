@@ -2,12 +2,15 @@ package api
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -90,13 +93,23 @@ func presenting(t *testing.T, values ...string) context.Context {
 
 func TestABearerTheServiceDoesNotAcceptIsRefusedWithoutSayingWhy(t *testing.T) {
 	s := serve(t)
+	otherAudience, err := kube.WorkloadToken(t.Context(), callerAccount, "test-other-audience")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unbound, err := kube.UnboundToken(t.Context(), callerAccount, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var refusals []string
 	for name, ctx := range map[string]context.Context{
-		"no bearer":            presenting(t),
-		"two bearers":          presenting(t, "Bearer "+callerToken, "Bearer "+callerToken),
-		"another scheme":       presenting(t, "Basic "+callerToken),
-		"an unknown token":     as(t, "test-token-unknown"),
-		"an unlabeled account": as(t, unlabeledToken),
+		"no bearer":                                presenting(t),
+		"a token for another audience":             as(t, otherAudience),
+		"a token bound to no Pod":                  as(t, unbound),
+		"two bearers":                              presenting(t, "Bearer "+callerToken, "Bearer "+callerToken),
+		"another scheme":                           presenting(t, "Basic "+callerToken),
+		"an unknown token":                         as(t, "test-token-unknown"),
+		"an unlabeled account":                     as(t, unlabeledToken),
 		"an account outside the caller namespaces": as(t, outsiderToken),
 		"an expired operator token":                as(t, s.issuer.token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()})),
 		"another issuer's token":                   as(t, s.issuer.token(t, map[string]any{"iss": "https://test-other-issuer.example/"})),
@@ -111,26 +124,49 @@ func TestABearerTheServiceDoesNotAcceptIsRefusedWithoutSayingWhy(t *testing.T) {
 	}
 }
 
-func TestAWorkloadIsRefusedOnceItsAccountLosesTheLabelOrItsTokenIsRevoked(t *testing.T) {
+func TestAWorkloadIsRefusedOnceItsAccountLosesTheLabelOrItsPodIsGone(t *testing.T) {
 	s := serve(t)
+	// Accounts of this test's own, so that changing them leaves the other tests' alone.
+	delabeled := auth.Account{Namespace: testNamespace, Name: "test-delabeled-caller"}
+	revoked := auth.Account{Namespace: testNamespace, Name: "test-revoked-caller"}
+	for _, account := range []auth.Account{delabeled, revoked} {
+		if err := setCallerLabel(t.Context(), account, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	delabeledToken, err := kube.WorkloadToken(t.Context(), delabeled, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod, err := kube.Pod(t.Context(), revoked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revokedToken, err := kube.PodToken(t.Context(), pod, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
 	read := func(token string) error {
 		_, err := s.client.ListActionRequests(as(t, token), &action_servicepb.ListActionRequestsRequest{})
 		return err
 	}
-	for _, token := range []string{callerToken, otherToken} {
+	for _, token := range []string{delabeledToken, revokedToken} {
 		if err := read(token); err != nil {
 			t.Fatal(err)
 		}
 	}
-	s.labels.remove(workload(callerToken))
-	wantCode(t, "an account that lost the label", read(callerToken), codes.Unauthenticated)
-	s.reviews.revoke(otherToken)
-	wantCode(t, "a revoked token", read(otherToken), codes.Unauthenticated)
+	if err := setCallerLabel(t.Context(), delabeled, false); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, "an account that lost the label", read(delabeledToken), codes.Unauthenticated)
+	if err := kube.Revoke(t.Context(), pod, revokedToken, testAudience); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, "the token of a deleted Pod", read(revokedToken), codes.Unauthenticated)
 }
 
-func TestAWorkloadIsUnavailableWhileTheTokenReviewGoesUnanswered(t *testing.T) {
-	s := serve(t)
-	s.reviews.setUnavailable()
+func TestAWorkloadIsUnavailableWhileTheAPIServerCannotBeReached(t *testing.T) {
+	s := serveWith(t, kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")})
 	_, err := s.client.ListActionRequests(as(t, callerToken), &action_servicepb.ListActionRequestsRequest{})
 	wantCode(t, "a workload", err, codes.Unavailable)
 	// An operator's token is verified against the issuer's keys alone.

@@ -17,8 +17,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/authtest"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -33,16 +33,21 @@ import (
 const (
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
-	callerToken  = "test-token-caller"
+	testAudience = "test-actions"
 )
 
-// caller is the ServiceAccount callerToken proves, which carries the caller label.
-var caller = auth.Account{Namespace: "test-agentplane", Name: "test-caller"}
+var (
+	kube *kubeapiserver.Server
+	// reader reads every account's requests; readerToken proves it, from a Pod running as it.
+	reader      = auth.Account{Namespace: "test-agentplane", Name: "test-reader"}
+	readerToken string
+)
 
-// labeled is the caller label, which only its one account carries.
-type labeled struct{ account auth.Account }
-
-func (l labeled) Admits(account auth.Account) bool { return account == l.account }
+func useAPIServer(server *kubeapiserver.Server) (err error) {
+	kube = server
+	readerToken, err = server.WorkloadToken(context.Background(), reader, testAudience)
+	return err
+}
 
 // running is a served Action Service over a database of its own.
 type running struct {
@@ -61,14 +66,11 @@ func start(t *testing.T) running {
 	t.Helper()
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.Clone(t)
-	c.TokenAudience = "test-actions"
-	c.CallerServiceAccountNamespaces = []string{caller.Namespace}
-	cluster := deps{
-		Reviews: authtest.Reviews{Accounts: map[string]authtest.Account{
-			callerToken: {Namespace: caller.Namespace, Name: caller.Name, UID: "test-caller-uid"},
-		}},
-		Callers: labeled{account: caller},
-	}
+	c.TokenAudience = testAudience
+	c.CallerServiceAccountNamespaces = []string{reader.Namespace}
+	c.ReaderAccounts = []auth.Account{reader}
+	// As deployed until the caller label's index lands: no workload is admitted as a caller.
+	cluster := deps{Reviews: kube.TokenReviews(), Callers: noCallers{}}
 	db, err := sql.Open("postgres", c.DatabaseURL)
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +166,7 @@ func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testi
 func TestTheServiceRunsTheDispatchWorkerWhichHasNoExecutorYet(t *testing.T) {
 	service := start(t)
 	operator := store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
-	pending, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}},
+	pending, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-dispatched", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 			Arguments: json.RawMessage(`{}`), Title: "test title",
@@ -202,9 +204,9 @@ func TestTheServiceRunsTheDispatchWorkerWhichHasNoExecutorYet(t *testing.T) {
 	}
 }
 
-func TestTheServiceAnswersTheCallersReadsOverGRPCAndHTTP(t *testing.T) {
+func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
 	service := start(t)
-	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}},
+	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-read", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 			Arguments: json.RawMessage(`{}`), Title: "test title",
@@ -218,7 +220,7 @@ func TestTheServiceAnswersTheCallersReadsOverGRPCAndHTTP(t *testing.T) {
 	if _, err := service.actions.GetActionRequest(ctx, request); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("a call without a bearer: %v", err)
 	}
-	got, err := service.actions.GetActionRequest(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+callerToken), request)
+	got, err := service.actions.GetActionRequest(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken), request)
 	if err != nil || got.GetActionRequest().GetId() != submitted.ID.String() {
 		t.Errorf("gRPC receipt: %v, %v", got, err)
 	}
@@ -227,7 +229,7 @@ func TestTheServiceAnswersTheCallersReadsOverGRPCAndHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	call.Header.Set("Authorization", "Bearer "+callerToken)
+	call.Header.Set("Authorization", "Bearer "+readerToken)
 	response, err := http.DefaultClient.Do(call)
 	if err != nil {
 		t.Fatal(err)
