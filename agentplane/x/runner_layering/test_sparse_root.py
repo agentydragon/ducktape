@@ -17,7 +17,7 @@ from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.driver import RunnerDriver
 from agentplane.runner.testing.process_fixtures import RunnerProcess
-from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
+from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # gazelle:include_dep @pypi//protobuf

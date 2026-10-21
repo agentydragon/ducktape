@@ -17,14 +17,14 @@ from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import runner_pb2
 from agentplane.runner.testing import launches
-from agentplane.runner.testing.claude_model import ClaudeModel
-from agentplane.runner.testing.codex_model import CodexModel
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.driver import RunnerDriver
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.gateway import Gateway, serve_gateway
 from agentplane.runner.testing.process import RunningRunner
-from agentplane.runner.testing.scripted_model import ScriptedModel
+from agentplane.testing.claude_model import ClaudeModel
+from agentplane.testing.codex_model import CodexModel
+from agentplane.testing.scripted_model import ScriptedModel
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

@@ -10,15 +10,7 @@ from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.claude.testing.model import MODEL
 from agentplane.native.claude.testing.requests import MessagesRequest
 from agentplane.native.testing.model_endpoint import ModelExchange, SseEvent
-from agentplane.runner.testing.scripted_model import (
-    Item,
-    ModelRequest,
-    Reasoning,
-    ScriptedModel,
-    ShellCall,
-    Text,
-    ToolOutput,
-)
+from agentplane.testing.scripted_model import Item, ModelRequest, Reasoning, ScriptedModel, ShellCall, Text, ToolOutput
 
 _signatures = (f"sig_test_{n}" for n in itertools.count(1))
 

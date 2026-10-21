@@ -11,7 +11,7 @@ import pytest_bazel
 from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.testing import events
 from agentplane.runner.testing.driver import RunnerDriver, SessionFollow, SessionSealedError
-from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
+from agentplane.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

@@ -11,7 +11,7 @@ from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.driver import RunnerDriver, SessionFollow
-from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.testing.scripted_model import ScriptedModel, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

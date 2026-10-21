@@ -11,8 +11,10 @@ package(
         "//agentplane/egress/testing:__pkg__",
         "//agentplane/history_service/testing:__pkg__",
         "//agentplane/llm_ingress:__pkg__",
+        "//agentplane/runner:__subpackages__",
         "//agentplane/runner_gateway:__subpackages__",
         "//agentplane/sandboxes:__subpackages__",
+        "//agentplane/x/runner_layering:__pkg__",
     ],
 )
 
@@ -70,4 +72,37 @@ py_library(
         "@pypi//protobuf",
         "@pypi//tenacity",
     ],
+)
+
+py_library(
+    name = "claude_model",
+    srcs = ["claude_model.py"],
+    deps = [
+        ":scripted_model",
+        "//agentplane/native/claude:blocks",
+        "//agentplane/native/claude/testing:anthropic_sse",
+        "//agentplane/native/claude/testing:messages",
+        "//agentplane/native/claude/testing:model",
+        "//agentplane/native/claude/testing:requests",
+        "//agentplane/native/testing:model_endpoint",
+    ],
+)
+
+py_library(
+    name = "codex_model",
+    srcs = ["codex_model.py"],
+    deps = [
+        ":scripted_model",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:requests",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/native/testing:model_endpoint",
+    ],
+)
+
+py_library(
+    name = "scripted_model",
+    srcs = ["scripted_model.py"],
+    deps = ["//agentplane/native/testing:model_endpoint"],
 )

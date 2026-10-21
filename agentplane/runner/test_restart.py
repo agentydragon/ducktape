@@ -18,7 +18,7 @@ from agentplane.runner.testing import events
 from agentplane.runner.testing.driver import RunnerDriver
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process_fixtures import RunnerProcess
-from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
+from agentplane.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

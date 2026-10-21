@@ -63,12 +63,12 @@ from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner import runner_service_pb2
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.process import RunningRunner
-from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.testing.runner_peer import Endpoint
 from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
 from agentplane.subjects import ServiceAccountRef
+from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 

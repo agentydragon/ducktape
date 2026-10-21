@@ -15,7 +15,7 @@ from agentplane.runner.testing import events
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.driver import RunnerDriver, running
 from agentplane.runner.testing.gateway import Gateway
-from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.testing.scripted_model import ScriptedModel, Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf

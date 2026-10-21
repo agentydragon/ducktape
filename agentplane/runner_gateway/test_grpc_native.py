@@ -20,9 +20,9 @@ from agentplane.runner import runner_service_pb2
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.process import RunningRunner
-from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.testing.runner_peer import runner_peer
+from agentplane.testing.scripted_model import ScriptedModel, Text
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio

@@ -9,15 +9,7 @@ from agentplane.native.codex.testing.model import MODEL
 from agentplane.native.codex.testing.requests import ResponsesRequest
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.testing.model_endpoint import ModelExchange, SseEvent
-from agentplane.runner.testing.scripted_model import (
-    Item,
-    ModelRequest,
-    Reasoning,
-    ScriptedModel,
-    ShellCall,
-    Text,
-    ToolOutput,
-)
+from agentplane.testing.scripted_model import Item, ModelRequest, Reasoning, ScriptedModel, ShellCall, Text, ToolOutput
 
 _encrypted = (f"enc_test_{n}" for n in itertools.count(1))
 

@@ -22,12 +22,12 @@ from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner import runner_service_pb2
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.process import RunningRunner
-from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.testing.runner_peer import runner_peer
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster, sandbox_cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
+from agentplane.testing.scripted_model import ScriptedModel, Text
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
