@@ -1,6 +1,6 @@
 # Acceptance against any deployment; `agentplane-testing` retired
 
-Status: **proposal for operator review, 2026-10-21 UTC. No implementation starts before approval.**
+Status: **proposed 2026-10-21 UTC; each step starts on the operator's approval.**
 Nodes are in the [task DAG](task_dag.md#14-acceptance-on-k3s-and-retiring-agentplane-testing).
 
 The operator's goal (2026-10-21 03:40, 04:11):
@@ -114,27 +114,71 @@ the steps below give k3s what they need.
 Some scenarios exist for only one backend. "The model obeys the instruction" is real-model only.
 Exact request contents are scripted only.
 
+## Test layout
+
+Proposed 2026-10-21; the operator has not chosen yet.
+
+- **Scenarios** stay in `agentplane/acceptance/test_<behavior>.py`, one module per behavior. A
+  module holds that behavior's version for each backend it has, and the system-side steps and
+  checks they share: create the Sandbox, suspend it, read the egress decisions. A module may have
+  one version only.
+- **One test function per backend.** A function names its backend with a marker, `real_model` or
+  `scripted_model`, and each target's plugin deselects what it cannot serve, as the k3s target
+  does for `vm_sandboxes`.
+  - A real-model function takes the `model` fixture (the catalog's model for the harness) and
+    sends prompts with `Agent.run`. Its evidence is the system's record, plus the answer where
+    the behavior is about instructions.
+  - A scripted function takes a `scripted` fixture: the `ScriptedModel` for its Sandbox and
+    harness. It runs the turn with `Agent.run` and answers each model request with `reply`
+    (`Text`, `ShellCall`). Its evidence is the system's record, plus what the harness sent.
+  - Example, the Pod case of `test_suspend_resume`. The shared steps check the volumes, the new
+    incarnation and the dormant sessions. The real version asks the model to recall the seeded
+    code. The scripted version checks that the first request after resume carries the seeded code
+    in its conversation.
+- **Bazel targets.** `acceptance_test` makes one target for each (target, backend) pair the
+  scenario has:
+
+  | Target                                | Backend  | Bazel target                                                              |
+  | ------------------------------------- | -------- | ------------------------------------------------------------------------- |
+  | Deployed (testing, or staging by env) | real     | `<scenario>`, manual and local, as now                                    |
+  | k3s                                   | scripted | `<scenario>_k3s`, on RBE; with the model-free scenarios, the CI candidate |
+  | k3s                                   | real     | `<scenario>_k3s_real`, after `K3S_MODEL_CREDENTIALS`                      |
+  | Deployed                              | scripted | not scheduled                                                             |
+
+- **The scripted upstream** is `agentplane/acceptance/scripted_upstream.py`.
+  - It is one HTTP server for both dialects: `/v1/messages` goes to `ClaudeModel` and
+    `/v1/responses` to `CodexModel`.
+  - It reuses the runner tests' `ScriptedModel` and `ModelEndpoint`; `ModelEndpoint` gains a bind
+    address.
+  - It keeps one queue per Sandbox Pod and dialect. The Pod is the one LLM ingress names in the
+    `x-litellm-spend-logs-metadata` header it adds.
+  - The k3s plugin starts it on the node IP before rendering the chart, and points LLM ingress's
+    upstream at it. The fixture's app catalog and Codex catalog offer one scripted route per
+    harness.
+  - LLM ingress stays in the path, so its workload auth, its catalog and its identity stamping are
+    under test too.
+- **Targets** stay where #11330 put them: the environment variables in `conftest.py`, the k3s
+  plugin in `x/k3s_env/acceptance_target.py`.
+
 ## The program
 
 Ordered by what unblocks what. Speed work runs alongside and blocks only the CI tier.
 
-1. **`ACCEPTANCE_MODEL_BACKEND_ORDER`** (decision): which model backend comes first.
-   - Recommended: real model first. Every model scenario is written that way and passes against
-     testing now, so on k3s it needs only the key.
-   - The scripted backend is second, but it is what lets model scenarios run on pull requests.
-2. **Model backends on k3s.** These two can run in either order, as decided in step 1.
-   - **`K3S_MODEL_CREDENTIALS`** (decision), then **`K3S_MODEL_SCENARIOS`**.
-     - The fixture today takes a Qwen-only key through `--test_env`, which lands on the BuildBuddy
-       command line.
-     - Recommended: a Terraform-provisioned, budget-capped LiteLLM key for k3s acceptance, offering
-       models on both harnesses. That means ChatGPT luna for Codex, which the operator allowed for
-       tests.
-     - Deliver the key as a BuildBuddy secret rather than a flag. BuildBuddy RBE secrets are unused
-       in this repo so far.
-   - **`ACCEPTANCE_SCRIPTED_MODEL`**: the scripted backend on k3s.
-     - The catalog offers the scripted model.
-     - Scripted variants of `test_egress`, `test_instructions` and the Pod case of
-       `test_suspend_resume` run on both harnesses.
+1. **`ACCEPTANCE_SCRIPTED_MODEL`**: the scripted backend on k3s, laid out as in
+   [Test layout](#test-layout). It goes first: the operator is fine with either order, and it needs
+   no key (2026-10-21 05:23).
+   - Scripted versions of `test_instructions`, the Pod case of `test_suspend_resume` and the
+     `test_egress` cases that need no outside credential run on both harnesses.
+2. **`K3S_MODEL_CREDENTIALS`** (decision), then **`K3S_MODEL_SCENARIOS`**: real models on k3s.
+   - The fixture today takes a Qwen-only key through `--test_env`, which lands on the BuildBuddy
+     command line.
+   - No BuildBuddy secret for model access exists yet (operator, 2026-10-21 05:22). How one is
+     provisioned is part of this decision.
+   - Recommended: a Terraform-provisioned, budget-capped LiteLLM key for k3s acceptance, offering
+     models on both harnesses. That means ChatGPT luna for Codex, which the operator allowed for
+     tests.
+   - Deliver the key as a BuildBuddy secret rather than a flag. BuildBuddy RBE secrets are unused
+     in this repo so far.
 3. **`K3S_FIXTURE_IDENTITY`.** Then `test_mcp` and `test_dcr` run on k3s.
    - Add Dex with a plain config Secret. The ExternalSecret template is what dropped it from the
      fixture.
@@ -180,7 +224,7 @@ Speed, in parallel:
 
 ## CI tier
 
-**`K3S_CI_TIER`** (decision, after the first model backend). What blocks CI:
+**`K3S_CI_TIER`** (decision, after the scripted backend). What blocks CI:
 
 - **Time on slow workers.** Set the budget on the slowest of 10 fresh runs, not the median.
 - **Reliability.** Each admitted target needs 20 consecutive fresh green runs
@@ -193,5 +237,6 @@ Speed, in parallel:
 Recommended:
 
 - On PRs: the model-free and scripted-model k3s targets, once they meet the budget.
+- `x/k3s_env` leaves `x/` in the PR that admits its first target to CI.
 - Post-merge on `devel`: the real-model targets. They judge Agentplane's instructions against a
   model, which is a signal to watch rather than a gate for a code change.

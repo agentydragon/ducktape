@@ -1976,7 +1976,6 @@ changes.
 
 ```mermaid
 flowchart LR
-    ACCEPTANCE_MODEL_BACKEND_ORDER[Decision: real or scripted model first]
     K3S_MODEL_CREDENTIALS[Decision: model key for k3s acceptance]
     K3S_MODEL_SCENARIOS[Blocked: real-model scenarios on k3s]
     ACCEPTANCE_SCRIPTED_MODEL[Proposed: scripted-model scenarios on k3s]
@@ -1990,8 +1989,6 @@ flowchart LR
     K3S_TEST_STARTUP[Proposed: cut the time before pytest starts]
     K3S_CI_TIER[Decision: which k3s targets run in CI]
     K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
-    ACCEPTANCE_MODEL_BACKEND_ORDER -. orders .-> K3S_MODEL_SCENARIOS
-    ACCEPTANCE_MODEL_BACKEND_ORDER -. orders .-> ACCEPTANCE_SCRIPTED_MODEL
     K3S_MODEL_SCENARIOS -. first backend .-> TESTING_ENVIRONMENT_RETIRE
     ACCEPTANCE_SCRIPTED_MODEL -. first backend .-> TESTING_ENVIRONMENT_RETIRE
     K3S_VM_IMAGE -. the emulation spike needs it .-> K3S_VM_ACCEPTANCE
@@ -2005,18 +2002,11 @@ flowchart LR
     K3S_TEST_STARTUP -. faster .-> K3S_CI_TIER
 ```
 
-### `ACCEPTANCE_MODEL_BACKEND_ORDER` — real or scripted model first
-
-**Decision.** Real models test the plumbing and whether Agentplane's instructions get a model to do
-the job. Scripted models are deterministic, need no key, and can run on PRs.
-
-Recommendation: real model first. The model scenarios are written that way and pass against testing
-now, so k3s needs only the key.
-
 ### `K3S_MODEL_CREDENTIALS` — model key for k3s acceptance
 
 **Decision.** Today a Qwen-only key reaches the fixture through `--test_env`, which BuildBuddy
-records on the command line.
+records on the command line. No BuildBuddy secret for model access exists yet (operator,
+2026-10-21 05:22).
 
 Recommendation: a Terraform-provisioned, budget-capped LiteLLM key offering models on both
 harnesses (ChatGPT luna for Codex), delivered as a BuildBuddy secret.
@@ -2036,12 +2026,17 @@ with the real model:
 
 ### `ACCEPTANCE_SCRIPTED_MODEL` — scripted-model scenarios on k3s
 
-**Proposed, ordered by `ACCEPTANCE_MODEL_BACKEND_ORDER`.** The runner tests' `ScriptedModel`, in both dialects, is
-served by the test process as LLM ingress's upstream at the node IP, and the catalog offers it.
+**Proposed; the first model backend (operator, 2026-10-21 05:23).** Laid out as in the plan's
+[Test layout](k3s_acceptance.md#test-layout), which waits on the operator's choice.
 
-The test scripts each model step and asserts what the model was sent. Scripted variants of
-`test_egress`, `test_instructions` and the Pod case of `test_suspend_resume` pass on both
-harnesses.
+- `agentplane/acceptance/scripted_upstream.py` serves the runner tests' `ScriptedModel` in both
+  dialects, one queue per Sandbox Pod, as LLM ingress's upstream at the node IP.
+- The fixture's app catalog and Codex catalog offer one scripted route per harness.
+- Scenario functions carry `real_model` or `scripted_model`, and each target deselects what it
+  cannot serve.
+
+Exit: scripted versions of `test_instructions`, the Pod case of `test_suspend_resume` and the
+`test_egress` cases that need no outside credential pass on k3s on both harnesses.
 
 Out of scope: scripted runs against testing or staging, which would need a deployed scripted-model
 endpoint.
