@@ -7,7 +7,6 @@ Sandbox-subject bindings are written by the integration app at runtime and are n
 from __future__ import annotations
 
 from collections.abc import Sequence
-from urllib.parse import urlsplit
 
 from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBindingSpecSubject
 from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRules, PolicySetSpecRulesMethods
@@ -23,7 +22,7 @@ from agentplane.action_service.policies.resources import CALLER_LABEL, parse_act
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, external_creds
-from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
+from cluster.cdk8s.agentplane import app as app_component, egress, testing
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -48,7 +47,7 @@ from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.public_coder.egress import NAMESPACE, SERVICE_ACCOUNT
 
@@ -86,12 +85,11 @@ def coinbase_egress_rules() -> list[PolicySetSpecRules]:
 def agentplane_testing_egress_rules() -> list[PolicySetSpecRules]:
     """The egress half of the acceptance-testing PolicySet."""
     testing_app = app_component.service(testing.ENV.namespace)
-    testing_login_hosts = [testing.ENV.app.hostname, urlsplit(testing.ENV.app.oidc_issuer).netloc]
     # The proxy matches the exact host spelling. The app Service avoids hairpinning through the
-    # Gateway; only the browser callback and isolated testing Dex issuer use public hostnames.
+    # Gateway, which serves the public hostname.
     return [
         Rule.egress(hosts=[testing_app.fqdn], cluster_internal=True),
-        Rule.egress(hosts=testing_login_hosts, cluster_internal=True),
+        Rule.egress(hosts=[testing.ENV.app.hostname], cluster_internal=True),
     ]
 
 
@@ -640,17 +638,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             name=f"{proxy.name.removeprefix('agentplane-')}-to-testing-app", namespace=_NAMESPACE
         ),
         endpoint_selector=proxy.pods.selector,
-        egress=[
-            testing_app.egress(),
-            # Gateway Service traffic is checked against the selected backend, not
-            # node:443. Keep Dex's backend permission scoped to its login SNI. This rule is
-            # Dex's own port, so its SNI scoping touches nothing else the proxy reaches.
-            EgressRule.to_endpoints(
-                dex.service().pods.cilium,
-                dex.service().pod_port,
-                server_names=[urlsplit(testing.ENV.app.oidc_issuer).netloc],
-            ),
-        ],
+        egress=[testing_app.egress()],
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
     # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.

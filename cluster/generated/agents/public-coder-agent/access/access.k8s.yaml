@@ -188,41 +188,6 @@ subjects:
     namespace: agentplane-staging
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: agentplane-testing-login-reader
-  namespace: public-coder-agent
-rules:
-  - apiGroups:
-      - ""
-    resourceNames:
-      - agentplane-testing-acceptance-operator
-    resources:
-      - secrets
-    verbs:
-      - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: agentplane-testing-login-reader
-  namespace: public-coder-agent
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: agentplane-testing-login-reader
-subjects:
-  - apiGroup: rbac.authorization.k8s.io
-    kind: Group
-    name: oidc-ksbx-groups:haku
-  - apiGroup: rbac.authorization.k8s.io
-    kind: Group
-    name: haku:access-profile:haku
-  - kind: ServiceAccount
-    name: haku
-    namespace: haku-sandbox
----
-apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   annotations:

@@ -491,7 +491,6 @@ py_library(
     srcs = ["actions_staging_policies.py"],
     deps = [
         ":app",
-        ":dex",
         ":egress",
         ":egress_policies",
         ":egress_staging_credentials",

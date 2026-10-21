@@ -111,9 +111,8 @@ kubectl auth can-i get secrets -n public-coder-agent
 
 The current repository sources are under `k8s-reader/`. The standing
 `haku:access-profile:public-coder` synthetic group has secret-free read-only diagnostics plus
-explicit per-service exceptions: the existing Agentplane staging lifecycle RoleBinding and GET of
-only `public-coder-agent/agentplane-acceptance-operator`. The latter permits no Secret list/watch
-or other Secret reads; acceptance bootstrap must capture the response without printing its values. Console derives that group only from the
+one explicit per-service exception: the existing Agentplane staging lifecycle RoleBinding. It
+permits no Secret reads. Console derives that group only from the
 deploy-owned access profile; it is not a caller credential. Selected Node and cross-namespace
 projections may be available. Trust `kubectl auth can-i` and the API server's decision over this
 prose summary.

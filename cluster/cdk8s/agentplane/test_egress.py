@@ -409,7 +409,6 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         "public-coder-volsync-status",
         "public-coder-agent-reader",
         "agentplane-testing-operator",
-        "agentplane-testing-login",
     } <= set(selected)
     # Only these two narrow ClusterRoles may be bound cluster-wide. In particular,
     # never bind the namespaced log/metadata readers or Haku's broader reader there.
@@ -438,7 +437,6 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         ("ducktape-flux", "ducktape-flux-reader"),
         ("public-coder-agent", "agent-public-coder-extended-diagnostics-reader"),
         ("public-coder-agent", "public-coder-agent-reader"),
-        ("public-coder-agent", "agentplane-testing-login-reader"),
         ("agentplane-testing", "agentplane-testing-operator"),
     } | (
         {

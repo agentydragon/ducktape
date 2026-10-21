@@ -6825,12 +6825,6 @@ metadata:
 spec:
   rules:
     - namespaces:
-        - public-coder-agent
-      role:
-        kind: Role
-        name: agentplane-testing-login-reader
-      type: kubernetes_role_binding
-    - namespaces:
         - agentplane-testing
       role:
         kind: Role
@@ -6843,7 +6837,6 @@ spec:
     - clusterInternal: true
       hosts:
         - agentplane-testing.allegedly.works
-        - agentplane-dex-testing.allegedly.works
       type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -8248,16 +8241,6 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-testing-dex
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "5556"
-              protocol: TCP
-          serverNames:
-            - agentplane-dex-testing.allegedly.works
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: egress

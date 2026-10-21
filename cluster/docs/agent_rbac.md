@@ -155,9 +155,8 @@ every sandbox it stamps through the sandbox Action group runs as it
 - `get`/`list` on Agentplane `sandboxes`, `sandboxtemplates`, `policysets` and `policybindings` and read-only KubeVirt VM/VMI views, plus the VMI
   `console` subresource, in **agentplane-staging** (`claude-ai-sandbox-reader`), so a read-only
   check needs no approval.
-- `get` on three explicitly named Secrets: `agentplane-staging/coinbase-api-credentials`
-  (the view-only Coinbase CDP key),
-  `public-coder-agent/agentplane-testing-acceptance-operator` (the testing login), and
+- `get` on two explicitly named Secrets: `agentplane-staging/coinbase-api-credentials`
+  (the view-only Coinbase CDP key) and
   `litellm/litellm-key-disposable-env` (the Qwen-only key for the disposable test environment).
   No general Secret enumeration or staging login access.
 
@@ -391,20 +390,13 @@ already covers public coder's two narrow cluster readers.
 
 ### Testing-only Agentplane operator access
 
-All three managed presets separately select `agentplane-testing-operator` and
-`agentplane-testing-login`, and the `agentplane-testing` egress policy. Static Haku
-and public coder share the same testing roles. The login grant is `get` on exactly
-`public-coder-agent/agentplane-testing-acceptance-operator`, the reflected testing
-Dex login Secret, through the new `agentplane-testing-login-reader` Role.
-The old staging+testing login Role and binding are removed. A new Role name ensures
-independently reconciled managed bindings cannot temporarily acquire the old
-`agentplane-acceptance-operator` (**staging**) permission during rollout.
-No agent receives a staging operator/login grant here. Ordinary diagnostic reads
-and Haku's unrelated Coinbase reader are unchanged.
+All three managed presets separately select `agentplane-testing-operator` and the
+`agentplane-testing` egress policy. Static Haku and public coder share the same testing
+role. No agent receives an operator login for testing or staging.
 
-The testing egress policy admits the testing app's internal API and the public
-**testing** app/Dex origins needed for the OIDC redirect flow, without credential
-substitution. It does not admit staging app or Authentik login origins.
+The testing egress policy admits the testing app's internal API and its public
+**testing** origin, without credential substitution. It does not admit Dex, the staging
+app or Authentik login origins.
 
 The existing `agentplane-testing-operator` Role and its static Haku
 RoleBinding remain Flux-owned. This is a

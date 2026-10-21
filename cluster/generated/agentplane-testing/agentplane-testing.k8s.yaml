@@ -6265,12 +6265,6 @@ spec:
         subject: Cgx0ZXN0LXN1YmplY3QSBWxvY2Fs
         username: test-user
       engineVersion: v2
-      metadata:
-        annotations:
-          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: public-coder-agent
-          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: public-coder-agent
       type: Opaque
 ---
 apiVersion: gateway.networking.k8s.io/v1

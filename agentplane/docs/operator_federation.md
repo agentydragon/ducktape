@@ -195,8 +195,8 @@ the existing Decision issuer field.
 
 ### Authoritative subject mode (configuration proof, not live token observation)
 
-The login and target application policy bindings are Authentik-managed (currently Rai plus the
-dedicated acceptance operator). Display names never enter authorization. Both providers explicitly
+The login and target application policy bindings are Authentik-managed (currently Rai alone).
+Display names never enter authorization. Both providers explicitly
 use `sub_mode = "hashed_user_id"`, which makes the same Authentik user's `uid` the `sub` claim on
 both sides of the exchange:
 

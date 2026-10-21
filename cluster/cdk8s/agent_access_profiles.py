@@ -167,11 +167,6 @@ def catalog() -> dict[str, KubernetesGrant]:
             namespace="public-coder-agent",
             role_ref=RoleRef(kind="Role", name="public-coder-agent-reader"),
         ),
-        "agentplane-testing-login": RoleBindingGrant(
-            kind="RoleBinding",
-            namespace="public-coder-agent",
-            role_ref=RoleRef(kind="Role", name="agentplane-testing-login-reader"),
-        ),
     }
 
 
@@ -183,7 +178,7 @@ SHARED_DIAGNOSTICS = (
     "public-coder-volsync-status",
     "public-coder-agent-reader",
 )
-TESTING_ACCESS = ("agentplane-testing-operator", "agentplane-testing-login")
+TESTING_ACCESS = ("agentplane-testing-operator",)
 PUBLIC_INVENTORY = ("public-coder-node-read", "public-coder-cluster-metadata-read")
 HAKU_EXTRAS = ("cluster-diagnostics", "haku-sandbox-write")
 PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY)

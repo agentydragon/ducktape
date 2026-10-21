@@ -31,14 +31,6 @@ rules:
   - apiGroups:
       - rbac.authorization.k8s.io
     resourceNames:
-      - agentplane-testing-login-reader
-    resources:
-      - roles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
       - public-coder-agent-reader
     resources:
       - roles

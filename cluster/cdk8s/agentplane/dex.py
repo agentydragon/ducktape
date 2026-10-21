@@ -36,7 +36,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
-    ExternalSecretSpecTargetTemplateMetadata,
 )
 
 from cluster.cdk8s import cilium, pod_policy
@@ -125,8 +124,8 @@ def _length_delimited(number: int, value: str) -> bytes:
     return bytes([number << 3 | 2]) + bytes(varint) + data
 
 
-# Shared between Dex's own staticPasswords entry and the ExternalSecret template the
-# acceptance suite reads, so the two can't name different identities.
+# Shared between Dex's own staticPasswords entry and the ExternalSecret template that records
+# its login, so the two can't name different identities.
 _TESTING_OPERATOR = Operator(email="test-user@agentplane-testing.invalid", username="test-user", user_id="test-subject")
 
 
@@ -298,14 +297,6 @@ def _add_credentials(scope: Construct) -> None:
         template=ExternalSecretSpecTargetTemplate(
             engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
             type="Opaque",
-            metadata=ExternalSecretSpecTargetTemplateMetadata(
-                annotations={
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "public-coder-agent",
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "public-coder-agent",
-                }
-            ),
             data={
                 **operator_login_data(_TESTING_OPERATOR, password="{{ .password }}", issuer=_ISSUER),
                 CONFIG_KEY: _testing_config_yaml(),

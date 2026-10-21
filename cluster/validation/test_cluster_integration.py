@@ -550,7 +550,6 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
             ("ClusterRole", "cluster-diagnostics-reader", None),
             ("Role", "claude-ai-coinbase-reader", "agentplane-staging"),
             ("Role", "agentplane-testing-operator", "agentplane-testing"),
-            ("Role", "agentplane-testing-login-reader", "public-coder-agent"),
             ("Role", "claude-ai-sandbox-reader", "agentplane-staging"),
             ("Role", "agent-haku-console-metadata-reader", "haku-console"),
             ("Role", "agent-clickhouse-diagnostics-reader", "clickhouse"),
@@ -631,7 +630,6 @@ def test_agent_permission_denials(
         }
     )
     denied = {
-        Permission("public-coder-agent", "", "secrets", "get", "agentplane-acceptance-operator"),
         Permission("public-coder-agent", "", "secrets", "list"),
         Permission("public-coder-agent", "kubevirt.io", "virtualmachineinstances", "delete", "public-coder-devbox"),
         Permission("agentplane-staging", "", "pods/exec", "create"),
@@ -652,7 +650,6 @@ def test_agent_permission_denials(
         Permission(namespace, "kustomize.toolkit.fluxcd.io", "kustomizations", "patch")
         for namespace in ("flux-system", "ducktape-flux", "agentplane-testing", "agentplane-staging")
     }
-    testing_login = Permission("public-coder-agent", "", "secrets", "get", "agentplane-testing-acceptance-operator")
     coinbase = Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials")
     denied |= {
         Permission("agentplane-staging", "", "secrets", verb)
@@ -663,7 +660,6 @@ def test_agent_permission_denials(
     for name, permissions in profiles.items():
         assert bool(uncovered({coinbase}, permissions)) == (name == "public-coder"), name
         assert uncovered(denied, permissions) == denied, name
-        assert not uncovered({testing_login}, permissions), name
         if name == "claude-ai":
             sandbox_writes = {
                 Permission("haku-sandbox", "", resource, verb)

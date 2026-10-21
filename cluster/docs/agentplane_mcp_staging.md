@@ -18,8 +18,7 @@ client, Connection, and grant provenance.
   or an external client's DCR redirect URI.
 - The upstream provider emits UUID subjects. The adapter checks that exact UUID and upstream
   issuer, then maps it to the same UUID under the existing Action operator issuer. It does not
-  authorize by username, browser-supplied Identity, or arbitrary upstream login. The separate
-  staging acceptance operator does not receive access to this external MCP provider.
+  authorize by username, browser-supplied Identity, or arbitrary upstream login.
 - Terraform creates the Secret in `authentik`; Reflector copies it only to `agentplane-staging`.
   The Actions process mounts its three credential files read-only. No Secret is mounted into
   the app, runner, workload proxy, or Sandbox. Required references gate pod startup; Reloader

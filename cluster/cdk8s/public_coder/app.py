@@ -749,31 +749,6 @@ def _rbac(scope: Construct) -> None:
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-volsync-status")],
     )
 
-    # Use a new testing-only Role name rather than expanding the old staging+testing
-    # reader's subjects: independently reconciled managed bindings must never acquire
-    # the old staging credential while waiting for this chart to narrow its rules.
-    acceptance = "agentplane-testing-login-reader"
-    k8s.KubeRole(
-        scope,
-        "agentplane-testing-login-reader",
-        metadata=k8s.ObjectMeta(name=acceptance, namespace=NAMESPACE),
-        rules=[
-            k8s.PolicyRule(
-                api_groups=[""],
-                resources=["secrets"],
-                resource_names=["agentplane-testing-acceptance-operator"],
-                verbs=["get"],
-            )
-        ],
-    )
-    k8s.KubeRoleBinding(
-        scope,
-        "agentplane-testing-login-reader-binding",
-        metadata=k8s.ObjectMeta(name=acceptance, namespace=NAMESPACE),
-        role_ref=access.role_ref("agentplane-testing-login"),
-        subjects=[subject.k8s() for subject in access.profile_subjects("agentplane-testing-login")],
-    )
-
     # Cluster-scoped node inventory for scheduling and health diagnostics.
     #
     # Nodes are cluster infrastructure rather than Git-managed application state, so this is

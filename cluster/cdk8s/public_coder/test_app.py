@@ -136,35 +136,6 @@ def test_agents_no_longer_restart_the_devbox(rbac_objects: list[dict[str, Any]])
     assert not any(obj["kind"] == "RoleBinding" for obj in retired)
 
 
-def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credential(
-    app_objects: list[dict[str, Any]], rbac_objects: list[dict[str, Any]], proxy_objects: list[dict[str, Any]]
-) -> None:
-    objects = _named(rbac_objects, "agentplane-testing-login-reader")
-    role = _one(objects, "Role")
-    binding = _one(objects, "RoleBinding")
-    assert binding["roleRef"]["name"] == role["metadata"]["name"]
-    assert _subjects(binding) == _HAKU_SUBJECTS
-    rule = one(role["rules"])
-    assert rule["resources"] == ["secrets"]
-    assert rule["verbs"] == ["get"]
-    secret_names = set(rule["resourceNames"])
-    assert secret_names == {"agentplane-testing-acceptance-operator"}
-
-    for objects in (app_objects, proxy_objects):
-        deployment = _one(objects, "Deployment")
-        pod = deployment["spec"]["template"]["spec"]
-        for container in pod.get("initContainers", []) + pod["containers"]:
-            for entry in container.get("env", []):
-                assert not entry["name"].startswith("AGENTPLANE_ACCEPTANCE_OPERATOR_")
-                assert entry.get("valueFrom", {}).get("secretKeyRef", {}).get("name") not in secret_names
-            for source in container.get("envFrom", []):
-                assert source.get("secretRef", {}).get("name") not in secret_names
-        for volume in pod.get("volumes", []):
-            assert volume.get("secret", {}).get("secretName") not in secret_names
-            for source in volume.get("projected", {}).get("sources", []):
-                assert source.get("secret", {}).get("name") not in secret_names
-
-
 def test_app_egress_reaches_the_internet_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
     egress = _one(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
     assert all(rule.get("to") for rule in egress)
