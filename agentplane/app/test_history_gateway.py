@@ -41,7 +41,7 @@ def register_attached_sessions() -> bool:
 
 @pytest.fixture(autouse=True)
 async def discovered(live_index: LiveIndex, sandbox: SandboxCluster) -> None:
-    await discover(live_index, sandbox)
+    await discover(live_index, sandbox.server, namespace=sandbox.namespace, name=sandbox.name)
 
 
 async def test_production_bridge_archives_native_evidence_across_bounded_service_copies(

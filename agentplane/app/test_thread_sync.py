@@ -171,20 +171,8 @@ async def _cross_replica_sync(
 ) -> None:
     async with (
         asyncio.timeout(60),
-        app_process(
-            db_url,
-            service_port=int(reader.target.rsplit(":", 1)[1]),
-            history=reader,
-            sandbox_present=False,
-            electric_url=service.url,
-        ) as first,
-        app_process(
-            db_url,
-            service_port=int(reader.target.rsplit(":", 1)[1]),
-            history=reader,
-            sandbox_present=False,
-            electric_url=service.url,
-        ) as second,
+        app_process(db_url, history=reader, gateway=None, electric_url=service.url) as first,
+        app_process(db_url, history=reader, gateway=None, electric_url=service.url) as second,
         httpx.AsyncClient(base_url=first.url, timeout=35) as client_one,
         httpx.AsyncClient(base_url=second.url, timeout=35) as client_two,
     ):

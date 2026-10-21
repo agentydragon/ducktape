@@ -33,6 +33,8 @@ class SandboxCluster:
     server: KubernetesApiServer
     # The cluster's own namespace, so that tests can share one control plane.
     namespace: str
+    # The Sandbox's, its Pod's and its ServiceAccount's.
+    name: str
     inventory: SandboxInventory
     # The UIDs the API server gave the Sandbox and its Pod.
     uid: str
@@ -40,22 +42,22 @@ class SandboxCluster:
 
     @property
     def identity(self) -> SandboxIdentity:
-        return SandboxIdentity(namespace=self.namespace, name=SANDBOX, uid=self.uid)
+        return SandboxIdentity(namespace=self.namespace, name=self.name, uid=self.uid)
 
     @property
     def owner(self) -> ServiceAccountRef:
         """The Sandbox's own ServiceAccount, which its runner Pod runs as."""
-        return ServiceAccountRef(namespace=self.namespace, name=SANDBOX)
+        return ServiceAccountRef(namespace=self.namespace, name=self.name)
 
     @property
     def destination(self) -> SandboxDestination:
         return SandboxDestination(
-            owner=ServiceAccount(namespace=self.namespace, name=SANDBOX), sandbox=SANDBOX, sandbox_uid=self.uid
+            owner=ServiceAccount(namespace=self.namespace, name=self.name), sandbox=self.name, sandbox_uid=self.uid
         )
 
     async def pod_token(self, audience: str) -> str:
         """A token bound to the runner Pod, as its runner container holds one."""
-        return await self.server.pod_token(self.namespace, SANDBOX, [audience])
+        return await self.server.pod_token(self.namespace, self.name, [audience])
 
     @property
     def custom_objects(self) -> CustomObjectsClient:
@@ -64,7 +66,7 @@ class SandboxCluster:
     async def sandbox(self) -> dict[str, Any]:
         """The Sandbox as stored."""
         return await self.custom_objects.get_namespaced_custom_object(
-            GROUP, VERSION, self.namespace, sandbox_resource.SANDBOXES_PLURAL, SANDBOX
+            GROUP, VERSION, self.namespace, sandbox_resource.SANDBOXES_PLURAL, self.name
         )
 
     async def patch_sandbox(self, patch: dict[str, Any]) -> None:
@@ -73,7 +75,7 @@ class SandboxCluster:
             VERSION,
             self.namespace,
             sandbox_resource.SANDBOXES_PLURAL,
-            SANDBOX,
+            self.name,
             patch,
             _content_type=_MERGE_PATCH,
         )
@@ -85,15 +87,15 @@ class SandboxCluster:
             VERSION,
             self.namespace,
             sandbox_resource.SANDBOXES_PLURAL,
-            SANDBOX,
+            self.name,
             patch,
             _content_type=_MERGE_PATCH,
         )
 
 
 @asynccontextmanager
-async def sandbox_cluster(server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
-    """A namespace of its own on `server` with one Ready, running Sandbox and its runner Pod at 127.0.0.1."""
+async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -> AsyncIterator[SandboxCluster]:
+    """A namespace of its own on `server` with one Ready, running Sandbox `name` and its runner Pod at 127.0.0.1."""
     namespace = f"sandboxes-{uuid4().hex[:8]}-test"
     core = k8s_client.CoreV1Api(server.api)
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(server.api))
@@ -106,44 +108,45 @@ async def sandbox_cluster(server: KubernetesApiServer) -> AsyncIterator[SandboxC
         {
             "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
             "kind": sandbox_resource.SANDBOX_KIND,
-            "metadata": {"name": SANDBOX},
+            "metadata": {"name": name},
             "spec": {"template": "test-template", "running": True},
         },
     )
     uid = created["metadata"]["uid"]
     # The Sandbox Controller runs a Sandbox's Pods as the ServiceAccount of its name.
     await core.create_namespaced_service_account(
-        namespace, k8s_client.V1ServiceAccount(metadata=k8s_client.V1ObjectMeta(name=SANDBOX))
+        namespace, k8s_client.V1ServiceAccount(metadata=k8s_client.V1ObjectMeta(name=name))
     )
     pod = await core.create_namespaced_pod(
         namespace,
         k8s_client.V1Pod(
             metadata=k8s_client.V1ObjectMeta(
-                name=SANDBOX,
+                name=name,
                 owner_references=[
                     k8s_client.V1OwnerReference(
                         api_version=sandbox_resource.SANDBOX_API_VERSION,
                         kind=sandbox_resource.SANDBOX_KIND,
-                        name=SANDBOX,
+                        name=name,
                         uid=uid,
                         controller=True,
                     )
                 ],
             ),
             spec=k8s_client.V1PodSpec(
-                service_account_name=SANDBOX,
+                service_account_name=name,
                 containers=[k8s_client.V1Container(name="runner", image="registry.test/runner:unused")],
             ),
         ),
     )
     await core.patch_namespaced_pod_status(
-        SANDBOX,
+        name,
         namespace,
         {"status": {"phase": "Running", "podIP": "127.0.0.1", "conditions": [{"type": "Ready", "status": "True"}]}},
     )
     cluster = SandboxCluster(
         server=server,
         namespace=namespace,
+        name=name,
         inventory=SandboxInventory(namespace=namespace, custom_objects=custom, core_v1=core),
         uid=uid,
         pod_uid=pod.metadata.uid,
@@ -152,7 +155,7 @@ async def sandbox_cluster(server: KubernetesApiServer) -> AsyncIterator[SandboxC
         {
             "status": {
                 "operatingMode": sandbox_resource.OperatingMode.RUNNING.value,
-                "incarnation": {"name": SANDBOX, "uid": pod.metadata.uid},
+                "incarnation": {"name": name, "uid": pod.metadata.uid},
                 "conditions": [
                     {
                         "type": sandbox_resource.READY,

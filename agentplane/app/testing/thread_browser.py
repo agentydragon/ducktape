@@ -2,26 +2,27 @@
 `pytest_plugins = ("agentplane.app.testing.thread_browser",)`.
 
 A conftest fixture outranks a plugin's, so each test module defines `service_history_db_url` itself,
-as `electric`'s database, for the package conftest's history fixtures to follow; and `gateway` as
-`gateway_client`, which points live Runner calls at the scripted service.
+as `electric`'s database, for the package conftest's history fixtures to follow; and `sandbox` as the
+`ReplicationSource`'s, whose scripted runner the Runner Gateway reaches.
 """
 
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
 
-import grpc
 import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 
 from agentplane.app.testing import history_probe, thread_view_marks
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
-from agentplane.app.testing.replication_process import AppProcess, app_process
+from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, app_process
 from agentplane.app.testing.replication_source import (
     SANDBOX,
     SESSION,
@@ -29,9 +30,9 @@ from agentplane.app.testing.replication_source import (
     ReplicationSource,
     add_replication_source,
 )
+from agentplane.app.testing.runner_gateway import RUNNER_AUDIENCE
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import (
     BrowserPostgres,
@@ -42,6 +43,10 @@ from agentplane.history_service.testing.electric_service import (
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
+from agentplane.runner_gateway.testing.runner_connection import runner_connection
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import deterministic_browser_context, disable_animations_script
 from util.testing.postgres import DatabaseNames
@@ -146,21 +151,32 @@ async def electric(
 
 
 @pytest.fixture
-async def gateway_port() -> AsyncIterator[int]:
-    """A scripted Runner service used by apps with no live Sandbox process."""
-    server = grpc.aio.server()
-    add_replication_source(ReplicationSource(), server)
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-        yield port
-
-
-@pytest.fixture
-async def gateway_client(gateway_port: int, tmp_path: Path) -> SandboxControlClient:
-    token_file = tmp_path / "gateway-token"
-    await asyncio.to_thread(token_file.write_text, "test-browser-gateway-peer")
-    return SandboxControlClient(
-        control_target=f"127.0.0.1:{gateway_port}", token_file=token_file, request_timeout_s=10, lifecycle_timeout_s=10
+def gateway_access(
+    history_api: KubernetesApiServer, sandbox: SandboxCluster, gateway_service: GatewayProcess, app_token_file: Path
+) -> GatewayAccess:
+    return GatewayAccess(
+        kubeconfig=history_api.kubeconfig,
+        namespace=sandbox.namespace,
+        sandbox=sandbox.name,
+        target=gateway_service.target,
+        dispatcher_http_url=gateway_service.http_url,
+        token_file=app_token_file,
     )
+
+
+@asynccontextmanager
+async def scripted_runner(
+    source: ReplicationSource,
+    sandbox: SandboxCluster,
+    gateway_service: GatewayProcess,
+    sandbox_control: SandboxControlClient,
+) -> AsyncIterator[None]:
+    """`source`'s scripted runner, connected to the Runner Gateway as `sandbox`'s runner."""
+    async with runner_connection(
+        gateway_service.target, await sandbox.pod_token(RUNNER_AUDIENCE), partial(add_replication_source, source)
+    ):
+        await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
+        yield
 
 
 @pytest.fixture
@@ -202,26 +218,31 @@ async def thread_browser(
     replay_after: int | None,
     electric: ElectricService,
     certificate: BrowserCertificate,
+    sandbox: SandboxCluster,
+    gateway_service: GatewayProcess,
+    sandbox_control: SandboxControlClient,
+    gateway_access: GatewayAccess,
 ) -> AsyncIterator[ThreadBrowser]:
     source = thread_source
     thread_id = await event_logs.seed(SANDBOX, SESSION)
     await store.rename(thread_id, "Browser thread")
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
-    server = grpc.aio.server()
-    add_replication_source(source, server)
     async with (
-        serving(server, "127.0.0.1:0", grace_s=0) as service_port,
+        scripted_runner(source, sandbox, gateway_service, sandbox_control),
         source.ingesting(history),
         app_process(
             db_url,
-            service_port,
             history_client,
+            gateway=gateway_access,
             frontend_directory=directory,
             replay_after=replay_after,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
+        # The operator session the app's relay of the Dispatcher's watch requires.
+        login = await page.request.post(f"{ingress.url}/test-login", params={"seconds": 3600})
+        assert login.ok, await login.text()
         async with asyncio.timeout(30):
             opened = await source.opened.get()
             await page.goto(f"{ingress.url}/#/threads/{thread_id}")

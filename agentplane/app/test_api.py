@@ -29,6 +29,7 @@ from agentplane.app.notifications_operator_client import NotificationsOperatorCl
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_access import SandboxAccess
+from agentplane.app.testing.dispatcher import served_dispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
@@ -39,8 +40,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc.calls import ServiceError, dial
-from agentplane.grpc.serving import serving
+from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.history import History
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
@@ -697,11 +697,8 @@ async def unanswered_dispatcher_service(
             raise AssertionError("the dispatch is never answered")
 
     cancelled: asyncio.Queue[str] = asyncio.Queue()
-    server = grpc.aio.server()
-    session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(UnansweredDispatcher(), server)
-    await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
-        yield (SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=1), cancelled)
+    async with served_dispatcher(UnansweredDispatcher(), token_file, request_timeout_s=1) as client:
+        yield (client, cancelled)
 
 
 @asynccontextmanager
@@ -723,11 +720,8 @@ async def queued_dispatcher_service(token_file: Path) -> AsyncIterator[SessionDi
                 )
             )
 
-    server = grpc.aio.server()
-    session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(QueuedDispatcher(), server)
-    await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
-        yield SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=5)
+    async with served_dispatcher(QueuedDispatcher(), token_file, request_timeout_s=5) as client:
+        yield client
 
 
 async def test_bridge_returns_the_dispatcher_queued_receipt_over_grpc(

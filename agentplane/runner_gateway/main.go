@@ -219,7 +219,6 @@ func serve(ctx context.Context, c config) error {
 		return err
 	}
 	defer listener.Close()
-	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
 	var facadeServer *http.Server
 	if c.HTTPListenAddress != "" {
@@ -227,6 +226,8 @@ func serve(ctx context.Context, c config) error {
 			return err
 		}
 	}
+	// Serving once both listeners accept, so a ready replica answers the facade too.
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	var result error
 	select {
 	case err := <-failed:

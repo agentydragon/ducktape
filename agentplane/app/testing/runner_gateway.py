@@ -15,6 +15,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.live import LiveIndex
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import bearer, dial
 from agentplane.history_service.testing.go_service import WRITER
 from agentplane.runner.testing.config import RunnerTestConfig
@@ -24,8 +25,9 @@ from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
+from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.guest_config import Endpoint
-from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster, sandbox_cluster
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.testing.postgres import DatabaseNames, create_temporary_database
@@ -52,12 +54,12 @@ def history_writer_namespaces(sandbox: SandboxCluster) -> Sequence[str]:
     return (sandbox.namespace, WRITER.namespace)
 
 
-async def discover(live_index: LiveIndex, sandbox: SandboxCluster) -> None:
-    """Index `sandbox` and its Pod as the app's informers would."""
-    live_index.sandboxes[SANDBOX] = await sandbox.sandbox()
-    live_index.pods[SANDBOX] = await k8s_client.CoreV1Api(sandbox.server.api).read_namespaced_pod(
-        SANDBOX, sandbox.namespace
+async def discover(live_index: LiveIndex, server: KubernetesApiServer, *, namespace: str, name: str) -> None:
+    """Index the Sandbox `name` and its Pod as the app's informers would."""
+    live_index.sandboxes[name] = await k8s_client.CustomObjectsApi(server.api).get_namespaced_custom_object(
+        GROUP, VERSION, namespace, SANDBOXES_PLURAL, name
     )
+    live_index.pods[name] = await k8s_client.CoreV1Api(server.api).read_namespaced_pod(name, namespace)
 
 
 @pytest.fixture

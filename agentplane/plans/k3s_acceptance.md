@@ -30,9 +30,6 @@ depends on.
 
 The reshuffle this implies:
 
-- **`APP_BRIDGE_TEST_SPLIT`.** The app's bridge tests run the app on a Python Dispatcher
-  (`RunnerProxyBackedDispatcher`), which drifted from the Go one: it answers after runner
-  admission, where the Go Dispatcher answers at enqueue.
 - **`FAKE_APISERVERS_TO_ENVTEST`.** Hand-written API servers and TokenReview stubs give way to
   envtest.
 - **`K3S_VM_ACCEPTANCE`.** VM Sandboxes need KubeVirt on k3s without KVM (finding 3).

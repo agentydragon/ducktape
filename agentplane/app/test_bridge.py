@@ -13,7 +13,7 @@ import json
 import logging
 import shlex
 from collections.abc import AsyncIterator, Callable
-from contextlib import aclosing, asynccontextmanager
+from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast, override
@@ -40,6 +40,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
+from agentplane.app.testing.dispatcher import served_dispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.runner_gateway import APP, admitted, delivered_opening, discover, session_dispatcher_client
@@ -132,17 +133,6 @@ async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session
         with attempt:
             assert (await http.get(f"/threads/{thread_id}")).status_code == 200
     return thread_id
-
-
-@asynccontextmanager
-async def served_dispatcher(
-    service: session_dispatcher_pb2_grpc.SessionDispatcherServicer, token_file: Path
-) -> AsyncIterator[SessionDispatcherClient]:
-    await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
-    server = grpc.aio.server()
-    session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(service, server)
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
-        yield SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=5)
 
 
 async def _submit_input(
@@ -274,7 +264,7 @@ async def local_runners(
     live_index: LiveIndex, sandbox: SandboxCluster, sandbox_control: SandboxControlClient, runner: RunningRunner
 ) -> RunnerDirectory:
     """`SANDBOX` in the app's index, its runner connected to the Gateway."""
-    await discover(live_index, sandbox)
+    await discover(live_index, sandbox.server, namespace=sandbox.namespace, name=sandbox.name)
     return RunnerDirectory(live_index, sandbox_control)
 
 
@@ -806,7 +796,9 @@ async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
                 state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED, admission=receipt
             )
 
-    async with served_dispatcher(AdmittedInterrupt(), tmp_path / "admitted-dispatcher-token") as client:
+    async with served_dispatcher(
+        AdmittedInterrupt(), tmp_path / "admitted-dispatcher-token", request_timeout_s=5
+    ) as client:
         bridge.dispatcher = client
         response = await bridge.dispatcher.unary(
             bridge.dispatcher.stub.InterruptTurn,

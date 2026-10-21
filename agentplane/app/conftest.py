@@ -28,7 +28,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.testing.dispatcher import runner_proxy_backed_dispatcher
+from agentplane.app.testing.dispatcher import served_dispatcher
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.notifications_operator import FakeNotificationsOperator
@@ -79,6 +79,7 @@ from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 # with the runner.
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
 from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.testing.runner_peer import Endpoint, runner_peer
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import (
@@ -252,11 +253,11 @@ def runners(live_index: LiveIndex, gateway: SandboxControlClient) -> RunnerDirec
 
 
 @pytest.fixture
-async def dispatcher(
-    runners: RunnerDirectory, event_logs: SeededEventLogStore, tmp_path: Path
-) -> AsyncIterator[SessionDispatcherClient]:
-    """The Dispatcher interface for app tests whose scenarios need a live local runner."""
-    async with runner_proxy_backed_dispatcher(runners, event_logs, tmp_path / "dispatcher-token") as client:
+async def dispatcher(tmp_path: Path) -> AsyncIterator[SessionDispatcherClient]:
+    """A Dispatcher implementing nothing, for app tests that never reach one."""
+    async with served_dispatcher(
+        session_dispatcher_pb2_grpc.SessionDispatcherServicer(), tmp_path / "dispatcher-token", request_timeout_s=5
+    ) as client:
         yield client
 
 

@@ -67,6 +67,8 @@ class GatewayProcess:
 
     process: asyncio.subprocess.Process
     target: str
+    # The Dispatcher's generated HTTP/JSON facade.
+    http_url: str
     log_path: Path
 
     def gateway_client(
@@ -190,6 +192,7 @@ async def run_gateway(
     await asyncio.to_thread(_migrate, database_url, migration_log)
 
     port = pick_free_port()
+    http_port = pick_free_port()
     binary = get_required_path(own_repo_rlocation(_GATEWAY_BINARY))
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
     # The settings file as the cdk8s renderer writes it: its keys checked against the Python model.
@@ -201,6 +204,7 @@ async def run_gateway(
             "runner_token_file": str(runner_proxy_token_file),
             "kubeconfig": str(kubeconfig),
             "listen_address": f"127.0.0.1:{port}",
+            "http_listen_address": f"127.0.0.1:{http_port}",
             "proxy_port": port,
             "runner_control_target_template": f"127.0.0.1:{port}",
             "dispatcher_audience": dispatcher_audience,
@@ -225,7 +229,9 @@ async def run_gateway(
         process = await asyncio.create_subprocess_exec(
             str(binary), env=environment, stdout=log_file, stderr=subprocess.STDOUT
         )
-        service = GatewayProcess(process=process, target=f"127.0.0.1:{port}", log_path=log_path)
+        service = GatewayProcess(
+            process=process, target=f"127.0.0.1:{port}", http_url=f"http://127.0.0.1:{http_port}", log_path=log_path
+        )
         try:
             await _wait_ready(service, timeout_s=startup_timeout_s)
             yield service

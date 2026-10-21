@@ -14,7 +14,6 @@ from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
-import grpc
 import pytest
 import pytest_bazel
 from google.protobuf import json_format
@@ -32,8 +31,8 @@ from sqlalchemy import select, update
 from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
-from agentplane.app.testing.replication_process import app_process
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource, add_replication_source
+from agentplane.app.testing.replication_process import GatewayAccess, app_process
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
     append_items,
@@ -42,10 +41,10 @@ from agentplane.app.testing.thread_browser import (
     expect_reading_anchor,
     frames,
     message_composer,
+    scripted_runner,
 )
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.grpc.serving import serving
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import (
@@ -64,6 +63,9 @@ from agentplane.postgres.wakeups import notify
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
@@ -94,14 +96,17 @@ async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[
     await page.route(url, first)
 
 
-def command_admission_receipt(body: str) -> event_log_pb2.EventEntry:
-    """Unwrap the tagged HTTP receipt: a Dispatcher result or an archived admission."""
+def dispatched_command_id(body: str) -> str:
+    """The command whose Dispatch the tagged HTTP receipt carries."""
     value = json.loads(body)
-    if value["kind"] == "dispatch":
-        dispatch = json_format.ParseDict(value["dispatch"], session_dispatcher_pb2.Dispatch())
-        assert dispatch.HasField("admission"), "these scenarios wait for runner admission"
-        return dispatch.admission
-    assert value["kind"] == "archived_admission"
+    assert value["kind"] == "dispatch", value
+    return json_format.ParseDict(value["dispatch"], session_dispatcher_pb2.Dispatch()).command_id
+
+
+def archived_admission(body: str) -> event_log_pb2.EventEntry:
+    """The archived admission the tagged HTTP receipt carries."""
+    value = json.loads(body)
+    assert value["kind"] == "archived_admission", value
     return json_format.ParseDict(value["admission"], event_log_pb2.EventEntry())
 
 
@@ -117,8 +122,10 @@ async def service_history_db_url(electric: ElectricService) -> str:
 
 
 @pytest.fixture
-def gateway(gateway_client: SandboxControlClient) -> SandboxControlClient:
-    return gateway_client
+async def sandbox(history_api: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
+    """The `ReplicationSource`'s."""
+    async with sandbox_cluster(history_api, name=SANDBOX) as started:
+        yield started
 
 
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
@@ -130,7 +137,6 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     thread_source: ReplicationSource,
     electric: ElectricService,
     certificate: BrowserCertificate,
-    gateway_port: int,
 ) -> None:
     thread_id = await event_logs.seed(SANDBOX, SESSION)
     await history.set_attached(thread_id, thread_source.attached)
@@ -139,12 +145,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url,
-            service_port=gateway_port,
-            history=event_logs.reader,
-            frontend_directory=directory,
-            sandbox_present=False,
-            electric_url=electric.url,
+            db_url, history=event_logs.reader, gateway=None, frontend_directory=directory, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -215,18 +216,12 @@ async def test_switching_threads_starts_at_each_threads_tail(
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
-    gateway_port: int,
 ) -> None:
     threads, _ = await _seed_navigation_threads(event_logs, history, store)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url,
-            service_port=gateway_port,
-            history=event_logs.reader,
-            frontend_directory=directory,
-            sandbox_present=False,
-            electric_url=electric.url,
+            db_url, history=event_logs.reader, gateway=None, frontend_directory=directory, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -259,7 +254,6 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
-    gateway_port: int,
 ) -> None:
     """The history lays an unmeasured row out at a flat guess; one it has read before, at the height
     it read. Rows read on a thread's first visit are laid out at those heights on the return."""
@@ -267,12 +261,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url,
-            service_port=gateway_port,
-            history=event_logs.reader,
-            frontend_directory=directory,
-            sandbox_present=False,
-            electric_url=electric.url,
+            db_url, history=event_logs.reader, gateway=None, frontend_directory=directory, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -320,18 +309,12 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
-    gateway_port: int,
 ) -> None:
     threads, sources = await _seed_navigation_threads(event_logs, history, store)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url,
-            service_port=gateway_port,
-            history=event_logs.reader,
-            frontend_directory=directory,
-            sandbox_present=False,
-            electric_url=electric.url,
+            db_url, history=event_logs.reader, gateway=None, frontend_directory=directory, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -524,6 +507,10 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     history: History,
     history_client: HistoryServiceClient,
     electric: ElectricService,
+    sandbox: SandboxCluster,
+    gateway_service: GatewayProcess,
+    sandbox_control: SandboxControlClient,
+    gateway_access: GatewayAccess,
 ) -> None:
     source = ReplicationSource()
     source.attached.active_turn_id = "test-projected-turn"
@@ -578,13 +565,11 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     thread = await event_logs.seed(SANDBOX, SESSION)
     await store.rename(thread, "Streamed thread")
-    server = grpc.aio.server()
-    add_replication_source(source, server)
     async with (
-        serving(server, "127.0.0.1:0", grace_s=0) as service_port,
+        scripted_runner(source, sandbox, gateway_service, sandbox_control),
         source.ingesting(history),
         app_process(
-            db_url, service_port, history_client, frontend_directory=directory, electric_url=electric.url
+            db_url, history_client, gateway=gateway_access, frontend_directory=directory, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
         asyncio.timeout(60),
@@ -2069,12 +2054,11 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
             response = await replies.get()
             command = await source.runner.commands.get()
         assert response.status == 200
-        admission = command_admission_receipt(await response.text())
-        assert admission.event.command_admitted.command == command
+        assert dispatched_command_id(await response.text()) == command.command_id
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         await expect_pending_message_bubble(page, command.submit_input.text)
         archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
-        assert admission in archived
+        assert any(entry.event.command_admitted.command == command for entry in archived)
 
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
@@ -2110,10 +2094,10 @@ async def test_lost_runner_receipt_reconciles_from_thread_without_retry(thread_b
         receipt = await receipts.get()
         original = await source.runner.commands.get()
     assert receipt.status == 200
-    admitted = command_admission_receipt(await receipt.text())
-    assert admitted.event.command_admitted.command == original
+    assert dispatched_command_id(await receipt.text()) == original.command_id
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert admitted in await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
+    archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
+    assert any(entry.event.command_admitted.command == original for entry in archived)
     await expect_pending_message_bubble(page, original.submit_input.text)
     await expect(page.locator('[data-stage="unconfirmed"]')).to_have_count(0)
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
@@ -2206,9 +2190,9 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             command = await source.runner.commands.get()
             assert (await app.replay_held()).cursor >= 5
         assert response.status == 200
-        admission = command_admission_receipt(await response.text())
+        assert dispatched_command_id(await response.text()) == command.command_id
+        admission = source.entries[4]
         assert admission.event.command_admitted.command == command
-        assert admission == source.entries[4]
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
@@ -2227,7 +2211,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             await page.reload()
         redelivery = await redelivered.value
         assert redelivery.status == 200
-        assert command_admission_receipt(await redelivery.text()) == admission
+        assert archived_admission(await redelivery.text()) == admission
         async with asyncio.timeout(15):
             assert (await app.replay_held()).cursor >= 5
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
@@ -2281,9 +2265,8 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     async with asyncio.timeout(15):
         command = await source.runner.commands.get()
     assert response.status == 200
-    admission = command_admission_receipt(await response.text())
-    assert admission.event.command_admitted.command == command
-    assert admission == source.entries[6]
+    assert dispatched_command_id(await response.text()) == command.command_id
+    assert source.entries[6].event.command_admitted.command == command
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
 
@@ -2344,9 +2327,8 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
             command = await source.runner.commands.get()
             assert (await app.replay_held()).cursor >= 5
         assert response.status == 200
-        admission = command_admission_receipt(await response.text())
-        assert admission == source.entries[4]
-        assert admission.event.command_admitted.command == command
+        assert dispatched_command_id(await response.text()) == command.command_id
+        assert source.entries[4].event.command_admitted.command == command
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
         pending = page.get_by_role("region", name="Input messages")

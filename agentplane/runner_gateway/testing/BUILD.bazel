@@ -45,3 +45,16 @@ py_library(
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
+
+py_library(
+    name = "runner_connection",
+    srcs = ["runner_connection.py"],
+    deps = [
+        "//agentplane/grpc:calls",
+        "//agentplane/grpc:tunnel",
+        "//agentplane/runner_gateway:runner_control_pb2",
+        "//agentplane/runner_gateway:runner_control_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)

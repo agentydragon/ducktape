@@ -21,6 +21,7 @@ from tempfile import TemporaryDirectory
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+import grpc
 import httpx
 import uvicorn
 from fastapi.staticfiles import StaticFiles
@@ -38,11 +39,13 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.testing.dispatcher import runner_proxy_backed_dispatcher
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
-from agentplane.app.testing.replication_source import SANDBOX
+from agentplane.app.testing.notifications_operator import FakeNotificationsOperator
+from agentplane.app.testing.operator_streams import OIDC, with_test_login
+from agentplane.app.testing.runner_gateway import discover
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.history_watch import HistoryWatch, SessionOpenings
 from agentplane.app.threads.runner_directory import RunnerDirectory
@@ -52,13 +55,17 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
+from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import Freshness
+from agentplane.notification_service import notifications_operator_pb2_grpc
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.inventory import SandboxInventory
-from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
+from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 from agentplane.subjects import ServiceAccountRef
+from agentplane.testing.kubernetes_apiserver import kubernetes_api
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -68,6 +75,19 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 @dataclass(frozen=True)
 class Ready:
     url: str
+
+
+@dataclass(frozen=True)
+class GatewayAccess:
+    """The Runner Gateway an app process reaches, and the Sandbox behind it that the app indexes."""
+
+    kubeconfig: Path
+    namespace: str
+    sandbox: str
+    target: str
+    dispatcher_http_url: str
+    # The app's projected token, for both the Dispatcher and the Runner proxy.
+    token_file: Path
 
 
 @dataclass(frozen=True)
@@ -191,12 +211,11 @@ class ReadyServer(uvicorn.Server):
 
 def _run(
     database_url: str,
-    service_port: int,
+    gateway: GatewayAccess | None,
     history_target: str,
     history_token_file: Path,
     connection: Connection,
     frontend_directory: Path | None,
-    sandbox_present: bool,
     replay_after: int | None,
     electric_url: str | None,
     electric_log_path: Path | None,
@@ -217,12 +236,11 @@ def _run(
         asyncio.run(
             _serve(
                 database_url,
-                service_port,
+                gateway,
                 history_target,
                 history_token_file,
                 connection,
                 frontend_directory,
-                sandbox_present,
                 replay_after,
                 electric_url,
             )
@@ -237,12 +255,11 @@ def _run(
 
 async def _serve(
     database_url: str,
-    service_port: int,
+    gateway: GatewayAccess | None,
     history_target: str,
     history_token_file: Path,
     connection: Connection,
     frontend_directory: Path | None,
-    sandbox_present: bool,
     replay_after: int | None,
     electric_url: str | None,
 ) -> None:
@@ -253,123 +270,135 @@ async def _serve(
         freshness=Freshness(stale_after_seconds=90, at={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)}),
         core_v1=core,
     )
-    if sandbox_present:
-        raw, running = seed_runner(custom, core, SANDBOX)
-        index.sandboxes[SANDBOX] = raw
-        index.pods[SANDBOX] = running
+    if gateway is not None:
+        async with kubernetes_api(gateway.kubeconfig) as kubernetes:
+            await discover(index, kubernetes, namespace=gateway.namespace, name=gateway.sandbox)
+        # The inventory holds what the index does, as the informers feeding both would.
+        custom.objects[(SANDBOXES_PLURAL, gateway.sandbox)] = index.sandboxes[gateway.sandbox]
+        core.pods[gateway.sandbox] = index.pods[gateway.sandbox]
     with TemporaryDirectory() as directory:
-        token_file = Path(directory) / "token"
-        await asyncio.to_thread(token_file.write_text, "test-app-sandbox-peer")
+        if gateway is None:
+            token_file = Path(directory) / "token"
+            await asyncio.to_thread(token_file.write_text, "test-app-unused-token")
+            target, dispatcher_http_url = (
+                "test-unused-runner-gateway.invalid:8080",
+                "http://test-unused-dispatcher.invalid",
+            )
+        else:
+            token_file, target, dispatcher_http_url = gateway.token_file, gateway.target, gateway.dispatcher_http_url
         history = HistoryServiceClient(history_target, token_file=history_token_file, request_timeout_s=10)
         summaries = Summaries(history)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         content = ContentStore(engine, history_reader=history)
+        notices = grpc.aio.server()
+        # Open and silent, as an idle inbox's notices are.
+        notifications_operator_pb2_grpc.add_NotificationsOperatorServicer_to_server(
+            FakeNotificationsOperator(), notices
+        )
         async with (
             history,
             history.new_client() as watch_client,
             history.new_client() as openings_client,
             dial("test-unused-decisions.invalid:8081") as decisions_channel,
-            dial("test-unused-notifications.invalid:8080") as notifications_channel,
+            serving(notices, "127.0.0.1:0", grace_s=0) as notices_port,
+            dial(f"127.0.0.1:{notices_port}") as notifications_channel,
             httpx.AsyncClient(
                 base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
             ) as electric_http,
-            httpx.AsyncClient(base_url="http://test-unused-dispatcher.invalid") as dispatcher_facade,
+            dial(target) as dispatcher_channel,
+            httpx.AsyncClient(base_url=dispatcher_http_url) as dispatcher_facade,
         ):
             inventory = SandboxAccess(
                 SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core),
                 default_policy_sets=frozenset(),
                 caller=ServiceAccountRef(namespace=NAMESPACE, name="app"),
             )
-            gateway = SandboxControlClient(
-                control_target=f"127.0.0.1:{service_port}",
-                token_file=token_file,
-                request_timeout_s=10,
-                lifecycle_timeout_s=10,
+            control = SandboxControlClient(
+                control_target=target, token_file=token_file, request_timeout_s=10, lifecycle_timeout_s=10
             )
             store = ThreadStore(engine, summaries)
-            runners = RunnerDirectory(index, gateway)
-            async with runner_proxy_backed_dispatcher(
-                runners, event_logs, Path(directory) / "dispatcher-token"
-            ) as dispatcher:
-                bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
-                history_watch = HistoryWatch(
-                    watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
-                )
-                action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
-                egress = EgressAccess(namespace=NAMESPACE, custom_objects=custom, action_policy=action_policy)
-                app = create_app(
-                    inventory,
-                    bridge,
-                    store,
-                    ModelCatalog(
-                        models=[
-                            ModelOption(
-                                model="test-model-before",
-                                display_name="Test Model Before",
-                                reasoning_efforts=list(TEST_REASONING_EFFORTS),
-                            ),
-                            ModelOption(
-                                model="test-model-after",
-                                display_name="Test Model After",
-                                reasoning_efforts=list(TEST_REASONING_EFFORTS),
-                            ),
-                        ],
-                        harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
-                    ),
-                    egress,
-                    DecisionsClient(
-                        decisions_channel, token_file=Path(directory) / "egress-token", request_timeout_s=1
-                    ),
-                    index,
-                    action_policy,
-                    electric=ElectricProxy(
-                        electric_http,
-                        content,
-                        event_logs=event_logs,
-                        thread_changes=database_updates.changes[Channel.THREADS],
-                    ),
+            runners = RunnerDirectory(index, control)
+            dispatcher = SessionDispatcherClient(dispatcher_channel, token_file=token_file, request_timeout_s=10)
+            bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
+            history_watch = HistoryWatch(
+                watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
+            )
+            action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
+            egress = EgressAccess(namespace=NAMESPACE, custom_objects=custom, action_policy=action_policy)
+            app = create_app(
+                inventory,
+                bridge,
+                store,
+                ModelCatalog(
+                    models=[
+                        ModelOption(
+                            model="test-model-before",
+                            display_name="Test Model Before",
+                            reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                        ),
+                        ModelOption(
+                            model="test-model-after",
+                            display_name="Test Model After",
+                            reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                        ),
+                    ],
+                    harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
+                ),
+                egress,
+                DecisionsClient(decisions_channel, token_file=Path(directory) / "egress-token", request_timeout_s=1),
+                index,
+                action_policy,
+                # A browser's app has operator sessions, which the operator-only relays require.
+                OIDC if frontend_directory is not None else None,
+                electric=ElectricProxy(
+                    electric_http,
+                    content,
                     event_logs=event_logs,
-                    content=content,
-                    database_updates=database_updates,
-                    operator_sessions=OperatorSessionStore(engine),
-                    dispatcher_http=UpstreamProxy(dispatcher_facade, Path(directory) / "dispatcher-token"),
-                    notifications=NotificationsOperatorClient(
-                        notifications_channel, token_file=Path(directory) / "notifications-token", request_timeout_s=1
-                    ),
-                    system_status=answering_system_status(),
+                    thread_changes=database_updates.changes[Channel.THREADS],
+                ),
+                event_logs=event_logs,
+                content=content,
+                database_updates=database_updates,
+                operator_sessions=OperatorSessionStore(engine),
+                dispatcher_http=UpstreamProxy(dispatcher_facade, token_file),
+                notifications=NotificationsOperatorClient(
+                    notifications_channel, token_file=Path(directory) / "notifications-token", request_timeout_s=1
+                ),
+                system_status=answering_system_status(),
+            )
+            # Authentication is tested separately; the production routes, HTTP transport, ingestion,
+            # PostgreSQL notifications, and SSE generator all run here unchanged.
+            app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
+            if frontend_directory is not None:
+                with_test_login(app)
+                app.add_middleware(EmptyActionsStream)
+            if replay_after is not None:
+                app.add_middleware(
+                    GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
                 )
-                # Authentication is tested separately; the production routes, HTTP transport, ingestion,
-                # PostgreSQL notifications, and SSE generator all run here unchanged.
-                app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
-                if frontend_directory is not None:
-                    app.add_middleware(EmptyActionsStream)
-                if replay_after is not None:
-                    app.add_middleware(
-                        GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
+            if frontend_directory is not None:
+                app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
+            try:
+                async with database_updates.listener.listen():
+                    watching = asyncio.create_task(history_watch.run(), name="test-app-history-watch")
+                    opening = asyncio.create_task(
+                        SessionOpenings(openings_client, event_logs, retry_interval_s=0.05).run(),
+                        name="test-app-session-openings",
                     )
-                if frontend_directory is not None:
-                    app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
-                try:
-                    async with database_updates.listener.listen():
-                        watching = asyncio.create_task(history_watch.run(), name="test-app-history-watch")
-                        opening = asyncio.create_task(
-                            SessionOpenings(openings_client, event_logs, retry_interval_s=0.05).run(),
-                            name="test-app-session-openings",
-                        )
-                        try:
-                            with socket.socket() as listener:
-                                listener.bind(("127.0.0.1", 0))
-                                url = f"http://127.0.0.1:{listener.getsockname()[1]}"
-                                await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(
-                                    sockets=[listener]
-                                )
-                        finally:
-                            watching.cancel()
-                            opening.cancel()
-                            await asyncio.gather(watching, opening, return_exceptions=True)
-                finally:
-                    await engine.dispose()
-                    await core.close()
+                    try:
+                        with socket.socket() as listener:
+                            listener.bind(("127.0.0.1", 0))
+                            url = f"http://127.0.0.1:{listener.getsockname()[1]}"
+                            await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(
+                                sockets=[listener]
+                            )
+                    finally:
+                        watching.cancel()
+                        opening.cancel()
+                        await asyncio.gather(watching, opening, return_exceptions=True)
+            finally:
+                await engine.dispose()
+                await core.close()
 
 
 async def receive(connection: Connection) -> object:
@@ -409,11 +438,10 @@ class AppProcess:
 @asynccontextmanager
 async def app_process(
     database_url: str,
-    service_port: int,
     history: HistoryServiceClient,
     *,
+    gateway: GatewayAccess | None,
     frontend_directory: Path | None = None,
-    sandbox_present: bool = True,
     replay_after: int | None = None,
     electric_url: str | None = None,
 ) -> AsyncIterator[AppProcess]:
@@ -428,12 +456,11 @@ async def app_process(
         target=_run,
         args=(
             database_url,
-            service_port,
+            gateway,
             history.target,
             history.token_file,
             child,
             frontend_directory,
-            sandbox_present,
             replay_after,
             electric_url,
             electric_log_path,
