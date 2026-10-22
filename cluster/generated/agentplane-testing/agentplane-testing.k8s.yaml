@@ -315,8 +315,9 @@ spec:
       isolationCheck:
         enabled: false
   storage:
+    resizeInUseVolumes: false
     size: 5Gi
-    storageClass: local-path-ovh-ssd
+    storageClass: piraeus-ssd-local
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
