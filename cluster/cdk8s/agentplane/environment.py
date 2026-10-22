@@ -117,7 +117,7 @@ class ActionsProps:
     """This environment's Actions runtime, settings and secret wiring."""
 
     operator_oidc: OperatorOidcSettings
-    # CLEANUP(added 2026-10-21): Remove Python and this selector after ACTION_SERVICE_GO_PORT stage N.
+    # CLEANUP(added 2026-10-21): Remove Python and this selector after ACTION_SERVICE_GO_PORT stage O.
     runtime: Literal["python", "go"]
     # Its own namespace included; the Action Service watches policies in its own.
     caller_service_account_namespaces: frozenset[str]

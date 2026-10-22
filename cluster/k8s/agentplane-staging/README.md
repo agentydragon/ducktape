@@ -16,13 +16,22 @@ asynchronously outside the artifact.
 
 The shared `all-images` automation owns the tags in `image-pins/` through Flux Setters
 markers. The runner-owned lifecycle promotion and deployed acceptance are complete;
-all service and runner image families have their markers restored. No staging starts
-hold remains. See the [lifecycle contract](../../../agentplane/docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle).
+all service and runner image families have their markers restored. The Go Actions cutover
+promotes the Go service and Goose migrator with its generated-client app, Notification
+Service, runner disk, and Sandbox images. No staging starts hold remains. See the
+[lifecycle contract](../../../agentplane/docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle).
 
 The `agentplane-staging` and `agentplane-staging-delivery` Flux Kustomizations consume
 this Component from the repo source. A template update affects future Sandbox
 incarnations; it does not upgrade a running Sandbox. Keep existing Sandbox UIDs and
 storage when suspending/resuming to adopt a new runner image.
+
+The Actions Go cutover keeps the existing database, Connection and grant rows, and
+Sandbox storage. It does not reset or recreate them. The Go authorization server stores
+local opaque tokens as hashes and keeps recoverable upstream refresh tokens in PostgreSQL
+as plaintext, which the operator accepted for this rollout. Existing external MCP clients
+must authorize once after the service switch; reconnect through the app preserves the
+existing Connection identity after operator confirmation.
 
 ## Action policies
 

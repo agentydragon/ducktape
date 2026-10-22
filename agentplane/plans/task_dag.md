@@ -29,7 +29,7 @@ code-mode fixture) have no group. `REFACTOR_COHERENCE_AUDIT` sweeps what remains
 ```mermaid
 flowchart LR
     subgraph ACTION_TRACK[Action Service Go port]
-        ACTION_SERVICE_GO_PORT[In flight: port, cutover and Python retirement]
+        ACTION_SERVICE_GO_PORT[In review: stage N; stage M accepted; stage O remains]
         ACTION_MCP_EDGE_SPLIT[Blocked: split mcp-edge out after the flip]
     end
     subgraph MESSAGING_TRACK[Agent messaging]
@@ -1803,7 +1803,7 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 ```mermaid
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
-    ACTION_SERVICE_GO_PORT[In flight: port the Action Service to Go]
+    ACTION_SERVICE_GO_PORT[In review: stage N staging cutover]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
     ACTION_SERVICE_GO_PORT -. related .-> WEB_PUSH_SERVICE
@@ -1820,13 +1820,15 @@ check on `thread_observations` (404 for a Session no Thread links) is kept or dr
 
 ### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
 
-**Rollout in flight; operator, 2026-10-22: proceed testing, then staging, then Python retirement;
-restoration testing waived, existing data preserved.** The Go service, generated CLI/app/Notification
-callers and Go-backed K3s acceptance are merged in #11454, including the cleanup in #11459 and #11460.
-Testing/staging still need coordinated runtime and caller image pins, verified fresh/resumed
-Sandbox CLIs, and deployed-path checks. The operator accepts unencrypted database secrets; retain
-Connection identities. The existing controller refreshes the runner-disk template on resume; do not recreate
-Sandboxes or their storage. Remaining stages and the later edge split:
+**Stage M accepted 2026-10-22; stage N cutover in review; stage O Python retirement remains.**
+The Go service, generated CLI/app/Notification callers and Go-backed K3s acceptance are merged in
+#11454, including the cleanup in #11459 and #11460. Testing's Go deployment and disposable Sandbox
+CLI-through-egress probe passed; the staging image-pin file carries the selected tested tags. The
+staging source change coordinates the service, Goose migrator, generated callers, Go
+probes and runner-disk/Sandbox images. Preserve the staging database, Connection identities,
+Sandboxes and their storage; restoration testing is waived and unencrypted database secrets are
+accepted. The existing controller refreshes the runner-disk template on resume. Remaining stages
+and the later edge split:
 [Action Service Go rollout](action_service_go_port.md).
 
 ### `ACTION_MCP_EDGE_SPLIT` — split `mcp-edge` out of the Action Service
