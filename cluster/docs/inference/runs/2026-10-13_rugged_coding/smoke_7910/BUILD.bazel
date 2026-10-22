@@ -1,0 +1,23 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "run_fully_offline_task",
+    srcs = ["run_fully_offline_task.py"],
+    data = ["offline_task_bootstrap.py"],
+)
+
+py_library(
+    name = "run_repair_continuation",
+    srcs = ["run_repair_continuation.py"],
+    data = ["repair_continuation_bootstrap.py"],
+)
+
+py_library(
+    name = "offline_task_bootstrap",
+    srcs = ["offline_task_bootstrap.py"],
+)
+
+py_library(
+    name = "repair_continuation_bootstrap",
+    srcs = ["repair_continuation_bootstrap.py"],
+)
