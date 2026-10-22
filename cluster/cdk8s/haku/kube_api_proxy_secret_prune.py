@@ -14,10 +14,7 @@ NAMESPACE = "haku-console"
 # cert-manager and Reflector leave these output Secrets without owner references. This
 # temporary inventory adopts them without applying data; remove its Flux Kustomization
 # after the source owners have reconciled away to let Flux prune the keys.
-_SECRETS = (
-    ("haku-console-public-coder-agent", "Opaque"),
-    ("haku-kube-api-proxy-tls", "kubernetes.io/tls"),
-)
+_SECRETS = (("haku-console-public-coder-agent", "Opaque"), ("haku-kube-api-proxy-tls", "kubernetes.io/tls"))
 
 
 def chart(app: App) -> Chart:

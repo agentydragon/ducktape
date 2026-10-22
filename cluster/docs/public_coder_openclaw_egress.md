@@ -86,13 +86,13 @@ was only the `password` JSON field on
 
 Existing environment-variable names stay stable:
 
-| Variable                           | Agentplane credential name  |
-| ---------------------------------- | --------------------------- |
-| `GH_PAT`, `GITHUB_TOKEN`           | `github-pat`                |
-| `CLICKHOUSE_PUBLIC_CODER_PASSWORD` | `public-coder-clickhouse`   |
-| `AIQUOTA_API_BEARER_TOKEN`         | `aiquota-read`              |
-| `BRAVE_API_KEY`                    | `brave-search`              |
-| `MATRIX_PASSWORD`                  | `public-coder-matrix`       |
+| Variable                           | Agentplane credential name |
+| ---------------------------------- | -------------------------- |
+| `GH_PAT`, `GITHUB_TOKEN`           | `github-pat`               |
+| `CLICKHOUSE_PUBLIC_CODER_PASSWORD` | `public-coder-clickhouse`  |
+| `AIQUOTA_API_BEARER_TOKEN`         | `aiquota-read`             |
+| `BRAVE_API_KEY`                    | `brave-search`             |
+| `MATRIX_PASSWORD`                  | `public-coder-matrix`      |
 
 The generator supplied canonical placeholders, the Matrix proxy setting, and a kubeconfig;
 this PR removes the kubeconfig and Haku token placeholder.

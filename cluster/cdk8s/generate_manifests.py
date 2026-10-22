@@ -158,8 +158,8 @@ from cluster.cdk8s.grocy import (
 from cluster.cdk8s.haku import (
     charts as haku_charts,
     flux_kustomizations as haku_flux_kustomizations,
-    kube_api_proxy_secret_prune as haku_kube_api_proxy_secret_prune,
     forgejo_tea as haku_forgejo_tea,
+    kube_api_proxy_secret_prune as haku_kube_api_proxy_secret_prune,
     mailbox as haku_mailbox,
     namespace as haku_namespace,
     rbac as haku_rbac,
