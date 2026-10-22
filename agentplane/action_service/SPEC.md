@@ -12,42 +12,28 @@ surfaces do not require caller admission.
 
 ## Caller admission and Connection authority
 
-**Every** caller is a Kubernetes ServiceAccount carrying the label
-`agentplane.allegedly.works/use-action-service: "true"` in a namespace the service accepts callers
-from, whether it proves that account with a Pod-bound workload token or through an external
-Connection acting as it. Authenticating is not being admitted: an unlabeled account cannot submit
-Actions, so a workload the operator has not named cannot queue Actions for them either. Nothing is
-admitted before the ServiceAccount watch has synced. The service lists the labeled accounts to the
-operator, which is what a Connection's consent picks from. The
-single operator can inspect Connections, rename them, and unbind them. A Connection's UUID does
-not change on rename; names are presentation and need not be unique.
+Every caller is a Kubernetes ServiceAccount carrying the label
+`agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace.
+A Pod-bound workload token proves that account directly; an external MCP bearer proves an active
+Connection grant whose currently bound account is admitted by the same label. Nothing is admitted
+before the ServiceAccount watch has synced. Missing or unlabeled accounts cannot submit Actions.
 
-The trusted OAuth adapter reserves a pending grant only after consent, then activates it after
-verified issuance. A pending grant has an activation deadline and cannot authorize calls. Exact
-binding retries recover the same grant and Connection; conflicting retries are refused.
-Each grant retains the ServiceAccount it acts as, its exact verified downstream issuer/client
-pair, Connection UUID and binding revision. Those fields do not change on rename or reconnect.
+The operator can inspect Connections, rename them, rebind them to an eligible ServiceAccount, and
+unbind them. Updates carry the reviewed version; an already-unbound Connection returns unchanged.
+A Connection's UUID survives rename and rebind; names need not be unique. Each grant retains its original caller and immutable grant
+revision, while future requests from its existing token act as the Connection's current bound
+account. Rebinding does not require issuing another token.
 
-Reconnect revokes the previous grant and creates a new pending revision. Existing credentials never
-acquire the replacement ServiceAccount's authority. Unbind and grant revocation take effect on the
-next authority resolution; a ServiceAccount that is missing, unlabeled, or not yet seen by the
-watch also refuses resolution. Revoking an old grant cannot revoke its replacement. No grant or
-Connection history is deleted.
+A grant is created active in the transaction that issues its OAuth tokens. Reconnect revokes the
+previous grants and creates a new revision. Unbind, revocation, or loss of the current account's
+admission refuses subsequent MCP authority resolution. Revoking an old grant cannot revoke its
+replacement, and no Connection or grant history is deleted.
 
-Resolved external principals use the ServiceAccount as their receipt/idempotency scope:
-Connections acting as the same ServiceAccount share reads, while different ServiceAccounts remain
-isolated. The submitting grant is separate provenance. The Connection authority is implemented
-independently of the OAuth adapter; no external bearer admission is enabled by these management
-endpoints.
-
-Each externally admitted Action retains an immutable snapshot of its submitting grant independently
-of caller-supplied metadata. A shared-ServiceAccount repeat of a key is refused, and the lookup by
-key returns the first Action with its original provenance; rename, reconnect, refresh and
-revocation cannot rewrite that evidence.
-Admission and dispatch authorization are atomic with revocation. Dispatch requires the original
-grant and its ServiceAccount still to authorize the Action, not a later replacement binding.
-Loss of authority before the dispatch claim fails the unstarted Execution without changing its
-historical Decision or invoking an executor. Revocation does not stop already claimed work.
+The core receives a ServiceAccount principal and has no Connection authority or grant provenance.
+Requests and idempotency keys are scoped to the submitting account. Connections acting as the
+same account share its receipt reads; different accounts remain isolated. Rebinding changes only
+future submissions, not the account of an existing Action. Revoking a Connection stops further
+requests; it does not cancel an Action the core has already accepted.
 
 ## Action policies
 
@@ -102,22 +88,21 @@ named subject.
 
 ## External OAuth consent
 
-An enrollment names one validated OAuth authorization and expires within fifteen minutes. The
-operator previews and decides it through an authenticated, browser-bound interface. Only that
-browser and operator can decide or recover its result. Approval selects a labeled caller
-ServiceAccount and either a new Connection name or an explicitly confirmed existing Connection and
-its reviewed version; denial grants no authority. A changed or stale decision cannot
-overwrite the original, and an exact retry recovers it.
+An enrollment names one validated OAuth authorization and expires within fifteen minutes. Its
+first authenticated preview pins it to that operator's issuer and subject. That operator can
+approve an eligible ServiceAccount and either a new Connection name or an explicitly confirmed
+existing Connection and its reviewed version. Denial grants no authority. A different operator
+cannot inspect or decide the enrollment; browser identity does not supply authority.
 
-Existing-Connection selection supports reconnecting to the same ServiceAccount or changing it
-only through fresh OAuth. Version changes after consent refuse replacement. Reserving the new
-grant at token exchange revokes prior grants before activation; failed issuance never restores
-them. Consent alone does not revoke the existing grant, and old credentials never retarget.
+A decision is accepted once. Any later decision, including an identical retry after a lost
+answer, is refused and requires restarting authorization. An enrollment version or existing
+Connection version that changed since review also refuses the decision or activation.
 
-Before token issuance, the authenticated upstream operator must match the consent operator.
-Consent does not itself activate a grant. Each approved enrollment permits only one token-family
-exchange claim; an ambiguous failure after that claim requires fresh authorization. An old
-authorization cannot be matched to replacement consent by reusing its client/redirect/PKCE tuple.
+The upstream authenticated operator must match the consent operator before token issuance. Consent
+alone does not activate a grant. An approved enrollment permits one token-family exchange claim;
+an ambiguous failure after that claim requires fresh authorization. Activation creates the grant
+active in the same transaction as token issuance and revokes replaced grants. An old authorization
+cannot acquire replacement consent by reusing its client, redirect and PKCE tuple.
 
 ## Cancellation
 
@@ -160,7 +145,7 @@ periodic state-query fallback.
 
 ## Actions MCP frontend
 
-The Action Service serves a generic MCP frontend in the same process, with the same catalog,
+When OAuth is configured, the Action Service serves a generic MCP frontend in the same process, with the same catalog,
 admission, Decision, Execution, and receipt authority as its HTTP interface. Its fixed tools
 discover Actions, submit/cancel requests, read receipts and results, and page durable events. A result
 reads as the tool that ran answered, an MCP backend's own result exactly with every content block, and a
@@ -172,18 +157,15 @@ durations are bounded, and backend configuration is never exposed.
 
 A caller on an external Connection also sees direct tools: the Actions its group's reviewed
 configuration names, each as an MCP tool of its own, listed where a policy bound to the caller could
-auto-approve it. A direct call is an ordinary Action with the same admission, Decision, Execution and
-provenance. One that no policy decides is refused before anything is persisted, with the reason, so
+auto-approve it. A direct call is an ordinary Action with the same caller scope, admission, Decision and Execution. One that no policy decides is refused before anything is persisted, with the reason, so
 it never waits for a human; one still running after a bounded wait answers with its request instead
-of its result. A caller admitted by a workload token sees only the fixed tools.
+of its result.
 
-Every MCP HTTP request authenticates its bearer, with live workload validation for in-cluster callers.
-Reused MCP session identifiers confer no authority. Long waits revalidate
-caller authorization before returning data. Operator bearers, unexchanged credential placeholders,
+Every MCP HTTP request authenticates an access token issued by the local OAuth server.
+Reused MCP session identifiers confer no authority. Core calls and watch frames resolve the bearer
+against current admission and Connection state. Operator bearers, unexchanged credential placeholders,
 and caller-supplied identity/policy claims cannot acquire this authority. An Origin header does not
-grant authority or categorically disqualify a caller; FastMCP provides automatic Host/Origin
-protection for loopback access. Browser cookies are not authentication on this endpoint.
-When external OAuth is configured, the frontend also accepts verified, active Connection grants.
+grant authority or categorically disqualify a caller. Browser cookies are not authentication on this endpoint.
 Clients may use DCR registration or HTTPS Client ID Metadata Documents (CIMD).
 Neither registration nor metadata discovery is authority. Consent binds one labeled caller
 ServiceAccount and named Connection to the validated authorization interaction and approving
@@ -191,13 +173,12 @@ operator; upstream issuer/subject must match the explicit operator mapping befor
 One consent permits at most one token family. Ambiguous post-claim issuance requires fresh
 authorization.
 
-Refresh and bearer admission resolve current canonical grant validity. Ended bindings cannot
-acquire replacement ServiceAccount authority. External receipts/idempotency are
-ServiceAccount-scoped while each Action permanently records exact submitting
-Connection/grant/revision/issuer/client evidence.
-In-cluster authentication remains live-workload-based; neither path accepts operator credentials as
-a caller bypass. OAuth protocol state shares durable encrypted storage and stable configured keys
-across replacement/replicas. Enabling these contracts does not imply deployed client acceptance.
+Refresh and bearer admission resolve current canonical grant validity and the current Connection
+binding. External receipts and idempotency are ServiceAccount-scoped. Connections retain their grant
+history; accepted Actions retain their submitting account independently of later Connection changes.
+In-cluster Actions RPCs and their HTTP facade use live workload authentication; workload tokens
+do not authenticate to `/mcp`. Neither path accepts operator credentials as a caller bypass. OAuth protocol state is durable across replacement and replicas. Recoverable upstream refresh
+tokens are stored in the service database; issued opaque token values are stored only as hashes. Enabling these contracts does not imply deployed client acceptance.
 
 MCP cancellation uses the same owner-only, pre-dispatch-claim cutoff and typed outcomes as the
 HTTP cancellation route. It requires no version and never stops in-progress execution. This is

@@ -1820,21 +1820,14 @@ check on `thread_observations` (404 for a Session no Thread links) is kept or dr
 
 ### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
 
-**In flight; operator, 2026-10-19 PDT: port it, with the OAuth authorization server on `zitadel/oidc`; 2026-10-20 PDT:
-approved its destination, an `actions` core with `mcp-edge` split out after the flip; 2026-10-21: resumed.** Landed: the
-Goose migrator, the four proto services (`ActionService`, `OperatorActionService`, `WebPushService`, and
-`ConnectionService` in `agentplane/mcp_edge/`), the lifecycle store, the service skeleton, the dispatch worker,
-workload and operator admission, policy providers, the request RPCs and watches, the catalog, both executors, `/mcp`,
-Connections, the authorization server and Web Push. The CLI, app, Notification Service and acceptance fixtures now
-use generated facades/clients; the Python `OperatorActionServiceClient` and app Action routes/relay are removed on the
-acceptance branch. **Stage L remains in flight** until Go-backed aggregate acceptance and caller compatibility evidence
-cover the testing cutover. The request watch sends delta frames from the start: its first frame is the whole history
-(megabytes, #7922) and it ends every minute with the exchanged token. The MCP endpoint, OAuth metadata and consent
-callbacks stay hand-written HTTP. The receipt wait (`wait_seconds`,
-`wait_until`) and request paging (`limit`, `after_id`) the [agent CLI](../docs/agent_cli.md) calls are served by the
-Python service today; the port keeps them, and a server stream of receipts that ends at the condition replaces the wait
-with the CLI updated in the same change. Stages, stored-data risks and cutover: [Action Service Go
-port](action_service_go_port.md).
+**Rollout in flight; operator, 2026-10-22: proceed testing, then staging, then Python retirement;
+restoration testing waived, existing data preserved.** The Go service, generated CLI/app/Notification
+callers and Go-backed K3s acceptance are merged in #11454, including the cleanup in #11459 and #11460.
+Testing/staging still need coordinated runtime and caller image pins, verified fresh/resumed
+Sandbox CLIs, and deployed-path checks. The operator accepts unencrypted database secrets; retain
+Connection identities. The existing controller refreshes the runner-disk template on resume; do not recreate
+Sandboxes or their storage. Remaining stages and the later edge split:
+[Action Service Go rollout](action_service_go_port.md).
 
 ### `ACTION_MCP_EDGE_SPLIT` — split `mcp-edge` out of the Action Service
 

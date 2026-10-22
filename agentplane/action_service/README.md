@@ -17,40 +17,17 @@ Console's being the one to retire, not two systems that happen to resemble each 
 
 ## External Connections
 
-Any caller is a ServiceAccount labeled `agentplane.allegedly.works/use-action-service: "true"` in
-one of `caller_service_account_namespaces` — a Pod-bound workload token and a Connection are two
-ways to prove one account, and the label admits either. The integration app labels the account it
-mints per Sandbox; staging commits `claude-ai` for Claude.ai MCP Connections, `haku-agent`, and a
-binding for `public-coder-agent/openclaw` alongside their policies in
-`cluster/cdk8s/agentplane/actions_staging_policies.py`. Testing commits none:
-nothing there enrolls an external Connection, and the system tests create the objects they
-needs at run time. `policy_informer.PolicyInformer` watches them with a label selector into the
-`PolicyIndex`,
-and `connections.ConnectionAuthority` resolves grants against that index: a grant whose
-currently bound ServiceAccount is missing, unlabeled, or not yet listed by the watch refuses resolution.
-`ConnectionAuthority` persists runtime named Connections and immutable grant revisions in the
-service's database. The operator API exposes
-`GET /v1/operator/caller-service-accounts`, list/detail at `/v1/operator/connections`, `PATCH` of
-a name with `expected_version`, `POST .../{id}/rebind` with `expected_version` and an
-eligible `service_account`, and `POST .../{id}/unbind` with `expected_version`.
-
-Only the internal OAuth adapter may call `bind`, `activate`, `resolve`, or grant-specific `revoke`;
-there is no HTTP endpoint accepting client-provided ServiceAccount/issuer/client/grant bindings.
-Bind is idempotent by its consent grant UUID, reconnect locks the Connection and ends the old
-grant, and activation is bounded by its deadline. The [app consent UI](../app/README.md) and
-[OAuth adapter](#external-oauth) use this authority. A Connection's bearer resolves to its grant's
-currently bound ServiceAccount, and the request is that account's: neither the request, its receipt
-nor its executor projection records the grant, and a repeat of a key is refused whichever Connection
-or Pod of the account submitted it. The grant is resolved on every MCP request and again after a
-wait, so revoking, unbinding or reconnecting a Connection refuses its token's next request, while
-requests it already submitted proceed through decision and dispatch. The operator may rebind an
-active Connection to a different eligible ServiceAccount without issuing a new OAuth token; this
-increments the binding version and retains immutable original grant history in `original_caller`.
-Later requests from the existing token use the new account. Authority comes from `bound_caller`,
-history from `original_caller`.
-
-Action Service/PostgreSQL owns Connection authority; the integration app owns its operator UI.
-Configurable policies and the Thread lifecycle are separate from this authority.
+External MCP Connections are owned by [`mcp_edge/connections`](../mcp_edge/connections/); the
+generated [`ConnectionService`](../mcp_edge/connection_service.proto) defines its operator API.
+Consent can select only a ServiceAccount in the current labeled Action callers view. The MCP edge
+resolves a Connection grant to its currently bound ServiceAccount before admitting a bearer.
+ActionRequests use that ServiceAccount as the caller and do not record Connection or grant
+provenance. Rebinding changes which ServiceAccount future uses of existing tokens act as; unbinding
+revokes the Connection's grants. Requests already submitted continue through the Action lifecycle.
+The operator can list or watch Connections, rename, rebind, and unbind them; the
+integration app presents the operator UI ([consent UI](../app/README.md)). See the
+[ConnectionService implementation](../mcp_edge/connections/service.go) and
+[authorization server](../mcp_edge/authserver/authserver.go).
 
 The executable contract is deliberately small:
 
@@ -78,34 +55,22 @@ Notes are not a secret channel: do not put credentials in them. Human decisions 
 
 ## Consent transactions
 
-`EnrollmentAuthority` accepts trusted, framework-validated authorization metadata from the OAuth
-adapter. Only an opaque enrollment handle crosses to the integration-app URL; PostgreSQL stores
-its hash. The operator-authenticated `/v1/operator/connection-enrollments/{handle}/preview` and
-`/decision` routes bind the interaction to the browser binding the caller sends and the
-independently verified operator principal. The app enforces browser Origin/CSRF protection and
-sends one binding for every browser, so only the operator distinguishes callers; the service
-compares the browser-binding hash and operator on every decision.
+The Go authorization server creates an enrollment with each OAuth authorization and sends the
+browser to the integration app with an opaque handle; PostgreSQL stores its hash.
+`ConnectionService` pins the enrollment to the operator who first previews it. Preview returns the
+client presentation, redirect URI, expiry, and decision version, not the upstream URL or PKCE
+challenge.
 
-Preview returns client presentation and expiry, not the held upstream URL or PKCE challenge.
-Allow stores the selected ServiceAccount and either a new name or an explicitly confirmed
-`ReconnectConnection` target/version, then releases only the stored framework
-URL. Deny returns no redirect. Exact decision retries recover the original response; conflicting
-or stale decisions cannot overwrite it. The watched labeled ServiceAccounts supply the UI picker.
-The service validates the existing Connection version at decision and the binding authority checks
-it again when reserving the replacement at code exchange. A concurrent rename, unbind, activation,
-or competing reconnect requires fresh authorization rather than updating the reviewed version.
-The consent row retains the selected Connection UUID and version.
-Grant reservation revokes all prior active/pending grants atomically, even if later issuance fails;
-the replacement stays pending until activation and neither old tokens nor Actions retarget.
-
-The OAuth adapter calls `approved` with the framework code's client/redirect/PKCE tuple and the
-verified, explicitly mapped upstream operator. It binds and validates the resulting pending grant,
-then calls `claim_exchange` immediately before framework code consumption. Only one exchange can
-claim an enrollment; dependency failures before the claim remain retryable, whereas ambiguous
-post-claim failures require fresh OAuth. Activation remains the adapter's responsibility after
-successful token persistence. Enrollments retain correlation tombstones so expired codes cannot
-select a newer consent. These endpoints do not enable OAuth
-or bypass Action review on their own.
+A decision is one-shot and version-checked. Allow selects a currently labeled ServiceAccount and a
+new Connection name or an explicitly confirmed reconnect target at its reviewed version; deny
+grants no authority. Consent alone does not create a grant. At successful OAuth code exchange, the
+authorization server rechecks the enrollment, selected caller, and reconnect version, then creates
+an active grant; reconnect also revokes the Connection's previous grants. Grant changes and token
+issuance share the code-exchange transaction. See the
+[enrollment store](../mcp_edge/connections/enrollments.go),
+[authorization store](../mcp_edge/connections/authorizations.go),
+[consent API](../mcp_edge/connection_service.proto), and
+[OAuth code exchange](../mcp_edge/authserver/tokens.go).
 
 ## Decision providers
 
@@ -184,55 +149,39 @@ Action events to a subscriber. No delegated-owner field or alternate service end
 
 ## Generic MCP frontend
 
-The same service process serves stateless Streamable HTTP at `/mcp`. The FastAPI lifespan starts
-the PostgreSQL update listener and MCP transport and unwinds both on shutdown/startup failure.
-This is the production `main.py` composition, not a sidecar, upstream-tool proxy, or second store.
-Requests use the same Sandbox bearer/egress placeholder substitution as the REST workload API.
-Operator/OIDC bearers remain confined to `/v1/operator/...`; configured external OAuth grants are
-also accepted by `/mcp`. Both are verified by FastMCP's own bearer layer (`CallerTokenVerifier` in
-`caller_auth.py`): a request without a bearer gets 401 with the protected-resource metadata
-challenge, a refused bearer 401 `invalid_token`, and tools receive the verified identity through
-FastMCP's `CurrentAccessToken` dependency, never from request state. Staging publishes
-`/mcp`, `/register`, `/authorize`, `/token`, `/revoke`, `/auth/callback`, and the OAuth well-known
-paths through an `HTTPRoute` at `agentplane-actions-staging.allegedly.works` (the `Actions`
-construct's `HTTPRoute` in `cluster/cdk8s/agentplane/actions.py`); testing has no public route. REST
-and operator endpoints stay off that origin. FastMCP's automatic Host/Origin guard protects loopback access without
-categorically rejecting requests carrying Origin; authority comes from the explicit validated
-bearer, not Origin or browser cookies.
-The `basic` `PolicySet` admits a Sandbox to every route of the service with the same workload
-credential substitution: the service authenticates and authorizes each request itself. The protocol
-tests exercise substitution at that boundary.
+When `oauth` is configured, the Go service mounts stateless Streamable HTTP at `/mcp` and the OAuth
+protocol endpoints on the same HTTP listener. `/mcp` accepts only this authorization server's
+bearer tokens; each grant resolves to its Connection's currently bound, labeled ServiceAccount
+before a core call. Workload and operator API authentication remain separate. Missing or invalid
+bearers receive 401 with protected-resource metadata; authority outages receive 503. See the
+[HTTP edge](edge.go), [MCP handler](../mcp_edge/mcpserver/server.go), and
+[bearer verifier](../mcp_edge/authserver/tokens.go).
+The `basic` `PolicySet` controls Sandbox egress; it does not supply the OAuth bearer `/mcp` requires.
+The service authenticates and authorizes each request itself. Tests exercise workload credential
+substitution at the API boundary.
 
 ### External OAuth
 
-The optional `oauth` settings enable FastMCP 3.4.7's DCR, discovery, authorization, callback,
-token and revocation routes in this process. `ActionsOAuthProxy` holds the validated upstream
-redirect in the durable enrollment authority and sends the browser to the integration app's
-consent page. The page chooses a new name or existing Connection and a labeled caller
-ServiceAccount; raw client registration and upstream login alone create no caller authority.
+The optional `oauth` settings enable the Go authorization server: discovery, dynamic client
+registration (DCR), CIMD, authorization, token (code and refresh), revocation, and callback
+endpoints. It pins an upstream OIDC issuer, client, and operator subject; only a verified sign-in of
+that operator completes authorization. The consent page chooses a new Connection or a confirmed
+reconnect and a currently labeled ServiceAccount. A consent decision is one-shot and
+version-checked; code exchange rechecks the choice, activates the grant, and issues local tokens in
+one database transaction. Replaying an exchanged code revokes that grant.
 
-After consent, the adapter verifies the upstream issuer/subject against the explicitly configured
-single-operator mapping, validates the pending binding, and atomically claims the enrollment
-before FastMCP consumes its code. Only one token family may issue per enrollment. Failures before
-the claim can be retried; an ambiguous failure after it requires fresh OAuth, not another issuance.
-Tokens contain an opaque grant reference. Every bearer admission and refresh resolves the current
-canonical grant; unbind/revocation cannot silently retarget an old token to a new ServiceAccount; an
-operator-only rebind explicitly can, while recording a new binding version.
-The local revocation endpoint ends the canonical grant independently of upstream IdP revocation;
-it does not forward local credentials upstream or revoke an upstream account. Encrypted SDK
-metadata remains bounded by its existing TTL after the grant is ended.
+Local access and refresh tokens are opaque; PostgreSQL stores their SHA-256 digests. The upstream
+provider refresh token must be recoverable for renewal, so it is stored as plaintext in
+`oauth_authorization.upstream_refresh_token`; the current design accepts plaintext database
+storage. Each `/mcp` request resolves the grant to its Connection's current bound account. Grant
+identity and provenance are not copied onto ActionRequests. Local token revocation revokes the
+grant; upstream account revocation is separate.
 
-Configure dedicated upstream client credentials, discovery/issuer pins, public `base_url`,
-`integration_app_url`, and the exact `approving_operator` issuer/subject mapping. Provider-scoped
-subjects are never assumed equal. `jwt_signing_key_file` supplies a stable key across replicas;
-`encryption_key_file` supplies a Fernet key for credential-bearing PostgreSQL KV in the same Actions
-database (`agentplane_oauth_kv`). Neither key is generated at startup. Runtime settings add no
-deployment, Authentik client, ingress, or browser CORS policy automatically.
-
-External MCP callers share receipt ownership/idempotency within the ServiceAccount while
-each Action retains immutable submitting Connection/grant/revision/issuer/client provenance.
-Production admission and dispatch use the same Connection authority. Sandbox bearers still use
-live workload validation and egress substitution; OAuth does not grant an operator bearer bypass.
+Configure `base_url`, `integration_app_url`, `upstream_issuer`, `upstream_client_id`,
+`upstream_client_secret_file`, `upstream_subject`, and `approving_operator` in the optional `oauth`
+settings. See [Go OAuth configuration](config.go), the
+[authorization server](../mcp_edge/authserver/authserver.go), and the
+[ConnectionService contract](../mcp_edge/connection_service.proto).
 
 | Tool                         | Use                                                                                                                                                                               |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -269,14 +218,15 @@ claim, without a version parameter. It returns the canonical outcome (`cancelled
 executor. The cancelled receipt stays readable by request ID or submission key. It is independent
 of cancelling or disconnecting a wait.
 
-`get_action_result` returns an outcome as the tool that ran answered (`tool_results.py`): an MCP
-group's stored `CallToolResult` exactly, every content block included, and a sandbox result the way
-FastMCP presents a returned model, the object as structured content and as one JSON text block, so
-a nonzero exit is not an error result. A request still waiting on its decision or execution says so
-as an ordinary result; a denied, cancelled, failed or unknown one is an error result carrying the
-decision's note or reason, or the executor's error. `request_action` answers the same way once its
-wait ends unless asked for its receipt, so an Action a policy approves comes back as its tool's own
-answer from the one call. A receipt's `execution` has its state, error and timing but no result.
+`get_action_result` presents an outcome as an MCP tool result (see the
+[implementation](../mcp_edge/mcpserver/results.go)): an MCP group's stored `CallToolResult` is
+relayed with all content blocks, and a Sandbox group's
+stored JSON object is returned as structured content with the same JSON in one text block. A request
+still waiting on its decision or execution says so as an ordinary result; a denied, cancelled, failed
+or unknown one is an error result carrying the decision's note or reason, or the executor's error.
+`request_action` answers the same way once its wait ends unless asked for its receipt, so an Action a
+policy approves comes back as its tool's own answer from the one call. A receipt's `execution` has
+its state, error and timing but no result.
 
 MCP submission, receipt and result tools take one shared `wait` object (`wait_seconds`, 0 through this
 instance's `max_wait_seconds` setting, default 0; the setting defaults to 30 seconds;
@@ -307,28 +257,27 @@ group descriptions, or hidden schemas through nested payloads.
 ### Direct tools
 
 A group's `direct_tools` names Actions an external Connection also gets as MCP tools of their own
-(`direct_tools.py`), named `<group>__<action>` with the Action's schema, description, title and
-annotations (mirrored from an MCP backend's `tools/list`, declared by the sandbox roster). Each
-request lists them for a caller whose bearer is a Connection grant, keeping only those an
-`action_auto_approve` policy of its bindings names (`policy_evaluation.auto_approvable`); a workload
-bearer sees none. A group offering them must not have `__` in its key, and a sandbox group's names
-must be in its roster at startup.
+([implementation](../mcp_edge/mcpserver/direct.go)), named `<group>__<action>` with the Action's
+schema, description, title and annotations (mirrored from an MCP backend's `tools/list`, declared by
+the Sandbox roster). `/mcp` lists only those currently offered Actions that the caller's policy
+marks auto-approvable. A group offering them must not have `__` in its key, and a Sandbox group's
+names must be in its roster at startup.
 
-A call submits through `ActionService.submit_decided` with a server-minted idempotency key and the
-title `Direct tool call`. If no provider decides it, nothing is persisted and the call answers an
-error naming each policy's reason (`UndecidedRequestError`) and pointing at `request_action`. A
-decided call waits up to this instance's `direct_wait_seconds` setting, capped by
-`max_wait_seconds`, and answers through `tool_results.py`, as `get_action_result` does, so an
+A call is submitted as decided-only with a server-minted idempotency key and the title
+`Direct tool call`. If no policy approves it, nothing is persisted; the MCP error gives the policy
+reasons and points at `request_action`. A decided call waits up to this instance's
+`direct_wait_seconds` setting, capped by `max_wait_seconds`, and answers through the same MCP result
+formatter (see the [implementation](../mcp_edge/mcpserver/results.go)) as `get_action_result`, so an
 unfinished one names its request to keep waiting on. A configured name the caller's
 policy does not cover still resolves, so it is refused with a reason rather than unknown. Listing
 is per request with no `tools/list_changed`: a client holding an older list only meets refusals,
 and `request_action` reaches any Action whatever the list says.
 
-**Direct-tool retry limitation:** every `call_direct` invocation uses a fresh server-minted
+**Direct-tool retry limitation:** every direct-tool call uses a fresh server-minted
 `direct-<uuid>` idempotency key. If its first response is lost after submission, the caller
 has neither the request ID nor that key; calling the same tool again can submit and execute
-another Action, even with identical arguments. An unfinished/error response includes the
-request ID for subsequent reads; a completed direct-tool response relays the backend result.
+another Action, even with identical arguments. An unfinished result names its request for later
+reads; a completed direct-tool response relays the backend result.
 For side-effectful calls requiring recovery from a lost first reply, use `request_action`
 with a caller-chosen idempotency key and recover by that key instead.
 Do not infer that repeating arguments is a safe deduplication rule: two identical calls may be
@@ -336,44 +285,37 @@ intentional.
 
 ## Action catalog
 
-`catalog.ActionCatalog` is the Agent-facing discovery seam: an `ActionGroup` (e.g. `github`) is the
+`catalog.Catalog` is the Agent-facing discovery seam: an `ActionGroup` (e.g. `github`) is the
 executor/backend ownership unit, and each child `Action` (e.g. `get_file`) is namespaced under it as
 the pair `(github, get_file)`. `GET /v1/action-groups` lists every configured group with its Actions'
 descriptions and input schemas; `GET /v1/action-groups/{group}/actions/{action}` looks up one Action
 directly and 404s clearly on an unknown group or action. Both are workload-authenticated reads with
 no owner-scoping, since the catalog is the same for every caller.
 
-Group bindings are reviewed runtime configuration, not a dynamic registry: `main.Settings.action_groups`
-follows the same `AGENTPLANE_ACTIONS_CONFIG_FILE`-mounted-YAML convention as the integration app's
-`AGENTPLANE_CONFIG_FILE` (`agentplane/app/main.py`), so an operator edits the group configuration and the
-process picks it up on restart — sufficient because ActionGroup/executor bindings change at
-operator/deploy cadence, not per-request. Staging uses two rolling replicas; configuration changes
-must remain compatible while old and new replicas overlap.
-`McpExecutorBinding.config` is never exposed by discovery; only the human-authored executor description is.
+Group bindings are reviewed runtime configuration, not a dynamic registry: `action_groups` is read
+from the Action Service settings file and applied at startup ([configuration](config.go)). Both
+environments use `Recreate` to avoid overlapping Python and Go workers during cutover.
+`catalog.MCPBinding.config` is never exposed by discovery; only the human-authored executor description is.
 
 The catalog is also the admission and routing authority: `ActionService` resolves the submitted
 structured `action: {group, name}`, rejects unknown or unavailable groups/Actions and unbound groups before persistence,
 and validates arguments against the advertised JSON Schema before persistence or provider
-evaluation. Invalid arguments return HTTP 422 without reserving the idempotency key. An accepted
+evaluation. Invalid arguments fail `INVALID_ARGUMENT` without reserving the idempotency key. An accepted
 key is reserved for its caller: `POST /v1/action-requests` refuses a repeat with HTTP 409, and
 `GET /v1/action-requests?idempotency_key=<key>` (operator: `/v1/operator/action-requests`)
 returns the request it named, combinable with `state`.
-Dispatch uses the executor bound to that group. `ActionStore` owns persistence and lifecycle,
+Dispatch uses the executor bound to that group. `store.Store` owns persistence and lifecycle,
 not a second admission registry. Executors expose execution only, not an action registry.
 Dispatch resolves the identity again, so a removed action is terminally refused rather than rerouted or
-retried. Each service replica may own its own current FastMCP connection; the database-backed
+retried. Each service replica may own its own current MCP session; the database-backed
 single-Execution claim and lease token, not the MCP connection, fence dispatch and keep a lost
 attempt from being replayed.
 
-`runtime.running_executor` builds one typed executor per reviewed group by matching on its binding,
-passes a group-keyed mapping to the service, and shares the same catalog objects with discovery. An
-`McpExecutorBinding` becomes a supervised `McpActionGroupExecutor` over the stdio or
-streamable-HTTP config below, whose `tools/list` refreshes child Actions and whose execution
-rechecks the live schema. A `PodExecutorBinding` becomes a `SandboxExecutor`, code-owned rather
-than supervised: its roster is its own models, so it is offered from the moment configuration
-validates rather than after a handshake, and it needs Kubernetes access or startup fails
-([sandbox Actions](sandbox/README.md)). Echo is only an explicitly injected test executor,
-never a production default or factory option.
+`main.go` builds a supervised `mcpexec.Executor` for each `catalog.MCPBinding` and a
+`sandbox.Executor` for each `catalog.PodBinding`. The MCP executor discovers upstream tools through
+its Go SDK session; Sandbox Actions come from the configured template roster and are offered after
+startup validation ([sandbox Actions](sandbox/README.md)). Echo is only an explicitly injected test
+executor, never a production default.
 
 An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
 path aborts startup rather than silently selecting that empty catalog. Missing bindings and unsupported kinds fail
@@ -495,27 +437,25 @@ not hold that token: it presents the public
 path, whose generic `authenticatedWorkloadToken` source substitutes the already-authenticated
 `agentplane-egress` bearer for the exact first-party destination rule.
 
-At the destination, `WorkloadPrincipalAuthenticator` and `WorkloadPrincipalResolver` from
-`//agentplane/workload_auth` perform the TokenReview. The caller is the
+At the destination, the [workload resolver](../workload_auth/go/auth/) performs the TokenReview. The caller is the
 ServiceAccount that Pod runs as, derived only from what the bearer proved. Identity headers are
 never authorization. Thread and Agent fields remain untrusted until an authoritative binding exists;
 workload authentication performs no Thread or Agent lookup.
 
-Operator/BFF calls use the separate `/v1/operator/...` surface and their own `OperatorAuthenticator`:
-the OIDC adapter below when `operator_oidc` is set, otherwise `DisabledOperatorAuthenticator`, which
-refuses every operator bearer.
+Operator/BFF calls use the separate `/v1/operator/...` surface, gated by the configured OIDC
+verifier. Without `operator_oidc`, operator requests are refused.
 
-Migrations run separately through `:migrate`; the server verifies the migrated schema and never
-creates tables at startup. `:image` and `:migration_image` are separate OCI targets. Each deployed
+Goose migrations run separately through `//agentplane/action_service/migrations:image`; the server
+checks schema compatibility at startup. `//agentplane/action_service:service_image` contains the Go service. Each deployed
 environment gives the service its own `actions` database and login role on the namespace's shared
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
 
 ## MCP executor transports
 
-`McpActionGroupExecutor.from_group` owns one persistent MCP connection for a group. Its
-`McpExecutorBinding.config` accepts a stdio launch (`command`, optional `args`, `env`, `cwd`, and
-`transport: stdio`) or a streamable-HTTP endpoint:
+The Go `mcpexec.Executor` keeps one MCP session for each configured group. Its
+`catalog.MCPBinding.config` accepts a stdio launch (`command`, optional `args`, `env`, `cwd`, and
+`transport: stdio`) or a streamable-HTTP endpoint ([configuration](mcpexec/config.go)):
 
 ```yaml
 transport: streamable-http
@@ -523,15 +463,16 @@ url: http://127.0.0.1:8000/mcp
 auth: none # or `oauth` with `server_id`, or `static_bearer` with `bearer_file`
 ```
 
-HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implementation, including
-JSON/SSE responses and session shutdown. Both transports use the same catalog refresh, live schema
+HTTP uses the Go MCP SDK's Streamable HTTP client transport and session, including JSON/SSE
+responses and session shutdown. Both transports use the same catalog refresh, live schema
 validation, result recording, and ambiguous-call failure path; a failed `tools/call` transport
 exchange is not retried. The Execution's `result` is the tool's `CallToolResult` in MCP wire shape
-(`content` blocks of every type, `structuredContent`, `isError`, `_meta`), tool errors included. HTTP config rejects userinfo, URL queries/fragments, launch fields, and
-header settings. `auth: none` sends no credentials. `auth: oauth` names a configured `mcp_servers`
-linkage through `server_id`; `from_group_with_linkage` attaches an `httpx` auth hook that resolves
-that linkage's current access token on every request, and the group stays unavailable until the
-linkage authority reports a current link ([§ Action catalog](#action-catalog)). `auth: static_bearer`
+(`content` blocks of every type, `structuredContent`, `isError`, `_meta`), tool errors included.
+HTTP config rejects userinfo and URL queries/fragments, stdio launch fields, and `Authorization`
+in configured headers. `auth: none` sends no credentials. `auth: oauth` names a
+configured `mcp_servers` linkage through `server_id`; the Go SDK's OAuth handler reads that
+linkage's current access token for each request, and the group stays unavailable until the linkage
+authority reports a current link ([§ Action catalog](#action-catalog)). `auth: static_bearer`
 reads `bearer_file`, a mounted secret, once when the transport is built and sends it as the bearer
 on every request; an unreadable or empty file makes the group unavailable. The production
 composition uses this same transport selection. Invalid discovered schemas or duplicate supported tool names
@@ -610,11 +551,11 @@ the integration app's ordinary operator session and canonical Decision contract.
 
 ## Shutdown budgets
 
-SIGTERM/SIGINT synchronously fence dispatch and HTTP admission. `/readyz` becomes unavailable;
-`/healthz` remains a liveness check. Uvicorn waits at most 5 seconds for HTTP requests (including
-SSE); this time counts against the 20-second execution drain. Forced cancellation gets another
-5 seconds to record unknown outcomes. Both deployed environments allow 60 seconds for termination,
-leaving a margin for transport/database cleanup. No preStop delay consumes that budget.
+SIGTERM/SIGINT mark readiness unavailable, stop admission, and drain dispatch and background
+supervisors. The Go HTTP server allows five seconds for open calls to finish before closing its
+connections; execution shutdown is owned by the worker. Both deployments allow 60 seconds for
+termination. Go probes use gRPC health: the default readiness service and `livez` for liveness.
+See [service shutdown](main.go) and [execution ownership](SPEC.md#execution-ownership-and-shutdown).
 
 Execution renewals run every third of the granted lease duration, with each renewal RPC bounded by
 the same interval, so a call outlasts its lease window rather than being swept from under it. The
