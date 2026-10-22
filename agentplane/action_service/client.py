@@ -104,4 +104,3 @@ class OperatorActionServiceClient:
 
     def stream_mcp_linkages(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
         return self._stream_operator("/v1/operator/mcp-servers/stream")
-
