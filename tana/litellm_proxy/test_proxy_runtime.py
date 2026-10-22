@@ -50,26 +50,7 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
     handler_path.parent.mkdir(parents=True)
     shutil.copy(get_required_path("ducktape/tana/litellm_proxy/custom_handler.py"), handler_path)
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        textwrap.dedent(
-            """
-            model_list:
-              - model_name: gpt-4o-mini
-                litellm_params:
-                  model: tana/tana/gpt-4o-mini
-                  custom_llm_provider: tana
-                  api_key: refresh-token
-                model_info:
-                  mode: chat
-                  supports_function_calling: true
-            litellm_settings:
-              drop_params: true
-              custom_provider_map:
-                - provider: tana
-                  custom_handler: tana.litellm_proxy.custom_handler.tana_handler
-            """
-        )
-    )
+    config_path.write_text(get_required_path("_main/tana/litellm_proxy/testdata/custom_provider.yaml").read_text())
 
     class FakeClient:
         async def chat_completion(
@@ -125,24 +106,7 @@ async def test_litellm_router_forwards_local_reasoning_default_in_http_payload(
 ) -> None:
     """Use the pinned LiteLLM OpenAI adapter through a mock HTTP transport."""
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        textwrap.dedent(
-            """
-            model_list:
-              - model_name: rugged-local
-                litellm_params:
-                  model: openai/qwen3:4b
-                  api_base: http://ollama.test/v1
-                  api_key: sk-test
-                  extra_body:
-                    reasoning_effort: none
-            litellm_settings:
-              drop_params: true
-            router_settings:
-              num_retries: 0
-            """
-        )
-    )
+    config_path.write_text(get_required_path("_main/tana/litellm_proxy/testdata/local_reasoning.yaml").read_text())
 
     request_bodies: list[dict[str, Any]] = []
 
