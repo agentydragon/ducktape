@@ -27,7 +27,6 @@ import type {
   BindingView,
   Decision,
   DispatchReceipt,
-  McpLinkageView,
   PolicySetView,
   SandboxView,
   ThreadView,
@@ -35,6 +34,7 @@ import type {
 } from "../client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
+import type { McpLinkageView } from "../mcp_linkage_client";
 import type { DecisionsSnapshot, SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
 import type {
   GitHubSubject,
@@ -2248,21 +2248,14 @@ const MCP_LINKAGES: McpLinkageView[] = [
     server_id: "example_docs",
     server_url: "https://docs-mcp.example.test/mcp",
     status: "linked",
-    revision: 3,
     scopes: ["openid", "offline_access"],
-    expires_at: new Date(NOW + HOUR).toISOString(),
-    linked_at: ago(30 * 24 * HOUR),
-    linked_by: null,
+    refresh_failure: null,
   },
   {
     server_id: "example_cluster",
     server_url: "https://cluster-mcp.example.test/mcp",
     status: "expired",
-    revision: 2,
     scopes: ["openid", "email", "profile", "offline_access"],
-    expires_at: ago(2 * HOUR),
-    linked_at: ago(9 * 24 * HOUR),
-    linked_by: null,
     refresh_failure: {
       action: "retrying",
       error: "the token endpoint answered HTTP 503 Service Unavailable",
@@ -2274,11 +2267,7 @@ const MCP_LINKAGES: McpLinkageView[] = [
     server_id: "example_calendar",
     server_url: "https://calendar-mcp.example.test/mcp",
     status: "degraded",
-    revision: 5,
     scopes: ["openid", "offline_access"],
-    expires_at: ago(HOUR),
-    linked_at: ago(40 * 24 * HOUR),
-    linked_by: null,
     refresh_failure: {
       action: "reconnect",
       error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
@@ -2290,11 +2279,8 @@ const MCP_LINKAGES: McpLinkageView[] = [
     server_id: "example_pantry",
     server_url: "https://pantry-mcp.example.test/mcp",
     status: "unlinked",
-    revision: 0,
     scopes: [],
-    expires_at: null,
-    linked_at: null,
-    linked_by: null,
+    refresh_failure: null,
   },
 ];
 
@@ -2398,7 +2384,11 @@ function actionProtoJson(value: unknown, key = "", owner = ""): unknown {
                   ? "POLICY_KIND_"
                   : key === "reason" && owner === "health"
                     ? "MCP_UNAVAILABLE_REASON_"
-                    : undefined;
+                    : key === "status"
+                      ? "MCP_LINKAGE_STATUS_"
+                      : key === "action" && owner === "refresh_failure"
+                        ? "MCP_REFRESH_ACTION_"
+                        : undefined;
       if (prefix !== undefined) return `${prefix}${value.toUpperCase()}`;
     }
     if (typeof value === "number" && (key === "version" || key === "generation")) return String(value);
@@ -2429,6 +2419,12 @@ function actionGroups(): ActionGroupView[] {
           },
         }
       : row
+  );
+}
+
+function mcpLinkages(): McpLinkageView[] {
+  return MCP_LINKAGES.map((row) =>
+    row.server_id === "example_docs" && flags.has("mcpLinkageChanged") ? { ...row, status: "expired" as const } : row
   );
 }
 
@@ -2527,6 +2523,25 @@ routes.push(
           { snapshotComplete: {} },
         ],
         () => actionGroups().map((group) => ({ upsert: actionProtoJson(group) })),
+        signal
+      );
+    },
+  ],
+  [
+    "GET",
+    /^\/upstream\/actions\/v1\/operator\/mcp-servers:watch$/,
+    (_match, _query, signal) => {
+      const path = "/upstream/actions/v1/operator/mcp-servers:watch";
+      return liveNdjsonWatch(
+        path,
+        [
+          { snapshot: { linkages: mcpLinkages().map((linkage) => actionProtoJson(linkage)) } },
+          { snapshotComplete: {} },
+        ],
+        () =>
+          mcpLinkages()
+            .filter((linkage) => linkage.server_id === "example_docs")
+            .map((linkage) => ({ upsert: actionProtoJson(linkage) })),
         signal
       );
     },
@@ -3170,15 +3185,6 @@ class HarnessEventSource extends EventTarget {
     }
     if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
       this.dispatchEvent(new MessageEvent("output", { data: JSON.stringify(btoa("guest console output\r\n")) }));
-      return;
-    }
-    if (url.pathname === "/mcp-servers/stream") {
-      const rows = MCP_LINKAGES.map((row) =>
-        row.server_id === "example_docs" && flags.has("mcpLinkageChanged")
-          ? { ...row, status: "expired" as const }
-          : row
-      );
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
       return;
     }
     if (sandbox !== null) {

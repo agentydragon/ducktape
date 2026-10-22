@@ -21,7 +21,6 @@ from google.protobuf.json_format import MessageToDict
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 from agentplane.action_service.client import OperatorActionServiceClient
-from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from agentplane.action_service.policy_view import ActionPolicySetView
 from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
@@ -523,27 +522,32 @@ OperatorActions = Annotated[OperatorActionServiceClient, Depends(_operator_actio
 operator_router = APIRouter(tags=["operator"])
 
 
-@operator_router.get("/mcp-linkage/callback")
-async def complete_mcp_linkage(state: str, code: str, client: OperatorActions) -> RedirectResponse:
-    await client.complete_mcp_linkage(state, code)
+mcp_callback_router = APIRouter(tags=["connections"])
+
+
+@mcp_callback_router.get("/mcp-linkage/callback")
+async def complete_mcp_linkage(state: str, code: str, services: Services) -> RedirectResponse:
+    """Bridge the provider's registered callback to the public Action Service callback."""
+    if services.actions_http is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Action facade is not configured")
+    try:
+        upstream = await services.actions_http.open_request(
+            "GET",
+            "v1/mcp-linkage/callback",
+            str(httpx.QueryParams({"state": state, "code": code})),
+            bearer=None,
+            headers={"accept": "application/json"},
+        )
+    except (httpx.RequestError, httpx2.TransportError) as error:
+        raise upstream_http_error(error) from error
+    try:
+        if 300 <= upstream.status_code < 400:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Action callback redirects are not accepted")
+        if not 200 <= upstream.status_code < 300:
+            raise HTTPException(upstream.status_code, "MCP linkage callback failed")
+    finally:
+        await upstream.aclose()
     return RedirectResponse("/#/mcp-servers?linked=1", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@operator_router.get("/mcp-servers/stream")
-async def mcp_linkages_stream(
-    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
-) -> StreamingResponse:
-    return _operator_resource_stream(request, shutdown, updates, sessions, client.stream_mcp_linkages, "MCP linkage")
-
-
-@operator_router.post("/mcp-servers/{server_id}/linkage/start")
-async def start_mcp_linkage(server_id: str, body: McpLinkageStart, client: OperatorActions) -> McpLinkageStartView:
-    return await client.start_mcp_linkage(server_id, body.scopes)
-
-
-@operator_router.post("/mcp-servers/{server_id}/linkage/disconnect")
-async def disconnect_mcp_linkage(server_id: str, client: OperatorActions) -> McpLinkageView:
-    return await client.disconnect_mcp_linkage(server_id)
 
 
 class CallerGrantView(BaseModel):
@@ -1128,8 +1132,8 @@ def create_app(
         actions_http=actions_http,
     )
     app.state.services = services
-    # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
-    # declared below, outside these routers.
+    # Every operator route needs a caller. The provider callback has its single-use state/code
+    # contract, and /healthz is the only other unauthenticated route.
     for api_router in (
         router,
         models,
@@ -1143,6 +1147,7 @@ def create_app(
         system_router,
     ):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
+    app.include_router(mcp_callback_router)
     if electric is not None:
         app.include_router(electric_router, dependencies=[Depends(require_caller)])
     app.include_router(upstream_router, dependencies=[Depends(require_caller)])
