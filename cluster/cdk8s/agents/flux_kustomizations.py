@@ -130,9 +130,9 @@ def public_coder_agent_app(
         artifact,
         wait=None,
         annotations={"ducktape.org/parked": "true"},
-        # Keep this reconciler active so it prunes the retired proxy and app credentials. The
-        # OpenClaw Deployment remains at zero replicas and its PVCs stay in the desired state.
-        suspend=False,
+        # The parked app artifact is intentionally omitted. Keep its inventory orphanable so
+        # the retained OpenClaw PVCs and state survive while the app is offline.
+        suspend=True,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         decryption=SOPS_DECRYPTION,
         timeout="5m",
@@ -146,6 +146,32 @@ def public_coder_agent_app(
         description=(
             "OpenClaw coder agent application; its state and retained SSH audit recordings stay "
             "in the parked namespace. Backups reconcile separately."
+        ),
+    )
+
+
+def public_coder_agent_secret_prune(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    public_coder_agent_access: Kustomization,
+    cert_manager: Kustomization,
+    cert_manager_trust: Kustomization,
+    external_secrets_operator: Kustomization,
+) -> Kustomization:
+    """Temporarily track retired credentials so Flux can prune their owners and Secret targets."""
+    return flux_kustomization(
+        chart,
+        "public-coder-agent-secret-prune",
+        artifact,
+        timeout="5m",
+        prune=True,
+        deletion_policy=KustomizationSpecDeletionPolicy.DELETE,
+        depends_on=flux_kustomization_depends_on_many(
+            public_coder_agent_access, cert_manager, cert_manager_trust, external_secrets_operator
+        ),
+        description=(
+            "Temporarily adopts the retired Public Coder credential owners and Secret targets with Merge so Flux "
+            "can prune them without copying Secret values into Git."
         ),
     )
 

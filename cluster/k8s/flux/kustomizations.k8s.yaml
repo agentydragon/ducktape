@@ -4136,8 +4136,37 @@ spec:
     kind: ExternalArtifact
     name: public-coder-agent-app
     namespace: ducktape-flux
-  suspend: false
+  suspend: true
   timeout: 5m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Temporarily adopts the retired Public Coder credential owners and Secret targets with Merge so Flux can prune them without copying Secret values into Git.
+  name: public-coder-agent-secret-prune
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Delete
+  dependsOn:
+    - name: public-coder-agent-access
+      namespace: ducktape-flux
+    - name: cert-manager
+      namespace: ducktape-flux
+    - name: cert-manager-trust
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/public-coder-agent/secret-prune
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: public-coder-agent-secret-prune
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

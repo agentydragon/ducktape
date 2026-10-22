@@ -555,7 +555,7 @@ def test_public_coder_pause_retains_state_after_devbox_retirement(
     }
     for name in ("public-coder-agent-access", "public-coder-agent-app", "public-coder-agent-backup"):
         assert owners[name]["deletionPolicy"] == "Orphan"
-    assert owners["public-coder-agent-app"].get("suspend", False) is False
+    assert owners["public-coder-agent-app"].get("suspend", False) is True
     assert owners["public-coder-agent-backup"]["suspend"] is True
 
 
