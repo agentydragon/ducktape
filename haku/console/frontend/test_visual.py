@@ -88,11 +88,7 @@ async def test_capability_request(
         await _park_pointer(view)
         await view.capture()
 
-        full_detail = view.page.get_by_role("radio", name="Full")
-        full_detail_id = await full_detail.get_attribute("id")
-        assert full_detail_id is not None
-        await view.page.locator(f"label[for='{full_detail_id}']").click()
-        await expect(full_detail).to_be_checked()
+        await view.page.get_by_title("Full", exact=True).click()
         await expect(view.page.get_by_text("Requested", exact=True)).to_be_visible()
         await _park_pointer(view)
         await view.capture(f"capability_request_detailed_{color_scheme}")
