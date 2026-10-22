@@ -4143,19 +4143,13 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Temporarily adopts the retired Public Coder credential owners and Secret targets with Merge so Flux can prune them without copying Secret values into Git.
+    description: Temporarily tracks the retired Public Coder Secret targets with Merge while Flux prunes their owners; the manifests contain no Secret values.
   name: public-coder-agent-secret-prune
   namespace: ducktape-flux
 spec:
   deletionPolicy: Delete
   dependsOn:
     - name: public-coder-agent-access
-      namespace: ducktape-flux
-    - name: cert-manager
-      namespace: ducktape-flux
-    - name: cert-manager-trust
-      namespace: ducktape-flux
-    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/public-coder-agent/secret-prune

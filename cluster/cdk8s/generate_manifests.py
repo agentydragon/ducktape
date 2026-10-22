@@ -1688,12 +1688,7 @@ def generate_manifests(root: Path) -> None:
     )
     write_directory(root, public_coder_agent_secret_prune_artifact, public_coder_credential_prune.chart)
     agents_flux_kustomizations.public_coder_agent_secret_prune(
-        flux_chart,
-        public_coder_agent_secret_prune_artifact,
-        public_coder_agent_access_kustomization,
-        cert_manager_kustomization,
-        cert_manager_trust_kustomization,
-        external_secrets_operator_kustomization,
+        flux_chart, public_coder_agent_secret_prune_artifact, public_coder_agent_access_kustomization
     )
     namespace_dependencies = {
         "activitywatch": activitywatch_kustomization,

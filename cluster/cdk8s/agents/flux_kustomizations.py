@@ -151,30 +151,22 @@ def public_coder_agent_app(
 
 
 def public_coder_agent_secret_prune(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    public_coder_agent_access: Kustomization,
-    cert_manager: Kustomization,
-    cert_manager_trust: Kustomization,
-    external_secrets_operator: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, public_coder_agent_access: Kustomization
 ) -> Kustomization:
-    """Temporarily track retired credentials so Flux can prune their owners and Secret targets."""
+    """Track retired Secret targets while Flux prunes their ExternalSecret and certificate owners."""
     return flux_kustomization(
         chart,
         "public-coder-agent-secret-prune",
         artifact,
-        # The retired ExternalSecrets currently report source sync errors; their health must not
-        # block Flux from tracking and pruning their target Secret objects.
+        # This temporary inventory tracks only Secret targets; workload health checks are not needed.
         wait=None,
         timeout="5m",
         prune=True,
         deletion_policy=KustomizationSpecDeletionPolicy.DELETE,
-        depends_on=flux_kustomization_depends_on_many(
-            public_coder_agent_access, cert_manager, cert_manager_trust, external_secrets_operator
-        ),
+        depends_on=[flux_kustomization_depends_on(public_coder_agent_access)],
         description=(
-            "Temporarily adopts the retired Public Coder credential owners and Secret targets with Merge so Flux "
-            "can prune them without copying Secret values into Git."
+            "Temporarily tracks the retired Public Coder Secret targets with Merge while Flux prunes their owners; "
+            "the manifests contain no Secret values."
         ),
     )
 
