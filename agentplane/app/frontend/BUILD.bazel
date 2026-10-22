@@ -1498,21 +1498,6 @@ agentplane_vitest_test(
     ],
 )
 
-check_vitest_specs()
-
-py_library(
-    name = "visual_app",
-    srcs = ["visual_app.py"],
-    deps = ["@pypi//playwright"],
-)
-
-agentplane_visual_test(
-    name = "visual_actions",
-    src = "test_visual_actions.py",
-    shard_count = 4,
-    title = "Agentplane: action presentations",
-)
-
 ts_library(
     name = "harness_network",
     srcs = ["harness/network.ts"],
@@ -1526,4 +1511,19 @@ agentplane_vitest_test(
         ":harness_network",
         "//:node_modules/vitest",
     ],
+)
+
+check_vitest_specs()
+
+py_library(
+    name = "visual_app",
+    srcs = ["visual_app.py"],
+    deps = ["@pypi//playwright"],
+)
+
+agentplane_visual_test(
+    name = "visual_actions",
+    src = "test_visual_actions.py",
+    shard_count = 4,
+    title = "Agentplane: action presentations",
 )
