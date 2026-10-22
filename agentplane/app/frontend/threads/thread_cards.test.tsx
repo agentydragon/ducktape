@@ -11,7 +11,7 @@ import {
   ItemKind,
   RecoveryDisposition,
   TurnStatus,
-} from "../../../../agentplane_proto_generated/agentplane/proto/event_pb";
+} from "../../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/event_pb";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { EntityCard } from "./thread_cards";
 import { testItem } from "./thread_entity_fixture";

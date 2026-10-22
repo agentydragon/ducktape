@@ -35,11 +35,30 @@ proto_plugin(
     tool = ":protoc_gen_es",
 )
 
+# Generate browser-facing Agentplane protos from API roots. Imported schemas, including Google
+# HTTP annotations, are discovered from each ProtoInfo closure.
+typescript_proto_compile(
+    name = "agentplane_proto_generated",
+    protos = [
+        ":event_log_proto",
+        ":runner_proto",
+        "//agentplane/action_service:operator_action_service_proto",
+        "//agentplane/action_service:web_push_service_proto",
+        "//agentplane/mcp_edge:connection_service_proto",
+    ],
+)
+
+js_library(
+    name = "agentplane_proto_js",
+    srcs = [":agentplane_proto_generated"],
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
+
 js_test(
     name = "typescript_proto_runtime_test",
     data = [
+        ":agentplane_proto_js",
         ":typescript_transitive_fixture_js",
-        "//:agentplane_proto_js",
     ],
     entry_point = "typescript_proto_runtime_test.mjs",
 )
@@ -125,10 +144,7 @@ py_proto_library_with_mypy_stubs(
 proto_library(
     name = "sandboxes_proto",
     srcs = ["sandboxes.proto"],
-    visibility = [
-        "//:__pkg__",
-        "//agentplane:__subpackages__",
-    ],
+    visibility = ["//agentplane:__subpackages__"],
     deps = [
         "@protobuf//:duration_proto",
         "@protobuf//:struct_proto",

@@ -26,7 +26,7 @@ import {
   WatchActionRequestsResponseSchema,
   type ActionGroup,
   type ActionRequest,
-} from "../../../../agentplane_proto_generated/agentplane/action_service/action_service_pb";
+} from "../../../../agentplane/proto/agentplane_proto_generated/agentplane/action_service/action_service_pb";
 import {
   DecideActionRequestResponseSchema,
   DisconnectMcpServerResponseSchema,
@@ -35,7 +35,7 @@ import {
   McpServerLinkageSchema,
   StartMcpServerLinkageResponseSchema,
   WatchMcpServersResponseSchema,
-} from "../../../../agentplane_proto_generated/agentplane/action_service/operator_action_service_pb";
+} from "../../../../agentplane/proto/agentplane_proto_generated/agentplane/action_service/operator_action_service_pb";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import type {
   ActionGroupView,

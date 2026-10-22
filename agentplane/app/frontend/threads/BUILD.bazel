@@ -96,8 +96,8 @@ ts_library(
     deps = [
         ":thread_sync",
         ":thread_view_timing",
-        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -109,9 +109,9 @@ agentplane_vitest_test(
         ":thread_entity_fixture",
         ":thread_sync",
         ":thread_view_timing",
-        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -132,10 +132,10 @@ agentplane_vitest_test(
     deps = [
         ":dispatch_watch",
         ":local_commands",
-        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:watch_fixture",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -144,9 +144,9 @@ ts_library(
     srcs = ["local_commands.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend:client",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -155,10 +155,10 @@ agentplane_vitest_test(
     srcs = ["local_commands.test.ts"],
     deps = [
         ":local_commands",
-        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -183,7 +183,6 @@ ts_library(
         ":thread_sync",
         ":thread_title",
         ":thread_view_timing",
-        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -205,6 +204,7 @@ ts_library(
         "//agentplane/app/frontend:thread_tab",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:topbar",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -226,7 +226,6 @@ agentplane_vitest_test(
         ":thread_state_fixture",
         ":thread_sync",
         ":thread_view_timing",
-        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -240,6 +239,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:watch_fixture",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -311,7 +311,6 @@ ts_library(
         ":step_line",
         ":thread_evidence",
         ":thread_sync",
-        "//:agentplane_proto_js",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -320,6 +319,7 @@ ts_library(
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:raw_switch",
+        "//agentplane/proto:agentplane_proto_js",
         "//util/frontend:code_block",
         "//util/frontend:markdown",
     ],
@@ -335,7 +335,6 @@ agentplane_vitest_test(
         ":thread_state_fixture",
         ":thread_sync",
         ":thread_view_timing",
-        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -343,6 +342,7 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -438,7 +438,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
-        "//:agentplane_proto_js",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 

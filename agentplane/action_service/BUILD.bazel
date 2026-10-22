@@ -1376,7 +1376,6 @@ proto_library(
     name = "action_service_proto",
     srcs = ["action_service.proto"],
     visibility = [
-        "//:__pkg__",
         "//agentplane:__subpackages__",
     ],
     deps = [
@@ -1419,7 +1418,6 @@ proto_library(
     name = "operator_action_service_proto",
     srcs = ["operator_action_service.proto"],
     visibility = [
-        "//:__pkg__",
         "//agentplane:__subpackages__",
     ],
     deps = [
@@ -1454,7 +1452,6 @@ proto_library(
     name = "web_push_service_proto",
     srcs = ["web_push_service.proto"],
     visibility = [
-        "//:__pkg__",
         "//agentplane:__subpackages__",
     ],
     deps = [

@@ -53,12 +53,12 @@ vitest_test(
     data = [":service_worker_js"],
     tsconfig = ":tsconfig_test",
     deps = [
-        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/node",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions:proto_test_fixtures",
         "//agentplane/app/frontend/actions:types",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 

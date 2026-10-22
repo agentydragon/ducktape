@@ -12,7 +12,7 @@ import {
   ItemKind,
   TurnStatus,
   TurnStatusSchema,
-} from "../../../../agentplane_proto_generated/agentplane/proto/event_pb";
+} from "../../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/event_pb";
 import type { ThreadEntity } from "./thread_sync";
 
 /** A row is identified by its first entity: its key and reading anchor stay put while later steps

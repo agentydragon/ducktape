@@ -7,7 +7,6 @@ proto_library(
     name = "connection_service_proto",
     srcs = ["connection_service.proto"],
     visibility = [
-        "//:__pkg__",
         "//agentplane:__subpackages__",
     ],
     deps = [

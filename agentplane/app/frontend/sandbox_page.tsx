@@ -45,7 +45,7 @@ import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandbo
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { snapshotFresh } from "./thread_status";
 import { TopbarActions, TopbarTitle } from "./topbar";
-import type { SessionSpec } from "../../../agentplane_proto_generated/agentplane/proto/runner_pb";
+import type { SessionSpec } from "../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/runner_pb";
 
 // Persist only the Session ID, never instructions or setup scripts (which can contain secrets).
 function pendingOpenKey(sandbox: string): string {

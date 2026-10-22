@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { create, getOption } from "@bufbuild/protobuf";
-import { ActionService } from "../../agentplane_proto_generated/agentplane/action_service/action_service_pb.js";
-import { http } from "../../agentplane_proto_generated/google/api/annotations_pb.js";
+import { ActionService } from "./agentplane_proto_generated/agentplane/action_service/action_service_pb.js";
+import { http } from "./agentplane_proto_generated/google/api/annotations_pb.js";
 import { RootSchema } from "./typescript_transitive_fixture_generated/agentplane/proto/typescript_generation_test/root_pb.js";
 
 const submitActionRequest = getOption(ActionService.method.submitActionRequest, http);
@@ -25,7 +25,7 @@ assert.equal(
 
 for (const wkt of ["descriptor", "duration", "empty", "struct", "timestamp"]) {
   assert.equal(
-    existsSync(new URL(`../../agentplane_proto_generated/google/protobuf/${wkt}_pb.js`, import.meta.url)),
+    existsSync(new URL(`./agentplane_proto_generated/google/protobuf/${wkt}_pb.js`, import.meta.url)),
     false
   );
 }

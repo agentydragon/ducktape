@@ -1,10 +1,13 @@
 import { create, equals, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
-import { CommandSchema, type Command } from "../../../../agentplane_proto_generated/agentplane/proto/command_pb";
+import {
+  CommandSchema,
+  type Command,
+} from "../../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/command_pb";
 import {
   EventEntrySchema,
   type EventEntry,
-} from "../../../../agentplane_proto_generated/agentplane/proto/event_log_pb";
+} from "../../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/event_log_pb";
 import type { DispatchReceipt, InterruptResult } from "../client";
 
 /** A typed operation retained for lost-response recovery; Command protobuf belongs to the journal. */

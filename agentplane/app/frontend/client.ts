@@ -3,8 +3,14 @@ import createClient from "openapi-fetch";
 
 import type { components, paths } from "./api/schema";
 import { redirectToLogin } from "./operator_login";
-import { SessionSpecSchema, type SessionSpec } from "../../../agentplane_proto_generated/agentplane/proto/runner_pb";
-import { EventEntrySchema, type EventEntry } from "../../../agentplane_proto_generated/agentplane/proto/event_log_pb";
+import {
+  SessionSpecSchema,
+  type SessionSpec,
+} from "../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/runner_pb";
+import {
+  EventEntrySchema,
+  type EventEntry,
+} from "../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/event_log_pb";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
 
