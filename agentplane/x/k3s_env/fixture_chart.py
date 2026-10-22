@@ -87,7 +87,8 @@ EGRESS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset"
 EGRESS_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate:unset"
 DEX_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-dex:unset"
 MCP_EVERYTHING_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset"
-APP_ORIGIN = app_component.service(NAMESPACE).url
+APP_SERVICE = app_component.service(NAMESPACE)
+APP_ORIGIN = APP_SERVICE.url
 ACTIONS_SERVICE = actions.service(NAMESPACE)
 DEX_HOST = dex.service().host
 DEX_ISSUER = dex.issuer(f"https://{DEX_HOST}:{dex.HTTPS_PORT.number}")
@@ -139,8 +140,11 @@ def objects(
     """Synthesize only the objects the one-node, operator-light k3s fixture deploys; Dex, the MCP
     servers `test_mcp` calls and the Action Service's OAuth server only given `mcp`, whose images then
     need importing; the VM template, on the test guest, and its launcher relay only with `vm_sandboxes`."""
-    operator_oidc = testing.operator_oidc(issuer=DEX_ISSUER, app_client_id=_APP_LOGIN.id)
-    oauth, oauth_files = _actions_oauth(mcp.actions_origin) if mcp is not None else (None, {})
+    app_origin = mcp.app_origin if mcp is not None else APP_ORIGIN
+    app_login = replace(_APP_LOGIN, redirect_uri=f"{app_origin}/auth/callback")
+    mcp_linkage = replace(_MCP_LINKAGE, redirect_uri=f"{app_origin}/mcp-linkage/callback")
+    operator_oidc = testing.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
+    oauth, oauth_files = _actions_oauth(mcp.actions_origin, app_origin) if mcp is not None else (None, {})
     env = replace(
         testing.ENV,
         vm_sandboxes=vm_sandboxes,
@@ -158,14 +162,15 @@ def objects(
                 "action_federation": testing.action_federation(operator_oidc),
             }
         ),
-        app=replace(testing.ENV.app, origin=APP_ORIGIN, oidc_issuer=DEX_ISSUER),
+        app=replace(testing.ENV.app, origin=app_origin, oidc_issuer=DEX_ISSUER),
         # The scenarios' own MCP server and Action groups in place of the deployment's.
         actions=replace(
             testing.ENV.actions,
+            runtime="go",
             operator_oidc=operator_oidc,
             mcp_servers={
                 mcp_servers.OAUTH: actions_testing_fixtures.oauth_fixture_server(
-                    mcp_servers.OAUTH, client_id=_MCP_LINKAGE.id, redirect_uri=_MCP_LINKAGE.redirect_uri
+                    mcp_servers.OAUTH, client_id=mcp_linkage.id, redirect_uri=mcp_linkage.redirect_uri
                 )
             },
             action_groups={
@@ -389,7 +394,14 @@ def objects(
         {"client-id": _MCP_LINKAGE.id, "client-secret": _password(), **oauth_files},
     )
     if mcp is not None:
-        _add_mcp_fixtures(chart, mcp, system_roots=system_roots, dex_clients=[app_service, action_service])
+        _add_mcp_fixtures(
+            chart,
+            mcp,
+            app_login=app_login,
+            mcp_linkage=mcp_linkage,
+            system_roots=system_roots,
+            dex_clients=[app_service, action_service],
+        )
     _secret(
         chart,
         "agentplane-testing-egress-ca",
@@ -484,7 +496,15 @@ def browser_services(*, mcp_fixtures: bool) -> list[ServiceRef]:
     return [app_component.service(NAMESPACE), *([dex.service()] if mcp_fixtures else [])]
 
 
-def _add_mcp_fixtures(chart: Chart, mcp: McpInputs, *, system_roots: str, dex_clients: list[Construct]) -> None:
+def _add_mcp_fixtures(
+    chart: Chart,
+    mcp: McpInputs,
+    *,
+    app_login: dex.StaticClient,
+    mcp_linkage: dex.StaticClient,
+    system_roots: str,
+    dex_clients: list[Construct],
+) -> None:
     """Dex with the operator's password login, trusted by `dex_clients`, and the MCP servers the Action
     groups call."""
     password = _password()
@@ -496,8 +516,8 @@ def _add_mcp_fixtures(chart: Chart, mcp: McpInputs, *, system_roots: str, dex_cl
             **dex.operator_login_data(_OPERATOR, password=password, issuer=DEX_ISSUER),
             dex.CONFIG_KEY: dex.config_yaml(
                 issuer=DEX_ISSUER,
-                app_login=_APP_LOGIN,
-                mcp_linkage=_MCP_LINKAGE,
+                app_login=app_login,
+                mcp_linkage=mcp_linkage,
                 operator=_OPERATOR,
                 password_hash=password_hash,
                 serve_tls=True,
@@ -533,7 +553,7 @@ def _add_mcp_fixtures(chart: Chart, mcp: McpInputs, *, system_roots: str, dex_cl
     )
 
 
-def _actions_oauth(origin: str) -> tuple[OAuthSettings, dict[str, str]]:
+def _actions_oauth(origin: str, app_origin: str) -> tuple[OAuthSettings, dict[str, str]]:
     """The Action Service's OAuth server at `origin`, signing operators in at Dex, and the files it reads
     from `actions.mcp_oauth_secret`. For registration only (`test_dcr`): no scenario signs in through
     it, so Dex has no client for it."""
@@ -543,7 +563,7 @@ def _actions_oauth(origin: str) -> tuple[OAuthSettings, dict[str, str]]:
         upstream_client_id="test-actions-oauth",
         upstream_client_secret_file=files / "oauth-client-secret",
         base_url=origin,
-        integration_app_url=APP_ORIGIN,
+        integration_app_url=app_origin,
         jwt_signing_key_file=files / "jwt-signing-key",
         encryption_key_file=files / "encryption-key",
         upstream_issuer=DEX_ISSUER,

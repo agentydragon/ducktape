@@ -30,7 +30,7 @@ def _render(output: Path, backend: Backend, mcp: McpInputs | None, *, vm_sandbox
         backend=backend,
         vm_sandboxes=vm_sandboxes,
         namespace=fixture_chart.NAMESPACE,
-        app_origin=fixture_chart.APP_ORIGIN,
+        app_origin=mcp.app_origin if mcp is not None else fixture_chart.APP_ORIGIN,
         browser_services=[
             BrowserService(name=service.name, host=service.host, fqdn=service.fqdn)
             for service in fixture_chart.browser_services(mcp_fixtures=mcp is not None)
@@ -41,6 +41,8 @@ def _render(output: Path, backend: Backend, mcp: McpInputs | None, *, vm_sandbox
                 operator_secret=fixture_chart.OPERATOR_SECRET,
                 actions_service=fixture_chart.ACTIONS_SERVICE.name,
                 actions_port=fixture_chart.ACTIONS_SERVICE.port.number,
+                app_service=fixture_chart.APP_SERVICE.name,
+                app_port=fixture_chart.APP_SERVICE.port.number,
             )
             if mcp is not None
             else None

@@ -16,7 +16,11 @@ from agentplane.x.k3s_env.rendered_fixture import McpInputs
 from util.settings_contract import env_name
 
 _MCP = McpInputs(
-    dex_ca_cert="dex-ca\n", dex_cert="dex-cert\n", dex_key="dex-key\n", actions_origin="http://127.0.0.1:1"
+    dex_ca_cert="dex-ca\n",
+    dex_cert="dex-cert\n",
+    dex_key="dex-key\n",
+    actions_origin="http://127.0.0.1:1",
+    app_origin="http://127.0.0.1:2",
 )
 
 
@@ -71,6 +75,12 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"]
         == "IfNotPresent"
     )
+    actions_container = _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]
+    assert actions_container["readinessProbe"]["grpc"] == {"port": fixture_chart.ACTIONS_SERVICE.pod_port}
+    assert actions_container["livenessProbe"]["grpc"] == {
+        "port": fixture_chart.ACTIONS_SERVICE.pod_port,
+        "service": "livez",
+    }
     egress_pod = _resource(docs, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = next(container for container in egress_pod["containers"] if container["name"] == "proxy")
     assert proxy["image"] == fixture_chart.EGRESS_IMAGE
