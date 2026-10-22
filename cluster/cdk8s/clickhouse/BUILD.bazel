@@ -47,6 +47,7 @@ py_library(
     srcs = ["installation.py"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
         ":client",

@@ -1633,8 +1633,9 @@ def generate_manifests(root: Path) -> None:
     public_coder_agent_devbox_artifact = artifact(
         "public-coder-agent-devbox", f"{GENERATED_ROOT}/agents/public-coder-agent/devbox-retirement"
     )
+    write_directory(root, public_coder_agent_devbox_artifact)
     public_coder_agent_devbox_kustomization = agents_flux_kustomizations.public_coder_agent_devbox_cleanup(
-        flux_chart, write_directory(root, public_coder_agent_devbox_artifact)
+        flux_chart, public_coder_agent_devbox_artifact
     )
     public_coder_agent_app_artifact = artifact("public-coder-agent-app", public_coder_app.APP_DIR)
     public_coder_agent_app_kustomization = agents_flux_kustomizations.public_coder_agent_app(
