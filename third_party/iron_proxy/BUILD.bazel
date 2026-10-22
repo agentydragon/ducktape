@@ -76,3 +76,11 @@ alias(
     name = "patched_http2",
     actual = "@org_golang_x_net_patched//http2",
 )
+
+# The gRPC bridge suite drives the patched CLI as a separate process, keeping its isolated
+# dependency graph out of the Agentplane test binary.
+go_binary(
+    name = "patched_binary",
+    embed = ["@com_github_ironsh_iron_proxy_patched//cmd/iron-proxy:iron-proxy_lib"],
+    pure = "on",
+)

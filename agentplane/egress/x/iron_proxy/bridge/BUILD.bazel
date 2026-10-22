@@ -19,8 +19,14 @@ go_library(
 
 go_test(
     name = "bridge_test",
-    srcs = ["bridge_test.go"],
-    data = ["@ducktape_iron_proxy//:binary"],  # keep: subprocess interoperability with the pinned proxy CLI
+    srcs = [
+        "bridge_test.go",
+        "streaming_test.go",
+    ],
+    data = [
+        "@ducktape_iron_proxy//:binary",
+        "@ducktape_iron_proxy//:patched_binary",
+    ],  # keep: subprocess interoperability with both pinned proxy CLIs
     embed = [":bridge"],
     deps = [
         "//agentplane/egress/decision",
@@ -35,7 +41,12 @@ go_test(
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//interop/grpc_testing",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/structpb",
     ],
 )

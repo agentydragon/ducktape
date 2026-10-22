@@ -251,15 +251,32 @@ func exchangeInnerGET(t *testing.T, conn net.Conn, reader *bufio.Reader, target,
 	return response.StatusCode, string(responseBody)
 }
 
+type ironProxyConfig struct {
+	binary          string
+	caCert          string
+	caKey           string
+	upstreamCA      string
+	sendRequestBody bool
+}
+
 func startIronProxy(t *testing.T, transformAddress string) string {
+	t.Helper()
+	return startConfiguredIronProxy(t, transformAddress, ironProxyConfig{binary: "binary", sendRequestBody: true})
+}
+
+func startConfiguredIronProxy(t *testing.T, transformAddress string, settings ironProxyConfig) string {
 	t.Helper()
 	files, err := runfiles.New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	binary, err := files.Rlocation("ducktape_iron_proxy/binary_/binary")
+	binary, err := files.Rlocation("ducktape_iron_proxy/" + settings.binary + "_/" + settings.binary)
 	if err != nil {
 		t.Fatal(err)
+	}
+	tlsConfig := "  mode: sni-only\n"
+	if settings.caCert != "" {
+		tlsConfig = fmt.Sprintf("  mode: mitm\n  ca_cert: %q\n  ca_key: %q\n", settings.caCert, settings.caKey)
 	}
 	// Empty upstream_deny_cidrs is confined to this loopback-only test fixture.
 	config := fmt.Sprintf(`dns:
@@ -270,24 +287,26 @@ proxy:
   tunnel_listen: "127.0.0.1:0"
   upstream_deny_cidrs: []
 tls:
-  mode: sni-only
-transforms:
+%stransforms:
   - name: grpc
     config:
       name: %q
       target: %q
-      send_request_body: true
+      send_request_body: %t
 metrics:
   listen: "127.0.0.1:0"
 log:
   level: info
-`, TransformName, transformAddress)
+`, tlsConfig, TransformName, transformAddress, settings.sendRequestBody)
 	configPath := filepath.Join(t.TempDir(), "iron-proxy.yaml")
 	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	command := exec.Command(binary, "--config", configPath)
 	command.Env = []string{}
+	if settings.upstreamCA != "" {
+		command.Env = append(command.Env, "SSL_CERT_FILE="+settings.upstreamCA, "SSL_CERT_DIR="+t.TempDir())
+	}
 	stderr, err := command.StderrPipe()
 	if err != nil {
 		t.Fatal(err)

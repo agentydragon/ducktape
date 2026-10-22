@@ -1,6 +1,6 @@
 # iron-proxy reuse comparison
 
-Compare Agentplane `devel` at `dacc69719d6fffc710414ccd9e966861e60fa60a` with iron-proxy
+Compare Agentplane `devel` at `4fdc22d821c57f85a6e4bc11a0bf8b8d4f0e270b` with iron-proxy
 [`7c6a6e9261f09aa4f4efdb0bc20bdbbfb306603d`](https://github.com/paradigmxyz/iron-proxy/tree/7c6a6e9261f09aa4f4efdb0bc20bdbbfb306603d).
 The executable experiment is [`../x/iron_proxy/`](../x/iron_proxy/README.md).
 It changes no deployed service or production proxy code. Upstream `60ed3566` adds only a Go
@@ -29,11 +29,12 @@ better production throughput, latency, memory use, or security history.
 ## Executed comparisons
 
 [BuildBuddy invocation `27357bf8`](https://app.buildbuddy.io/invocation/27357bf8-7cc7-4acf-8670-8b2ce546041d)
-executed and passed all four test targets against the Agentplane baseline above: the original and
+executed and passed all four test targets against Agentplane `dacc69719d`: the original and
 patched transport comparisons, the gRPC bridge including its Iron CLI subprocess, and the current
 `//agentplane/egress/proxy:proxy_test`. None of the four test results came from cache.
-The patch and the adapter are separate experiments; the patched transport was not combined with
-the bridge in these runs.
+[BuildBuddy invocation `9a21aa90`](https://app.buildbuddy.io/invocation/9a21aa90-9c44-4b8a-9843-ccd654471ac6)
+executed and passed the extended bridge suite, including all combined CLI streaming cases below.
+The original and patched transport comparison targets also passed from cache in that invocation.
 
 | Scenario                                                                 | Pinned iron-proxy                        | With response-flush patch                              |
 | ------------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------ |
@@ -50,7 +51,27 @@ does not satisfy the probe. The patched test exchanges a response frame while th
 still open. Neither is a throughput benchmark. The tests deliberately assert the observed stock
 limitations, so a green characterization suite is not a claim of replacement parity.
 
-`bridge:bridge_test` also starts the actual pinned iron-proxy CLI as a separate process and checks:
+`bridge:bridge_test` starts both the stock and patched Iron CLIs as separate processes. Its real
+gRPC `FullDuplexCall` client and server communicate through CONNECT and TLS interception, with a
+separate upstream trust root:
+
+- **Patched transport, header-only transform:** initial metadata reaches the client before its
+  first request message; three request/response exchanges finish before request EOF. Credential
+  substitution and private-header stripping, clean EOF and trailers, client cancellation and
+  deadline propagation to the upstream all work. Removing the binding refuses the next stream on
+  the same tunnel. That refusal currently surfaces as gRPC `INTERNAL`, not `PERMISSION_DENIED`;
+  the test characterizes this framing gap and checks that no upstream call occurs.
+- **Stock transport, header-only transform:** the authenticated upstream flushes initial metadata,
+  but the client receives none before its deadline. This reproduces the missing-flush blocker with
+  the actual bridge in the path.
+- **Patched transport, `send_request_body: true`:** the client reaches its deadline before the inner
+  request reaches either policy evaluation or the upstream. CONNECT alone was reviewed. Forwarding
+  the body into the unary transform therefore still blocks an interactive stream before request EOF.
+
+These are characterization tests: the two expected stalls and the refusal-framing gap do not count
+as replacement parity. They do not change the deployed proxy or add conditional body handling.
+
+The existing JSON/HTTP fixture also checks:
 
 - CONNECT authentication reaches the real Agentplane resolver through iron-proxy's own gRPC client.
 - An inner HTTP/1.1 request inherits that identity without presenting the bearer again.
@@ -59,10 +80,10 @@ limitations, so a green characterization suite is not a claim of replacement par
 - Revoking the controlled TokenReview result refuses the next request on that same tunnel, before
   a second request reaches the upstream.
 
-The bridge uses the shared PolicySet reader and its freshness gate.
-This fixture uses plaintext HTTP/1.1 inside CONNECT and permits loopback only for its local upstream.
-It does not prove real Kubernetes token issuance/revocation, production network isolation, TLS
-bridge interoperability, or full protocol parity.
+The bridge uses the shared PolicySet reader and its freshness gate. The JSON fixture uses plaintext
+HTTP/1.1 inside CONNECT; the streaming cases verify TLS on both legs. Loopback is permitted only for
+the fixture upstreams. These fixtures do not prove real Kubernetes token issuance/revocation,
+production network isolation, or full protocol parity.
 
 ## Reuse paths and remaining costs
 
@@ -119,8 +140,8 @@ Costs that the prototype leaves open:
 
 [`streaming.patch`](../../../third_party/iron_proxy/streaming.patch) flushes response headers and
 each body write. The same test sources build against the original and patched dependencies in
-separate binaries. This establishes the TLS interactive case only; buffering/backpressure and
-high-throughput behavior have not been benchmarked.
+separate binaries. The combined CLI cases also establish the header-only bridge's interactive TLS
+gRPC path. Buffering/backpressure and high-throughput behavior have not been benchmarked.
 
 The patch does not provide h2c. It also does not integrate Agentplane's address admission:
 
