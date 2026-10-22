@@ -3,7 +3,6 @@ its clients address it by."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 from cdk8s import ApiObjectMetadata
@@ -70,22 +69,19 @@ class PostgresRef:
         )
 
 
-def _affinity(
-    *, placement: Placement, storage_class: str, tolerations: Sequence[ClusterSpecAffinityTolerations] | None = None
-) -> ClusterSpecAffinity:
+def _affinity(*, placement: Placement, storage_class: str) -> ClusterSpecAffinity:
     """One instance per node within `placement`, required: instances sharing a node share its
     failure, and preferred anti-affinity lets the scheduler co-locate them. A Cluster tolerates
     control-plane nodes for local-path SSD classes and the Piraeus SSD pilot, whose only pool is
     currently on an OVH control-plane."""
-    storage_tolerations = (
+    tolerations = (
         [_CONTROL_PLANE_TOLERATION]
         if storage_class in SSD_STORAGE_CLASSES or storage_class == _PIRAEUS_SSD_STORAGE_CLASS
-        else []
+        else None
     )
-    combined_tolerations = [*storage_tolerations, *(tolerations or ())]
     return ClusterSpecAffinity(
         node_selector=placement.node_selector,
-        tolerations=combined_tolerations or None,
+        tolerations=tolerations,
         topology_key="kubernetes.io/hostname",
         pod_anti_affinity_type="required",
     )
@@ -112,7 +108,6 @@ def cluster(
     *,
     ref: PostgresRef,
     placement: Placement | None,
-    tolerations: Sequence[ClusterSpecAffinityTolerations] | None = None,
     storage_class: str,
     size: str,
     initdb: ClusterSpecBootstrapInitdb | None,
@@ -133,8 +128,6 @@ def cluster(
     default, while `False` prevents resizing existing PVCs when the template size changes;
     new claims still use `size`),
     `placement` (the zone or region pin), from which `_affinity` derives placement, and
-    `tolerations` (extra typed entries merged into `affinity.tolerations`; changing affinity can
-    restart existing instance Pods under CNPG's default PodSpec reconciliation), and
     `wal_archive`, which makes the barman-cloud plugin archive WAL to the ObjectStore named
     `ref.name` (`cnpg_backup.CnpgBackup` builds it). Our policy: 2 instances
     (cluster/docs/cnpg_conventions.md R2) on `POSTGRES_IMAGE`; `image_name=None` runs the
@@ -142,9 +135,6 @@ def cluster(
     otherwise kills a primary it considers isolated on a transient network blip -- and enables
     the PodMonitor.
     """
-    if placement is None and tolerations:
-        raise ValueError("CNPG tolerations require placement so they can be added to affinity")
-
     return Cluster(
         scope,
         id,
@@ -153,11 +143,7 @@ def cluster(
         instances=instances,
         image_name=image_name,
         bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
-        affinity=(
-            _affinity(placement=placement, storage_class=storage_class, tolerations=tolerations)
-            if placement is not None
-            else None
-        ),
+        affinity=_affinity(placement=placement, storage_class=storage_class) if placement is not None else None,
         env=env,
         managed=managed,
         postgresql=postgresql,
