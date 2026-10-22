@@ -47,6 +47,20 @@ ts_library(
 )
 
 ts_library(
+    name = "proto_test_fixtures",
+    testonly = True,
+    srcs = ["proto_test_fixtures.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":types",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/action_service:operator_action_service_pb",
+        "//agentplane/app/frontend:mcp_linkage_client",
+    ],
+)
+
+ts_library(
     name = "call",
     srcs = ["call.tsx"],
     tsconfig = TSCONFIG,
@@ -261,6 +275,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":action_client",
+        ":proto_test_fixtures",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

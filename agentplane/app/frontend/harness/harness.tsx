@@ -22,6 +22,23 @@ import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
+import {
+  actionGroupsSnapshotCompleteProtoJson,
+  actionGroupsSnapshotProtoJson,
+  actionGroupUpsertProtoJson,
+  actionRequestsSnapshotCompleteProtoJson,
+  actionRequestsSnapshotProtoJson,
+  actionRequestUpsertProtoJson,
+  actionStateProtoJson,
+  decideActionRequestProtoJson,
+  getActionRequestProtoJson,
+  listActionGroupsProtoJson,
+  listActionHistoryProtoJson,
+  listActionRequestsProtoJson,
+  mcpLinkagesSnapshotCompleteProtoJson,
+  mcpLinkagesSnapshotProtoJson,
+  mcpLinkageUpsertProtoJson,
+} from "../actions/proto_test_fixtures";
 import { sampleConnection } from "../connections_fixture";
 import type {
   BindingView,
@@ -2363,46 +2380,6 @@ type Flag =
   | "mcpHealthChanged";
 const flags = new Set<Flag>();
 
-function actionProtoJson(value: unknown, key = "", owner = ""): unknown {
-  if (Array.isArray(value)) return value.map((item) => actionProtoJson(item, key, owner));
-  if (value === null || typeof value !== "object") {
-    if (typeof value === "string") {
-      const prefix =
-        key === "state"
-          ? owner === "execution"
-            ? "EXECUTION_STATE_"
-            : owner === "health"
-              ? "MCP_LIFECYCLE_"
-              : "ACTION_STATE_"
-          : key === "verdict"
-            ? "VERDICT_"
-            : key === "executor_kind"
-              ? "EXECUTOR_KIND_"
-              : key === "source"
-                ? "POLICY_SOURCE_"
-                : key === "type"
-                  ? "POLICY_KIND_"
-                  : key === "reason" && owner === "health"
-                    ? "MCP_UNAVAILABLE_REASON_"
-                    : key === "status"
-                      ? "MCP_LINKAGE_STATUS_"
-                      : key === "action" && owner === "refresh_failure"
-                        ? "MCP_REFRESH_ACTION_"
-                        : undefined;
-      if (prefix !== undefined) return `${prefix}${value.toUpperCase()}`;
-    }
-    if (typeof value === "number" && (key === "version" || key === "generation")) return String(value);
-    return value;
-  }
-  const dynamic = new Set(["arguments", "result", "error", "input_schema"]);
-  return Object.fromEntries(
-    Object.entries(value).map(([childKey, child]) => [
-      childKey.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase()),
-      dynamic.has(childKey) ? child : actionProtoJson(child, childKey, key),
-    ])
-  );
-}
-
 function actionGroups(): ActionGroupView[] {
   return MCP_GROUPS.map((row) =>
     row.key === "example_docs" && flags.has("mcpHealthChanged")
@@ -2502,11 +2479,8 @@ routes.push(
       const path = "/upstream/actions/v1/action-requests:watch";
       return liveNdjsonWatch(
         path,
-        [
-          { snapshot: { actionRequests: pendingActions().map((request) => actionProtoJson(request)) } },
-          { snapshotComplete: {} },
-        ],
-        () => pendingActions().map((request) => ({ upsert: actionProtoJson(request) })),
+        [actionRequestsSnapshotProtoJson(pendingActions()), actionRequestsSnapshotCompleteProtoJson()],
+        () => pendingActions().map(actionRequestUpsertProtoJson),
         signal
       );
     },
@@ -2518,11 +2492,8 @@ routes.push(
       const path = "/upstream/actions/v1/action-groups:watch";
       return liveNdjsonWatch(
         path,
-        [
-          { snapshot: { actionGroups: actionGroups().map((group) => actionProtoJson(group)) } },
-          { snapshotComplete: {} },
-        ],
-        () => actionGroups().map((group) => ({ upsert: actionProtoJson(group) })),
+        [actionGroupsSnapshotProtoJson(actionGroups()), actionGroupsSnapshotCompleteProtoJson()],
+        () => actionGroups().map(actionGroupUpsertProtoJson),
         signal
       );
     },
@@ -2534,14 +2505,11 @@ routes.push(
       const path = "/upstream/actions/v1/operator/mcp-servers:watch";
       return liveNdjsonWatch(
         path,
-        [
-          { snapshot: { linkages: mcpLinkages().map((linkage) => actionProtoJson(linkage)) } },
-          { snapshotComplete: {} },
-        ],
+        [mcpLinkagesSnapshotProtoJson(mcpLinkages()), mcpLinkagesSnapshotCompleteProtoJson()],
         () =>
           mcpLinkages()
             .filter((linkage) => linkage.server_id === "example_docs")
-            .map((linkage) => ({ upsert: actionProtoJson(linkage) })),
+            .map(mcpLinkageUpsertProtoJson),
         signal
       );
     },
@@ -2549,11 +2517,10 @@ routes.push(
   [
     "GET",
     /^\/upstream\/actions\/v1\/action-requests$/,
-    (_match, query) => ({
-      actionRequests: ACTIONS.filter(
-        (request) => !query.has("state") || `ACTION_STATE_${request.state.toUpperCase()}` === query.get("state")
-      ).map((request) => actionProtoJson(request)),
-    }),
+    (_match, query) =>
+      listActionRequestsProtoJson(
+        ACTIONS.filter((request) => !query.has("state") || actionStateProtoJson(request.state) === query.get("state"))
+      ),
   ],
   [
     "GET",
@@ -2570,10 +2537,7 @@ routes.push(
         flags.has("pagedActionHistory") && !query.has("cursor")
           ? { items: filtered.slice(0, 2), next_cursor: "second-page" }
           : { items: flags.has("pagedActionHistory") ? filtered.slice(2) : filtered, next_cursor: null };
-      return {
-        actionRequests: page.items.map((request) => actionProtoJson(request)),
-        ...(page.next_cursor === null ? {} : { nextCursor: page.next_cursor }),
-      };
+      return listActionHistoryProtoJson(page);
     },
   ],
   [
@@ -2582,7 +2546,7 @@ routes.push(
     (match) => {
       const request = previewAction?.id === match[1] ? previewAction : ACTIONS.find((item) => item.id === match[1]);
       return request
-        ? { actionRequest: actionProtoJson(request) }
+        ? getActionRequestProtoJson(request)
         : Response.json({ code: 5, message: "Action request not found" }, { status: 404 });
     },
   ],
@@ -2620,7 +2584,7 @@ routes.push(
         );
       }
       const groups = receiptActionGroup === undefined ? MCP_GROUPS : [...MCP_GROUPS, receiptActionGroup];
-      return { actionGroups: groups.map((group) => actionProtoJson(group)) };
+      return listActionGroupsProtoJson(groups);
     },
   ],
   ["GET", /^\/upstream\/actions\/v1\/operator\/push\/config$/, () => ({})],
@@ -2675,7 +2639,7 @@ routes.push(
     (match) => {
       const request = ACTIONS.find((item) => item.id === match[1]);
       return request
-        ? { actionRequest: actionProtoJson({ ...request, state: "allowed", version: 2 }) }
+        ? decideActionRequestProtoJson({ ...request, state: "allowed", version: 2 })
         : Response.json({ code: 5, message: "Action request not found" }, { status: 404 });
     },
   ],

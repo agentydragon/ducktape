@@ -5,6 +5,26 @@ import { afterEach, type Mock, vi } from "vitest";
 
 import { api } from "../client";
 import type { ActionGroupView, ActionRequestView, ActionState } from "./client";
+import type { McpLinkageView } from "../mcp_linkage_client";
+import {
+  actionGroupUpsertProtoJson,
+  actionGroupsSnapshotCompleteProtoJson,
+  actionGroupsSnapshotProtoJson,
+  actionRequestUpsertProtoJson,
+  actionRequestsSnapshotCompleteProtoJson,
+  actionRequestsSnapshotProtoJson,
+  decideActionRequestProtoJson,
+  disconnectMcpLinkageProtoJson,
+  getActionRequestProtoJson,
+  listActionGroupsProtoJson,
+  listActionHistoryProtoJson,
+  listActionRequestsProtoJson,
+  mcpLinkageUpsertProtoJson,
+  mcpLinkagesSnapshotCompleteProtoJson,
+  mcpLinkagesSnapshotProtoJson,
+  startMcpLinkageProtoJson,
+} from "./proto_test_fixtures";
+import type { ActionHistoryPage } from "./types";
 
 /** Shared fixtures, stand-ins for the network, and mounting for the Action views' suites. */
 
@@ -99,83 +119,91 @@ export function sshExec(state: ActionState, returned: Record<string, unknown> = 
 
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 
-function toProtoJson(value: unknown, parentKey = "", ownerKey = ""): unknown {
-  if (Array.isArray(value)) return value.map((item) => toProtoJson(item, parentKey, ownerKey));
-  if (value === null || typeof value !== "object") {
-    if (typeof value === "string") {
-      const prefix =
-        parentKey === "state"
-          ? ownerKey === "execution"
-            ? "EXECUTION_STATE_"
-            : ownerKey === "health"
-              ? "MCP_LIFECYCLE_"
-              : "ACTION_STATE_"
-          : parentKey === "verdict"
-            ? "VERDICT_"
-            : parentKey === "executor_kind"
-              ? "EXECUTOR_KIND_"
-              : parentKey === "source"
-                ? "POLICY_SOURCE_"
-                : parentKey === "type"
-                  ? "POLICY_KIND_"
-                  : parentKey === "reason" && ownerKey === "health"
-                    ? "MCP_UNAVAILABLE_REASON_"
-                    : parentKey === "status"
-                      ? "MCP_LINKAGE_STATUS_"
-                      : parentKey === "action" && ownerKey === "refresh_failure"
-                        ? "MCP_REFRESH_ACTION_"
-                        : undefined;
-      if (prefix !== undefined) return `${prefix}${value.toUpperCase()}`;
-      if (parentKey === "version" || parentKey === "generation") return value;
+function actionResponse(path: string, value: unknown): unknown {
+  if (value instanceof Response || value === undefined || value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    if (path.endsWith("/action-groups")) {
+      if (!value.every(isActionGroupView)) throw new Error("Expected ActionGroupView fixtures.");
+      return listActionGroupsProtoJson(value);
     }
-    if (typeof value === "number" && (parentKey === "version" || parentKey === "generation")) {
-      return String(value);
+    if (path.endsWith("/action-requests")) {
+      if (!value.every(isActionRequestView)) throw new Error("Expected ActionRequestView fixtures.");
+      return listActionRequestsProtoJson(value);
     }
     return value;
   }
-  const dynamicFields = new Set(["arguments", "result", "error", "input_schema"]);
-  return Object.fromEntries(
-    Object.entries(value).map(([key, child]) => [
-      key.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase()),
-      dynamicFields.has(key) ? child : toProtoJson(child, key, parentKey),
-    ])
+  if (!isRecord(value)) return value;
+  if (path.endsWith("/action-requests:history")) {
+    if (!isActionHistoryPage(value)) throw new Error("Expected an ActionHistoryPage fixture.");
+    return listActionHistoryProtoJson(value);
+  }
+  if (path.endsWith("/decision")) {
+    if (!isActionRequestView(value)) throw new Error("Expected an ActionRequestView decision fixture.");
+    return decideActionRequestProtoJson(value);
+  }
+  if (path.endsWith("/action-groups")) {
+    return value;
+  }
+  if (/\/action-requests\/[^/]+$/.test(path)) {
+    if (!isActionRequestView(value)) throw new Error("Expected an ActionRequestView fixture.");
+    return getActionRequestProtoJson(value);
+  }
+  if (path.endsWith("/linkage/start")) {
+    if (typeof value.authorization_url !== "string") throw new Error("Expected an authorization URL fixture.");
+    return startMcpLinkageProtoJson(value.authorization_url);
+  }
+  if (path.endsWith("/linkage/disconnect")) {
+    if (!isMcpLinkageView(value.linkage)) throw new Error("Expected an MCP linkage fixture.");
+    return disconnectMcpLinkageProtoJson(value.linkage);
+  }
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isActionRequestView(value: unknown): value is ActionRequestView {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.idempotency_key === "string" &&
+    isRecord(value.action) &&
+    typeof value.state === "string" &&
+    typeof value.version === "number" &&
+    typeof value.created_at === "string" &&
+    typeof value.updated_at === "string"
   );
 }
 
-function actionResponse(path: string, value: unknown): unknown {
-  if (value instanceof Response || value === undefined || value === null || typeof value !== "object") return value;
-  if (
-    "actionRequest" in value ||
-    "actionRequests" in value ||
-    "actionGroups" in value ||
-    "authorizationUrl" in value ||
-    "linkage" in value
-  )
-    return value;
-  if (path.endsWith("/action-requests:history")) {
-    const page = value as { items?: unknown[]; next_cursor?: string | null };
-    return {
-      actionRequests: (page.items ?? []).map((item) => toProtoJson(item)),
-      nextCursor: page.next_cursor ?? undefined,
-    };
-  }
-  if (path.endsWith("/action-requests")) {
-    const rows = Array.isArray(value)
-      ? value
-      : Array.isArray((value as { items?: unknown }).items)
-        ? (value as { items: unknown[] }).items
-        : [];
-    return { actionRequests: rows.map((item) => toProtoJson(item)) };
-  }
-  if (path.endsWith("/decision")) {
-    return { actionRequest: toProtoJson(value) };
-  }
-  if (path.endsWith("/action-groups")) {
-    const groups = Array.isArray(value) ? value : [];
-    return { actionGroups: groups.map((item) => toProtoJson(item)) };
-  }
-  return { actionRequest: toProtoJson(value) };
+function isActionGroupView(value: unknown): value is ActionGroupView {
+  return (
+    isRecord(value) &&
+    typeof value.key === "string" &&
+    typeof value.executor_kind === "string" &&
+    Array.isArray(value.actions)
+  );
 }
+
+function isMcpLinkageView(value: unknown): value is McpLinkageView {
+  return (
+    isRecord(value) &&
+    typeof value.server_id === "string" &&
+    typeof value.server_url === "string" &&
+    typeof value.status === "string" &&
+    Array.isArray(value.scopes)
+  );
+}
+
+function isActionHistoryPage(value: Record<string, unknown>): value is Record<string, unknown> & ActionHistoryPage {
+  return (
+    Array.isArray(value.items) &&
+    value.items.every(isActionRequestView) &&
+    (value.next_cursor === null || typeof value.next_cursor === "string")
+  );
+}
+
+type ActionFixture = ActionRequestView | ActionGroupView | McpLinkageView;
 
 /** A browser fetch stream that records the facade's NDJSON watch replay. */
 export class TestNdjsonWatch {
@@ -226,24 +254,46 @@ export class TestNdjsonWatch {
     this.signal?.addEventListener("abort", () => this.close(), { once: true });
   }
 
-  send(value: unknown): void {
+  sendActionRequests(value: readonly ActionRequestView[]): void {
     if (this.controller === undefined) return;
-    const groupWatch = this.url.includes("action-groups:watch");
-    const linkageWatch = this.url.includes("mcp-servers:watch");
-    const snapshot = groupWatch
-      ? { actionGroups: (value as ActionGroupView[]).map((item) => toProtoJson(item)) }
-      : linkageWatch
-        ? { linkages: (value as object[]).map((item) => toProtoJson(item)) }
-        : { actionRequests: (value as ActionRequestView[]).map((item) => toProtoJson(item)) };
-    this.controller.enqueue(this.encoder.encode(`${JSON.stringify({ result: { snapshot } })}\n`));
-    this.controller.enqueue(this.encoder.encode(`${JSON.stringify({ result: { snapshotComplete: {} } })}\n`));
+    this.controller.enqueue(
+      this.encoder.encode(
+        `${JSON.stringify({ result: actionRequestsSnapshotProtoJson(value) })}\n${JSON.stringify({ result: actionRequestsSnapshotCompleteProtoJson() })}\n`
+      )
+    );
   }
 
-  sendUpserts(values: readonly unknown[]): void {
+  sendActionGroups(value: readonly ActionGroupView[]): void {
     if (this.controller === undefined) return;
-    for (const value of values) {
-      this.controller.enqueue(this.encoder.encode(`${JSON.stringify({ result: { upsert: toProtoJson(value) } })}\n`));
-    }
+    this.controller.enqueue(
+      this.encoder.encode(
+        `${JSON.stringify({ result: actionGroupsSnapshotProtoJson(value) })}\n${JSON.stringify({ result: actionGroupsSnapshotCompleteProtoJson() })}\n`
+      )
+    );
+  }
+
+  sendMcpLinkages(value: readonly McpLinkageView[]): void {
+    if (this.controller === undefined) return;
+    this.controller.enqueue(
+      this.encoder.encode(
+        `${JSON.stringify({ result: mcpLinkagesSnapshotProtoJson(value) })}\n${JSON.stringify({ result: mcpLinkagesSnapshotCompleteProtoJson() })}\n`
+      )
+    );
+  }
+
+  sendUpsertFrames(value: readonly ReturnType<typeof actionRequestUpsertProtoJson>[]): void {
+    if (this.controller === undefined) return;
+    for (const frame of value) this.controller.enqueue(this.encoder.encode(`${JSON.stringify({ result: frame })}\n`));
+  }
+
+  sendGroupUpsertFrames(value: readonly ReturnType<typeof actionGroupUpsertProtoJson>[]): void {
+    if (this.controller === undefined) return;
+    for (const frame of value) this.controller.enqueue(this.encoder.encode(`${JSON.stringify({ result: frame })}\n`));
+  }
+
+  sendLinkageUpsertFrames(value: readonly ReturnType<typeof mcpLinkageUpsertProtoJson>[]): void {
+    if (this.controller === undefined) return;
+    for (const frame of value) this.controller.enqueue(this.encoder.encode(`${JSON.stringify({ result: frame })}\n`));
   }
 
   sendRaw(line: string): void {
@@ -328,7 +378,7 @@ export class TestEventSource extends EventTarget {
 
 /** Pushes one snapshot down the latest stream, or the one opened on `url`; a string goes as the
  * frame's raw data. */
-export async function send(value: unknown, url?: string): Promise<void> {
+export async function send(value: string | readonly ActionFixture[], url?: string): Promise<void> {
   let watchUrl =
     url === undefined
       ? TestNdjsonWatch.opened.has(ACTION_REQUEST_WATCH)
@@ -348,7 +398,25 @@ export async function send(value: unknown, url?: string): Promise<void> {
   }
   if (watch !== undefined && typeof value !== "string") {
     await act(async () => {
-      watch.send(value);
+      if (watchUrl === ACTION_GROUP_WATCH) {
+        const groups = value.map((item) => {
+          if (!isActionGroupView(item)) throw new Error("Expected ActionGroupView fixtures.");
+          return item;
+        });
+        watch.sendActionGroups(groups);
+      } else if (watchUrl === MCP_LINKAGE_WATCH) {
+        const linkages = value.map((item) => {
+          if (!isMcpLinkageView(item)) throw new Error("Expected McpLinkageView fixtures.");
+          return item;
+        });
+        watch.sendMcpLinkages(linkages);
+      } else {
+        const requests = value.map((item) => {
+          if (!isActionRequestView(item)) throw new Error("Expected ActionRequestView fixtures.");
+          return item;
+        });
+        watch.sendActionRequests(requests);
+      }
       await Promise.resolve();
     });
     return;
@@ -369,7 +437,7 @@ export async function send(value: unknown, url?: string): Promise<void> {
 }
 
 /** Pushes upsert frames down a generated watch, as the service does after its initial snapshot. */
-export async function sendUpserts(values: readonly unknown[], url: string): Promise<void> {
+export async function sendUpserts(values: readonly ActionFixture[], url: string): Promise<void> {
   const watchUrl = url.includes("action-groups:watch")
     ? ACTION_GROUP_WATCH
     : url.includes("mcp-servers:watch")
@@ -379,7 +447,29 @@ export async function sendUpserts(values: readonly unknown[], url: string): Prom
         : undefined;
   const watch = watchUrl === undefined ? undefined : TestNdjsonWatch.opened.get(watchUrl);
   if (watch === undefined) throw new Error(`No generated watch is open for ${url}`);
-  await act(async () => watch.sendUpserts(values));
+  await act(async () => {
+    if (watchUrl === ACTION_GROUP_WATCH) {
+      const groups = values.map((value) => {
+        if (!isActionGroupView(value)) throw new Error("Expected ActionGroupView upserts.");
+        return actionGroupUpsertProtoJson(value);
+      });
+      watch.sendGroupUpsertFrames(groups);
+      return;
+    }
+    if (watchUrl === MCP_LINKAGE_WATCH) {
+      const linkages = values.map((value) => {
+        if (!isMcpLinkageView(value)) throw new Error("Expected McpLinkageView upserts.");
+        return mcpLinkageUpsertProtoJson(value);
+      });
+      watch.sendLinkageUpsertFrames(linkages);
+      return;
+    }
+    const requests = values.map((value) => {
+      if (!isActionRequestView(value)) throw new Error("Expected ActionRequestView upserts.");
+      return actionRequestUpsertProtoJson(value);
+    });
+    watch.sendUpsertFrames(requests);
+  });
 }
 
 export interface Sent {
@@ -397,7 +487,7 @@ export function answerApi(answer: (sent: Sent) => unknown): Sent[] {
   const sent: Sent[] = [];
   actionAnswer = async (entry) => {
     sent.push(entry);
-    return actionResponse(entry.path, await answer(entry));
+    return answer(entry);
   };
   installActionFetch();
   const middleware = {

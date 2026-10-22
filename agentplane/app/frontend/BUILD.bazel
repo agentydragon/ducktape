@@ -1458,6 +1458,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions:proto_test_fixtures",
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",

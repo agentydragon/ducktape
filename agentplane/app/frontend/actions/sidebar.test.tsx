@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ActionsAttentionBar, ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
 import { mount, request, send, unmountLast } from "./testing";
+import type { ActionRequestView } from "./types";
 
 function CurrentPath(): JSX.Element {
   const location = useLocation();
@@ -148,7 +149,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
       </ActionRequestsProvider>
     </MemoryRouter>
   );
-  const reads = [
+  const reads: { request: ActionRequestView; visible: string[] }[] = [
     {
       request: {
         ...request("decision_pending", 3),

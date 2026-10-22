@@ -2,9 +2,13 @@ import { readFileSync } from "node:fs";
 import { TextDecoder, TextEncoder } from "node:util";
 import { URLSearchParams } from "node:url";
 import { runInNewContext } from "node:vm";
+import { fromJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
+import { Verdict as ProtoVerdict } from "../../../action_service/action_service_pb";
+import { DecideActionRequestRequestSchema } from "../../../action_service/operator_action_service_pb";
 import type { ActionRequestView } from "../actions/types";
+import { decideActionRequestProtoJson, listActionRequestsProtoJson } from "../actions/proto_test_fixtures";
 
 type PushMessage =
   | {
@@ -59,27 +63,6 @@ function actionRequest(
   };
 }
 
-function toProtoJson(value: unknown, key = "", owner = ""): unknown {
-  if (Array.isArray(value)) return value.map((item) => toProtoJson(item, key, owner));
-  if (value === null || typeof value !== "object") {
-    if (typeof value === "string") {
-      if (key === "state")
-        return `${owner === "execution" ? "EXECUTION_STATE_" : "ACTION_STATE_"}${value.toUpperCase()}`;
-      if (key === "verdict") return `VERDICT_${value.toUpperCase()}`;
-      if (key === "version") return value;
-    }
-    if (typeof value === "number" && key === "version") return String(value);
-    return value;
-  }
-  const dynamicFields = new Set(["arguments", "error", "result"]);
-  return Object.fromEntries(
-    Object.entries(value).map(([childKey, child]) => [
-      childKey.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase()),
-      dynamicFields.has(childKey) ? child : toProtoJson(child, childKey, key),
-    ])
-  );
-}
-
 function loadWorker(): TestWorker {
   const listeners: TestWorker["listeners"] = new Map();
   const requests: TestWorker["requests"] = [];
@@ -123,8 +106,10 @@ function loadWorker(): TestWorker {
       const actionRequest = pending?.[0];
       const body =
         options?.method === "POST"
-          ? { actionRequest: actionRequest === undefined ? undefined : toProtoJson(actionRequest) }
-          : { actionRequests: (pending ?? []).map((request) => toProtoJson(request)) };
+          ? actionRequest === undefined
+            ? {}
+            : decideActionRequestProtoJson(actionRequest)
+          : listActionRequestsProtoJson(pending ?? []);
       return { ok: options?.method === "POST" || pending !== null, json: async () => body };
     },
     crypto: { randomUUID: () => "test-intent" },
@@ -207,19 +192,20 @@ describe("service worker notifications", () => {
     expect(worker.windows).toEqual(["/#/actions"]);
 
     await dispatch(worker, "notificationclick", { action: "approve", notification });
-    expect(JSON.parse(String(worker.requests[0]?.options?.body))).toMatchObject({
-      verdict: "VERDICT_ALLOW",
-      expectedVersion: "1",
-      idempotencyKey: expect.any(String),
-    });
+    const approved = fromJson(DecideActionRequestRequestSchema, JSON.parse(String(worker.requests[0]?.options?.body)));
+    expect(approved.verdict).toBe(ProtoVerdict.ALLOW);
+    expect(approved.expectedVersion).toBe(1n);
+    expect(worker.requests[0]?.url).toBe("/upstream/actions/v1/operator/action-requests/request/decision");
+    expect(approved.idempotencyKey).toEqual(expect.any(String));
+    expect(approved.decisionNote).toBeUndefined();
     expect(worker.requests[0]?.options?.credentials).toBeUndefined();
 
     await dispatch(worker, "notificationclick", { action: "deny", notification });
-    expect(JSON.parse(String(worker.requests[1]?.options?.body))).toMatchObject({
-      verdict: "VERDICT_DENY",
-      expectedVersion: "1",
-      idempotencyKey: expect.any(String),
-    });
+    const denied = fromJson(DecideActionRequestRequestSchema, JSON.parse(String(worker.requests[1]?.options?.body)));
+    expect(denied.verdict).toBe(ProtoVerdict.DENY);
+    expect(denied.expectedVersion).toBe(1n);
+    expect(worker.requests[1]?.url).toBe("/upstream/actions/v1/operator/action-requests/request/decision");
+    expect(denied.idempotencyKey).toEqual(expect.any(String));
     expect(worker.windows).toEqual(["/#/actions"]);
 
     const retracted = await show(worker, { kind: "retract", action_id: "request", outcome: "denied" });
