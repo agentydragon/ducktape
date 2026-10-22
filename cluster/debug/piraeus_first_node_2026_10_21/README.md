@@ -1,30 +1,79 @@
 # First Piraeus node: execution evidence
 
 Started 2026-10-21 PDT (2026-10-22 UTC). Target: `ovh-ns1001419` only.
-The operator authorized the conversion without an etcd snapshot, using existing
-rehearsal capacity. The off-node CNPG and Seaweed handoffs are complete, with
-their recovery evidence below. Native drain completed and the target is
-cordoned. A DRBD image upgrade to `05bbb1.14.0` started at 08:35 UTC; completion
-has not been confirmed. The target has not been reset or data-disk-wiped. No
-production Piraeus application PVC has been created and no PV is bound on the
-target. The explicit user pause before any Piraeus application restore remains
-in force.
+The approved rebuild is complete and the node remains cordoned. Its whole
+secondary NVMe backs the Piraeus SSD pool. Application data remains on verified
+off-node copies; no application Piraeus PVC has been created. The explicit pause
+before repopulating application storage remains in force.
 
-## Production progress checkpoint (2026-10-22 08:35 UTC)
+## Physical-node checkpoint (2026-10-22)
 
-- Seaweed SSD volume-server PR #11521
-  (`563ceb5541205d8d39710e713e140f41c3e9cb26`) is merged. Flux reports two
-  ready servers in the existing SSD group, and source server 2 is gone. Its old
-  empty claim was removed only after checking the claim UID; the source PV is
-  `Released`/`Retain`.
-- All four original target PVs are `Released` with `Retain`, verified against
-  their claim identities. No PV is bound to `ovh-ns1001419`; no production
-  Piraeus application claim has been created.
-- The native Kubernetes drain completed and the target is cordoned. DRBD image
-  upgrade `05bbb1.14.0` started at 08:35 UTC. Its completion has not been
-  checked; target reset and data-disk wipe have not started.
-- The explicit user pause before creating any Piraeus application PVC or
-  restoring application data remains in force.
+[Sanitized production evidence](production_acceptance.json) records:
+
+- System serial `190130800417`: ETCD 16 GiB, EPHEMERAL 32 GiB, CRI 192 GiB,
+  KUBELET 128 GiB, LOG 16 GiB. Kubelet reports the 128 GiB filesystem as
+  `nodefs` and the 192 GiB filesystem as image/container storage.
+- Data serial `1951A3449505`: one whole-device LVM PV, `piraeus_ssd/data`,
+  503517806592-byte thin-data LV, 4 GiB metadata, 4 GiB metadata spare,
+  64 KiB chunks, no free VG extents. Existing FILE_THIN canaries are separate.
+- The same-version DRBD image upgrade completed. Selective STATE/EPHEMERAL
+  reset gracefully removed the old etcd member; the prepared configuration
+  rejoined the existing cluster without bootstrap. No etcd snapshot was taken.
+  A subsequent physical powercycle returned a new boot ID, three healthy etcd
+  members and matching hashes for all eight source/restored disposable volumes.
+- Default DRBD and STORAGE-only paths both provisioned sparse 50 GiB
+  Filesystem/Block claims, restored snapshots with matching 16 MiB seed hashes,
+  expanded online to 52 GiB, rejected out-of-bounds block writes, and enforced
+  ENOSPC on separate 1 GiB filesystems. Discard released physical blocks while
+  preserving seeds. UID/fsGroup 26 could write and restore independent seed files.
+- Controller and satellite replacement preserved all eight seed hashes.
+  Retain preserved each small test backend after PVC removal; an explicit,
+  UID-guarded change to Delete removed its PV and LINSTOR resource.
+- Live data/metadata samples were scraped into Mimir; all seven rules evaluated
+  successfully. Pausing only the collector's sleep child produced the existing
+  stale alert in Alertmanager; resuming sampling cleared it. Data/metadata
+  utilization thresholds were not deliberately forced on the physical pool.
+- An independent metadata export imported and re-exported into an isolated H2
+  database with all 407 rows across 34 tables equal. This validates export
+  contents. A live controller disaster restore remains unqualified.
+- All temporary acceptance Pods, claims, snapshots, classes and eight backing
+  resources were removed after recording their proofs. The three owned QEMUs
+  were stopped after local memory pressure was reported, releasing about
+  12 GiB resident RAM; disk images and private evidence remain on disk.
+
+The four original target PV objects remain `Released`/`Retain` inventory records.
+Their original files were erased by the approved physical data-disk wipe.
+Recovery sources are the verified off-node database/Seaweed copies and the
+independent Seaweed Raft archive.
+
+### Physical performance observations
+
+Matching single-job, queue-depth-one, direct-I/O fio microbenchmarks used the
+same NVMe pool. Each durable-write run used 4 KiB random writes plus
+`fdatasync=1` for 20 seconds after a 3-second ramp. The warmed second pair:
+
+| Path                  | Durable writes/s | Sync p99 | Verified sequential write | Verified sequential read |
+| --------------------- | ---------------- | -------- | ------------------------- | ------------------------ |
+| STORAGE-only LVM_THIN | 1605             | 1.045 ms | 839 MiB/s                 | 998 MiB/s                |
+| One-copy DRBD,STORAGE | 1538             | 1.057 ms | 547 MiB/s                 | 1356 MiB/s               |
+
+Sequential runs wrote and CRC32C-verified 1 GiB with 1 MiB blocks. The initial
+durable pair measured 926/824 writes/s and overlapped acceptance setup. These
+short measurements cover bounded fio jobs; application throughput and a
+plain-partition local-path baseline remain unmeasured. Sequential DRBD overhead
+was measurable. Client/API reads
+and approval review also timed out during reported local memory pressure.
+Later queries succeeded after owned QEMUs were stopped; a persistent LINSTOR
+API stall was not reproduced.
+
+### Remaining qualification
+
+Metadata exhaustion and aggregate DRBD pool exhaustion remain unqualified.
+Production capacity-threshold alert delivery and a full LINSTOR controller
+restore have not been exercised. The isolated metadata round trip and observed
+stale-alert delivery have the narrower scope described above. Application
+performance and the first-node soak remain unqualified; restoring application
+redundancy awaits step 6 approval.
 
 ## Production handoff checkpoint (2026-10-22 08:20 UTC; historical)
 

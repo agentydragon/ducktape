@@ -58,14 +58,12 @@ the production target class.
   were protected by exact PV/claim UID checks, and all temporary Flux holds have
   been removed. See the [sanitized handoff proof](cnpg_offnode_handoff_proof.json).
 
-At the 08:20 handoff checkpoint, target-node maintenance had not started. Since
-then, the native drain completed and the target was cordoned; a DRBD image
-upgrade to `05bbb1.14.0` started at 08:35 UTC, with completion not yet
-confirmed. The target has not been reset or data-disk-wiped. The four original
-target PVs are `Released`/`Retain`; no PV is bound on the target, and no
-production Piraeus application PVC has been created. Do not create production
-Piraeus claims until node/pool acceptance is complete and the user explicitly
-authorizes the Piraeus restore.
+The target rebuild and cold reboot have completed; it remains cordoned. The
+four original target PV objects are `Released`/`Retain` inventory records, but
+the approved data-disk wipe erased their backing files. The recovery sources
+are the verified off-node copies. No application Piraeus PVC has been created;
+see the [physical-node checkpoint](README.md#physical-node-checkpoint-2026-10-22).
+The user pause before repopulating application storage remains in force.
 
 ## Handoff sequence
 

@@ -1,0 +1,1298 @@
+{
+  "final_health": {
+    "time": 1792663053.5495434,
+    "node": {
+      "boot_id": "9c74a678-6ea3-4b63-90ac-a49c1c496e64",
+      "unschedulable": true,
+      "conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    "applications": {
+      "nix-cache/attic-db": {
+        "desired": 2,
+        "ready": 2,
+        "primary": "attic-db-2",
+        "phase": "Cluster in healthy state"
+      },
+      "study-casino/study-casino-db": {
+        "desired": 2,
+        "ready": 2,
+        "primary": "study-casino-db-6",
+        "phase": "Cluster in healthy state"
+      }
+    },
+    "seaweed": {
+      "seaweedfs-master-0": {
+        "node": "ovh-ns104963",
+        "phase": "Running",
+        "ready": true
+      },
+      "seaweedfs-master-1": {
+        "node": "ovh-ns104952",
+        "phase": "Running",
+        "ready": true
+      },
+      "seaweedfs-master-2": {
+        "node": "ovh-ns102453",
+        "phase": "Running",
+        "ready": true
+      },
+      "seaweedfs-volume-ssd-0": {
+        "node": "ovh-ns104963",
+        "phase": "Running",
+        "ready": true
+      },
+      "seaweedfs-volume-ssd-1": {
+        "node": "ovh-ns104952",
+        "phase": "Running",
+        "ready": true
+      }
+    },
+    "bound_linstor_claims": [],
+    "satellite_conditions": [
+      {
+        "lastTransitionTime": "2026-10-22T08:53:43Z",
+        "message": "Resources applied",
+        "observedGeneration": 3,
+        "reason": "AsExpected",
+        "status": "True",
+        "type": "Applied"
+      },
+      {
+        "lastTransitionTime": "2026-10-22T09:51:37Z",
+        "message": "ONLINE",
+        "observedGeneration": 3,
+        "reason": "AsExpected",
+        "status": "True",
+        "type": "Available"
+      },
+      {
+        "lastTransitionTime": "2026-10-22T09:51:37Z",
+        "message": "Pools configured",
+        "observedGeneration": 3,
+        "reason": "AsExpected",
+        "status": "True",
+        "type": "Configured"
+      }
+    ],
+    "metrics_daemonset": {
+      "desiredNumberScheduled": 1,
+      "numberReady": 1,
+      "numberAvailable": 1
+    },
+    "local_mem_available_kib": 67334628
+  },
+  "captured_at": "2026-10-22T09:58:03.965624+00:00",
+  "node": "ovh-ns1001419",
+  "application_piraeus_claims_created": 0,
+  "system_layout": {
+    "volumes": [
+      {
+        "id": "CRI",
+        "spec": {
+          "filesystem": "xfs",
+          "location": "/dev/nvme0n1p9",
+          "mountLocation": "/dev/nvme0n1p9",
+          "mountSpec": {
+            "parentId": "/var/lib",
+            "projectQuotaSupport": false,
+            "secure": true,
+            "selinuxLabel": "system_u:object_r:containerd_state_t:s0",
+            "targetPath": "containerd"
+          },
+          "parentLocation": "/dev/nvme0n1",
+          "partitionIndex": 9,
+          "partitionUUID": "07e54cb9-3e05-4f95-9de8-b290e9368ae9",
+          "phase": "ready",
+          "prettySize": "206 GB",
+          "size": 206158430208,
+          "type": "partition",
+          "uuid": "57062b62-8692-4d94-afe7-7858590771d6"
+        }
+      },
+      {
+        "id": "EPHEMERAL",
+        "spec": {
+          "filesystem": "xfs",
+          "location": "/dev/nvme0n1p7",
+          "mountLocation": "/dev/nvme0n1p7",
+          "mountSpec": {
+            "fileMode": 493,
+            "projectQuotaSupport": true,
+            "secure": true,
+            "selinuxLabel": "system_u:object_r:ephemeral_t:s0",
+            "targetPath": "/var"
+          },
+          "parentLocation": "/dev/nvme0n1",
+          "partitionIndex": 7,
+          "partitionUUID": "9edeff91-898d-4c42-9e5b-b111fb89ebe8",
+          "phase": "ready",
+          "prettySize": "34 GB",
+          "size": 34359738368,
+          "type": "partition",
+          "uuid": "6566f6f3-310e-4228-84b5-2a8a9eedaa35"
+        }
+      },
+      {
+        "id": "ETCD",
+        "spec": {
+          "filesystem": "xfs",
+          "location": "/dev/nvme0n1p5",
+          "mountLocation": "/dev/nvme0n1p5",
+          "mountSpec": {
+            "fileMode": 448,
+            "gid": 60,
+            "noExec": true,
+            "parentId": "/var/lib",
+            "projectQuotaSupport": false,
+            "recursiveRelabel": true,
+            "secure": true,
+            "selinuxLabel": "system_u:object_r:etcd_data_t:s0",
+            "targetPath": "etcd",
+            "uid": 60
+          },
+          "parentLocation": "/dev/nvme0n1",
+          "partitionIndex": 5,
+          "partitionUUID": "f70b9c46-fe44-4e23-9f90-7191077c52ee",
+          "phase": "ready",
+          "prettySize": "17 GB",
+          "size": 17179869184,
+          "type": "partition",
+          "uuid": "db459da6-cc0c-4643-b525-11ff2a63155a"
+        }
+      },
+      {
+        "id": "KUBELET",
+        "spec": {
+          "filesystem": "xfs",
+          "location": "/dev/nvme0n1p8",
+          "mountLocation": "/dev/nvme0n1p8",
+          "mountSpec": {
+            "fileMode": 448,
+            "parentId": "/var/lib",
+            "projectQuotaSupport": false,
+            "secure": true,
+            "selinuxLabel": "system_u:object_r:kubelet_state_t:s0",
+            "targetPath": "kubelet"
+          },
+          "parentLocation": "/dev/nvme0n1",
+          "partitionIndex": 8,
+          "partitionUUID": "cd6df17f-52da-4241-8921-2405f790ea21",
+          "phase": "ready",
+          "prettySize": "137 GB",
+          "size": 137438953472,
+          "type": "partition",
+          "uuid": "44fc6bca-fb65-451d-bba1-39b1a4a2bbbb"
+        }
+      },
+      {
+        "id": "LOG",
+        "spec": {
+          "filesystem": "xfs",
+          "location": "/dev/nvme0n1p6",
+          "mountLocation": "/dev/nvme0n1p6",
+          "mountSpec": {
+            "fileMode": 493,
+            "noExec": true,
+            "parentId": "EPHEMERAL",
+            "projectQuotaSupport": false,
+            "secure": true,
+            "selinuxLabel": "system_u:object_r:var_log_t:s0",
+            "targetPath": "log"
+          },
+          "parentLocation": "/dev/nvme0n1",
+          "partitionIndex": 6,
+          "partitionUUID": "fb9b8e10-fc35-4b8c-bf6d-32b1705789e0",
+          "phase": "ready",
+          "prettySize": "17 GB",
+          "size": 17179869184,
+          "type": "partition",
+          "uuid": "eef3b237-5d36-4ba9-8e2c-ac6a2f18cc3f"
+        }
+      }
+    ],
+    "nodefs": {
+      "time": "2026-10-22T09:56:59Z",
+      "availableBytes": 134705967104,
+      "capacityBytes": 137371844608,
+      "usedBytes": 2665877504,
+      "inodesFree": 67108039,
+      "inodes": 67108864,
+      "inodesUsed": 825
+    },
+    "runtime": {
+      "imageFs": {
+        "time": "2026-10-22T09:57:01Z",
+        "availableBytes": 197380431872,
+        "capacityBytes": 206057766912,
+        "usedBytes": 4395225088,
+        "inodesFree": 100592584,
+        "inodes": 100663296,
+        "inodesUsed": 62998
+      },
+      "containerFs": {
+        "time": "2026-10-22T09:57:01Z",
+        "availableBytes": 197380431872,
+        "capacityBytes": 206057766912,
+        "usedBytes": 4395225088,
+        "inodesFree": 100592584,
+        "inodes": 100663296,
+        "inodesUsed": 62998
+      }
+    }
+  },
+  "pool_pvs": {
+    "report": [
+      {
+        "pv": [
+          {
+            "pv_name": "/dev/nvme1n1",
+            "pv_uuid": "FjqbZl-Muzq-piKv-6KWk-OGPI-TGhe-njFoWK",
+            "pv_size": "512107741184",
+            "vg_name": "piraeus_ssd"
+          }
+        ]
+      }
+    ],
+    "log": []
+  },
+  "pool_vgs": {
+    "report": [
+      {
+        "vg": [
+          {
+            "vg_name": "piraeus_ssd",
+            "vg_size": "512107741184",
+            "vg_free": "0"
+          }
+        ]
+      }
+    ],
+    "log": []
+  },
+  "pool_lvs": {
+    "report": [
+      {
+        "lv": [
+          {
+            "lv_name": "data",
+            "vg_name": "piraeus_ssd",
+            "lv_size": "503517806592",
+            "chunk_size": "65536",
+            "data_percent": "0.00",
+            "metadata_percent": "0.44"
+          },
+          {
+            "lv_name": "[data_tdata]",
+            "vg_name": "piraeus_ssd",
+            "lv_size": "503517806592",
+            "chunk_size": "0",
+            "data_percent": "",
+            "metadata_percent": ""
+          },
+          {
+            "lv_name": "[data_tmeta]",
+            "vg_name": "piraeus_ssd",
+            "lv_size": "4294967296",
+            "chunk_size": "0",
+            "data_percent": "",
+            "metadata_percent": ""
+          },
+          {
+            "lv_name": "[lvol0_pmspare]",
+            "vg_name": "piraeus_ssd",
+            "lv_size": "4294967296",
+            "chunk_size": "0",
+            "data_percent": "",
+            "metadata_percent": ""
+          }
+        ]
+      }
+    ],
+    "log": []
+  },
+  "source_seeds": {
+    "drbd-block": {
+      "pvc_uid": "346e504c-bdd3-4fb1-b374-c5f0d4072750",
+      "pv": "pvc-346e504c-bdd3-4fb1-b374-c5f0d4072750",
+      "pv_uid": "3b7a5dd7-c161-419c-b675-d2f7904cc5d2",
+      "handle": "pvc-346e504c-bdd3-4fb1-b374-c5f0d4072750",
+      "sha256": "18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd",
+      "stdout": "/usr/bin/fio\n18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd  -\n53688164352\n",
+      "stderr": "16+0 records in\n16+0 records out\n16777216 bytes (17 MB, 16 MiB) copied, 0.0518127 s, 324 MB/s\n",
+      "node_affinity": {
+        "required": {
+          "nodeSelectorTerms": [
+            {
+              "matchExpressions": [
+                {
+                  "key": "linbit.com/hostname",
+                  "operator": "In",
+                  "values": ["ovh-ns1001419"]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "drbd-fs": {
+      "pvc_uid": "4c0c43d0-5d7d-4d2a-946c-8ce53c5168f8",
+      "pv": "pvc-4c0c43d0-5d7d-4d2a-946c-8ce53c5168f8",
+      "pv_uid": "90fe1778-e214-4888-869c-931aedf9ae3e",
+      "handle": "pvc-4c0c43d0-5d7d-4d2a-946c-8ce53c5168f8",
+      "sha256": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f",
+      "stdout": "/usr/bin/fio\n8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f  -\nFilesystem       1B-blocks     Used   Available Use% Mounted on\n/dev/drbd1001  52519927808 18898944 49799901184   1% /data\n",
+      "stderr": "16+0 records in\n16+0 records out\n16777216 bytes (17 MB, 16 MiB) copied, 0.0430142 s, 390 MB/s\n",
+      "node_affinity": {
+        "required": {
+          "nodeSelectorTerms": [
+            {
+              "matchExpressions": [
+                {
+                  "key": "linbit.com/hostname",
+                  "operator": "In",
+                  "values": ["ovh-ns1001419"]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "native-block": {
+      "pvc_uid": "bec5e3e1-f6e6-470c-918b-25d312d91f88",
+      "pv": "pvc-bec5e3e1-f6e6-470c-918b-25d312d91f88",
+      "pv_uid": "e7e51080-e0ee-4dd4-9b05-1f1719f41cf7",
+      "handle": "pvc-bec5e3e1-f6e6-470c-918b-25d312d91f88",
+      "sha256": "3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba",
+      "stdout": "/usr/bin/fio\n3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba  -\n53687091200\n",
+      "stderr": "16+0 records in\n16+0 records out\n16777216 bytes (17 MB, 16 MiB) copied, 0.0543509 s, 309 MB/s\n",
+      "node_affinity": {
+        "required": {
+          "nodeSelectorTerms": [
+            {
+              "matchExpressions": [
+                {
+                  "key": "linbit.com/hostname",
+                  "operator": "In",
+                  "values": ["ovh-ns1001419"]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "native-fs": {
+      "pvc_uid": "38a80c83-cc94-476d-8261-f5726f731629",
+      "pv": "pvc-38a80c83-cc94-476d-8261-f5726f731629",
+      "pv_uid": "a2378cfe-ea47-41eb-9b8e-c60a51300386",
+      "handle": "pvc-38a80c83-cc94-476d-8261-f5726f731629",
+      "sha256": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb",
+      "stdout": "/usr/bin/fio\nd2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb  -\nFilesystem                                                                    1B-blocks     Used   Available Use% Mounted on\n/dev/mapper/piraeus_ssd-pvc--38a80c83--cc94--476d--8261--f5726f731629_00000 52521566208 18898944 49801535488   1% /data\n",
+      "stderr": "16+0 records in\n16+0 records out\n16777216 bytes (17 MB, 16 MiB) copied, 0.0458778 s, 366 MB/s\n",
+      "node_affinity": {
+        "required": {
+          "nodeSelectorTerms": [
+            {
+              "matchExpressions": [
+                {
+                  "key": "linbit.com/hostname",
+                  "operator": "In",
+                  "values": ["ovh-ns1001419"]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "snapshot_restore_and_expansion": {
+    "drbd-block": {
+      "restored_sha256": "18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd",
+      "expanded_capacity": "55835189248"
+    },
+    "drbd-fs": {
+      "restored_sha256": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f",
+      "expanded_capacity": "Filesystem       1B-blocks      Used   Available Use% Mounted on\n/dev/drbd1001  54633660416 287555584 51559079936   1% /data"
+    },
+    "native-block": {
+      "restored_sha256": "3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba",
+      "expanded_capacity": "55834574848"
+    },
+    "native-fs": {
+      "restored_sha256": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb",
+      "expanded_capacity": "Filesystem                                                                    1B-blocks      Used   Available Use% Mounted on\n/dev/mapper/piraeus_ssd-pvc--38a80c83--cc94--476d--8261--f5726f731629_00000 54635364352 287895552 51538964480   1% /data"
+    }
+  },
+  "limits_and_discard": {
+    "before": {
+      "report": [
+        {
+          "lv": [
+            {
+              "lv_name": "data",
+              "lv_size": "503517806592",
+              "data_percent": "1.14",
+              "metadata_percent": "0.48"
+            }
+          ]
+        }
+      ],
+      "log": []
+    },
+    "filesystem": {
+      "drbd-limit": {
+        "sha256": "ad6a3a2e01a5fe212fbecaaacf6363985cde0c0aece9b5c41920ef400ad56d3c",
+        "fill_returncode": 1,
+        "fill_stderr": "dd: error writing '/data/fill': No space left on device\n945+0 records in\n944+0 records out\n989855744 bytes (990 MB, 944 MiB) copied, 3.23835 s, 306 MB/s\ncommand terminated with exit code 1\n",
+        "filled_pool": {
+          "report": [
+            {
+              "lv": [
+                {
+                  "lv_name": "data",
+                  "lv_size": "503517806592",
+                  "data_percent": "1.34",
+                  "metadata_percent": "0.49"
+                }
+              ]
+            }
+          ],
+          "log": []
+        },
+        "discard_output": "/data: 960.8 MiB (1007464448 bytes) trimmed\nad6a3a2e01a5fe212fbecaaacf6363985cde0c0aece9b5c41920ef400ad56d3c  /data/seed\n",
+        "after_discard_pool": {
+          "report": [
+            {
+              "lv": [
+                {
+                  "lv_name": "data",
+                  "lv_size": "503517806592",
+                  "data_percent": "1.15",
+                  "metadata_percent": "0.49"
+                }
+              ]
+            }
+          ],
+          "log": []
+        }
+      },
+      "native-limit": {
+        "sha256": "102c56d50c42bfbe2b0805b47438f423a03d803c59e80351ee8f4fcb199739cf",
+        "fill_returncode": 1,
+        "fill_stderr": "dd: error writing '/data/fill': No space left on device\n942+0 records in\n941+0 records out\n986710016 bytes (987 MB, 941 MiB) copied, 3.43961 s, 287 MB/s\ncommand terminated with exit code 1\n",
+        "filled_pool": {
+          "report": [
+            {
+              "lv": [
+                {
+                  "lv_name": "data",
+                  "lv_size": "503517806592",
+                  "data_percent": "1.35",
+                  "metadata_percent": "0.49"
+                }
+              ]
+            }
+          ],
+          "log": []
+        },
+        "discard_output": "/data: 957.1 MiB (1003638784 bytes) trimmed\n102c56d50c42bfbe2b0805b47438f423a03d803c59e80351ee8f4fcb199739cf  /data/seed\n",
+        "after_discard_pool": {
+          "report": [
+            {
+              "lv": [
+                {
+                  "lv_name": "data",
+                  "lv_size": "503517806592",
+                  "data_percent": "1.15",
+                  "metadata_percent": "0.48"
+                }
+              ]
+            }
+          ],
+          "log": []
+        }
+      }
+    },
+    "block": {
+      "drbd-block": {
+        "device_bytes": 55835189248,
+        "boundary_write_returncode": 1,
+        "stderr": "dd: error writing '/dev/canary': No space left on device\n1+0 records in\n0+0 records out\n0 bytes copied, 0.000283362 s, 0.0 kB/s\ncommand terminated with exit code 1\n"
+      },
+      "native-block": {
+        "device_bytes": 55834574848,
+        "boundary_write_returncode": 1,
+        "stderr": "dd: error writing '/dev/canary': No space left on device\n1+0 records in\n0+0 records out\n0 bytes copied, 0.000323764 s, 0.0 kB/s\ncommand terminated with exit code 1\n"
+      }
+    },
+    "after": {
+      "report": [
+        {
+          "lv": [
+            {
+              "lv_name": "data",
+              "lv_size": "503517806592",
+              "data_percent": "1.15",
+              "metadata_percent": "0.48"
+            }
+          ]
+        }
+      ],
+      "log": []
+    }
+  },
+  "nonroot_and_independent_file_restore": {
+    "drbd": {
+      "identity_and_original_seed": "uid=26 gid=26(tape) groups=26(tape)\nad6a3a2e01a5fe212fbecaaacf6363985cde0c0aece9b5c41920ef400ad56d3c  /data/seed\n",
+      "independent_backup_restored_sha256": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f"
+    },
+    "native": {
+      "identity_and_original_seed": "uid=26 gid=26(tape) groups=26(tape)\n102c56d50c42bfbe2b0805b47438f423a03d803c59e80351ee8f4fcb199739cf  /data/seed\n",
+      "independent_backup_restored_sha256": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb"
+    }
+  },
+  "independent_backup": {
+    "metadata_export_bytes": 85645,
+    "metadata_export_sha256": "e1eb8a8e91a7d168208b20b435b6d4228cfc7ff3e4c3d8a10efa49344a4c1c49",
+    "metadata_export_top_keys": [
+      "linstor_version",
+      "export_timestamp_ms",
+      "exported_from",
+      "data_version",
+      "sql_version",
+      "k8s_version",
+      "tables"
+    ],
+    "seeds": {
+      "drbd-block": {
+        "bytes": 16777216,
+        "sha256": "18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd"
+      },
+      "drbd-fs": {
+        "bytes": 16777216,
+        "sha256": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f"
+      },
+      "native-block": {
+        "bytes": 16777216,
+        "sha256": "3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba"
+      },
+      "native-fs": {
+        "bytes": 16777216,
+        "sha256": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb"
+      }
+    }
+  },
+  "metadata_import_roundtrip": {
+    "source_sha256": "e1eb8a8e91a7d168208b20b435b6d4228cfc7ff3e4c3d8a10efa49344a4c1c49",
+    "roundtrip_sha256": "cd759c1c92f90c4fc4d9291baf01876d3ae737f754d278cbd390d2e66c45bbc8",
+    "table_count": 34,
+    "row_count": 407,
+    "all_table_rows_match": true,
+    "database": "isolated local H2",
+    "controller_started": false,
+    "service_account_token_mounted": false,
+    "network_policy": "deny all ingress and egress"
+  },
+  "controller_satellite_restart": {
+    "before": {
+      "drbd-block": "18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd",
+      "drbd-block-restored": "18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd",
+      "drbd-fs": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f",
+      "drbd-fs-restored": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f",
+      "native-block": "3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba",
+      "native-block-restored": "3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba",
+      "native-fs": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb",
+      "native-fs-restored": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb"
+    },
+    "linstor-controller-": {
+      "old_uid": "509e45db-fe15-4bb0-8662-59918798c02e",
+      "new_uid": "96735bf3-cd2c-4d32-83e6-a4761a5c2d5e",
+      "name": "linstor-controller-8b6bc8d46-s7bzq",
+      "seed_hashes": {
+        "drbd-block": "18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd",
+        "drbd-block-restored": "18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd",
+        "drbd-fs": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f",
+        "drbd-fs-restored": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f",
+        "native-block": "3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba",
+        "native-block-restored": "3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba",
+        "native-fs": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb",
+        "native-fs-restored": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb"
+      }
+    },
+    "linstor-satellite.ovh-ns1001419-": {
+      "old_uid": "c857e634-3ac5-47c3-95c0-ec8634c8e165",
+      "new_uid": "d20c90d9-dce1-471e-874f-aa15a0163e4b",
+      "name": "linstor-satellite.ovh-ns1001419-8lpfx",
+      "seed_hashes": {
+        "drbd-block": "18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd",
+        "drbd-block-restored": "18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd",
+        "drbd-fs": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f",
+        "drbd-fs-restored": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f",
+        "native-block": "3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba",
+        "native-block-restored": "3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba",
+        "native-fs": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb",
+        "native-fs-restored": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb"
+      }
+    }
+  },
+  "reboot": {
+    "before_boot_id": "489deb09-4a53-4eed-adf6-f25a0e912307",
+    "before_etcd_status": "NODE         MEMBER             DB SIZE   IN USE            LEADER             RAFT INDEX   RAFT TERM   RAFT APPLIED INDEX   LEARNER   PROTOCOL   STORAGE   ERRORS\n10.42.0.17   d6625034717c279c   520 MB    144 MB (27.77%)   d6625034717c279c   432276289    1772        432276289            false     3.7.1      3.7.0     \n10.42.0.16   604784ee9e48b9af   523 MB    144 MB (27.60%)   d6625034717c279c   432276289    1772        432276289            false     3.7.1      3.7.0     \n10.42.0.19   9e474402a93f295f   520 MB    144 MB (27.72%)   d6625034717c279c   432276289    1772        432276289            false     3.7.1      3.7.0     \n",
+    "started_at": 1792662481.7042406,
+    "expected_application_piraeus_claims": 0,
+    "after_boot_id": "9c74a678-6ea3-4b63-90ac-a49c1c496e64",
+    "consumer_recovery": "All eight original Pod UIDs resumed naturally; no Pod or PVC replacement was performed. Some were temporarily Error while kubelet restarted containers; all prior exits were 137 at reboot shutdown.",
+    "seed_hashes": {
+      "drbd-block": "18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd",
+      "drbd-block-restored": "18eaac32900ce4f769b76976086ffb2d34c7f3494d8edbba41187d01eacafafd",
+      "drbd-fs": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f",
+      "drbd-fs-restored": "8a51b25c68f5fd0c7338f84fb04cf9d0098a7910cea109a4943f77376e00c39f",
+      "native-block": "3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba",
+      "native-block-restored": "3e010e08996eb38aa6388988cbe1dde410b0c8b447838315d7a0e597db5a7fba",
+      "native-fs": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb",
+      "native-fs-restored": "d2c83981ff0ffaa257be2779b4a485acecd013ec6f9c66b4b3ebc4d602ab0fcb"
+    },
+    "after_etcd_status": "NODE         MEMBER             DB SIZE   IN USE            LEADER             RAFT INDEX   RAFT TERM   RAFT APPLIED INDEX   LEARNER   PROTOCOL   STORAGE   ERRORS\n10.42.0.16   604784ee9e48b9af   523 MB    174 MB (33.30%)   d6625034717c279c   432296448    1772        432296448            false     3.7.1      3.7.0     \n10.42.0.17   d6625034717c279c   520 MB    174 MB (33.48%)   d6625034717c279c   432296449    1772        432296449            false     3.7.1      3.7.0     \n10.42.0.19   9e474402a93f295f   520 MB    174 MB (33.48%)   d6625034717c279c   432296449    1772        432296449            false     3.7.1      3.7.0     \n",
+    "completed_at": 1792662873.1298244,
+    "node_still_cordoned": true
+  },
+  "retain_delete": {
+    "drbd": {
+      "pv": "pvc-ee6875d3-a653-4d71-9441-3c59579c3d8e",
+      "pv_uid": "e73ede12-9b0a-40fd-be4f-c3e03ef72248",
+      "claim_uid": "ee6875d3-a653-4d71-9441-3c59579c3d8e",
+      "released_with_retain_backend_present": true,
+      "explicit_delete_removed_pv_and_backend": true
+    },
+    "native": {
+      "pv": "pvc-d28eefb0-2cfa-4ead-b42c-92effab8e087",
+      "claim_uid": "d28eefb0-2cfa-4ead-b42c-92effab8e087",
+      "released_with_retain_backend_present": true,
+      "explicit_delete_removed_pv_and_backend": true
+    }
+  },
+  "alert_route": {
+    "method": "Pause only the collector sleep child; resume in finally; wait for inactive rule",
+    "started_at": 1792660404.152051,
+    "collector_resumed_at": 1792660691.1735775,
+    "resolved_at": 1792660836.1997967,
+    "observed_states": ["inactive", "pending", "query-unavailable", "firing"],
+    "alertmanager_alert_count": 2,
+    "query_errors": [
+      {
+        "time": 1792660597.5998137,
+        "stderr": "Unable to connect to the server: context deadline exceeded\n"
+      },
+      {
+        "time": 1792660679.5078049,
+        "stderr": "Unable to connect to the server: context deadline exceeded\n"
+      },
+      {
+        "time": 1792660755.3827486,
+        "stderr": "Unable to connect to the server: context deadline exceeded\n"
+      },
+      {
+        "time": 1792660826.0405052,
+        "stderr": "Unable to connect to the server: context deadline exceeded (Client.Timeout exceeded while awaiting headers)\n"
+      }
+    ]
+  },
+  "monitoring_latest": {
+    "lvm_thin_pool_data_percent{namespace=\"piraeus-datastore\"}": {
+      "returncode": 0,
+      "body": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {
+                "__name__": "lvm_thin_pool_data_percent",
+                "container": "node-exporter",
+                "endpoint": "metrics",
+                "instance": "10.244.9.35:9100",
+                "job": "piraeus-lvm-metrics",
+                "namespace": "piraeus-datastore",
+                "pod": "piraeus-lvm-metrics-q4m96",
+                "pool": "data",
+                "service": "piraeus-lvm-metrics",
+                "vg": "piraeus_ssd"
+              },
+              "value": [1792663047.096, "0"]
+            }
+          ]
+        }
+      }
+    },
+    "lvm_thin_pool_metadata_percent{namespace=\"piraeus-datastore\"}": {
+      "returncode": 0,
+      "body": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {
+                "__name__": "lvm_thin_pool_metadata_percent",
+                "container": "node-exporter",
+                "endpoint": "metrics",
+                "instance": "10.244.9.35:9100",
+                "job": "piraeus-lvm-metrics",
+                "namespace": "piraeus-datastore",
+                "pod": "piraeus-lvm-metrics-q4m96",
+                "pool": "data",
+                "service": "piraeus-lvm-metrics",
+                "vg": "piraeus_ssd"
+              },
+              "value": [1792663047.206, "0.44"]
+            }
+          ]
+        }
+      }
+    },
+    "lvm_thin_pool_collector_success{namespace=\"piraeus-datastore\"}": {
+      "returncode": 0,
+      "body": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {
+                "__name__": "lvm_thin_pool_collector_success",
+                "container": "node-exporter",
+                "endpoint": "metrics",
+                "instance": "10.244.9.35:9100",
+                "job": "piraeus-lvm-metrics",
+                "namespace": "piraeus-datastore",
+                "pod": "piraeus-lvm-metrics-q4m96",
+                "pool": "data",
+                "service": "piraeus-lvm-metrics",
+                "vg": "piraeus_ssd"
+              },
+              "value": [1792663047.315, "1"]
+            }
+          ]
+        }
+      }
+    },
+    "up{namespace=\"piraeus-datastore\",service=\"piraeus-lvm-metrics\"}": {
+      "returncode": 0,
+      "body": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {
+                "__name__": "up",
+                "container": "node-exporter",
+                "endpoint": "metrics",
+                "instance": "10.244.9.35:9100",
+                "job": "piraeus-lvm-metrics",
+                "namespace": "piraeus-datastore",
+                "pod": "piraeus-lvm-metrics-q4m96",
+                "service": "piraeus-lvm-metrics"
+              },
+              "value": [1792663047.436, "1"]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "rule_evaluation": [
+    {
+      "name": "piraeus-lvm-metrics",
+      "file": "alloy/piraeus-datastore/piraeus-lvm-metrics/9be4ee83-b5a4-48b1-9ce7-212093fdd883",
+      "rules": [
+        {
+          "state": "inactive",
+          "name": "PiraeusThinPoolDataUsageWarning",
+          "query": "(lvm_thin_pool_data_percent{namespace=\"piraeus-datastore\",pool=\"data\",vg=\"piraeus_ssd\"} >= 80) and (lvm_thin_pool_data_percent{namespace=\"piraeus-datastore\",pool=\"data\",vg=\"piraeus_ssd\"} < 90)",
+          "duration": 120,
+          "keepFiringFor": 0,
+          "labels": {
+            "severity": "warning"
+          },
+          "annotations": {
+            "description": "Thin-pool piraeus_ssd/data data usage has been at least 80% for 2 minutes.",
+            "summary": "Piraeus thin-pool data usage is high"
+          },
+          "alerts": [],
+          "health": "ok",
+          "lastError": "",
+          "type": "alerting",
+          "lastEvaluation": "2026-10-22T09:57:04.427785295Z",
+          "evaluationTime": 0.004297535
+        },
+        {
+          "state": "inactive",
+          "name": "PiraeusThinPoolDataUsageCritical",
+          "query": "lvm_thin_pool_data_percent{namespace=\"piraeus-datastore\",pool=\"data\",vg=\"piraeus_ssd\"} >= 90",
+          "duration": 120,
+          "keepFiringFor": 0,
+          "labels": {
+            "severity": "critical"
+          },
+          "annotations": {
+            "description": "Thin-pool piraeus_ssd/data data usage has been at least 90% for 2 minutes.",
+            "summary": "Piraeus thin-pool data usage is critical"
+          },
+          "alerts": [],
+          "health": "ok",
+          "lastError": "",
+          "type": "alerting",
+          "lastEvaluation": "2026-10-22T09:57:04.432090459Z",
+          "evaluationTime": 0.000651622
+        },
+        {
+          "state": "inactive",
+          "name": "PiraeusThinPoolMetadataUsageWarning",
+          "query": "(lvm_thin_pool_metadata_percent{namespace=\"piraeus-datastore\",pool=\"data\",vg=\"piraeus_ssd\"} >= 70) and (lvm_thin_pool_metadata_percent{namespace=\"piraeus-datastore\",pool=\"data\",vg=\"piraeus_ssd\"} < 85)",
+          "duration": 120,
+          "keepFiringFor": 0,
+          "labels": {
+            "severity": "warning"
+          },
+          "annotations": {
+            "description": "Thin-pool piraeus_ssd/data metadata usage has been at least 70% for 2 minutes.",
+            "summary": "Piraeus thin-pool metadata usage is high"
+          },
+          "alerts": [],
+          "health": "ok",
+          "lastError": "",
+          "type": "alerting",
+          "lastEvaluation": "2026-10-22T09:57:04.432747644Z",
+          "evaluationTime": 0.000562098
+        },
+        {
+          "state": "inactive",
+          "name": "PiraeusThinPoolMetadataUsageCritical",
+          "query": "lvm_thin_pool_metadata_percent{namespace=\"piraeus-datastore\",pool=\"data\",vg=\"piraeus_ssd\"} >= 85",
+          "duration": 120,
+          "keepFiringFor": 0,
+          "labels": {
+            "severity": "critical"
+          },
+          "annotations": {
+            "description": "Thin-pool piraeus_ssd/data metadata usage has been at least 85% for 2 minutes.",
+            "summary": "Piraeus thin-pool metadata usage is critical"
+          },
+          "alerts": [],
+          "health": "ok",
+          "lastError": "",
+          "type": "alerting",
+          "lastEvaluation": "2026-10-22T09:57:04.433314728Z",
+          "evaluationTime": 0.000512477
+        },
+        {
+          "state": "inactive",
+          "name": "PiraeusThinPoolCollectorFailed",
+          "query": "lvm_thin_pool_collector_success{namespace=\"piraeus-datastore\",pool=\"data\",vg=\"piraeus_ssd\"} == 0",
+          "duration": 120,
+          "keepFiringFor": 0,
+          "labels": {
+            "severity": "warning"
+          },
+          "annotations": {
+            "description": "Reporting lvs has not returned both usage fields for piraeus_ssd/data for 2 minutes.",
+            "summary": "Piraeus thin-pool metrics collection is failing"
+          },
+          "alerts": [],
+          "health": "ok",
+          "lastError": "",
+          "type": "alerting",
+          "lastEvaluation": "2026-10-22T09:57:04.433841877Z",
+          "evaluationTime": 0.000459661
+        },
+        {
+          "state": "inactive",
+          "name": "PiraeusThinPoolCollectorStale",
+          "query": "(time() - lvm_thin_pool_collector_last_success_timestamp_seconds{namespace=\"piraeus-datastore\",pool=\"data\",vg=\"piraeus_ssd\"} > 90 or absent(lvm_thin_pool_collector_last_success_timestamp_seconds{namespace=\"piraeus-datastore\",pool=\"data\",vg=\"piraeus_ssd\"}) or time() - node_textfile_mtime_seconds{file=\"/textfiles/lvm_thin_pool.prom\",namespace=\"piraeus-datastore\",service=\"piraeus-lvm-metrics\"} > 90) and on (namespace) (kube_daemonset_status_desired_number_scheduled{daemonset=\"piraeus-lvm-metrics\",namespace=\"piraeus-datastore\"} > 0)",
+          "duration": 120,
+          "keepFiringFor": 0,
+          "labels": {
+            "severity": "warning"
+          },
+          "annotations": {
+            "description": "The last successful sample or textfile update for piraeus_ssd/data is missing or older than 90 seconds.",
+            "summary": "Piraeus thin-pool metrics are stale"
+          },
+          "alerts": [],
+          "health": "ok",
+          "lastError": "",
+          "type": "alerting",
+          "lastEvaluation": "2026-10-22T09:57:04.434306286Z",
+          "evaluationTime": 0.001631716
+        },
+        {
+          "state": "inactive",
+          "name": "PiraeusThinPoolScrapeMissing",
+          "query": "((up{namespace=\"piraeus-datastore\",service=\"piraeus-lvm-metrics\"} == 0) or absent(up{namespace=\"piraeus-datastore\",service=\"piraeus-lvm-metrics\"})) and on (namespace) (kube_daemonset_status_desired_number_scheduled{daemonset=\"piraeus-lvm-metrics\",namespace=\"piraeus-datastore\"} > 0)",
+          "duration": 120,
+          "keepFiringFor": 0,
+          "labels": {
+            "severity": "warning"
+          },
+          "annotations": {
+            "description": "Alloy has not scraped the Piraeus thin-pool exporter successfully for 2 minutes.",
+            "summary": "Piraeus thin-pool exporter is not being scraped"
+          },
+          "alerts": [],
+          "health": "ok",
+          "lastError": "",
+          "type": "alerting",
+          "lastEvaluation": "2026-10-22T09:57:04.43594315Z",
+          "evaluationTime": 0.000855335
+        }
+      ],
+      "interval": 60,
+      "lastEvaluation": "2026-10-22T09:57:04.427770717Z",
+      "evaluationTime": 0.009031675,
+      "sourceTenants": null
+    }
+  ],
+  "fio": {
+    "1-native-fs": {
+      "fio_version": "fio-3.41",
+      "job_options": {
+        "name": "durable-4k",
+        "filename": "/data/durable-fio",
+        "size": "256M",
+        "rw": "randwrite",
+        "bs": "4k",
+        "ioengine": "psync",
+        "iodepth": "1",
+        "numjobs": "1",
+        "direct": "1",
+        "fdatasync": "1",
+        "time_based": "1",
+        "runtime": "20",
+        "ramp_time": "3",
+        "randseed": "20261022",
+        "group_reporting": "1"
+      },
+      "error": 0,
+      "write_iops": 925.753712,
+      "write_bytes_per_second": 3791887,
+      "read_bytes_per_second": 0,
+      "sync_latency_ns": {
+        "min": 563315,
+        "max": 7428964,
+        "mean": 1027883.240441,
+        "stddev": 512202.792119,
+        "N": 18516,
+        "percentile": {
+          "1.000000": 577536,
+          "5.000000": 602112,
+          "10.000000": 618496,
+          "20.000000": 659456,
+          "30.000000": 692224,
+          "40.000000": 724992,
+          "50.000000": 774144,
+          "60.000000": 864256,
+          "70.000000": 1155072,
+          "80.000000": 1597440,
+          "90.000000": 1777664,
+          "95.000000": 1925120,
+          "99.000000": 2310144,
+          "99.500000": 2473984,
+          "99.900000": 5603328,
+          "99.950000": 6782976,
+          "99.990000": 7438336
+        }
+      }
+    },
+    "1-drbd-fs": {
+      "fio_version": "fio-3.41",
+      "job_options": {
+        "name": "durable-4k",
+        "filename": "/data/durable-fio",
+        "size": "256M",
+        "rw": "randwrite",
+        "bs": "4k",
+        "ioengine": "psync",
+        "iodepth": "1",
+        "numjobs": "1",
+        "direct": "1",
+        "fdatasync": "1",
+        "time_based": "1",
+        "runtime": "20",
+        "ramp_time": "3",
+        "randseed": "20261022",
+        "group_reporting": "1"
+      },
+      "error": 0,
+      "write_iops": 823.708815,
+      "write_bytes_per_second": 3373911,
+      "read_bytes_per_second": 0,
+      "sync_latency_ns": {
+        "min": 569577,
+        "max": 10715710,
+        "mean": 1155384.084188,
+        "stddev": 638790.279597,
+        "N": 16475,
+        "percentile": {
+          "1.000000": 585728,
+          "5.000000": 618496,
+          "10.000000": 651264,
+          "20.000000": 692224,
+          "30.000000": 724992,
+          "40.000000": 774144,
+          "50.000000": 831488,
+          "60.000000": 954368,
+          "70.000000": 1335296,
+          "80.000000": 1777664,
+          "90.000000": 2113536,
+          "95.000000": 2375680,
+          "99.000000": 2899968,
+          "99.500000": 3227648,
+          "99.900000": 5603328,
+          "99.950000": 6520832,
+          "99.990000": 8355840
+        }
+      }
+    },
+    "2-drbd-fs": {
+      "fio_version": "fio-3.41",
+      "job_options": {
+        "name": "durable-4k",
+        "filename": "/data/durable-fio",
+        "size": "256M",
+        "rw": "randwrite",
+        "bs": "4k",
+        "ioengine": "psync",
+        "iodepth": "1",
+        "numjobs": "1",
+        "direct": "1",
+        "fdatasync": "1",
+        "time_based": "1",
+        "runtime": "20",
+        "ramp_time": "3",
+        "randseed": "20261022",
+        "group_reporting": "1"
+      },
+      "error": 0,
+      "write_iops": 1538.073096,
+      "write_bytes_per_second": 6299947,
+      "read_bytes_per_second": 0,
+      "sync_latency_ns": {
+        "min": 277369,
+        "max": 11669195,
+        "mean": 612763.2844,
+        "stddev": 386561.71382,
+        "N": 30763,
+        "percentile": {
+          "1.000000": 280576,
+          "5.000000": 284672,
+          "10.000000": 309248,
+          "20.000000": 342016,
+          "30.000000": 460800,
+          "40.000000": 602112,
+          "50.000000": 634880,
+          "60.000000": 667648,
+          "70.000000": 700416,
+          "80.000000": 741376,
+          "90.000000": 815104,
+          "95.000000": 929792,
+          "99.000000": 1056768,
+          "99.500000": 1974272,
+          "99.900000": 6455296,
+          "99.950000": 7700480,
+          "99.990000": 8978432
+        }
+      }
+    },
+    "2-native-fs": {
+      "fio_version": "fio-3.41",
+      "job_options": {
+        "name": "durable-4k",
+        "filename": "/data/durable-fio",
+        "size": "256M",
+        "rw": "randwrite",
+        "bs": "4k",
+        "ioengine": "psync",
+        "iodepth": "1",
+        "numjobs": "1",
+        "direct": "1",
+        "fdatasync": "1",
+        "time_based": "1",
+        "runtime": "20",
+        "ramp_time": "3",
+        "randseed": "20261022",
+        "group_reporting": "1"
+      },
+      "error": 0,
+      "write_iops": 1605.119744,
+      "write_bytes_per_second": 6574570,
+      "read_bytes_per_second": 0,
+      "sync_latency_ns": {
+        "min": 276942,
+        "max": 12732105,
+        "mean": 590107.155837,
+        "stddev": 411708.228016,
+        "N": 32104,
+        "percentile": {
+          "1.000000": 280576,
+          "5.000000": 280576,
+          "10.000000": 284672,
+          "20.000000": 313344,
+          "30.000000": 350208,
+          "40.000000": 577536,
+          "50.000000": 626688,
+          "60.000000": 667648,
+          "70.000000": 700416,
+          "80.000000": 741376,
+          "90.000000": 823296,
+          "95.000000": 929792,
+          "99.000000": 1044480,
+          "99.500000": 1220608,
+          "99.900000": 6848512,
+          "99.950000": 9240576,
+          "99.990000": 12124160
+        }
+      }
+    },
+    "native-fs-sequential": {
+      "fio_version": "fio-3.41",
+      "job_options": {
+        "name": "verified-sequential",
+        "filename": "/data/sequential-fio",
+        "size": "1G",
+        "rw": "write",
+        "bs": "1M",
+        "ioengine": "psync",
+        "iodepth": "1",
+        "direct": "1",
+        "fsync_on_close": "1",
+        "verify": "crc32c",
+        "verify_fatal": "1",
+        "do_verify": "1",
+        "group_reporting": "1"
+      },
+      "error": 0,
+      "write_iops": 838.656839,
+      "write_bytes_per_second": 879395433,
+      "read_bytes_per_second": 1046531992,
+      "sync_latency_ns": {
+        "min": 0,
+        "max": 0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "N": 0
+      }
+    },
+    "drbd-fs-sequential": {
+      "fio_version": "fio-3.41",
+      "job_options": {
+        "name": "verified-sequential",
+        "filename": "/data/sequential-fio",
+        "size": "1G",
+        "rw": "write",
+        "bs": "1M",
+        "ioengine": "psync",
+        "iodepth": "1",
+        "direct": "1",
+        "fsync_on_close": "1",
+        "verify": "crc32c",
+        "verify_fatal": "1",
+        "do_verify": "1",
+        "group_reporting": "1"
+      },
+      "error": 0,
+      "write_iops": 547.008547,
+      "write_bytes_per_second": 573580034,
+      "read_bytes_per_second": 1422174601,
+      "sync_latency_ns": {
+        "min": 0,
+        "max": 0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "N": 0
+      }
+    }
+  },
+  "cleanup": {
+    "namespace": "piraeus-acceptance-20261022",
+    "claims": [
+      {
+        "name": "drbd-block",
+        "uid": "346e504c-bdd3-4fb1-b374-c5f0d4072750",
+        "pv": "pvc-346e504c-bdd3-4fb1-b374-c5f0d4072750",
+        "pv_uid": "3b7a5dd7-c161-419c-b675-d2f7904cc5d2",
+        "handle": "pvc-346e504c-bdd3-4fb1-b374-c5f0d4072750"
+      },
+      {
+        "name": "drbd-block-restored",
+        "uid": "e53e74d1-090c-43b0-858e-430f05c5fc30",
+        "pv": "pvc-e53e74d1-090c-43b0-858e-430f05c5fc30",
+        "pv_uid": "02192f51-19c0-4006-874c-64863fd8cb57",
+        "handle": "pvc-e53e74d1-090c-43b0-858e-430f05c5fc30"
+      },
+      {
+        "name": "drbd-fs",
+        "uid": "4c0c43d0-5d7d-4d2a-946c-8ce53c5168f8",
+        "pv": "pvc-4c0c43d0-5d7d-4d2a-946c-8ce53c5168f8",
+        "pv_uid": "90fe1778-e214-4888-869c-931aedf9ae3e",
+        "handle": "pvc-4c0c43d0-5d7d-4d2a-946c-8ce53c5168f8"
+      },
+      {
+        "name": "drbd-fs-restored",
+        "uid": "7d5aa8a2-6dad-46e2-b73b-afdb9053ca58",
+        "pv": "pvc-7d5aa8a2-6dad-46e2-b73b-afdb9053ca58",
+        "pv_uid": "115f34d6-fd09-4b42-9372-57497c27ffe9",
+        "handle": "pvc-7d5aa8a2-6dad-46e2-b73b-afdb9053ca58"
+      },
+      {
+        "name": "native-block",
+        "uid": "bec5e3e1-f6e6-470c-918b-25d312d91f88",
+        "pv": "pvc-bec5e3e1-f6e6-470c-918b-25d312d91f88",
+        "pv_uid": "e7e51080-e0ee-4dd4-9b05-1f1719f41cf7",
+        "handle": "pvc-bec5e3e1-f6e6-470c-918b-25d312d91f88"
+      },
+      {
+        "name": "native-block-restored",
+        "uid": "45fcef64-e96b-426e-8d27-731c8714a3c3",
+        "pv": "pvc-45fcef64-e96b-426e-8d27-731c8714a3c3",
+        "pv_uid": "4db66afc-a98f-4bbf-be08-ff11c2b0c9a5",
+        "handle": "pvc-45fcef64-e96b-426e-8d27-731c8714a3c3"
+      },
+      {
+        "name": "native-fs",
+        "uid": "38a80c83-cc94-476d-8261-f5726f731629",
+        "pv": "pvc-38a80c83-cc94-476d-8261-f5726f731629",
+        "pv_uid": "a2378cfe-ea47-41eb-9b8e-c60a51300386",
+        "handle": "pvc-38a80c83-cc94-476d-8261-f5726f731629"
+      },
+      {
+        "name": "native-fs-restored",
+        "uid": "86cea507-2dac-4323-8f4a-933a52869f65",
+        "pv": "pvc-86cea507-2dac-4323-8f4a-933a52869f65",
+        "pv_uid": "b6589ab7-b38c-4a0c-9fed-6780ad2e4712",
+        "handle": "pvc-86cea507-2dac-4323-8f4a-933a52869f65"
+      }
+    ],
+    "completed_at": 1792662965.3459606,
+    "all_acceptance_pvs_and_resources_removed": true,
+    "temporary_classes_removed": true
+  },
+  "qualification_limits": [
+    "No plain-partition or local-path baseline was measured; native baseline is STORAGE-only LVM_THIN on the same data NVMe.",
+    "Short fio microbenchmarks are not application or database workload qualification.",
+    "The first durable-write pair overlapped acceptance setup and is less controlled than the warmed second pair.",
+    "Production data/metadata utilization threshold alerts were not deliberately forced; live samples and rule evaluation health were checked, and the stale-collector alert reached Alertmanager and resolved.",
+    "Metadata validation imported/re-exported all rows into an isolated H2 database; no live controller disaster restore was performed.",
+    "Aggregate data exhaustion/recovery was exercised only on the disposable STORAGE-only lab pool; metadata exhaustion and aggregate DRBD exhaustion remain unqualified.",
+    "Transient client/API reads and automatic approval-review timeouts occurred during reported local memory pressure. Stopping task-owned QEMUs released about 12 GiB; later reads succeeded. A persistent LINSTOR stall was not reproduced."
+  ]
+}
