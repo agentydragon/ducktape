@@ -46,7 +46,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     """py_test with auto repo-root imports and sensible defaults.
 
     When main and main_module are unset, runs pytest_bazel and collects the source
-    whose basename matches the target name, using pytest's importlib mode.
+    whose basename matches the target name using pytest's default import mode.
 
     Args:
         name: Target name.
@@ -93,9 +93,9 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
             if len(main_srcs) == 1:
                 # Application Settings models can parse sys.argv before pytest consumes it.
                 base_env["PYTEST_ADDOPTS"] = " ".join([
+                    "--rootdir=.",
                     base_env.get("PYTEST_ADDOPTS", ""),
                     "$(location {})".format(_location_label(main_srcs[0])),
-                    "--import-mode=importlib",
                 ]).strip()
                 kwargs["main_module"] = "pytest_bazel"
                 pytest_bazel_dep = Label("@pypi//pytest_bazel")
