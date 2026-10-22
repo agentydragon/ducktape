@@ -18,9 +18,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import textwrap
 import time
 from pathlib import Path
+
+from util.bazel import runfiles
 
 
 def _parse_args() -> argparse.Namespace:
@@ -60,62 +61,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _offline_bootstrap(*, socat: str, proxy_port: int, backend_enabled: bool, command: list[str]) -> list[str]:
-    # This code runs after entering the new network namespace. The only
-    # reachable endpoint is a Unix socket that the host-side relay fixes to the
-    # configured 127.0.0.1 inference service.
-    bootstrap = textwrap.dedent(
-        """\
-        import os, shutil, socket, subprocess, sys, time, urllib.request
-        if os.path.isdir("/tmp/offline-config-source"):
-            shutil.copytree(
-                "/tmp/offline-config-source",
-                "/tmp/offline-home/.config/opencode",
-                dirs_exist_ok=True,
-            )
-        backend_enabled = sys.argv[3] == "1"
-        relay = None
-        try:
-            if backend_enabled:
-                relay = subprocess.Popen([
-                    sys.argv[1],
-                    f"TCP-LISTEN:{sys.argv[2]},bind=127.0.0.1,reuseaddr,fork",
-                    "UNIX-CONNECT:/tmp/offline-bridge/backend.sock",
-                ], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if backend_enabled:
-                for _ in range(50):
-                    try:
-                        with urllib.request.urlopen(
-                            f"http://127.0.0.1:{sys.argv[2]}/api/tags", timeout=2
-                        ):
-                            break
-                    except OSError:
-                        if relay is not None and relay.poll() is not None:
-                            raise RuntimeError("loopback relay exited before health check")
-                        time.sleep(0.1)
-                else:
-                    raise RuntimeError("loopback backend health check did not succeed")
-            try:
-                with socket.create_connection(("1.1.1.1", 443), timeout=1):
-                    raise RuntimeError("offline network check failed: public egress works")
-            except OSError:
-                pass
-            if backend_enabled:
-                print("offline verified: loopback backend reachable; public egress denied", file=sys.stderr)
-            else:
-                print("offline verified: public egress denied; no backend bridge enabled", file=sys.stderr)
-            result = subprocess.run(sys.argv[4:], check=False)
-            raise SystemExit(result.returncode)
-        finally:
-            if relay is not None:
-                relay.terminate()
-                try:
-                    relay.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    relay.kill()
-                    relay.wait()
-        """
-    )
-    return [sys.executable, "-c", bootstrap, socat, str(proxy_port), "1" if backend_enabled else "0", *command]
+    return [sys.executable, "/offline-bootstrap.py", socat, str(proxy_port), "1" if backend_enabled else "0", *command]
 
 
 def main() -> int:
@@ -145,6 +91,9 @@ def main() -> int:
             start_new_session=True,
         )
     try:
+        bootstrap_script = runfiles.get_required_path(
+            runfiles.own_repo_rlocation("x/local_llm/eval/offline_bootstrap.py")
+        ).resolve(strict=True)
         if host_relay is not None:
             for _ in range(50):
                 if bridge_socket.exists():
@@ -164,6 +113,9 @@ def main() -> int:
             "--ro-bind",
             "/",
             "/",
+            "--ro-bind",
+            str(bootstrap_script),
+            "/offline-bootstrap.py",
             "--dev",
             "/dev",
             "--proc",
