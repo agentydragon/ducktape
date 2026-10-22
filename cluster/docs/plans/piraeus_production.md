@@ -418,8 +418,9 @@ healthy masters, leader agreement, and application S3 reads/writes before
 retiring the source. Rebuild each evacuated Attic and Study Casino CNPG member
 on a new strict-local Piraeus claim through its operator's native replica
 workflow, one member at a time. Keep the other two healthy off-node instances
-serving until the replacement catches up and passes its checks; restore the
-third instance only then. Keep Study Casino's instance claim template at 1Gi.
+serving while CNPG creates and catches up the replacement; require all three
+healthy before completing that member handoff. Keep Study Casino's instance
+claim template at 1Gi.
 Applications continue to use their existing SeaweedFS CSI claims and service
 endpoints. Do not add a second Piraeus copy by default when the application
 already provides replication.
