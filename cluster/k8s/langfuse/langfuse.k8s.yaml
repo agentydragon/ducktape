@@ -319,7 +319,7 @@ spec:
         kind: HelmRepository
         name: langfuse
         namespace: langfuse
-      version: 2.1.0
+      version: 2.1.6
   install:
     strategy:
       name: RetryOnFailure
@@ -411,7 +411,7 @@ spec:
       features:
         signUpDisabled: false
       image:
-        tag: 4.35.0
+        tag: 4.67.0
       nextauth:
         secret:
           secretKeyRef:

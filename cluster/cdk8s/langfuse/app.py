@@ -127,9 +127,8 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
     resources = {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "1", "memory": "2Gi"}}
     return {
         "langfuse": {
-            # Chart 2.1.0's appVersion trails the current release; pin both web and
-            # worker to the same current Langfuse image explicitly.
-            "image": {"tag": "4.35.0"},
+            # Keep web and worker on the same release when it leads the chart's appVersion.
+            "image": {"tag": "4.67.0"},
             "features": {
                 # SSO-only: email/password login is disabled below via
                 # AUTH_DISABLE_USERNAME_PASSWORD. Signup must stay enabled so the
@@ -271,7 +270,7 @@ def _helm_release(scope: Construct, *, storage: s3.PrivateBucket) -> None:
         _NAMESPACE,
         repository=https_helm_repository(scope, _NAME, _NAMESPACE, url="https://langfuse.github.io/langfuse-k8s"),
         chart=_NAME,
-        version="2.1.0",
+        version="2.1.6",
         interval="15m",
         timeout="20m",
         install=HelmReleaseSpecInstall(
