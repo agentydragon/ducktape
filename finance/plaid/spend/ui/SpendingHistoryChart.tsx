@@ -11,7 +11,7 @@ import {
   PointElement,
   Tooltip,
 } from "chart.js";
-import type { components } from "./api/schema";
+import type { Allowance, EstimatePeriodId, TransactionsView } from "./types";
 
 Chart.register(
   BarController,
@@ -23,10 +23,6 @@ Chart.register(
   PointElement,
   Tooltip
 );
-
-type Allowance = components["schemas"]["AllowanceView"];
-type TransactionsView = components["schemas"]["SpendTransactionsView"];
-type EstimatePeriodId = Extract<components["schemas"]["Period"]["id"], "rolling_7d" | "rolling_30d">;
 type LegendRow = {
   key: string;
   label: string;

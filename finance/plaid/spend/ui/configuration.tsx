@@ -1,0 +1,191 @@
+import { Alert, Badge, Box, Card, Divider, Group, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+
+import { Metric, Money, periodLabels } from "./spend_display";
+import { ruleConditionText, ruleKindDisplay, rulesFootnote } from "./rule_display";
+import type { SpendConfiguration } from "./types";
+
+export function ConfigurationPage({
+  configuration,
+  loading,
+  error,
+}: {
+  configuration: SpendConfiguration | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const allowance = configuration?.allowance;
+  return (
+    <Stack gap="lg">
+      <Group justify="space-between" align="flex-start" gap="md">
+        <div>
+          <Title order={2} size="h3">
+            Configuration
+          </Title>
+          <Text size="sm" c="dimmed" mt="xs">
+            Read-only settings currently loaded by Plaid Spend. Account IDs are omitted; changes are made in the private
+            configuration and take effect after rollout.
+          </Text>
+        </div>
+        <Badge color="gray" variant="light">
+          Read only
+        </Badge>
+      </Group>
+      {error && (
+        <Alert color="red" title="Couldn't load configuration">
+          {error}
+        </Alert>
+      )}
+      {loading && !configuration && (
+        <Text size="sm" c="dimmed">
+          Loading configuration…
+        </Text>
+      )}
+      {configuration && (
+        <>
+          {allowance ? (
+            <Card component="section" aria-labelledby="configuration-allowance-title" withBorder radius="lg" p="lg">
+              <Stack gap="md">
+                <Title id="configuration-allowance-title" order={3} size="h4">
+                  Flexible allowance policy
+                </Title>
+                <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md">
+                  <Metric
+                    label="MONTHLY ALLOWANCE"
+                    value={<Money value={allowance.monthly_minor_units} currency={allowance.currency} />}
+                  />
+                  <Metric label="START DATE" value={allowance.activation_at} />
+                  <Metric label="DAY CUTOVER TIME ZONE" value={allowance.time_zone ?? "UTC"} />
+                  <Metric label="ACCOUNTS IN SCOPE" value={allowance.spending_account_count} />
+                  <Metric label="MAX SYNC AGE" value={`${allowance.max_sync_age_hours} hours`} />
+                  <Metric label="DEFAULT ESTIMATE WINDOW" value={periodLabels[allowance.forecast_basis_period_id]} />
+                </SimpleGrid>
+                <Divider />
+                <div>
+                  <Text fw={650} mb="sm">
+                    Analysis categories
+                  </Text>
+                  <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="xs">
+                    {Object.entries(allowance.analysis_categories).map(([id, category]) => (
+                      <Group key={id} gap="xs" wrap="nowrap">
+                        <Box
+                          component="span"
+                          aria-hidden="true"
+                          style={{
+                            display: "inline-block",
+                            width: 10,
+                            height: 10,
+                            flex: "0 0 auto",
+                            borderRadius: "50%",
+                            backgroundColor: category.color,
+                          }}
+                        />
+                        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                          {category.label}
+                        </Text>
+                        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                          {id}
+                        </Text>
+                      </Group>
+                    ))}
+                  </SimpleGrid>
+                </div>
+                <Divider />
+                <div>
+                  <Text fw={650} mb="sm">
+                    Classification rules
+                  </Text>
+                  <Stack gap="xs">
+                    {allowance.rules.map((rule, index) => {
+                      const { label, color } = ruleKindDisplay[rule.kind];
+                      const oneOff = rule.scope === "one_off";
+                      return (
+                        <Paper key={`${rule.kind}-${index}`} withBorder radius="md" p="sm">
+                          <Group align="flex-start" gap="sm" wrap="nowrap">
+                            <Text size="sm" c="dimmed" w={20} ta="right">
+                              {index + 1}.
+                            </Text>
+                            <Badge color={color} variant="light" style={{ flexShrink: 0 }}>
+                              {label}
+                            </Badge>
+                            {oneOff && (
+                              <Badge color="violet" variant="light" style={{ flexShrink: 0 }}>
+                                One-off
+                              </Badge>
+                            )}
+                            <Stack gap={2} miw={0}>
+                              {rule.id && (
+                                <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+                                  {rule.id}
+                                </Text>
+                              )}
+                              <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                                {ruleConditionText(rule.condition)}
+                              </Text>
+                              {rule.description && (
+                                <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                                  {rule.description}
+                                </Text>
+                              )}
+                            </Stack>
+                          </Group>
+                        </Paper>
+                      );
+                    })}
+                  </Stack>
+                  <Text size="xs" c="dimmed" mt="sm">
+                    {rulesFootnote}
+                  </Text>
+                </div>
+              </Stack>
+            </Card>
+          ) : (
+            <Alert color="yellow" title="No flexible allowance configured">
+              Card settings are still shown below.
+            </Alert>
+          )}
+          <section aria-labelledby="configuration-cards-title">
+            <Group justify="space-between" align="baseline">
+              <Title id="configuration-cards-title" order={3} size="h4">
+                Card settings
+              </Title>
+              <Text size="sm" c="dimmed">
+                {configuration.cards.length} configured
+              </Text>
+            </Group>
+            <Text size="xs" c="dimmed" mt="xs" mb="md">
+              Limits are shown in minor units of each account's currency.
+            </Text>
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+              {configuration.cards.map((card, index) => (
+                <Card key={`${card.label}-${index}`} withBorder radius="md" p="lg">
+                  <Stack gap="sm">
+                    <Group justify="space-between" align="flex-start" gap="sm">
+                      <Text fw={650} style={{ overflowWrap: "anywhere" }}>
+                        {card.label}
+                      </Text>
+                      <Badge color={card.enabled ? "teal" : "gray"} variant="light">
+                        {card.enabled ? "Enabled" : "Disabled"}
+                      </Badge>
+                    </Group>
+                    <Text size="sm">
+                      Card limit: {card.limit_minor_units == null ? "Not set" : card.limit_minor_units.toLocaleString()}
+                    </Text>
+                    <Text size="sm" c="dimmed">
+                      Alert threshold:{" "}
+                      {card.alert_threshold_percent == null ? "Not set" : `${card.alert_threshold_percent}%`}
+                    </Text>
+                  </Stack>
+                </Card>
+              ))}
+            </SimpleGrid>
+            {!configuration.cards.length && (
+              <Text size="sm" c="dimmed" mt="sm">
+                No cards configured.
+              </Text>
+            )}
+          </section>
+        </>
+      )}
+    </Stack>
+  );
+}

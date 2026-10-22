@@ -26,7 +26,14 @@ ts_library(
     srcs = [
         "SpendingHistoryChart.tsx",
         "assets.d.ts",
+        "configuration.tsx",
         "main.tsx",
+        "rule_display.ts",
+        "spend_display.tsx",
+        "spending.tsx",
+        "transactions.tsx",
+        "types.ts",
+        "use_spend_data.ts",
     ],
     tsconfig = ":tsconfig",
     deps = [
