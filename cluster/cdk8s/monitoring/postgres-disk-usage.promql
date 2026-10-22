@@ -1,0 +1,8 @@
+sum by (node, device, namespace, persistentvolumeclaim, component) (
+  label_replace(
+    max by (namespace, pod, datname) (cnpg_pg_database_size_bytes{datname!~"template0|template1"}),
+    "component", "Postgres: $1", "namespace", "(.+)"
+  )
+  * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
+    disk_usage:pvc_filesystem:info{volume="pgdata"}
+)

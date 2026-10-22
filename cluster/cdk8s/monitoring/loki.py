@@ -8,8 +8,6 @@ backend. Grafana reaches Loki internally via the cluster Service.
 
 from __future__ import annotations
 
-import textwrap
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgress,
@@ -36,6 +34,7 @@ from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "loki"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/loki"
@@ -294,23 +293,9 @@ def _promtail_journal_values() -> dict[str, object]:
                 # Disable the chart's default Kubernetes pod-log scrape — the main promtail
                 # already collects pod logs on every node; this release must not double-collect.
                 "scrapeConfigs": "",
-                "extraScrapeConfigs": textwrap.dedent(
-                    """\
-                    - job_name: journal
-                      journal:
-                        path: /var/log/journal
-                        max_age: 12h
-                        labels:
-                          job: systemd-journal
-                      relabel_configs:
-                        - source_labels: ['__journal__systemd_unit']
-                          target_label: unit
-                        - source_labels: ['__journal__hostname']
-                          target_label: node
-                        - source_labels: ['__journal_priority_keyword']
-                          target_label: level
-                    """
-                ),
+                "extraScrapeConfigs": get_required_path(
+                    own_repo_rlocation("cluster/cdk8s/monitoring/journal-scrape.yaml")
+                ).read_text(),
             },
         },
         "extraVolumes": [

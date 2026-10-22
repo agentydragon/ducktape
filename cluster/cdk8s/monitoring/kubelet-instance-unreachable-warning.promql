@@ -1,0 +1,5 @@
+(
+  up{job="kubelet", metrics_path="/metrics"} == 0
+)
+unless on (node)
+kube_node_spec_taint{job="kube-state-metrics", key="node-role.kubernetes.io/roaming"} == 1

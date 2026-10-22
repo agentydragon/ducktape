@@ -1,0 +1,6 @@
+histogram_quantile(
+  0.99,
+  sum by (instance, le) (
+    rate(apiserver_request_duration_seconds_bucket{resource="leases", verb="PUT", scope="resource"}[10m])
+  )
+) > 0.5

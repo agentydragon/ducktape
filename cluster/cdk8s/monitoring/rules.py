@@ -7,6 +7,7 @@ from textwrap import dedent
 from cdk8s import ApiObjectMetadata, App, Chart
 
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "monitoring-rules"
 NAMESPACE = "monitoring"
@@ -14,17 +15,9 @@ NAMESPACE = "monitoring"
 _CONTROL_PLANE_IO = [
     Rule.alert(
         "ControlPlaneSystemDiskBusy",
-        dedent(
-            """\
-            (
-              rate(node_disk_io_time_seconds_total{device="sda"}[10m])
-              * on(namespace, pod) group_left(node)
-                kube_pod_info{namespace="monitoring", pod=~"prometheus-node-exporter-.+"}
-              * on(node) group_left()
-                kube_node_role{role="control-plane"}
-            ) > 0.50
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/control-plane-system-disk-busy-warning.promql")
+        ).read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Control-plane system disk is busy on {{ $labels.node }}",
@@ -35,17 +28,9 @@ _CONTROL_PLANE_IO = [
     ),
     Rule.alert(
         "ControlPlanePodSystemDiskWriterHigh",
-        dedent(
-            """\
-            (
-              sum by (namespace, pod, node) (
-                rate(container_fs_writes_bytes_total{device="/dev/sda", container!="", pod!="", namespace!="kube-system"}[10m])
-              )
-              * on(node) group_left()
-                kube_node_role{role="control-plane"}
-            ) > 1048576
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/control-plane-pod-system-disk-writer-high-warning.promql")
+        ).read_text(),
         for_="10m",
         labels={"severity": "warning"},
         summary="Pod {{ $labels.namespace }}/{{ $labels.pod }} is writing heavily to control-plane /dev/sda",
@@ -67,16 +52,9 @@ _CONTROL_PLANE_IO = [
     # plane, and `instance` cannot be added to `equal` without diverging from the stock rule.
     Rule.alert(
         "ControlPlaneLeasePutLatency",
-        dedent(
-            """\
-            histogram_quantile(
-              0.99,
-              sum by (instance, le) (
-                rate(apiserver_request_duration_seconds_bucket{resource="leases", verb="PUT", scope="resource"}[10m])
-              )
-            ) > 0.5
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/control-plane-lease-put-latency-warning.promql")
+        ).read_text(),
         for_="10m",
         labels={"severity": "warning"},
         summary="Apiserver lease PUT latency is high on {{ $labels.instance }}",
@@ -87,16 +65,9 @@ _CONTROL_PLANE_IO = [
     ),
     Rule.alert(
         "ControlPlaneLeasePutLatency",
-        dedent(
-            """\
-            histogram_quantile(
-              0.99,
-              sum by (instance, le) (
-                rate(apiserver_request_duration_seconds_bucket{resource="leases", verb="PUT", scope="resource"}[10m])
-              )
-            ) > 2
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/control-plane-lease-put-latency-critical.promql")
+        ).read_text(),
         for_="5m",
         labels={"severity": "critical"},
         summary="Apiserver lease PUT latency is critical on {{ $labels.instance }}",
@@ -133,16 +104,9 @@ _EXTERNAL_SECRETS = [
     ),
     Rule.alert(
         "ExternalSecretsControllerBacklogged",
-        dedent(
-            """\
-            sum by (controller) (
-              workqueue_depth{controller=~"externalsecret|clusterexternalsecret|secretstore|clustersecretstore"}
-            ) > 0
-            and on (controller)
-            controller_runtime_active_workers{controller=~"externalsecret|clusterexternalsecret|secretstore|clustersecretstore"}
-              >= controller_runtime_max_concurrent_reconciles{controller=~"externalsecret|clusterexternalsecret|secretstore|clustersecretstore"}
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/external-secrets-controller-backlogged-warning.promql")
+        ).read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="External Secrets {{ $labels.controller }} controller is saturated with queued work",
@@ -183,12 +147,9 @@ _FLUX = [
     # broken service.
     Rule.alert(
         "FluxKustomizationNotReady",
-        dedent(
-            """\
-            kube_customresource_flux_kustomization_ready{status!="True"} == 1
-            unless on (namespace, name) (kube_customresource_flux_kustomization_suspended == 1)
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/flux-kustomization-not-ready-warning.promql")
+        ).read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Flux Kustomization {{ $labels.namespace }}/{{ $labels.name }} is not Ready",
@@ -199,12 +160,9 @@ _FLUX = [
     ),
     Rule.alert(
         "FluxHelmReleaseNotReady",
-        dedent(
-            """\
-            kube_customresource_flux_helmrelease_ready{status!="True"} == 1
-            unless on (namespace, name) (kube_customresource_flux_helmrelease_suspended == 1)
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/flux-helm-release-not-ready-warning.promql")
+        ).read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Flux HelmRelease {{ $labels.namespace }}/{{ $labels.name }} is not Ready",
@@ -215,12 +173,9 @@ _FLUX = [
     ),
     Rule.alert(
         "FluxGitRepositoryNotReady",
-        dedent(
-            """\
-            kube_customresource_flux_gitrepository_ready{status!="True"} == 1
-            unless on (namespace, name) (kube_customresource_flux_gitrepository_suspended == 1)
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/flux-git-repository-not-ready-warning.promql")
+        ).read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Flux GitRepository {{ $labels.namespace }}/{{ $labels.name }} is not Ready",
@@ -289,21 +244,9 @@ _GITHUB_QUOTA = [
         # errors, which the exporter exposes as HTTP 502). Only suppress when
         # ALL current targets are down: a failed old pod must not hide a healthy
         # replacement that returns no quota gauge.
-        dedent(
-            """\
-            (
-              absent_over_time(github_graphql_rate_remaining{github_account="agentydragon"}[5m])
-              unless on ()
-              (max(up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring"}) == 0)
-            )
-            or
-            (
-              absent_over_time(github_graphql_rate_remaining{github_account="agentydragon-agent"}[5m])
-              unless on ()
-              (max(up{job="github-graphql-rate-exporter-agentydragon-agent",namespace="monitoring"}) == 0)
-            )
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/github-graphql-quota-observations-missing-warning.promql")
+        ).read_text(),
         labels={"severity": "warning"},
         summary="GitHub GraphQL quota observations for {{ $labels.github_account }} are missing",
         description=(
@@ -389,16 +332,9 @@ _MCP_AUTH = [
 _ROAMING_NODE = [
     Rule.alert(
         "KubeNodeNotReady",
-        dedent(
-            """\
-            (
-              kube_node_status_condition{condition="Ready",job="kube-state-metrics",status="true"} == 0
-              and on (cluster, node)
-              kube_node_spec_unschedulable{job="kube-state-metrics"} == 0
-            )
-            unless on (node) (kube_node_spec_taint{job="kube-state-metrics",key="node-role.kubernetes.io/roaming"} == 1)
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/kube-node-not-ready-warning.promql")
+        ).read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Node is not ready.",
@@ -414,15 +350,9 @@ _ROAMING_NODE = [
     # bolting on a second mechanism.
     Rule.alert(
         "KubeNodeUnreachable",
-        dedent(
-            """\
-            (
-              kube_node_spec_taint{effect="NoSchedule",job="kube-state-metrics",key="node.kubernetes.io/unreachable"}
-              unless ignoring (key, value)
-              kube_node_spec_taint{job="kube-state-metrics",key=~"ToBeDeletedByClusterAutoscaler|cloud.google.com/impending-node-termination|aws-node-termination-handler/spot-itn|node-role.kubernetes.io/roaming"}
-            ) == 1
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/kube-node-unreachable-warning.promql")
+        ).read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Node is unreachable.",
@@ -503,27 +433,7 @@ _DISK_USAGE = [
     # for static local PVs. CSI volumes have neither and drop out.
     Rule.record(
         "disk_usage:pvc_path:info",
-        dedent(
-            """\
-            max by (namespace, pod, volume, persistentvolumeclaim, node, path) (
-              max by (namespace, pod, volume, persistentvolumeclaim) (kube_pod_spec_volumes_persistentvolumeclaims_info)
-              * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{node!=""})
-              * on (namespace, persistentvolumeclaim) group_left (persistentvolume)
-                label_replace(
-                  max by (namespace, persistentvolumeclaim, volumename) (kube_persistentvolumeclaim_info),
-                  "persistentvolume", "$1", "volumename", "(.+)"
-                )
-              * on (persistentvolume) group_left (path)
-                label_replace(
-                  label_replace(
-                    max by (persistentvolume, host_path, local_path) (kube_persistentvolume_info),
-                    "path", "$1", "host_path", "(.+)"
-                  ),
-                  "path", "$1", "local_path", "(.+)"
-                )
-            )
-            """
-        ),
+        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/disk-usage-pvc-path-info.promql")).read_text(),
     ),
     # Longest mountpoint prefix of the PVC path wins; mountpoints deeper than three components are not
     # matched and fall through to a shorter enclosing mount.
@@ -542,88 +452,39 @@ _DISK_USAGE = [
                 # One copy per volume server: replicas are separate physical bytes on separate disks.
                 _component(
                     "SeaweedFS",
-                    dedent(
-                        """\
-                        sum by (node, device, namespace, persistentvolumeclaim, component) (
-                          label_replace(
-                            label_replace(
-                              max by (namespace, pod, collection) (
-                                SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal"}
-                              ),
-                              "component", "SeaweedFS (default collection)", "collection", ""
-                            ),
-                            "component", "SeaweedFS: $1", "collection", "(.+)"
-                          )
-                          * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                            disk_usage:pvc_filesystem:info{namespace="seaweedfs"}
-                        )"""
-                    ),
+                    get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/seaweedfs-disk-usage.promql"))
+                    .read_text()
+                    .removesuffix("\n"),
                 ),
                 _component(
                     "SeaweedFS deleted, awaiting vacuum",
-                    dedent(
-                        """\
-                        label_replace(
-                          sum by (node, device, namespace, persistentvolumeclaim) (
-                            max by (namespace, pod) (
-                              SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="deleted_bytes"}
-                            )
-                            * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                              disk_usage:pvc_filesystem:info{namespace="seaweedfs"}
-                          ),
-                          "component", "SeaweedFS deleted, awaiting vacuum", "", ""
-                        )"""
-                    ),
+                    get_required_path(
+                        own_repo_rlocation("cluster/cdk8s/monitoring/seaweedfs-deleted-disk-usage.promql")
+                    )
+                    .read_text()
+                    .removesuffix("\n"),
                 ),
                 # MergeTree parts only. ClickHouse's DiskUsed is the whole filesystem's used bytes, shared
                 # with everything else on the disk.
                 _component(
                     "ClickHouse",
-                    dedent(
-                        """\
-                        label_replace(
-                          sum by (node, device, namespace, persistentvolumeclaim) (
-                            (
-                              max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace="clickhouse"})
-                              + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse"})
-                            )
-                            * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                              disk_usage:pvc_filesystem:info{namespace="clickhouse"}
-                          ),
-                          "component", "ClickHouse", "", ""
-                        )"""
-                    ),
+                    get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/clickhouse-disk-usage.promql"))
+                    .read_text()
+                    .removesuffix("\n"),
                 ),
                 # Database files on each instance's PGDATA volume; WAL and other PostgreSQL files are not
                 # counted.
                 _component(
                     "Postgres (CNPG)",
-                    dedent(
-                        """\
-                        sum by (node, device, namespace, persistentvolumeclaim, component) (
-                          label_replace(
-                            max by (namespace, pod, datname) (cnpg_pg_database_size_bytes{datname!~"template0|template1"}),
-                            "component", "Postgres: $1", "namespace", "(.+)"
-                          )
-                          * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                            disk_usage:pvc_filesystem:info{volume="pgdata"}
-                        )"""
-                    ),
+                    get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/postgres-disk-usage.promql"))
+                    .read_text()
+                    .removesuffix("\n"),
                 ),
                 _component(
                     "Kubelet-measured PVCs",
-                    dedent(
-                        """\
-                        label_replace(
-                          label_join(
-                            max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes)
-                            * on (namespace, persistentvolumeclaim) group_left (node, device)
-                              max by (namespace, persistentvolumeclaim, node, device) (disk_usage:pvc_filesystem:info),
-                            "component", "/", "namespace", "persistentvolumeclaim"
-                          ),
-                          "component", "PVC: $1", "component", "(.+)"
-                        )"""
-                    ),
+                    get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/pvc-disk-usage.promql"))
+                    .read_text()
+                    .removesuffix("\n"),
                 ),
             ]
         )
@@ -631,15 +492,9 @@ _DISK_USAGE = [
     ),
     Rule.record(
         "disk_usage:unattributed_bytes",
-        dedent(
-            """\
-            disk_usage:filesystem_size_bytes - disk_usage:filesystem_free_bytes
-            - on (node, device) (
-              sum by (node, device) (disk_usage:component_used_bytes)
-              or on (node, device) 0 * disk_usage:filesystem_size_bytes
-            )
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/disk-usage-unattributed-bytes.promql")
+        ).read_text(),
     ),
 ]
 
@@ -649,32 +504,9 @@ _ROAMING_NODE_WORKLOAD = [
     # pod condition remains alertable on ordinary nodes.
     Rule.alert(
         "KubePodNotReady",
-        dedent(
-            """\
-            (
-              sum by (namespace, pod, job, cluster) (
-                max by (namespace, pod, job, cluster) (
-                  kube_pod_status_phase{job="kube-state-metrics", namespace=~".*", phase=~"Pending|Unknown"}
-                  or
-                  (
-                    kube_pod_status_phase{job="kube-state-metrics", namespace=~".*", phase="Running"} == 1
-                    and on (namespace, pod, cluster)
-                    kube_pod_status_ready{job="kube-state-metrics", namespace=~".*", condition="true"} == 0
-                  )
-                ) * on (namespace, pod, cluster) group_left() topk by (namespace, pod, cluster) (
-                  1, max by (namespace, pod, owner_kind, cluster) (kube_pod_owner{owner_kind!="Job"})
-                )
-              ) > 0
-              unless on (namespace, pod, cluster)
-              kube_pod_status_reason{job="kube-state-metrics", namespace=~".*", reason="SchedulingGated"} == 1
-            )
-            unless on (namespace, pod)
-            (
-              kube_pod_info{job="kube-state-metrics", node!=""}
-              and on (node)
-              kube_node_spec_taint{job="kube-state-metrics", key="node-role.kubernetes.io/roaming"} == 1
-            )"""
-        ),
+        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/kube-pod-not-ready-warning.promql"))
+        .read_text()
+        .removesuffix("\n"),
         for_="15m",
         labels={"severity": "warning"},
         description=(
@@ -688,15 +520,9 @@ _ROAMING_NODE_WORKLOAD = [
     # exclusion used by KubeNodeNotReady applies directly here.
     Rule.alert(
         "KubeletInstanceUnreachable",
-        dedent(
-            """\
-            (
-              up{job="kubelet", metrics_path="/metrics"} == 0
-            )
-            unless on (node)
-            kube_node_spec_taint{job="kube-state-metrics", key="node-role.kubernetes.io/roaming"} == 1
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/kubelet-instance-unreachable-warning.promql")
+        ).read_text(),
         for_="15m",
         labels={"severity": "warning"},
         description="A Kubelet instance has been unreachable for more than 15 minutes.",
@@ -724,19 +550,7 @@ _ROAMING_NODE_WORKLOAD = [
     # This removes one of the three reasons it cannot be re-enabled.
     Rule.alert(
         "TargetDown",
-        dedent(
-            """\
-            100 * (
-              count by (cluster, job, namespace, service) (
-                (up == 0) unless on (node) (kube_node_spec_taint{key="node-role.kubernetes.io/roaming"} == 1)
-              )
-              /
-              count by (cluster, job, namespace, service) (
-                up unless on (node) (kube_node_spec_taint{key="node-role.kubernetes.io/roaming"} == 1)
-              )
-            ) > 10
-            """
-        ),
+        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/target-down-warning.promql")).read_text(),
         for_="10m",
         labels={"severity": "warning"},
         summary="One or more targets are unreachable.",

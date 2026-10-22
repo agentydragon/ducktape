@@ -1,0 +1,11 @@
+(
+  absent_over_time(github_graphql_rate_remaining{github_account="agentydragon"}[5m])
+  unless on ()
+  (max(up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring"}) == 0)
+)
+or
+(
+  absent_over_time(github_graphql_rate_remaining{github_account="agentydragon-agent"}[5m])
+  unless on ()
+  (max(up{job="github-graphql-rate-exporter-agentydragon-agent",namespace="monitoring"}) == 0)
+)

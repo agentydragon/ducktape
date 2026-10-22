@@ -1,0 +1,9 @@
+100 * (
+  count by (cluster, job, namespace, service) (
+    (up == 0) unless on (node) (kube_node_spec_taint{key="node-role.kubernetes.io/roaming"} == 1)
+  )
+  /
+  count by (cluster, job, namespace, service) (
+    up unless on (node) (kube_node_spec_taint{key="node-role.kubernetes.io/roaming"} == 1)
+  )
+) > 10

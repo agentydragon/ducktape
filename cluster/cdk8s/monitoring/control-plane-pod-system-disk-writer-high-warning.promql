@@ -1,0 +1,7 @@
+(
+  sum by (namespace, pod, node) (
+    rate(container_fs_writes_bytes_total{device="/dev/sda", container!="", pod!="", namespace!="kube-system"}[10m])
+  )
+  * on(node) group_left()
+    kube_node_role{role="control-plane"}
+) > 1048576

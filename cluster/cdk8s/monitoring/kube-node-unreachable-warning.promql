@@ -1,0 +1,5 @@
+(
+  kube_node_spec_taint{effect="NoSchedule",job="kube-state-metrics",key="node.kubernetes.io/unreachable"}
+  unless ignoring (key, value)
+  kube_node_spec_taint{job="kube-state-metrics",key=~"ToBeDeletedByClusterAutoscaler|cloud.google.com/impending-node-termination|aws-node-termination-handler/spot-itn|node-role.kubernetes.io/roaming"}
+) == 1
