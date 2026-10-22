@@ -1441,6 +1441,11 @@ proto_library(
     ],
 )
 
+py_proto_library_with_mypy_stubs(
+    name = "operator_action_service_pb2",
+    deps = [":operator_action_service_proto"],
+)
+
 go_proto_library(
     name = "operator_action_service_go_proto",
     compilers = [
