@@ -392,18 +392,18 @@ locals {
       CRI       = "192GiB"
       KUBELET   = "128GiB"
       LOG       = "16GiB"
-    } : yamlencode({
-      apiVersion = "v1alpha1"
-      kind       = "VolumeConfig"
-      name       = name
-      provisioning = {
-        diskSelector = {
-          match = "disk.serial == '${local.piraeus_first_node_system_disk_serial}'"
+      } : yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "VolumeConfig"
+        name       = name
+        provisioning = {
+          diskSelector = {
+            match = "disk.serial == '${local.piraeus_first_node_system_disk_serial}'"
+          }
+          minSize = size
+          maxSize = size
+          grow    = false
         }
-        minSize = size
-        maxSize = size
-        grow    = false
-      }
     })
   ]
 
