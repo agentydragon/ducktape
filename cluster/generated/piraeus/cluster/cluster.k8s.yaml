@@ -534,6 +534,67 @@ spec:
             source:
               hostDevices:
                 - /dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_1951A3449505
+      - deletionPolicy: Retain
+        name: ssd-ovh-ns104952
+        nodeSelector:
+          kubernetes.io/hostname: ovh-ns104952
+          storage.allegedly.works/piraeus-ready: "true"
+        patches:
+          - patch: |
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: reactor-config
+              data:
+                prometheus.toml: |
+                  [[prometheus]]
+                  enums = true
+                  address = "127.0.0.1:9942"
+            target:
+              kind: ConfigMap
+              name: reactor-config
+              version: v1
+        podTemplate:
+          spec:
+            dnsPolicy: ClusterFirstWithHostNet
+            hostNetwork: true
+            initContainers:
+              - $patch: delete
+                name: drbd-shutdown-guard
+              - $patch: delete
+                name: drbd-module-loader
+            volumes:
+              - $patch: delete
+                name: run-systemd-system
+              - $patch: delete
+                name: run-drbd-shutdown-guard
+              - $patch: delete
+                name: systemd-bus-socket
+              - $patch: delete
+                name: lib-modules
+              - $patch: delete
+                name: usr-src
+              - hostPath:
+                  path: /var/etc/lvm/backup
+                  type: DirectoryOrCreate
+                name: etc-lvm-backup
+              - hostPath:
+                  path: /var/etc/lvm/archive
+                  type: DirectoryOrCreate
+                name: etc-lvm-archive
+        storagePools:
+          - lvmThinPool:
+              logicalVolumeCreateArguments:
+                - --poolmetadatasize
+                - 4G
+                - --chunksize
+                - 64K
+              thinPool: data
+              volumeGroup: piraeus_ssd
+            name: ssd
+            source:
+              hostDevices:
+                - /dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN
     storageClasses:
       - allowVolumeExpansion: true
         name: local-canary

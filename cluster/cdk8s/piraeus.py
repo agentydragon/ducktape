@@ -31,6 +31,8 @@ _FIRST_NODE_VOLUME_GROUP = "piraeus_ssd"
 _FIRST_NODE_THIN_POOL = "data"
 _FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns1001419"}
 _FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_1951A3449505"
+_NEXT_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns104952"}
+_NEXT_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"
 _CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
 _REACTOR_CONFIG_PATCH = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-reactor-patch.yaml")).read_text()
 _TALOS_SATELLITE_PATCHES = [
@@ -205,6 +207,26 @@ def cluster_chart(app: App) -> Chart:
                                 "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
                             },
                             "source": {"hostDevices": [_FIRST_NODE_DATA_DEVICE]},
+                        }
+                    ],
+                },
+                {
+                    "name": "ssd-ovh-ns104952",
+                    # Keep both the hostname and readiness label in the native selector.
+                    # The source device is initialized only after a later cutover adds the label.
+                    "nodeSelector": _NEXT_NODE_SELECTOR,
+                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
+                    "deletionPolicy": "Retain",
+                    "storagePools": [
+                        {
+                            "name": "ssd",
+                            "lvmThinPool": {
+                                "volumeGroup": _FIRST_NODE_VOLUME_GROUP,
+                                "thinPool": _FIRST_NODE_THIN_POOL,
+                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+                            },
+                            "source": {"hostDevices": [_NEXT_NODE_DATA_DEVICE]},
                         }
                     ],
                 },
