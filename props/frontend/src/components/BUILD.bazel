@@ -131,9 +131,9 @@ ts_library(
     srcs = ["LLMRequestViewer.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
+        ":JsonCode",
         ":LLMRequestSection",
         ":LLMResponseSection",
-        ":JsonCode",
         ":RawJsonSection",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
