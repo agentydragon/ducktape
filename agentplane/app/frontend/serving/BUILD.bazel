@@ -27,10 +27,18 @@ pkg_files(
     strip_prefix = strip_prefix.files_only(),
 )
 
+pkg_files(
+    name = "nginx_global_conf_files",
+    srcs = ["nginx.conf"],
+    prefix = "/etc/nginx",
+    strip_prefix = strip_prefix.files_only(),
+)
+
 pkg_tar(
     name = "static_tar",
     srcs = [
         ":nginx_conf_files",
+        ":nginx_global_conf_files",
         ":service_worker_files",
         ":web_files",
     ],

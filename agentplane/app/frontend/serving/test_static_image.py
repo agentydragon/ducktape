@@ -75,6 +75,7 @@ def test_static_image_serves_assets_without_revalidation() -> None:
         assert rendered.exit_code == 0, rendered.output
         nginx_config = rendered.output.decode()
         assert "listen 8080;" in nginx_config
+        assert "worker_processes 1;" in nginx_config
         assert "proxy_pass" not in nginx_config
 
 
