@@ -3,12 +3,30 @@
 Started 2026-10-21 PDT (2026-10-22 UTC). Target: `ovh-ns1001419` only.
 The operator authorized the conversion without an etcd snapshot, using existing
 rehearsal capacity. The off-node CNPG and Seaweed handoffs are complete, with
-their recovery evidence below. No target-node cordon/drain, Talos upgrade/reset,
-or physical data-disk wipe has started. The target has no `piraeus-ready` label;
-no production application PVC has been created on Piraeus. The explicit user
-pause before any Piraeus application restore remains in force.
+their recovery evidence below. Native drain completed and the target is
+cordoned. A DRBD image upgrade to `05bbb1.14.0` started at 08:35 UTC; completion
+has not been confirmed. The target has not been reset or data-disk-wiped. No
+production Piraeus application PVC has been created and no PV is bound on the
+target. The explicit user pause before any Piraeus application restore remains
+in force.
 
-## Production handoff checkpoint (2026-10-22 08:20 UTC)
+## Production progress checkpoint (2026-10-22 08:35 UTC)
+
+- Seaweed SSD volume-server PR #11521
+  (`563ceb5541205d8d39710e713e140f41c3e9cb26`) is merged. Flux reports two
+  ready servers in the existing SSD group, and source server 2 is gone. Its old
+  empty claim was removed only after checking the claim UID; the source PV is
+  `Released`/`Retain`.
+- All four original target PVs are `Released` with `Retain`, verified against
+  their claim identities. No PV is bound to `ovh-ns1001419`; no production
+  Piraeus application claim has been created.
+- The native Kubernetes drain completed and the target is cordoned. DRBD image
+  upgrade `05bbb1.14.0` started at 08:35 UTC. Its completion has not been
+  checked; target reset and data-disk wipe have not started.
+- The explicit user pause before creating any Piraeus application PVC or
+  restoring application data remains in force.
+
+## Production handoff checkpoint (2026-10-22 08:20 UTC; historical)
 
 The following handoffs moved data to existing off-node storage; they did not
 restore application data to Piraeus.
@@ -18,8 +36,8 @@ restore application data to Piraeus.
   immediately before any reboot.
 - **CNPG:** Attic is 2/2 ready, primary `attic-db-2` on `ovh-ns104952`, standby
   `attic-db-3` on `ovh-ns104963`; the new standby uses an 8 GiB request while
-  the original 2 GiB claims remain unchanged. Study Casino is 2/2 ready,
-  primary `study-casino-db-6` on `ovh-ns104952`, standby
+  the remaining off-node member's 2 GiB claim is unchanged. Study Casino is
+  2/2 ready, primary `study-casino-db-6` on `ovh-ns104952`, standby
   `study-casino-db-1` on `ovh-ns104963`; all remaining Study Casino claims stay
   at 1 GiB. Both target members were removed, their source PVs remain
   `Released` with `Retain`, and replication lag was zero. See the
@@ -190,8 +208,9 @@ Filesystem restores and the later Block restores.
 
 - Talos provider 0.12 uses the 1.14 SDK needed by the additional system volumes;
   0.11 uses the 1.13 SDK, whose VolumeConfig validator accepts only STATE,
-  EPHEMERAL and IMAGE-CACHE. The provider 0.12 upgrade merged in PR #11507 and
-  Flux applied it.
+  EPHEMERAL and IMAGE-CACHE. The provider 0.12 pin was updated in PR #11464;
+  this Terraform provider change is not applied by Flux. First-node preparation
+  merged in PR #11507.
 - Only the target's desired Talos configuration removes its old whole-disk
   UserVolumeConfig, selects the verified system disk, adds the five fixed system
   volumes and uses the existing DRBD image schematic. Other nodes keep their
@@ -206,15 +225,16 @@ Filesystem restores and the later Block restores.
 - An explicit empty local-path `nodePathMap` entry denies new local-path claims
   on the target instead of silently placing them on the system disk.
 
-No target Talos machine configuration has been applied. The target's
-`piraeus-ready` label remains absent. The preserved configuration still matches
-the original byte-for-byte. Direct authenticated
+At the 08:20 checkpoint, no target Talos machine configuration had been applied;
+the target's `piraeus-ready` label was absent and the preserved configuration
+matched the original byte-for-byte. Direct authenticated
 `talosctl -e 51.81.245.180 -n 51.81.245.180 version` passed from Wyrm2 after
 earlier timeouts. The temporary relay Pod, ConfigMap and NetworkPolicy have
 been removed; no relay is needed. All four exact source PVs were changed to
 `Retain` with PV/claim UID guards and verified readback. The CNPG and Seaweed
-off-node handoffs have since completed as recorded above. No target-node
-cordon/drain, Talos reset/upgrade or physical data-disk wipe has occurred.
+off-node handoffs have since completed as recorded above. The later 08:35
+checkpoint records the completed drain, cordon, and started image upgrade;
+reset and data-disk wipe have not occurred.
 
 Same-member Seaweed master recovery and CNPG/volume off-node recovery are now
 qualified. Production Piraeus pool acceptance, alert delivery, and any Piraeus

@@ -58,10 +58,14 @@ the production target class.
   were protected by exact PV/claim UID checks, and all temporary Flux holds have
   been removed. See the [sanitized handoff proof](cnpg_offnode_handoff_proof.json).
 
-The node remains untouched: no target cordon/drain, Talos reset/upgrade, or
-physical disk wipe has occurred. Do not create production Piraeus claims until
-node/pool acceptance is complete and the user explicitly authorizes the
-Piraeus restore.
+At the 08:20 handoff checkpoint, target-node maintenance had not started. Since
+then, the native drain completed and the target was cordoned; a DRBD image
+upgrade to `05bbb1.14.0` started at 08:35 UTC, with completion not yet
+confirmed. The target has not been reset or data-disk-wiped. The four original
+target PVs are `Released`/`Retain`; no PV is bound on the target, and no
+production Piraeus application PVC has been created. Do not create production
+Piraeus claims until node/pool acceptance is complete and the user explicitly
+authorizes the Piraeus restore.
 
 ## Handoff sequence
 
@@ -111,8 +115,9 @@ user's explicit approval.
 5. **Complete: prove off-node recovery.** Both Clusters are healthy at count 2
    on separate nodes and have zero lag. The handoff proof records the retained
    Attic PV identity, primary/standby placement, and unchanged Study Casino
-   1 GiB claims. This completes the data-preservation gate only; target-node
-   maintenance has not started and this does not authorize Piraeus PVC creation.
+   1 GiB claims. This completes the data-preservation gate only. Node-level
+   maintenance began after this checkpoint and remains in progress; this does
+   not authorize Piraeus PVC creation.
 
 6. **Deferred: restore one new member per Cluster on Piraeus.** Only after the
    target is Ready, its production Piraeus pool and data/metadata alert delivery
