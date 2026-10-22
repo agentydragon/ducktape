@@ -41,8 +41,8 @@ resource "terraform_data" "buildbuddy_live_tests_secret" {
   }
 
   provisioner "local-exec" {
-    when        = destroy
-    command     = "/usr/local/bin/buildbuddy-secret-sync delete"
+    when    = destroy
+    command = "/usr/local/bin/buildbuddy-secret-sync delete"
     # TF_VAR_buildbuddy_api_key is injected into the runner pod and inherited by
     # local-exec. Do not map it here: destroy provisioners cannot reference vars.
   }
