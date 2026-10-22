@@ -5,7 +5,6 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
@@ -115,7 +114,3 @@ async def test_a_session_whose_open_failed_is_offered_again_on_the_next_stream(
     async with session_openings(history_service, production_event_logs):
         await wait_for_thread(production_event_logs, session_id)
     assert attempts[:2] == [str(session_id), str(session_id)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

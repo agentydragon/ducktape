@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from fastapi import HTTPException
 
 from props.backend.auth import (
@@ -126,7 +125,3 @@ def test_get_caller_db_agent_disposes_on_cleanup():
             next(gen)
 
         mock_caller_db.dispose.assert_called_once()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

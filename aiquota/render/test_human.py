@@ -1,7 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
 
 from aiquota.models import (
@@ -18,10 +17,6 @@ from aiquota.render import human
 from aiquota.render.format import format_prepaid_balance
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_fixture
 from util.bazel.runfiles import get_required_path
-
-if __name__ == "__main__":
-    pytest_bazel.main()
-
 
 _FETCHED_AT = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 

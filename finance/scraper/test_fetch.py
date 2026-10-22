@@ -7,7 +7,6 @@ from pathlib import Path
 import httpx
 import pygit2
 import pytest
-import pytest_bazel
 
 from finance.evidence.markets import MarketEntry, Platform
 from finance.evidence.sources import EVIDENCE_SOURCES, EvidenceKind, EvidenceSource
@@ -448,10 +447,6 @@ async def test_run_scrape_failed_market_is_tolerated_until_stale(tmp_path: Path)
         stale_after=timedelta(hours=72),
     )
     assert code == 1  # last synced 100h ago (> 72h) and still failing
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_every_declared_source_is_fetched_and_written_verbatim(tmp_path: Path) -> None:

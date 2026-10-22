@@ -1,13 +1,7 @@
 from datetime import UTC, datetime
 
-import pytest_bazel
-
 from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, PaidCredits, ProviderFetch, ProviderQuota, QuotaWindow
 from aiquota.render.view_model import currently_over_plan, to_view
-
-if __name__ == "__main__":
-    pytest_bazel.main()
-
 
 _NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 

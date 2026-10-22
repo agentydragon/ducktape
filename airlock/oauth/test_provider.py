@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-import pytest_bazel
 import respx
 from httpx import Response
 
@@ -229,7 +228,3 @@ def test_needs_refresh_soon(provider: GenericOAuth2Provider) -> None:
 def test_needs_refresh_expired(provider: GenericOAuth2Provider) -> None:
     token = TokenData(access_token="a", refresh_token="r", expires_at=datetime.now(UTC) - timedelta(hours=1), scope="s")
     assert provider.needs_refresh(token)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

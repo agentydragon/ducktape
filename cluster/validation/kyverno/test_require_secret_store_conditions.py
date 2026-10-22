@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.kyverno.apply import apply_policy
 from cluster.validation.kyverno.paths import manifest, policy
@@ -44,7 +43,3 @@ class TestRequireSecretStoreConditions:
     def test_declared_conditions_allowed(self, secret_store_conditions_policy: Path):
         result = apply_policy(secret_store_conditions_policy, manifest("cluster_secret_store_with_conditions.yaml"))
         assert result.failed == 0, f"store naming its namespaces must pass\n{result.stdout}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

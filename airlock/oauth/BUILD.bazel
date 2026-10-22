@@ -74,7 +74,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
 )
@@ -89,6 +88,5 @@ py_test(
         ":refresh",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

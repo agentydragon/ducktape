@@ -22,7 +22,6 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 

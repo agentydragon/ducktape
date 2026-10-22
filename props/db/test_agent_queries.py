@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from props.agents.critic_dev.recipes.ground_truth import count_issues_by_snapshot
 from props.core.splits import Split
@@ -82,7 +81,3 @@ class TestQueryBuilders:
                 # tp_count and fp_count should be integers
                 assert isinstance(row.tp_count, int)
                 assert isinstance(row.fp_count, int)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

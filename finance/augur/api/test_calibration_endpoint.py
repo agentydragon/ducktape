@@ -14,7 +14,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from fastapi.testclient import TestClient
 
@@ -181,7 +180,3 @@ def test_run_calibration_includes_sample_sanity_bands(tmp_path: Path, augur_conf
     assert openai_anchor["status"] == "pass"
     assert openai_anchor["expected_lower"] == 100.0
     assert all(band["status"] != "fail" for band in bands)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

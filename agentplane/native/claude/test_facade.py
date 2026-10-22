@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.native.claude import facade, wire
 from agentplane.native.testing.async_process import AsyncNativeProcess, NativeProcessEofError
@@ -47,7 +46,3 @@ async def test_initialize_requires_its_control_reply(tmp_path: Path, outcome: st
         assert result["origin"] == {"kind": "task-notification"}
         assert (await observed.next())["is_error"] is True
         assert (await observed.next())["response"]["request_id"] == "another-request"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

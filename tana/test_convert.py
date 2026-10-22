@@ -6,7 +6,6 @@ import difflib
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from tana.export.convert import export_node_as_tanapaste
 from tana.graph.loader import load_workspace
@@ -62,7 +61,3 @@ def test_node_export_minimal_json(folder, node_id):
     actual = export_node_as_tanapaste(store, store[node_id])
     expected = (base / f"{node_id}.tanapaste").read_text()
     check_content_match(actual, expected, f"{node_id} using minimal JSON")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

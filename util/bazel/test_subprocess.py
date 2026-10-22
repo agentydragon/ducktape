@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest_bazel
-
 from util.bazel.subprocess import _in_bazel_venv, python_env, run_python_module
 
 
@@ -57,7 +55,3 @@ def test_run_python_module_version():
     # python -m platform prints platform info
     assert result.returncode == 0
     assert result.stdout.strip()  # Should have output
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

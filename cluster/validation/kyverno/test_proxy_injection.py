@@ -12,7 +12,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.kyverno.apply import apply_twice, assert_not_mutated
 from cluster.validation.kyverno.paths import manifest, policy
@@ -95,7 +94,3 @@ def test_pod_carrying_its_own_wiring_is_left_alone(tmp_path: Path) -> None:
     the pod's.
     """
     assert_not_mutated(policy("inject-haku-egress-proxy", tmp_path), manifest("pod_self_wired_egress_proxy.yaml"))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

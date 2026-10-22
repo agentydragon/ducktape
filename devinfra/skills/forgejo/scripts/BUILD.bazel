@@ -29,6 +29,5 @@ py_test(
         ":forgejo_lib",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

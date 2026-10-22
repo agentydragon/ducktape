@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.stream import follow
@@ -85,7 +84,3 @@ async def test_stream_does_not_end_before_the_awaited_command_is_admitted() -> N
                 )
                 assert b"id: 2" in await anext(frames)
                 assert b"event: end" in await anext(frames)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

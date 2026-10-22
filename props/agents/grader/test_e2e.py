@@ -20,8 +20,6 @@ import asyncio
 import logging
 from uuid import uuid4
 
-import pytest_bazel
-
 from agent_core.testing.responses import PlayGen
 from props.agents.grader.drift_handler import get_drift
 from props.agents.grader.testing.mocks import GraderMock
@@ -137,7 +135,3 @@ async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, 
 
         # Assert no drift remains (grading + clustering)
         assert_no_pending(test_snapshot, db)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

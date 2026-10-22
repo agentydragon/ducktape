@@ -5,7 +5,6 @@ from uuid import UUID
 
 import grpc
 import pytest
-import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.timestamp_pb2 import Timestamp
 
@@ -165,7 +164,3 @@ async def test_a_consumer_that_stops_hangs_up_on_the_watch(
 
     async with asyncio.timeout(10):
         await notifications_operator.hung_up.wait()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

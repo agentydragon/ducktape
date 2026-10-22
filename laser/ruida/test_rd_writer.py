@@ -1,5 +1,3 @@
-import pytest_bazel
-
 from laser.ruida.rd_writer import (
     RdJob,
     RdLayer,
@@ -132,7 +130,3 @@ def test_global_bbox_spans_all_rects():
     assert ymin == 20.0
     assert xmax == 60.0
     assert ymax == 70.0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

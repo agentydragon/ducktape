@@ -7,7 +7,6 @@ from urllib.error import URLError
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 
 from devinfra.ci import cancel_bb_invocations
 
@@ -39,7 +38,3 @@ def test_no_known_children_needs_no_credentials(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.delenv("BUILDBUDDY_API_KEY", raising=False)
     monkeypatch.setattr(sys, "argv", ["cancel", ""])
     cancel_bb_invocations.main()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

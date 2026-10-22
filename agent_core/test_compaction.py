@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from agent_core.agent import Agent
 from agent_core.handler import BaseHandler
@@ -98,7 +97,3 @@ async def test_compact_transcript_insufficient_history(mcp_tool_provider, summar
     assert not result.compacted
     assert summarizing_client.call_count == 0
     assert agent._transcript == original_transcript
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

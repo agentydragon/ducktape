@@ -8,7 +8,6 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -677,7 +676,3 @@ def test_admin_casino_stats_returns_target_user_stats(admin_app: tuple[TestClien
     body = r.json()
     assert body["username"] == "auragon"
     assert body["event_count"] == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -11,7 +11,6 @@ from typing import Any
 
 import httpx2
 import pytest
-import pytest_bazel
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
 
 from mcp_infra.request_scoped_openapi import RequestScopedOpenAPIClients
@@ -220,7 +219,3 @@ async def test_concurrent_calls_keep_request_clients_isolated(
     assert sorted(entered) == ["operator-alpha", "operator-beta"]
     assert sorted(exited) == ["operator-alpha", "operator-beta"]
     assert parent._client is placeholder_client
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -62,7 +62,6 @@ py_test(
         ":loki",
         "//:conftest",
         "//props:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -149,7 +148,6 @@ py_test(
         "//props/db:models",
         "@pypi//fastapi",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -162,7 +160,6 @@ py_test(
         "//:conftest",
         "//props:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -178,7 +175,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
         "@pypi//uvicorn",
     ],
 )
@@ -202,7 +198,6 @@ py_test(
         "//props/testing/fixtures:credentials",
         "//props/testing/fixtures:runs",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 

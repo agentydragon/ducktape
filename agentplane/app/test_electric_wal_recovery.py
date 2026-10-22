@@ -13,7 +13,6 @@ from uuid import UUID
 
 import asyncpg
 import httpx
-import pytest_bazel
 
 from agentplane.app.testing.history import fixture_session_id
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
@@ -213,7 +212,3 @@ def _values(response: httpx.Response) -> list[dict[str, object]]:
 def _write_artifact(name: str, body: str) -> None:
     path = undeclared_outputs_dir() / name
     path.write_text(body + "\n")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

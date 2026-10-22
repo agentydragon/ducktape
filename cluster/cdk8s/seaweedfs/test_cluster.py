@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
@@ -43,7 +42,3 @@ def test_seaweedfs_components_carry_the_protected_priority_class() -> None:
     assert {path: component.get("priorityClassName") for path, component in components.items()} == dict.fromkeys(
         components, stateful_infra.NAME
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

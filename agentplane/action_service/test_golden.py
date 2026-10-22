@@ -2,8 +2,6 @@
 
 import json
 
-import pytest_bazel
-
 from agentplane.action_service.generate_golden import build, serialize
 from util.bazel.runfiles import get_required_path
 
@@ -17,7 +15,3 @@ def test_golden_vectors_are_what_the_python_service_produces() -> None:
     for section, stored in json.loads(checked_in).items():
         assert stored == json.loads(produced)[section], section
     assert checked_in == produced, "regenerate with: bb run //agentplane/action_service:generate_golden_bin"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

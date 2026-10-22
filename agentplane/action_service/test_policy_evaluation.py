@@ -10,7 +10,6 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
@@ -460,7 +459,3 @@ def test_an_account_the_label_admitted_is_refused_once_the_copy_stops_moving() -
 
     index.clock = lambda: NOW + timedelta(seconds=index.freshness.stale_after_seconds + 1)
     assert index.admits(WORKLOAD) is False
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

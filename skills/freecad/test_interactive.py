@@ -13,7 +13,6 @@ import time
 import xmlrpc.client
 
 import pytest
-import pytest_bazel
 
 from skills.freecad.conftest import freecad_env
 from util.bazel.runfiles import get_required_path
@@ -114,7 +113,3 @@ def test_error_handling(freecad_rpc):
     assert result["success"] is False
     assert "test error" in result["error"]
     assert freecad_rpc.ping() is True
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

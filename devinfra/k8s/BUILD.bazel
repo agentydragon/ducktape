@@ -32,7 +32,6 @@ py_test(
         ":extract_crd",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -44,7 +43,6 @@ py_test(
         ":kubeconfig",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )

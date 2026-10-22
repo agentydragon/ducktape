@@ -13,7 +13,6 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import jwt
 import pytest
-import pytest_bazel
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 from jwt.algorithms import RSAAlgorithm
@@ -747,7 +746,3 @@ async def test_default_mock_access_token_audience_behavior_is_unchanged() -> Non
     )
     assert "azp" not in issued_claims
     assert "azp" not in refreshed_claims
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

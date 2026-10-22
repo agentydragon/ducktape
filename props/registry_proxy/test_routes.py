@@ -14,7 +14,6 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
-import pytest_bazel
 from fastapi import FastAPI, Request
 from starlette.responses import Response
 
@@ -137,7 +136,3 @@ def test_only_grader_builtin_tag_move_notifies_supervisor() -> None:
     assert not _is_grader_builtin_push(grader, "sha256:" + "ab" * 32)
     # Other repos never drive the grader supervisor, even on their builtin tag.
     assert not _is_grader_builtin_push(str(AgentType.CRITIC), BUILTIN_TAG)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

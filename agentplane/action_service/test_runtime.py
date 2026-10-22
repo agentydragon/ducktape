@@ -13,7 +13,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
@@ -573,7 +572,3 @@ async def test_hung_group_does_not_block_healthy_group_or_runtime(execution_leas
             )
             assert result.state is ExecutionState.SUCCEEDED
             assert not groups["blocked"].available
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

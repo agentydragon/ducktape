@@ -37,7 +37,6 @@ from decimal import Decimal
 
 import polars as pl
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import LocationId
@@ -350,7 +349,3 @@ def test_the_sale(lifecycle: tuple[Expected, Rollout]) -> None:
     assert sale["section_121_exclusion_quanta"] == 0
     assert sale["depreciation_recapture_quanta"] == dollars(case.recapture)
     assert sale["long_term_capital_gain_quanta"] == dollars(case.gain - case.recapture)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

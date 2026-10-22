@@ -15,7 +15,6 @@ from uuid import UUID
 import fastmcp.client.client
 import httpx2
 import pytest
-import pytest_bazel
 from fastapi import FastAPI
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
@@ -1019,7 +1018,3 @@ async def test_request_action_refuses_receipt_fields_without_a_receipt(results_f
     assert 'respond_with="receipt"' in text_of(refused.content)
     principal = CallerPrincipal(account=workload("a"))
     assert await results_frontend.store.list_requests(principal, idempotency_key="test-fields") == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -242,7 +241,3 @@ def test_run_critic_snapshot_not_found_returns_404(run_critic_client) -> None:
     # Snapshot validation happens before image resolution
     mock_registry.resolve_image.assert_not_called()
     mock_registry.start_critic.assert_not_called()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

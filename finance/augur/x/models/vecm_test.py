@@ -12,7 +12,6 @@ from datetime import date
 
 import numpy as np
 import pytest
-import pytest_bazel
 from numpyro import distributions as dist
 
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
@@ -182,7 +181,3 @@ class TestVecmModel:
         inflation = sampled.level_matrix(InflationKey(), rollout_count=512, horizon_months=1)
         monthly_log_return = np.log(inflation[:, 1] / inflation[:, 0])
         assert float(np.std(monthly_log_return, ddof=1)) < 0.02
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

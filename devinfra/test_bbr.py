@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pygit2
 import pytest
-import pytest_bazel
 
 from devinfra.bbr import (
     _STALE_BASE_ERROR_THRESHOLD,
@@ -491,7 +490,3 @@ class TestCheckBaseBranchFreshness:
         repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
         repo.set_head(base)
         assert check_base_branch_freshness(repo) is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

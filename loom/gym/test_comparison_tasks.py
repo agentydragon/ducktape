@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 
-import pytest_bazel
-
 from loom.gym.comparison_tasks import comparison_task, comparison_tasks
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.task import BinaryOutcome
@@ -55,7 +53,3 @@ def test_comparison_tasks_grid_and_bundles() -> None:
     assert len(tasks) == 8
     assert len({task.task_id for task in tasks}) == 8
     assert {task.bundle_id for task in tasks} == {"compare-bundle-2020-01", "compare-bundle-2020-04"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -88,7 +88,6 @@ py_test(
         "//util/testing:postgres_fixtures",
         "@pypi//psycopg",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],
@@ -178,7 +177,6 @@ py_test(
         "//util:playwright",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -193,7 +191,6 @@ py_test(
         "//third_party/containers:debian_slim",
         "//util:oci",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -231,7 +228,6 @@ py_test(
         "//util:visual_review",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -242,7 +238,6 @@ py_test(
         "//:conftest",
         "//util/testing:sharding",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -255,7 +250,6 @@ py_test(
         "//util:net",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
 )
@@ -277,7 +271,6 @@ py_test(
         "@pypi//pillow",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -343,7 +336,6 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

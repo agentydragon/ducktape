@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 # gazelle:include_dep //util/testing:sharding
 
@@ -49,7 +48,3 @@ def test_advertises_sharding_to_bazel(
     monkeypatch.setenv("TEST_SHARD_STATUS_FILE", str(status_file))
     _run_shard(pytester, 0)
     assert status_file.exists()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.js.debundle.live_proxy.addon import DebundleLiveProxyAddon
 from devinfra.js.debundle.live_proxy.core import (
@@ -491,7 +490,3 @@ def require_mapping(mapping: LocalAssetMapping | None) -> LocalAssetMapping:
     if mapping is None:
         raise AssertionError("expected local asset mapping")
     return mapping
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

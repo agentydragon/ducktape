@@ -142,7 +142,6 @@ py_test(
         "@pypi//openai",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -156,7 +155,6 @@ py_test(
         "@pypi//openai",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -170,7 +168,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

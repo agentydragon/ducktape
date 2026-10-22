@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest_bazel
 from sqlalchemy.engine import URL, make_url
 
 from util.db_url import render_postgresql_url
@@ -37,7 +36,3 @@ def test_render_accepts_sqlalchemy_url_and_keeps_target_driver() -> None:
 
     assert rendered == url.render_as_string(hide_password=False)
     assert make_url(rendered).query["options"] == url.query["options"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

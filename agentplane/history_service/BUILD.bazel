@@ -72,7 +72,6 @@ py_test(
         ":settled_cursors",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

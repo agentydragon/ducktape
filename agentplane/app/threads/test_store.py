@@ -4,7 +4,6 @@ from datetime import UTC
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
@@ -217,7 +216,3 @@ async def test_a_page_token_continues_only_its_own_listing(store: ThreadStore, e
         await store.list_page(limit=1, page_token=first.next_page_token, include_archived=True)
     with pytest.raises(InvalidPageTokenError, match="malformed"):
         await store.list_page(limit=1, page_token="test-not-a-token")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

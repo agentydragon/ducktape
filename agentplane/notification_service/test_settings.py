@@ -4,7 +4,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.notification_service.settings import (
@@ -178,7 +177,3 @@ def test_github_presence_and_secret_separation(settings_file: Path, monkeypatch:
     with pytest.raises(ValidationError) as failure:
         Settings(database_url="postgresql://unused", _cli_parse_args=False)
     assert "test-signing-ke" not in str(failure.value)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

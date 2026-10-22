@@ -42,6 +42,5 @@ py_test(
         ":bun_standalone_extract",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

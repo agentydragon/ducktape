@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest_bazel
-
 from difftree.conftest import PNG_HEADER, create_file, git_add_commit
 from difftree.parser import FileChange, parse_git_diff, parse_unified_diff
 
@@ -34,7 +32,3 @@ def test_file_change_with_binary(temp_git_repo: Path, run_git):
 
     binary_change = next(c for c in changes if c.path == "image.png")
     assert binary_change == FileChange(path="image.png", additions=0, deletions=0, is_binary=True)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import jsonschema
 import pytest
-import pytest_bazel
 
 from agentplane.action_service.sandbox.actions import SandboxAction, actions
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
@@ -51,7 +50,3 @@ def test_exec_admits_nothing_past_the_deployment_caps(
     else:
         with pytest.raises(jsonschema.ValidationError):
             jsonschema.validate(arguments, schema)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

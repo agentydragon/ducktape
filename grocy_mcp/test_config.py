@@ -11,7 +11,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from grocy_mcp.tool_models import ServerSettings
 from mcp_infra.persistence import ValkeyPersistence
@@ -59,7 +58,3 @@ def test_yaml_config_deep_merges_with_env_secrets(tmp_path: Path, monkeypatch: p
     # from env (the secret):
     assert settings.auth.oidc_client_secret == "shh"
     assert settings.auth.proxy_client_id == "grocy-sf"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

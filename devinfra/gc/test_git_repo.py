@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pygit2
 import pytest
-import pytest_bazel
 
 from devinfra.gc import git_repo
 from devinfra.gc.conftest import GitRepo
@@ -76,7 +75,3 @@ def test_main_ref_raises_git_error_when_origin_head_is_unset(repo: GitRepo) -> N
     `git remote set-head` on, not just a theoretical one — it must surface as `GitError`."""
     with pytest.raises(git_repo.GitError):
         git_repo.main_ref(repo.pg())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

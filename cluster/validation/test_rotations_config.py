@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 
-import pytest_bazel
 import yaml
 
 from cluster.cdk8s.authentik.jwt_rotation import ROTATIONS
@@ -60,7 +59,3 @@ def test_sops_files_have_creation_rules() -> None:
     paths += [str(r.k8s_secret.path) for r in ROTATIONS.rotations if r.k8s_secret]
     uncovered = [p for p in paths if not any(pat.search(p) for pat in patterns)]
     assert not uncovered, f"no .sops.yaml creation_rule matches: {uncovered}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

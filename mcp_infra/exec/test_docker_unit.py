@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.resources.template import match_uri_template
 
@@ -102,7 +101,3 @@ def test_file_uri_template_matches_paths_with_slashes() -> None:
     result = match_uri_template(uri, FILE_RESOURCE_URI_TEMPLATE)
     assert result is not None
     assert result["path"] == "/some/path.txt"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

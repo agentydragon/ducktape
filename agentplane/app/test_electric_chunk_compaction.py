@@ -34,7 +34,6 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-import pytest_bazel
 from fastapi import FastAPI
 from sqlalchemy import ColumnElement, delete, inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
@@ -302,7 +301,3 @@ async def test_compacting_by_reinsertion_reaches_every_reader_of_the_field_as_on
         assert bystander == holder
 
         assert await body.load_afresh() == [body.held[0] | {"text": json.dumps(_TEXT)}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

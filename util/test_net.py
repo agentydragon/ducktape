@@ -2,7 +2,6 @@ import errno
 import socket
 
 import pytest
-import pytest_bazel
 
 from util.net import reserve_free_port
 
@@ -28,7 +27,3 @@ def test_server_with_reuse_address_serves_on_reserved_port() -> None:
         with socket.create_connection((HOST, port)):
             accepted, _ = server.accept()
             accepted.close()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

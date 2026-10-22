@@ -265,7 +265,6 @@ py_test(
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -277,7 +276,6 @@ py_test(
         ":session_start",
         "//:conftest",
         "//devinfra/claude:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 

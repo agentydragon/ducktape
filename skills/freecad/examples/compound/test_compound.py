@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from skills.freecad.conftest import assert_run_ok, copy_outputs
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
@@ -52,7 +51,3 @@ def test_svg_golden(compound_outputs: Path) -> None:
 
 def test_pdf_golden(compound_outputs: Path) -> None:
     assert_pdf_equal(compound_outputs / "compound.pdf", get_required_path(_GOLDEN_PDF))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

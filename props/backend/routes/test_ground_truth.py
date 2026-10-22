@@ -11,7 +11,6 @@ from __future__ import annotations
 from textwrap import dedent
 
 import pytest
-import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -185,7 +184,3 @@ def test_admin_can_fetch_snapshot_files_in_batch(synced_db: Database) -> None:
     assert body["missing"] == ["missing.py"]
     assert "def add" in files_by_path["add.py"]["content"]
     assert "def subtract" in files_by_path["subtract.py"]["content"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

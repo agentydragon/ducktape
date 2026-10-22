@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from haku.console import app
 from haku.console.conftest import console_settings, write_config
@@ -176,7 +175,3 @@ def test_duplicate_static_agent_tokens_fail_startup(migrated_db_url: str, tmp_pa
 def test_image_command_rejects_unknown_modes() -> None:
     with pytest.raises(SystemExit):
         app.run_command(["unknown"])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

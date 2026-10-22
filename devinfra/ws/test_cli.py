@@ -47,9 +47,3 @@ def test_quick_reference_alignment_survives() -> None:
     output = CliRunner().invoke(app, ["--help"]).output
     line = next(ln for ln in output.splitlines() if "ws templates" in ln)
     assert "ws templates                   LLM lanes" in line
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

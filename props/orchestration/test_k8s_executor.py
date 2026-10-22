@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from unittest.mock import AsyncMock
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio.client import (
     V1ContainerState,
     V1ContainerStateTerminated,
@@ -177,7 +176,3 @@ async def test_close():
     executor = K8sExecutor(api_client=api_client, core_v1=AsyncMock(), namespace="test-ns")
     await executor.close()
     api_client.close.assert_called_once()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

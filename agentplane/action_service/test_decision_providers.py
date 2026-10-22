@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-import pytest_bazel
 from mcp.types import CallToolResult
 from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -585,7 +584,3 @@ async def test_history_filters_auto_allows_before_pagination(
             seen.append(items[0].id)
         assert seen == [denied.id, cancelled.id, human.id]
         assert cursor is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,7 +4,6 @@ from dataclasses import dataclass, replace
 from itertools import product
 
 import pytest
-import pytest_bazel
 
 from finance.augur.policy import sleeves
 from finance.augur.sim.actions import Consume, DecisionActions, Sell, Transfer
@@ -341,7 +340,3 @@ def test_selected_pools_keep_their_own_economic_unit_scale(lots: tuple[Lot, ...]
         for lot in result.summary.ending_book.lots
         if lot.lot_id in {"test-second", "test-outside"}
     ] == [(10, 3), (1, 0)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@ round-trip and the shared-store builder's non-optional contract."""
 
 from __future__ import annotations
 
-import pytest_bazel
 from key_value.aio.stores.postgresql import PostgreSQLStore
 from key_value.aio.stores.valkey import ValkeyStore
 
@@ -39,7 +38,3 @@ async def test_postgres_store_round_trip(postgres_url: str) -> None:
     assert await store.get("agent-1", collection="clients") is None
 
     await store.close()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

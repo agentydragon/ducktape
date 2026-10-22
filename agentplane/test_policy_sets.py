@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel
 
 from agentplane.policy_sets import (
@@ -115,7 +114,3 @@ def test_the_transition_time_moves_only_when_the_status_does(
     subject_binding = binding("b", "s", conditions=None if previous is None else [previous])
     reported = set_condition(subject_binding, "TestReady", ready=ready, reason="R2", message="m2", now=NOW)
     assert (reported.last_transition_time, reported.observed_generation) == (transition, 4)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

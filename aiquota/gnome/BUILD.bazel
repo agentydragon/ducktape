@@ -65,7 +65,6 @@ py_test(
         "//util/testing:gnome",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//testcontainers",
     ],
 )

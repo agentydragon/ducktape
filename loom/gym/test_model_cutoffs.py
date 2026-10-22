@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-import pytest_bazel
 
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS, assert_admissible
 
@@ -33,7 +32,3 @@ def test_weights_release_never_precedes_knowledge_cutoff() -> None:
     # violating this ordering is a registry typo.
     for entry in KNOWN_MODEL_CUTOFFS.values():
         assert entry.knowledge_cutoff <= entry.weights_released
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

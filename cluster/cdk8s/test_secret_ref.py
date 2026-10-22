@@ -3,7 +3,6 @@
 `any` and must still come out wire-shaped (the executable record of that library behavior)."""
 
 import pytest
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from cdk8s_plus_34 import Deployment, k8s
 
@@ -54,7 +53,3 @@ def test_helm_values_env_map(chart: Chart) -> None:
     )
     (_, release) = Cdk8sTesting.synth(chart)
     assert release["spec"]["values"]["env"] == {"TOKEN": {"valueFrom": _ENV["valueFrom"]}}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

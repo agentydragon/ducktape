@@ -110,7 +110,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -126,7 +125,6 @@ py_test(
         ":background_task",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -146,7 +144,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

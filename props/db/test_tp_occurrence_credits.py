@@ -1,6 +1,5 @@
 """Test tp_occurrence_credits view: runs without grading edges get zero credit."""
 
-import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -356,7 +355,3 @@ def test_occurrence_statistics_has_correct_n_critic_runs(
     # Run 1: SUM=0.8, Run 2: SUM(0.1+0.15+0.2+0.25)=0.7 -> mean = (0.8+0.7)/2 = 0.75
     avg_caught = result.credit_stats.mean if result.credit_stats else 0.0
     assert abs(avg_caught - 0.75) < 0.01, f"Expected 0.75, got {avg_caught}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -141,7 +140,3 @@ def test_notifications_use_the_configured_dispatcher(
         for endpoint in rule.get("toEndpoints", [])
     }
     assert runner_gateway.NAME in egress_services
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

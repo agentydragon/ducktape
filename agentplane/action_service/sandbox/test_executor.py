@@ -13,7 +13,6 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
@@ -246,7 +245,3 @@ async def test_a_template_comes_back_as_the_pod_itself(executor: SandboxExecutor
     result = await executor.execute(_request(SandboxAction.GET_TEMPLATE, {"template": TEMPLATE}), LEASE)
     assert result.state is ExecutionState.SUCCEEDED
     assert result.result == TEMPLATE_POD
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -278,7 +278,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
@@ -331,7 +330,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -345,7 +343,6 @@ py_test(
         "//:conftest",
         "//agentplane/runner:harness",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -431,7 +428,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
     ],
@@ -605,7 +601,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
         "@pypi//uvicorn",
@@ -676,7 +671,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
@@ -780,7 +774,6 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -857,7 +850,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -878,7 +870,6 @@ py_test(
         ":conftest",
         ":shutdown",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -892,7 +883,6 @@ py_test(
         "//:conftest",
         "@pypi//alembic",
         "@pypi//psycopg",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -931,7 +921,6 @@ py_test(
         "//agentplane/action_service:policy_view",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -975,7 +964,6 @@ py_test(
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -998,7 +986,6 @@ py_test(
         "//util/testing:mock_oidc",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
@@ -1042,7 +1029,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
@@ -1066,7 +1052,6 @@ py_test(
         "@pypi//asyncpg",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1102,7 +1087,6 @@ py_test(
         "//agentplane/proto:event_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1126,7 +1110,6 @@ py_test(
         "//agentplane/sandboxes/testing:sandbox_namespace",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -1181,7 +1164,6 @@ py_test(
         "//agentplane/proto:event_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -1208,7 +1190,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -1238,7 +1219,6 @@ py_test(
         "//agentplane/postgres:wakeups",
         "//agentplane/proto:event_pb2",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -1278,7 +1258,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
@@ -1375,7 +1354,6 @@ py_test(
         "//agentplane/proto:sandboxes_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1404,7 +1382,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1433,7 +1410,6 @@ py_test(
         "//agentplane/sandboxes/testing:sandbox_namespace",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1447,7 +1423,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1494,7 +1469,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )
@@ -1550,7 +1524,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1581,7 +1554,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1618,6 +1590,5 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

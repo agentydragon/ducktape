@@ -11,7 +11,6 @@ from datetime import date
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.x.models.ornstein_uhlenbeck import fit_ornstein_uhlenbeck, fit_rates_block
 from finance.augur.x.models.structural_macro import MINIMUM_MONTHS, PERCENT_TO_DECIMAL
@@ -155,7 +154,3 @@ def test_the_two_series_are_joined_on_month() -> None:
 
     assert fit.short_rate.sample_months == len(short) - 16
     assert fit.term_spread.monthly_sigma == pytest.approx(0.0, abs=1e-9)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

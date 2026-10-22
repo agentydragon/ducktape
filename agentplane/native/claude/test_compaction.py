@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest_bazel
-
 from agentplane.native.claude.scenarios import SYSTEM_PROMPT
 from agentplane.native.claude.testing import anthropic_sse
 from agentplane.native.claude.testing.harness import ClaudeLauncher
@@ -58,7 +56,3 @@ async def test_manual_compact_keeps_standing_prompt_afterwards_and_on_resume(
             assert exchange.request.system_text.endswith(SYSTEM_PROMPT)
             await exchange.send(*anthropic_sse.message_stream([anthropic_sse.Text("RESUMED_OK")], model=MODEL).events)
         assert (await prompt.result()).result == "RESUMED_OK"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

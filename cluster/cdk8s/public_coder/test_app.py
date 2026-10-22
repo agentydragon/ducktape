@@ -12,7 +12,6 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from cdk8s import (
     App,
     Chart,
@@ -150,7 +149,3 @@ def test_openclaw_cannot_bypass_agentplane_egress(app_objects: list[dict[str, An
             "podSelector": {"matchLabels": public_coder_egress.GATEWAY.pods.selector},
         }
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

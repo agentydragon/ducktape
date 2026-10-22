@@ -3,7 +3,6 @@ anchoring, directory and recursive matches) that the exclude_patterns config
 consumed by runners/containerized_claude.py relies on."""
 
 import pathspec
-import pytest_bazel
 
 
 def test_exclusion_patterns():
@@ -24,7 +23,3 @@ def test_exclusion_patterns():
     assert not spec.match_file("sub/CLAUDE.md")  # Not root
     assert spec.match_file("temp/file.txt")  # Directory match
     assert spec.match_file("build/dist/app.js")  # Recursive match
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

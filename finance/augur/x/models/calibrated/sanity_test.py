@@ -13,7 +13,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import pytest_bazel
 import yaml
 from numpyro import distributions as dist
 from pydantic import TypeAdapter
@@ -170,7 +169,3 @@ def test_quarantine_names_checked_in_artifacts() -> None:
     # reports as a skip and Bazel as a pass.
     assert ARTIFACTS
     assert QUARANTINED.keys() <= set(ARTIFACTS)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

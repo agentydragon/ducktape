@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
-import pytest_bazel
 
 from airlock.oauth.config import OAuth2ProviderConfig, TokenSecretConfig
 from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, GenericOAuth2Provider, TokenData
@@ -249,7 +248,3 @@ async def test_refresh_loop_warns_on_scope_drift(
     drift_warnings = [r for r in caplog.records if "Scope drift" in r.message]
     assert len(drift_warnings) == 1
     assert "extra" in drift_warnings[0].message
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

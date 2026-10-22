@@ -120,7 +120,6 @@ py_test(
         "//agent_core/testing/mcp:responses",
         "//openai_utils:model",
         "@pypi//pyhamcrest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -148,7 +147,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -162,7 +160,6 @@ py_test(
         "//openai_utils:model",
         "@pypi//httpx2",
         "@pypi//openai",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -186,7 +183,6 @@ py_test(
         "@pypi//anthropic",
         "@pypi//openai",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -208,7 +204,6 @@ py_test(
         "//openai_utils/testing:openai_mock",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -224,7 +219,6 @@ py_test(
         "//openai_utils:model",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -239,7 +233,6 @@ py_test(
         "//:conftest",
         "//openai_utils:model",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

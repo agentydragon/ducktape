@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
@@ -21,7 +20,3 @@ def test_mailbox_initialization_is_serialized_and_init_only() -> None:
     assert "STALWART_ADMIN_PASSWORD" in initialize_env
     assert "STALWART_ADMIN_PASSWORD" not in production_env
     assert "STALWART_RECOVERY_ADMIN" not in initialize_env | production_env
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

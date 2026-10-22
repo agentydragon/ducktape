@@ -5,7 +5,6 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import event_entry
@@ -37,7 +36,3 @@ async def test_archived_command_admission_is_an_exact_retry_key(
         )
     with pytest.raises(ThreadNotFoundError):
         await content.admitted_command(UUID(int=0), command)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

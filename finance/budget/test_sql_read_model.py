@@ -7,7 +7,6 @@ from datetime import date
 
 import pytest
 import pytest_asyncio
-import pytest_bazel
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -658,7 +657,3 @@ async def test_match_override_date_freeze_excludes_later_rows(
     }
     assert classified["wealthfront_out"] == "custom"  # 2026-03-22, within the freeze
     assert classified["wealthfront_in"] == "transfers_in"  # 2026-03-23, after the freeze -> normal rule
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

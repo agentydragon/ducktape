@@ -256,7 +256,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -322,6 +321,5 @@ py_test(
         "//agentplane/app:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

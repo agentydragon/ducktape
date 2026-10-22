@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
 from hamcrest import has_entries
 
 from agent_core.agent import Agent
@@ -51,7 +50,3 @@ async def test_agent_mcp_echo_with_response(mcp_tool_provider_echo, test_handler
     assert outputs, "No tool outputs captured"
     assert outputs[0].result.structured_content == {"echo": "hello"}
     assert res.text.strip() == "done"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 
 import polars as pl
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from finance.evidence.manifold import ManifoldBet, bets_frame, load_market, prob_at
@@ -86,7 +85,3 @@ def test_prob_at_multiple_choice_per_answer() -> None:
     answer1 = bets.filter(pl.col("answer_id") == "answer1")
     assert prob_at(answer1, _at(9_999)) == 0.4
     assert prob_at(answer1, _at(1_500)) == 0.2
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

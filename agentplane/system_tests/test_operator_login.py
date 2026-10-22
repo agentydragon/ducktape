@@ -8,7 +8,6 @@ from uuid import UUID
 
 import httpx
 import pytest
-import pytest_bazel
 from pydantic import JsonValue, SecretStr
 
 from agentplane.app.oidc import SECURE_COOKIE
@@ -430,7 +429,3 @@ def test_http_reaches_only_a_cluster_internal_name() -> None:
     assert app_origin("http://app.test-namespace.svc:8080") == httpx.URL("http://app.test-namespace.svc:8080/")
     with pytest.raises(LoginBlockedError, match="HTTPS app origin"):
         app_origin("http://app.test.invalid")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

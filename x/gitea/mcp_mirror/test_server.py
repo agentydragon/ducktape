@@ -1,7 +1,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from x.gitea.mcp_mirror import server
 
@@ -93,7 +92,3 @@ def test_make_mcp_requires_configuration() -> None:
     # Use a raw regex for the generic message match
     with pytest.raises(ValueError, match=r"."):
         server.GiteaMirrorServer()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

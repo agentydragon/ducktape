@@ -15,7 +15,6 @@ from urllib.parse import parse_qs
 import httpx
 import jwt
 import pytest
-import pytest_bazel
 from fastapi import FastAPI
 from google.protobuf.json_format import MessageToJson
 from pydantic import AnyHttpUrl
@@ -670,7 +669,3 @@ async def test_concurrent_cross_replica_callbacks_consume_pending_login_once(rev
     responses = await asyncio.gather(a.get(callback, follow_redirects=False), b.get(callback, follow_redirects=False))
     assert sorted(response.status_code for response in responses) == [303, 401]
     assert sorted([(await a.get("/auth/me")).status_code, (await b.get("/auth/me")).status_code]) == [200, 401]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

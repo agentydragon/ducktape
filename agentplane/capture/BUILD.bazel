@@ -44,7 +44,6 @@ py_test(
     deps = [
         ":llm_recording_proxy",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 

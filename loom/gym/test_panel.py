@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 
-import pytest_bazel
-
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.panel import build_panel
 from loom.gym.seed_tasks import SEED_TASKS
@@ -89,7 +87,3 @@ def test_dense_families_thin_to_sparse_anchor_grids() -> None:
             assert task.grid.anchor.month in (3, 9), f"off the semi-annual grid: {task.task_id}"
         else:
             assert task.grid.anchor.month == 3, f"off the annual grid: {task.task_id}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

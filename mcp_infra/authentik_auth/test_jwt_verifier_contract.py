@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 import httpx2
 import pytest
-import pytest_bazel
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, MultiAuth
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
@@ -179,7 +178,3 @@ async def test_rejects_token_whose_kid_selects_the_wrong_key(jwt_contract_harnes
     )
 
     assert access_token is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

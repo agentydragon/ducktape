@@ -69,6 +69,5 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

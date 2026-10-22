@@ -14,8 +14,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import pytest_bazel
-
 from agentplane.capture import codex_hook
 from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import frames, responses_sse
@@ -93,7 +91,3 @@ async def test_pretooluse_deny_blocks_the_tool_and_the_model_sees_why(
     frames.assert_success(captured, "HOOK_DENIED_OBSERVED")
 
     assert len(_pretooluse_events(log_path)) == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

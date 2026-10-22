@@ -81,7 +81,6 @@ py_test(
         "//agentplane/action_service/github_policy:visibility",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -97,7 +96,6 @@ py_test(
         "//agentplane/action_service:conftest",
         "//agentplane/action_service/github_policy:visibility",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -112,7 +110,6 @@ py_test(
         "//agentplane/action_service:conftest",
         "//agentplane/action_service/github_policy:visibility",
         "@pypi//pydantic",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -127,7 +124,6 @@ py_test(
         "//agentplane/action_service:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -171,7 +167,6 @@ py_test(
         "//agentplane/action_service/github_policy:visibility",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -189,7 +184,6 @@ py_test(
         "//agentplane/action_service/github_policy:visibility",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -214,7 +208,6 @@ py_test(
         "//agentplane/action_service:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -252,7 +245,6 @@ py_test(
         "//:conftest",
         "//agentplane/action_service:conftest",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )
 

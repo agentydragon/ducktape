@@ -44,7 +44,6 @@ py_test(
         "@pypi//numpyro",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )

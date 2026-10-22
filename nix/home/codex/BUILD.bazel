@@ -18,6 +18,5 @@ py_test(
         ":merge",
         "//:conftest",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )

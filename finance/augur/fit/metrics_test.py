@@ -12,7 +12,6 @@ import math
 import jax.numpy as jnp
 import numpy as np
 import pytest
-import pytest_bazel
 from numpyro import distributions as dist
 
 from finance.augur.fit.metrics import (
@@ -317,7 +316,3 @@ def test_unavailable_predictive_retains_preceding_origins_without_a_partial_mean
     assert isinstance(result, (UnscoredRollingOriginResult, UnscoredMultiStepRow))
     assert result.n_origins == 2
     assert [score.origin_index for score in result.origin_scores] == [5, 6]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

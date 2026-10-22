@@ -14,7 +14,6 @@ from uuid import UUID
 
 import httpx
 import pytest
-import pytest_bazel
 from fastapi import FastAPI, Request
 from more_itertools import one
 from sqlalchemy import select, update
@@ -388,7 +387,3 @@ async def test_shape_reads_revalidate_where_other_reads_are_not_stored(app: Fast
     assert (first.status_code, again.status_code) == (200, 304)
     assert [first.headers["cache-control"], again.headers["cache-control"]] == ["private, no-cache"] * 2
     assert scope.headers["cache-control"] == "no-store"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

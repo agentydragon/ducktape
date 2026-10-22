@@ -26,6 +26,16 @@ def py_binary(imports = None, **kwargs):
         imports = repo_imports()
     _py_binary(imports = imports, **kwargs)
 
+def _source_basename(source):
+    return str(source).split(":")[-1].split("/")[-1]
+
+def _location_label(source):
+    if type(source) != "string":
+        return str(source)
+    if source.startswith("@") or source.startswith("//") or source.startswith(":"):
+        return source
+    return ":" + source
+
 # The tag `//third_party/containers:ryuk` loads its image into the Docker daemon under, and
 # the Ryuk image every `requires_docker` test's testcontainers starts. Testcontainers' own
 # default (`testcontainers/ryuk:0.8.1`) is a tag nothing preloads, which the daemon pulls
@@ -34,6 +44,9 @@ RYUK_TAG = "testcontainers/ryuk:0.14.0"
 
 def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, tags = None, imports = None, args = None, deps = None, env = None, env_inherit = None, shard_count = None, **kwargs):
     """py_test with auto repo-root imports and sensible defaults.
+
+    When main and main_module are unset, runs pytest_bazel and collects the source
+    whose basename matches the target name, using pytest's importlib mode.
 
     Args:
         name: Target name.
@@ -59,7 +72,8 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
             Shard only tests whose per-case cost dominates their per-process setup --
             a suite that recompiles the same program in every shard pays that cost
             per shard instead of once.
-        **kwargs: Passed through to py_test.
+        **kwargs: Passed through to py_test. Explicit main and main_module values keep
+            their existing behavior.
     """
     if imports == None:
         imports = repo_imports()
@@ -71,6 +85,23 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     base_env_inherit = list(env_inherit or [])
     base_args = list(args or [])
     base_deps = list(deps or [])
+    if kwargs.get("main") == None and kwargs.get("main_module") == None:
+        test_srcs = kwargs.get("srcs", [])
+        if type(test_srcs) == "list":
+            main_srcs = [src for src in test_srcs if _source_basename(src) == name + ".py"]
+            if len(main_srcs) == 1:
+                base_args = [
+                    "$(location {})".format(_location_label(main_srcs[0])),
+                    "--import-mode=importlib",
+                ] + base_args
+                kwargs["main_module"] = "pytest_bazel"
+                pytest_bazel_dep = Label("@pypi//pytest_bazel")
+                has_pytest_bazel_dep = False
+                for dep in base_deps:
+                    if Label(str(dep)) == pytest_bazel_dep:
+                        has_pytest_bazel_dep = True
+                if not has_pytest_bazel_dep:
+                    base_deps.append(pytest_bazel_dep)
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
         env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | (env or {})

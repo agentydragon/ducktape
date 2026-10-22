@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest_bazel
-
 from util.image_tag import image_provenance
 
 
@@ -25,7 +23,3 @@ def test_explicit_source_commit_wins_over_tag() -> None:
 
 def test_blank_source_commit_falls_back_to_tag() -> None:
     assert image_provenance("devel-20260713014452-83da566", source_commit=" ").source_commit == "83da566"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

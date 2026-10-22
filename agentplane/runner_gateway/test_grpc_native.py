@@ -9,7 +9,6 @@ from uuid import uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
@@ -305,7 +304,3 @@ async def test_failed_bootstrap_reports_failure_when_input_arrives(
     assert command_failure.event.command_failed.command_id == "after-failed-bootstrap"
     assert not (await destination.status()).processes
     assert {row.session_id for row in await destination.list_sessions()} == {opened.session_id}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

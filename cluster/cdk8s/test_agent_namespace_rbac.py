@@ -1,7 +1,6 @@
 """Static namespace readers wait only on the shared roles, and an unreviewed namespace gets none."""
 
 import pytest
-import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
@@ -44,7 +43,3 @@ def test_unapproved_namespaces_fail_closed() -> None:
     namespace(scope, "namespace", name="private-unreviewed", vpa=Vpa.AUTO)
     labels = Cdk8sTesting.synth(scope)[0]["metadata"]["labels"]
     assert not set(labels) & set(AgentReadable)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

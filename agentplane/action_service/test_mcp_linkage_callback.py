@@ -7,7 +7,6 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import httpx2
 import pytest
-import pytest_bazel
 from pydantic import AnyHttpUrl
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -219,7 +218,3 @@ async def test_cimd_link_requires_discovery_support(linkage: McpLinkageAuthority
         await linkage.start(
             "test-cimd", McpLinkageStart(), OperatorPrincipal(issuer="test-issuer", subject="test-operator")
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

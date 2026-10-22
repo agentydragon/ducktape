@@ -19,7 +19,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.study.sbbi.long_term_corporate import (
     EVIDENCE,
@@ -102,7 +101,3 @@ def test_the_data_prefers_the_maturity_the_monograph_documents(reproduced: dict[
     documented = tracking_error(reproduced)
     for maturity, error in errors.items():
         assert documented < error, f"maturity {maturity:.0f} tracks better ({error:.2f}) than 20 ({documented:.2f})"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

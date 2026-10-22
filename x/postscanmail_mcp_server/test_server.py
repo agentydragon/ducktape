@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-import pytest_bazel
 import respx
 from fastmcp.client import Client
 from mcp.types import ToolAnnotations
@@ -186,7 +185,3 @@ async def test_address_actions_dispatch_to_right_url(
     )
     await mcp_client.call_tool(tool, {"address_id": "addr-1", "mail_ids": ["m1", "m2"]})
     assert route.calls.last.request.read() == b'{"mail_ids":["m1","m2"]}'
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

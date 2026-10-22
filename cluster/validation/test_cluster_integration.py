@@ -17,7 +17,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -666,7 +665,3 @@ def test_agent_permission_denials(
                 for verb in ("create", "update", "patch", "delete")
             }
             assert uncovered(sandbox_writes, permissions) == sandbox_writes
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

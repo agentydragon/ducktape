@@ -14,7 +14,6 @@ from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -458,7 +457,3 @@ async def test_forced_drain_bounds_unavailable_outcome_persistence(
     assert await store.pending_dispatches() == []
     # With persistence unavailable, the durable claim remains fenced for lease-sweep recovery.
     assert (await store.get(request_id, CALLER)).state is ActionState.RUNNING
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

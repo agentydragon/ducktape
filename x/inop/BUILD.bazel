@@ -20,7 +20,6 @@ py_test(
         "//x/inop/runners:base",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -82,7 +81,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pathspec",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -99,7 +97,6 @@ py_test(
         "//x/inop/engine:models",
         "//x/inop/prompting:truncation_utils",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tiktoken",
     ],
 )

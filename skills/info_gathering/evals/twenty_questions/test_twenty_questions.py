@@ -3,8 +3,6 @@
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest_bazel
-
 from openai_utils.model import AssistantMessageOut, FunctionCallItem, OutputText, ResponsesResult, ResponseUsage
 from skills.info_gathering.evals.twenty_questions.direct_provider import DirectToolProvider
 from skills.info_gathering.evals.twenty_questions.twenty_questions import Correct, Timeout, run_twenty_questions
@@ -111,7 +109,3 @@ async def test_success_on_turn_1(tmp_path):
     assert isinstance(summary.result, Correct)
     assert summary.result.turns == 1
     assert summary.turns == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from study_casino.games import BLACKJACK_DECKS, RNG_VERSION, make_shoe, spin_roulette, spin_slots
 from study_casino.rng import ActionRngFactory, AuditedRandom
 
@@ -78,7 +76,3 @@ def test_seed_digest_changes_when_action_material_changes():
     b = _rng("spin-2", "casino.roulette.spin", request | {"client_action_id": "spin-2"}).audit()
 
     assert a.seed_digest_hex != b.seed_digest_hex
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

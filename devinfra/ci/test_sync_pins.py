@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 from types import SimpleNamespace
 
-import pytest_bazel
-
 from devinfra.ci.sync_pins import release_is_on_devel
 
 
@@ -31,7 +29,3 @@ def test_rejects_feature_release_and_caches_provenance() -> None:
     assert release_is_on_devel(repo, old_devel, "current-devel", reachable)
     assert not release_is_on_devel(repo, feature, "current-devel", reachable)
     assert repo.compared == [("feature", "current-devel"), ("old-devel", "current-devel")]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

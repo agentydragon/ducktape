@@ -39,6 +39,5 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

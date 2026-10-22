@@ -46,7 +46,6 @@ py_test(
         "@pypi//mcp",
         "@pypi//mcp_types",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
 )

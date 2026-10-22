@@ -6,7 +6,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import Testing as Cdk8sTesting
 from more_itertools import one
@@ -506,10 +505,6 @@ def test_inference_is_granted_separately_from_platform_operations(
         secret = _by_name(docs, "ExternalSecret", source["name"])
         assert secret["metadata"]["namespace"] == f"{namespace}-egress-credentials"
         assert source["key"] in {item["secretKey"] for item in secret["spec"]["data"]}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_aiquota_read_is_read_only_and_not_public(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 from fastapi import FastAPI
 
 from agentplane.app.action_policy import ActionPolicyInventory
@@ -208,7 +207,3 @@ async def test_a_caller_without_an_operator_session_gets_nothing(serve: ServeApp
 
     assert response.status_code == 401
     assert not facade.requests
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

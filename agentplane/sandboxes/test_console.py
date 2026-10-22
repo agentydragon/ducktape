@@ -2,7 +2,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import pytest
-import pytest_bazel
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 from kubernetes_asyncio import client as k8s_client
@@ -58,7 +57,3 @@ async def test_a_vm_that_cannot_be_attached_is_unavailable(status: type[web.HTTP
     async with kubernetes_api(app) as configuration:
         with pytest.raises(ConsoleUnavailableError):
             [chunk async for chunk in stream_console(configuration, namespace="sandboxes-test", vmi="vm-test")]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest_bazel
 from agent_framework import InMemoryHistoryProvider
 
 from haku.runtime.x.agent_framework.agent import _run_command, aclose_history, build_history_provider, build_mcp_tools
@@ -39,7 +38,3 @@ async def test_history_provider_redis_with_url() -> None:
 
 async def test_run_command_returns_combined_output(tmp_path: Path) -> None:
     assert (await _run_command("echo hi", cwd=tmp_path)).strip() == "hi"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

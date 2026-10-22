@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events
@@ -140,7 +139,3 @@ async def test_native_history_and_resume_resources(
             assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
     finally:
         artifact.write_text(json.dumps(samples, indent=2) + "\n")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

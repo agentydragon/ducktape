@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
-import pytest_bazel
 from pydantic_settings import SettingsConfigDict
 
 from util.yaml_file_settings import YamlFileSettings
@@ -33,7 +32,3 @@ def test_a_named_path_that_is_not_a_file_is_refused(tmp_path: Path, monkeypatch:
 
     with pytest.raises(FileNotFoundError):
         ExampleSettings()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

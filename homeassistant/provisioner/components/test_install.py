@@ -6,7 +6,6 @@ from pathlib import Path
 
 import httpx2
 import pytest
-import pytest_bazel
 
 from homeassistant.provisioner.components.install import (
     initialize_component_config,
@@ -140,7 +139,3 @@ async def test_install_component_downloads_with_httpx2_mock(tmp_path: Path, http
     assert redirect.called
     assert download.called
     assert (tmp_path / "custom_components/example/__init__.py").read_text() == "# installed\n"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

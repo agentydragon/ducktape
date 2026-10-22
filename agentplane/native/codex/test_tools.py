@@ -13,7 +13,6 @@ import json
 import shlex
 
 import pytest
-import pytest_bazel
 
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
@@ -297,7 +296,3 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
         (recovered_wait,) = recovered_waits
         assert recovered_wait["receiverThreadIds"] == [spawned_id]
         assert recovered_wait["agentsStates"][spawned_id]["status"] == "notFound"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

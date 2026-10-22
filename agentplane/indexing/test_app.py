@@ -9,7 +9,6 @@ from pathlib import Path
 import httpx
 import pathspec
 import pytest
-import pytest_bazel
 from pydantic import SecretStr
 
 from agentplane.indexing.app import create_app
@@ -108,7 +107,3 @@ async def test_update_serves_old_revision_when_embedding_fails(
     assert recovered.json()["hits"][0]["text"] == "beta new document\n"
     assert recovered.json()["hits"][0]["revision"] == harness.revisions[1]
     assert recovered.json()["status"]["index"]["pending_files"] == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -7,7 +7,6 @@ Tests the SQL workflow where critic agents:
 
 from __future__ import annotations
 
-import pytest_bazel
 from sqlalchemy import text
 
 from props.agents.critic.conftest import insert_issue, insert_occurrence
@@ -114,7 +113,3 @@ async def test_insert_multi_location_occurrence(test_critic_run, temp_engine, db
             LocationAnchor(file="add.py", start_line=1, end_line=3),
             LocationAnchor(file="subtract.py", start_line=1, end_line=3),
         ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

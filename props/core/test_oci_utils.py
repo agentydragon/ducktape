@@ -1,7 +1,6 @@
 """Tests for oci_utils module."""
 
 import pytest
-import pytest_bazel
 
 from props.core.agent_types import AgentType
 from props.core.oci_utils import RegistryProxyConfig, UpstreamRegistryConfig, is_digest
@@ -135,7 +134,3 @@ class TestRewriteLocation:
         # path — no namespace drift, so the manifest finds its blobs.
         upstream_path = "/v2/props/critic/blobs/uploads/abc"
         assert _UPSTREAM.rewrite_path(_UPSTREAM.rewrite_location(upstream_path)) == upstream_path
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

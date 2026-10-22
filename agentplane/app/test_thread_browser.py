@@ -15,7 +15,6 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
 import pytest
-import pytest_bazel
 from google.protobuf import json_format
 from playwright.async_api import (
     APIResponse,
@@ -2596,7 +2595,3 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
     await expect(composer).to_be_disabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

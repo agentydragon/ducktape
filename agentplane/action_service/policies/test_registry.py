@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import pytest_bazel
 from pydantic import TypeAdapter
 
 from agentplane.action_service.catalog import ActionIdentity
@@ -43,7 +42,3 @@ async def test_unlisted_action_never_matches(github_visibility: Callable[..., Re
             assert await evaluate(policy, unlisted, arguments, visibility) == NotMatched(
                 f"{unlisted.group}/{unlisted.name} is not listed"
             )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

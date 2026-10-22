@@ -8,7 +8,6 @@ from pathlib import Path
 
 import aiohttp
 import pytest
-import pytest_bazel
 
 from agentplane.egress.sidecar_config import READINESS_PATH
 from agentplane.egress.testing.sidecar_process import SidecarProcess
@@ -84,7 +83,3 @@ async def test_sigterm_shutdown_closes_an_active_tunnel(central: int, token_file
     assert await asyncio.wait_for(reader.read(), timeout=2) == b""
     writer.close()
     await writer.wait_closed()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

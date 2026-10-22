@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-import pytest_bazel
 from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
@@ -90,7 +89,3 @@ async def test_a_smuggled_search_qualifier_does_not_match(
     )
     assert isinstance(decision, NotMatched)
     assert "qualifier" in decision.reason
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

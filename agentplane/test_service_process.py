@@ -2,7 +2,6 @@ import logging
 from collections.abc import Iterator
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -51,7 +50,3 @@ def test_settings_reject_an_unknown_level(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_levels_default_to_none() -> None:
     assert ExampleSettings().log_levels == {}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

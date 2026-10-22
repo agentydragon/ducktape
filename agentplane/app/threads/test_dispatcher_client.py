@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import override
 
 import grpc
-import pytest_bazel
 
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.grpc.calls import dial
@@ -46,7 +45,3 @@ async def test_generated_stub_reads_rotated_bearer_for_each_call(tmp_path: Path)
     assert service.tokens == ["Bearer first", "Bearer second"]
     assert len(service.deadlines) == 2
     assert all(0 < deadline < 7.5 for deadline in service.deadlines)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

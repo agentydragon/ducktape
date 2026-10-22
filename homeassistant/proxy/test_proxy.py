@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-import pytest_bazel
 import respx
 
 from homeassistant.proxy.config import AccessRule, EntityInfo, HomeAssistantSettings, Policy, Settings, TokenConfig
@@ -169,7 +168,3 @@ async def test_blocked_endpoint(client: httpx.AsyncClient):
 async def test_blocked_arbitrary_path(client: httpx.AsyncClient):
     resp = await client.get("/api/something/else", headers=_HEADERS)
     assert resp.status_code == 403
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

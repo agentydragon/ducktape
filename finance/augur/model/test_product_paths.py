@@ -4,7 +4,6 @@ from datetime import date
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.bond_fund import BondFundSpec, YieldCurve
 from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
@@ -40,7 +39,3 @@ def test_historical_markets_are_reusable_and_keep_observed_credit(historical: Hi
         bundle = construct_products(paths, equity=None, instruments=(fund,))
         payout = bundle.level_matrix(SecurityDistributionKey(symbol=fund.symbol), rollout_count=2, horizon_months=12)
         assert payout[0, 0] == pytest.approx(100.0 * expected / 12)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import Connection, Engine, create_engine, text
@@ -1310,7 +1309,3 @@ def test_tool_call_principal_is_an_exact_immutable_union_and_events_derive_it(db
             )
     finally:
         engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

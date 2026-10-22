@@ -116,7 +116,6 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

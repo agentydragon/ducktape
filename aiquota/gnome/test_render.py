@@ -37,7 +37,6 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from testcontainers.core.container import DockerContainer
 
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_fixture_data
@@ -329,7 +328,3 @@ def test_view_signal_wins_getter_and_owner_restart_invalidates_reply(render_sess
             f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} "
             f"--method {shlex.quote(_FAKE_DBUS_DEST + '.Stop')} >/dev/null; fi"
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

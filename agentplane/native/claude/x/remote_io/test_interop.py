@@ -9,7 +9,6 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from aiohttp import web
 
 from agentplane.native.claude.testing import anthropic_sse
@@ -378,7 +377,3 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
     finally:
         await peer.close()
         await runner.cleanup()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

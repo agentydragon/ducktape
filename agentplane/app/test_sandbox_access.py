@@ -1,7 +1,6 @@
 """The operator's Sandbox writes, made by the app through Kubernetes."""
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest
@@ -51,7 +50,3 @@ async def test_lifecycle_acts_on_the_incarnation_it_read(access: SandboxAccess, 
     assert (await access.get("my-task")).operating_mode == OperatingMode.RUNNING
     with pytest.raises(SandboxNotFoundError):
         await access.suspend("never-made")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

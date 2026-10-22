@@ -5,7 +5,6 @@ from __future__ import annotations
 import ipaddress
 
 import pytest
-import pytest_bazel
 
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
@@ -148,7 +147,3 @@ def test_host_names_have_no_dots(mesh: nebula_mesh.Mesh) -> None:
             f"so kubelet would register the node as {name.split('.', 1)[0]!r}. "
             "Use a single DNS label."
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

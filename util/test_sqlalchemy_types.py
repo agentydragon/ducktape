@@ -5,7 +5,6 @@ from __future__ import annotations
 from enum import StrEnum
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel, ConfigDict
 
 from util.enum_vocab import UnknownValue
@@ -86,7 +85,3 @@ def test_pydantic_column_handles_containers_and_aliases() -> None:
 
     assert stored == [{"camelCase": "value"}]
     assert column.process_result_value(stored, None) == payload
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

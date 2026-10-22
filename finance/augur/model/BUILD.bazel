@@ -57,7 +57,6 @@ py_test(
         ":series",
         "//:conftest",
         "//finance/augur:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -71,7 +70,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -140,7 +138,6 @@ py_test(
         "//finance/evidence:sources",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -175,7 +172,6 @@ py_test(
         "//finance/augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -202,7 +198,6 @@ py_test(
         "//finance/augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -228,7 +223,6 @@ py_test(
         "//finance/augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -262,7 +256,6 @@ py_test(
         "//finance/augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -296,7 +289,6 @@ py_test(
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -343,7 +335,6 @@ py_test(
         "//finance/augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -361,7 +352,6 @@ py_test(
         "//finance/augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

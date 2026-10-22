@@ -120,7 +120,6 @@ py_test(
         "//devinfra/claude/testing:container_e2e",
         "//util/bazel:runfiles",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )

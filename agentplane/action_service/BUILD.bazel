@@ -330,7 +330,6 @@ py_test(
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -353,7 +352,6 @@ py_test(
         "//agentplane:subjects",
         "//agentplane/action_service/testing:lifecycle",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -384,7 +382,6 @@ py_test(
         "@pypi//mcp_types",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -409,7 +406,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -424,7 +420,6 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -456,7 +451,6 @@ py_test(
         "@pypi//mcp_types",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -524,7 +518,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//uvicorn",
     ],
@@ -561,7 +554,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
         "@pypi//uvicorn",
@@ -601,7 +593,6 @@ py_test(
         "//util/testing:mock_oidc",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -616,7 +607,6 @@ py_test(
         ":db",
         "//:conftest",
         "@pypi//alembic",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -638,7 +628,6 @@ py_test(
         ":operator_stream",
         ":updates",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -681,7 +670,6 @@ py_test(
         "//agentplane:changes",
         "//agentplane:subjects",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -701,7 +689,6 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -769,7 +756,6 @@ py_test(
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -812,7 +798,6 @@ py_test(
         "@pypi//mcp_types",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
@@ -842,7 +827,6 @@ py_test(
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -941,7 +925,6 @@ py_test(
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
@@ -966,7 +949,6 @@ py_test(
         "@pypi//cryptography",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -987,7 +969,6 @@ py_test(
         "@pypi//httpx2",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -1019,7 +1000,6 @@ py_test(
         "@pypi//httpx2",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -1058,7 +1038,6 @@ py_test(
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )
@@ -1109,7 +1088,6 @@ py_test(
         "//agentplane/action_service/testing:policies",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1196,7 +1174,6 @@ py_test(
         "@pypi//mcp",
         "@pypi//mcp_types",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
@@ -1272,7 +1249,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1305,7 +1281,6 @@ py_test(
         ":generate_golden",
         "//:conftest",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1339,7 +1314,6 @@ py_test(
         ":generate_golden",
         "//:conftest",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1369,7 +1343,6 @@ py_test(
         ":generate_mcp_golden",
         "//:conftest",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1698,7 +1671,6 @@ py_test(
         ":generate_mcp_executor_golden",
         "//:conftest",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )
 

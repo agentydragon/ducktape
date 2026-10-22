@@ -57,7 +57,6 @@ py_test(
         "//props:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
 )
@@ -77,7 +76,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
 )

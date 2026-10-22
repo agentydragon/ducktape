@@ -87,7 +87,6 @@ py_test(
         "//agentplane/app:conftest",
         "//util:oci",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
         "@pypi//testcontainers",
     ],
 )

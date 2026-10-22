@@ -92,6 +92,5 @@ py_test(
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -8,7 +8,6 @@ from enum import StrEnum
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.gc import output_base_gc as gc
 from devinfra.gc.conftest import make_base
@@ -352,7 +351,3 @@ def test_a_base_whose_workspace_would_be_orphaned_says_so_after_why_it_is_kept(t
     assert _described(orphaning).startswith(_described(plain))
     assert _described(orphaning) != _described(plain)
     assert _described(orphaning) in gc.render_report([orphaning], include_kept=True, include_sizes=False)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from skills.frontmatter_validation import validate_skill_frontmatter, validate_skill_frontmatter_text
 
@@ -64,7 +63,3 @@ description: This looks like prose. Trigger: user wants the skill.
 """,
             source="regression/SKILL.md",
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

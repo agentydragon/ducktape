@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.series import HomeValueKey, LocationId, RentKey
@@ -84,7 +83,3 @@ def test_mirror_rejects_duplicate_targets() -> None:
                 MirrorLevelSeries(target=_TARGET, source=other_source),
             ),
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ import stat
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.ci.install_bb import install_bb
 
@@ -58,7 +57,3 @@ def test_corrupt_download_does_not_replace_destination(tmp_path: Path, already_i
         assert list(destination.parent.iterdir()) == [destination]
     else:
         assert list(destination.parent.iterdir()) == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

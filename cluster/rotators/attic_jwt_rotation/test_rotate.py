@@ -9,7 +9,6 @@ import certifi
 import httpx
 import pygit2
 import pytest
-import pytest_bazel
 import yaml
 
 from cluster.rotators.attic_jwt_rotation import rotate
@@ -416,7 +415,3 @@ def test_ensure_cache_raises_when_create_fails():
     transport = _ScriptedTransport([httpx.Response(404, text=""), httpx.Response(403, text="denied")])
     with _client(transport) as client, pytest.raises(RuntimeError):
         ensure_cache(client, "main")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

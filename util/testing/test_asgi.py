@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
-import pytest_bazel
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
@@ -81,7 +80,3 @@ async def test_a_server_that_neither_starts_nor_exits_times_out_and_is_torn_down
     with pytest.raises(TimeoutError):
         async with asgi.serve_app_in_loop(never_finishes_starting, sock=sock):
             pytest.fail("the body must not run when the server never started")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

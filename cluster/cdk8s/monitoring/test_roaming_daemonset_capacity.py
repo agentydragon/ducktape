@@ -21,7 +21,6 @@ import operator
 from functools import reduce
 
 import pytest
-import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
@@ -88,7 +87,3 @@ def test_max_unavailable_exceeds_roaming_nodes(
         "roaming node offline, the rollout deadlocks and no node receives the new "
         "config — while Helm and Flux both report success."
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest_bazel
-
 from devinfra.gc import foreign_clone_gc as fcg
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.pull_request import PrInfo, PrState
@@ -134,7 +132,3 @@ def test_prune_foreign_clone_removes_nested_worktrees_then_the_root(repo: GitRep
     assert outcome == fcg.PrunedForeignClone(foreign.path)
     assert not nested_wt.path.exists()
     assert not foreign.path.exists()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

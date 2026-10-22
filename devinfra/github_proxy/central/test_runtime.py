@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from aiohttp import web
 from mitmproxy import http, io
 from mitmproxy.addons.proxyserver import Proxyserver
@@ -541,7 +540,3 @@ async def test_private_or_self_dns_never_dials(proxy: Harness, target: str) -> N
             await writer.wait_closed()
     assert proxy.origins.dials == 0
     assert proxy.origins.requests == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

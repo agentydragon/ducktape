@@ -1,7 +1,6 @@
 """Offline checks for undefined comparisons; no evidence downloads or fitting."""
 
 import pytest
-import pytest_bazel
 
 from finance.augur.study.macro_window.stability import Comparison, Tally, describe, tally
 
@@ -23,7 +22,3 @@ def test_finite_sign_changes_still_report_separately_from_undefined_comparisons(
     ]
     assert [comparison.flips for comparison in comparisons] == [True, False, None]
     assert tally(comparisons) == Tally(flipped=1, defined=2, undefined=1)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

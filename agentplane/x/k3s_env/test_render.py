@@ -5,7 +5,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import bcrypt
-import pytest_bazel
 import yaml
 
 from agentplane.action_service.oauth_settings import OAuthSettings
@@ -269,7 +268,3 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         volume = next(volume for volume in actions_pod["volumes"] if volume["name"] == mount["name"])["secret"]
         assert {"key": path.name, "path": path.name} in volume["items"], path
         assert _resource(docs, "Secret", volume["secretName"])["stringData"][path.name], path
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

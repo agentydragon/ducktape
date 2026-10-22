@@ -97,7 +97,6 @@ py_test(
         "//util/testing:postgres",
         "//util/testing:postgres_schema",
         "@pypi//psycopg",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

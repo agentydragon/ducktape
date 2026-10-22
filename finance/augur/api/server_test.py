@@ -13,7 +13,6 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from fastapi.testclient import TestClient
 
 from util.bazel.runfiles import get_required_path
@@ -677,7 +676,3 @@ def test_backend_server_pe_tender_sale_appears_as_holding_sale_event(server_url:
     sale = pe_sales[0]
     assert int(sale["proceeds_quanta"]) > 0
     assert sale["units"] > 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

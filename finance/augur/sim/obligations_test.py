@@ -6,7 +6,6 @@ from decimal import Decimal
 from functools import partial
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.cash_band import Raise, cash_band
@@ -501,7 +500,3 @@ def test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_co
         _cash(continuing.summary.ending_book, actor)
         for actor in (AgentId("alice"), AgentId("employer"), AgentId("landlord"))
     ] == [900_000, -1_000_000, 200_000]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ from collections.abc import AsyncIterator
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
@@ -60,7 +59,3 @@ async def test_reconnect_wakes_every_channel(postgres_admin_url: str, engine: As
             async with asyncio.timeout(10):
                 await first.wait()
                 await second.wait()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 from collections.abc import AsyncIterator
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.crd_group import GROUP, VERSION
@@ -151,7 +150,3 @@ async def test_initial_sandbox_without_controller_status_is_unknown(cluster: San
     assert not view.HasField("operating_mode")
     assert view.phase == SandboxPhase.SANDBOX_PHASE_UNSPECIFIED
     assert not view.HasField("pod")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,7 +1,6 @@
 """Tests for filter normalization and synchronization."""
 
 import pytest
-import pytest_bazel
 
 from gmail_api.labels import SystemLabel
 from gmail_archiver.filter_sync import NormalizedFilter, normalize_yaml_rule, normalized_to_create_request
@@ -85,7 +84,3 @@ def test_archive_only_filter_to_create_request():
         criteria=FilterCriteria(from_="newsletter@example.com"),
         action=FilterAction(remove_label_ids=[SystemLabel.INBOX]),
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

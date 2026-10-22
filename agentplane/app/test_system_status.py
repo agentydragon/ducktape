@@ -4,7 +4,6 @@ from collections.abc import AsyncIterator
 import grpc
 import httpx
 import pytest
-import pytest_bazel
 from grpc_health.v1 import health, health_pb2
 
 from agentplane.app.system_status import (
@@ -103,7 +102,3 @@ async def test_one_down_probe_leaves_the_others_reported() -> None:
         ("Test ok", ComponentState.OK),
         ("Test down", ComponentState.DOWN),
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

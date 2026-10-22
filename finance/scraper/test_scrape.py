@@ -1,5 +1,3 @@
-import pytest_bazel
-
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.evidence.markets import Platform, load_roster
 from finance.scraper.scrape import build_parser, markets_from_args
@@ -27,7 +25,3 @@ def test_markets_from_args_unions_roster_and_catalog() -> None:
 def test_catalog_flag_is_optional() -> None:
     args = build_parser().parse_args(["--git-url", "https://unused.test/repo.git", "--roster", str(_ROSTER)])
     assert markets_from_args(args) == tuple(sorted(load_roster(_ROSTER), key=lambda e: (e.platform, e.market_id)))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

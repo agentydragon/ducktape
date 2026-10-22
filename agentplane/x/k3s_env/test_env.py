@@ -6,7 +6,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 
 from agentplane.app.sandbox_models import NewSandbox
 from agentplane.app.testing.client import Client
@@ -60,7 +59,3 @@ async def test_qwen_turn_completes(stack: Stack) -> None:
             raise
     print("answer:", turn.answer)
     (Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp")) / "answer.txt").write_text(turn.answer)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

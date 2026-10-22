@@ -6,7 +6,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from playwright.async_api import Playwright, expect
 
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -249,7 +248,3 @@ async def test_capture_modes_are_mutually_exclusive(harness: VisualHarness) -> N
         with pytest.raises(ValueError, match="not both"):
             await view.capture("invalid", target=view.page.locator("#shot"), full_page=True)
     assert not harness.output_dir.exists()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

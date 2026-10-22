@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest_bazel
 from hamcrest import assert_that
 
 from agent_core.testing.responses import PlayGen
@@ -142,7 +141,3 @@ async def test_build_critic_sh_via_agent(
                 critic_run_id = issues[0].agent_run_id
                 edges = session.query(GradingEdge).filter_by(critique_run_id=critic_run_id).all()
                 assert len(edges) > 0, "Expected grading edges for the build_critic.sh-produced critic run"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

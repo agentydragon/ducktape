@@ -16,7 +16,6 @@ from datetime import date
 
 import aiohttp
 import pytest
-import pytest_bazel
 from yarl import URL
 
 from loom.wayback.proxy.proxy import ClampViolationError, Config, WaybackResolver
@@ -54,7 +53,3 @@ async def test_live_example_com_is_clamped(resolver: WaybackResolver) -> None:
     timestamps = [row[rows[0].index("timestamp")] for row in rows[1:]]
     assert timestamps, "expected at least one pre-as_of capture"
     assert max(timestamps) <= "20200601235959"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

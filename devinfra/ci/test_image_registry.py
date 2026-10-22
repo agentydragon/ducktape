@@ -1,5 +1,3 @@
-import pytest_bazel
-
 from devinfra.ci.image_registry import REGISTRY_PREFIX, Registry, repo_for
 
 
@@ -15,7 +13,3 @@ def test_repo_url_is_the_one_the_cluster_pulls() -> None:
 def test_every_registry_has_a_prefix() -> None:
     """A new member without one would fail only at the push that needs it."""
     assert set(REGISTRY_PREFIX) == set(Registry)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

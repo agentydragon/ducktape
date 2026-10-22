@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio.client import (
     ApiClient,
     ApiException,
@@ -305,7 +304,3 @@ async def test_a_template_this_deployment_does_not_offer_is_refused() -> None:
         await inventory.create(CALLER, "box", "another-template")
     with pytest.raises(SandboxActionError, match="unknown template 'another-template'; this deployment offers"):
         await inventory.get_template("another-template")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

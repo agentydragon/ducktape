@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest_bazel
-
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import (
     LabeledTlhPortfolio,
@@ -72,7 +70,3 @@ def test_product_portfolio_response_carries_tlh_portfolios_as_money_apart_from_h
         ProductTlhCohort(holding_period_months_at_start=4, value_quanta="25001", cost_basis_quanta="30000"),
         ProductTlhCohort(holding_period_months_at_start=0, value_quanta="75000", cost_basis_quanta="29999"),
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

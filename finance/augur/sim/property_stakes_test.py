@@ -11,7 +11,6 @@ from decimal import Decimal
 
 import polars as pl
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import HomeValueKey, LocationId
@@ -419,7 +418,3 @@ def test_each_year_deducts_only_the_depreciation_and_tax_that_year_earned(lifecy
 
     assert federal[11]["ordinary_income_quanta"] == pytest.approx(year_0 * QUANTA_PER_UNIT, abs=5)
     assert federal[23]["ordinary_income_quanta"] == pytest.approx(year_1 * QUANTA_PER_UNIT, abs=5)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

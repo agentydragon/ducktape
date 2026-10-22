@@ -9,8 +9,6 @@ import sys
 import zipfile
 from pathlib import Path
 
-import pytest_bazel
-
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # gazelle:include_dep //devinfra/pr_visuals:publisher
@@ -101,7 +99,3 @@ def test_wheel_contains_import_closure_templates_and_runnable_entry_points(tmp_p
         capture_output=True,
         text=True,
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

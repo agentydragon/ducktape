@@ -2,7 +2,6 @@
 
 import subprocess
 
-import pytest_bazel
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
@@ -120,7 +119,3 @@ def test_empty_admissions_are_cleared_and_runner_admissions_kept(
                 }
         finally:
             engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

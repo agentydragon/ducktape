@@ -6,7 +6,6 @@ from datetime import date
 
 import numpy as np
 import numpy.typing as npt
-import pytest_bazel
 
 from finance.augur.calibration.platform import Direction
 from finance.augur.calibration.resolvers import (
@@ -167,7 +166,3 @@ def test_bucket_model_counts_tile() -> None:
     assert list(counts) == [1, 2, 1]
     # Beyond the horizon -> unscoreable (None).
     assert bucket_model_counts(matrix, lows=[None], highs=[None], at_month=99, horizon_months=12) is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

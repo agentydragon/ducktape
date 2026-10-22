@@ -2,8 +2,6 @@
 
 from datetime import UTC, datetime, timedelta
 
-import pytest_bazel
-
 from devinfra.ci.artifacts import Pin, Sources
 from devinfra.ci.prune_releases import Release, pinned_tags, releases_to_delete
 
@@ -61,7 +59,3 @@ def test_packages_are_independent():
         _release("skill-cpap-dddddddddddd", 80),
     ]
     assert releases_to_delete(releases, pinned=set(), cutoff=CUTOFF) == ["bbr-aaaaaaaaaaaa", "skill-cpap-cccccccccccc"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

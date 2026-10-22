@@ -9,7 +9,6 @@ from uuid import UUID, uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -294,7 +293,3 @@ async def test_a_thread_exists_by_its_public_identity(engine: AsyncEngine, remot
     public_id = await seed_thread(engine)
     assert await remote.exists(public_id)
     assert not await remote.exists(uuid4())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

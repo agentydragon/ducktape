@@ -8,7 +8,6 @@ from decimal import Decimal
 import numpy as np
 import polars as pl
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
 from finance.augur.policy.funding import ClaimPayer
@@ -293,7 +292,3 @@ def test_projection_preserves_selected_original_path_identity() -> None:
     assert arrays.rollout_ids == project_events(selected).rollout_ids == expected.rollout_ids
     for actual, block in zip(arrays.base_series, expected.base_series, strict=True):
         np.testing.assert_array_equal(actual, block)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

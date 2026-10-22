@@ -17,7 +17,6 @@ py_test(
         ":health",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

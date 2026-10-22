@@ -5,7 +5,6 @@ Only a disposable testcontainer database is used; no deployed database is contac
 
 import re
 
-import pytest_bazel
 from sqlalchemy import create_engine, text
 from testcontainers.postgres import PostgresContainer
 
@@ -61,7 +60,3 @@ def test_schema_baseline(
                 )
         finally:
             engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

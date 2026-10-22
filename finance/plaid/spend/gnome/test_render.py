@@ -20,7 +20,6 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from testcontainers.core.container import DockerContainer
 
 from util.bazel.runfiles import get_required_path
@@ -329,7 +328,3 @@ def test_authentication_required_has_no_retry_countdown(render_session: tuple[Gn
         assert "Last attempt 1m 15s ago" in menu_text
         assert "Sign-in required" in menu_text
         assert "Retry in" not in menu_text
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

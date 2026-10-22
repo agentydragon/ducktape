@@ -17,7 +17,6 @@ from uuid import uuid4
 
 import httpx2
 import pytest
-import pytest_bazel
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
@@ -291,7 +290,3 @@ async def test_call_no_policy_approves_is_refused_with_its_reason_and_leaves_not
     assert "argument_schema" in text_of(private.content)
     assert "request_action" in text_of(private.content)
     assert await direct.store.list_requests(direct.grant.principal()) == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

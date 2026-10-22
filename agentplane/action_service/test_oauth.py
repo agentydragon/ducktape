@@ -17,7 +17,6 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
-import pytest_bazel
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from fastmcp.server.auth.cimd import CIMDDocument
@@ -736,7 +735,3 @@ async def _call_mcp_result(
     assert response.status_code == 200, response.text
     data = next(line.removeprefix("data: ") for line in response.text.splitlines() if line.startswith("data: "))
     return CallToolResult.model_validate(json.loads(data)["result"])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

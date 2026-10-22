@@ -3,7 +3,6 @@ anti-affinity from `metadata.name`, and leaves optional CRD fields unset on `Non
 
 from typing import Any, cast
 
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Size, Testing as Cdk8sTesting
 from cdk8s_plus_34 import Cpu
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
@@ -107,7 +106,3 @@ def test_preferred_node_affinity_set_is_passed_through() -> None:
     assert preferred["weight"] == 100
     (expr,) = preferred["preference"]["matchExpressions"]
     assert expr == {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

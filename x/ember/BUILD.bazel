@@ -48,7 +48,6 @@ py_test(
         "//x/ember:matrix_client",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -60,7 +59,6 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -71,7 +69,6 @@ py_test(
         ":python_session",
         "//:conftest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -193,7 +190,6 @@ py_test(
         "//util/exec:models",
         "//util/exec:subprocess",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_bazel",
     ],
 )
 

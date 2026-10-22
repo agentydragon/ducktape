@@ -14,7 +14,6 @@ from fractions import Fraction
 from itertools import chain
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.actions import Action, Buy, Consume, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.books import AccountRef
@@ -460,7 +459,3 @@ def test_selected_replay_with_fresh_memory_reproduces_the_path() -> None:
     (alone,), replay = run(paths, [1])
     assert alone.summary == together[1].summary
     assert replay.memory[1].records == population.memory[1].records
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

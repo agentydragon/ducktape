@@ -4,7 +4,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 
 from devinfra.k8s import kubeconfig
@@ -96,7 +95,3 @@ def test_main_end_to_end_env_override(tmp_path: Path, monkeypatch: pytest.Monkey
     assert kc["current-context"] == "haku-k8s"
     assert kc["contexts"][0]["context"]["namespace"] == "haku"
     assert kc["users"][0]["user"] == {"token": _FAKE_TOKEN}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

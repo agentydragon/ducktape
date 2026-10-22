@@ -6,7 +6,6 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_bazel
 import uvicorn
 from fastapi import FastAPI
 
@@ -52,7 +51,3 @@ async def test_startup_skips_when_no_grader(app_without_grader: FastAPI) -> None
 
     with patch.object(uvicorn.Server, "startup", new_callable=AsyncMock):
         await server.startup()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

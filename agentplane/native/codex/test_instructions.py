@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
@@ -60,7 +58,3 @@ async def test_a_resume_cannot_replace_the_threads_developer_instructions(
         # already loaded, which a resume onto a fresh process never is.
         warnings = [frame["params"]["message"] for frame in second.native_frames() if frame.get("method") == "warning"]
         assert not [message for message in warnings if "nstructions" in message]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

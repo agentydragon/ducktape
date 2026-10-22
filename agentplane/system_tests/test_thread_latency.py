@@ -40,7 +40,6 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-import pytest_bazel
 from more_itertools import one
 from pydantic import BaseModel, Field
 
@@ -261,7 +260,3 @@ async def test_a_one_word_turn_answers_and_its_thread_opens_in_time(
         if seconds >= ceilings[stage]
     ]
     assert not breaches, f"{'; '.join(breaches)}\n{timings.model_dump_json()}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

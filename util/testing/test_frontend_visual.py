@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from playwright.async_api import Page, Playwright
 
 from util.testing.frontend_visual import (
@@ -143,7 +142,3 @@ async def test_native_and_emulated_device_scales_match(playwright: Playwright, d
             "Emulation.setDeviceMetricsOverride", {"width": 412, "height": 915, "mobile": False, "deviceScaleFactor": 0}
         )
         assert await page.evaluate("window.devicePixelRatio") == device_scale_factor
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

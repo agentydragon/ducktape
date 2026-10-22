@@ -16,8 +16,6 @@ that Zod requires as discriminators.
 
 import json
 
-import pytest_bazel
-
 from devinfra.claude.claude_api.hooks.output import HookOutput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookSpecificOutput
 
@@ -39,7 +37,3 @@ def test_exclude_none_omits_null_fields() -> None:
     # Literal defaults required by Zod as discriminators are preserved
     assert parsed["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     assert parsed["hookSpecificOutput"]["additionalContext"] == "# Session hook context"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -9,7 +9,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -314,7 +313,3 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
         )
         assert unbound.status_code == 200
         assert unbound.json()["grants"][0]["status"] == "revoked"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

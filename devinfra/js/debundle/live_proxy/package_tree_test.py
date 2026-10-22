@@ -18,7 +18,6 @@ import unittest
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.js.debundle.live_proxy.package_tree import resolve_package_subpath
 
@@ -108,7 +107,3 @@ class SubpathEscapeTest(unittest.TestCase):
         (pkg / "dist" / "b.mjs").write_text("export const b = 1;\n", encoding="utf-8")
         result = resolve_package_subpath("p", "dist/b.mjs", package_root=pkg)
         assert result.read_text(encoding="utf-8") == "export const b = 1;\n"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

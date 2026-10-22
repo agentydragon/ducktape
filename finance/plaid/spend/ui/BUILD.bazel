@@ -170,6 +170,5 @@ py_test(
         "@pypi//fastapi",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -8,7 +8,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
@@ -294,7 +293,3 @@ def test_actual_profile_cli_uses_same_batch_session_for_both_authoring_forms(tmp
         assert (directory / "execution.prof").stat().st_size > 0
     assert reports[0]["output_sha256"] == reports[1]["output_sha256"]
     assert reports[0]["observed_path_months"] == 108
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

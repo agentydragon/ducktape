@@ -69,7 +69,6 @@ py_test(
         "//:conftest",
         "//props:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -4,7 +4,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from devinfra.claude.session_export.conftest import (
@@ -212,7 +211,3 @@ async def test_a_refused_stream_shows_on_the_page_with_its_reason(
         assert "403" in problem.message
         assert "/events/stream" in problem.message
         assert "refused" in problem.message
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

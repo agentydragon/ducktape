@@ -7,7 +7,6 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
-import pytest_bazel
 from fastapi import HTTPException, Request
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api
@@ -100,7 +99,3 @@ async def test_forged_identity_metadata_cannot_affect_result() -> None:
     sent = authentication.await_args
     assert sent is not None
     assert sent.args[0].spec.token == TOKEN
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

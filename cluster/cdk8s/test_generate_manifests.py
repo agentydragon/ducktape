@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 
 from cluster.cdk8s.generate_manifests import generate_manifests
@@ -632,7 +631,3 @@ def test_public_coder_pause_retains_state_after_devbox_retirement(
         assert owners[name]["deletionPolicy"] == "Orphan"
     assert owners["public-coder-agent-app"].get("suspend", False) is True
     assert owners["public-coder-agent-backup"]["suspend"] is True
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

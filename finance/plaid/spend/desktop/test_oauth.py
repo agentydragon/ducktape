@@ -6,8 +6,6 @@ import asyncio
 from http import HTTPStatus
 from typing import cast
 
-import pytest_bazel
-
 from finance.plaid.spend.desktop.oauth import Authenticator, CallbackResult, _callback_error, _format_callback_error
 
 
@@ -56,7 +54,3 @@ def test_callback_response_escapes_html() -> None:
     body = response.split(b"\r\n\r\n", maxsplit=1)[1]
     assert b"&lt;script&gt;alert(1)&lt;/script&gt; &amp; retry" in body
     assert b"Content-Security-Policy:" in response
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,6 +1,5 @@
 """Staging's Forgejo credential reaches its credentials namespace through exact source access."""
 
-import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting
 
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
@@ -34,7 +33,3 @@ def test_forgejo_password_has_one_reader_and_exact_source_access() -> None:
     provider = store["spec"]["provider"]["kubernetes"]
     assert provider["remoteNamespace"] == "haku-sandbox"
     assert provider["auth"]["serviceAccount"] == {"name": "external-creds-reader"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

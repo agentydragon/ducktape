@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from devinfra.pr_visuals import check_run
 
@@ -122,7 +121,3 @@ def test_upsert_rejects_invalid_status_conclusion_pair(status: Any, conclusion: 
             summary="summary",
             token="token",
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

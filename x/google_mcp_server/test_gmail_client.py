@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel
 
 from gmail_api.filters import FilterAction, FilterCriteria
@@ -298,7 +297,3 @@ def test_batch_modify_reuses_existing_label(svc: _FakeGmailService, client: Gmai
 def test_batch_modify_remove_requires_existing_label(client: GmailToolsClient) -> None:
     with pytest.raises(ValueError, match="do not exist"):
         client.threads_modify_labels(ModifyGmailThreadLabelsArgs(thread_ids=["t1"], remove=["ghost"]))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

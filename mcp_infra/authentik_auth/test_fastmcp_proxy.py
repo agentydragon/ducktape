@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import httpx2
 import pytest
-import pytest_bazel
 from authlib.oauth2 import OAuth2Error
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
@@ -253,7 +252,3 @@ async def test_retryable_jwt_verifier_genuine_4xx_is_not_retried(jwt_verifier: R
     ):
         await jwt_verifier._fetch_jwks()
     assert upstream.call_count == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

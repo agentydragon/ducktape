@@ -7,7 +7,6 @@ import os
 from dataclasses import replace
 from pathlib import Path
 
-import pytest_bazel
 from google.protobuf.json_format import Parse
 
 from agentplane.proto import runner_pb2
@@ -108,7 +107,3 @@ async def test_a_failed_bootstrap_settles_admitted_commands_and_never_reruns(
     assert all(session.harness_state == runner_pb2.HARNESS_STATE_STOPPED for session in sessions)
     assert recorded(config.state_dir)[0].output.data == b"broken\n"
     assert (config.state_dir / "runs").read_text() == "run\n"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

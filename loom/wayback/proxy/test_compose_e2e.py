@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from textwrap import dedent
 
 import pytest
-import pytest_bazel
 
 from loom.wayback.proxy import fake_ia
 from third_party.containers import python_3_14_slim
@@ -153,7 +152,3 @@ async def test_agent_browses_only_the_clamped_archive(compose_stack: ComposeStac
     assert any(
         record["url"] == fake_ia.EXAMPLE_URL and record["capture_ts"] == fake_ia.GOOD_TS for record in manifest_lines
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

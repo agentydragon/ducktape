@@ -39,6 +39,5 @@ py_test(
         "//finance/augur/study/trinity:evidence_snapshot",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

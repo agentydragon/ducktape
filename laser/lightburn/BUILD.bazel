@@ -13,6 +13,5 @@ py_test(
         ":lbrn2_writer",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

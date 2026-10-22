@@ -9,7 +9,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from finance.augur.calibration.evidence_clients import EvidenceMarketReader, MarketNotMirroredError
 from finance.augur.calibration.quote import BookQuote, PoolQuote
@@ -133,7 +132,3 @@ async def test_corrupt_snapshot_propagates(tmp_path: Path) -> None:
     reader = EvidenceMarketReader(platform=Platform.MANIFOLD, evidence_dir=tmp_path)
     with pytest.raises(ValueError, match="Invalid JSON"):
         await reader.get_market("bad")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -11,7 +11,6 @@ from itertools import pairwise
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.x.models.equity_fit import fit_log_returns, fit_rate_beta
 from finance.augur.x.models.synthetic_rates import months, ou_path
@@ -82,7 +81,3 @@ def test_rate_beta_needs_enough_shared_months() -> None:
             equity_levels=[MonthlyLevel(month=r.month, value=100.0 + i) for i, r in enumerate(rates[:100])],
             short_rate=rates,
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

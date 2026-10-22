@@ -14,7 +14,6 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.claude.testing import container_e2e
 from util.bazel.runfiles import get_required_path
@@ -104,7 +103,3 @@ def test_mailbox_delivery(container: container_e2e.E2EContainer, repl_hook: dict
     msg3 = out3.get("systemMessage", "")
     assert "output_Y" in msg3, f"expected output_Y, got: {msg3!r}"
     assert "output_X" not in msg3, f"output_X re-appeared in phase-2 message: {msg3!r}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

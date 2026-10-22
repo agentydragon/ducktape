@@ -58,7 +58,6 @@ py_test(
         "//props:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
 )
@@ -81,7 +80,6 @@ py_test(
         "//props/testing/fixtures:runs",
         "@pypi//fastapi",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -100,7 +98,6 @@ py_test(
         "//props/db:models",
         "@pypi//fastapi",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import httpx
 import pytest
-import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import create_app
@@ -83,7 +82,3 @@ async def test_signed_operator_admission(
         )
         assert response.status_code == (200 if failure is None else 401)
         assert (await client.get("/v1/operator/action-requests")).status_code == 401
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -10,7 +10,6 @@ from urllib.parse import parse_qs
 import httpx
 import litellm
 import pytest
-import pytest_bazel
 from litellm.types.utils import ChatCompletionMessageToolCall, Choices, GenericStreamingChunk, Usage
 
 from tana.litellm_proxy.provider import (
@@ -1110,7 +1109,3 @@ async def test_429_surfaces_through_litellm_acompletion_as_rate_limit_error(isol
     with pytest.raises(litellm.RateLimitError) as exc_info:
         await run()
     assert exc_info.value.status_code == 429
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

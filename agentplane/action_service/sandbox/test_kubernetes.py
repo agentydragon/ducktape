@@ -12,7 +12,6 @@ import json
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.action_service.sandbox.kubernetes import PodExecError, _command, _exit_code, _handshake_error
 
@@ -81,7 +80,3 @@ def test_command_that_never_started_names_the_runtime_error() -> None:
     }
     with pytest.raises(PodExecError, match="/opt/test/missing"):
         _exit_code(json.dumps(frame).encode())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

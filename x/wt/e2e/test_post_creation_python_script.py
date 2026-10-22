@@ -3,7 +3,6 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
 from x.wt.testing.conftest import kill_daemon_at_wt_dir
@@ -49,7 +48,3 @@ def test_post_creation_python_script_runs(real_env_with_python_post_script, wtcl
     assert wt_path.is_dir(), f"worktree path is not a directory: {wt_path}"
     assert (wt_path / ".py_post_create_ran").exists(), ".py_post_create_ran not created by python post-create"
     assert "Fatal Python error: init_sys_streams" not in (result.stdout or "") + (result.stderr or "")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

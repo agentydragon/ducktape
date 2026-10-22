@@ -74,7 +74,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -88,7 +87,6 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/sim:market_path",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -107,7 +105,6 @@ py_test(
         "//finance/augur/sim:results",
         "//util/bazel:runfiles",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -152,6 +149,5 @@ py_test(
         "//finance/augur/sim:world",
         "//finance/augur/sim/testing:session",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

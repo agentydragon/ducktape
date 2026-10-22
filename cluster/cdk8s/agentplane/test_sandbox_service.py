@@ -3,7 +3,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -82,7 +81,3 @@ def test_notifications_have_no_app_or_sandbox_service_dependency(
         for rule in policy["egress"]
         for target in rule.get("toEndpoints", [])
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

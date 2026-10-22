@@ -2,7 +2,6 @@ import urllib.error
 from email.message import Message
 
 import pytest
-import pytest_bazel
 
 from devinfra.ci import bes
 from devinfra.ci.bes import BuildBuddyError, Output, artifact_output, merge, parse
@@ -211,7 +210,3 @@ def test_get_does_not_retry_permanent_http_failures(monkeypatch) -> None:
     with pytest.raises(BuildBuddyError):
         bes._get("https://example.test/file/download", "key", 7)
     assert attempts == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

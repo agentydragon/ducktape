@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
@@ -104,7 +103,3 @@ def test_generator_entry_placed_in_a_namespace_passes(
         config_map_generator=[ConfigMapArgs(name="test-config", namespace=entry_namespace)],
         namespaced_by_overlay=namespaced_by_overlay,
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

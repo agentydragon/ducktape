@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -813,7 +812,3 @@ async def test_host_unreachable_maps_to_authority_unavailable(db_url: str, harne
 
     with pytest.raises(AgentGrantAuthorityUnavailableError):
         await harness.authority._database_call(no_route_to_host)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest_bazel
-
 from cluster.cdk8s.agentplane import testing
 
 
@@ -25,7 +23,3 @@ def test_credentials_namespace_holds_exactly_the_secrets_egress_credentials_read
     }
     assert read
     assert read == copied
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

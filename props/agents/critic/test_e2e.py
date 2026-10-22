@@ -16,7 +16,6 @@ Covers:
 
 from __future__ import annotations
 
-import pytest_bazel
 from hamcrest import all_of, assert_that
 
 from agent_core.testing.responses import DecoratorMock, PlayGen
@@ -169,7 +168,3 @@ async def test_python3_can_import_and_inspect_props(
             run = session.get(AgentRun, run_id)
             assert run is not None
             assert run.status == AgentRunStatus.EXITED
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

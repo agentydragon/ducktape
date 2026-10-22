@@ -7,7 +7,6 @@ import struct
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from jinja2 import Environment
 
 from cluster.cdk8s.ollama.patch_qwen38_template import (
@@ -99,7 +98,3 @@ def test_template_preserves_instruction_position(roles: list[str]) -> None:
     assert rendered.index("part-0") < rendered.index("part-1")
     if len(roles) == 4:
         assert rendered.index("part-1") < rendered.index("part-2") < rendered.index("part-3")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -8,7 +8,6 @@ from uuid import uuid4
 
 import asyncpg
 import pytest
-import pytest_bazel
 from sqlalchemy.engine import make_url
 
 from agentplane.postgres.listener import PostgresListener
@@ -150,7 +149,3 @@ async def test_failed_listen_registration_closes_connection(listener: PostgresLi
     assert not listener.connected
     async with listener.listen():
         assert listener.connected
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

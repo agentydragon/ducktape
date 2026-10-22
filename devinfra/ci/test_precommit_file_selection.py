@@ -4,7 +4,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.ci.precommit_file_selection import needs_ansible_roles, prepare_changed_files
 
@@ -108,7 +107,3 @@ def test_diff_failure_does_not_become_an_empty_selection(tmp_path: Path) -> None
         prepare_changed_files(event_name="pull_request", base_ref="devel", changed_files_path=changed_files, run=run)
 
     assert not changed_files.exists()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

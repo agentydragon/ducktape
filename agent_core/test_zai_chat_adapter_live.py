@@ -4,7 +4,6 @@ import json
 import os
 
 import pytest
-import pytest_bazel
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
@@ -277,7 +276,3 @@ async def test_zai_chat_adapter_tool_call_live() -> None:
     assert json.loads(arguments) == {"answer": "ok"}
     assert result.usage is not None
     assert result.usage.total_tokens > 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

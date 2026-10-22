@@ -6,7 +6,6 @@ from typing import Any
 
 import polars as pl
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import LocationId
@@ -179,7 +178,3 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
     assert events.mortgage_originations.height == 1
     assert events.mortgage_payments.height == 1
     assert events.transfers.filter(pl.col("cause_id") == "sf_home_property_tax_m1").height == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

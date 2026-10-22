@@ -4,7 +4,6 @@ import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
-import pytest_bazel
 
 from homeassistant.proxy.config import AccessRule, Action, EntityInfo, Policy
 from homeassistant.proxy.policy import AccessDeniedError, PolicyEnforcer
@@ -169,7 +168,3 @@ class TestConnectionLifecycle:
             await enforcer.stop()
             assert enforcer._connection_task is None
             assert enforcer._client is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

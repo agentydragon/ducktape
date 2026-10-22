@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest_bazel
-
 from cluster.validation.flux import validate_flux_build
 from util.bazel.runfiles import get_required_path
 
@@ -25,7 +23,3 @@ def test_flux_build_renders_tree() -> None:
     k8s_dir = get_required_path(_K8S_ROOT_KUSTOMIZATION).parent
     errors = asyncio.run(validate_flux_build(k8s_dir))
     assert not errors, "\n".join(errors)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

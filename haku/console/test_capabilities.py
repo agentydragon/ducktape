@@ -12,7 +12,6 @@ from typing import Any
 
 import httpx
 import pytest
-import pytest_bazel
 import respx
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -112,7 +111,3 @@ def test_launch_routine_unconfigured_is_503(make_operator_client: Callable[..., 
     with make_operator_client() as c:
         resp = c.post("/api/capabilities/launch-routine")
     assert resp.status_code == 503
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

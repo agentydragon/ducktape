@@ -6,7 +6,6 @@ import asyncio
 
 import aiohttp
 import pytest
-import pytest_bazel
 
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.testing.model_endpoint import JsonResponse, ModelRequestParseError, SseEvent
@@ -35,7 +34,3 @@ async def test_sse_response_is_rejected_for_a_non_streaming_typed_request() -> N
             await exchange.respond(JsonResponse(b"{}"))
         response = await request
         assert response.status == 200
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

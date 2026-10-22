@@ -31,6 +31,5 @@ py_test(
         ":parse_str_edf",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -107,7 +106,3 @@ async def test_sync_stores_nothing_of_a_page_with_a_sequence_gap(
     with pytest.raises(ValueError, match="sequence_num"):
         await sync_session(api, store, session)
     assert await store.resume_after(ONE) == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

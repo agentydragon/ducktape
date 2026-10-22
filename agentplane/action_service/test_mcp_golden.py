@@ -4,8 +4,6 @@ they pin is held to them."""
 import asyncio
 import json
 
-import pytest_bazel
-
 from agentplane.action_service.generate_mcp_golden import build, serialize, tool_definitions
 from util.bazel.runfiles import get_required_path
 
@@ -25,7 +23,3 @@ def test_golden_vectors_are_what_the_python_tools_answer() -> None:
     for section, stored in json.loads(checked_in).items():
         assert stored == json.loads(produced)[section], section
     assert checked_in == produced, REGENERATE
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -6,7 +6,6 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.conditioning import (
@@ -225,7 +224,3 @@ def _artifact(
         source_manifest={"source_ids": ("fixture:public",)},
         prior_manifest={"kind": "fixture"},
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

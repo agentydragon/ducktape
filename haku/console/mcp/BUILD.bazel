@@ -35,7 +35,6 @@ py_test(
         "//haku/console:conftest",
         "@pypi//jsonschema",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//referencing",
     ],
 )

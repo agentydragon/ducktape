@@ -3,7 +3,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -81,7 +80,3 @@ def test_app_and_migration_use_same_database_uri_secret(
             "valueFrom": {"secretKeyRef": {"name": "postgres-app", "key": "uri"}},
         }
         assert not any(variable["name"].startswith("AGENTPLANE_DB_") for variable in variables)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

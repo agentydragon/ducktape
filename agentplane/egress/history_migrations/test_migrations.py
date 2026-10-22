@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
@@ -88,7 +87,3 @@ def test_concurrent_runners_serialize(postgres_admin_url: str, database_names: D
                 assert conn.scalar(text(f"SELECT count(*) FROM {_VERSION} WHERE version_id=2 AND is_applied")) == 1
         finally:
             engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

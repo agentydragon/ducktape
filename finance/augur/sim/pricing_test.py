@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
 
@@ -38,7 +37,3 @@ class TestMaintenanceRate:
         half = maintenance_rate(base_annual_pct=1.0, occupancy_mode=OccupancyMode.RENTED_PARTIAL, rented_fraction=0.5)
         assert owner < half < landlord
         assert half == pytest.approx((owner + landlord) / 2)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

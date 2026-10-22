@@ -3,7 +3,6 @@
 import json
 
 import pytest
-import pytest_bazel
 import tiktoken
 
 from x.inop.config import OptimizerConfig
@@ -66,7 +65,3 @@ class TestFileTruncation:
         manager = TruncationManager(test_config)
         result = manager.truncate_files_by_tokens([], 150_000)
         assert result == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

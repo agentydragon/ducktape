@@ -4,7 +4,6 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.bond_fund import YieldCurve
 from finance.augur.model.market_paths import MarketPaths
@@ -75,7 +74,3 @@ def test_cpi_and_equity_levels_must_stay_positive(paths: MarketPaths, invalid: f
 def test_negative_market_rates_are_valid(paths: MarketPaths) -> None:
     negative = replace(paths, short_rate=np.full((2, 4), -0.01), term_spread=np.full((2, 4), -0.02))
     assert negative.short_rate[0, 0] == -0.01
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

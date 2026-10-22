@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 
-import pytest_bazel
-
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
 from loom.gym.task import BinaryOutcome, GridCoordinates, GridShape, ScalarOutcome, Task
@@ -82,7 +80,3 @@ def test_windows_beyond_data_are_not_emitted() -> None:
     tasks = tasks_for_spec(spec, anchor_start=date(2020, 1, 1), anchor_step_months=3)
     # Last month is 2020-12; anchors 2020-07/2020-10 have no +6m data, so only 2020-01/2020-04 yield tasks.
     assert {task.as_of for task in tasks} == {date(2020, 2, 1), date(2020, 5, 1)}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

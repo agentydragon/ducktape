@@ -1,7 +1,6 @@
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from agentplane.app.sandbox_models import SandboxPhase as ViewPhase, sandbox_is_ready, sandbox_view
@@ -55,7 +54,3 @@ def test_ready_condition_does_not_override_an_unreported_mode() -> None:
     )
 
     assert not sandbox_is_ready(sandbox_view(view))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

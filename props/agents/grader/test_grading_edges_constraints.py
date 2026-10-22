@@ -9,7 +9,6 @@ Verifies that database constraints correctly enforce:
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from sqlalchemy.exc import IntegrityError
 
 from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, ReportedIssueOccurrence
@@ -205,7 +204,3 @@ def test_edge_overlap_not_containment_is_gradeable(session, test_critic_run, tes
         )
     )
     session.commit()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

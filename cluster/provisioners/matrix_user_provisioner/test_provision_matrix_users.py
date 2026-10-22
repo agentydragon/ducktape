@@ -6,7 +6,6 @@ import logging
 
 import httpx
 import pytest
-import pytest_bazel
 
 from cluster.provisioners.matrix_user_provisioner.provision_matrix_users import (
     ADMIN_DEVICE_ID,
@@ -153,7 +152,3 @@ def test_admin_login_pins_the_device_id():
     [(_, _, body)] = client.calls
     assert body is not None
     assert body["device_id"] == ADMIN_DEVICE_ID
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from finance.augur.sim.ids import JurisdictionId
@@ -36,7 +35,3 @@ def test_unknown_law_is_refused_rather_than_ignored() -> None:
 def test_float_rate_is_refused_as_inexact() -> None:
     with pytest.raises(TypeError):
         TaxBracket.model_validate({"upper": "Infinity", "rate": 0.1})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

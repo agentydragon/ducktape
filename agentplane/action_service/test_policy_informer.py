@@ -10,7 +10,6 @@ from typing import Any, cast
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api, CustomObjectsApi
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
@@ -247,7 +246,3 @@ async def test_watch_end_relists(policies: Policies, index: PolicyIndex) -> None
         policy_set("test-late", [{"type": "kubernetes_cluster_role_binding", "clusterRole": "test-reader"}]),
     )
     await index.wait_for(lambda: "test-late" in index.rule_sets)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

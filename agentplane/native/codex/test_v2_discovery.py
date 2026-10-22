@@ -22,7 +22,6 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel
 
 from agentplane.native.codex import driver, scenarios
@@ -507,7 +506,3 @@ async def test_nested_child_ancestry_and_terminal_recovery(
             with pytest.raises(TimeoutError):
                 async with asyncio.timeout(0.25):
                     await openai_responses.await_next_request()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

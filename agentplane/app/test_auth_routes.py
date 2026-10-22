@@ -16,7 +16,6 @@ from typing import Any, Protocol
 
 import httpx
 import pytest
-import pytest_bazel
 from kubernetes_asyncio.client import AuthenticationV1Api
 from sqlalchemy import select, update
 from starlette.responses import Response
@@ -367,7 +366,3 @@ async def test_callback_error_does_not_echo_untrusted_provider_text(
     assert response.status_code == 401
     assert marker not in response.text
     assert marker not in caplog.text
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

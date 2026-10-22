@@ -21,7 +21,6 @@ import urllib.request
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
-import pytest_bazel
 from playwright.async_api import Playwright, ViewportSize
 
 from study_casino.app import create_app
@@ -150,7 +149,3 @@ def _post(origin: str, path: str, payload: dict) -> None:
 async def test_casino_views_render(view: VisualPage, visible_text: str) -> None:
     await view.page.get_by_text(visible_text).first.wait_for(state="visible", timeout=15_000)
     await view.capture(full_page=True, animations="disabled", scale="css")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

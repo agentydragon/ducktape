@@ -7,7 +7,6 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import HttpUrl, ValidationError
 
 from finance.augur.api.config import (
@@ -280,7 +279,3 @@ def test_a_security_distribution_is_declared_once_per_symbol(minimal_config: Min
 
     with pytest.raises(ValidationError):
         minimal_config(security_distributions=(declaration, declaration))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

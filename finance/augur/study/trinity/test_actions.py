@@ -8,7 +8,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.augur.sim.external_series import ExternalSeriesContext
@@ -173,7 +172,3 @@ def test_offline_cli_replays_selected_original_windows(tmp_path: Path, share: fl
         assert outcomes[trace.rollout_id].summary == trace.summary
         assert trace.trace is not None
         assert {row.action.kind for row in trace.trace.receipts} <= {"Sell", "PayClaim"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal, NewType
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, StringConstraints
 
 from openai_utils.json_schema import OpenAICompatibleSchema, _inline_refs_with_siblings
@@ -238,7 +237,3 @@ def test_discriminated_union_with_described_newtypes():
                 assert_no_ref_with_siblings(item, f"{path}[{i}]")
 
     assert_no_ref_with_siblings(schema)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

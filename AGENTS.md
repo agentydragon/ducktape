@@ -87,7 +87,11 @@ Operator review is the scarce resource. Split into small, independently approvab
 ## Testing
 
 - Always via Bazel (`bbr test`), never direct pytest.
-- **Every `py_test` needs `pytest_bazel.main()`** under `if __name__ == "__main__":` (dep `@pypi//pytest_bazel`) — otherwise it exits 0 without running tests.
+- The repo `//devinfra/python:defs.bzl` `py_test` wrapper runs `pytest_bazel` centrally for its
+  default entrypoint and collects the target-named source in importlib mode; those source files
+  do not need a `pytest_bazel.main()` guard. Raw/native `py_test` targets with an implicit main
+  still need that guard (the `pytest_main` aspect checks them). Explicit `main` and `main_module`
+  targets keep their declared entrypoint behavior.
 - pytest-asyncio auto mode is on; a test using a session-scoped async fixture (e.g. `playwright_driver`) needs `@pytest.mark.asyncio(loop_scope="session")` or browser startup can hang.
 - Never skip for missing tools; they come from runfiles or the RBE image.
 - Docker tests: `py_test` from `//devinfra/python:defs.bzl` with `requires_docker = True`; they run on RBE.

@@ -4,7 +4,6 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import Chart, Testing as Cdk8sTesting
 from more_itertools import one
@@ -181,7 +180,3 @@ def test_migration_job_is_force_recreated_when_the_pinned_image_changes() -> Non
     assert {item["name"]: item["valueFrom"] for item in pod["containers"][0]["env"]} == {
         "DATABASE_URL": {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

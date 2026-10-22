@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.series import IssuerId
@@ -432,7 +431,3 @@ def test_runtime_sampling_fails_on_nonfinite_private_equity_prices(
                 horizon_months=1, rollout_seeds=(1,), required_private_equity_issuers=frozenset({PRIVATE_COMPANY_A})
             )
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

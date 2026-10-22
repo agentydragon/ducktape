@@ -9,7 +9,6 @@ from pathlib import Path
 
 import grpc
 import pytest
-import pytest_bazel
 
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 
@@ -168,7 +167,3 @@ async def test_cancellation_reaches_upstream(route_channel: RouteUnderTest) -> N
     await asyncio.wait_for(route_channel.upstream.blocking_started.wait(), timeout=2)
     call.cancel()
     await asyncio.wait_for(route_channel.upstream.blocking_cancelled.wait(), timeout=2)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

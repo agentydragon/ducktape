@@ -94,7 +94,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -125,7 +124,6 @@ py_test(
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -156,7 +154,6 @@ py_test(
         "//agentplane/testing:scripted_model",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -185,7 +182,6 @@ py_test(
         "//agentplane/testing:scripted_model",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -215,7 +211,6 @@ py_test(
         "//agentplane/testing:scripted_model",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -246,7 +241,6 @@ py_test(
         "//agentplane/testing:scripted_model",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -271,7 +265,6 @@ py_test(
         "//agentplane/runner/testing:driver",
         "//agentplane/runner/testing:gateway",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -301,7 +294,6 @@ py_test(
         "//agentplane/testing:scripted_model",
         "@pypi//grpcio",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -351,7 +343,6 @@ py_test(
         "//agentplane/runner/testing:fixtures",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -368,7 +359,6 @@ py_test(
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:container_logs",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -423,6 +413,5 @@ py_test(
         ":conftest",
         "//:conftest",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )

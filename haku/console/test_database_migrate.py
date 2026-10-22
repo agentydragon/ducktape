@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from haku.console import database_migrate
 
@@ -17,7 +16,3 @@ def test_migration_command_reads_only_the_database_url(monkeypatch: pytest.Monke
     database_migrate.main()
 
     assert called == [database_url]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from uuid import UUID
 
-import pytest_bazel
 from sqlalchemy import select
 
 from agentplane.app.testing.history import SeededEventLogStore
@@ -394,7 +393,3 @@ async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbere
     assert before.items() <= positions.items()
     assert [index for _, _, index in after] == list(range(len(after)))
     assert positions[("item", "third")] == len(first_pass)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

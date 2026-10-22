@@ -7,7 +7,6 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from cdk8s import (
     Chart,
     Testing as Cdk8sTesting,  # not collected by pytest
@@ -78,7 +77,3 @@ def test_vm_workspace_is_a_controller_attached_raw_disk_image() -> None:
     volumes = vm["template"]["spec"]["volumes"]
     assert "workspace" not in {volume["name"] for volume in volumes}
     assert "dataVolumeTemplates" not in vm
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

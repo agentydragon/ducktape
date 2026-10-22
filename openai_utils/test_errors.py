@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from openai import BadRequestError
 
 from openai_utils.model import ResponsesRequest
@@ -16,7 +15,3 @@ async def test_non_context_length_bad_request_propagates() -> None:
 
     with pytest.raises(BadRequestError):
         await client.responses_create(ResponsesRequest(input="hi", max_output_tokens=16))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

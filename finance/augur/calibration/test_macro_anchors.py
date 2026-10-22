@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-import pytest_bazel
-
 from finance.augur.calibration.catalog import (
     CatalogMetadata,
     ExactMarket,
@@ -77,7 +75,3 @@ def test_explicit_history_overrides_derived_history(synthetic_evidence_dir: Path
     pinned = [100.0, 101.0, 102.0]
     resolved = resolve_anchors(_catalog(inflation_history=pinned))
     assert resolved.inflation_history == pinned
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

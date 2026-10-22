@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from finance.augur.api.conftest import MinimalConfig
@@ -334,7 +333,3 @@ def test_holding_period_buckets_cost_basis_fraction_all_or_none() -> None:
                 ),
             ),
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

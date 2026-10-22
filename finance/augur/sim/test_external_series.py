@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 import pytest
-import pytest_bazel
 
 from finance.augur.model.exogenous import LevelFrames
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey
@@ -83,7 +82,3 @@ def test_missing_distribution_snapshot_is_not_treated_as_a_zero_payout() -> None
 def test_negative_distribution_is_rejected_even_if_it_would_round_to_zero(value: float) -> None:
     with pytest.raises(ValueError, match="security_distribution:bnd"):
         _compile(_payout_paths(bad_month_value=value))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

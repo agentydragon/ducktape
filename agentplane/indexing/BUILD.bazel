@@ -114,7 +114,6 @@ py_test(
         "@pypi//pathspec",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -156,7 +155,6 @@ py_test(
         "@pypi//pathspec",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -172,7 +170,6 @@ py_test(
         ":store",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -220,7 +217,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -5,7 +5,6 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionIdentity
@@ -202,7 +201,3 @@ async def test_concurrent_approval_cannot_revive_cancelled_request(
         assert isinstance(approval, ActionConflictError)
     assert (await store.get(pending.id, CALLER)).state is ActionState.CANCELLED
     assert await store.pending_dispatches() == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

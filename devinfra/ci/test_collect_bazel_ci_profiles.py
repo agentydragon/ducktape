@@ -1,5 +1,3 @@
-import pytest_bazel
-
 from devinfra.ci import collect_bazel_ci_profiles
 
 
@@ -108,7 +106,3 @@ def test_bes_summary_extracts_analysis_metrics() -> None:
     assert metrics["ac_misses"] == 64
     assert metrics["ac_miss_details"] == {"DIFFERENT_FILES": 31}
     assert metrics["runner_counts"] == {"remote": 5}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

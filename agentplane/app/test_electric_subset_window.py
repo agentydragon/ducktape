@@ -15,7 +15,6 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-import pytest_bazel
 from sqlalchemy import select
 
 from agentplane.app.testing.history import fixture_session_id
@@ -267,7 +266,3 @@ async def test_bodies_load_as_subsets_of_one_shape_per_field(
                 int(first_generation),
                 int(replaced["generation"]),
             }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

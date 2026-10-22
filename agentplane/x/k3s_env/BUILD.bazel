@@ -178,7 +178,6 @@ py_test(
         "//agentplane/runner_gateway:settings",
         "//util:settings_contract",
         "@pypi//bcrypt",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -255,7 +254,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -286,7 +284,6 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )

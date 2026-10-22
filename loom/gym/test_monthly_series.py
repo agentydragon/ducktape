@@ -4,7 +4,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from loom.gym.monthly_series import MonthlySeries, add_months, load_series, month_end, validate_known_history
 
@@ -45,7 +44,3 @@ def test_load_series_requires_evidence_files(tmp_path: Path) -> None:
     # not silently produce an empty series.
     with pytest.raises(RuntimeError):
         load_series(tmp_path)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

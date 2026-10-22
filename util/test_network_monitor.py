@@ -1,6 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest_bazel
 from dbus_next import Message, Variant
 from dbus_next.constants import MessageType
 
@@ -102,7 +101,3 @@ async def test_failed_connection_is_closed() -> None:
         async with NetworkMonitor(MagicMock()):
             bus.disconnect.assert_called_once_with()
         bus.disconnect.assert_called_once_with()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

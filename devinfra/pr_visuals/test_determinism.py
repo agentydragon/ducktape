@@ -8,7 +8,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-import pytest_bazel
 
 from devinfra.pr_visuals.determinism import (
     Findings,
@@ -478,7 +477,3 @@ def test_unstarted_commands_are_reported_without_discarding_observations(
         invocation = failed_command[2].removeprefix("--invocation_id=")
         assert f"`{invocation}`: BuildBuddy has no invocation record; bbr exited {launcher_exit}." in output
         assert "Command: `bbr test " + " ".join(failed_command[2:]) + "`" in output
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

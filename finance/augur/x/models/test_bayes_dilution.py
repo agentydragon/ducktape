@@ -11,7 +11,6 @@ import datetime as dt
 import math
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import IssuerId
 from finance.augur.x.models.bayes_dilution import BayesianDilutionPriors, fit_bayesian_dilution_prior
@@ -128,7 +127,3 @@ def test_too_few_observations_raises() -> None:
     one_val = [_valuation(_BASE, 1.0e10)]
     with pytest.raises(ValueError, match="needs >= 2 price and >= 2 valuation"):
         fit_bayesian_dilution_prior(one_price, one_val)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

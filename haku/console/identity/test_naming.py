@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from haku.console.identity.naming import (
     MAX_AGENT_NAME_CODE_POINTS,
@@ -52,7 +51,3 @@ def test_length_limit_counts_normalized_unicode_scalars() -> None:
     with pytest.raises(AgentNameTooLongError) as too_long:
         normalize_agent_name("🤖" * (MAX_AGENT_NAME_CODE_POINTS + 1))
     assert too_long.value.actual_length == MAX_AGENT_NAME_CODE_POINTS + 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

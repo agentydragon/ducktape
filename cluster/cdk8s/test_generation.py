@@ -3,7 +3,6 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
@@ -85,7 +84,3 @@ def test_directory_generator_options_are_written_under_kustomizes_key(tmp_path: 
     )
     kustomization = yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())
     assert kustomization["generatorOptions"] == {"disableNameSuffixHash": True}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

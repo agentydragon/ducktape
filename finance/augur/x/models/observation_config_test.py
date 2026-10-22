@@ -4,7 +4,6 @@ from datetime import date
 
 import numpy as np
 import pytest
-import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
@@ -82,7 +81,3 @@ def test_source_named_and_bare_numeric_anchors_are_not_an_alternate_format(confi
     document["latest_observations"] = {"spy_adjusted_close_latest": 711.5800170898438}
     with pytest.raises(ValidationError):
         VecmProviderConfig.model_validate(document)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

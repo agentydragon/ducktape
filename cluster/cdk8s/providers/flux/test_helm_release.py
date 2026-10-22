@@ -2,7 +2,6 @@
 rejects at apply."""
 
 import pytest
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecChart,
@@ -39,7 +38,3 @@ def test_not_exactly_one_chart_source_raises(
             chart=chart,
             chart_ref=chart_ref,
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

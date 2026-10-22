@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.authentik_blueprints import (
     check_outpost_provider_references,
@@ -36,7 +35,3 @@ def test_outpost_provider_references_resolve(k8s_dir: Path) -> None:
     """Embedded-outpost refs are valid and do not target retired providers."""
     errors = check_outpost_provider_references(k8s_dir)
     assert not errors, "\n".join(errors)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

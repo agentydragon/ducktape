@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.dependencies import check_source_references, validate_dependencies
@@ -156,7 +155,3 @@ class TestSourceReferences:
             flux_sources={("ExternalArtifact", "ducktape-flux", "cert-manager")},
         )
         assert check_source_references(cluster) == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

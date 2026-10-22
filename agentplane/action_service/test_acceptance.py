@@ -12,7 +12,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import _mcp_group_snapshot, create_app
@@ -932,10 +931,6 @@ async def test_service_reader_reads_every_owners_requests_and_holds_no_mutation_
             )
         ).status_code == 401
         assert (await client.get(_operator_path(request["id"]), headers=reader)).status_code == 401
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 async def test_operator_history_pages_exclude_pending_and_require_operator(

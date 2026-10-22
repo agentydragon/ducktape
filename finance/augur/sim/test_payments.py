@@ -4,7 +4,6 @@ from copy import deepcopy
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim import results
 from finance.augur.sim.accounting import Accounting
@@ -220,7 +219,3 @@ def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
     assert books.tax_settlements[0].amount == 1000
     assert books.ledger.balance(AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("asset:tax-prepayments"))) == 0
     assert books.ledger.trial_balance() == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

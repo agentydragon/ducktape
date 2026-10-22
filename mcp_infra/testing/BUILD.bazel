@@ -126,6 +126,5 @@ py_test(
         ":wedge_repro",
         "//:conftest",
         "//mcp_infra:conftest",
-        "@pypi//pytest_bazel",
     ],
 )

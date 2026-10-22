@@ -42,7 +42,6 @@ py_test(
         ":conftest",
         ":deployment",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -110,7 +109,6 @@ py_test(
         "//util/testing:postgres",
         "@pypi//alembic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "//haku/console/identity:agent",
         "//haku/console/identity:operator_identity",
@@ -230,7 +228,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -247,7 +244,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
 )
@@ -348,7 +344,6 @@ py_test(
         "//:conftest",
         "//util:oci",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
         "@pypi//testcontainers",
     ],
 )
@@ -378,7 +373,6 @@ py_test(
         ":database_migrate",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -389,7 +383,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -403,7 +396,6 @@ py_test(
         ":database_migrate",
         "//:conftest",
         "//util/testing:undeclared_outputs",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],

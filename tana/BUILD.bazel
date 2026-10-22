@@ -23,6 +23,5 @@ py_test(
         "//tana/export:convert",
         "//tana/graph:loader",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

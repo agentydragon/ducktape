@@ -132,7 +132,6 @@ py_test(
         ":output_base_gc",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -146,7 +145,6 @@ py_test(
         ":worktree_gc",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -162,7 +160,6 @@ py_test(
         "//:conftest",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -176,7 +173,6 @@ py_test(
         ":workspace_scan",
         ":worktree_gc",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -190,7 +186,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
 )
@@ -230,7 +225,6 @@ py_test(
         ":foreign_clone_gc",
         ":pull_request",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -243,6 +237,5 @@ py_test(
         "//:conftest",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

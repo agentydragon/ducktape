@@ -274,7 +274,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -293,7 +292,6 @@ py_test(
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -314,7 +312,6 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )

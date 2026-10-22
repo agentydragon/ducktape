@@ -41,7 +41,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -61,7 +60,6 @@ py_test(
         ":schema",
         ":wire",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 

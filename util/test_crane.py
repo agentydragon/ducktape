@@ -17,7 +17,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import pytest_bazel
 
 from util.crane import Crane, CraneError, find_crane
 
@@ -138,7 +137,3 @@ def test_arun_raises_with_stderr_and_stdout() -> None:
     msg = str(exc_info.value)
     assert "AUTH_FAILED: token expired" in msg
     assert "some output" in msg
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

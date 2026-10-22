@@ -7,7 +7,6 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx2
 import pytest
-import pytest_bazel
 from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -151,7 +150,3 @@ async def test_a_failed_refresh_reports_what_the_provider_answered(
         1,
     )
     assert changed.is_set()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
