@@ -3,14 +3,6 @@ common --experimental_isolated_extension_usages
 # Disable Aspect telemetry (aspect_tools_telemetry) so builds don't POST to telemetry.aspect.build
 common --repo_env=DO_NOT_TRACK=1
 
-# Suppress -Wdeprecated-declarations from protobuf's own internal usage of its
-# deprecated APIs (FieldOptions::weak(), RepeatedPtrField(Arena*), etc.).
-# All warnings are within external/protobuf+/ — protobuf using APIs that it
-# itself deprecated, not fixable from this repo.
-# Applied to both target and exec (host) configs since protoc runs in exec.
-build --per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
-build --host_per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
-
 # Suppress -Wmaybe-uninitialized from protobuf's own C decoder implementation.
 # The diagnostic originates in external/protobuf+/upb/wire/decode.c rather than
 # repository code, so keep the exception scoped to protobuf and both configs.
