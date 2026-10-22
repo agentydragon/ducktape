@@ -18,8 +18,10 @@ exception does not waive preservation of application data or SeaweedFS master st
 
 The first physical node, `ovh-ns1001419`, was converted on 2026-10-22. Attic and
 Study Casino returned to three healthy members with their replacement replicas
-on strict-local Piraeus claims. The new Piraeus SSD volume server is Ready;
-application-data acceptance remains in progress. Seaweed master-2 still uses its
+on strict-local Piraeus claims. The new Piraeus SSD volume server passed a
+bounded native move of one 239 MB volume and separate owned S3 write/read checks;
+all 34 SSD volume IDs retain two copies. Bulk redistribution has not run.
+Seaweed master-2 still uses its
 temporary HDD claim and must return through an identity-preserving cold handoff.
 The [node-roll runbook](../runbooks/piraeus_node_roll.md) records that handoff,
 the next control-plane candidates, per-node readiness gates and conditional

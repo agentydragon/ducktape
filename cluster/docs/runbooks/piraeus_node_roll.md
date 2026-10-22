@@ -14,7 +14,7 @@ Refresh all placements before choosing a window.
 
 | Node            | Reason / complication                                                                                                                                                                                               |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ovh-ns1001419` | First converted SSD control plane. Attic and Study Casino replicas have returned on Piraeus; finish Seaweed volume-server acceptance and return master-2 from HDD before the next drain.                            |
+| `ovh-ns1001419` | First converted SSD control plane. Attic and Study Casino replicas returned on Piraeus; Seaweed passed a bounded native SSD move and separate S3 checks. Return master-2 from HDD before the next drain.            |
 | `ovh-ns104952`  | Hosts old SSD volume server `ssd-1`, so retiring the last ordinal permits shrinking the old group from two to one. Several PostgreSQL primaries, Seaweed master-1, and Forgejo Valkey member-1 must move first.     |
 | `ovh-ns104963`  | Hosts old SSD volume server `ssd-0`, Seaweed master-0, Forgejo Valkey member-0, and the single-instance `agentplane-testing/postgres`. The singleton needs an explicit native-replication handoff or agreed outage. |
 
