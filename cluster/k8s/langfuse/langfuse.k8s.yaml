@@ -349,12 +349,6 @@ spec:
           value: --max-old-space-size=1536
         - name: CLICKHOUSE_CLUSTER_NAME
           value: default
-        - name: LANGFUSE_MIGRATION_V4_WRITE_MODE
-          value: dual
-        - name: LANGFUSE_MIGRATION_V4_NATIVE_OTEL_BEHAVIOUR
-          value: dual_write
-        - name: LANGFUSE_BACKGROUND_MIGRATION_V4_ENABLE_HISTORIC_BACKFILL
-          value: "true"
         - name: AUTH_CUSTOM_NAME
           value: Authentik
         - name: AUTH_CUSTOM_ISSUER

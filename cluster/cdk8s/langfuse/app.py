@@ -166,16 +166,6 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
                 # The shared ClickHouse uses the canonical default logical cluster
                 # name, so Langfuse can keep automatic migrations enabled.
                 {"name": "CLICKHOUSE_CLUSTER_NAME", "value": "default"},
-                # v3 -> v4 migration: dual-write has been validated with fresh LiteLLM
-                # chat and Responses traffic. Backfill existing history as-is,
-                # including any already-corrupt timestamps.
-                # CLEANUP(langfuse-v4-migration): remove these migration overrides once
-                # compatible producers, v4 API consumers, evaluators, and exports are
-                # verified and historic backfill has completed; that selects v4's
-                # events_only/direct defaults and stops legacy writes.
-                {"name": "LANGFUSE_MIGRATION_V4_WRITE_MODE", "value": "dual"},
-                {"name": "LANGFUSE_MIGRATION_V4_NATIVE_OTEL_BEHAVIOUR", "value": "dual_write"},
-                {"name": "LANGFUSE_BACKGROUND_MIGRATION_V4_ENABLE_HISTORIC_BACKFILL", "value": "true"},
                 # Authentik SSO (generic OIDC relying party). Client credentials come
                 # from the langfuse-oidc-config secret, minted by
                 # tf/gitops/sso-providers/provider_langfuse.tf in the authentik
