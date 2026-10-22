@@ -80,10 +80,9 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//util:net",
+        "//finance/augur/testing:server",
         "//util:playwright",
         "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -3,12 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
-import time
-import urllib.error
-import urllib.request
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from urllib.parse import urlencode
@@ -17,9 +12,8 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Browser, Page
 
+from finance.augur.testing.server import run_server
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
@@ -68,55 +62,8 @@ def page_errors(page: Page) -> list[str]:
 
 @pytest.fixture
 def augur_server(tmp_path: Path) -> Iterator[str]:
-    out = undeclared_outputs_dir()
-    server_log = (out / "augur-server.log").open("w")
-    port = pick_free_port("127.0.0.1")
-    server = subprocess.Popen(
-        [
-            str(get_required_path("_main/finance/augur/dev")),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--config",
-            str(get_required_path("_main/finance/augur/api/testdata/config.yaml")),
-        ],
-        env={
-            **os.environ,
-            # An (empty) evidence checkout: the price readers boot against it and
-            # would report any market as not-mirrored; this smoke test never reads one.
-            "AUGUR_EVIDENCE_DIR": str(tmp_path / "evidence"),
-            "HOME": str(tmp_path / "home"),
-            "MPLCONFIGDIR": str(tmp_path / "matplotlib"),
-            "PYTHONUNBUFFERED": "1",
-            "XDG_CACHE_HOME": str(tmp_path / "cache"),
-        },
-        stdout=server_log,
-        stderr=server_log,
-    )
-    origin = f"http://127.0.0.1:{port}"
-    deadline = time.monotonic() + 30
-    try:
-        while time.monotonic() < deadline:
-            if server.poll() is not None:
-                raise RuntimeError(f"Augur server exited early with code {server.returncode}; see {server_log.name}")
-            try:
-                with urllib.request.urlopen(f"{origin}/healthz", timeout=1) as response:
-                    if response.status == 200 and response.read().decode() == "ok\n":
-                        break
-            except OSError, urllib.error.URLError:
-                time.sleep(0.25)
-        else:
-            raise RuntimeError(f"Augur server did not start within 30s; see {server_log.name}")
+    with run_server(binary=get_required_path("_main/finance/augur/dev"), tmp_path=tmp_path) as origin:
         yield origin
-    finally:
-        server.terminate()
-        try:
-            server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=10)
-        server_log.close()
 
 
 async def test_product_shell_renders_metric_fan_charts(page: Page, page_errors: list[str], augur_server: str) -> None:
