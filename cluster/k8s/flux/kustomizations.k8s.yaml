@@ -3974,10 +3974,6 @@ spec:
       namespace: agentplane-staging
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
-      name: public-coder-haku-console
-      namespace: agentplane-staging-egress-credentials
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
       name: public-coder-clickhouse
       namespace: agentplane-staging-egress-credentials
     - apiVersion: external-secrets.io/v1
@@ -4022,6 +4018,33 @@ spec:
     name: agentplane-staging-delivery
     namespace: ducktape-flux
   timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Temporarily tracks the retired Haku Kubernetes API proxy's cert-manager and reflected Secrets without applying data; remove this Kustomization after its source owners reconcile to prune them.
+  name: haku-kube-api-proxy-secret-prune
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Delete
+  dependsOn:
+    - name: haku-console
+      namespace: ducktape-flux
+    - name: agentplane-staging
+      namespace: ducktape-flux
+    - name: authentik-tf
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/haku-kube-api-proxy-secret-prune
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: haku-kube-api-proxy-secret-prune
+    namespace: ducktape-flux
+  timeout: 5m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

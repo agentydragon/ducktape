@@ -1,4 +1,8 @@
-# Public coder OpenClaw: Agentplane egress cutover
+# Public coder OpenClaw: Agentplane egress cutover (historical)
+
+> This handoff records the 2026-10-03 cutover state. This PR retires the Haku Kubernetes
+> API proxy and removes Public Coder's kubeconfig and Haku bearer path; the cutover notes
+> below do not describe a currently available Kubernetes access route.
 
 OpenClaw moved to Agentplane egress on 2026-10-03. On 2026-10-21 the public-coder
 KubeVirt devbox, its disposable Bazel cache, and the now-unused public-coder Iron proxy
@@ -59,13 +63,13 @@ account as a shortcut. The older bounded-startup/integrity investigation
 establish that this schema migration has run. Proxy rollback below does **not** undo
 a database migration; database recovery needs its own verified backup/restore plan.
 
-## Transport and credentials
+## Transport and credentials at cutover
 
 OpenClaw uses the standard Agentplane relay at `http://127.0.0.1:3128`. Only the relay
 mounts a short-lived projected token, with audience `agentplane-egress`. The dedicated
-`public-coder-agent/openclaw` ServiceAccount has no new Kubernetes RBAC grants or
-Kubernetes-audience token. Kubernetes calls still use the existing Haku static-Agent
-bearer through the Haku kube-api proxy, with unchanged authorization.
+`public-coder-agent/openclaw` ServiceAccount had no Kubernetes RBAC grants or
+Kubernetes-audience token. At cutover, Kubernetes calls used a Haku static-Agent bearer
+through the Haku kube-api proxy; this PR removes that now-fail-closed route and bearer.
 
 The staging gateway admits that exact ServiceAccount through an explicit `PolicyBinding`.
 This does **not** grant access to the staging application's operator API or login secret,
@@ -73,11 +77,11 @@ and does not change any managed-agent preset or testing-environment binding. Pub
 Internet access preserves Iron's existing unrestricted public destinations. The app's
 network policy still forbids direct Internet and direct ClickHouse access.
 
-The gateway reads canonical credential sources into its isolated credentials namespace,
-not from the app's Iron mirrors. Haku, ClickHouse and Matrix each get an exact-source
-Secret reader; Brave reuses the existing external-creds mechanism. GitHub and AIQuota
-reuse the gateway's existing credentials. Haku identity and ClickHouse username stay
-unchanged. Matrix substitution is only the `password` JSON field on
+The gateway read canonical credential sources into its isolated credentials namespace,
+not from the app's Iron mirrors. ClickHouse and Matrix each got an exact-source Secret
+reader; Brave reused the existing external-creds mechanism. GitHub and AIQuota reused the
+gateway's existing credentials. ClickHouse username stayed unchanged. Matrix substitution
+was only the `password` JSON field on
 `POST https://matrix.allegedly.works/_matrix/client/v3/login`.
 
 Existing environment-variable names stay stable:
@@ -85,13 +89,13 @@ Existing environment-variable names stay stable:
 | Variable                           | Agentplane credential name  |
 | ---------------------------------- | --------------------------- |
 | `GH_PAT`, `GITHUB_TOKEN`           | `github-pat`                |
-| `HAKU_CONSOLE_TOKEN`               | `public-coder-haku-console` |
 | `CLICKHOUSE_PUBLIC_CODER_PASSWORD` | `public-coder-clickhouse`   |
 | `AIQUOTA_API_BEARER_TOKEN`         | `aiquota-read`              |
 | `BRAVE_API_KEY`                    | `brave-search`              |
 | `MATRIX_PASSWORD`                  | `public-coder-matrix`       |
 
-The generator supplies canonical placeholders, the Matrix proxy setting, and kubeconfig.
+The generator supplied canonical placeholders, the Matrix proxy setting, and a kubeconfig;
+this PR removes the kubeconfig and Haku token placeholder.
 No `gh` re-login is needed: the image's wrapper still exports `GH_TOKEN` from `GH_PAT`.
 LiteLLM, local gateway authentication, and SSH credentials are unchanged.
 
@@ -133,7 +137,8 @@ only, never file contents. Do not globally replace placeholders in persisted sta
 Generated config is re-seeded automatically; preserve the rest of the OpenClaw PVC,
 including Matrix state.
 
-The public-coder Iron proxy and devbox were removed after OpenClaw's Agentplane cutover;
+The public-coder Iron proxy and devbox were removed after OpenClaw's Agentplane cutover.
+This PR also retires the Haku Kubernetes API proxy and its Public Coder credential path;
 reverting the 2026-10-03 cutover alone no longer restores a working route. Any future
 rollback to Iron requires an explicit reintroduction of its workload, trust, credentials,
 and network policy. The devbox and its cache are not part of that rollback. No OpenClaw PVC

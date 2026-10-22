@@ -17,9 +17,8 @@ require (
 // Direct dependencies for finance/worthy
 require github.com/fsouza/go-dockerclient v1.13.3
 
-// Direct dependencies for haku/kube_api_proxy
+// Direct dependencies for Agentplane Kubernetes authentication.
 require (
-	github.com/caarlos0/env/v11 v11.4.1
 	k8s.io/apimachinery v0.37.0
 	k8s.io/apiserver v0.37.0
 )

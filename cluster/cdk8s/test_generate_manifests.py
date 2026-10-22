@@ -465,7 +465,6 @@ def test_openclaw_cutover_waits_for_agentplane_credentials(
     assert app["deletionPolicy"] == "Orphan"
     checks = owners["agentplane-staging"]["spec"]["healthChecks"]
     assert {c["name"] for c in checks if c["kind"] == "ExternalSecret"} >= {
-        "public-coder-haku-console",
         "public-coder-clickhouse",
         "public-coder-matrix",
         "brave-search",

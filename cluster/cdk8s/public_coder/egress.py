@@ -25,7 +25,6 @@ from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, cr
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
@@ -39,7 +38,6 @@ GATEWAY = egress.proxy("agentplane-staging")
 CA_BUNDLE_NAME = "agentplane-egress-ca"
 POLICY = "public-coder-openclaw"
 GITHUB_CREDENTIAL = "github-pat"
-HAKU_CREDENTIAL = "public-coder-haku-console"
 CLICKHOUSE_CREDENTIAL = "public-coder-clickhouse"
 AIQUOTA_CREDENTIAL = "aiquota-read"
 BRAVE_CREDENTIAL = "brave-search"
@@ -117,20 +115,6 @@ def add_gateway_resources(
         reader=reader,
         namespace=namespace,
         credentials_namespace=credentials_namespace,
-        credential=HAKU_CREDENTIAL,
-        source_namespace="authentik",
-        secret="haku-console-public-coder-agent",
-        key="token",
-        description="Public coder's existing static-Agent Haku Console bearer, also used by its Kubernetes authorization proxy. No change of Haku identity or approval policy.",
-        target=EgressCredentialSpecTargets(
-            header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-        ),
-    )
-    _copied_credential(
-        scope,
-        reader=reader,
-        namespace=namespace,
-        credentials_namespace=credentials_namespace,
         credential=CLICKHOUSE_CREDENTIAL,
         source_namespace=client.NAMESPACE,
         secret=client.PUBLIC_CODER_CREDENTIALS,
@@ -180,9 +164,6 @@ def add_gateway_resources(
             Rule.egress(
                 hosts=["github.com", "api.github.com", "codeload.github.com"],
                 credential_ref=PolicySetSpecRulesCredentialRef(name=GITHUB_CREDENTIAL),
-            ),
-            Rule.egress(
-                hosts=[kube_api_proxy.HOSTNAME], credential_ref=PolicySetSpecRulesCredentialRef(name=HAKU_CREDENTIAL)
             ),
             Rule.egress(
                 hosts=[client.HTTP.fqdn],

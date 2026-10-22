@@ -22,11 +22,10 @@ from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.config_format import json5_config, yaml_config
+from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.generation import config_map_chart, write_charts
-from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.public_coder import config as public_coder_config, egress as public_coder_egress, egress_proxy_url
@@ -57,7 +56,6 @@ _GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gate
 # The OpenClaw config uses the same proxy for Matrix login-password substitution.
 _EGRESS_PROXY = egress_proxy_url.PROXY_URL
 _NO_PROXY = "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
-_KUBECONFIG_CONFIG_MAP_NAME = "kubeconfig"
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]
 
@@ -70,40 +68,6 @@ def chart(app: App) -> Chart:
         namespace=NAMESPACE,
         data={"openclaw.json5": json5_config(public_coder_config.config())},
     )
-
-
-def kubeconfig_chart(app: App) -> Chart:
-    """kubectl's config: haku-kube-api-proxy's public route, reached through the egress proxy,
-    with the bearer placeholder the proxy swaps."""
-    chart = Chart(app, _KUBECONFIG_CONFIG_MAP_NAME, disable_resource_name_hashes=True)
-    kubeconfig = {
-        "apiVersion": "v1",
-        "kind": "Config",
-        "clusters": [
-            {
-                "name": "in-cluster",
-                "cluster": {
-                    "server": f"https://{kube_api_proxy.HOSTNAME}",
-                    "proxy-url": _EGRESS_PROXY,
-                    "certificate-authority": _CA_BUNDLE,
-                },
-            }
-        ],
-        "contexts": [
-            {"name": "in-cluster", "context": {"cluster": "in-cluster", "namespace": NAMESPACE, "user": "haku-agent"}}
-        ],
-        "current-context": "in-cluster",
-        # Agentplane egress substitutes the original Haku Agent bearer only for the dedicated Haku
-        # Kubernetes proxy hostname. No Kubernetes credential enters this container.
-        "users": [{"name": "haku-agent", "user": {"token": placeholder_of(public_coder_egress.HAKU_CREDENTIAL)}}],
-    }
-    k8s.KubeConfigMap(
-        chart,
-        "config",
-        metadata=k8s.ObjectMeta(name=_KUBECONFIG_CONFIG_MAP_NAME, namespace=NAMESPACE),
-        data={"config": yaml_config(kubeconfig)},
-    )
-    return chart
 
 
 def _env(name: str, value: str) -> k8s.EnvVar:
@@ -189,10 +153,6 @@ def _openclaw_container() -> k8s.Container:
             # Authorization headers. See F7, F10, F16.
             _env("GITHUB_TOKEN", placeholder_of(public_coder_egress.GITHUB_CREDENTIAL)),
             _env("GH_PAT", placeholder_of(public_coder_egress.GITHUB_CREDENTIAL)),
-            # Non-secret Haku Kubernetes proxy bearer placeholder. The real static-Agent
-            # credential exists in Haku Console and Agentplane egress replaces this value only
-            # in Authorization headers sent to haku-kubeapi.allegedly.works.
-            _env("HAKU_CONSOLE_TOKEN", placeholder_of(public_coder_egress.HAKU_CREDENTIAL)),
             # Native ClickHouse reader credentials for normalized and raw AIQuota history. This
             # is deliberately a non-secret placeholder: the Agentplane egress gateway swaps it only
             # inside Authorization for the private ClickHouse ClusterIP host.
@@ -274,9 +234,6 @@ def _openclaw_container() -> k8s.Container:
         ),
         volume_mounts=[
             k8s.VolumeMount(name="data", mount_path=f"{_HOME}/.openclaw"),
-            # Kubeconfig with a non-secret placeholder. Agentplane egress substitutes the Agent's Haku
-            # bearer only for haku-kubeapi.allegedly.works; no Kubernetes credential is mounted.
-            k8s.VolumeMount(name="kubeconfig", mount_path=f"{_HOME}/.kube", read_only=True),
             # Over the system trust store, not alongside it. The Bundle is built with
             # useDefaultCAs, so it already contains the public roots plus the cluster root plus
             # Agentplane egress's interception root -- replacing the distro file loses nothing.
@@ -388,9 +345,6 @@ def _deployment(scope: Construct) -> None:
                         k8s.Volume(
                             name="data",
                             persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_STATE_CLAIM_NAME),
-                        ),
-                        k8s.Volume(
-                            name="kubeconfig", config_map=k8s.ConfigMapVolumeSource(name=_KUBECONFIG_CONFIG_MAP_NAME)
                         ),
                         k8s.Volume(name="cfg", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP_NAME)),
                         k8s.Volume(
@@ -739,24 +693,6 @@ def _rbac(scope: Construct) -> None:
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-cluster-metadata-read")],
     )
 
-    # Static maximum execution ceiling for operator-approved Haku grants.
-    #
-    # This ClusterRoleBinding does not give the Agent standing Kubernetes access. Haku Console
-    # still evaluates every request against the fixed standing SAR group or an active
-    # Agent-owned grant before haku-kube-api-proxy sends it upstream. The personal-cluster
-    # deployment deliberately makes that inline authorization boundary authoritative so future
-    # useful grants do not each require a separate GitOps RBAC expansion.
-    k8s.KubeClusterRoleBinding(
-        scope,
-        "cluster-admin-ceiling",
-        metadata=k8s.ObjectMeta(
-            name="haku-kube-api-proxy-cluster-admin-ceiling",
-            annotations={"description": "Gives only the Haku authorization proxy a cluster-admin execution ceiling."},
-        ),
-        role_ref=_role_ref("ClusterRole", "cluster-admin"),
-        subjects=[k8s.Subject(kind="ServiceAccount", name=kube_api_proxy.NAME, namespace=console.NAMESPACE)],
-    )
-
 
 def namespace_chart(app: App) -> Chart:
     """The namespace shared by the public-coder-agent components, and its `default` ServiceAccount.
@@ -791,7 +727,7 @@ def app_chart(app: App) -> Chart:
 
 
 def rbac_chart(app: App) -> Chart:
-    """The Roles and bindings that Haku and Agentplane Sandboxes still read, and the kube-api-proxy ceiling."""
+    """The Roles and bindings that Haku and Agentplane Sandboxes still read."""
     access = Chart(app, "rbac", disable_resource_name_hashes=True)
     _rbac(access)
     return access
@@ -802,4 +738,4 @@ APP_DIR = f"{PARKED_ROOT}/public-coder-agent/app"
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, APP_DIR, chart, kubeconfig_chart, app_chart)
+    write_charts(root, APP_DIR, chart, app_chart)

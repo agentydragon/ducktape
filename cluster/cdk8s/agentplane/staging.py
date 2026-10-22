@@ -616,7 +616,6 @@ def agentplane_staging(
                     namespace=ENV.egress.credentials_namespace,
                 )
                 for name in (
-                    public_coder_egress.HAKU_CREDENTIAL,
                     public_coder_egress.CLICKHOUSE_CREDENTIAL,
                     public_coder_egress.MATRIX_CREDENTIAL,
                     public_coder_egress.BRAVE_CREDENTIAL,

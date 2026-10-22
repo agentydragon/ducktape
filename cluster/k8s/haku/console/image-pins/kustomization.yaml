@@ -5,5 +5,3 @@ images:
     newTag: devel-20261021063130-fcbc703 # {"$imagepolicy": "flux-system:haku-console:tag"}
   - name: git.allegedly.works/ducktape-ci/haku-console-static
     newTag: devel-20261021063117-fcbc703 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
-  - name: git.allegedly.works/ducktape-ci/haku-kube-api-proxy
-    newTag: devel-20261021215536-6f00f44 # {"$imagepolicy": "flux-system:haku-kube-api-proxy:tag"}

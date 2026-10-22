@@ -4,61 +4,43 @@
 
 Public Coder OpenClaw is paused while model-limit ownership is being simplified.
 OpenClaw has zero replicas. The KubeVirt devbox, its disposable Bazel cache, the
-devbox SSH route, and the public-coder Iron proxy have been retired. This is a
-parked OpenClaw deployment, not a deletion of its state, diagnostics, or backup.
-The UI is unavailable while paused.
+devbox SSH route, the public-coder Iron proxy, and the Haku Kubernetes API proxy are
+retired. OpenClaw state, diagnostics, and the retained SSH audit-recording PVC remain;
+the UI is unavailable while paused.
 
-Keep the namespace and the existing Flux owners. OpenClaw state, diagnostics, and
-the old SSH session recordings PVC remain declared with unchanged names/specs. The
-VolSync backup's ReplicationSource is paused (`spec.paused`); its Restic repository
-and controller-owned cache PVC are kept. The `public-coder-agent-app` Flux owner
-remains active and annotated `ducktape.org/parked`: it keeps the Deployment at zero
-replicas and prunes retired proxy resources while preserving the declared PVCs. The
-backup owner stays suspended. The `public-coder-agent-devbox` owner temporarily points
-to an empty cleanup artifact so Flux prunes its old inventory. The
-`public-coder-agent-access` owner (`cluster/generated/agents/public-coder-agent/access/`)
-stays active: it owns the Namespace and Roles that Haku and Agentplane Sandboxes still
-read. A separate cleanup Kustomization waits for the credential sources to reconcile,
-then deletes the retired, unowned Secret copies and private keys using a Role restricted
-to their exact names. The devbox cache PVC was explicitly disposed of during retirement;
-do not recreate it.
+Keep the namespace and existing Flux owners. OpenClaw PVC names and specs remain
+unchanged. The VolSync backup's ReplicationSource is paused (`spec.paused`); its
+Restic repository and controller-owned cache PVC are kept. The
+`public-coder-agent-app` Flux owner remains active and annotated
+`ducktape.org/parked`: it keeps the Deployment at zero replicas and preserves the
+declared PVCs. The backup owner stays suspended. The devbox and Public Coder secret
+cleanup inventories were removed after reconciliation in PR #11457. The
+`public-coder-agent-access` owner
+(`cluster/generated/agents/public-coder-agent/access/`) stays active: it owns the
+Namespace and Roles that Haku and Agentplane Sandboxes still read. This change removes
+the Haku proxy's cluster-admin binding from that inventory.
+
+The temporary `haku-kube-api-proxy-secret-prune` Flux owner adopts only the proxy's
+cert-manager TLS Secret and the reflected Haku bearer Secret, without applying their
+data. Remove that owner in a later revision after the proxy, Terraform source, and
+Agentplane egress owners have reconciled; Flux will then prune those two Secrets.
 
 To resume, move the app directory back under `cluster/k8s` and drop the parked
 annotation, per `cluster/AGENTS.md`; restore the OpenClaw replica count and
-unsuspend the backup. The OpenClaw image workflow and smoke
-script are parked in `cluster/parked/public-coder-agent/ci/`; move them back and publish
-a fresh image before resuming. Verify model budgets and credentials first; do not
-reset retained PVCs or change the embedding identity.
+unsuspend the backup. The OpenClaw image workflow and smoke script are parked in
+`cluster/parked/public-coder-agent/ci/`; move them back and publish a fresh image
+before resuming. The Haku Kubernetes API route and bearer were removed and will not
+return with the app. Verify model budgets and credentials first; do not reset retained
+PVCs or change the embedding identity.
 
-## Kubernetes authorization path
+## Kubernetes API access removed
 
-The Agent's kubeconfig points at `haku-kubeapi.allegedly.works` through the local
-Agentplane egress relay. The Agent presents a non-secret placeholder; egress substitutes the
-Agent's Haku bearer only for that hostname. The standalone Haku Kubernetes proxy authenticates the bearer with Console,
-evaluates the deploy-owned `public-coder` standing SAR subject, strips all caller credentials, and
-uses its own rotating projected ServiceAccount token upstream.
-
-The synthetic, non-login `haku:access-profile:public-coder` group is the configured SAR
-identity. Console selects it only from the deploy-owned `public-coder` access-profile configuration;
-the caller cannot supply it. Console also includes Kubernetes's standard `system:authenticated`
-group after it authenticates the Agent bearer, preserving normal API discovery without pretending
-the subject is a ServiceAccount. `haku-kube-api-proxy` has an independent `cluster-admin` execution
-ceiling, usable only when Console authorizes each request through standing SAR or an active
-Agent-owned grant. This deliberately makes the inline Haku authorization path the temporary-access
-policy boundary for this personal cluster; the Agent still has no standing cluster-admin authority
-or direct kube-apiserver credential.
-
-The proxy serves `watch` and log-follow alongside pod `exec` and `portforward`, and
-rejects upgrades other than those two. Every long-running request is reauthorized
-every five seconds and closes within the revalidation interval plus the Console
-authorization timeout after a grant is released or revoked.
-The standing group has no login credential or ServiceAccount token; only Console may evaluate it
-through SubjectAccessReview.
-
-The `public-coder-agent-app` Flux Kustomization owns the namespace and OpenClaw application.
-It depends on External Secrets and Agentplane staging, and health-checks the OpenClaw Deployment.
-Backup remains a separate owner. The devbox and its Iron dependency are retired; there is no
-devbox rollback path to restore.
+Haku Console's Kubernetes authorization endpoint was retired, so the dedicated Haku
+Kubernetes API proxy failed closed. This change removes that workload, its public route,
+ServiceAccount and cluster-admin ceiling, along with Public Coder's kubeconfig and Haku
+bearer substitution. Resuming OpenClaw does not restore Kubernetes API access. The
+separate narrow Roles that Haku and Agentplane Sandboxes still use remain owned by
+`public-coder-agent-access`.
 
 Promtail scrapes ordinary pod stdout/stderr from the application and Console into Loki. The current
 Loki configuration enables compactor retention but sets no finite `retention_period`, so these
@@ -129,13 +111,9 @@ agent's: its canonical SOPS source is
 ExternalSecret syncs it into the credential namespace. Workstations decrypt the
 same source file directly through `ducktape.sopsEnv`.
 
-The Haku Console credential is used only by the Kubernetes authorization proxy. Terraform
-generates a dedicated `public-coder-agent` static-Agent bearer for Haku Console; Agentplane egress
-copies it from the canonical Secret. The OpenClaw container sees an Agentplane placeholder; egress replaces it in
-the `Authorization` header only for `haku-kubeapi.allegedly.works`. Haku Console checks the Agent's
-identity and Kubernetes policy before the proxy forwards an authorized request to the Kubernetes
-API. GitHub goes through the egress-mediated `agentydragon-agent` token directly; see <TOOLING.md>
-for the operational playbook.
+The dedicated Public Coder Haku bearer and its egress substitution were removed with the
+Kubernetes API proxy. GitHub continues to use the egress-mediated `agentydragon-agent` token;
+see <TOOLING.md> for the operational playbook.
 
 The Matrix bot password is generated and retained by the existing Matrix user
 provisioner. It is stored in the Matrix namespace as a SOPS-managed Secret and

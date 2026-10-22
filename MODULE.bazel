@@ -2149,7 +2149,6 @@ use_repo(
     "com_github_blacktop_go_dwarf",
     "com_github_blacktop_go_macho",
     "com_github_bradleyfalzon_ghinstallation_v2",
-    "com_github_caarlos0_env_v11",
     "com_github_cespare_xxhash_v2",
     "com_github_cheynewallace_tabby",
     "com_github_coder_websocket",

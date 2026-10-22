@@ -8,8 +8,9 @@ Direct client-certificate access uses `api.allegedly.works:6443`. There is no
 API TLS-passthrough listener on port 443: it overlapped the Gateway's wildcard
 HTTPS listener.
 
-Haku's separately authorized API boundary uses `haku-kubeapi.allegedly.works`;
-see <haku/kube_api_proxy.py>.
+The separate `haku-kubeapi.allegedly.works` route was retired after Haku Console's
+Kubernetes authorization endpoint was removed. Its implementation is retained as
+historical context in <../../haku/kube_api_proxy/README.md>.
 
 ## Why terminate TLS?
 

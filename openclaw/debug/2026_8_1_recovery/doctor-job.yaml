@@ -152,8 +152,6 @@ spec:
             # config the gateway does, so it gets the same environment.
             - name: GH_PAT
               value: "proxy-github-placeholder"
-            - name: HAKU_CONSOLE_TOKEN
-              value: "proxy-haku-console-placeholder"
             - name: CLICKHOUSE_PUBLIC_CODER_USER
               value: "public_coder_analytics"
             - name: CLICKHOUSE_PUBLIC_CODER_PASSWORD

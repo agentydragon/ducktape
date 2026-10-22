@@ -1,6 +1,5 @@
-"""The console resource chart -- database, schema migration, the console itself and its
-Kubernetes API proxy -- shared by manifest generation and tests (synthesized in memory
-via `cdk8s.Testing`).
+"""The console resource chart -- database, schema migration, and the console itself --
+shared by manifest generation and tests (synthesized in memory via `cdk8s.Testing`).
 
 The database and migration used to be Kustomizations of their own, ordered ahead of the
 console by `dependsOn`. One Kustomization has no such ordering, so the migration Job retries
@@ -23,7 +22,6 @@ from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.haku.console import Console
 from cluster.cdk8s.haku.database import Db
-from cluster.cdk8s.haku.kube_api_proxy import KubeApiProxy
 from cluster.cdk8s.haku.migration import Migration
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -68,7 +66,6 @@ def console_chart(app: App) -> Chart:
     Db(chart, "db")
     Migration(chart, "migration")
     Console(chart, "console")
-    KubeApiProxy(chart, "kube-api-proxy")
     return chart
 
 

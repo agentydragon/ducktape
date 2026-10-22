@@ -75,7 +75,6 @@ IMAGES = (
     "grocy-user-perms-provisioner",
     "haku-console",
     "haku-console-static",
-    "haku-kube-api-proxy",
     "homeassistant-component-installer",
     "homeassistant-onboarding",
     "homeassistant-token-provisioner",

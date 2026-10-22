@@ -25,11 +25,6 @@
       "test": "//third_party/cli_proxy_api_tests:tests",
       "registry": "forgejo"
     },
-    "haku-kube-api-proxy": {
-      "target": "//haku/kube_api_proxy:image",
-      "test": "//haku/kube_api_proxy/...",
-      "registry": "forgejo"
-    },
     "loki-read-proxy": {
       "target": "//cluster/proxies/loki_read_proxy:image",
       "test": "//cluster/proxies/loki_read_proxy/...",

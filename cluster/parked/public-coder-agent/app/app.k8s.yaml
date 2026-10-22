@@ -320,33 +320,6 @@ data:
     }
 immutable: false
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kubeconfig
-  namespace: public-coder-agent
-data:
-  config: |
-    apiVersion: v1
-    kind: Config
-    clusters:
-      - name: in-cluster
-        cluster:
-          server: https://haku-kubeapi.allegedly.works
-          proxy-url: http://127.0.0.1:3128
-          certificate-authority: /etc/ssl/certs/ca-certificates.crt
-    contexts:
-      - name: in-cluster
-        context:
-          cluster: in-cluster
-          namespace: public-coder-agent
-          user: haku-agent
-    current-context: in-cluster
-    users:
-      - name: haku-agent
-        user:
-          token: agentplane-credential-public-coder-haku-console
----
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -525,8 +498,6 @@ spec:
               value: agentplane-credential-github-pat
             - name: GH_PAT
               value: agentplane-credential-github-pat
-            - name: HAKU_CONSOLE_TOKEN
-              value: agentplane-credential-public-coder-haku-console
             - name: CLICKHOUSE_PUBLIC_CODER_USER
               value: public_coder_analytics
             - name: CLICKHOUSE_PUBLIC_CODER_PASSWORD
@@ -593,9 +564,6 @@ spec:
           volumeMounts:
             - mountPath: /home/openclaw/.openclaw
               name: data
-            - mountPath: /home/openclaw/.kube
-              name: kubeconfig
-              readOnly: true
             - mountPath: /etc/ssl/certs/ca-certificates.crt
               name: trust
               readOnly: true
@@ -678,9 +646,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: public-coder-agent-state-v2
-        - configMap:
-            name: kubeconfig
-          name: kubeconfig
         - configMap:
             name: config
           name: cfg

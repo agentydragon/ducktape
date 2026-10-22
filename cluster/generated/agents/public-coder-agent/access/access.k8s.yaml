@@ -242,18 +242,3 @@ subjects:
   - kind: ServiceAccount
     name: haku
     namespace: haku-sandbox
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  annotations:
-    description: Gives only the Haku authorization proxy a cluster-admin execution ceiling.
-  name: haku-kube-api-proxy-cluster-admin-ceiling
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-  - kind: ServiceAccount
-    name: haku-kube-api-proxy
-    namespace: haku-console

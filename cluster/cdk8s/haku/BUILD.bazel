@@ -67,26 +67,12 @@ py_library(
 )
 
 py_library(
-    name = "kube_api_proxy",
-    srcs = ["kube_api_proxy.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/public_coder:__pkg__",
-    ],
+    name = "kube_api_proxy_secret_prune",
+    srcs = ["kube_api_proxy_secret_prune.py"],
     deps = [
-        ":console",
-        "//cluster/cdk8s:cilium",
-        "//cluster/cdk8s:gateway",
-        "//cluster/cdk8s:pod_policy",
-        "//cluster/cdk8s:probes",
-        "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/forgejo_registry:pull_credentials",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
-        "//cluster/cdk8s/providers/cert_manager:certificate",
-        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s:manifest_roots",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
@@ -114,7 +100,6 @@ py_library(
     deps = [
         ":console",
         ":database",
-        ":kube_api_proxy",
         ":migration",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
@@ -135,6 +120,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
