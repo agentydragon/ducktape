@@ -1,7 +1,6 @@
 """Alembic database migrations."""
 
 # gazelle:exclude env.py
-# gazelle:exclude script.py.mako
 # gazelle:exclude versions
 
 # Removed py_test load - using defs.bzl version

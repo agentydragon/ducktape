@@ -1,6 +1,4 @@
 # gazelle:ignore
-# gazelle:resolve py external_secrets_crds //cluster/cdk8s/providers/external_secrets:externalsecret
-# gazelle:resolve py external_secret_store_crds //cluster/cdk8s/providers/external_secrets:clustersecretstore
 # gazelle:resolve py eso_password_generator_crds //cluster/cdk8s/providers/external_secrets:passwordgenerator
 # gazelle:resolve py external_secrets_secretstore_crds //cluster/cdk8s/providers/external_secrets:secretstore
 # gazelle:resolve py external_secrets_clusterexternalsecret_crds //cluster/cdk8s/providers/external_secrets:clusterexternalsecret

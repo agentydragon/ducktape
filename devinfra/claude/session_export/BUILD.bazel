@@ -3,8 +3,6 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# gazelle:resolve py httpx_sse @pypi//httpx_sse
-
 py_library(
     name = "api",
     srcs = ["api.py"],

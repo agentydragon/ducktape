@@ -2,8 +2,6 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
-# gazelle:resolve py agentplane.proto.grpc_tunnel_pb2 //agentplane/proto:grpc_tunnel_pb2
-
 py_library(
     name = "options",
     srcs = ["options.py"],

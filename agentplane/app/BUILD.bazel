@@ -9,10 +9,6 @@ package(default_visibility = [
     "//agentplane/system_tests:__pkg__",
 ])
 
-# gazelle:resolve py agentplane.proto.command_pb2 //agentplane/proto:command_pb2
-# gazelle:resolve py agentplane.proto.event_pb2 //agentplane/proto:event_pb2
-# gazelle:resolve py agentplane.proto.event_log_pb2 //agentplane/proto:event_log_pb2
-
 # No test here is small, and none of that is about the tests being slow: on the CI executor image
 # they are killed at a small target's 60s with the budget spent fetching inputs rather than running
 # -- 70s of `fileDownloadDurationUsec` against 12KB actually fetched and, for two of them, no CPU

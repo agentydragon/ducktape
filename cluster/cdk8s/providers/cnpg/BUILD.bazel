@@ -1,6 +1,4 @@
 # gazelle:ignore
-# gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
-# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
 # gazelle:resolve py cnpg_scheduledbackup_crds //cluster/cdk8s/providers/cnpg:scheduledbackup
 # gazelle:resolve py barman_cloud_objectstore_crds //cluster/cdk8s/providers/cnpg:objectstore
 
