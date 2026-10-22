@@ -31,9 +31,10 @@ The Console no longer accepts, executes, lists, or decides tool calls. Its tool-
 status enum, grants, and migrations remain in Postgres and in the ORM schema so historical data is
 preserved and deployments continue to validate the existing database. There are no live
 application readers or writers for those records. The enriched per-server renderers
-(`frontend/tool_call_card.tsx`, `frontend/tool_rendering/`) stay built and preview-tested, but no
-shipped page mounts them. The cluster's generic Agent Sandbox constructs remain for other
-workspaces.
+(`frontend/tool_call_card.tsx`, `frontend/tool_rendering/`) remain a buildable development
+component with their MCP schema exports, lookup clients, and per-server preview harnesses. They are
+excluded from the production frontend bundle and static image. The cluster's generic Agent Sandbox
+constructs remain for other workspaces.
 
 ### Canonical Agent authority
 

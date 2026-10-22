@@ -1,0 +1,50 @@
+/* Tool calls are audit rows. Their payloads can expand below the summary, but the call itself
+   should not look like a dashboard card nested inside another dashboard card. */
+.haku-tool-call {
+  border-block: 1px solid var(--haku-border);
+  padding: 0.7rem 0;
+  background: var(--haku-panel-bg);
+}
+
+.haku-tool-call-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.haku-tool-call-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.haku-tool-call-summary-actions {
+  flex: 0 0 auto;
+}
+
+.haku-tool-call-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.haku-tool-call-status svg {
+  display: block;
+}
+
+/* The card identity header floats its status selector beside the title, then lets the text use
+   the full width below it. */
+.haku-card-head {
+  display: flow-root;
+}
+
+.haku-card-head-actions {
+  float: right;
+  margin-left: var(--mantine-spacing-sm);
+  margin-bottom: 0.35rem;
+}
+
+.haku-card-head > :not(.haku-card-head-actions) + :not(.haku-card-head-actions) {
+  margin-top: 2px;
+}

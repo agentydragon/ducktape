@@ -38,9 +38,9 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend:agent_names",
-        "//haku/console/frontend:approval_state",
-        "//haku/console/frontend:client",
         "//haku/console/frontend:tool_call_card",
+        "//haku/console/frontend:tool_call_record",
+        "//haku/console/frontend:tool_call_state",
         "//haku/console/frontend/tool_rendering:variant",
     ],
 )

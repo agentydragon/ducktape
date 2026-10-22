@@ -76,11 +76,19 @@ ts_library(
 )
 
 # The shared ToolCallRecord wire model. No Console route serves it, so it is not in :schema; the
-# tool-call card and the renderer previews still take its type through :client.
+# renderer-only state and preview targets consume it directly.
 js_json_schema(
     name = "tool_call_record",
     out = "api/tool_call_record.d.ts",
     generator = "//haku/console:export_tool_call_schema_bin",
+)
+
+ts_library(
+    name = "tool_call_state",
+    srcs = ["tool_call_state.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":tool_call_record"],
 )
 
 ts_library(
@@ -91,7 +99,6 @@ ts_library(
     deps = [
         ":operator_login",
         ":schema",
-        ":tool_call_record",
         "//:node_modules/openapi-fetch",
     ],
 )
@@ -182,10 +189,7 @@ ts_library(
     srcs = ["approval_state.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        "//:node_modules/@haku/console-bridge",
-    ],
+    deps = ["//:node_modules/@haku/console-bridge"],
 )
 
 ts_library(
@@ -471,9 +475,10 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":approval_state",
         ":tool_arguments_field",
         ":tool_call_meta",
+        ":tool_call_record",
+        ":tool_call_state",
         ":tool_result_field",
         ":variant_control",
         "//:node_modules/@mantine/core",
@@ -598,19 +603,16 @@ ts_library(
     ],
 )
 
-# Tailwind v4 scans the `@source`-declared file for class names; concatenate every
-# source whose utility classes the stylesheet must keep into the one file it lists.
+# Tailwind v4 scans the `@source`-declared file for class names; production keeps only the
+# sources used by the shipped shell.
 filegroup(
     name = "tailwind_content_srcs",
     srcs = [
         "app.tsx",
         "approval_state.ts",
-        "calendar_client.ts",
         "client.ts",
         "confirm_dialog.tsx",
         "field.tsx",
-        "gmail_client.ts",
-        "grocy_client.ts",
         "haku_ui_embed.tsx",
         "icons.tsx",
         "index.html",
@@ -619,14 +621,23 @@ filegroup(
         "routing.ts",
         "settings_panel.tsx",
         "shell_chrome.tsx",
-        "tana_client.ts",
         "theme.ts",
         "toast.ts",
+        "variant_control.tsx",
+    ],
+)
+
+filegroup(
+    name = "renderer_tailwind_content_srcs",
+    srcs = [
+        "calendar_client.ts",
+        "gmail_client.ts",
+        "grocy_client.ts",
+        "tana_client.ts",
         "tool_arguments_field.tsx",
         "tool_call_card.tsx",
         "tool_call_meta.tsx",
         "tool_result_field.tsx",
-        "variant_control.tsx",
         "//haku/console/frontend/tool_rendering:tailwind_srcs",
     ],
 )
@@ -635,6 +646,13 @@ genrule(
     name = "tailwind_content_index",
     srcs = [":tailwind_content_srcs"],
     outs = ["tailwind_content.txt"],
+    cmd = "cat $(SRCS) > $@",
+)
+
+genrule(
+    name = "renderer_tailwind_content_index",
+    srcs = [":renderer_tailwind_content_srcs"],
+    outs = ["renderer_tailwind_content.txt"],
     cmd = "cat $(SRCS) > $@",
 )
 
@@ -662,6 +680,27 @@ js_run_binary(
         "styles.src.css",
         "--output",
         "generated/styles.css",
+        "--minify",
+    ],
+    chdir = package_name(),
+    tool = ":tailwind_cli",
+)
+
+js_run_binary(
+    name = "preview_styles_css",
+    srcs = [
+        "preview_styles.src.css",
+        "styles.src.css",
+        "tool_call_card.src.css",
+        ":renderer_tailwind_content_index",
+        ":tailwind_content_index",
+    ],
+    outs = ["generated/preview_styles.css"],
+    args = [
+        "--input",
+        "preview_styles.src.css",
+        "--output",
+        "generated/preview_styles.css",
         "--minify",
     ],
     chdir = package_name(),
@@ -784,7 +823,8 @@ haku_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":approval_state",
-        ":client",
+        ":tool_call_record",
+        ":tool_call_state",
         "//:node_modules/vitest",
     ],
 )

@@ -1,0 +1,5 @@
+@import "./styles.src.css";
+@import "./tool_call_card.src.css";
+
+/* The shared stylesheet indexes production sources; renderer utilities are added for previews. */
+@source "./renderer_tailwind_content.txt";

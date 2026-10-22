@@ -1,13 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  approvalDisplayFields,
-  capabilityRequestItems,
-  geolocationApprovalQueueId,
-  screenshotApprovalQueueId,
-  showsAutoApprovalEvaluation,
-} from "./approval_state";
-import type { ToolCallRecord } from "./client";
+import { capabilityRequestItems, geolocationApprovalQueueId, screenshotApprovalQueueId } from "./approval_state";
+import { approvalDisplayFields, showsAutoApprovalEvaluation } from "./tool_call_state";
+import type { ToolCallRecord } from "./api/tool_call_record";
 
 function pendingApproval(overrides: Partial<ToolCallRecord> = {}): ToolCallRecord {
   return {

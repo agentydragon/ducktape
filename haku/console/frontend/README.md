@@ -21,14 +21,17 @@ route-specific cache headers.
   `//haku/console:export_schema_bin`; Pydantic models are the wire contract), with config, operator,
   deployment, agent enrollment, and launch-routine helpers.
 - `confirm_dialog.tsx` — trusted top-layer confirmations for bridge launches and off-whitelist opens.
-- `styles.src.css` — Tailwind + `@mantine/core` CSS → `@tailwindcss/cli` → `generated/styles.css`
-  → `dist/assets/styles-<hash>.css`. **Deviation:** the `@source` content index is a generated
-  file (`tailwind_content_index`) listing the sources, since Bazel sandboxes inputs.
+- `styles.src.css` — production Tailwind + `@mantine/core` CSS → `@tailwindcss/cli` →
+  `generated/styles.css` → `dist/assets/styles-<hash>.css`. **Deviation:** the `@source` content
+  index is a generated file (`tailwind_content_index`) listing the shipped shell sources, since
+  Bazel sandboxes inputs. Renderer-only styles and utility classes are added by
+  `preview_styles.src.css` for the per-server preview targets.
 - `tool_call_card.tsx` + `tool_rendering/` — enriched Gmail, Calendar, Grocy, Haku Routine and
   Tana tool-call renderers. No shipped page mounts them since the tool-call service was retired;
-  they stay built and tested, with per-server preview screenshots. Arguments/results validate
-  against the MCP schemas `//haku/console/mcp:export_tool_schemas_bin` exports; `ToolCallRecord`
-  comes from the shared wire model via `:tool_call_record`.
+  their MCP lookup clients, schema exporters, and per-server preview targets remain buildable. The
+  production `:bundle` excludes this renderer subtree and its stylesheet inputs. Arguments/results
+  validate against the MCP schemas `//haku/console/mcp:export_tool_schemas_bin` exports; renderer
+  targets consume `ToolCallRecord` from the shared wire model via `:tool_call_record`.
 - `tool_arguments_field.tsx` / `tool_result_field.tsx` — argument / result rendering: per-server
   widget (`tool_rendering/<server>/{requests,responses}.tsx`, result over the unwrapped
   `CallToolResult`) else raw JSON (result: detailed only).

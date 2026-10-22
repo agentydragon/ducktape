@@ -580,41 +580,6 @@
   background: var(--haku-panel-bg);
 }
 
-/* Tool calls are the audit stream's rows. Their payloads can still expand below the summary, but
-   the call itself should not look like a dashboard card nested inside another dashboard card. */
-.haku-tool-call {
-  border-block: 1px solid var(--haku-border);
-  padding: 0.7rem 0;
-  background: var(--haku-panel-bg);
-}
-
-.haku-tool-call-summary {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.haku-tool-call-title {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.haku-tool-call-summary-actions {
-  flex: 0 0 auto;
-}
-
-.haku-tool-call-status {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-}
-
-.haku-tool-call-status svg {
-  display: block;
-}
-
 /* Provisioning is a live resource read, so its useful shape is a compact status table. The age
    marker only appears when the read is old enough to question, rather than spending a column on
    a timestamp that is normally fresh. */
@@ -875,26 +840,6 @@
   .haku-provisioning-detail {
     grid-area: detail;
   }
-}
-
-/* The card's identity header: title + action line + rationale/error subheads. The status marker
-   and Brief/Full selector float top-right (`haku-card-head-actions`) so the text wraps under them
-   on the first line(s) and reclaims the full card width below, rather than every line being
-   narrowed to leave the badge's column empty. `flow-root` contains the float within the header. */
-.haku-card-head {
-  display: flow-root;
-}
-
-.haku-card-head-actions {
-  float: right;
-  margin-left: var(--mantine-spacing-sm);
-  margin-bottom: 0.35rem;
-}
-
-/* The tight vertical rhythm the flex Stack used to give the stacked text lines (the float is the
-   first child, so the title — the first non-float line — takes no top margin). */
-.haku-card-head > :not(.haku-card-head-actions) + :not(.haku-card-head-actions) {
-  margin-top: 2px;
 }
 
 .haku-shell-countdown {

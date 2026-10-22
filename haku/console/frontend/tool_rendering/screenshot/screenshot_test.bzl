@@ -70,7 +70,7 @@ def preview_screenshots(name, entry, fixtures, deps, visibility = None):
         # The harness is inlined into a page of no origin, whose relative `/api/…` URLs the mock
         # fetch parses and never sends: the base gives them something to resolve against.
         inline_page = True,
-        stylesheets = ["//haku/console/frontend:styles_css"],
+        stylesheets = ["//haku/console/frontend:preview_styles_css"],
         base_href = "https://haku-console.test/",
         visibility = visibility,
     )
