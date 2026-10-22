@@ -4,7 +4,15 @@
  * app's client captures the stub) answers API, Electric Shape and Dispatcher watch routes. `EventSource`
  * remains only for the live sandbox, thread, and action-inventory views.
  */
-import { electricLive, electricShape, electricSubset, ndjsonWatch, routes, UNANSWERED } from "./network";
+import {
+  electricLive,
+  electricShape,
+  electricSubset,
+  ndjsonWatch,
+  publishNdjsonWatch,
+  routes,
+  UNANSWERED,
+} from "./network";
 import { TEST_REASONING_EFFORTS } from "../test_model_catalog";
 import "@mantine/core/styles.css";
 
@@ -3120,6 +3128,7 @@ const visualHarness = {
   publish(flag: Flag, pathSuffix: string): void {
     flags.add(flag);
     HarnessEventSource.publish(pathSuffix);
+    publishNdjsonWatch(pathSuffix);
   },
   ageOutage(milliseconds: number): void {
     streamRegistry.now = () => Date.now() + milliseconds;

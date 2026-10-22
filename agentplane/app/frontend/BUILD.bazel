@@ -1378,7 +1378,6 @@ ts_library(
     srcs = [
         "harness/disclosure_visual.tsx",
         "harness/harness.tsx",
-        "harness/network.ts",
         "harness/operation_presentation_visual.tsx",
     ],
     tsconfig = TSCONFIG,
@@ -1389,6 +1388,7 @@ ts_library(
         ":command_view",
         ":connections_fixture",
         ":disclosure",
+        ":harness_network",
         ":live",
         ":notification_types",
         ":stream_status",
@@ -1511,4 +1511,19 @@ agentplane_visual_test(
     src = "test_visual_actions.py",
     shard_count = 4,
     title = "Agentplane: action presentations",
+)
+
+ts_library(
+    name = "harness_network",
+    srcs = ["harness/network.ts"],
+    tsconfig = TSCONFIG,
+)
+
+agentplane_vitest_test(
+    name = "harness_network_test",
+    srcs = ["harness/network.test.ts"],
+    deps = [
+        ":harness_network",
+        "//:node_modules/vitest",
+    ],
 )

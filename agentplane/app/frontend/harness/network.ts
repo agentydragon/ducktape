@@ -131,18 +131,65 @@ export function electricLive(handle: string, relation?: string, signal?: AbortSi
   return new Response(body, { headers: { ...shapeHeaders(handle, schema), "content-type": "text/event-stream" } });
 }
 
-/** A gRPC-Gateway server stream that sends `results` and then stays open until `signal` aborts, as a
- * watch does: newline-delimited `{"result": ...}` objects. */
+interface PublishedWatch {
+  path: string;
+  publish: () => void;
+}
+
+const publishedWatches = new Set<PublishedWatch>();
+
+/** Publish current delta frames to every open facade watch whose path ends with the suffix. */
+export function publishNdjsonWatch(pathSuffix: string): void {
+  for (const watch of publishedWatches) if (watch.path.endsWith(pathSuffix)) watch.publish();
+}
+
+/** A live facade watch: snapshot frames first, then delta frames when a fixture publishes. */
+export function liveNdjsonWatch(
+  path: string,
+  initial: readonly unknown[],
+  updates: () => readonly unknown[],
+  signal: AbortSignal | undefined
+): Response {
+  return watchResponse(initial, signal, { path, updates });
+}
+
+/** A gRPC-Gateway stream sends `results` and stays open until its reader cancels or signal aborts. */
 export function ndjsonWatch(results: readonly unknown[], signal: AbortSignal | undefined): Response {
+  return watchResponse(results, signal, null);
+}
+
+function watchResponse(
+  initial: readonly unknown[],
+  signal: AbortSignal | undefined,
+  publication: { path: string; updates: () => readonly unknown[] } | null
+): Response {
+  let dispose = (): void => {};
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
-      for (const result of results) controller.enqueue(encoder.encode(`${JSON.stringify({ result })}\n`));
-      signal?.addEventListener(
-        "abort",
-        () => controller.error(new DOMException("The watch request was aborted", "AbortError")),
-        { once: true }
-      );
+      const send = (results: readonly unknown[]): void => {
+        for (const result of results) controller.enqueue(encoder.encode(`${JSON.stringify({ result })}\n`));
+      };
+      const watch =
+        publication === null ? null : { path: publication.path, publish: () => send(publication.updates()) };
+      const onAbort = (): void => {
+        dispose();
+        controller.error(new DOMException("The watch request was aborted", "AbortError"));
+      };
+      dispose = (): void => {
+        signal?.removeEventListener("abort", onAbort);
+        if (watch !== null) publishedWatches.delete(watch);
+      };
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      if (watch !== null) publishedWatches.add(watch);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      send(initial);
+    },
+    cancel() {
+      dispose();
     },
   });
   return new Response(body, { headers: { "content-type": "application/x-ndjson" } });
