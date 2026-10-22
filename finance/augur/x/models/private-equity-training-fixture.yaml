@@ -1,0 +1,8 @@
+issuer_id: private_company_a
+observations_path: observations.jsonl
+out_model_path: trained_model.json
+priors:
+  macro_capacity_reference_usd: 100000000000.0
+  tender_interval_months_median_prior: 3.0
+  tender_interval_log_sigma: 0.05
+  tender_price_log_discount_sigma: 0.0

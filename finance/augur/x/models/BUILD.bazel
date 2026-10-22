@@ -253,6 +253,7 @@ py_test(
     name = "private_equity_fit_test",
     size = "medium",
     srcs = ["private_equity_fit_test.py"],
+    data = ["private-equity-training-fixture.yaml"],
     deps = [
         ":conftest",
         ":private_equity_fit",
@@ -261,6 +262,7 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
+        "//util/bazel:runfiles",
         "//util/testing:jsonl",
         "@pypi//numpy",
         "@pypi//pytest",

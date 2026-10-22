@@ -21,6 +21,7 @@ from finance.augur.x.models.trained_private_equity import (
     TrainedPrivateEquityModelArtifact,
     TrainedPrivateEquityScalePrior,
 )
+from util.bazel.runfiles import get_required_path
 from util.testing.jsonl import write_jsonl
 
 PRIVATE_COMPANY_A = IssuerId("private_company_a")
@@ -175,19 +176,8 @@ def test_fit_requires_current_ppu_mark(tmp_path: Path, rows: list[dict[str, obje
 def test_train_round_trips_compact_model_and_runtime_samples(tmp_path: Path, rows: list[dict[str, object]]) -> None:
     write_jsonl(tmp_path / "observations.jsonl", rows)
     config_path = tmp_path / "train.yaml"
-    config_path.write_text(
-        """
-issuer_id: private_company_a
-observations_path: observations.jsonl
-out_model_path: trained_model.json
-priors:
-  macro_capacity_reference_usd: 100000000000.0
-  tender_interval_months_median_prior: 3.0
-  tender_interval_log_sigma: 0.05
-  tender_price_log_discount_sigma: 0.0
-""".strip()
-        + "\n",
-        encoding="utf-8",
+    config_path.write_bytes(
+        get_required_path("_main/finance/augur/x/models/private-equity-training-fixture.yaml").read_bytes()
     )
 
     artifact = train_from_config(config_path)
