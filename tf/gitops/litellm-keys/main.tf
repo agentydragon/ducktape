@@ -2,10 +2,6 @@ terraform {
   required_version = ">= 1.0"
 
   required_providers {
-    external = {
-      source  = "hashicorp/external"
-      version = "~> 2.3"
-    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 3.0"
@@ -13,10 +9,6 @@ terraform {
     litellm = {
       source  = "ncecere/litellm"
       version = "~> 2.0"
-    }
-    sops = {
-      source  = "carlpett/sops"
-      version = "~> 1.0"
     }
   }
 }
@@ -41,9 +33,17 @@ provider "litellm" {
 resource "terraform_data" "buildbuddy_live_tests_secret" {
   triggers_replace = ["crossplane-handoff"]
 
+  lifecycle {
+    precondition {
+      condition     = var.buildbuddy_api_key != ""
+      error_message = "The BuildBuddy API key must be set for the handoff cleanup."
+    }
+  }
+
   provisioner "local-exec" {
     when        = destroy
     command     = "/usr/local/bin/buildbuddy-secret-sync delete"
-    environment = { TF_VAR_buildbuddy_api_key = var.buildbuddy_api_key }
+    # TF_VAR_buildbuddy_api_key is injected into the runner pod and inherited by
+    # local-exec. Do not map it here: destroy provisioners cannot reference vars.
   }
 }
