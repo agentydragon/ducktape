@@ -17,17 +17,14 @@ TF_MODULE = "litellm-keys"
 def keys_chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
     """Keep the old state/backend and providers available while Terraform destroys its resources."""
     chart = Chart(app, TF_MODULE, disable_resource_name_hashes=True)
+    buildbuddy_api_key = SecretRef(namespace=terraform.NAMESPACE, name="buildbuddy-org-admin-api-key").key("api-key")
     terraform.gitops_terraform(
         chart,
         "terraform",
         module=module,
         variables=None,
-        additional_vars=[
-            terraform.secret_var(
-                "buildbuddy_api_key",
-                SecretRef(namespace=terraform.NAMESPACE, name="buildbuddy-org-admin-api-key").key("api-key"),
-            )
-        ],
+        additional_vars=[terraform.secret_var("buildbuddy_api_key", buildbuddy_api_key)],
+        env=[terraform.secret_env("TF_VAR_buildbuddy_api_key", buildbuddy_api_key)],
     )
     return chart
 

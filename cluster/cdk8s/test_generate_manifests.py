@@ -320,6 +320,27 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
     assert teams["team-gemini-clients"]["spec"]["forProvider"]["routerSettings"]["fallbacks"]
 
 
+def test_litellm_buildbuddy_terraform_runners_receive_api_key_environment(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    terraform_resources = {
+        doc["metadata"]["name"]: doc
+        for doc in documents
+        if doc.get("kind") == "Terraform"
+        and doc.get("metadata", {}).get("name") in {"litellm-keys", "litellm-buildbuddy-sync"}
+    }
+    assert set(terraform_resources) == {"litellm-keys", "litellm-buildbuddy-sync"}
+
+    expected_env = {
+        "name": "TF_VAR_buildbuddy_api_key",
+        "valueFrom": {"secretKeyRef": {"name": "buildbuddy-org-admin-api-key", "key": "api-key"}},
+    }
+    for resource in terraform_resources.values():
+        env = resource["spec"]["runnerPodTemplate"]["spec"]["env"]
+        assert expected_env in env
+
+
 def test_piraeus_controller_network_policy_only_admits_api_tls(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
