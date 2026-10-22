@@ -1066,6 +1066,8 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: external-secrets.io/v1
       current: has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')

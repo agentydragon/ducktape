@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import ServiceAccount
 from crossplane_pkg_provider_crds.io.crossplane.pkg import Provider, ProviderSpec, ProviderSpecPackagePullSecrets
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsOn, KustomizationSpecHealthCheckExprs
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import flux, namespaces
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.forgejo_registry.chart import NAME as FORGEJO_IMAGES_KUSTOMIZATION_NAME
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     SECRET_NAME as FORGEJO_PULL_SECRET,
     forgejo_images_creds_external_secret,
@@ -72,7 +75,21 @@ def crossplane(chart: Chart, directory: RenderedDirectory, kyverno: Kustomizatio
 def litellm_provider_chart(app: App) -> Chart:
     """Install the Upjet-generated provider for LiteLLM's management API."""
     chart = Chart(app, LITELLM_PROVIDER_KUSTOMIZATION_NAME, disable_resource_name_hashes=True)
-    forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
+    reader = ServiceAccount(
+        chart,
+        "forgejo-images-creds-reader",
+        metadata=ApiObjectMetadata(name="crossplane-forgejo-images-creds-reader", namespace=NAMESPACE),
+        automount_token=False,
+    )
+    store = single_secret_store(
+        chart,
+        "crossplane-forgejo-images-creds",
+        reader=reader,
+        source_namespace="forgejo-images",
+        source_secret=FORGEJO_PULL_SECRET,
+        consumer_namespace=NAMESPACE,
+    )
+    forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE, secret_store_name=store)
     Provider(
         chart,
         "provider",
@@ -101,6 +118,7 @@ def litellm_provider(
         depends_on=[
             flux_kustomization_depends_on(crossplane),
             flux_kustomization_depends_on(external_secrets_operator),
+            KustomizationSpecDependsOn(name=FORGEJO_IMAGES_KUSTOMIZATION_NAME, namespace=flux.NAMESPACE),
         ],
         description="Install the LiteLLM Upjet provider after Crossplane core; LiteLLM resources reconcile separately.",
     )

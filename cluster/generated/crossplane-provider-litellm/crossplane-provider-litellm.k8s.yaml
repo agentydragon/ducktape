@@ -1,3 +1,61 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crossplane-forgejo-images-creds-reader
+  namespace: crossplane-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crossplane-forgejo-images-creds-reader
+  namespace: forgejo-images
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - forgejo-images-creds
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crossplane-forgejo-images-creds-reader
+  namespace: forgejo-images
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crossplane-forgejo-images-creds-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-forgejo-images-creds-reader
+    namespace: crossplane-system
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-crossplane-forgejo-images-creds-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - crossplane-system
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: crossplane-forgejo-images-creds-reader
+      remoteNamespace: forgejo-images
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -10,7 +68,7 @@ spec:
   refreshInterval: 1h
   secretStoreRef:
     kind: ClusterSecretStore
-    name: kubernetes-forgejo-images-secret-store
+    name: kubernetes-crossplane-forgejo-images-creds-secret-store
   target:
     name: forgejo-images-creds
     template:

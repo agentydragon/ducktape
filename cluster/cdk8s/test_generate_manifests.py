@@ -246,10 +246,48 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
     assert provider["spec"]["package"].startswith("git.allegedly.works/ducktape-ci/provider-litellm:")
     assert provider["spec"]["packagePullSecrets"] == [{"name": "forgejo-images-creds"}]
     assert pull_secret["apiVersion"] == "external-secrets.io/v1"
+    assert pull_secret["spec"]["secretStoreRef"] == {
+        "kind": "ClusterSecretStore",
+        "name": "kubernetes-crossplane-forgejo-images-creds-secret-store",
+    }
     assert pull_secret["spec"]["target"]["template"]["type"] == "kubernetes.io/dockerconfigjson"
+    store = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "ClusterSecretStore"
+        and doc["metadata"].get("name") == "kubernetes-crossplane-forgejo-images-creds-secret-store"
+    )
+    assert store["spec"]["conditions"] == [{"namespaces": ["crossplane-system"]}]
+    assert store["spec"]["provider"]["kubernetes"]["remoteNamespace"] == "forgejo-images"
+    assert store["spec"]["provider"]["kubernetes"]["auth"]["serviceAccount"] == {
+        "name": "crossplane-forgejo-images-creds-reader"
+    }
+    reader_role = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "Role" and doc["metadata"].get("name") == "crossplane-forgejo-images-creds-reader"
+    )
+    assert reader_role["metadata"]["namespace"] == "forgejo-images"
+    assert reader_role["rules"] == [
+        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["forgejo-images-creds"], "verbs": ["get"]}
+    ]
+    reader_binding = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "RoleBinding" and doc["metadata"].get("name") == "crossplane-forgejo-images-creds-reader"
+    )
+    assert reader_binding["subjects"] == [
+        {
+            "apiGroup": "",
+            "kind": "ServiceAccount",
+            "name": "crossplane-forgejo-images-creds-reader",
+            "namespace": "crossplane-system",
+        }
+    ]
     assert kustomization["spec"]["dependsOn"] == [
         {"name": "crossplane", "namespace": "ducktape-flux"},
         {"name": "external-secrets-operator", "namespace": "ducktape-flux"},
+        {"name": "forgejo-images", "namespace": "ducktape-flux"},
     ]
     assert kustomization["spec"]["wait"] is True
     assert kustomization["spec"]["prune"] is False
