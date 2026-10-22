@@ -388,6 +388,7 @@ Agent status is opaque from the dashboard's perspective:
 
 - We see the container and its exit code
 - LLM requests are logged by the proxy to the `llm_requests` table
+- Through LiteLLM, every API shape exports run and model correlation keys to Langfuse without injecting them into provider-owned Responses or Anthropic metadata.
 - Container stdout/stderr captured after exit
 - No real-time introspection into agent internals
 
