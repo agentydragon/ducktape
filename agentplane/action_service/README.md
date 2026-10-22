@@ -5,7 +5,8 @@ schema and `/v1/action-requests` lifecycle; the Agentplane integration app, Haku
 external harnesses remain clients rather than state owners.
 
 Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked lifecycle, recovery and
-Kubernetes/grant workflows and an HTTP reference served under `/docs/agents/`. Update the guides when those contracts change.
+Kubernetes/grant workflows. The generated HTTP/JSON API reference is `/openapi.json`; update the guides
+when those contracts change.
 
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
 `ActionGroup` mounts one MCP server, mirrors its `tools/list` into the catalog, and this service
@@ -277,7 +278,7 @@ decision's note or reason, or the executor's error. `request_action` answers the
 wait ends unless asked for its receipt, so an Action a policy approves comes back as its tool's own
 answer from the one call. A receipt's `execution` has its state, error and timing but no result.
 
-Submission, receipt and result reads take one shared `wait` object (`wait_seconds`, 0 through this
+MCP submission, receipt and result tools take one shared `wait` object (`wait_seconds`, 0 through this
 instance's `max_wait_seconds` setting, default 0; the setting defaults to 30 seconds;
 `wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
 Set `max_wait_seconds` in the Action Service settings file or with
@@ -290,11 +291,12 @@ failure must not prompt a new Action. Workload authorization is revalidated afte
 before returning data. The generic MCP tool schemas never expand the dynamic Action catalog, and no
 Action output-schema metadata is added.
 
-`GET /v1/action-requests/{id}` takes the same two options as the query parameters `wait_seconds`
-and `wait_until`, with the same bounds (HTTP 422 above `max_wait_seconds`) and the same revalidation
-(HTTP 401 if the bearer no longer authenticates when the wait ends). `GET /v1/action-requests`
-takes `limit` (1 through 128; without it every match is returned) and `after_id`, the last request
-the caller already has: the page starts after it in newest-first order, whatever `state` or
+`GET /v1/action-requests/{id}` reads one current receipt; it has no wait query parameters.
+`GET /v1/action-requests/{id}:watch` is the generated server stream, beginning with the current
+receipt and continuing on committed changes until the `until` condition holds or the client deadline
+ends. The MCP wait options above remain available to MCP callers. `GET /v1/action-requests` takes
+`limit` (1 through 128; without it every match is returned) and `after_id`, the last request the
+caller already has: the page starts after it in newest-first order, whatever `state` or
 `idempotency_key` filter applies, and an `after_id` the caller does not own is HTTP 404.
 
 Workflow: list identifiers, fetch one input schema if needed, submit once, then wait/read the

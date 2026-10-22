@@ -8,6 +8,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -1402,6 +1403,11 @@ ts_proto_library(
         "//agentplane/proto:sandboxes_pb",
         "//google/api:annotations_pb",
     ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "action_service_pb2",
+    deps = [":action_service_proto"],
 )
 
 go_proto_library(

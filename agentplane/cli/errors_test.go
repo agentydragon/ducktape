@@ -1,199 +1,325 @@
 package main
 
 import (
-	"maps"
+	"context"
+	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	rpcCode "google.golang.org/genproto/googleapis/rpc/code"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-const missingID = "00000000-0000-0000-0000-00000000dead"
-
-func TestHTTPFailuresMapToExitCodes(t *testing.T) {
-	egress := func(reason string) map[string]string {
-		return map[string]string{egressHeader: "denied; reason=" + reason}
-	}
-	sidecar := func(reason string) map[string]string { return map[string]string{sidecarHeader: "reason=" + reason} }
+func TestGRPCFailuresMapToExitCodes(t *testing.T) {
 	cases := []struct {
-		name       string
-		status     int
-		headers    map[string]string
-		body       string
-		wantExit   int
-		wantCode   string
-		wantSource string
-		wantReason string
+		name     string
+		code     codes.Code
+		wantExit int
 	}{
-		{"bad request", 400, nil, `{"detail":"bad"}`, 1, "INVALID_ARGUMENT", sourceService, ""},
-		{"validation", 422, nil, `{"detail":[{"loc":["body","title"],"msg":"too long"}]}`, 1, "INVALID_ARGUMENT", sourceService, ""},
-		{"unauthenticated", 401, nil, `{"detail":"invalid workload bearer"}`, 1, "UNAUTHENTICATED", sourceService, ""},
-		{"service denies", 403, nil, `{"detail":"no"}`, 1, "PERMISSION_DENIED", sourceService, ""},
-		{"proxy denies", 403, egress("no-rule"), "", 1, "PERMISSION_DENIED", sourceEgress, "no-rule"},
-		{"proxy cannot find the placeholder", 403, egress("placeholder-unresolved"), "", 1, "PERMISSION_DENIED", sourceEgress, "placeholder-unresolved"},
-		{"sidecar bad request", 400, sidecar("bad-request"), "", 1, "INVALID_ARGUMENT", sourceSidecar, "bad-request"},
-		{"not found", 404, nil, `{"detail":"action request not found"}`, 5, "NOT_FOUND", sourceService, ""},
-		{"conflict", 409, nil, `{"detail":"stale"}`, 4, "ABORTED", sourceService, ""},
-		{"rate limited", 429, map[string]string{"Retry-After": "7"}, `{"detail":"slow down"}`, 3, "RESOURCE_EXHAUSTED", sourceService, ""},
-		{"proxy could not decide", 502, egress("unavailable"), "", 3, "UNAVAILABLE", sourceEgress, "unavailable"},
-		{"sidecar cannot reach the proxy", 502, sidecar("proxy-unreachable"), "", 3, "UNAVAILABLE", sourceSidecar, "proxy-unreachable"},
-		{"sidecar has no token", 503, sidecar("token-unavailable"), "", 3, "UNAVAILABLE", sourceSidecar, "token-unavailable"},
-		{"draining", 503, nil, `{"detail":"Action Service is draining"}`, 3, "UNAVAILABLE", sourceService, ""},
-		{"gateway timeout", 504, nil, "", 3, "DEADLINE_EXCEEDED", sourceService, ""},
-		{"server error", 500, nil, `{"detail":"boom"}`, 1, "INTERNAL", sourceService, ""},
-		{"gRPC status body", 401, nil, `{"code":16,"message":"unauthenticated","details":[]}`, 1, "UNAUTHENTICATED", sourceService, ""},
-		// A gateway's HTTP status only approximates its gRPC code, which the body names.
-		{"failed precondition", 400, nil, `{"code":9,"message":"cancelled","details":[]}`, 1, "FAILED_PRECONDITION", sourceService, ""},
-		{"out of range", 400, nil, `{"code":11,"message":"past the end","details":[]}`, 1, "OUT_OF_RANGE", sourceService, ""},
-		{"already exists", 409, nil, `{"code":6,"message":"exists","details":[]}`, 4, "ALREADY_EXISTS", sourceService, ""},
-		{"aborted", 409, nil, `{"code":10,"message":"stale","details":[]}`, 4, "ABORTED", sourceService, ""},
-		{
-			"retry info beats the header", 429,
-			map[string]string{"Retry-After": "9"},
-			`{"code":8,"message":"slow down","details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"7s"}]}`,
-			3, "RESOURCE_EXHAUSTED", sourceService, "",
-		},
-		{"proxy refusal with a status body", 403, egress("no-rule"), `{"code":5,"message":"gone","details":[]}`, 1, "PERMISSION_DENIED", sourceEgress, "no-rule"},
+		{"invalid argument", codes.InvalidArgument, exitRefused},
+		{"unauthenticated", codes.Unauthenticated, exitRefused},
+		{"permission denied", codes.PermissionDenied, exitRefused},
+		{"not found", codes.NotFound, exitNotFound},
+		{"already exists", codes.AlreadyExists, exitConflict},
+		{"aborted", codes.Aborted, exitConflict},
+		{"rate limited", codes.ResourceExhausted, exitTransient},
+		{"unavailable", codes.Unavailable, exitTransient},
+		{"deadline exceeded", codes.DeadlineExceeded, exitTransient},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
-				for name, value := range tc.headers {
-					w.Header().Set(name, value)
-				}
-				reply(w, tc.status, tc.body)
-			})
-			code, stdout, stderr := invoke(actionsEnv(f.URL), "actions", "get", missingID, "--json")
-			if code != tc.wantExit || stdout != "" {
-				t.Fatalf("exit %d, stdout %q; want exit %d and empty stdout", code, stdout, tc.wantExit)
+			fake, endpoint := newActionFake(t)
+			fake.getRequest = func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
+				return nil, status.Error(tc.code, "test service refusal")
+			}
+			code, stdout, stderr := invoke(actionsEnv(endpoint), "actions", "get", missingID, "--json")
+			if code != tc.wantExit || stdout != "" || fake.count("GetActionRequest") != 1 {
+				t.Fatalf("exit %d, stdout %q, calls %+v; want exit %d after one RPC", code, stdout, fake.callLog(), tc.wantExit)
 			}
 			got := errorOf(t, stderr)
-			if got.Code != tc.wantCode || got.Source != tc.wantSource || got.HTTPStatus == nil || *got.HTTPStatus != tc.status {
-				t.Errorf("envelope = %+v, want %s from %s with http_status %d", got, tc.wantCode, tc.wantSource, tc.status)
-			}
-			if (tc.wantReason == "") != (got.Reason == nil) || (got.Reason != nil && *got.Reason != tc.wantReason) {
-				t.Errorf("reason = %v, want %q", got.Reason, tc.wantReason)
-			}
-			if tc.status == 429 && (got.RetryAfterSeconds == nil || *got.RetryAfterSeconds != 7) {
-				t.Errorf("retry_after_seconds = %v, want 7", got.RetryAfterSeconds)
-			}
-			if got.Message == "" {
-				t.Error("the envelope has no message")
+			if got.Code != rpcCode.Code_name[int32(tc.code)] || got.Source != sourceService || got.HTTPStatus != nil || got.Message != "test service refusal" {
+				t.Errorf("envelope %+v; want %s from service without an HTTP status", got, tc.code)
 			}
 		})
 	}
 }
 
-func TestUnreachableServiceExitsTransient(t *testing.T) {
-	f := newFake(t, func(http.ResponseWriter, *http.Request, seen) {})
-	f.Close()
-	code, stdout, stderr := invoke(actionsEnv(f.URL), "actions", "get", missingID, "--json")
+func TestGRPCRetryInfoBecomesRetryAfterSeconds(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.getRequest = func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
+		st, err := status.New(codes.ResourceExhausted, "slow down").WithDetails(&errdetails.RetryInfo{RetryDelay: durationpb.New(7 * time.Second)})
+		if err != nil {
+			return nil, err
+		}
+		return nil, st.Err()
+	}
+	code, _, stderr := invoke(actionsEnv(endpoint), "actions", "get", missingID, "--json")
 	got := errorOf(t, stderr)
-	if code != 3 || stdout != "" || got.Code != "UNAVAILABLE" || got.Source != sourceClient || got.HTTPStatus != nil {
+	if code != exitTransient || got.Code != "RESOURCE_EXHAUSTED" || got.RetryAfterSeconds == nil || *got.RetryAfterSeconds != 7 {
+		t.Errorf("exit %d, envelope %+v; want transient with a 7-second retry delay", code, got)
+	}
+}
+
+func TestUnreachableServiceExitsTransient(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := "http://" + listener.Addr().String()
+	_ = listener.Close()
+	code, stdout, stderr := invoke(actionsEnv(endpoint), "actions", "get", missingID, "--json")
+	got := errorOf(t, stderr)
+	if code != exitTransient || stdout != "" || got.Code != "UNAVAILABLE" || got.Source != sourceClient || got.HTTPStatus != nil {
 		t.Errorf("exit %d, stdout %q, envelope %+v; want exit 3 with UNAVAILABLE from the client", code, stdout, got)
 	}
 }
 
 func TestDeadlineExitsTransient(t *testing.T) {
-	f := newFake(t, func(_ http.ResponseWriter, r *http.Request, _ seen) { <-r.Context().Done() })
-	code, stdout, stderr := invoke(actionsEnv(f.URL), "actions", "get", missingID, "--json", "--timeout", "0.3")
+	fake, endpoint := newActionFake(t)
+	fake.getRequest = func(ctx context.Context, _ *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
+		<-ctx.Done()
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+	code, stdout, stderr := invoke(actionsEnv(endpoint), "actions", "get", missingID, "--json", "--timeout", "0.2")
 	got := errorOf(t, stderr)
-	if code != 3 || stdout != "" || got.Code != "DEADLINE_EXCEEDED" || got.Source != sourceClient {
-		t.Errorf("exit %d, stdout %q, envelope %+v; want exit 3 with DEADLINE_EXCEEDED from the client", code, stdout, got)
+	if code != exitTransient || stdout != "" || got.Code != "DEADLINE_EXCEEDED" || fake.count("GetActionRequest") != 1 {
+		t.Errorf("exit %d, stdout %q, envelope %+v; want deadline exceeded after one RPC", code, stdout, got)
+	}
+}
+
+func proxySubprocessEnv(values map[string]string) []string {
+	current := make([]string, 0, len(os.Environ())+len(values))
+	for _, item := range os.Environ() {
+		name, _, _ := strings.Cut(item, "=")
+		if _, replaced := values[name]; !replaced {
+			current = append(current, item)
+		}
+	}
+	for name, value := range values {
+		current = append(current, name+"="+value)
+	}
+	return current
+}
+
+func runProxyChild(t *testing.T, testName, endpoint, proxyURL string) {
+	runProxyChildWithProxies(t, testName, endpoint, proxyURL, proxyURL)
+}
+
+func runProxyChildWithProxies(t *testing.T, testName, endpoint, httpProxyURL, httpsProxyURL string) {
+	t.Helper()
+	command := exec.Command(os.Args[0], "-test.run=^"+testName+"$")
+	command.Env = proxySubprocessEnv(map[string]string{
+		"AGENTPLANE_CLI_PROXY_CHILD":    "1",
+		"AGENTPLANE_ACTIONS_URL":        endpoint,
+		"AGENTPLANE_ACTIONS_CREDENTIAL": testCredential,
+		"HTTP_PROXY":                    httpProxyURL,
+		"http_proxy":                    httpProxyURL,
+		"HTTPS_PROXY":                   httpsProxyURL,
+		"https_proxy":                   httpsProxyURL,
+		"ALL_PROXY":                     "",
+		"all_proxy":                     "",
+		"NO_PROXY":                      "",
+		"no_proxy":                      "",
+	})
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("proxy subprocess failed: %v\n%s", err, output)
+	}
+}
+
+func TestGRPCClientUsesHTTPSProxyCONNECTForH2C(t *testing.T) {
+	if os.Getenv("AGENTPLANE_CLI_PROXY_CHILD") == "1" {
+		code, stdout, stderr := invoke(actionsEnv(os.Getenv("AGENTPLANE_ACTIONS_URL")), "actions", "groups", "--json")
+		if code != 0 || stdout != "" || stderr != "" {
+			t.Fatalf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
+		}
+		return
+	}
+
+	fake, directEndpoint := newActionFake(t)
+	destination := strings.TrimPrefix(directEndpoint, "http://")
+	_, port, err := net.SplitHostPort(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := "actions.test.invalid:" + port
+	endpoint := "http://" + target
+	connected := make(chan string, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			t.Errorf("proxy method %s, want CONNECT", r.Method)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		connected <- r.Host
+		client, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack proxy connection: %v", err)
+			return
+		}
+		defer client.Close()
+		upstream, err := net.Dial("tcp", destination)
+		if err != nil {
+			t.Errorf("dial local gRPC server: %v", err)
+			_, _ = io.WriteString(client, "HTTP/1.1 502 Bad Gateway\r\n\r\n")
+			return
+		}
+		defer upstream.Close()
+		if _, err := io.WriteString(client, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
+			t.Errorf("write CONNECT response: %v", err)
+			return
+		}
+		go func() { _, _ = io.Copy(upstream, client) }()
+		_, _ = io.Copy(client, upstream)
+	}))
+	defer proxy.Close()
+	unusedHTTPProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("grpc-go selected HTTP_PROXY for an http Actions URL: %s %s", r.Method, r.URL)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer unusedHTTPProxy.Close()
+
+	runProxyChildWithProxies(t, "TestGRPCClientUsesHTTPSProxyCONNECTForH2C", endpoint, unusedHTTPProxy.URL, proxy.URL)
+	select {
+	case got := <-connected:
+		if got != target {
+			t.Errorf("CONNECT target %q, want %q", got, target)
+		}
+	default:
+		t.Fatal("grpc-go did not open the configured HTTP CONNECT proxy")
+	}
+	if fake.count("ListActionGroups") != 1 {
+		t.Fatalf("gRPC server calls %+v; want ListActionGroups over CONNECT+h2c", fake.callLog())
+	}
+	for _, call := range fake.callLog() {
+		if len(call.authorization) != 1 || call.authorization[0] != "Bearer "+testCredential {
+			t.Errorf("authorization metadata %q; want the configured placeholder", call.authorization)
+		}
+	}
+}
+
+func TestGRPCConnectRefusalPreservesProxySourceAndReason(t *testing.T) {
+	if os.Getenv("AGENTPLANE_CLI_PROXY_CHILD") == "1" {
+		code, stdout, stderr := invoke(actionsEnv(os.Getenv("AGENTPLANE_ACTIONS_URL")), "actions", "groups", "--json")
+		got := errorOf(t, stderr)
+		if code != exitTransient || stdout != "" || got.Source != sourceEgress || got.Reason == nil || *got.Reason != "no-rule" {
+			t.Fatalf("exit %d, stdout %q, error %+v; want the egress CONNECT refusal", code, stdout, got)
+		}
+		return
+	}
+
+	connected := make(chan struct{}, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			t.Errorf("proxy method %s, want CONNECT", r.Method)
+		}
+		connected <- struct{}{}
+		w.Header().Set(egressHeader, "denied; reason=no-rule")
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer proxy.Close()
+	endpoint := "http://actions.test.invalid:8080"
+	runProxyChild(t, "TestGRPCConnectRefusalPreservesProxySourceAndReason", endpoint, proxy.URL)
+	select {
+	case <-connected:
+	default:
+		t.Fatal("grpc-go did not send CONNECT through the configured proxy")
 	}
 }
 
 func TestCredentialIsSentAsBearerAndNeverPrinted(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 403, `{"detail":"no"}`) })
+	fake, endpoint := newActionFake(t)
+	fake.getRequest = func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
+		return nil, status.Error(codes.PermissionDenied, "test refusal")
+	}
 	for _, args := range [][]string{{"actions", "get", missingID}, {"actions", "get", missingID, "--json"}} {
-		code, stdout, stderr := invoke(actionsEnv(f.URL), args...)
-		if code != 1 || strings.Contains(stdout+stderr, testCredential) {
+		code, stdout, stderr := invoke(actionsEnv(endpoint), args...)
+		if code != exitRefused || strings.Contains(stdout+stderr, testCredential) {
 			t.Errorf("%v: exit %d; the credential appears in the output: %q %q", args, code, stdout, stderr)
 		}
 	}
-	for _, s := range f.requests("GET") {
-		if s.authorization != "Bearer "+testCredential {
-			t.Errorf("Authorization = %q, want the bearer placeholder", s.authorization)
+	for _, call := range fake.callLog() {
+		if len(call.authorization) != 1 || call.authorization[0] != "Bearer "+testCredential {
+			t.Errorf("authorization metadata = %q, want bearer placeholder", call.authorization)
 		}
 	}
 }
 
-func TestRedirectIsNotFollowed(t *testing.T) {
-	elsewhere := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, `{}`) })
+func TestRedirectIsNotFollowedForTheHTTPClients(t *testing.T) {
+	elsewhere := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, `{"subject":{},"policies":[]}`) })
 	f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ seen) {
 		http.Redirect(w, r, elsewhere.URL, http.StatusFound)
 	})
-	code, _, _ := invoke(actionsEnv(f.URL), "actions", "get", missingID)
-	if code != 1 || elsewhere.count() != 0 {
+	code, _, _ := invoke(egressEnv(f.URL), "egress", "rules", "--json")
+	if code != exitRefused || elsewhere.count() != 0 {
 		t.Errorf("exit %d, %d requests followed the redirect; want exit 1 and none", code, elsewhere.count())
 	}
 }
 
-func TestEachGroupNeedsOnlyItsOwnConfiguration(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ seen) {
-		if r.URL.Path == "/v1/rules" {
-			reply(w, 200, `{"subject":{"namespace":"test-ns","name":"test-sa"},"policies":[]}`)
-			return
-		}
-		if r.URL.Path == "/v1/subscriptions" {
-			reply(w, 200, `{"subscriptions":[]}`)
-			return
-		}
-		reply(w, 200, `[]`)
-	})
-	groups := []struct {
-		env     map[string]string
+func TestEachGroupNeedsItsOwnConfiguration(t *testing.T) {
+	cases := []struct {
 		args    []string
 		missing string
 	}{
-		{actionsEnv(f.URL), []string{"actions", "groups"}, "AGENTPLANE_ACTIONS_URL"},
-		{notificationsEnv(f.URL), []string{"notifications", "subscriptions"}, "AGENTPLANE_NOTIFICATIONS_URL"},
-		{egressEnv(f.URL), []string{"egress", "rules"}, "AGENTPLANE_EGRESS_URL"},
+		{[]string{"actions", "groups"}, "AGENTPLANE_ACTIONS_URL"},
+		{[]string{"notifications", "subscriptions"}, "AGENTPLANE_NOTIFICATIONS_URL"},
+		{[]string{"egress", "rules"}, "AGENTPLANE_EGRESS_URL"},
 	}
-	for i, configured := range groups {
-		for j, command := range groups {
-			before := f.count()
-			code, _, stderr := invoke(configured.env, append(command.args, "--json")...)
-			if i == j {
-				if code != 0 || f.count() != before+1 {
-					t.Errorf("%s with only its own configuration: exit %d, stderr %q", command.args[0], code, stderr)
-				}
-				continue
-			}
-			got := errorOf(t, stderr)
-			if code != 2 || got.Code != "INVALID_ARGUMENT" || !strings.Contains(got.Message, command.missing) || f.count() != before {
-				t.Errorf("%s without its configuration: exit %d, envelope %+v, %d requests; want exit 2 naming %s and no request",
-					command.args[0], code, got, f.count()-before, command.missing)
-			}
+	for _, tc := range cases {
+		code, stdout, stderr := invoke(nil, append(tc.args, "--json")...)
+		got := errorOf(t, stderr)
+		if code != exitUsage || stdout != "" || !strings.Contains(got.Message, tc.missing) {
+			t.Errorf("%v: exit %d, stdout %q, error %+v; want exit 2 naming %s", tc.args, code, stdout, got, tc.missing)
 		}
 	}
 }
 
-func TestUsageErrorsExitBeforeAnyRequest(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, `[]`) })
-	env := actionsEnv(f.URL)
-	maps.Copy(env, notificationsEnv(f.URL))
+func TestUsageErrorsExitBeforeAnyActionRPC(t *testing.T) {
+	fake, endpoint := newActionFake(t)
 	cases := [][]string{
-		{"actions", "no-such-command"},
 		{"actions", "get"},
 		{"actions", "get", missingID, "--key", "k"},
-		{"actions", "get", "--no-such-flag"},
 		{"actions", "show", "no-slash"},
 		{"actions", "submit", "g/a"},
 		{"actions", "submit", "g/a", "--title", "t", "--arguments", "{not json"},
 		{"actions", "submit", "g/a", "--title", "t", "--until", "decision"},
 		{"actions", "wait", missingID, "--until", "never"},
 		{"actions", "requests", "--limit", "-1"},
-		{"actions", "groups", "--timeout", "soon"},
-		{"notifications", "subscribe", "github", "pr", "not-a-pull-request"},
-		{"notifications", "subscribe", "github", "pr", "o/r#1", "--event", ":created"},
-		{"notifications", "subscribe", "github", "pr", "o/r#1", "--event", "no_such_event"},
-		{"actions"},
-		{},
+		{"actions", "events", missingID, "--after", "2147483648"},
+		{"actions", "requests", "--state", "not_a_state"},
 	}
 	for _, args := range cases {
-		code, stdout, stderr := invoke(env, args...)
-		if code != exitUsage || stdout != "" || f.count() != 0 {
-			t.Errorf("%v: exit %d, stdout %q, %d requests (stderr %q); want exit 2, no output, no request", args, code, stdout, f.count(), stderr)
+		code, stdout, stderr := invoke(actionsEnv(endpoint), args...)
+		if code != exitUsage || stdout != "" || fake.count("ListActionGroups")+fake.count("GetAction") +
+			+fake.count("GetActionPolicy") + fake.count("SubmitActionRequest") + fake.count("GetActionRequest") +
+			+fake.count("WatchActionRequest") + fake.count("ListActionRequests") + fake.count("ListActionRequestEvents") != 0 {
+			t.Errorf("%v: exit %d, stdout %q, calls %+v, stderr %q; want exit 2 before any action RPC", args, code, stdout, fake.callLog(), stderr)
 		}
+	}
+}
+
+func TestWaitDeadlineUsesTheClientBudget(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.getRequest = func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
+		return &action_servicepb.GetActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_RUNNING)}, nil
+	}
+	fake.watchRequest = func(_ *action_servicepb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[action_servicepb.WatchActionRequestResponse]) error {
+		<-stream.Context().Done()
+		return status.FromContextError(stream.Context().Err()).Err()
+	}
+	code, _, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "0.2")
+	if code != exitDeadline {
+		t.Errorf("exit %d; want deadline exit after a 0.2s budget", code)
 	}
 }

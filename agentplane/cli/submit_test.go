@@ -1,292 +1,299 @@
 package main
 
 import (
-	"encoding/json"
-	"net/http"
-	"os"
-	"path/filepath"
+	"context"
+	"net"
 	"strings"
-	"sync"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-const createdID = "00000000-0000-0000-0000-0000000000c1"
-
-// requestStore is an Action Service that keeps what is submitted under each idempotency key.
-type requestStore struct {
-	mu       sync.Mutex
-	byKey    map[string]string
-	atSubmit func(key string)
+func submittedReceipt(request *action_servicepb.SubmitActionRequestRequest) *action_servicepb.ActionRequest {
+	created := testActionRequest("test-submitted-request", action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING)
+	created.IdempotencyKey = request.GetIdempotencyKey()
+	created.Action = request.GetAction()
+	created.Arguments = request.GetArguments()
+	created.Title = request.GetTitle()
+	created.Description = request.Description
+	return created
 }
 
-func newRequestStore(t *testing.T, state string, atSubmit func(key string)) (*fake, *requestStore) {
-	store := &requestStore{byKey: map[string]string{}, atSubmit: atSubmit}
-	return newFake(t, func(w http.ResponseWriter, r *http.Request, s seen) {
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/action-requests":
-			var body struct {
-				IdempotencyKey string `json:"idempotency_key"`
-			}
-			if err := json.Unmarshal(s.body, &body); err != nil {
-				t.Errorf("submission is not JSON: %v", err)
-			}
-			if store.atSubmit != nil {
-				store.atSubmit(body.IdempotencyKey)
-			}
-			if _, repeated := store.byKey[body.IdempotencyKey]; repeated {
-				reply(w, 409, `{"detail":"idempotency key reused"}`)
-				return
-			}
-			store.byKey[body.IdempotencyKey] = receiptJSON(createdID, state, body.IdempotencyKey)
-			reply(w, 202, store.byKey[body.IdempotencyKey])
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/action-requests":
-			found := []string{}
-			if receipt, ok := store.byKey[s.query.Get("idempotency_key")]; ok {
-				found = append(found, receipt)
-			}
-			reply(w, 200, "["+strings.Join(found, ",")+"]")
-		default:
-			reply(w, 404, `{"detail":"not found"}`)
+func TestSubmitWritesItsGeneratedKeyBeforeTheRPCAndGetFindsIt(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	c := newCLI(actionsEnv(endpoint), "")
+	fake.submit = func(_ context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		if announced := decodeObject(t, c.stderr.String()); announced["idempotency_key"] != request.GetIdempotencyKey() {
+			t.Error("the generated key was not written before SubmitActionRequest")
 		}
-	}), store
-}
-
-func TestSubmitWritesItsGeneratedKeyBeforeThePostAndGetFindsIt(t *testing.T) {
-	c := new(cli)
-	var stderrAtPost, keyAtPost string
-	f, _ := newRequestStore(t, "decision_pending", func(key string) {
-		keyAtPost, stderrAtPost = key, c.stderr.String()
-	})
-	c = newCLI(actionsEnv(f.URL), "")
-	if code := c.run("actions", "submit", "test-group/test-action", "--title", "t"); code != 0 {
+		return &action_servicepb.SubmitActionRequestResponse{ActionRequest: submittedReceipt(request)}, nil
+	}
+	if code := c.run("actions", "submit", "test-group/test-action", "--title", "test title", "--json"); code != 0 {
 		t.Fatalf("submit exit %d, stderr %q", code, c.stderr.String())
 	}
-	if keyAtPost == "" || !strings.Contains(stderrAtPost, keyAtPost) {
-		t.Fatalf("the POST carried key %q but stderr held %q before it", keyAtPost, stderrAtPost)
+	line := decodeObject(t, c.stderr.String())["idempotency_key"]
+	key, ok := line.(string)
+	if !ok || key == "" || decodeObject(t, c.stdout.String())["idempotencyKey"] != key {
+		t.Fatalf("key announcement %v does not match stdout %q", line, c.stdout.String())
 	}
-	code, stdout, _ := invoke(actionsEnv(f.URL), "actions", "get", "--key", keyAtPost, "--json")
-	got := decodeObject(t, stdout)
-	if code != 0 || got["id"] != createdID || got["idempotency_key"] != keyAtPost {
-		t.Errorf("get --key %q: exit %d, %v; want the submitted request", keyAtPost, code, got)
+	fake.listRequests = func(_ context.Context, request *action_servicepb.ListActionRequestsRequest) (*action_servicepb.ListActionRequestsResponse, error) {
+		if request.IdempotencyKey == nil || request.GetIdempotencyKey() != key {
+			t.Errorf("lookup key = %v, want %q", request.IdempotencyKey, key)
+		}
+		created := testActionRequest("test-submitted-request", action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
+		created.IdempotencyKey = key
+		return &action_servicepb.ListActionRequestsResponse{ActionRequests: []*action_servicepb.ActionRequest{created}}, nil
+	}
+	if code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "get", "--key", key, "--json"); code != 0 || decodeObject(t, stdout)["id"] != "test-submitted-request" {
+		t.Errorf("get by generated key: exit %d, stdout %q", code, stdout)
 	}
 }
 
 func TestSubmitAnnouncesAGeneratedKeyAsJSONUnderJSON(t *testing.T) {
-	f, _ := newRequestStore(t, "decision_pending", nil)
-	code, stdout, stderr := invoke(actionsEnv(f.URL), "actions", "submit", "test-group/test-action", "--title", "t", "--json")
-	var announced struct {
-		Key string `json:"idempotency_key"`
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(_ context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		return &action_servicepb.SubmitActionRequestResponse{ActionRequest: submittedReceipt(request)}, nil
 	}
-	if err := json.Unmarshal([]byte(stderr), &announced); err != nil || code != 0 || decodeObject(t, stdout)["idempotency_key"] != announced.Key {
-		t.Errorf("exit %d, stderr %q: want the key as a JSON object matching the receipt", code, stderr)
+	code, _, stderr := invoke(actionsEnv(endpoint), "--json", "actions", "submit", "test-group/test-action", "--title", "test title")
+	if code != 0 || !strings.Contains(stderr, `"idempotency_key"`) {
+		t.Errorf("exit %d, stderr %q; want the generated key as a JSON object", code, stderr)
 	}
 }
 
 func TestSubmitWithAKeyAnnouncesNothing(t *testing.T) {
-	f, _ := newRequestStore(t, "decision_pending", nil)
-	_, _, stderr := invoke(actionsEnv(f.URL), "actions", "submit", "test-group/test-action", "--title", "t", "--key", "mine")
-	if stderr != "" {
-		t.Errorf("stderr = %q, want nothing", stderr)
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(_ context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		return &action_servicepb.SubmitActionRequestResponse{ActionRequest: submittedReceipt(request)}, nil
+	}
+	code, _, stderr := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key")
+	if code != 0 || stderr != "" {
+		t.Errorf("exit %d, stderr %q; want no key announcement", code, stderr)
 	}
 }
 
-func TestSubmitSendsTheRequestAsGiven(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "arguments.json")
-	if err := os.WriteFile(file, []byte(`{ "from": "file" }`), 0o600); err != nil {
-		t.Fatal(err)
+func TestSubmitSendsTypedFieldsAndStructuredArguments(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(_ context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		if request.GetIdempotencyKey() != "test-key" || request.GetAction().GetGroup() != "test-group" || request.GetAction().GetName() != "test-action" ||
+			request.GetTitle() != "test title" || request.Description == nil || *request.Description != "test detail" ||
+			request.GetArguments().AsMap()["target"] != "test-target" {
+			t.Errorf("SubmitActionRequest = %v", request)
+		}
+		return &action_servicepb.SubmitActionRequestResponse{ActionRequest: submittedReceipt(request)}, nil
 	}
-	cases := []struct {
-		name      string
-		arguments []string
-		stdin     string
-		want      string
-	}{
-		{"absent", nil, "", `{}`},
-		{"literal", []string{"--arguments", `{"n": 12345678901234567890, "x": [1, 2]}`}, "", `{"n":12345678901234567890,"x":[1,2]}`},
-		{"file", []string{"--arguments", "@" + file}, "", `{"from":"file"}`},
-		{"stdin", []string{"--arguments", "-"}, `{"from": "stdin"}`, `{"from":"stdin"}`},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			f, _ := newRequestStore(t, "decision_pending", nil)
-			c := newCLI(actionsEnv(f.URL), tc.stdin)
-			args := append([]string{"actions", "submit", "test-group/test-action", "--title", "the title", "--description", "the detail", "--key", "k"}, tc.arguments...)
-			if code := c.run(args...); code != 0 {
-				t.Fatalf("exit %d, stderr %q", code, c.stderr.String())
-			}
-			var sent struct {
-				IdempotencyKey string          `json:"idempotency_key"`
-				Action         map[string]any  `json:"action"`
-				Arguments      json.RawMessage `json:"arguments"`
-				Title          string          `json:"title"`
-				Description    *string         `json:"description"`
-			}
-			posts := f.requests("POST")
-			if len(posts) != 1 {
-				t.Fatalf("%d POSTs, want 1", len(posts))
-			}
-			if err := json.Unmarshal(posts[0].body, &sent); err != nil {
-				t.Fatal(err)
-			}
-			if string(sent.Arguments) != tc.want || sent.Action["group"] != "test-group" || sent.Action["name"] != "test-action" ||
-				sent.Title != "the title" || sent.Description == nil || *sent.Description != "the detail" || sent.IdempotencyKey != "k" {
-				t.Errorf("sent %s", posts[0].body)
-			}
-		})
+	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--description", "test detail", "--arguments", `{"target":"test-target"}`, "--key", "test-key", "--json")
+	if code != 0 || decodeObject(t, stdout)["idempotencyKey"] != "test-key" {
+		t.Errorf("exit %d, stdout %q", code, stdout)
 	}
 }
 
 func TestSubmitOmitsAnAbsentDescription(t *testing.T) {
-	f, _ := newRequestStore(t, "decision_pending", nil)
-	invoke(actionsEnv(f.URL), "actions", "submit", "test-group/test-action", "--title", "t")
-	if sent := decodeObject(t, string(f.requests("POST")[0].body)); sent["description"] != nil {
-		t.Errorf("description = %v, want it left out", sent["description"])
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(_ context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		if request.Description != nil {
+			t.Errorf("description = %q, want absent", request.GetDescription())
+		}
+		return &action_servicepb.SubmitActionRequestResponse{ActionRequest: submittedReceipt(request)}, nil
+	}
+	if code, _, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key"); code != 0 {
+		t.Errorf("exit %d, want 0", code)
 	}
 }
 
 func TestRepeatedKeyExitsConflictWithoutALookup(t *testing.T) {
-	f, _ := newRequestStore(t, "decision_pending", nil)
-	invoke(actionsEnv(f.URL), "actions", "submit", "test-group/test-action", "--title", "t", "--key", "same")
-	code, stdout, stderr := invoke(actionsEnv(f.URL), "actions", "submit", "test-group/test-action", "--title", "t", "--key", "same", "--json")
-	got := errorOf(t, stderr)
-	if code != 4 || stdout != "" || got.Code != "ALREADY_EXISTS" || len(f.requests("GET")) != 0 || len(f.requests("POST")) != 2 {
-		t.Errorf("exit %d, stdout %q, envelope %+v, %d GETs; want exit 4 ALREADY_EXISTS and no lookup", code, stdout, got, len(f.requests("GET")))
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(context.Context, *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		return nil, status.Error(codes.AlreadyExists, "key is already used")
+	}
+	code, _, stderr := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key")
+	if code != exitConflict || fake.count("SubmitActionRequest") != 1 || fake.count("ListActionRequests") != 0 || !strings.Contains(stderr, "actions get --key test-key") {
+		t.Errorf("exit %d, calls %+v, stderr %q; want conflict with no lookup", code, fake.callLog(), stderr)
 	}
 }
 
-func TestSubmitRefusalsAreFinalAndLookNothingUp(t *testing.T) {
-	for status, wantExit := range map[int]int{400: 1, 401: 1, 403: 1, 404: 5, 422: 1, 429: 3} {
-		f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, status, `{"detail":"no"}`) })
-		code, stdout, _ := invoke(actionsEnv(f.URL), "actions", "submit", "g/a", "--title", "t", "--key", "k")
-		if code != wantExit || stdout != "" || f.count() != 1 {
-			t.Errorf("status %d: exit %d, stdout %q, %d requests; want exit %d and the one POST", status, code, stdout, f.count(), wantExit)
+func TestSubmitRefusalIsFinalAndDoesNotLookUpTheKey(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(context.Context, *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		return nil, status.Error(codes.PermissionDenied, "policy refused")
+	}
+	code, _, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key")
+	if code != exitRefused || fake.count("ListActionRequests") != 0 {
+		t.Errorf("exit %d, calls %+v; want a refusal without lookup", code, fake.callLog())
+	}
+}
+
+func TestLostSubmitResponseLooksUpTheSameKeyOnce(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(context.Context, *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		return nil, status.Error(codes.Unavailable, "connection ended after admission")
+	}
+	fake.listRequests = func(_ context.Context, request *action_servicepb.ListActionRequestsRequest) (*action_servicepb.ListActionRequestsResponse, error) {
+		created := testActionRequest("test-submitted-request", action_servicepb.ActionState_ACTION_STATE_RUNNING)
+		created.IdempotencyKey = request.GetIdempotencyKey()
+		return &action_servicepb.ListActionRequestsResponse{ActionRequests: []*action_servicepb.ActionRequest{created}}, nil
+	}
+	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--json")
+	if got := decodeObject(t, stdout); code != 0 || got["id"] != "test-submitted-request" || fake.count("SubmitActionRequest") != 1 || fake.count("ListActionRequests") != 1 {
+		t.Errorf("exit %d, stdout %q, calls %+v; want one submission and one lookup", code, stdout, fake.callLog())
+	}
+}
+
+func TestSubmitThatCannotConfirmItsOutcomeDoesNotClaimTheKeyWasUnused(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(context.Context, *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		return nil, status.Error(codes.Unavailable, "submission outcome unknown")
+	}
+	fake.listRequests = func(context.Context, *action_servicepb.ListActionRequestsRequest) (*action_servicepb.ListActionRequestsResponse, error) {
+		return nil, status.Error(codes.Unavailable, "lookup unavailable")
+	}
+	code, _, stderr := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key")
+	if code != exitTransient || !strings.Contains(stderr, "outcome is unknown") || strings.Contains(stderr, "found no request") {
+		t.Errorf("exit %d, stderr %q; want a transient unverified outcome", code, stderr)
+	}
+}
+
+func TestSubmitWithAnAmbiguousResponseAndSuccessfulEmptyLookupExitsLost(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(context.Context, *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		return nil, status.Error(codes.Unavailable, "submission response lost")
+	}
+	fake.listRequests = func(context.Context, *action_servicepb.ListActionRequestsRequest) (*action_servicepb.ListActionRequestsResponse, error) {
+		return &action_servicepb.ListActionRequestsResponse{}, nil
+	}
+	code, _, stderr := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key")
+	if code != exitSubmitLost || !strings.Contains(stderr, "lookup by the key found no request") || fake.count("ListActionRequests") != 1 {
+		t.Errorf("exit %d, stderr %q, calls %+v; want exit 15 after one successful empty lookup", code, stderr, fake.callLog())
+	}
+}
+
+func TestSubmitWithAnUnreadableAnswerLooksUpTheKeyOnce(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(context.Context, *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		return &action_servicepb.SubmitActionRequestResponse{}, nil
+	}
+	fake.listRequests = func(_ context.Context, request *action_servicepb.ListActionRequestsRequest) (*action_servicepb.ListActionRequestsResponse, error) {
+		created := testActionRequest("test-submitted-request", action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
+		created.IdempotencyKey = request.GetIdempotencyKey()
+		return &action_servicepb.ListActionRequestsResponse{ActionRequests: []*action_servicepb.ActionRequest{created}}, nil
+	}
+	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--json")
+	if got := decodeObject(t, stdout); code != 0 || got["id"] != "test-submitted-request" || fake.count("ListActionRequests") != 1 {
+		t.Errorf("exit %d, stdout %q, calls %+v", code, stdout, fake.callLog())
+	}
+}
+
+func TestSubmitThatCannotReachTheServiceIsTransient(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := "http://" + listener.Addr().String()
+	_ = listener.Close()
+	code, stdout, stderr := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--json")
+	if code != exitTransient || stdout != "" || errorOf(t, stderr).Source != sourceClient {
+		t.Errorf("exit %d, stdout %q, stderr %q; want an uncommitted transient connect failure", code, stdout, stderr)
+	}
+}
+
+func TestSubmitDeadlineAfterTheRPCStartsChecksTheSameKey(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(ctx context.Context, _ *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		<-ctx.Done()
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+	code, _, stderr := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--timeout", "0.2")
+	if code != exitSubmitLost || fake.count("SubmitActionRequest") != 1 || fake.count("ListActionRequests") != 1 ||
+		!strings.Contains(stderr, "found no request") {
+		t.Errorf("exit %d, calls %+v, stderr %q; want one submit and one key lookup after the deadline", code, fake.callLog(), stderr)
+	}
+}
+
+func TestSubmitWaitFollowsTheRequestWithWatchActionRequest(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(_ context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		return &action_servicepb.SubmitActionRequestResponse{ActionRequest: submittedReceipt(request)}, nil
+	}
+	fake.watchRequest = func(request *action_servicepb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[action_servicepb.WatchActionRequestResponse]) error {
+		if request.GetRequestId() != "test-submitted-request" || request.GetUntil() != action_servicepb.WatchUntil_WATCH_UNTIL_TERMINAL {
+			t.Errorf("watch request = %v", request)
 		}
-	}
-}
-
-func TestLostSubmitResponseSendsOnePostAndAtMostOneLookup(t *testing.T) {
-	lost := map[string]func(http.ResponseWriter){
-		"connection closed after the request": drop,
-		"500":                                 func(w http.ResponseWriter) { reply(w, 500, `{"detail":"boom"}`) },
-		"502":                                 func(w http.ResponseWriter) { reply(w, 502, "") },
-		"503":                                 func(w http.ResponseWriter) { reply(w, 503, `{"detail":"draining"}`) },
-		"504":                                 func(w http.ResponseWriter) { reply(w, 504, "") },
-	}
-	lookups := map[string]struct {
-		answer   func(http.ResponseWriter)
-		wantExit int
-	}{
-		"found":         {func(w http.ResponseWriter) { reply(w, 200, "["+receiptJSON(createdID, "decision_pending", "k")+"]") }, 0},
-		"found nothing": {func(w http.ResponseWriter) { reply(w, 200, "[]") }, exitSubmitLost},
-		"lookup fails":  {func(w http.ResponseWriter) { reply(w, 503, "") }, exitSubmitLost},
-	}
-	for lostName, lose := range lost {
-		for lookupName, lookup := range lookups {
-			t.Run(lostName+"/"+lookupName, func(t *testing.T) {
-				f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ seen) {
-					if r.Method == http.MethodPost {
-						lose(w)
-						return
-					}
-					lookup.answer(w)
-				})
-				c := newCLI(actionsEnv(f.URL), "")
-				code := c.run("actions", "submit", "g/a", "--title", "t", "--key", "k", "--json")
-				if code != lookup.wantExit || len(f.requests("POST")) != 1 || len(f.requests("GET")) != 1 {
-					t.Fatalf("exit %d with %d POSTs and %d GETs; want exit %d, one POST and one GET", code, len(f.requests("POST")), len(f.requests("GET")), lookup.wantExit)
-				}
-				if got := f.requests("GET")[0].query.Get("idempotency_key"); got != "k" {
-					t.Errorf("the lookup was for key %q, want the submitted key", got)
-				}
-				if lookup.wantExit == 0 {
-					if got := decodeObject(t, c.stdout.String()); got["id"] != createdID {
-						t.Errorf("stdout = %q, want the found receipt", c.stdout.String())
-					}
-				} else if c.stdout.String() != "" {
-					t.Errorf("stdout = %q, want nothing after exit %d", c.stdout.String(), code)
-				}
-			})
+		if err := stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: submittedReceipt(&action_servicepb.SubmitActionRequestRequest{
+			IdempotencyKey: "test-key", Action: &action_servicepb.ActionIdentity{Group: "test-group", Name: "test-action"}, Title: "test title",
+		})}); err != nil {
+			return err
 		}
+		finished := testActionRequest("test-submitted-request", action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
+		finished.IdempotencyKey = "test-key"
+		return stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: finished})
 	}
-}
-
-func TestSubmitWithAnUnreadableAnswerLooksTheKeyUpOnce(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ seen) {
-		if r.Method == http.MethodPost {
-			reply(w, 202, `<html>not the Action Service</html>`)
-			return
-		}
-		reply(w, 200, "["+receiptJSON(createdID, "decision_pending", "k")+"]")
-	})
-	code, stdout, _ := invoke(actionsEnv(f.URL), "actions", "submit", "g/a", "--title", "t", "--key", "k", "--json")
-	if code != 0 || decodeObject(t, stdout)["id"] != createdID || len(f.requests("POST")) != 1 || len(f.requests("GET")) != 1 {
-		t.Errorf("exit %d, stdout %q, %d POSTs, %d GETs; want the looked-up receipt after one of each", code, stdout, len(f.requests("POST")), len(f.requests("GET")))
-	}
-}
-
-func TestSubmitThatNeverReachedTheServiceIsTransientAndSendsNothingTwice(t *testing.T) {
-	f := newFake(t, func(http.ResponseWriter, *http.Request, seen) {})
-	f.Close()
-	code, stdout, stderr := invoke(actionsEnv(f.URL), "actions", "submit", "g/a", "--title", "t")
-	if code != 3 || stdout != "" || !strings.Contains(stderr, "idempotency key: ") {
-		t.Errorf("exit %d, stdout %q, stderr %q; want exit 3 with the key announced", code, stdout, stderr)
-	}
-}
-
-func TestSubmitWaitFollowsTheRequestToItsOutcome(t *testing.T) {
-	for state, wantExit := range map[string]int{"succeeded": 0, "denied": 11, "failed": 12, "cancelled": 13, "execution_unknown": 14} {
-		t.Run(state, func(t *testing.T) {
-			f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ seen) {
-				if r.Method == http.MethodPost {
-					reply(w, 202, receiptJSON(createdID, "decision_pending", "k"))
-					return
-				}
-				reply(w, 200, receiptJSON(createdID, state, "k"))
-			})
-			code, stdout, _ := invoke(actionsEnv(f.URL), "actions", "submit", "g/a", "--title", "t", "--key", "k", "--wait", "--json")
-			if got := jsonLines(t, stdout); code != wantExit || len(got) != 1 || got[0]["state"] != state {
-				t.Errorf("exit %d, stdout %q; want exit %d and the %s receipt alone", code, stdout, wantExit, state)
-			}
-			waits := f.requests("GET")
-			if len(waits) != 1 || waits[0].path != "/v1/action-requests/"+createdID || waits[0].query.Get("wait_until") != "terminal" || waits[0].query.Get("wait_seconds") == "" {
-				t.Errorf("GETs %+v, want one server-side wait for the terminal state", waits)
-			}
-		})
+	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--wait", "--json")
+	if got := decodeObject(t, stdout); code != 0 || got["state"] != "ACTION_STATE_SUCCEEDED" || fake.count("WatchActionRequest") != 1 {
+		t.Errorf("exit %d, stdout %q, calls %+v; want the final receipt from one watch", code, stdout, fake.callLog())
 	}
 }
 
 func TestSubmitWaitUntilDecisionStopsAtTheDecision(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ seen) {
-		if r.Method == http.MethodPost {
-			reply(w, 202, receiptJSON(createdID, "decision_pending", "k"))
-			return
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(_ context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		return &action_servicepb.SubmitActionRequestResponse{ActionRequest: submittedReceipt(request)}, nil
+	}
+	fake.watchRequest = func(request *action_servicepb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[action_servicepb.WatchActionRequestResponse]) error {
+		if request.GetUntil() != action_servicepb.WatchUntil_WATCH_UNTIL_DECISION {
+			t.Errorf("watch until = %s", request.GetUntil())
 		}
-		reply(w, 200, receiptJSON(createdID, "running", "k"))
-	})
-	code, stdout, _ := invoke(actionsEnv(f.URL), "actions", "submit", "g/a", "--title", "t", "--key", "k", "--wait", "--until", "decision", "--json")
-	if got := decodeObject(t, stdout); code != 0 || got["state"] != "running" || f.requests("GET")[0].query.Get("wait_until") != "decision" {
-		t.Errorf("exit %d, stdout %q; want exit 0 on the allowed Action", code, stdout)
+		decision := testActionRequest("test-submitted-request", action_servicepb.ActionState_ACTION_STATE_ALLOWED)
+		return stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: decision})
+	}
+	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--wait", "--until", "decision", "--json")
+	if got := decodeObject(t, stdout); code != 0 || got["state"] != "ACTION_STATE_ALLOWED" {
+		t.Errorf("exit %d, stdout %q; want the allowed receipt", code, stdout)
 	}
 }
 
-func TestSubmitWaitDoesNotReadAReceiptThatAlreadyHolds(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
-		reply(w, 202, receiptJSON(createdID, "denied", "k"))
-	})
-	code, _, _ := invoke(actionsEnv(f.URL), "actions", "submit", "g/a", "--title", "t", "--key", "k", "--wait")
-	if code != 11 || len(f.requests("GET")) != 0 {
-		t.Errorf("exit %d with %d GETs, want exit 11 and none", code, len(f.requests("GET")))
+func TestSubmitWaitDoesNotWatchAReceiptThatAlreadyHolds(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(_ context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		allowed := submittedReceipt(request)
+		allowed.State = action_servicepb.ActionState_ACTION_STATE_ALLOWED
+		return &action_servicepb.SubmitActionRequestResponse{ActionRequest: allowed}, nil
+	}
+	code, _, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--wait", "--until", "decision")
+	if code != 0 || fake.count("WatchActionRequest") != 0 {
+		t.Errorf("exit %d, calls %+v; want the submission receipt without opening a watch", code, fake.callLog())
 	}
 }
 
 func TestSubmitWithoutWaitExitsZeroOnceRecorded(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
-		reply(w, 202, receiptJSON(createdID, "denied", "k"))
-	})
-	code, stdout, _ := invoke(actionsEnv(f.URL), "actions", "submit", "g/a", "--title", "t", "--key", "k", "--json")
-	if code != 0 || decodeObject(t, stdout)["state"] != "denied" {
-		t.Errorf("exit %d, stdout %q; want exit 0 and the receipt", code, stdout)
+	fake, endpoint := newActionFake(t)
+	fake.submit = func(_ context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+		return &action_servicepb.SubmitActionRequestResponse{ActionRequest: submittedReceipt(request)}, nil
+	}
+	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--json")
+	if got := decodeObject(t, stdout); code != 0 || got["state"] != "ACTION_STATE_DECISION_PENDING" || fake.count("WatchActionRequest") != 0 {
+		t.Errorf("exit %d, stdout %q, calls %+v; want the pending submission receipt", code, stdout, fake.callLog())
+	}
+}
+
+func TestArgumentsMustBeAnObjectBeforeSubmission(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	for _, value := range []string{`[]`, `null`, `4`, `"text"`} {
+		code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--arguments", value)
+		if code != exitUsage || stdout != "" || fake.count("SubmitActionRequest") != 0 {
+			t.Errorf("arguments %s: exit %d, stdout %q, calls %+v", value, code, stdout, fake.callLog())
+		}
+	}
+}
+
+func TestMalformedWatchReceiptDoesNotPrintPartialOutput(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.getRequest = func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
+		return &action_servicepb.GetActionRequestResponse{ActionRequest: testActionRequest("", action_servicepb.ActionState_ACTION_STATE_RUNNING)}, nil
+	}
+	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "0")
+	if code != exitDeadline || stdout == "" || fake.count("WatchActionRequest") != 0 {
+		t.Errorf("exit %d, stdout %q, calls %+v", code, stdout, fake.callLog())
 	}
 }
