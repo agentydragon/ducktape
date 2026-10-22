@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import logging
-import textwrap
 
 import pytest_bazel
 from hamcrest import all_of, assert_that
@@ -25,6 +24,7 @@ from more_itertools import one
 from agent_core.testing.responses import PlayGen
 from mcp_infra.testing.matchers import exited_successfully, stdout_contains
 from props.agents.critic.testing.mocks import CriticMock
+from props.agents.critic_dev.registry_push_probe import CONTAINER_SCRIPT_PATH
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
@@ -40,8 +40,13 @@ from props.db.models import AgentRun, AgentRunStatus
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.mocks import get_system_prompt_text
 from util.exec.models import BaseExecResult
+from util.oci import BazelImage
 
 logger = logging.getLogger(__name__)
+
+_CRITIC_REGISTRY_PROBE_IMAGE = BazelImage(
+    repo_name="critic", image_rlocation="_main/props/agents/critic_dev/critic_registry_probe_image"
+)
 
 
 # Test timeout (seconds)
@@ -155,38 +160,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
                 assert optimizer_run.status == AgentRunStatus.EXITED, f"Expected COMPLETED, got {optimizer_run.status}"
 
 
-# Runs inside the critic container with the credentials it was launched with and reports the status the registry
-# proxy answers at each step of an image push. Stdlib only: the critic image carries no crane or curl.
-_REGISTRY_PUSH_PROBE = textwrap.dedent(
-    """\
-    import base64, hashlib, json, os, urllib.error, urllib.request
-
-    auth = base64.b64encode(f"{os.environ['PGUSER']}:{os.environ['PGPASSWORD']}".encode()).decode()
-    manifest = b'{"schemaVersion": 2}'
-
-
-    def status(method, path, body=None):
-        url = os.environ["PROPS_REGISTRY_URL"] + path
-        request = urllib.request.Request(url, data=body, method=method, headers={"Authorization": "Basic " + auth})
-        try:
-            with urllib.request.urlopen(request, timeout=20) as response:
-                return response.status
-        except urllib.error.HTTPError as error:
-            return error.code
-
-
-    digest = hashlib.sha256(manifest).hexdigest()
-    statuses = {
-        "api_check": status("GET", "/v2/"),
-        "blob_upload": status("POST", "/v2/critic/blobs/uploads/", b""),
-        "manifest_put": status("PUT", f"/v2/critic/manifests/sha256:{digest}", manifest),
-    }
-    print(json.dumps(statuses, sort_keys=True))
-    """
-)
-
-
-async def test_critic_cannot_push_images(e2e_stack, all_files_scope, critic_image):
+async def test_critic_cannot_push_images(e2e_stack, all_files_scope):
     """A critic's own credentials authenticate to the registry proxy, but both steps of an image push are refused.
 
     The first request anchors the other two: the proxy accepts the credentials, so the refusals come from the
@@ -198,12 +172,12 @@ async def test_critic_cannot_push_images(e2e_stack, all_files_scope, critic_imag
     @CriticMock.mock()
     def mock(m: CriticMock) -> PlayGen:
         yield None  # First request
-        probes.append((yield from m.exec_roundtrip(["python3", "-c", _REGISTRY_PUSH_PROBE], timeout_ms=60000)))
+        probes.append((yield from m.exec_roundtrip(["python3", CONTAINER_SCRIPT_PATH], timeout_ms=60000)))
         yield m.submit(issues_count=0, summary="Registry probe completed")
 
-    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[_CRITIC_REGISTRY_PROBE_IMAGE]) as stack:
         await stack.registry.run_critic(
-            image=stack.resolved_images["critic"],
+            image=stack.resolved_images[_CRITIC_REGISTRY_PROBE_IMAGE.repo_name],
             example=all_files_scope,
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
