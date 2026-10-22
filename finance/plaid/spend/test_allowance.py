@@ -2,7 +2,6 @@
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -40,6 +39,7 @@ from finance.plaid.spend.models import (
     SpendConfigurationView,
     load_configuration,
 )
+from util.bazel.runfiles import get_required_path
 
 START = datetime(2026, 1, 31, tzinfo=UTC)
 START_DATE = date(2026, 1, 31)
@@ -638,46 +638,7 @@ def test_one_off_scope_is_validated_from_its_condition():
 
 
 def test_one_off_yaml_round_trip_and_configuration_view():
-    document = """
-cards: []
-allowance:
-  monthly_minor_units: 100000
-  activation_at: 2026-01-31
-  spending_account_ids:
-    - example-credit-id
-  analysis_categories:
-    fixed_travel:
-      label: Holiday travel
-      color: "#DB2777"
-    unclassified:
-      label: Unclassified
-      color: "#D97706"
-  rules:
-    - condition:
-        type: all_of
-        conditions:
-          - type: name_prefix
-            field: name
-            prefix: EXAMPLE HOTEL
-          - type: date_range
-            start: 2026-06-04
-            end: 2026-06-04
-          - type: amount_exact
-            value: '2430.78'
-      kind: fixed
-      scope: one_off
-      id: example-hotel-2026-06-04
-      analysis_category: fixed_travel
-      description: Confirmed example holiday stay; date and amount limit this to the observed charge.
-    - condition:
-        type: name_prefix
-        field: name
-        prefix: EXAMPLE RENT
-      kind: fixed
-      analysis_category: fixed_travel
-"""
-    path = Path("/tmp/ducktape-one-off-round-trip.yaml")
-    path.write_text(document, encoding="utf-8")
+    path = get_required_path("_main/finance/plaid/spend/one-off-configuration.yaml")
     loaded = load_configuration(path)
     parsed = loaded.allowance
     assert parsed is not None

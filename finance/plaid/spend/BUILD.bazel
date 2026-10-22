@@ -61,11 +61,13 @@ py_library(
 py_test(
     name = "test_allowance",
     srcs = ["test_allowance.py"],
+    data = ["one-off-configuration.yaml"],
     deps = [
         ":allowance",
         ":conftest",
         ":models",
         "//:conftest",
+        "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
