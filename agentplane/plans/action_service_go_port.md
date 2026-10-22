@@ -15,16 +15,24 @@ the first attempt. Cleanup selected the Sandbox by UID; its Pod and both PVCs we
 The check did not read request or credential values; it confirms the Goose baseline and records the
 pre-cutover row counts.
 
+**Stage N service cutover accepted (2026-10-22; manual client reauthorization remains).** Actions is live
+on Go in both staging and testing; Goose applied migrations 1–3. Staging retained its 4,597 requests,
+one Connection and three grants, and the original
+Sandbox identities. A disposable staging catalog probe (UID prefix `31fe1a2c`) succeeded through the
+Runner and egress path and was removed. Public discovery, protected-resource and CIMD metadata returned
+200; `/mcp` returned 401 with the expected challenge. External-user reauthorization remains a manual
+follow-up; no end-to-end external login is claimed.
+
 The approved destination keeps the Actions lifecycle, policies, executors and Web Push in
 `actions`; Connections, OAuth and `/mcp` become `mcp-edge` after the runtime cutover. Both still run
 in the one Go binary until that separate extraction.
 
 ## Remaining stages
 
-| Stage | Status                   | Change                                                                                                                                                                                                                           |
-| ----- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| N     | Source cutover in review | Staging: use the verified testing images, preserve the database and Sandbox storage, and have external MCP clients re-authorize once. Reconcile only after merge; do not resume existing Sandboxes as part of the source change. |
-| O     | Pending                  | Retire the Python service, obsolete tests/Alembic/migration image and dependencies after staging validation and the rollback window. Drop unused stored columns only with new migrations.                                        |
+| Stage | Status   | Change                                                                                                                                                                                                                                                                               |
+| ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| N     | Accepted | Go Actions and Goose are live in staging and testing; existing Action/Connection/grant counts and Sandbox identities are preserved. The disposable Runner/egress catalog probe and public-route metadata/authentication checks passed. External-user reauthorization remains manual. |
+| O     | Active   | Retire Python parity generators/tests in small steps; retire the Python service, Alembic/migration image and dependencies after staging validation and the rollback window. Drop unused stored columns only with new migrations.                                                     |
 
 ## Cutover requirements
 
