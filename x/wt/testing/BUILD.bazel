@@ -90,3 +90,13 @@ py_library(
         "@pypi//typer_slim",
     ],
 )
+
+filegroup(
+    name = "post_create_shell",
+    srcs = ["post_create.sh"],
+)
+
+py_library(
+    name = "post_create",
+    srcs = ["post_create.py"],
+)

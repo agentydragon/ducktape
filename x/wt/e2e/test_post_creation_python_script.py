@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from util.bazel.runfiles import get_required_path
 from x.wt.testing.conftest import kill_daemon_at_wt_dir
 
 
@@ -15,33 +16,8 @@ def real_env_with_python_post_script(real_temp_repo, daemon_config_factory, tmp_
     The hook verifies stdin is valid, parses required args, emits stdout/stderr,
     and writes a marker file in the new worktree root.
     """
-    # Create Python post-create script
     script = tmp_path / "post_create.py"
-    script.write_text(
-        """#!/usr/bin/env python3
-import sys, argparse
-from pathlib import Path
-
-# Verify stdin is valid (raises if fd 0 is bad)
-sys.stdin.fileno()
-
-p = argparse.ArgumentParser()
-p.add_argument("--worktree_root", required=True)
-p.add_argument("--worktree_name", required=True)
-args, _ = p.parse_known_args()
-
-root = Path(args.worktree_root)
-if not root.exists():
-    print("worktree root does not exist", file=sys.stderr)
-    sys.exit(3)
-
-print("py post-create: hello from stdout")
-print("py post-create: hello from stderr", file=sys.stderr)
-
-(root / ".py_post_create_ran").write_text("ok")
-""",
-        encoding="utf-8",
-    )
+    script.write_text(get_required_path("_main/x/wt/testing/post_create.py").read_text(), encoding="utf-8")
     script.chmod(0o755)
 
     # Configure environment (WT_DIR) with this post-creation script

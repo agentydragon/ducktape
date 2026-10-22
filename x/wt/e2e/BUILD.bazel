@@ -84,10 +84,12 @@ py_test(
     data = [
         "//third_party/gitstatusd",
         "//x/wt:wt_cli",
+        "//x/wt/testing:post_create",
     ],
     deps = [
         ":conftest",
         "//:conftest",
+        "//util/bazel:runfiles",
         "//x/wt/testing:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

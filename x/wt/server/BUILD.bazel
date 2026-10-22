@@ -223,10 +223,12 @@ py_binary(
 py_test(
     name = "test_worktree_service",
     srcs = ["test_worktree_service.py"],
+    data = ["//x/wt/testing:post_create_shell"],
     deps = [
         ":conftest",
         ":worktree_service",
         "//:conftest",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
