@@ -15,7 +15,7 @@ def _status(auth: str, method: str, path: str, body: bytes | None = None) -> int
     request = urllib.request.Request(url, data=body, method=method, headers={"Authorization": "Basic " + auth})
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
-            return response.status
+            return int(response.status)
     except urllib.error.HTTPError as error:
         return error.code
 
