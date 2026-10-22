@@ -1,0 +1,158 @@
+# Forgejo encryption-key cutover
+
+One-off migration for Forgejo **15.0.8**, database schema **305**. `check` uses a
+read-only, repeatable-read transaction. `apply` locks the relevant tables,
+authenticates every old ciphertext, re-encrypts it, verifies the stored result,
+and commits together. Wrong keys, changed counts, or unsupported key-dependent
+records abort the transaction. No keys, ciphertexts or plaintext values are logged.
+
+Only Actions `secret.data` and pull-mirror `mirror.encrypted_remote_address` are
+migrated. TOTP, push mirrors, encrypted webhook authorization, tasks and LDAP must
+remain absent. Extend the migration after inspecting Forgejo if that changes.
+
+The format follows tagged upstream [keying](https://code.forgejo.org/forgejo/forgejo/src/tag/v15.0.8/modules/keying/keying.go),
+[Actions](https://code.forgejo.org/forgejo/forgejo/src/tag/v15.0.8/models/secret/secret.go)
+and [mirror](https://code.forgejo.org/forgejo/forgejo/src/tag/v15.0.8/models/repo/mirror.go)
+code: HKDF-SHA256 without salt, domain-separated 32-byte keys, XChaCha20-Poly1305,
+and AAD consisting of a field name, colon and big-endian row ID. Mirror AAD uses
+`remote_address_auth`, **not** its database column name. PyCryptodome supplies the
+cryptographic primitives.
+
+## Staging and activation
+
+`cluster/k8s/forgejo/forgejo-secret-key.sops.yaml` contains:
+
+- `current`: the existing public placeholder, retained for a compatible staging rollout.
+- `replacement`: a newly generated random key; inactive until the maintenance cutover.
+
+Forgejo mounts only `current`, at `/etc/forgejo-key/secret-key`. Staging still
+supplies the inline `SECRET_KEY` through Helm `valuesFrom`, using that same SOPS
+field. It does not change the shared `app.ini` to use the mount yet: during this
+first rolling update, old replicas' Git/SSH subprocesses cannot read a mount
+their pods do not have.
+
+**Merging the staging PR does not rotate the effective encryption key.** Wait for
+both replicas to finish that rollout and verify each mounts the staged `current`
+key and still uses that effective key, without an environment override. Compare
+inside the pod without printing key material or stable hashes.
+
+Prepare the activation commit in advance:
+
+```bash
+git apply --check cluster/forgejo_key_migration/activation.patch
+git apply cluster/forgejo_key_migration/activation.patch
+bb run //cluster/cdk8s:generate_manifests
+```
+
+The patch selects `replacement`, switches to `SECRET_KEY_URI`, converts the
+retained inline setting in `initPreScript`, suppresses the chart's generated
+inline key on a fresh install, and explicitly suspends the HelmRelease. Inspect
+the regenerated diff. Publish it only during the coordinated window below.
+Keep the `current` field for rollback.
+
+## Rehearsal prerequisites
+
+Before production `apply`:
+
+1. Restore a recent database backup into an isolated namespace, alongside the
+   matching configuration/key. Keep private contents inside the cluster; do not
+   upload the backup to CI. Block mail, hooks, mirror pushes and other external
+   side effects in the restored Forgejo deployment.
+2. Confirm the exact Forgejo image/version and inventory. The audited inventory
+   on 2026-10-22 was four Actions secrets and one encrypted mirror address.
+3. Exercise `check`, `apply`, and reverse `apply` against the restored database.
+   Start the same Forgejo version under the replacement key and exercise its
+   Actions-secret and mirror reads. A Python encrypt/decrypt round trip alone
+   does not establish interoperability with Forgejo.
+4. Record the backup/restore identifiers, image digest and observations in the
+   owning `cluster/debug/` investigation. Rehearsal is a gate for live cutover,
+   not an action performed by merging this code.
+
+## Running the Job
+
+The image is published to GHCR by the existing image pipeline. Resolve and pull
+its immutable digest **before** stopping Forgejo; verify the actual Job nodes can
+pull it without the Forgejo registry. `job.yaml` is deliberately outside Flux's
+manifest roots and is never automatically applied.
+
+For production, its database and key mounts already name the correct Secrets.
+For rehearsal, change the namespace, database endpoint and Secret references to
+the isolated copies. TLS verifies the CNPG service certificate against its CA.
+
+From the repo's Nix devshell:
+
+```bash
+export MIGRATION_IMAGE='ghcr.io/agentydragon/forgejo-key-migration@sha256:REPLACE_WITH_PUBLISHED_DIGEST'
+export EXPECTED_SECRETS=4 EXPECTED_MIRRORS=1
+export JOB_NAME=check MODE=check SOURCE_KEY=current TARGET_KEY=replacement
+envsubst '${MIGRATION_IMAGE} ${EXPECTED_SECRETS} ${EXPECTED_MIRRORS} ${JOB_NAME} ${MODE} ${SOURCE_KEY} ${TARGET_KEY}' \
+  < cluster/forgejo_key_migration/job.yaml | kubectl create -f -
+kubectl -n forgejo wait --for=condition=complete job/forgejo-key-check --timeout=300s
+kubectl -n forgejo logs job/forgejo-key-check
+```
+
+`check` may run while Forgejo serves traffic, but its snapshot does not guarantee
+the inventory stays unchanged. Review changed counts; do not merely increase
+the expected numbers to make the guard pass.
+
+## Production window
+
+1. Pause new CI work and credential writers. Suspend the `haku-state` Terraform
+   resource in `flux-system` and the `agents-infra/forgejo-token-rotation` CronJob; wait for their
+   existing jobs to finish. Preserve their original suspension states.
+2. Suspend Flux Kustomization `ducktape-flux/forgejo`, then HelmRelease
+   `forgejo/forgejo`. Scale Deployment `forgejo/forgejo` to zero and wait until
+   **all** its pods, including init containers and terminating pods, are gone.
+   Do not delete its PVCs, database or other persistent resources.
+3. Take the final CNPG plugin backup and preserve the current `app.ini` securely.
+   Wait for backup completion; verify it belongs to `forgejo-db-ssd`. Record the
+   restore point. The rehearsed restore must cover this schema and configuration.
+4. Set `JOB_NAME=apply MODE=apply`, keep the reviewed counts/key direction, and
+   repeat the `envsubst | kubectl create` command. Wait for
+   `job/forgejo-key-apply` and read its sanitized logs. No automatic retries are
+   configured. Keep Forgejo stopped after commit.
+5. Merge the prepared activation commit. Resume the Forgejo Kustomization so it
+   applies the new Helm values **and the explicitly suspended HelmRelease**.
+   Verify the source revision, key selection `replacement`, and suspended state;
+   suspend that Kustomization again, then resume the HelmRelease. Its chart
+   restores the configured replicas.
+   A mounted Secret changing does not reload the key in an existing process.
+6. Verify both replicas use `SECRET_KEY_URI`, have no populated inline key or
+   environment override, and match the replacement key without printing it.
+   Exercise Forgejo's Actions-secret reads and mirror synchronization. Restarting Forgejo permits
+   new writes; the simple backup rollback boundary ends here.
+7. Rotate Haku's underlying password through `tf/gitops/haku-state`, verify the
+   plan orders the user change and every distributed copy correctly, then resume
+   its controller. Verify Git, CI clone/build/push, registry pulls and Flux access.
+   Replace/revoke Haku PATs through their owners; password changes do not revoke
+   them. Resume the token rotator only after its source credentials converge.
+8. Remove the temporary declarative HelmRelease suspension and the applied
+   `activation.patch` in a cleanup commit,
+   resume its Kustomization, restore remaining paused work and take a fresh
+   backup. Clean up the one-off Jobs after retaining their sanitized evidence.
+
+The activation commit's explicit suspension prevents Flux from dropping a live
+maintenance override while applying new values. Check for a pending Helm
+operation before proceeding; suspension does not cancel one already running.
+No production database write or credential rotation is triggered by this PR.
+
+## Failure and rollback
+
+- Before commit, any SQL/decryption/verification failure rolls back the entire
+  transaction. Keep Forgejo stopped and investigate. If the connection fails at
+  commit, success is **unknown**; authenticate all rows with `check` in both
+  directions to establish which key is in use before taking further action.
+- After commit, before restarting Forgejo, either restore the final backup with
+  the corresponding old key/configuration, or run reverse `apply`: set
+  `JOB_NAME=rollback MODE=apply SOURCE_KEY=replacement TARGET_KEY=current` and
+  use the same reviewed counts. After successful reversal select `current` in
+  the generator again before starting either replica.
+- After restart or credential rotation, stop writers again and inventory fresh
+  data. Prefer forward repair or a reviewed reverse migration. Do not restore a
+  stale whole database over new writes or reintroduce revoked credentials.
+- Rerunning forward `apply` after success fails old-key authentication without
+  changing rows. Do not switch the mounted key based only on a Job's existence.
+
+Re-encryption preserves the existing secret values. It does not revoke credentials
+recoverable from old backups, establish that no one accessed them, or replace the
+separate Haku credential/token recovery work.

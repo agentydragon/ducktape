@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: forgejo-key-${JOB_NAME}
+  namespace: forgejo
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      containers:
+        - name: migrate
+          image: ${MIGRATION_IMAGE}
+          args:
+            - ${MODE}
+            - --old-key-file=/keys/${SOURCE_KEY}
+            - --new-key-file=/keys/${TARGET_KEY}
+            - --database-host=forgejo-db-ssd-rw.forgejo.svc
+            - --database-name=forgejo
+            - --database-user-file=/database/username
+            - --database-password-file=/database/password
+            - --database-ca-file=/database-ca/ca.crt
+            - --expect-secrets=${EXPECTED_SECRETS}
+            - --expect-mirrors=${EXPECTED_MIRRORS}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          volumeMounts:
+            - name: keys
+              mountPath: /keys
+              readOnly: true
+            - name: database
+              mountPath: /database
+              readOnly: true
+            - name: database-ca
+              mountPath: /database-ca
+              readOnly: true
+      volumes:
+        - name: keys
+          secret:
+            secretName: forgejo-secret-key
+            defaultMode: 288
+            items:
+              - key: current
+                path: current
+              - key: replacement
+                path: replacement
+        - name: database
+          secret:
+            secretName: forgejo-db-ssd-creds
+            defaultMode: 288
+            items:
+              - key: username
+                path: username
+              - key: password
+                path: password
+        - name: database-ca
+          secret:
+            secretName: forgejo-db-ssd-ca
+            items:
+              - key: ca.crt
+                path: ca.crt

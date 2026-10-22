@@ -7,3 +7,4 @@ resources:
   - cache/cache.k8s.yaml
   - app.k8s.yaml
   - forgejo-admin-password.sops.yaml
+  - forgejo-secret-key.sops.yaml

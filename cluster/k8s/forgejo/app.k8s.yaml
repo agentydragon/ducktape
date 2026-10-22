@@ -105,14 +105,26 @@ spec:
       - mountPath: /etc/ssl/certs/cluster-ca
         name: cluster-ca
         readOnly: true
+      - mountPath: /etc/forgejo-key
+        name: secret-key
+        readOnly: true
     extraInitVolumeMounts:
       - mountPath: /etc/ssl/certs/cluster-ca
         name: cluster-ca
+        readOnly: true
+      - mountPath: /etc/forgejo-key
+        name: secret-key
         readOnly: true
     extraVolumes:
       - configMap:
           name: cluster-internal-ca-bundle
         name: cluster-ca
+      - name: secret-key
+        secret:
+          items:
+            - key: current
+              path: secret-key
+          secretName: forgejo-secret-key
     gitea:
       additionalConfigFromEnvs:
         - name: FORGEJO__metrics__TOKEN
@@ -169,7 +181,6 @@ spec:
           TYPE: redis
         security:
           INSTALL_LOCK: true
-          SECRET_KEY: change-this-secret-key-in-production
         server:
           DISABLE_SSH: false
           DOMAIN: git.allegedly.works
@@ -229,6 +240,10 @@ spec:
         maxUnavailable: 1
       type: RollingUpdate
   valuesFrom:
+    - kind: Secret
+      name: forgejo-secret-key
+      targetPath: gitea.config.security.SECRET_KEY
+      valuesKey: current
     - kind: Secret
       name: forgejo-db-ssd-creds
       targetPath: gitea.config.database.PASSWD

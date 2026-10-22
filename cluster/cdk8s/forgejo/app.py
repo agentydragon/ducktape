@@ -60,6 +60,8 @@ HTTP = ServiceRef(
 _SSH = ServiceRef(name="forgejo-ssh", port=Port(name="ssh", number=2222), pods=HTTP.pods)
 _VALKEY = f"redis://{cache.MASTER.host}:{cache.MASTER.port.number}/0"
 _CLUSTER_CA_MOUNT = {"name": "cluster-ca", "mountPath": "/etc/ssl/certs/cluster-ca", "readOnly": True}
+_SECRET_KEY = SecretRef(namespace=_NAMESPACE, name="forgejo-secret-key").key("current")
+_SECRET_KEY_MOUNT = {"name": "secret-key", "mountPath": "/etc/forgejo-key", "readOnly": True}
 
 
 def _git_storage(scope: Construct) -> None:
@@ -227,7 +229,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
                 # never go to BuildBuddy/RBE or any external CI. See haku/PLAN.md.
                 "actions": {"ENABLED": True},
                 "metrics": {"ENABLED": True},
-                "security": {"INSTALL_LOCK": True, "SECRET_KEY": "change-this-secret-key-in-production"},
+                "security": {"INSTALL_LOCK": True},
                 "database": {
                     "DB_TYPE": "postgres",
                     "HOST": f"{db.POSTGRES.rw.host}:{db.POSTGRES.rw.port.number}",
@@ -265,9 +267,18 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
         # Trust cluster CA bundle (includes Let's Encrypt staging CA)
         "deployment": {"env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}]},
         # Mount CA bundle (includes Let's Encrypt staging CA when in staging mode)
-        "extraVolumes": [{"name": "cluster-ca", "configMap": {"name": "cluster-internal-ca-bundle"}}],
-        "extraContainerVolumeMounts": [_CLUSTER_CA_MOUNT],
-        "extraInitVolumeMounts": [_CLUSTER_CA_MOUNT],
+        "extraVolumes": [
+            {"name": "cluster-ca", "configMap": {"name": "cluster-internal-ca-bundle"}},
+            {
+                "name": "secret-key",
+                "secret": {
+                    "secretName": _SECRET_KEY.secret.name,
+                    "items": [{"key": _SECRET_KEY.key, "path": "secret-key"}],
+                },
+            },
+        ],
+        "extraContainerVolumeMounts": [_CLUSTER_CA_MOUNT, _SECRET_KEY_MOUNT],
+        "extraInitVolumeMounts": [_CLUSTER_CA_MOUNT, _SECRET_KEY_MOUNT],
         "service": {
             "http": {"type": "ClusterIP", "port": HTTP.port.number},
             "ssh": {"type": "ClusterIP", "port": _SSH.port.number},
@@ -332,13 +343,21 @@ def _helm_release(scope: Construct, *, storage: s3.PrivateBucket) -> None:
         install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=-1)),
         upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=-1)),
         values_from=[
+            # Keep the current effective key until the offline cutover. The
+            # activation patch replaces this injection with SECRET_KEY_URI.
+            HelmReleaseSpecValuesFrom(
+                kind=HelmReleaseSpecValuesFromKind.SECRET,
+                name=_SECRET_KEY.secret.name,
+                values_key=_SECRET_KEY.key,
+                target_path="gitea.config.security.SECRET_KEY",
+            ),
             HelmReleaseSpecValuesFrom(
                 kind=HelmReleaseSpecValuesFromKind.SECRET,
                 name=db.POSTGRES.app_secret.name,
                 values_key="password",
                 # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
                 target_path="gitea.config.database.PASSWD",
-            )
+            ),
         ],
         values=_values(storage),
     )
