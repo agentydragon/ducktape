@@ -251,7 +251,7 @@
     },
     "agentplane-history-migrate": {
       "target": "//agentplane/history_service/migrations:image",
-      "test": "//agentplane/history_service/migrations/...",
+      "test": "//agentplane/history_service/...",
       "registry": "forgejo"
     },
     "agentplane-history-service": {
@@ -291,7 +291,7 @@
     },
     "agentplane-notification-service-migrate": {
       "target": "//agentplane/notification_service/migrations:image",
-      "test": "//agentplane/notification_service/migrations/...",
+      "test": "//agentplane/notification_service/...",
       "registry": "forgejo"
     },
     "tf-runner": {
