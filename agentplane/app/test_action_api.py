@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -391,11 +391,11 @@ def _bind_live_sandbox(policies: PolicyIndex, sandbox_namespace: str) -> None:
         )
 
 
-@asynccontextmanager
-async def _served(app: FastAPI) -> AsyncIterator[str]:
+@pytest.fixture
+async def review_origin(review: Review) -> AsyncIterator[str]:
     """The app on a real socket, in this loop: the in-memory transport waits for a body that never
     ends, and another thread's loop could not use the store's connections."""
-    async with serve_app_in_loop(app) as origin:
+    async with serve_app_in_loop(review.app) as origin:
         yield origin
 
 
@@ -429,6 +429,7 @@ async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_o
     agent_auth: dict[str, str],
     live_index: LiveIndex,
     operator_connection: str,
+    review_origin: str,
 ) -> None:
     """The live frame carries what the Action Service resolves for the ServiceAccount the sandbox
     runs as, through the operator federation. Where the service cannot be asked, the frame says so
@@ -440,7 +441,7 @@ async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_o
     await browser.get("/auth/login")
     session = {"Cookie": f"{INSECURE_COOKIE}={browser.cookies[INSECURE_COOKIE]}"}
 
-    async with _served(review.app) as url, httpx.AsyncClient(base_url=url) as client:
+    async with httpx.AsyncClient(base_url=review_origin) as client:
         frame = await _first_snapshot(client, "/live/sandboxes/live", session)
         as_agent = await _first_snapshot(client, "/live/sandboxes/live", agent_auth)
 
@@ -491,9 +492,9 @@ async def test_caller_grants_without_a_sandbox(
 
 
 async def test_caller_grants_require_an_operator_session(
-    review: Review, namespace: SandboxNamespace, agent_auth: dict[str, str]
+    review_origin: str, namespace: SandboxNamespace, agent_auth: dict[str, str]
 ) -> None:
-    async with _served(review.app) as url, httpx.AsyncClient(base_url=url) as client:
+    async with httpx.AsyncClient(base_url=review_origin) as client:
         path = f"/caller-grants/{namespace.name}/live"
         assert (await client.get(path)).status_code == 401
         assert (await client.get(path, headers=agent_auth)).status_code == 403
