@@ -18,7 +18,7 @@ import {
   useState,
 } from "react";
 
-import { ItemKind } from "../../../proto/event_pb";
+import { ItemKind } from "../../../../agentplane_proto_generated/agentplane/proto/event_pb";
 import {
   displayableError,
   getThread,

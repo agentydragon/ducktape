@@ -120,11 +120,9 @@ ts_library(
     deps = [
         ":operator_login",
         ":schema",
+        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/openapi-fetch",
-        "//agentplane/proto:event_log_pb",
-        "//agentplane/proto:runner_pb",
-        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -134,10 +132,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/mcp_edge:connection_service_pb",
-        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -383,8 +379,8 @@ ts_library(
         ":client",
         ":live_stream",
         ":watch_stream",
+        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:operator_action_service_pb",
     ],
 )
 
@@ -1071,11 +1067,11 @@ ts_library(
     deps = [
         ":client",
         ":disclosure",
+        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/proto:runner_pb",
     ],
 )
 
@@ -1126,13 +1122,13 @@ ts_library(
         ":status_mark",
         ":thread_status",
         ":topbar",
+        "//:agentplane_proto_js",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend/actions:policy",
-        "//agentplane/proto:runner_pb",
     ],
 )
 
@@ -1200,11 +1196,11 @@ ts_library(
         ":client",
         ":live_stream",
         ":watch_stream",
+        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/action_service:web_push_service_pb",
     ],
 )
 
@@ -1347,6 +1343,7 @@ ts_library(
         ":text_block",
         ":theme",
         ":visual_rollouts",
+        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -1357,7 +1354,6 @@ ts_library(
         "//agentplane/app/frontend/actions:proto_test_fixtures",
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/threads:local_commands",
-        "//agentplane/proto:runner_pb",
     ],
 )
 

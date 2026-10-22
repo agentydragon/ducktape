@@ -80,7 +80,36 @@ load("@image_pins//:pins.bzl", "RBE_CONTAINER_DIGEST", "RBE_CONTAINER_IMAGE")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python/uv:lock.bzl", "lock")
+load("//agentplane/proto:typescript_proto.bzl", "typescript_proto_compile")
 load("//devinfra/python:defs.bzl", "py_library")
+
+# Generate all browser-facing Agentplane proto code in one workspace-relative namespace.
+# `proto_compile` generates only the listed protos, so imports that need TypeScript modules
+# are direct inputs too, including Google's HTTP annotations.
+typescript_proto_compile(
+    name = "agentplane_proto_generated",
+    protos = [
+        "//agentplane/action_service:action_service_proto",
+        "//agentplane/action_service:operator_action_service_proto",
+        "//agentplane/action_service:web_push_service_proto",
+        "//agentplane/mcp_edge:connection_service_proto",
+        "//agentplane/proto:command_proto",
+        "//agentplane/proto:event_log_proto",
+        "//agentplane/proto:event_proto",
+        "//agentplane/proto:runner_proto",
+        "//agentplane/proto:sandboxes_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/api:http_proto",
+    ],
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+js_library(
+    name = "agentplane_proto_js",
+    srcs = [":agentplane_proto_generated"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
 
 # Visibility is controlled per-target. Gazelle uses python_default_visibility NONE
 # so targets default to private. Public targets explicitly set visibility.

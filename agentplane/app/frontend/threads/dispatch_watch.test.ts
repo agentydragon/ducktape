@@ -2,7 +2,7 @@
 import { create } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { CommandSchema, type Command } from "../../../proto/command_pb";
+import { CommandSchema, type Command } from "../../../../agentplane_proto_generated/agentplane/proto/command_pb";
 import { stubWatchFetch } from "../watch_fixture";
 import { watchDispatches } from "./dispatch_watch";
 import { LocalCommands } from "./local_commands";

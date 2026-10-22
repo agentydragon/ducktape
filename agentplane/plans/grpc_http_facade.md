@@ -133,12 +133,8 @@ reads only 3.x. A service whose reads move picks between an OpenAPI 3 generator 
 the protobuf-es messages the frontend already generates. The default is OpenAPI 3. Until the app's own
 contract moves, the frontend holds two generated schemas behind one client.
 
-The Dispatcher's watch used neither: its frames are the proto-JSON `Dispatch` the typed Thread routes
-already return, which `dispatchReceipt` validates, so the browser holds no generated type for them. A
-`session_dispatcher_pb` from `ts_proto_library` builds only with a root `google/api` package that
-copies googleapis' `http.proto` and `annotations.proto` and generates their TypeScript, because
-protoc-gen-es imports `../../google/api/annotations_pb` and `ts_proto_library` declares its outputs
-beside a proto of its own package. That is the cost of generated messages for any annotated proto.
+The Dispatcher's watch uses neither: its frames are the proto-JSON `Dispatch` the typed Thread routes
+already return, which `dispatchReceipt` validates.
 
 ### Errors
 

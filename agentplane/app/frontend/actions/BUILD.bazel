@@ -36,9 +36,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":types",
+        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:schema",
@@ -53,9 +52,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":types",
+        "//:agentplane_proto_js",
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/app/frontend:mcp_linkage_client",
     ],
 )

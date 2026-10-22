@@ -12,7 +12,7 @@ import {
   StartMcpServerLinkageResponseSchema,
   WatchMcpServersResponseSchema,
   type McpServerLinkage,
-} from "../../action_service/operator_action_service_pb";
+} from "../../../agentplane_proto_generated/agentplane/action_service/operator_action_service_pb";
 
 const ACTION_FACADE = "/upstream/actions";
 

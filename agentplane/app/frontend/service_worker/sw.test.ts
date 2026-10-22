@@ -5,8 +5,8 @@ import { runInNewContext } from "node:vm";
 import { fromJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
-import { Verdict as ProtoVerdict } from "../../../action_service/action_service_pb";
-import { DecideActionRequestRequestSchema } from "../../../action_service/operator_action_service_pb";
+import { Verdict as ProtoVerdict } from "../../../../agentplane_proto_generated/agentplane/action_service/action_service_pb";
+import { DecideActionRequestRequestSchema } from "../../../../agentplane_proto_generated/agentplane/action_service/operator_action_service_pb";
 import type { ActionRequestView } from "../actions/types";
 import { decideActionRequestProtoJson, listActionRequestsProtoJson } from "../actions/proto_test_fixtures";
 
