@@ -35,8 +35,8 @@ Kubernetes/Talos observations (application/storage operations remain read-only):
 
 Attic's 2 GiB local-path request is smaller than its observed directory usage.
 Do not recreate that allocation unchanged on a size-enforcing backend. Determine
-database/WAL usage and provide headroom (initial candidate: 8 GiB). Study Casino's
-1 GiB allocation also needs headroom review (initial candidate: 4 GiB).
+database/WAL usage and provide headroom (initial candidate: 8 GiB). The operator
+confirmed that Study Casino keeps its existing 1 GiB capacity; no increase is planned.
 
 Preserved machine configuration and full inventories are in a private local
 directory, outside git. No etcd snapshot was taken. Treat Talos machine-config
@@ -156,7 +156,9 @@ Filesystem restores and the later Block restores.
 
 No production Talos/provider configuration has been applied. Direct authenticated `talosctl -e 51.81.245.180 -n 51.81.245.180 version`
 passed from Wyrm2 after earlier timeouts. The temporary relay Pod, ConfigMap and
-NetworkPolicy have been removed; no relay is needed. No cordon, drain, promotion, PVC reclaim change or disk write has occurred.
+NetworkPolicy have been removed; no relay is needed. Four exact source PVs were subsequently changed to Retain with PV/claim UID tests
+and verified readback. No cordon, drain, promotion, claim deletion, node reset or
+disk write has occurred.
 Capacity alert delivery, same-member Seaweed master restoration and the application
 handoff are not yet qualified. Aggregate DATA exhaustion/recovery passed on the lab
 STORAGE-only stack, with the limits recorded below.

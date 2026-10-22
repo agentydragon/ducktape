@@ -1,7 +1,8 @@
 # CNPG handoff for the first Piraeus node
 
 Read-only handoff prepared 2026-10-21. Maintenance is authorized; none of the
-operations below has been executed at this checkpoint.
+application handoff operations below has been executed at this checkpoint. The
+source PV retention protection has been applied with exact UID guards.
 
 ## Observed state
 
@@ -22,8 +23,9 @@ volumes must be retained before CNPG removes their claims. Read-only checks foun
 sync-replica floor does not block the proposed counts; recheck before execution.
 The target Attic filesystem directory was measured at 3.3 decimal GB against a
 2 GiB claim; the Study Casino directory was 620 MB against 1 GiB. Recheck PostgreSQL data, WAL,
-peak/temp use and free space before choosing replacement sizes; 8 GiB (Attic)
-and 4 GiB (Study Casino) are initial candidates, not verified requirements.
+peak/temp use and free space before choosing Attic replacement sizing; 8 GiB is
+the reviewed creation template for its off-node replica. The operator confirmed
+Study Casino keeps its existing 1 GiB capacity; no increase is planned.
 
 Both Clusters are generated: Attic from `cluster/cdk8s/nix_cache/attic.py`
 and Study Casino from `cluster/cdk8s/study_casino/app.py`. Change those sources
@@ -125,8 +127,8 @@ configuration. No global Flux or CNPG operator shutdown is required. The live/re
 6. **Restore one new member per Cluster on Piraeus.** After the target is Ready,
    its production Piraeus pool is healthy, and backup/WAL plus surviving-member
    health are rechecked, update each existing Cluster source to its verified
-   new `storageClass`, evidence-based size (initial candidates: Attic 8 GiB,
-   Study Casino 4 GiB), and `storage.resizeInUseVolumes: false`. In the committed final
+   new `storageClass`, agreed size (Attic 8 GiB,
+   Study Casino unchanged at 1 GiB), and `storage.resizeInUseVolumes: false`. In the committed final
    desired state, raise Attic from 2 to 3 and Study Casino from 2 to 3. Keep Study
    Casino's required hostname anti-affinity unchanged. CNPG will make new
    dynamically provisioned claims using the current Cluster storage template;
