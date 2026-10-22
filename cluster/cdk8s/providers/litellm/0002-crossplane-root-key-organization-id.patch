@@ -1,0 +1,46 @@
+diff --git a/internal/provider/resource_key.go b/internal/provider/resource_key.go
+--- a/internal/provider/resource_key.go
++++ b/internal/provider/resource_key.go
+@@ -1686,0 +1687,4 @@
++	} else if data.OrganizationID.IsUnknown() {
++		// LiteLLM omits organization_id for keys without an organization.
++		// Resolve that computed value to null instead of leaving it unknown after apply.
++		data.OrganizationID = types.StringNull()
+diff --git a/internal/provider/resource_key_test.go b/internal/provider/resource_key_test.go
+--- a/internal/provider/resource_key_test.go
++++ b/internal/provider/resource_key_test.go
+@@ -661,0 +662,34 @@
++func TestReadKeyResolvesUnknownOrganizationIDWhenAPIOmitsIt(t *testing.T) {
++	t.Parallel()
++
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		w.Header().Set("Content-Type", "application/json")
++		_ = json.NewEncoder(w).Encode(map[string]interface{}{
++			"key":  "key-123",
++			"info": map[string]interface{}{"key": "key-123"},
++		})
++	}))
++	defer server.Close()
++
++	r := &KeyResource{
++		client: &Client{
++			APIBase:    server.URL,
++			APIKey:     "test-key",
++			HTTPClient: server.Client(),
++		},
++	}
++
++	data := KeyResourceModel{
++		ID:             types.StringValue("key-123"),
++		Key:            types.StringValue("key-123"),
++		OrganizationID: types.StringUnknown(),
++	}
++
++	if err := r.readKey(context.Background(), &data); err != nil {
++		t.Fatalf("readKey returned error: %v", err)
++	}
++	if data.OrganizationID.IsUnknown() || !data.OrganizationID.IsNull() {
++		t.Fatalf("organization_id should resolve to null when omitted, got %#v", data.OrganizationID)
++	}
++}
++
