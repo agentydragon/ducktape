@@ -99,3 +99,34 @@ root-scope change and verify a Key read/reconcile cycle. Then verify all Keys,
 exported Secrets, the BuildBuddy Tofu reconciliation, and the stored BuildBuddy
 secret. Replacing Keys is acceptable if they cannot be adopted in place; verify
 consumer propagation after rotation.
+
+## Follow-up at 2026-10-22 14:04 UTC
+
+The Forgejo image-pull fix merged as ducktape PR #11587 (`77b2ee2e`). Flux
+fetched that revision, synced the dedicated `crossplane-system/forgejo-images-creds`
+ExternalSecret, installed the provider package, and marked
+`crossplane-provider-litellm` Ready. The key Kustomization then applied its new
+root-scoped artifact.
+
+Existing Key custom resources still had `spec.forProvider.organizationId: ducktape`,
+even though the served artifact omitted that field. A server-side apply dry run
+confirmed omission preserves the legacy field; a merge-patch null dry run
+confirmed explicit deletion removes it. I applied that deletion to
+`key-agentplane-staging` as a one-resource probe. Its spec no longer had the
+organization field, but `status.atProvider.organizationId` remained `ducktape`
+and its next update still returned HTTP 400. A 15-minute LiteLLM log sample
+contained 270 `Organization doesn't exist in db. Organization=ducktape` errors.
+
+The pinned provider patch only resolved an unknown `organization_id` to null.
+When the API omitted it but provider state already held the known stale value,
+the read path preserved it. The patch is being changed to clear the value on any
+API omission, with regression cases for both unknown and stale known state. The
+new package version is `v2.1.0-1.ducktape.8fc5d2ef39dd`; its pin and CI build
+workflow are in the follow-up change. Local BuildBuddy-backed Bazel testing
+could not start because `remote.buildbuddy.io` DNS resolution failed, so PR CI
+must provide that validation.
+
+After the patched package is published and installed, remove the stale
+`organizationId` from the remaining live Key specs, then verify all Keys report
+`Synced=True`, all exported Secrets refresh successfully, and the BuildBuddy
+secret sync converges. Do not print or inspect any key values.

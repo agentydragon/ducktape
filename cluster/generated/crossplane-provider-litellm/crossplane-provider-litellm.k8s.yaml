@@ -80,7 +80,7 @@ kind: Provider
 metadata:
   name: provider-litellm
 spec:
-  package: git.allegedly.works/ducktape-ci/provider-litellm:v2.1.0-1.ducktape.e7e87e2a10ce
+  package: git.allegedly.works/ducktape-ci/provider-litellm:v2.1.0-1.ducktape.8fc5d2ef39dd
   packagePullSecrets:
     - name: forgejo-images-creds
   revisionActivationPolicy: Automatic

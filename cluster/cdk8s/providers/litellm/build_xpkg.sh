@@ -46,7 +46,7 @@ MAKE_ARGS=(
 )
 
 make -C "$BUILD_ROOT/provider" "${MAKE_ARGS[@]}" terraform-provider
-(cd "$PROVIDER_SRC" && go test ./internal/provider -run '^TestReadKeyResolvesUnknownOrganizationIDWhenAPIOmitsIt$' -count=1)
+(cd "$PROVIDER_SRC" && go test ./internal/provider -run '^TestReadKeyClearsOrganizationIDWhenAPIOmitsIt$' -count=1)
 # This adapter's xpkg.build target builds the runtime image but does not build
 # the Crossplane provider binary that the image Makefile stages into its context.
 make -C "$BUILD_ROOT/provider" "${MAKE_ARGS[@]}" go.build

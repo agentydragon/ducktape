@@ -6,10 +6,10 @@ Audit findings deferred for later.
 
 - [ ] Remove `cluster/cdk8s/providers/litellm/0002-crossplane-root-key-organization-id.patch`
       and replace the `git.allegedly.works/ducktape-ci/provider-litellm` package pin in
-      `cluster/cdk8s/crossplane.py` with an upstream xpkg release after
-      [provider-litellm PR #1](https://github.com/TheCodingSheikh/provider-litellm/pull/1)
-      is merged and released. Verify root-scoped Keys reconcile through a read
-      cycle before removing the locally patched package build.
+      `cluster/cdk8s/crossplane.py` with an upstream xpkg release that clears both
+      unknown and stale `organization_id` state when LiteLLM omits the field. Verify
+      root-scoped Keys reconcile through a read cycle before removing the local patch.
+      Related upstream work: [provider-litellm PR #1](https://github.com/TheCodingSheikh/provider-litellm/pull/1).
 
 ## Study Casino database backups
 
