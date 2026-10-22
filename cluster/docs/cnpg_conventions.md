@@ -126,9 +126,10 @@ deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   profile while preparing the `ovh-ns104952` SSD evacuation. Existing PVCs
   keep their current StorageClass and size; a new claim uses
   `piraeus-ssd-local` at the existing template size, with
-  `resizeInUseVolumes: false`. The temporary third member is created one
-  cluster at a time under a resource-specific Flux hold and removed after
-  switchover; restore/verify two desired members before releasing the hold.
+  `resizeInUseVolumes: false`. Create the temporary third member one cluster
+  at a time under a resource-specific Flux hold. After switchover, keep the
+  Piraeus-seeded member and retire only the exact old member on `ovh-ns104952`;
+  restore/verify two desired members before releasing the hold.
 - `postgres` (`generated/agentplane-testing/`): 1 instance pinned
   `zone: hil-ovh` on `local-path-ovh-ssd`, shared by testing's three disposable
   logical databases. This experimental environment deliberately accepts no

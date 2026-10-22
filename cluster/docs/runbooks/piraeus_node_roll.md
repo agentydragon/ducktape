@@ -245,10 +245,11 @@ Use CNPG's native streaming replication, one cluster at a time:
 3. Switch primary off-target and observe the new primary plus streaming
    standbys. This includes the filer DB and Terraform state DB before depending
    on their availability for other maintenance.
-4. Retire the exact member on the target node using the CNPG-supported
-   workflow. Check the operator's member selection; scaling down alone does
-   not identify which ordinal it will remove. UID-guard Pod/PVC operations and
-   retain the PV. Verify two healthy members remain outside the outage set.
+4. Keep the newly seeded Piraeus member and retire only the exact old member
+   on `ovh-ns104952` using the CNPG-supported workflow. Check the operator's
+   member selection; scaling down alone does not identify which ordinal it
+   will remove. UID-guard Pod/PVC operations and retain the PV. Verify two
+   healthy members remain outside the outage set.
 5. Restore the Cluster's desired count to two before removing its Flux hold.
    Verify Flux and CNPG agree on two members, then proceed to the next cluster.
    Repeat until all seven have been evacuated.
