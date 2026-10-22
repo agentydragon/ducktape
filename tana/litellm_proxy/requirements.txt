@@ -1046,7 +1046,7 @@ httpx[http2]==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
     # via
-    #   -r tana/litellm_proxy/requirements.in
+    #   -r requirements.in
     #   fastapi-sso
     #   huggingface-hub
     #   litellm
@@ -1237,7 +1237,7 @@ litellm[proxy]==1.103.0 \
     --hash=sha256:6d894e11cd993da3e450a8d3c03f60af73d2850c2e727ad7dcffad41f6c5c538 \
     --hash=sha256:8ca94bfc2be98e3115c18d7755dcd15a0ddd56e8969f03aa823c9064d165c8a9 \
     --hash=sha256:bc44607abc41d2b34111899860a0c7e593dfbec154b1f264539150c337bd8bf9
-    # via -r tana/litellm_proxy/requirements.in
+    # via -r requirements.in
 litellm-enterprise==0.1.69 \
     --hash=sha256:59c93b75dcdaf51f1d8091b8a4681f1480fc6e338b2305d1adb9d55c826cf712 \
     --hash=sha256:66b8f43ecba29de4820f8aa3c6ec53b71f9a40ddca0dc84016b72f229e022685
@@ -1618,7 +1618,7 @@ opentelemetry-api==1.44.0 \
     --hash=sha256:67647e5e9566edcf421166fdf022b3537f818635daa852b289e34604dc6fb33a \
     --hash=sha256:94b98c893a91b88657eaac1e3ba89618cdb85be6918196705354f34728b2cdef
     # via
-    #   -r tana/litellm_proxy/requirements.in
+    #   -r requirements.in
     #   mcp
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
@@ -1630,7 +1630,7 @@ opentelemetry-exporter-otlp-proto-common==1.44.0 \
 opentelemetry-exporter-otlp-proto-http==1.44.0 \
     --hash=sha256:838592fce774c1c8bb7b9a0a7facbfa82e17be5a8a4e94cef10cb84ae026bae3 \
     --hash=sha256:c633d7270ad6b57cd4cfbe8b0007a9e2e7c0cb50bd6c50fe2a7b245f721a09d8
-    # via -r tana/litellm_proxy/requirements.in
+    # via -r requirements.in
 opentelemetry-proto==1.44.0 \
     --hash=sha256:898b155a0e1557afd867478fb6158e8122a46329ca0bb8dc53cc55e98f017f56 \
     --hash=sha256:c547a79c2f8c0c515d31509154682e5921c7cfd5ca67b70e1f9266e2c3e103f3
@@ -1641,7 +1641,7 @@ opentelemetry-sdk==1.44.0 \
     --hash=sha256:cebe7f65dc12f26ead75c6064de12fd2a9052e5060c0272d402cfa203aae123b \
     --hash=sha256:df081c4c6bcfdb1211e3e86140376792643128a25f8d72d1d27675936e7e96ad
     # via
-    #   -r tana/litellm_proxy/requirements.in
+    #   -r requirements.in
     #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-semantic-conventions==0.65b0 \
     --hash=sha256:1cacde7b0ad306f84c5ef08c3dbe1bbaf20165bba6f8bff43b670e555a086bcb \
@@ -1742,7 +1742,7 @@ polars-runtime-32==1.44.2 \
 prometheus-client==0.26.0 \
     --hash=sha256:04a91bcf94e2cf74a44a1a874d651a2e853ed354b6e822f3b7487751465d5c2b \
     --hash=sha256:fa93d06737aa02bacd05794768508bb97d2fbee28cb3bca04eaae92f0ca953d6
-    # via -r tana/litellm_proxy/requirements.in
+    # via -r requirements.in
 prompt-toolkit==3.0.53 \
     --hash=sha256:01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2 \
     --hash=sha256:9ec8a0ad96d5c56148b3f914aa79c1564c3fde5d2e6b876e7bc327e353cf8fa6
@@ -2025,7 +2025,7 @@ pydantic-settings==2.15.0 \
     --hash=sha256:0ba092c291c94baceb5eff768aa0d56400a457585bc0175925a5a5510303da42 \
     --hash=sha256:694b793e84f766ba76a90ebdefc01d0a9a045dab0382bee70393da93712ad117
     # via
-    #   -r tana/litellm_proxy/requirements.in
+    #   -r requirements.in
     #   litellm
 pygments==2.21.0 \
     --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9 \
