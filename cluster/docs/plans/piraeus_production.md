@@ -368,45 +368,65 @@ fsync/tail latency, Seaweed volume-server I/O and representative application
 operations. Exercise limit enforcement, sparse allocation, expansion, discard,
 retention, restart/reboot and volume/controller recovery on disposable capacity.
 Select the production stack from these results. Do not extend the control-plane
-maintenance window for a long soak: restore service after the short admission
-gates, then perform the extended observation with redundancy restored.
+maintenance window for a long soak: finish the short node/pool admission gates,
+then keep application data on verified off-node copies through the step 5 stop.
+Use disposable claims for extended observation before the step 6 production
+handoffs.
 
-### 4. Restore production members and observe
+### 4. Maintain production service on off-node application copies
 
-Restore Seaweed master 2 first onto its replacement Piraeus claim, preserving
-identity and verifying three healthy members. Rebuild the database members on
-new strict-local claims. Keep the two existing SSD local-path volume servers
-serving the existing Seaweed volumes. Do not edit their immutable claim
-templates or move SSD volumes onto Piraeus in this step; that work waits for
-step 6 and the node/pool acceptance gate.
+Keep evacuated application data on its verified off-node replacements during
+node/pool acceptance. Keep Seaweed master 2 on its temporary HDD-backed claim
+in the original master topology; verify three healthy masters, leader
+agreement, and application S3 reads/writes. Keep the affected Attic and Study
+Casino CNPG clusters at two healthy off-target instances while their evacuated
+members remain off-node. Do not restore the third instance or create production
+Piraeus PVCs yet. Study Casino's instance claim template remains 1Gi.
 
-Use a reviewed operator handoff for each replacement claim. Applications using
-existing SeaweedFS CSI claims keep those claims and their service endpoints.
-Seaweed and CNPG provide their own replication; avoid adding a second Piraeus
-copy by default for each member. Keep LINSTOR controller metadata/recovery
-independent of the first data pool so the pool can be recovered without itself.
+Keep the two existing SSD local-path volume servers and their claims serving
+the existing Seaweed volumes. Do not edit their immutable claim template or
+move SSD volumes onto Piraeus in this step. Applications using existing
+SeaweedFS CSI claims keep those claims and their service endpoints. Keep
+LINSTOR controller metadata/recovery independent of the first data pool so the
+pool can be recovered without itself.
 
-Observe ordinary load, replica convergence, application performance, pool
-headroom and restart behavior. Finish this node's acceptance and restore full
-application/etcd redundancy before selecting another node. Once a disk is wiped,
-recovery depends on the verified off-node source. Once replacement claims accept
-writes, old copies are stale; rollback requires write quiescence and data
-reconciliation rather than simply switching claim names.
+Observe service health and replica convergence while production state remains
+off-node. Use disposable claims for pool headroom, restart, and recovery
+observations. Retain verified off-node sources until the corresponding
+step 6 replacements have been accepted.
 
-### 5. Complete node and pool acceptance before production PVCs
+### 5. Complete node and pool acceptance, then pause
 
 Complete the checks in [First SSD node, strict-local mode](#first-ssd-node-strict-local-mode),
-including observed thin-pool data and metadata alerts, before creating a
-Piraeus-backed Seaweed volume-server claim or moving production data. The
-[first-node execution record](../../debug/piraeus_first_node_2026_10_21/README.md)
-still stops before step 6. This design does not authorize production PVC
-creation or data movement; obtain the user's explicit approval at that stop.
+including observed thin-pool data and metadata alerts, while application data
+remains on its off-node copies. The [first-node execution
+record](../../debug/piraeus_first_node_2026_10_21/README.md) stops before step 6.
+Stop here, present the acceptance evidence, and wait for the user's explicit
+approval before creating any production Piraeus PVC or restoring application
+data onto Piraeus.
 
-### 6. Add the Piraeus-backed SSD Seaweed server and move data gradually
+### 6. Restore production members and add the Piraeus-backed SSD server
 
-Keep the two existing `local-path-ovh-ssd` volume servers and their claims.
-Add a separate Seaweed `volumeTopology` group, such as `ssd-piraeus`, with one
-filesystem-backed volume-server claim on the accepted rebuilt node:
+Proceed only after step 5 acceptance and explicit user approval. This is the
+first step that may create production Piraeus PVCs. Keep verified off-node data
+and temporary HDD sources until each replacement is accepted.
+
+Restore the evacuated Seaweed master 2 using its application-specific handoff:
+copy the verified Raft state from the temporary HDD-backed claim to a
+replacement Piraeus claim, preserve the member identity, and verify three
+healthy masters, leader agreement, and application S3 reads/writes before
+retiring the source. Rebuild each evacuated Attic and Study Casino CNPG member
+on a new strict-local Piraeus claim through its operator's native replica
+workflow, one member at a time. Keep the other two healthy off-node instances
+serving until the replacement catches up and passes its checks; restore the
+third instance only then. Keep Study Casino's instance claim template at 1Gi.
+Applications continue to use their existing SeaweedFS CSI claims and service
+endpoints. Do not add a second Piraeus copy by default when the application
+already provides replication.
+
+Then keep the two existing `local-path-ovh-ssd` volume servers and their claims,
+and add a separate Seaweed `volumeTopology` group, such as `ssd-piraeus`, with
+one filesystem-backed volume-server claim on the accepted rebuilt node:
 
 | Setting                      | Proposed value                                  |
 | ---------------------------- | ----------------------------------------------- |
@@ -434,8 +454,8 @@ reads and writes, two healthy copies, expected SSD placement, and adequate thin
 pool data and metadata headroom before each further batch. Then rebalance SSD
 volumes gradually, checking the same gates as placement changes.
 
-Before creating the new claim or moving data, confirm the node and pool passed
-step 5 and that the data/metadata alerts report fresh samples with usable
+Before creating the new claim or moving data, reconfirm that the node and pool
+passed step 5 and that the data/metadata alerts report fresh samples with usable
 headroom. Ensure Seaweed volume-server monitoring covers both SSD topology
 groups. Review generated pod labels and anti-affinity across both groups: the
 current helper matches `seaweedfs/topology` using the disk value, which may not
@@ -446,7 +466,9 @@ group name changes Seaweed's replication placement.
 Use the [volume-server runbook](../runbooks/rolling_seaweedfs_volume_pvc.md)
 for replication convergence and the alive-empty-server/FUSE-client gate if a
 server endpoint is later retired. This step retains both existing local-path
-servers; their later retirement is a separate reviewed change.
+servers; their later retirement is a separate reviewed change. Once replacement
+claims accept writes, old copies are stale; rollback requires write quiescence
+and data reconciliation rather than simply switching claim names.
 
 ### SeaweedFS and later conversions
 
