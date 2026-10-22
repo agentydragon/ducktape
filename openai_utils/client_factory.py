@@ -22,11 +22,16 @@ from openai_utils.retry import RetryingOpenAIModel
 from openai_utils.types import ReasoningEffort
 
 
-def get_async_openai(*, log_path: Path | None = None, base_url: str | None = None) -> AsyncOpenAI:
+def get_async_openai(
+    *, log_path: Path | None = None, base_url: str | None = None, enable_debug_logging: bool = False
+) -> AsyncOpenAI:
     """Return an AsyncOpenAI client, optionally with HTTP logging."""
-    if log_path is None:
-        return AsyncOpenAI(base_url=base_url)
-    http_client = make_logging_httpx_async_client(log_path)
+    if enable_debug_logging:
+        http_client = make_logger_logging_httpx_async_client()
+    elif log_path is not None:
+        http_client = make_logging_httpx_async_client(log_path)
+    else:
+        http_client = None
     return AsyncOpenAI(http_client=http_client, base_url=base_url)
 
 
@@ -43,16 +48,9 @@ def build_client(
     - Respects ADGN_OPENAI_HTTP_LOG if log_http_path is not provided
     - If enable_debug_logging=True, logs HTTP traffic to Python logger at DEBUG level
     """
-    if enable_debug_logging:
-        inner = AsyncOpenAI(http_client=make_logger_logging_httpx_async_client())
-    elif log_http_path is None:
+    if log_http_path is None:
         env_path = os.environ.get("ADGN_OPENAI_HTTP_LOG")
-        inner = (
-            get_async_openai(log_path=Path(env_path), base_url=base_url)
-            if env_path
-            else get_async_openai(base_url=base_url)
-        )
-    else:
-        inner = get_async_openai(log_path=log_http_path, base_url=base_url)
+        log_http_path = Path(env_path) if env_path else None
+    inner = get_async_openai(log_path=log_http_path, base_url=base_url, enable_debug_logging=enable_debug_logging)
     base = BoundOpenAIModel(client=inner, model=model, reasoning_effort=reasoning_effort)
     return RetryingOpenAIModel(base=base)
