@@ -150,39 +150,6 @@ def public_coder_agent_app(
     )
 
 
-def public_coder_agent_devbox_cleanup(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    """Keep the retired devbox Kustomization long enough to prune its old inventory."""
-    return flux_kustomization(
-        chart,
-        "public-coder-agent-devbox",
-        artifact,
-        wait=None,
-        suspend=False,
-        deletion_policy=KustomizationSpecDeletionPolicy.DELETE,
-        timeout="5m",
-        description="Prunes the retired public-coder KubeVirt devbox and its disposable cache and SSH keys.",
-    )
-
-
-def public_coder_agent_secret_prune(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, *dependencies: Kustomization
-) -> Kustomization:
-    """Adopt remaining credential Secrets after their source owners have been pruned."""
-    return flux_kustomization(
-        chart,
-        "public-coder-agent-secret-prune",
-        artifact,
-        timeout="5m",
-        prune=True,
-        deletion_policy=KustomizationSpecDeletionPolicy.DELETE,
-        depends_on=flux_kustomization_depends_on_many(*dependencies),
-        description=(
-            "Temporarily adopts orphaned Public Coder Secrets without applying data; remove this Kustomization "
-            "in a later revision to prune them."
-        ),
-    )
-
-
 def agent_shared_secrets(chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization) -> Kustomization:
     name = "agent-shared-secrets"
     return flux_kustomization(

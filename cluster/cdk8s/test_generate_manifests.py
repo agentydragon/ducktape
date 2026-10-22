@@ -504,12 +504,6 @@ def test_public_coder_pause_retains_state_after_devbox_retirement(
         assert owners[name]["deletionPolicy"] == "Orphan"
     assert owners["public-coder-agent-app"].get("suspend", False) is False
     assert owners["public-coder-agent-backup"]["suspend"] is True
-    assert owners["public-coder-agent-devbox"]["deletionPolicy"] == "Delete"
-    assert owners["public-coder-agent-devbox"].get("suspend", False) is False
-    devbox_kustomization = yaml.safe_load(
-        (generated / GENERATED_ROOT / "agents/public-coder-agent/devbox-retirement/kustomization.yaml").read_text()
-    )
-    assert devbox_kustomization["resources"] == []
 
 
 if __name__ == "__main__":

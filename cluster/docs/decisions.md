@@ -347,19 +347,15 @@ See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
 These applications remain in Git for possible revival and usually are not actively
 reconciled. Their Flux Kustomizations are either retained as suspended declarations with
 the `ducktape.org/parked` annotation or removed from the active root bundle. A teardown
-may keep a narrow cleanup Kustomization active until its inventory has been pruned, as
-noted below.
+may keep a narrow cleanup Kustomization active for one reconciliation to prune its inventory.
 Non-ducktape-owned manifests stay under `cluster/parked/<name>/`; ducktape-owned
 manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
 applications").
 
 - **OpenClaw (public-coder-agent)**: `cluster/parked/public-coder-agent/` — the instance
-  is off with its PVCs and data kept. The app Kustomization stays active at zero replicas
-  to prune retired proxy resources; the devbox Kustomization temporarily reconciles an
-  empty source to prune its VM inventory; the backup Kustomization stays suspended.
-  The secret-prune Kustomization temporarily adopts the two orphaned ESO targets and cert-manager
-  output Secret without applying their data; removing that Kustomization in a later revision
-  deletes the Secrets through Flux inventory pruning.
+  is off with its PVCs and data kept. Its KubeVirt devbox and Iron proxy are retired; the
+  app Kustomization stays active at zero replicas, and the backup Kustomization stays
+  suspended.
   `public-coder-agent-access` stays active for the Namespace and the Roles Haku and
   Agentplane Sandboxes read.
 - **postscanmail-mcp**: `cluster/parked/postscanmail-mcp/` — decommissioned; its
