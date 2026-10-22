@@ -52,7 +52,8 @@ def _database_secret(
     scope: Construct, env: Environment, *, role: str, database: str, password: str, async_uri: bool = False
 ) -> None:
     host = f"{SERVICE}.{env.namespace}.svc"
-    uri = f"postgresql://{role}:{password}@{host}:{PORT}/{database}"
+    # This fixture's PostgreSQL listener has no TLS; lib/pq otherwise requires it.
+    uri = f"postgresql://{role}:{password}@{host}:{PORT}/{database}?sslmode=disable"
     data = {"password": password, "uri": uri}
     if async_uri:
         data["async-uri"] = f"postgresql+asyncpg://{role}:{password}@{host}:{PORT}/{database}"

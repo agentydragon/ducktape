@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Literal
 from urllib.parse import urlsplit
 
 from cdk8s import Duration
@@ -109,10 +110,11 @@ class WebPushProps:
 
 @dataclass(frozen=True)
 class ActionsProps:
-    """This environment's values of agentplane/action_service `Settings` fields, and how its
-    Deployment reaches their secrets."""
+    """This environment's Actions runtime, settings and secret wiring."""
 
     operator_oidc: OperatorOidcSettings
+    # CLEANUP(added 2026-10-21): Remove Python and this selector after ACTION_SERVICE_GO_PORT stage N.
+    runtime: Literal["python", "go"]
     # Its own namespace included; the Action Service watches policies in its own.
     caller_service_account_namespaces: frozenset[str]
     mcp_servers: Mapping[Key, McpOAuthServer]

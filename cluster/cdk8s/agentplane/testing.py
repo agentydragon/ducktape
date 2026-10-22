@@ -152,6 +152,7 @@ ENV = Environment(
     ),
     actions=ActionsProps(
         operator_oidc=_FEDERATION_TARGET,
+        runtime="python",
         caller_service_account_namespaces=frozenset({TESTING_NAMESPACE}),
         mcp_servers={},
         action_groups=_ACTION_GROUPS,
