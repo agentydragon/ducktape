@@ -1,0 +1,21 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/ci:__pkg__"],
+)
+
+py_library(
+    name = "fake_bazel",
+    srcs = ["fake_bazel.py"],
+)
+
+py_library(
+    name = "fake_bazel_diff",
+    srcs = ["fake_bazel_diff.py"],
+)
+
+py_library(
+    name = "fake_git",
+    srcs = ["fake_git.py"],
+)
