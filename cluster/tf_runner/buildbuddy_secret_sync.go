@@ -78,10 +78,10 @@ func setSecret() error {
 		return err
 	}
 	publicKeyBytes, err := base64.StdEncoding.DecodeString(key.Value)
-	if err != nil || len(publicKeyBytes) != box.PublicKeySize {
+	var publicKeyArray [32]byte
+	if err != nil || len(publicKeyBytes) != len(publicKeyArray) {
 		return errors.New("BuildBuddy returned an invalid public key")
 	}
-	var publicKeyArray [32]byte
 	copy(publicKeyArray[:], publicKeyBytes)
 	ciphertext, err := box.SealAnonymous(nil, []byte(value), &publicKeyArray, rand.Reader)
 	if err != nil {
