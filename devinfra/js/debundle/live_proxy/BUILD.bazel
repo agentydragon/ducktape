@@ -1,3 +1,4 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/python:defs.bzl", "py_test")
 
@@ -17,8 +18,12 @@ py_library(
 py_library(
     name = "core",
     srcs = ["core.py"],
+    data = [":browser_scripts"],
     visibility = ["//visibility:public"],
-    deps = [":vendor_runtime"],
+    deps = [
+        ":vendor_runtime",
+        "//util/bazel:runfiles",
+    ],
 )
 
 py_library(
@@ -117,5 +122,13 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+js_library(
+    name = "browser_scripts",
+    srcs = [
+        "noop_service_worker.js",
+        "prelude.js",
     ],
 )

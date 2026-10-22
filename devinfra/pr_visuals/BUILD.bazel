@@ -271,11 +271,25 @@ py_wheel(
 py_test(
     name = "test_wheel",
     srcs = ["test_wheel.py"],
-    data = [":wheel"],
+    data = [
+        "wheel_render_probe.py",
+        ":wheel",
+    ],
     deps = [
         "//:conftest",
         "//devinfra/pr_visuals:publisher",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "wheel_render_probe",
+    srcs = ["wheel_render_probe.py"],
+    deps = [
+        ":publisher",
+        "//devinfra/ci:invocation_ids",
+        "//util:visual_diff",
+        "//util:visual_review",
     ],
 )

@@ -22,6 +22,7 @@ from devinfra.js.debundle.live_proxy.vendor_runtime import (
     resolve_partial_swap_runtime_request,
     resolve_vendor_runtime_request,
 )
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 MODULE_SCRIPT_RE = re.compile(
     r"<script\b(?=[^>]*\btype\s*=\s*[\"']module[\"'])(?=[^>]*\bsrc\s*=\s*[\"'][^\"']+[\"'])[^>]*>\s*</script>",
@@ -451,73 +452,16 @@ def normalize_relative_path(value: str) -> str:
 
 
 def live_proxy_prelude_script(*, bootstrap_url: str, ui_version: str) -> str:
-    registration_literal = json.dumps(
-        {"active": None, "installing": None, "scope": "/", "waiting": None}, separators=(",", ":")
+    settings = json.dumps({"active": True, "bootstrapUrl": bootstrap_url, "uiVersion": ui_version})
+    prelude = get_required_path(own_repo_rlocation("devinfra/js/debundle/live_proxy/prelude.js")).read_text(
+        encoding="utf-8"
     )
-    return f"""<script>
-      (() => {{
-        const tag = "[js-debundle-live-proxy]";
-        const noopRegistration = {{
-          ...{registration_literal},
-          addEventListener() {{}},
-          async unregister() {{ return true; }},
-          async update() {{}},
-        }};
-        const serviceWorkerStub = {{
-          controller: null,
-          ready: Promise.resolve(noopRegistration),
-          addEventListener() {{}},
-          removeEventListener() {{}},
-          register: async () => noopRegistration,
-          getRegistration: async () => undefined,
-          getRegistrations: async () => [],
-          startMessages() {{}},
-        }};
-        globalThis.__jsDebundleLiveProxy = {{
-          active: true,
-          bootstrapUrl: {json.dumps(bootstrap_url)},
-          uiVersion: {json.dumps(ui_version)},
-        }};
-        document.documentElement.dataset.jsDebundleLiveProxy = "true";
-        const existing = navigator.serviceWorker;
-        if (existing && typeof existing.getRegistrations === "function") {{
-          existing.getRegistrations().then((registrations) => {{
-            for (const registration of registrations) {{
-              registration.unregister().catch(() => {{}});
-            }}
-          }}).catch(() => {{}});
-        }}
-        try {{
-          Object.defineProperty(navigator, "serviceWorker", {{
-            configurable: true,
-            value: serviceWorkerStub,
-          }});
-        }} catch (error) {{
-          if (existing) {{
-            try {{ existing.register = serviceWorkerStub.register; }} catch {{}}
-            try {{ existing.getRegistration = serviceWorkerStub.getRegistration; }} catch {{}}
-            try {{ existing.getRegistrations = serviceWorkerStub.getRegistrations; }} catch {{}}
-            try {{ existing.ready = serviceWorkerStub.ready; }} catch {{}}
-          }}
-          console.warn(tag, "unable to replace navigator.serviceWorker directly", error);
-        }}
-        console.info(tag, "active", globalThis.__jsDebundleLiveProxy);
-      }})();
-    </script>"""
+    return f"<script>\nglobalThis.__jsDebundleLiveProxy = {settings};\n{prelude}</script>"
 
 
 def noop_service_worker_source() -> str:
-    return "\n".join(
-        [
-            "self.addEventListener('install', (event) => {",
-            "  self.skipWaiting();",
-            "});",
-            "self.addEventListener('activate', (event) => {",
-            "  event.waitUntil(self.clients.claim());",
-            "});",
-            "self.addEventListener('fetch', () => {});",
-            "",
-        ]
+    return get_required_path(own_repo_rlocation("devinfra/js/debundle/live_proxy/noop_service_worker.js")).read_text(
+        encoding="utf-8"
     )
 
 

@@ -94,9 +94,13 @@ export default [
 
   js.configs.recommended,
 
-  // The capture diagnostic runs inside Playwright's browser page, not Node.
+  // These scripts execute in browser pages or service workers.
   {
-    files: ["util/testing/capture-diagnostics.js", "util/testing/capture-diagnostics-fixture.js"],
+    files: [
+      "util/testing/capture-diagnostics.js",
+      "util/testing/capture-diagnostics-fixture.js",
+      "devinfra/js/debundle/live_proxy/*.js",
+    ],
     languageOptions: {
       parserOptions: { ecmaVersion: "latest", sourceType: "script" },
       globals: browserGlobals,
