@@ -27,7 +27,11 @@ let
     else
       pkgs.gnomeExtensions.pop-shell;
   inherit (ducktapePackages)
-    ducktape
+    difftree
+    gmail-archiver
+    vm-interact
+    workspace-gc
+    ws
     claude-hook
     claude-statusline
     gterm-theme
@@ -381,7 +385,11 @@ in
 
       stylua
 
-      ducktape
+      difftree
+      gmail-archiver
+      vm-interact
+      workspace-gc
+      ws
       claude-hook
       claude-statusline
       bbapi

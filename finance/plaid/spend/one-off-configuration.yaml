@@ -1,0 +1,36 @@
+cards: []
+allowance:
+  monthly_minor_units: 100000
+  activation_at: 2026-01-31
+  spending_account_ids:
+    - example-credit-id
+  analysis_categories:
+    fixed_travel:
+      label: Holiday travel
+      color: "#DB2777"
+    unclassified:
+      label: Unclassified
+      color: "#D97706"
+  rules:
+    - condition:
+        type: all_of
+        conditions:
+          - type: name_prefix
+            field: name
+            prefix: EXAMPLE HOTEL
+          - type: date_range
+            start: 2026-06-04
+            end: 2026-06-04
+          - type: amount_exact
+            value: "2430.78"
+      kind: fixed
+      scope: one_off
+      id: example-hotel-2026-06-04
+      analysis_category: fixed_travel
+      description: Confirmed example holiday stay; date and amount limit this to the observed charge.
+    - condition:
+        type: name_prefix
+        field: name
+        prefix: EXAMPLE RENT
+      kind: fixed
+      analysis_category: fixed_travel

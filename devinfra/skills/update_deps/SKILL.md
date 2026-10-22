@@ -265,15 +265,19 @@ declarations.
 
 **Protobuf** is the primary example:
 
-| Ecosystem | Declaration                                                      | Example                          |
-| --------- | ---------------------------------------------------------------- | -------------------------------- |
-| Bazel     | `MODULE.bazel`: `bazel_dep(name = "protobuf", version = "33.1")` | protoc gencode 6.33.1            |
-| pip       | `pyproject.toml`: `protobuf==6.33.1`                             | Python runtime                   |
-| Nix       | `nix/packages/default.nix`: `protobuf` (tracks nixpkgs)          | Runtime in devShell/home-manager |
+| Ecosystem           | Declaration                                  | Current pin / role      |
+| ------------------- | -------------------------------------------- | ----------------------- |
+| Bazel               | `MODULE.bazel`: `protobuf` module            | `36.1.bcr.1`            |
+| pip                 | `requirements_bazel.txt`                     | `protobuf==7.36.1`      |
+| Nix stable          | `nixpkgs` input on `nixos-26.05`             | Python runtime `7.34.1` |
+| Nix unstable/master | `nixpkgs-unstable` / `nixpkgs-master` inputs | Python runtime `7.36.2` |
 
-**Rule**: protobuf runtime (pip/Nix) must be **>=** gencode (Bazel protoc).
-Bazel module version `X.Y` maps to gencode `6.X.Y`. If bumping Bazel protobuf,
-also bump pip. If Nix lags behind, do not bump Bazel/pip past the Nix version.
+**Rule**: protobuf runtime (pip/Nix) must be **>=** the protoc/gencode version
+used by the consumer. The current stable Nixpkgs Python runtime lags the Bazel
+and pip pins; a further coordinated bump needs to move or override that runtime
+as well. Protobuf `36.2` / Python `7.36.2` are available in the locked
+unstable/master inputs, but the stable `nixos-26.05` input remains at
+`7.34.1`. Verify all three ecosystems before proposing a joint update.
 
 When proposing ANY protobuf update, verify all three are compatible and note
 the versions in the PR description.

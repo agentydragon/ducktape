@@ -295,17 +295,13 @@ repos:
       - id: kubeconform
         name: kubeconform (cluster)
         language: system
+        # kubeconform -skip is a comma-separated string; repeated flags keep only the last value.
         entry: kubeconform
           -schema-location default
           -schema-location 'cluster/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           -ignore-missing-schemas
-          -skip seaweed.seaweedfs.com/v1/Seaweed
-          -skip agentplane.allegedly.works/v1alpha1/Sandbox
-          -skip agentplane.allegedly.works/v1alpha1/SandboxTemplate
-          -skip agentplane.allegedly.works/v1alpha1/PolicySet
-          -skip agentplane.allegedly.works/v1alpha1/PolicyBinding
-          -skip agentplane.allegedly.works/v1alpha1/EgressCredential
+          -skip 'seaweed.seaweedfs.com/v1/Seaweed,agentplane.allegedly.works/v1alpha1/Sandbox,agentplane.allegedly.works/v1alpha1/SandboxTemplate,agentplane.allegedly.works/v1alpha1/PolicySet,agentplane.allegedly.works/v1alpha1/PolicyBinding,agentplane.allegedly.works/v1alpha1/EgressCredential'
         files: ^cluster/(k8s|generated|parked)/.*\.(yaml|yml)$
         exclude: |
           (?x)^(

@@ -27,7 +27,7 @@ from pathlib import Path
 CODEX = os.environ.get("CODEX_BIN", "codex")
 CHOME = Path(os.environ.get("CODEX_FLEET_HOME", "~/.cache/codex-fleet")).expanduser()
 ROOT = Path(os.environ.get("CODEX_WORKDIR_ROOT", str(CHOME / "work")))
-MODEL = os.environ.get("CODEX_WORKER_MODEL", "chatgpt/oai-responses/gpt-6-luna")
+MODEL = os.environ.get("CODEX_WORKER_MODEL", "chatgpt-sub/oai-responses/gpt-6-luna")
 EFFORT = os.environ.get("CODEX_WORKER_EFFORT", "low")
 BASE_URL = os.environ.get("LITELLM_BASE_URL", "https://litellm.allegedly.works/v1")
 

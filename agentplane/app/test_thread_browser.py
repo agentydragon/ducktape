@@ -67,7 +67,6 @@ from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
@@ -142,14 +141,13 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     await history.set_attached(thread_id, thread_source.attached)
     await history.record(thread_id, thread_source.entries)
     await store.rename(thread_id, "Test archived thread")
-    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
             db_url,
             history=event_logs.reader,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=None,
-            frontend_directory=directory,
+            browser_login=True,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
@@ -158,6 +156,14 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         await page.goto(url)
         await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value("Test archived thread")
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
+        async with asyncio.timeout(15):
+            scope = await page.evaluate(
+                """async () => {
+                    await navigator.serviceWorker.register('/sw.js');
+                    return (await navigator.serviceWorker.ready).scope;
+                }"""
+            )
+        assert scope == f"{ingress.url}/"
         await expect(
             page.get_by_text(
                 "Sandbox no longer exists. Showing archived Thread history; controls are disabled.", exact=True
@@ -231,14 +237,13 @@ async def test_switching_threads_starts_at_each_threads_tail(
     namespace: SandboxNamespace,
 ) -> None:
     threads, _ = await _seed_navigation_threads(event_logs, history, store)
-    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
             db_url,
             history=event_logs.reader,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=None,
-            frontend_directory=directory,
+            browser_login=True,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
@@ -277,14 +282,13 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     """The history lays an unmeasured row out at a flat guess; one it has read before, at the height
     it read. Rows read on a thread's first visit are laid out at those heights on the return."""
     threads, _ = await _seed_navigation_threads(event_logs, history, store)
-    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
             db_url,
             history=event_logs.reader,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=None,
-            frontend_directory=directory,
+            browser_login=True,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
@@ -336,14 +340,13 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     namespace: SandboxNamespace,
 ) -> None:
     threads, sources = await _seed_navigation_threads(event_logs, history, store)
-    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
             db_url,
             history=event_logs.reader,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=None,
-            frontend_directory=directory,
+            browser_login=True,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
@@ -592,7 +595,6 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 closed_disclosures_read.set()
 
     page.on("request", observe)
-    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     thread = await event_logs.seed(SANDBOX, SESSION)
     await store.rename(thread, "Streamed thread")
     async with (
@@ -603,7 +605,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
             history_client,
             sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
             gateway=gateway_access,
-            frontend_directory=directory,
+            browser_login=True,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,

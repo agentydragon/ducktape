@@ -427,7 +427,7 @@
         };
       }
       // import ./nix/flake/artifact-checks.nix {
-        inherit pkgs;
+        inherit pkgs artifacts;
         packages = self.packages.${system};
       };
       packages.${system} =

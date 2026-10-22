@@ -101,7 +101,6 @@ py_library(
         "//util:kubernetes",
         "//util/testing:undeclared_outputs",
         "@pypi//asyncpg",
-        "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
@@ -132,6 +131,7 @@ py_library(
     srcs = ["http2_proxy.py"],
     data = ["http2_proxy.conf.j2"],
     deps = [
+        "//agentplane/app/frontend/serving:image",
         "//third_party/containers:nginx_unprivileged",
         "//util:net",
         "//util:oci",
@@ -309,5 +309,19 @@ py_library(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_http2_proxy",
+    size = "medium",
+    srcs = ["test_http2_proxy.py"],
+    deps = [
+        ":http2_proxy",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

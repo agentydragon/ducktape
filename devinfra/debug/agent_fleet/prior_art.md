@@ -229,7 +229,7 @@ PR #15501 fixed **only** `/v1/messages` passthrough, not `/chat/completions` (cl
 there). Reproduced across 7+ repos (bedrock-access-gateway#119, opencode#3077/#8010,
 openai-agents-python#765/#678, open-webui#20464, pydantic-ai#3113). **Nuance for us:** this bites
 the Anthropic-format-over-OpenAI-shaped hop (`/chat/completions` internals, Bedrock/Vertex). The
-ducktape `chatgpt/ant-messages/*` lane is **CLIProxyAPI `/v1/messages` passthrough**, which is
+ducktape `chatgpt-sub/ant-messages/*` lane is **CLIProxyAPI `/v1/messages` passthrough**, which is
 exactly why the repo chose it (`docs/personal_agents/verdicts.md` § Model routing) — so the worst
 of §3.6 is dodged, as long as the orchestrator's own thinking traffic doesn't get routed through a
 `/chat/completions` bridge.

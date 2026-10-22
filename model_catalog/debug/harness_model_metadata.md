@@ -1,5 +1,8 @@
 # Harness model-metadata under LiteLLM route names
 
+Historical captures retain the `chatgpt/` prefix used when recorded. Current
+subscription routes use `chatgpt-sub/`.
+
 > Historical, version-scoped audit. Paths and pins below describe that investigation,
 > not necessarily the current deployment. See the
 > [model-roster and consumer-configuration design](../design.md) for

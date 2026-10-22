@@ -939,9 +939,6 @@ py_test(
     name = "test_thread_browser",
     size = "medium",
     srcs = ["test_thread_browser.py"],
-    data = [
-        "//agentplane/app/frontend:bundle",
-    ],
     requires_docker = True,
     shard_count = 16,
     tags = ["visual"],
@@ -972,7 +969,6 @@ py_test(
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/sandboxes/testing:sandbox_namespace",
         "//agentplane/testing:kubernetes_apiserver",
-        "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "//util/testing:viewports",
         "//util/testing:visual_capture",
@@ -1139,9 +1135,6 @@ py_test(
     name = "test_thread_window_browser",
     size = "medium",
     srcs = ["test_thread_window_browser.py"],
-    data = [
-        "//agentplane/app/frontend:bundle",
-    ],
     main = "test_thread_window_browser.py",
     requires_docker = True,
     deps = [

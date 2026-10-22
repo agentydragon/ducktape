@@ -12,6 +12,12 @@ http {
         http2 on;
         ssl_certificate /test/certificate.pem;
         ssl_certificate_key /test/key.pem;
+        location = / { proxy_pass {{ static_upstream }}; }
+        location = /index.html { proxy_pass {{ static_upstream }}; }
+        location = /main.js { proxy_pass {{ static_upstream }}; }
+        location = /main.css { proxy_pass {{ static_upstream }}; }
+        location = /sw.js { proxy_pass {{ static_upstream }}; }
+        location = /favicon.svg { proxy_pass {{ static_upstream }}; }
         location / {
             proxy_pass {{ upstream }};
             proxy_http_version 1.1;

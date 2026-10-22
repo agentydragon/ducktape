@@ -1,5 +1,6 @@
 # This tree deliberately uses the slim dist; the manifest maps `typer` to the fat one.
 # gazelle:resolve py typer @pypi//typer_slim
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
@@ -39,6 +40,43 @@ py_binary(
     main_module = "gmail_archiver.main",
     visibility = ["//visibility:public"],
     deps = [":main"],
+)
+
+py_package(
+    name = "gmail_archiver_pkg",
+    packages = [
+        "gmail_api",
+        "gmail_archiver",
+        "gmail_archiver.cli",
+        "gmail_archiver.planners",
+    ],
+    deps = [":main"],
+)
+
+py_wheel(
+    name = "gmail_archiver_wheel",
+    distribution = "gmail_archiver",
+    entry_points = {"console_scripts": ["gmail-archiver = gmail_archiver.main:app"]},
+    python_requires = ">=3.14",
+    # SYNC: propagatedBuildInputs in nix/packages/default.nix (gmail-archiver).
+    requires = [
+        "beautifulsoup4",
+        "ducktape-util",
+        "google-api-python-client",
+        "google-auth",
+        "openai",
+        "platformdirs",
+        "pydantic>=2.0",
+        "pydantic-core",
+        "python-dateutil",
+        "pyyaml",
+        "rich",
+        "tenacity",
+        "typer",
+    ],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":gmail_archiver_pkg"],
 )
 
 py_library(

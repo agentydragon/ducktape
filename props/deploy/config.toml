@@ -52,7 +52,7 @@ max_parallel_agents = 3
 [[models]]
 name = "codex-gpt-6-sol"
 upstream = "litellm"
-upstream_model = "chatgpt/ant-messages/gpt-6-sol"
+upstream_model = "chatgpt-sub/ant-messages/gpt-6-sol"
 api_shape = "anthropic"
 input_usd_per_1m_tokens = 0
 cached_input_usd_per_1m_tokens = 0

@@ -5,6 +5,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "drift_watch",
     srcs = ["drift_watch.py"],
+    data = ["source.gitignore"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:ducktape_flux",
@@ -17,6 +18,7 @@ py_library(
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
     ],
 )

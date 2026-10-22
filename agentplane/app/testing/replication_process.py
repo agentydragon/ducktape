@@ -24,7 +24,6 @@ from uuid import UUID, uuid4
 import grpc
 import httpx
 import uvicorn
-from fastapi.staticfiles import StaticFiles
 from kubernetes_asyncio import client as k8s_client
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -231,7 +230,7 @@ def _run(
     history_target: str,
     history_token_file: Path,
     connection: Connection,
-    frontend_directory: Path | None,
+    browser_login: bool,
     replay_after: int | None,
     electric_url: str | None,
     electric_log_path: Path | None,
@@ -257,7 +256,7 @@ def _run(
                 history_target,
                 history_token_file,
                 connection,
-                frontend_directory,
+                browser_login,
                 replay_after,
                 electric_url,
             )
@@ -277,7 +276,7 @@ async def _serve(
     history_target: str,
     history_token_file: Path,
     connection: Connection,
-    frontend_directory: Path | None,
+    browser_login: bool,
     replay_after: int | None,
     electric_url: str | None,
 ) -> None:
@@ -375,12 +374,16 @@ async def _serve(
                 index,
                 action_policy,
                 # A browser's app has operator sessions, which the operator-only relays require.
-                OIDC if frontend_directory is not None else None,
-                electric=ElectricProxy(
-                    electric_http,
-                    content,
-                    event_logs=event_logs,
-                    thread_changes=database_updates.changes[Channel.THREADS],
+                OIDC if browser_login else None,
+                electric=(
+                    ElectricProxy(
+                        electric_http,
+                        content,
+                        event_logs=event_logs,
+                        thread_changes=database_updates.changes[Channel.THREADS],
+                    )
+                    if electric_url is not None
+                    else None
                 ),
                 event_logs=event_logs,
                 content=content,
@@ -395,15 +398,13 @@ async def _serve(
             # Authentication is tested separately; the production routes, HTTP transport, ingestion,
             # PostgreSQL notifications, and SSE generator all run here unchanged.
             app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
-            if frontend_directory is not None:
+            if browser_login:
                 with_test_login(app)
                 app.add_middleware(EmptyActionsWatch)
             if replay_after is not None:
                 app.add_middleware(
                     GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
                 )
-            if frontend_directory is not None:
-                app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
             try:
                 async with database_updates.listener.listen():
                     watching = asyncio.create_task(history_watch.run(), name="test-app-history-watch")
@@ -467,7 +468,7 @@ async def app_process(
     *,
     sandboxes: SandboxesAccess,
     gateway: GatewayAccess | None,
-    frontend_directory: Path | None = None,
+    browser_login: bool = False,
     replay_after: int | None = None,
     electric_url: str | None = None,
 ) -> AsyncIterator[AppProcess]:
@@ -475,7 +476,7 @@ async def app_process(
     parent, child = context.Pipe()
     electric_log_path = (
         undeclared_outputs_dir() / f"electric-proxy-{uuid4().hex}.log"
-        if frontend_directory is not None and electric_url is not None
+        if browser_login and electric_url is not None
         else None
     )
     process = context.Process(
@@ -487,7 +488,7 @@ async def app_process(
             history.target,
             history.token_file,
             child,
-            frontend_directory,
+            browser_login,
             replay_after,
             electric_url,
             electric_log_path,

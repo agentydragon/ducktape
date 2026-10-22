@@ -1,0 +1,93 @@
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+pkg_files(
+    name = "web_files",
+    srcs = ["//agentplane/app/frontend:bundle"],
+    prefix = "/usr/share/nginx/html",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "service_worker_files",
+    srcs = ["//agentplane/app/frontend/service_worker:service_worker_js"],
+    prefix = "/usr/share/nginx/html/dist",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "nginx_conf_files",
+    srcs = ["default.conf"],
+    prefix = "/etc/nginx/conf.d",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "nginx_global_conf_files",
+    srcs = ["nginx.conf"],
+    prefix = "/etc/nginx",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "static_tar",
+    srcs = [
+        ":nginx_conf_files",
+        ":nginx_global_conf_files",
+        ":service_worker_files",
+        ":web_files",
+    ],
+)
+
+oci_image(
+    name = "static_image",
+    base = "@nginx_unprivileged_linux_amd64",
+    cmd = [
+        "-g",
+        "daemon off;",
+    ],
+    entrypoint = ["/usr/sbin/nginx"],
+    exposed_ports = ["8080/tcp"],
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "agentplane-frontend",
+    },
+    tars = [":static_tar"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_rloc(
+    name = "static_test_image",
+    testonly = True,
+    image = ":static_image",
+)
+
+py_library(
+    name = "image",
+    testonly = True,
+    srcs = ["image.py"],
+    data = [":static_test_image"],
+    deps = ["//util:oci"],
+)
+
+py_test(
+    name = "test_static_image",
+    size = "medium",
+    srcs = ["test_static_image.py"],
+    requires_docker = True,
+    deps = [
+        ":image",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//util:oci",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+    ],
+)

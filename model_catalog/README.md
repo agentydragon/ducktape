@@ -16,6 +16,11 @@ own boundary.
 - `nix.py`: wrapper choices and their model-only JSON projection for Nix Claude Code wrappers.
   Regenerate `claude-wrappers.json` with `bb run //model_catalog:generate_nix`.
 
+The ChatGPT subscription account uses the `chatgpt-sub/` route prefix. LiteLLM
+interprets `chatgpt/` as its built-in provider during request preprocessing,
+before resolving configured routes; that prefix can initiate interactive login
+and block the proxy event loop.
+
 Account means whose credentials/account serve a model, not its manufacturer. Shape
 means the outbound wire, not the client's endpoint. Unknown facts remain unknown;
 comments retain the provenance of published, measured, or configured limits. A

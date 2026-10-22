@@ -522,7 +522,7 @@ via Cobra's built-in completion generation.
 | `github.com/DataDog/datadog-go/v5`             | `v5.8.2`     | StatsD metrics           |
 | `connectrpc.com/connect`                       | `v1.19.1`    | Connect RPC              |
 | `google.golang.org/grpc`                       | `v1.79.0`    | gRPC (tunnel protocol)   |
-| `google.golang.org/protobuf`                   | `v1.36.11`   | Protobuf                 |
+| `google.golang.org/protobuf`                   | `v1.36.12`   | Protobuf                 |
 | `go.opentelemetry.io/otel`                     | `v1.39.0`    | OpenTelemetry SDK        |
 | `go.opentelemetry.io/otel/exporters/otlp/...`  | various      | OTLP HTTP exporters      |
 | `go.opentelemetry.io/contrib/bridges/otelslog` | `v0.13.0`    | slog → OTel bridge       |

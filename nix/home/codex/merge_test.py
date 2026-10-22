@@ -4,47 +4,14 @@ import tomllib
 import pytest_bazel
 
 from nix.home.codex import merge
+from util.bazel.runfiles import get_required_path
 
 
 def test_main_prints_unmanaged_toml_and_preserves_live_only_config(tmp_path, monkeypatch, capsys) -> None:
     base = tmp_path / "config.nix-base.toml"
     live = tmp_path / "config.toml"
-    base.write_text(
-        textwrap.dedent(
-            """
-            approval_policy = "on-request"
-
-            [features]
-            streamable_shell = true
-
-            [profiles.openai]
-            model = "gpt-5.1-codex"
-            """
-        )
-    )
-    live.write_text(
-        textwrap.dedent(
-            """
-            approval_policy = "never"
-
-            [features]
-            rmcp_client = true
-            streamable_shell = false
-            view_image_tool = true
-            manual_feature = true
-
-            [profiles.openai]
-            model = "gpt-5-codex"
-            local_note = "keep"
-
-            [profiles.scratch]
-            model = "local"
-
-            [projects."/repo"]
-            trust_level = "trusted"
-            """
-        )
-    )
+    base.write_text(get_required_path("_main/nix/home/codex/testdata/nix-base.toml").read_text())
+    live.write_text(get_required_path("_main/nix/home/codex/testdata/live.toml").read_text())
     monkeypatch.setenv("BASE", str(base))
     monkeypatch.setenv("LIVE", str(live))
 

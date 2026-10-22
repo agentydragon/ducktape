@@ -6,7 +6,7 @@ import hashlib
 import ipaddress
 import ssl
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from jinja2 import Template
 
+from agentplane.app.frontend.serving.image import IMAGE as STATIC_IMAGE
 from third_party.containers import nginx_unprivileged
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
@@ -74,30 +75,55 @@ class Ingress:
         assert exit_code == 0, output
 
 
+async def _wait_for_frontend(upstream: str) -> None:
+    async with asyncio.timeout(30), httpx.AsyncClient(timeout=2) as client:
+        while True:
+            try:
+                response = await client.get(f"{upstream}/healthz")
+            # Docker can publish the port before nginx can answer: connections may be
+            # refused, reset, or closed before HTTP response headers arrive.
+            except httpx.TransportError:
+                await asyncio.sleep(0.1)
+                continue
+            response.raise_for_status()
+            return
+
+
 @asynccontextmanager
 async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIterator[Ingress]:
     await asyncio.to_thread(load_oci_image, nginx_unprivileged.IMAGE)
-    port = pick_free_port()
-    template = get_required_path("_main/agentplane/app/testing/http2_proxy.conf.j2").read_text()
-    (certificate.directory / "nginx.conf").write_text(Template(template).render(port=port, upstream=upstream) + "\n")
-    container = (
-        LoggedContainer(nginx_unprivileged.IMAGE.tag, test_name="conversation-http2-ingress")
-        .with_kwargs(network_mode="host")
-        .with_volume_mapping(str(certificate.directory), "/test", mode="ro")
-        .with_command("nginx -c /test/nginx.conf -g 'daemon off;'")
-    )
-    url = f"https://127.0.0.1:{port}"
-    context = ssl.create_default_context(cafile=str(certificate.directory / "certificate.pem"))
-    with container:
-        async with asyncio.timeout(30), httpx.AsyncClient(verify=context, http2=True, timeout=2) as client:
-            while True:
-                try:
-                    response = await client.get(f"{url}/models")
-                # A slow first answer is not a failed start: the 30 s budget decides that.
-                except httpx.ConnectError, httpx.TimeoutException:
-                    await asyncio.sleep(0.1)
-                    continue
-                response.raise_for_status()
-                assert response.http_version == "HTTP/2"
-                break
-        yield Ingress(url, container)
+    await asyncio.to_thread(load_oci_image, STATIC_IMAGE)
+    with ExitStack() as stack:
+        static_container = stack.enter_context(
+            LoggedContainer(STATIC_IMAGE.tag, test_name="conversation-static-frontend").with_exposed_ports(8080)
+        )
+        static_upstream = f"http://{static_container.get_container_host_ip()}:{static_container.get_exposed_port(8080)}"
+        await _wait_for_frontend(static_upstream)
+        # A separate nginx serves the actual built frontend. The TLS ingress supplies the
+        # browser's single origin while API traffic still reaches the real app process.
+        port = pick_free_port()
+        template = get_required_path("_main/agentplane/app/testing/http2_proxy.conf.j2").read_text()
+        (certificate.directory / "nginx.conf").write_text(
+            Template(template).render(port=port, upstream=upstream, static_upstream=static_upstream) + "\n"
+        )
+        container = (
+            LoggedContainer(nginx_unprivileged.IMAGE.tag, test_name="conversation-http2-ingress")
+            .with_kwargs(network_mode="host")
+            .with_volume_mapping(str(certificate.directory), "/test", mode="ro")
+            .with_command("nginx -c /test/nginx.conf -g 'daemon off;'")
+        )
+        url = f"https://127.0.0.1:{port}"
+        context = ssl.create_default_context(cafile=str(certificate.directory / "certificate.pem"))
+        with container:
+            async with asyncio.timeout(30), httpx.AsyncClient(verify=context, http2=True, timeout=2) as client:
+                while True:
+                    try:
+                        response = await client.get(f"{url}/models")
+                    # A slow first answer is not a failed start: the 30 s budget decides that.
+                    except httpx.ConnectError, httpx.TimeoutException:
+                        await asyncio.sleep(0.1)
+                        continue
+                    response.raise_for_status()
+                    assert response.http_version == "HTTP/2"
+                    break
+            yield Ingress(url, container)

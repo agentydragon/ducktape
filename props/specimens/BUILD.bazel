@@ -1,5 +1,3 @@
-# gazelle:ignore
-
 load("//devinfra/python:defs.bzl", "py_binary")
 
 # Export generic test file and conftest for specimen_targets to reference

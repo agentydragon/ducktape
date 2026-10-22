@@ -10,9 +10,14 @@ py_library(
 py_test(
     name = "merge_test",
     srcs = ["merge_test.py"],
+    data = [
+        "testdata/live.toml",
+        "testdata/nix-base.toml",
+    ],
     deps = [
         ":merge",
         "//:conftest",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

@@ -1,5 +1,8 @@
 # LiteLLM catalogue and publication
 
+Historical captures retain the `chatgpt/` prefix used when recorded. Current
+subscription routes use `chatgpt-sub/`.
+
 Supporting evidence for the [model-roster design](design.md), using its
 [shared token vocabulary](design.md#token-limit-vocabulary). Observations are dated
 and version-scoped; they do not authorize configuration or client-budget changes.

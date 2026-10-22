@@ -22,11 +22,6 @@ spec:
             secretKeyRef:
               key: password
               name: tofu-state-db-credentials
-        - name: TF_VAR_buildbuddy_api_key
-          valueFrom:
-            secretKeyRef:
-              key: api-key
-              name: buildbuddy-org-admin-api-key
       resources:
         requests:
           cpu: 250m
@@ -36,3 +31,9 @@ spec:
     kind: ExternalArtifact
     name: tf-gitops-litellm-keys
     namespace: ducktape-flux
+  vars:
+    - name: buildbuddy_api_key
+      valueFrom:
+        secretKeyRef:
+          key: api-key
+          name: buildbuddy-org-admin-api-key

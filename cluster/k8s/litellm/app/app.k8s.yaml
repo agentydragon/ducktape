@@ -218,7 +218,7 @@ data:
           mode: embedding
           max_input_tokens: 40960
           max_tokens: 40960
-      - model_name: chatgpt/ant-messages/gpt-6-astra
+      - model_name: chatgpt-sub/ant-messages/gpt-6-astra
         litellm_params:
           model: anthropic/gpt-6-astra
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
@@ -229,7 +229,7 @@ data:
           max_input_tokens: 872000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: chatgpt/ant-messages/gpt-6-sol
+      - model_name: chatgpt-sub/ant-messages/gpt-6-sol
         litellm_params:
           model: anthropic/gpt-6-sol
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
@@ -240,7 +240,7 @@ data:
           max_input_tokens: 372000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: chatgpt/ant-messages/gpt-6-luna
+      - model_name: chatgpt-sub/ant-messages/gpt-6-luna
         litellm_params:
           model: anthropic/gpt-6-luna
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
@@ -251,7 +251,7 @@ data:
           max_input_tokens: 372000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: chatgpt/oai-responses/gpt-6-astra
+      - model_name: chatgpt-sub/oai-responses/gpt-6-astra
         litellm_params:
           model: openai/gpt-6-astra
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
@@ -262,7 +262,7 @@ data:
           max_input_tokens: 872000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: chatgpt/oai-responses/gpt-6-sol
+      - model_name: chatgpt-sub/oai-responses/gpt-6-sol
         litellm_params:
           model: openai/gpt-6-sol
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
@@ -273,7 +273,7 @@ data:
           max_input_tokens: 372000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: chatgpt/oai-responses/gpt-6-luna
+      - model_name: chatgpt-sub/oai-responses/gpt-6-luna
         litellm_params:
           model: openai/gpt-6-luna
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
@@ -779,7 +779,7 @@ data:
     router_settings:
       model_group_alias:
         gpt-6-astra:
-          model: chatgpt/oai-responses/gpt-6-astra
+          model: chatgpt-sub/oai-responses/gpt-6-astra
           hidden: true
     general_settings:
       forward_client_headers_to_llm_api: true

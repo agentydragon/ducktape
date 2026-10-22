@@ -6,7 +6,7 @@
   artifacts,
 }:
 let
-  # The ducktape umbrella wheel is built (on Bazel) against `fastmcp==4.0.3` /
+  # The MCP tools are built against `fastmcp==4.0.3` /
   # `mcp==2.2.0` (see requirements_bazel.txt). The pinned nixpkgs revision predates
   # both mcp-sdk v2 (nixpkgs still ships mcp 1.26.0) and mcp v2's new transitive
   # deps (mcp-types, httpx2/httpcore2 -- all three postdate the pin entirely), and
@@ -153,6 +153,7 @@ let
       nativeBuildInputs ? [ ],
       buildInputs ? [ ],
       mainProgram ? null,
+      entrypointChecks ? [ ],
     }:
     python314Packages.buildPythonApplication {
       inherit pname;
@@ -181,6 +182,17 @@ let
       '';
       doCheck = false;
       dontUsePytestCheck = true;
+      doInstallCheck = entrypointChecks != [ ];
+      installCheckPhase = ''
+        runHook preInstallCheck
+        (
+          export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+          cd "$(mktemp -d)"
+          unset PYTHONPATH
+          ${lib.concatMapStringsSep "\n" (command: ''"$out/bin/${command}" --help'') entrypointChecks}
+        )
+        runHook postInstallCheck
+      '';
       meta = {
         inherit description;
         homepage = "https://github.com/agentydragon/ducktape";
@@ -363,50 +375,6 @@ rec {
         '';
       });
 
-  ducktape = mkWheel {
-    pname = "ducktape";
-    description = "Ducktape command-line tools";
-    importsCheck = [
-      "difftree.cli"
-      "gmail_archiver.main"
-      "cluster.skills.proxmox_vm.vm_interact"
-      "devinfra.gc.output_base_gc"
-      "devinfra.ws.cli"
-    ];
-    propagatedBuildInputs = with python314Packages; [
-      aiodocker
-      anyio
-      httpx
-      jinja2
-      mako
-      openai
-      platformdirs
-      pydantic
-      pygit2
-      pygithub
-      rich
-      structlog
-      tenacity
-      typer
-      python314Packages.fastmcp
-      mcp
-      click
-      unidiff
-      humanize
-      tabulate
-      beautifulsoup4
-      google-api-python-client
-      google-auth-httplib2
-      google-auth-oauthlib
-      pydantic-settings
-      python-dateutil
-      pyyaml
-      # skills deps (proxmox_vm)
-      pillow
-      ducktape-util
-    ];
-  };
-
   claude-statusline = mkWheel {
     pname = "claude-statusline";
     description = "Python Claude Code statusline";
@@ -506,7 +474,6 @@ rec {
   chatgpt = pkgs.callPackage ./chatgpt.nix { };
   # fastmcp-slim owns the client CLI (`fastmcp call|list <url> --auth <bearer>`);
   # expose it as a standalone app for agent closures (nix/flake/packages.nix `.#agent-haku`).
-  # The root metapackage remains the dependency consumed by the ducktape wheel.
   fastmcp = python314Packages.toPythonApplication python314Packages.fastmcp-slim;
   bebas-neue-font = pkgs.callPackage ./bebas-neue-font.nix { };
   bb = pkgs.callPackage ./bb.nix { inherit artifacts; };
@@ -562,4 +529,107 @@ rec {
 }
 // lib.optionalAttrs (artifacts ? aw-importer) {
   inherit aw-importer;
+}
+// lib.optionalAttrs (artifacts ? workspace-gc) {
+  workspace-gc = mkWheel {
+    pname = "workspace-gc";
+    description = "Reclaim stale Git worktrees, branches, and Bazel output bases";
+    mainProgram = "workspace-gc";
+    importsCheck = [ "devinfra.gc.workspace_gc" ];
+    entrypointChecks = [ "workspace-gc" ];
+    # SYNC: requires in //devinfra/gc:workspace_gc_wheel.
+    propagatedBuildInputs = with python314Packages; [
+      httpx
+      humanize
+      pygit2
+      rich
+      tabulate
+      typer
+    ];
+  };
+}
+// lib.optionalAttrs (artifacts ? difftree) {
+  difftree = mkWheel {
+    pname = "difftree";
+    description = "Summarize unified diffs as file trees";
+    mainProgram = "difftree";
+    importsCheck = [ "difftree.cli" ];
+    entrypointChecks = [ "difftree" ];
+    # SYNC: requires in //difftree:difftree_wheel.
+    propagatedBuildInputs = with python314Packages; [
+      click
+      more-itertools
+      rich
+      unidiff
+    ];
+  };
+}
+// lib.optionalAttrs (artifacts ? gmail-archiver) {
+  gmail-archiver = mkWheel {
+    pname = "gmail-archiver";
+    description = "Gmail archive, label, filter, and planning tools";
+    mainProgram = "gmail-archiver";
+    importsCheck = [ "gmail_archiver.main" ];
+    entrypointChecks = [ "gmail-archiver" ];
+    # SYNC: requires in //gmail_archiver:gmail_archiver_wheel.
+    propagatedBuildInputs = with python314Packages; [
+      beautifulsoup4
+      ducktape-util
+      google-api-python-client
+      google-auth
+      openai
+      platformdirs
+      pydantic
+      pydantic-core
+      python-dateutil
+      pyyaml
+      rich
+      tenacity
+      typer
+    ];
+  };
+}
+// lib.optionalAttrs (artifacts ? vm-interact) {
+  vm-interact =
+    (mkWheel {
+      pname = "vm-interact";
+      description = "Interact with Proxmox VMs over SSH";
+      mainProgram = "vm-interact";
+      importsCheck = [ "cluster.skills.proxmox_vm.vm_interact" ];
+      entrypointChecks = [ "vm-interact" ];
+      # SYNC: requires in //cluster/skills/proxmox_vm:vm_interact_wheel.
+      propagatedBuildInputs = with python314Packages; [
+        pillow
+        platformdirs
+        typer
+      ];
+    }).overrideAttrs
+      (old: {
+        makeWrapperArgs = (old.makeWrapperArgs or [ ]) ++ [
+          "--prefix"
+          "PATH"
+          ":"
+          (lib.makeBinPath [ pkgs.openssh ])
+        ];
+      });
+}
+// lib.optionalAttrs (artifacts ? ws) {
+  ws =
+    (mkWheel {
+      pname = "ws";
+      description = "Disposable agent workspaces on the cluster";
+      mainProgram = "ws";
+      importsCheck = [ "devinfra.ws.cli" ];
+      entrypointChecks = [ "ws" ];
+      # SYNC: requires in //devinfra/ws:ws_wheel.
+      propagatedBuildInputs = [ ducktape-util ] ++ (with python314Packages; [ typer ]);
+    }).overrideAttrs
+      (old: {
+        makeWrapperArgs = (old.makeWrapperArgs or [ ]) ++ [
+          "--prefix"
+          "PATH"
+          ":"
+          (lib.makeBinPath [ pkgs.kubectl ])
+        ];
+      });
 }

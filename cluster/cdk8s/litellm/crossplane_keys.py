@@ -68,6 +68,11 @@ def _key_spec(
     for_provider = KeySpecForProvider(
         key_alias=alias,
         models=list(models),
+        # provider-litellm v2.1.0 can leave this optional field unknown after
+        # create when LiteLLM omits organization_id from key info. An explicit
+        # empty value normalizes that state; the provider omits it from API
+        # requests when empty.
+        organization_id="",
         metadata_secret_ref=KeySpecForProviderMetadataSecretRef(name=metadata_secret),
         max_budget=max_budget,
         budget_duration=budget_duration,
@@ -92,8 +97,12 @@ def _team_spec(*, name: str, fallbacks: Sequence[str]) -> TeamSpec:
     return TeamSpec(
         for_provider=TeamSpecForProvider(
             team_alias=name.removeprefix("team-"),
-            router_settings=TeamSpecForProviderRouterSettings(
-                fallbacks=[TeamSpecForProviderRouterSettingsFallbacks(model="*", fallback_models=list(fallbacks))]
+            router_settings=(
+                TeamSpecForProviderRouterSettings(
+                    fallbacks=[TeamSpecForProviderRouterSettingsFallbacks(model="*", fallback_models=list(fallbacks))]
+                )
+                if fallbacks
+                else None
             ),
         ),
         provider_config_ref=TeamSpecProviderConfigRef(kind="ProviderConfig", name="default"),
@@ -256,7 +265,7 @@ def chart(app: App) -> Chart:
             max_budget=50,
             budget_duration="30d",
             annotations={
-                "description": "LiteLLM virtual key for the codex-pod agent (chatgpt/oai-responses/gpt-6-* models only); reflected into codex-pod as LITELLM_API_KEY",
+                "description": "LiteLLM virtual key for the codex-pod agent (chatgpt-sub/oai-responses/gpt-6-* models only); reflected into codex-pod as LITELLM_API_KEY",
                 "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
                 "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "codex-pod",
                 "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
@@ -300,7 +309,7 @@ def chart(app: App) -> Chart:
             models=_lane_models("gpt6_oai_lane_models"),
             consumer="retired standalone Codex workspaces; key retained for future use",
             annotations={
-                "description": "LiteLLM virtual key for a future Codex workspace lane (chatgpt/oai-responses/gpt-6-* models only); reflected into agent-workspaces if restored",
+                "description": "LiteLLM virtual key for a future Codex workspace lane (chatgpt-sub/oai-responses/gpt-6-* models only); reflected into agent-workspaces if restored",
                 "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
                 "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "agent-workspaces",
                 "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",

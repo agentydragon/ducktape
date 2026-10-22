@@ -54,6 +54,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
 SOPS_FILES = (
@@ -210,35 +211,7 @@ def _users() -> dict[str, object]:
 # The key must sort after the operator's own generated
 # `01-clickhouse-0*-{query,part,trace}_log.xml`, which set `replace="1"`.
 _SYSTEM_LOGS_FILE = "zz-system-logs.xml"
-_SYSTEM_LOGS_XML = """\
-<clickhouse>
-  <!-- ClickHouse's own telemetry was 85% of its write volume and 94% of its
-       part-creation ops: 24h of system.part_log showed 83k inserts / 30k merges /
-       25 GiB for system.*, against 4.9k inserts / 4.4 GiB of real tenant data,
-       all on a shared 7200 RPM spindle. Server metrics already reach Prometheus
-       through the endpoint configured above, which makes the *metric_log tables
-       redundant rather than merely expensive. -->
-  <metric_log remove="1"/>
-  <asynchronous_metric_log remove="1"/>
-  <query_metric_log remove="1"/>
-  <trace_log remove="1"/>
-  <text_log remove="1"/>
-  <processors_profile_log remove="1"/>
-  <background_schedule_pool_log remove="1"/>
-  <aggregated_zookeeper_log remove="1"/>
-  <zookeeper_connection_log remove="1"/>
-  <opentelemetry_span_log remove="1"/>
-  <query_views_log remove="1"/>
-  <asynchronous_insert_log remove="1"/>
-  <!-- Kept: query_log (the langfuse user holds SELECT on it), part_log (cheap
-       once the tables above stop generating parts for it to log, and it is what
-       diagnoses merge pressure), error_log, crash_log. -->
-  <query_log>
-    <max_size_rows>8192</max_size_rows>
-    <reserved_size_rows>8192</reserved_size_rows>
-  </query_log>
-</clickhouse>
-"""
+_SYSTEM_LOGS_XML = get_required_path(own_repo_rlocation("cluster/cdk8s/clickhouse/zz-system-logs.xml")).read_text()
 
 
 def clickhouse_chart(app: App) -> Chart:

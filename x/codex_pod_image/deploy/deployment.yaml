@@ -69,7 +69,7 @@ spec:
                   name: buildbuddy-api-key
                   key: api-key
                   optional: true
-            # LiteLLM virtual key (`chatgpt/oai-responses/*` models) minted by
+            # LiteLLM virtual key (`chatgpt-sub/oai-responses/*` models) minted by
             # cluster/cdk8s/litellm/crossplane_keys.py and reflected into this namespace. Codex's
             # baked config.toml points its `litellm` model_provider at this via
             # env_key=LITELLM_API_KEY, so codex routes to LiteLLM instead of a

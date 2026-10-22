@@ -334,9 +334,10 @@ See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
   those names (<../images/agent-workspace/codex-config.toml>,
   <../../x/codex_pod_image/home.nix>, `oai_lane_models` in
   <../../tf/gitops/litellm-keys/main.tf>) needed no rebuild, and the `codex-*` entries
-  stayed on `anthropic/` → `/v1/messages` for Claude Code. [#4823] later renamed the
-  lanes to `chatgpt/oai-responses/*` / `chatgpt/ant-messages/*` and retired both
-  legacy name families.
+  stayed on `anthropic/` → `/v1/messages` for Claude Code. [#4823] later established
+  the account/wire/model naming scheme and retired both
+  legacy name families. The CLIProxyAPI subscription routes now use
+  `chatgpt-sub/oai-responses/*` / `chatgpt-sub/ant-messages/*`.
 
   [#3198]: https://github.com/agentydragon/ducktape/pull/3198
   [#3199]: https://github.com/agentydragon/ducktape/pull/3199

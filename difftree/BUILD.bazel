@@ -1,3 +1,4 @@
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
@@ -57,6 +58,29 @@ py_binary(
     name = "difftree",
     main_module = "difftree.cli",
     deps = [":cli"],
+)
+
+py_package(
+    name = "difftree_pkg",
+    packages = ["difftree"],
+    deps = [":cli"],
+)
+
+py_wheel(
+    name = "difftree_wheel",
+    distribution = "difftree",
+    entry_points = {"console_scripts": ["difftree = difftree.cli:main"]},
+    python_requires = ">=3.14",
+    # SYNC: propagatedBuildInputs in nix/packages/default.nix (difftree).
+    requires = [
+        "click>=8.0",
+        "more-itertools",
+        "rich",
+        "unidiff>=0.7.0",
+    ],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":difftree_pkg"],
 )
 
 py_library(

@@ -167,13 +167,22 @@ gencode version, the pip `protobuf` runtime, and `autogen-core`'s `<6.0.0` pin
 is now fully resolved:
 
 - `autogen-core` was replaced by `agent-framework-core`, which has no protobuf pin.
-- pip `protobuf` is pinned to `6.33.1` to match the nixpkgs version.
+- At the time of this resolution, pip `protobuf` was pinned to `6.33.1` to match
+  nixpkgs. Current pins are different; see the version snapshot below.
 - `py_proto_library` targets now build and run correctly.
 
 `py_proto_library` targets for BuildBuddy message types (including `invocation_py_proto`
 and its transitive deps) are defined in `third_party/buildbuddy/BUILD.protos.bazel`.
 These are used for JSON deserialization via `google.protobuf.json_format` — see
 `devinfra/precommit/test_tag.py` for an example.
+
+### Current version snapshot (2026-10-21)
+
+The root workspace now pins Bazel protobuf `36.1.bcr.1` and the pip runtime
+`protobuf==7.36.1`. The stable `nixpkgs` input still supplies Python protobuf
+`7.34.1`; the `nixpkgs-unstable` and `nixpkgs-master` inputs supply `7.36.2`.
+Thus the April 2026 resolution above is historical, and a future coordinated
+bump must account for the stable Nix runtime as well as the Bazel and pip pins.
 
 ## Recommendation
 

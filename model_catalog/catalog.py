@@ -7,12 +7,12 @@ Naming scheme (#4823): an exposed `model_name` is `{provider}/{shape}/{model}` �
 upstream account/provider, the wire LiteLLM speaks to that provider, then the upstream
 model:
 
-- `chatgpt/ant-messages/*` / `chatgpt/oai-responses/*` — ChatGPT/Codex subscription via
+- `chatgpt-sub/ant-messages/*` / `chatgpt-sub/oai-responses/*` — ChatGPT/Codex subscription via
   CLIProxyAPI, which serves it on both the Anthropic Messages and the OpenAI Responses
   wire; the two entries pick between them
 - `anthropic-max20/ant-messages/*` — Claude Code subscription via CLIProxyAPI's Claude
   OAuth session, on the Anthropic Messages wire (a different upstream session on the same
-  pod as `chatgpt/*`, distinct from the direct-API `anthropic-api/ant-messages/*` entries)
+  pod as `chatgpt-sub/*`, distinct from the direct-API `anthropic-api/ant-messages/*` entries)
 - `anthropic-api/ant-messages/*` — direct Anthropic API on the Anthropic Messages wire
 - `tana/ant-messages/*` — Tana account via tana-litellm, an Anthropic Messages
   passthrough
@@ -33,7 +33,7 @@ and translates rather than rejecting a mismatch, so every entry is reachable fro
 `gemini-claude` wrapper runs Claude Code's `/v1/messages` traffic against
 `google/goog-generate/*`. What the shape does decide is which translator does the work,
 load-bearing wherever one account is served over two wires:
-`chatgpt/{ant-messages,oai-responses}/*` exists so CLIProxyAPI translates Claude Code's
+`chatgpt-sub/{ant-messages,oai-responses}/*` exists so CLIProxyAPI translates Claude Code's
 tool calls instead of LiteLLM's own Messages bridge (<nix/home/claude_code/codex-claude.nix>).
 
 A shape slug is `<definer>-<protocol>` (ant-messages, oai-responses, oai-chat,
@@ -42,7 +42,7 @@ identified by their definer — the bare nouns are unique only in today's snapsh
 ("chat" and "embeddings" are already generic: Cohere chat and Google embedContent are
 distinct wire shapes answering to the same nouns). The definer prefix is NOT the
 provider segment: provider says whose ACCOUNT serves the entry, the definer says whose
-PROTOCOL that wire is, and they vary independently — `chatgpt/ant-messages/*` is the
+PROTOCOL that wire is, and they vary independently — `chatgpt-sub/ant-messages/*` is the
 ChatGPT account serving Anthropic's wire shape. Definer slugs stay short and fixed
 (ant, oai, goog, olm; future coh, ...) so a provider slug can never stutter against a
 definer name (openai/openai-chat, ollama/ollama-chat).
@@ -75,7 +75,7 @@ from model_catalog import ollama
 class Provider(StrEnum):
     """First scheme segment: the upstream account/provider an entry spends from."""
 
-    CHATGPT = "chatgpt"
+    CHATGPT = "chatgpt-sub"
     ANTHROPIC_API = "anthropic-api"
     ANTHROPIC_MAX20 = "anthropic-max20"
     ANTIGRAVITY = "antigravity"
@@ -339,7 +339,7 @@ _SUBSCRIPTION_HAIKU = Model(
 # `internal/runtime/executor/antigravity_executor.go` calls Google's internal Cloud Code
 # API (cloudcode-pa.googleapis.com), not the public Gemini Developer API, and
 # `internal/translator/antigravity/claude/` is a dedicated Anthropic-Messages
-# translator for it -- the same wire mechanism already used for the chatgpt/
+# translator for it -- the same wire mechanism already used for the chatgpt-sub/
 # anthropic-max20 routes below. The account bundles three unrelated model families
 # under one weekly-refreshing quota (two buckets: "Gemini models" and "Claude and GPT
 # models"; confirmed live via the management UI's quota refresh, 2026-09-25):
