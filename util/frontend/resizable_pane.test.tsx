@@ -37,15 +37,33 @@ async function render(effectiveMax: number): Promise<HTMLDivElement> {
   return container;
 }
 
-function pointerEvent(type: string, clientY: number): MouseEvent {
+function pointerEvent(type: string, clientY: number, isPrimary = true): MouseEvent {
   const event = new MouseEvent(type, { bubbles: true, button: 0, clientY });
   Object.defineProperty(event, "pointerId", { value: 7 });
-  Object.defineProperty(event, "isPrimary", { value: true });
+  Object.defineProperty(event, "isPrimary", { value: isPrimary });
   return event;
 }
 
 function allowPointerCapture(element: HTMLElement): void {
-  Object.defineProperty(element, "setPointerCapture", { configurable: true, value: () => {} });
+  let capturedPointerId: number | null = null;
+  Object.defineProperties(element, {
+    setPointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => {
+        capturedPointerId = pointerId;
+      },
+    },
+    hasPointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => capturedPointerId === pointerId,
+    },
+    releasePointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => {
+        if (capturedPointerId === pointerId) capturedPointerId = null;
+      },
+    },
+  });
 }
 
 afterEach(async () => {
@@ -88,12 +106,20 @@ it("uses axis direction for dragging and clears pointer state on cancel", async 
   const separator = mounted.querySelector<HTMLElement>('[role="separator"]')!;
   allowPointerCapture(separator);
 
+  const secondaryPointer = pointerEvent("pointerdown", 100, false);
+  await act(async () => separator.dispatchEvent(secondaryPointer));
+  await act(async () => separator.dispatchEvent(pointerEvent("pointermove", 80)));
+  expect(separator.getAttribute("aria-valuenow")).toBe("100");
+  expect(mounted.querySelector("output")?.getAttribute("data-resizing")).toBe("false");
+
   await act(async () => separator.dispatchEvent(pointerEvent("pointerdown", 100)));
   expect(mounted.querySelector("output")?.getAttribute("data-resizing")).toBe("true");
+  expect(separator.hasPointerCapture(7)).toBe(true);
   await act(async () => separator.dispatchEvent(pointerEvent("pointermove", 80)));
   expect(separator.getAttribute("aria-valuenow")).toBe("120");
   await act(async () => separator.dispatchEvent(pointerEvent("pointercancel", 80)));
   expect(mounted.querySelector("output")?.getAttribute("data-resizing")).toBe("false");
+  expect(separator.hasPointerCapture(7)).toBe(false);
 
   await act(async () => separator.dispatchEvent(pointerEvent("pointermove", 20)));
   expect(separator.getAttribute("aria-valuenow")).toBe("120");

@@ -74,7 +74,7 @@ export function ResizeHandle({
     const current = drag.current;
     if (current?.pointerId !== pointerId) return;
     drag.current = null;
-    if (element?.hasPointerCapture?.(pointerId)) element.releasePointerCapture?.(pointerId);
+    if (element?.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
     onResizeEnd?.();
   };
 
@@ -91,7 +91,7 @@ export function ResizeHandle({
         if (event.button !== 0 || event.isPrimary === false) return;
         event.preventDefault();
         drag.current = { pointerId: event.pointerId, start: along(event), startSize: pane.size };
-        event.currentTarget.setPointerCapture?.(event.pointerId);
+        event.currentTarget.setPointerCapture(event.pointerId);
         onResizeStart?.();
       }}
       onPointerMove={(event) => {

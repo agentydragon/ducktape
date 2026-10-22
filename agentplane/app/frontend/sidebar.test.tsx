@@ -644,6 +644,25 @@ function sidebarWidth(): number {
 function resizeHandle(): HTMLElement {
   const found = container.querySelector('[aria-label="Resize sidebar"]');
   if (!(found instanceof HTMLElement)) throw new Error("missing resize handle");
+  let capturedPointerId: number | null = null;
+  Object.defineProperties(found, {
+    setPointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => {
+        capturedPointerId = pointerId;
+      },
+    },
+    hasPointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => capturedPointerId === pointerId,
+    },
+    releasePointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => {
+        if (capturedPointerId === pointerId) capturedPointerId = null;
+      },
+    },
+  });
   return found;
 }
 
@@ -667,15 +686,25 @@ it("clamps a dragged width to the [180, 480] range", async () => {
   const handle = resizeHandle();
 
   await act(async () => {
-    handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, clientX: 0 }));
-    handle.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: -1000 }));
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, isPrimary: true, button: 0, clientX: 0 })
+    );
+    handle.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, pointerId: 1, isPrimary: true, button: 0, clientX: -1000 })
+    );
   });
   expect(sidebarWidth()).toBe(180);
 
   await act(async () => {
-    handle.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 1000 }));
+    handle.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, pointerId: 1, isPrimary: true, button: 0, clientX: 1000 })
+    );
   });
   expect(sidebarWidth()).toBe(480);
+  await act(async () =>
+    handle.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, isPrimary: true, button: 0 }))
+  );
+  expect(handle.hasPointerCapture(1)).toBe(false);
 });
 
 it("persists the resized width across a remount", async () => {

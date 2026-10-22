@@ -254,7 +254,25 @@ it("clamps pointer and keyboard resizing and restores the width after collapsing
   await act(async () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
   expect(separator.getAttribute("aria-valuenow")).toBe("272");
 
-  Object.defineProperty(separator, "setPointerCapture", { configurable: true, value: () => {} });
+  let capturedPointerId: number | null = null;
+  Object.defineProperties(separator, {
+    setPointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => {
+        capturedPointerId = pointerId;
+      },
+    },
+    hasPointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => capturedPointerId === pointerId,
+    },
+    releasePointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => {
+        if (capturedPointerId === pointerId) capturedPointerId = null;
+      },
+    },
+  });
   const pointerEvent = (type: string, clientX: number): MouseEvent => {
     const event = new MouseEvent(type, { bubbles: true, button: 0, clientX });
     Object.defineProperty(event, "pointerId", { value: 1 });
@@ -267,12 +285,14 @@ it("clamps pointer and keyboard resizing and restores the width after collapsing
   await act(async () => separator.dispatchEvent(pointerEvent("pointermove", 0)));
   expect(separator.getAttribute("aria-valuenow")).toBe("220");
   await act(async () => separator.dispatchEvent(pointerEvent("pointerup", 0)));
+  expect(separator.hasPointerCapture(1)).toBe(false);
 
   await act(async () => separator.dispatchEvent(pointerEvent("pointerdown", 220)));
   await act(async () => separator.dispatchEvent(pointerEvent("pointermove", 248)));
   expect(separator.getAttribute("aria-valuenow")).toBe("248");
   expect(layout.style.userSelect).toBe("none");
   await act(async () => separator.dispatchEvent(pointerEvent("pointercancel", 248)));
+  expect(separator.hasPointerCapture(1)).toBe(false);
   expect(layout.style.userSelect).toBe("");
   await act(async () => separator.dispatchEvent(pointerEvent("pointermove", 0)));
   expect(separator.getAttribute("aria-valuenow")).toBe("248");
