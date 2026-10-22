@@ -133,10 +133,10 @@ def _component_labels(component: str) -> dict[str, str]:
 
 
 def _volume_topology(
-    *, rack: str, storage: str, storage_class: str, disk: str, max_volume_counts: int
+    *, rack: str, storage: str, storage_class: str, disk: str, replicas: int, max_volume_counts: int
 ) -> SeaweedSpecVolumeTopology:
     return SeaweedSpecVolumeTopology(
-        replicas=3,
+        replicas=replicas,
         data_center="hil",
         rack=rack,
         priority_class_name=stateful_infra.NAME,
@@ -327,9 +327,10 @@ def seaweed(scope: Construct) -> Seaweed:
                     storage="1800Gi",
                     storage_class="local-path-ovh-hdd",
                     disk="hdd",
+                    replicas=3,
                     max_volume_counts=400,
                 ),
-                # 3 servers on the OVH NVMe nodes; serves Forgejo git via the
+                # The usual 3-server OVH NVMe group serves Forgejo git via the
                 # seaweedfs-ovh-ssd StorageClass (diskType=ssd -> -disk=ssd).
                 #
                 # Real OVH rack -- both KS-GAME nodes (104952, 104963) are physically in
@@ -340,11 +341,14 @@ def seaweed(scope: Construct) -> Seaweed:
                 # 200 slots: -max=0 auto-derives only ~24 on the 419 GB NVMe. 200 gives
                 # 2*200 = 400 slots across any two survivors; the current 2-copy set uses 68
                 # (34 logical volumes), leaving room for the planned SSD migrations.
+                # Temporarily keep only the two surviving servers during the first-node rebuild.
+                # Restore three after the evacuated server's node has been rebuilt.
                 "ssd": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
                     storage_class="local-path-ovh-ssd",
                     disk="ssd",
+                    replicas=2,
                     max_volume_counts=200,
                 ),
             },
