@@ -1,4 +1,4 @@
-"""The Piraeus Operator and a two-node, file-backed LINSTOR canary."""
+"""Piraeus Operator with file-backed canaries and a local SSD pool."""
 
 from __future__ import annotations
 
@@ -19,9 +19,44 @@ CLUSTER_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/cluster"
 
 _CANARY_LABEL = "storage.allegedly.works/drbd-canary"
 _CANARY_SELECTOR = {_CANARY_LABEL: "true"}
+_PIRAEUS_READY_LABEL = "storage.allegedly.works/piraeus-ready"
+_CLUSTER_NODE_AFFINITY = {
+    "nodeSelectorTerms": [
+        {"matchExpressions": [{"key": _CANARY_LABEL, "operator": "In", "values": ["true"]}]},
+        {"matchExpressions": [{"key": _PIRAEUS_READY_LABEL, "operator": "In", "values": ["true"]}]},
+    ]
+}
 _POOL_DIRECTORY = "/var/mnt/local-path-ovh-hdd/linstor-canary"
+_FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_1951A3449505"
 _CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
 _REACTOR_CONFIG_PATCH = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-reactor-patch.yaml")).read_text()
+_TALOS_SATELLITE_PATCHES = [
+    {"target": {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}, "patch": _REACTOR_CONFIG_PATCH}
+]
+_TALOS_SATELLITE_POD_TEMPLATE = {
+    "spec": {
+        # DRBD uses the host network. Talos kubelet selects node InternalIPs from
+        # 10.42.0.0/16, the Nebula mesh subnet.
+        "hostNetwork": True,
+        "dnsPolicy": "ClusterFirstWithHostNet",
+        # Talos supplies DRBD modules in its system extension. Apply Piraeus' documented
+        # Talos patch to remove Linux module-loader and systemd assumptions and redirect
+        # read-only LVM paths.
+        "initContainers": [
+            {"name": "drbd-shutdown-guard", "$patch": "delete"},
+            {"name": "drbd-module-loader", "$patch": "delete"},
+        ],
+        "volumes": [
+            {"name": "run-systemd-system", "$patch": "delete"},
+            {"name": "run-drbd-shutdown-guard", "$patch": "delete"},
+            {"name": "systemd-bus-socket", "$patch": "delete"},
+            {"name": "lib-modules", "$patch": "delete"},
+            {"name": "usr-src", "$patch": "delete"},
+            {"name": "etc-lvm-backup", "hostPath": {"path": "/var/etc/lvm/backup", "type": "DirectoryOrCreate"}},
+            {"name": "etc-lvm-archive", "hostPath": {"path": "/var/etc/lvm/archive", "type": "DirectoryOrCreate"}},
+        ],
+    }
+}
 
 
 def operator_chart(app: App) -> Chart:
@@ -63,7 +98,7 @@ def operator_chart(app: App) -> Chart:
 
 
 def cluster_chart(app: App) -> Chart:
-    """Declare LINSTOR, the Talos satellite patch and the opt-in local canary class."""
+    """Declare LINSTOR, the Talos satellite patch, and local canary and SSD classes."""
     chart = Chart(app, "piraeus-cluster", disable_resource_name_hashes=True)
     k8s.KubeNetworkPolicy(
         chart,
@@ -104,16 +139,20 @@ def cluster_chart(app: App) -> Chart:
             "createInternalTLS": "cert-manager",
             "createApiTLS": "cert-manager",
             "linstorCluster": {
-                # Both the controller-side and node-side Piraeus workloads are limited to
-                # the two hosts prepared in cluster/terraform/main/drbd-canary.tf.
-                "nodeSelector": _CANARY_SELECTOR,
-                "properties": [{"name": "TcpPortAutoRange", "value": "7900-7919"}],
-                "controller": {"enabled": True},
-                "csiController": {"enabled": True},
+                # Keep node workloads on the two file canaries, or on the first production
+                # node after its post-evacuation rebuild config adds the readiness label.
+                "nodeAffinity": _CLUSTER_NODE_AFFINITY,
+                "tolerations": [
+                    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
+                ],
+                "properties": [{"name": "TcpPortAutoRange", "value": "7900-7999"}],
+                "controller": {"enabled": True, "podTemplate": {"spec": {"nodeSelector": _CANARY_SELECTOR}}},
+                "csiController": {"enabled": True, "podTemplate": {"spec": {"nodeSelector": _CANARY_SELECTOR}}},
                 "csiNode": {"enabled": True},
                 # Keep local PV affinity updates, but omit unrelated NFS and HA/eviction
-                # components during this two-node evaluation.
-                "affinityController": {"enabled": True},
+                # components during this evaluation. The affinity controller only needs
+                # to run on the existing file canaries.
+                "affinityController": {"enabled": True, "podTemplate": {"spec": {"nodeSelector": _CANARY_SELECTOR}}},
                 "highAvailabilityController": {"enabled": False},
                 "nfsServer": {"enabled": False},
             },
@@ -125,12 +164,8 @@ def cluster_chart(app: App) -> Chart:
                     "deletionPolicy": "Retain",
                     # Reactor metrics are unauthenticated. Monitoring is disabled for
                     # this canary, so keep the endpoint local to the host-network Pod.
-                    "patches": [
-                        {
-                            "target": {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"},
-                            "patch": _REACTOR_CONFIG_PATCH,
-                        }
-                    ],
+                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
                     "storagePools": [
                         {
                             "name": "local-canary",
@@ -141,37 +176,28 @@ def cluster_chart(app: App) -> Chart:
                             "fileThinPool": {"directory": _POOL_DIRECTORY},
                         }
                     ],
-                    "podTemplate": {
-                        "spec": {
-                            # DRBD uses the host network. Talos kubelet selects node
-                            # InternalIPs from 10.42.0.0/16, the Nebula mesh subnet.
-                            "hostNetwork": True,
-                            "dnsPolicy": "ClusterFirstWithHostNet",
-                            # Talos supplies DRBD modules in its system extension. Apply
-                            # Piraeus' documented Talos patch to remove Linux module-loader
-                            # and systemd assumptions and redirect read-only LVM paths.
-                            "initContainers": [
-                                {"name": "drbd-shutdown-guard", "$patch": "delete"},
-                                {"name": "drbd-module-loader", "$patch": "delete"},
-                            ],
-                            "volumes": [
-                                {"name": "run-systemd-system", "$patch": "delete"},
-                                {"name": "run-drbd-shutdown-guard", "$patch": "delete"},
-                                {"name": "systemd-bus-socket", "$patch": "delete"},
-                                {"name": "lib-modules", "$patch": "delete"},
-                                {"name": "usr-src", "$patch": "delete"},
-                                {
-                                    "name": "etc-lvm-backup",
-                                    "hostPath": {"path": "/var/etc/lvm/backup", "type": "DirectoryOrCreate"},
-                                },
-                                {
-                                    "name": "etc-lvm-archive",
-                                    "hostPath": {"path": "/var/etc/lvm/archive", "type": "DirectoryOrCreate"},
-                                },
-                            ],
+                },
+                {
+                    "name": "ssd-first-node",
+                    "nodeSelector": {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns1001419"},
+                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
+                    # This selector becomes eligible only after the target rebuild config
+                    # adds piraeus-ready=true following data evacuation and disk wipe.
+                    # source.hostDevices lets Piraeus initialize the entire data device.
+                    "deletionPolicy": "Retain",
+                    "storagePools": [
+                        {
+                            "name": "ssd",
+                            "lvmThinPool": {
+                                "volumeGroup": "piraeus_ssd",
+                                "thinPool": "data",
+                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+                            },
+                            "source": {"hostDevices": [_FIRST_NODE_DATA_DEVICE]},
                         }
-                    },
-                }
+                    ],
+                },
             ],
             "storageClasses": [
                 {
@@ -184,7 +210,18 @@ def cluster_chart(app: App) -> Chart:
                         "linstor.csi.linbit.com/placementCount": "1",
                         "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
                     },
-                }
+                },
+                {
+                    "name": "piraeus-ssd-local",
+                    "reclaimPolicy": "Retain",
+                    "volumeBindingMode": "WaitForFirstConsumer",
+                    "allowVolumeExpansion": True,
+                    "parameters": {
+                        "linstor.csi.linbit.com/storagePool": "ssd",
+                        "linstor.csi.linbit.com/placementCount": "1",
+                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
+                    },
+                },
             ],
         },
     )

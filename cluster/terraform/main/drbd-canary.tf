@@ -1,7 +1,9 @@
-# Host preparation only. Piraeus/CSI is deployed separately after the module checks
-# in cluster/docs/drbd_canary.md. Keep the rescue/dd schematic unchanged.
+# Host preparation only. Piraeus eligibility is controlled separately and must be
+# activated only after the target's rebuild. Keep the rescue/dd schematic unchanged.
 locals {
   drbd_canary_nodes          = toset(["ovh-ns102453", "ovh-ns103656"])
+  drbd_lvm_thin_nodes        = toset([local.piraeus_first_node])
+  drbd_prepared_nodes        = setunion(local.drbd_canary_nodes, local.drbd_lvm_thin_nodes)
   drbd_canary_talos_version  = "v1.14.0"
   drbd_canary_base_schematic = yamldecode(talos_image_factory_schematic.kimsufi.schematic)
 
@@ -9,22 +11,32 @@ locals {
 
   drbd_canary_machine_config_patches = {
     for name in keys(local.active_kimsufi_servers) :
-    name => contains(local.drbd_canary_nodes, name) ? [
+    name => contains(local.drbd_prepared_nodes, name) ? [
       yamlencode({
-        machine = {
-          install = {
-            image = local.drbd_canary_installer_image
-          }
-          kernel = {
-            modules = [
-              { name = "drbd", parameters = ["usermode_helper=disabled"] },
-              { name = "drbd_transport_tcp" },
-            ]
-          }
-          nodeLabels = {
-            "storage.allegedly.works/drbd-canary" = "true"
-          }
-        }
+        machine = merge(
+          {
+            install = {
+              image = local.drbd_canary_installer_image
+            }
+            kernel = {
+              modules = concat(
+                [
+                  { name = "drbd", parameters = ["usermode_helper=disabled"] },
+                  { name = "drbd_transport_tcp" },
+                ],
+                contains(local.drbd_lvm_thin_nodes, name) ? [
+                  { name = "dm_thin_pool" },
+                  { name = "dm_snapshot" },
+                ] : [],
+              )
+            }
+          },
+          contains(local.drbd_canary_nodes, name) ? {
+            nodeLabels = {
+              "storage.allegedly.works/drbd-canary" = "true"
+            }
+          } : {},
+        )
       }),
     ] : []
   }
@@ -44,6 +56,6 @@ resource "talos_image_factory_schematic" "drbd_canary" {
 }
 
 output "drbd_canary_installer_image" {
-  description = "In-place upgrade image for the DRBD canary workers; never use the rescue/dd installer"
+  description = "In-place upgrade image for DRBD-prepared OVH Talos nodes; never use the rescue/dd installer"
   value       = local.drbd_canary_installer_image
 }

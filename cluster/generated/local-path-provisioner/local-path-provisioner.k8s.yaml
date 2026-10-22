@@ -58,8 +58,7 @@ spec:
         paths:
           - /var/mnt/seaweedfs-data/local-path
       - node: ovh-ns1001419
-        paths:
-          - /var/mnt/seaweedfs-data/local-path
+        paths: []
       - node: optiplex
         paths:
           - /var/local-path-provisioner

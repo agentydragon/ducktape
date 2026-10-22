@@ -34,8 +34,8 @@ _HOME_SSD = "local-path-home-ssd"
 SSD_STORAGE_CLASSES = {_OVH_SSD, _HOME_SSD}
 
 
-def _node_path(node: str, path: str) -> dict[str, object]:
-    return {"node": node, "paths": [path]}
+def _node_path(node: str, *paths: str) -> dict[str, object]:
+    return {"node": node, "paths": list(paths)}
 
 
 def _storage_class(scope: Construct, name: str, *, reclaim_policy: ReclaimPolicy, topology: dict[str, str]) -> None:
@@ -149,7 +149,9 @@ def chart(app: App) -> Chart:
                 _node_path("ovh-ns102453", "/var/mnt/local-path-ovh-hdd/local-path"),
                 _node_path("ovh-ns104952", "/var/mnt/seaweedfs-data/local-path"),
                 _node_path("ovh-ns104963", "/var/mnt/seaweedfs-data/local-path"),
-                _node_path("ovh-ns1001419", "/var/mnt/seaweedfs-data/local-path"),
+                # This node's data disk is reserved for Piraeus. An explicit empty
+                # list denies new local-path claims without falling back to /var.
+                _node_path("ovh-ns1001419"),
                 # Home Assistant is deliberately tied to the physical home LAN and the
                 # OptiPlex's radios. Keep its local state on this machine's SSD.
                 _node_path("optiplex", "/var/local-path-provisioner"),

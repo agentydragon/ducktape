@@ -16,6 +16,10 @@
 # SERVER MAP
 
 locals {
+  piraeus_first_node                    = "ovh-ns1001419"
+  piraeus_first_node_system_disk_serial = "190130800417"
+  piraeus_first_node_data_disk_serial   = "1951A3449505"
+
   # Per-server provisioning facts, keyed by host name. The host name, Nebula IP and
   # Kubernetes role are the mesh roster's (local.nebula_hosts, nebula.tf), merged in below.
   kimsufi_server_provisioning = {
@@ -57,11 +61,9 @@ locals {
     "ovh-ns1001419" = {
       service_name = var.kimsufi_service_name_sys1
       apply_mode   = "staged_if_needing_reboot"
-      # The new SYS-1 has two identical NVMe devices. The machine is blank,
-      # so the first device is the Talos install disk and the second becomes
-      # the SSD UserVolume for local-path/SeaweedFS.
-      install_disk    = "/dev/nvme0n1"
-      data_disk_match = "disk.dev_path == '/dev/nvme1n1'"
+      # The rescue/dd path and the Talos install path use the verified system NVMe identity.
+      install_disk    = "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_190130800417"
+      data_disk_match = "disk.serial == '${local.piraeus_first_node_data_disk_serial}'"
       zone            = "hil-ovh"
       storage_tier    = "ssd"
     }
@@ -324,7 +326,7 @@ locals {
   # can use OVH-local capacity uniformly.
   kimsufi_user_volume_config_patches = {
     for k, v in merge(local.kimsufi_servers, local.kimsufi_cp_servers) :
-    k => v.data_disk_match == null ? [] : [
+    k => k == local.piraeus_first_node || v.data_disk_match == null ? [] : [
       yamlencode({
         apiVersion = "v1alpha1"
         kind       = "UserVolumeConfig"
@@ -348,9 +350,14 @@ locals {
     for k, v in local.kimsufi_servers :
     k => yamlencode({
       machine = merge(local.common_machine_base, {
-        install = {
-          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${lookup(local.talos_installer_version_overrides, k, var.talos_version)}"
-        }
+        install = merge(
+          {
+            image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${lookup(local.talos_installer_version_overrides, k, var.talos_version)}"
+          },
+          k == local.piraeus_first_node ? {
+            disk = v.install_disk
+          } : {},
+        )
         files = local.cp_auth_files
         # Topology labels set explicitly. The installed talos-CCM only populates
         # ExternalIP / providerID when `--cloud-provider=external` is in the kubelet
@@ -358,16 +365,47 @@ locals {
         # CCM transformation matches on `region=hil` set here.
         # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
         # (cluster/generated/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
-        nodeLabels = {
-          "topology.kubernetes.io/region" = "hil"
-          "topology.kubernetes.io/zone"   = v.zone
-          "storage.allegedly.works/tier"  = v.storage_tier
-        }
+        # Apply this target's desired config only after data evacuation and the
+        # system reset. The label gates Piraeus raw-pool creation.
+        nodeLabels = merge(
+          {
+            "topology.kubernetes.io/region" = "hil"
+            "topology.kubernetes.io/zone"   = v.zone
+            "storage.allegedly.works/tier"  = v.storage_tier
+          },
+          k == local.piraeus_first_node ? {
+            "storage.allegedly.works/piraeus-ready" = "true"
+          } : {},
+        )
       })
       cluster = local.kimsufi_controlplane_cluster_config_by_node[k]
     })
     if v.role == "controlplane"
   }
+
+  # Only the first-node rebuild gets dedicated system partitions. The generated
+  # EPHEMERAL document is patched by name along with the four new system volumes.
+  piraeus_first_node_system_volume_config_patches = [
+    for name, size in {
+      ETCD      = "16GiB"
+      EPHEMERAL = "32GiB"
+      CRI       = "192GiB"
+      KUBELET   = "128GiB"
+      LOG       = "16GiB"
+    } : yamlencode({
+      apiVersion = "v1alpha1"
+      kind       = "VolumeConfig"
+      name       = name
+      provisioning = {
+        diskSelector = {
+          match = "disk.serial == '${local.piraeus_first_node_system_disk_serial}'"
+        }
+        minSize = size
+        maxSize = size
+        grow    = false
+      }
+    })
+  ]
 
   kimsufi_worker_machine_config_patches = {
     for k, v in local.kimsufi_servers :
@@ -552,6 +590,7 @@ data "talos_machine_configuration" "kimsufi" {
     local.nebula_machine_patches[each.key],
     [local.talos_node_logging_patch],
     local.drbd_canary_machine_config_patches[each.key],
+    each.key == local.piraeus_first_node ? local.piraeus_first_node_system_volume_config_patches : [],
   )
 }
 

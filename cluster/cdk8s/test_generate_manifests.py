@@ -97,7 +97,7 @@ def test_generated_root_holds_only_generated_files(generated: Path, checkout: Pa
     )
 
 
-def test_piraeus_storage_is_confined_to_the_retained_two_node_canary(
+def test_piraeus_storage_is_confined_to_prepared_nodes(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
@@ -112,19 +112,32 @@ def test_piraeus_storage_is_confined_to_the_retained_two_node_canary(
     assert values["createInternalTLS"] == "cert-manager"
     assert values["createApiTLS"] == "cert-manager"
     cluster = values["linstorCluster"]
-    assert cluster["nodeSelector"] == canary_selector
-    assert cluster["properties"] == [{"name": "TcpPortAutoRange", "value": "7900-7919"}]
+    assert "nodeSelector" not in cluster
+    assert cluster["nodeAffinity"] == {
+        "nodeSelectorTerms": [
+            {"matchExpressions": [{"key": label, "operator": "In", "values": ["true"]}]}
+            for label in ("storage.allegedly.works/drbd-canary", "storage.allegedly.works/piraeus-ready")
+        ]
+    }
+    for component in ("controller", "csiController", "affinityController"):
+        assert cluster[component]["podTemplate"]["spec"]["nodeSelector"] == canary_selector
+    assert cluster["properties"] == [{"name": "TcpPortAutoRange", "value": "7900-7999"}]
     assert cluster["highAvailabilityController"] == {"enabled": False}
     assert cluster["nfsServer"] == {"enabled": False}
 
-    [satellite] = values["linstorSatelliteConfigurations"]
+    satellite, ssd_satellite = values["linstorSatelliteConfigurations"]
     assert satellite["nodeSelector"] == canary_selector
     assert satellite["deletionPolicy"] == "Retain"
     [pool] = satellite["storagePools"]
     assert pool == {"name": "local-canary", "fileThinPool": {"directory": "/var/mnt/local-path-ovh-hdd/linstor-canary"}}
 
-    assert len(values["linstorSatelliteConfigurations"]) == 1
-    assert satellite["nodeSelector"] == canary_selector
+    assert ssd_satellite["nodeSelector"] == {
+        "storage.allegedly.works/piraeus-ready": "true",
+        "kubernetes.io/hostname": "ovh-ns1001419",
+    }
+    assert ssd_satellite["deletionPolicy"] == "Retain"
+    assert ssd_satellite["podTemplate"] == satellite["podTemplate"]
+    assert ssd_satellite["patches"] == satellite["patches"]
     [reactor_patch] = satellite["patches"]
     assert reactor_patch["target"] == {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}
     assert 'address = "127.0.0.1:9942"' in reactor_patch["patch"]
@@ -132,7 +145,7 @@ def test_piraeus_storage_is_confined_to_the_retained_two_node_canary(
     assert "bind_address" not in reactor_patch["patch"]
     assert "3366" not in reactor_patch["patch"]
 
-    [storage_class] = values["storageClasses"]
+    storage_class, ssd_class = values["storageClasses"]
     assert storage_class["name"] == "local-canary"
     assert storage_class["reclaimPolicy"] == "Retain"
     assert storage_class["volumeBindingMode"] == "WaitForFirstConsumer"
@@ -143,6 +156,11 @@ def test_piraeus_storage_is_confined_to_the_retained_two_node_canary(
         "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
     }
     assert "annotations" not in storage_class
+    assert ssd_class == {
+        **storage_class,
+        "name": "piraeus-ssd-local",
+        "parameters": {**storage_class["parameters"], "linstor.csi.linbit.com/storagePool": "ssd"},
+    }
 
     operator_flux = next(
         doc

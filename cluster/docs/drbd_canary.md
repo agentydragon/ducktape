@@ -179,8 +179,8 @@ PVC, verify:
   host-local traffic remains outside this Pod policy. The controller itself does
   not use host networking.
 - LINSTOR reports the two Nebula node addresses (`10.42.0.15` and `10.42.0.13`)
-  for host-networked satellites. The controller's canary-only `TcpPortAutoRange`
-  is `7900-7919`; verify those TCP ports are available and reachable over the
+  for host-networked satellites. The controller's initial canary `TcpPortAutoRange`
+  was `7900-7919` (the first SSD rollout expands it to `7900-7999`); verify those TCP ports are available and reachable over the
   mesh. Piraeus documents that host networking reconfigures DRBD peer addresses;
   switching back to the pod network requires resetting paths or rebooting all
   involved nodes.

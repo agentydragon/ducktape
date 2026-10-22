@@ -17,8 +17,10 @@ existing identity and credentials and rehearse member removal/rejoin. This
 exception does not waive preservation of application data or SeaweedFS master state.
 
 This document records the agreed design and preparation sequence. No production
-node has been converted, and the disposable LVM_THIN/system-layout rehearsal,
-implementation PRs and per-node destructive execution remain outstanding. The
+node has been converted. The [disposable QEMU rehearsal](../../debug/piraeus_first_node_2026_10_21/README.md)
+now covers LVM_THIN PVC lifecycle, limits, discard and control-plane repartition/rejoin.
+Pool exhaustion/recovery, production alerting, application handoffs and per-node
+destructive execution remain outstanding. The
 previous shared-VG design with an ordinary legacy `localpath` LV is superseded.
 
 Keep the Talos rollout independent of NixOS, Atlas capacity and laptops. Begin
