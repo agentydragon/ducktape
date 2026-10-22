@@ -116,6 +116,11 @@ jobs:
             --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
           echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
 
+      # Check the real pinned consumer before source overrides can mask missing
+      # first-release pins and leave Home Manager broken after merge.
+      - name: Evaluate pinned Wyrm2 Home Manager
+        run: nix eval --raw .#nixosConfigurations.wyrm2.config.home-manager.users.agentydragon.home.activationPackage.drvPath
+
       - name: Check generated command policies
         run: |
           nix build --no-link --print-out-paths \

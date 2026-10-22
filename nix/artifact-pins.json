@@ -24,6 +24,26 @@
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-fefb9e9c10a8/ducktape_util-0.1.0-py3-none-any.whl",
       "sha256": "/vuenBCo7P9MgsDio7WyknNn30Z/CJptj738H8+ud64="
     },
+    "difftree": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-b55aaeb9f200/difftree-0.1.0-py3-none-any.whl",
+      "sha256": "tVquufIA/kWE67sRStJsDwlAs9SWXdFj99PaRs2lza4="
+    },
+    "gmail-archiver": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-25647b22e163/gmail_archiver-0.1.0-py3-none-any.whl",
+      "sha256": "JWR7IuFjeSpn89KHZeVG/tzfXIDMRfNuQ7Ym33lcmh4="
+    },
+    "vm-interact": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/vm-interact-beb3ac8bc322/vm_interact-0.1.0-py3-none-any.whl",
+      "sha256": "vrOsi8MiTTukG2VZNXgqzAfIB4eNA3gIDe3APkRo+Cw="
+    },
+    "workspace-gc": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/workspace-gc-4d61aabcd47b/workspace_gc-0.1.0-py3-none-any.whl",
+      "sha256": "TWGqvNR7IExsOseuUF+/e+2klkFGVf2IQ9pQJK5/Mwc="
+    },
+    "ws": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ws-b62afdfdcbe8/ducktape_ws-0.1.0-py3-none-any.whl",
+      "sha256": "tir9/cvor2wTpLMnYrkn8KPRjLBXqkGaoJkY97tlJk0="
+    },
     "gterm-theme": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-aef3119efae0/gterm_theme-0.1.0-py3-none-any.whl",
       "sha256": "rvMRnvrgCq8P8iJytR+9U2Tt2X6tK7Bqaun2nyxpK2o="
