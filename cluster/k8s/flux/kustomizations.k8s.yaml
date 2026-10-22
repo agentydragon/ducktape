@@ -179,6 +179,28 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: Crossplane core controller; provider packages and managed resources reconcile separately.
+  name: crossplane
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: kyverno
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/crossplane
+  prune: false
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: crossplane
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: local-path-provisioner
   namespace: ducktape-flux
 spec:

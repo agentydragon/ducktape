@@ -19,6 +19,7 @@ from cluster.cdk8s import (
     alloy_otlp_bearer,
     claude_sandbox_secrets,
     cnpg_operator,
+    crossplane,
     descheduler,
     dns_automation,
     ducktape_flux,
@@ -370,6 +371,10 @@ def generate_manifests(root: Path) -> None:
     )
     kyverno_artifact = artifact("kyverno", kyverno_app.OUTPUT_DIR)
     kyverno_kustomization = kyverno_app.kyverno(flux_chart, write_directory(root, kyverno_artifact, kyverno_app.chart))
+    crossplane_artifact = artifact("crossplane", crossplane.OUTPUT_DIR)
+    crossplane.crossplane(
+        flux_chart, write_directory(root, crossplane_artifact, crossplane.chart), kyverno_kustomization
+    )
     local_path_provisioner_artifact = artifact("local-path-provisioner", local_path_provisioner.OUTPUT_DIR)
     local_path_provisioner_kustomization = local_path_provisioner.local_path_provisioner(
         flux_chart, write_directory(root, local_path_provisioner_artifact, local_path_provisioner.chart)
@@ -1728,6 +1733,7 @@ def generate_manifests(root: Path) -> None:
             cert_manager_artifact,
             cert_manager_environment_artifact,
             cnpg_artifact,
+            crossplane_artifact,
             external_secrets_config_artifact,
             external_secrets_operator_artifact,
             forgejo_artifact,

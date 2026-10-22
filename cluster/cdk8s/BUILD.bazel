@@ -1214,6 +1214,18 @@ py_library(
 )
 
 py_library(
+    name = "crossplane",
+    srcs = ["crossplane.py"],
+    deps = [
+        ":flux",
+        ":helm",
+        ":manifest_roots",
+        ":namespaces",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "valkey",
     srcs = ["valkey.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -1438,6 +1450,7 @@ py_library(
         ":alloy_otlp_bearer",
         ":artifact_generators",
         ":claude_sandbox_secrets",
+        ":crossplane",
         ":descheduler",
         ":dns_automation",
         ":etcd",

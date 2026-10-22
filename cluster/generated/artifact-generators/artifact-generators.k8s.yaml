@@ -77,6 +77,11 @@ spec:
       name: cnpg
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/crossplane/**"
+          to: "@artifact/cluster/generated/crossplane/"
+      name: crossplane
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/external-secrets/config/**"
           to: "@artifact/cluster/generated/external-secrets/config/"
       name: external-secrets-config

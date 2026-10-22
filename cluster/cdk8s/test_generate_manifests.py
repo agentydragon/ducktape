@@ -164,6 +164,24 @@ def test_piraeus_storage_is_confined_to_the_retained_two_node_canary(
     ]
 
 
+def test_crossplane_core_waits_for_its_controller_and_retains_its_inventory(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    release = next(
+        doc for doc in documents if doc.get("kind") == "HelmRelease" and doc["metadata"].get("name") == "crossplane"
+    )
+    kustomization = next(
+        doc for doc in documents if doc.get("kind") == "Kustomization" and doc["metadata"].get("name") == "crossplane"
+    )
+
+    assert release["metadata"]["namespace"] == "crossplane-system"
+    assert release["spec"]["chart"]["spec"]["version"] == "2.4.2"
+    assert kustomization["spec"]["dependsOn"] == [{"name": "kyverno", "namespace": "ducktape-flux"}]
+    assert kustomization["spec"]["wait"] is True
+    assert kustomization["spec"]["prune"] is False
+
+
 def test_piraeus_controller_network_policy_only_admits_api_tls(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
