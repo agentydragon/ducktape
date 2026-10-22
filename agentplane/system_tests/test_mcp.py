@@ -360,7 +360,7 @@ async def test_agent_mcp_bff_decision(
     marker = f"MCP-BFF-{uuid4()}-" + "x" * 201
     submitted = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=False)
     assert submitted.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
-    request_id = submitted.id
+    request_id = UUID(submitted.id)
     path = f"/actions/{request_id}"
     pending_response = await operator_bff.get(path)
     assert pending_response.status_code == HTTPStatus.OK
@@ -404,7 +404,7 @@ async def test_agent_mcp_bff_decision(
 
     # What the agent learns of the operator's decision.
     completed = await agent.run("actions", "wait", str(request_id))
-    assert completed.id == request_id
+    assert completed.id == str(request_id)
     assert completed.state == expected_state
     terminal_response = await operator_bff.get(path)
     assert terminal_response.status_code == HTTPStatus.OK
@@ -416,7 +416,7 @@ async def test_agent_mcp_bff_decision(
     assert terminal.caller == pending.caller
     if terminal.decision != decided.decision:
         pytest.fail("Terminal Decision changed", pytrace=False)
-    assert terminal.state is expected_state
+    assert terminal.state is (ActionState.SUCCEEDED if verdict is Verdict.ALLOW else ActionState.DENIED)
     if verdict is Verdict.ALLOW:
         assert terminal.execution is not None
         assert decided.execution is not None
@@ -518,13 +518,13 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
 
     too_long = f"MCP-POLICY-{uuid4()}-" + "x" * 201
     missed = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, too_long, wait=False)
-    await _deny_pending(operator_bff, missed.id)
+    await _deny_pending(operator_bff, UUID(missed.id))
 
     policy_objects.expire_binding(binding_name)
     await _wait_unbound(operator_bff, view, binding_name)
     after_expiry = f"MCP-POLICY-{uuid4()}"
     expired = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, after_expiry, wait=False)
-    await _deny_pending(operator_bff, expired.id)
+    await _deny_pending(operator_bff, UUID(expired.id))
 
 
 async def _wait_unbound(operator_bff: httpx.AsyncClient, sandbox: SandboxView, binding_name: str) -> None:
