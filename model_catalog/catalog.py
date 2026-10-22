@@ -75,6 +75,8 @@ from model_catalog import ollama
 class Provider(StrEnum):
     """First scheme segment: the upstream account/provider an entry spends from."""
 
+    # Avoid LiteLLM's built-in `chatgpt` provider: alias preprocessing can start
+    # interactive login and block the event loop before configured route resolution.
     CHATGPT = "chatgpt-sub"
     ANTHROPIC_API = "anthropic-api"
     ANTHROPIC_MAX20 = "anthropic-max20"
