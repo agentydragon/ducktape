@@ -1,6 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/oci:py_image.bzl", "py_image_bytecode_layer", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -500,22 +501,13 @@ py_library(
     ],
 )
 
-# The app image: the API, the bridge, and the bundled SPA it serves, on debian slim as user 1000.
-# Published as agentplane-app (devinfra/ci/image_targets.json) and run by the Deployment in
-# cluster/k8s/agentplane-staging.
-aspect_py_binary(
-    name = "app_image_bin",
-    data = [
-        "//agentplane/app/frontend:bundle",
-        "//agentplane/app/frontend/service_worker:service_worker_js",
-    ],
-    main = "main.py",
-    deps = [":main"],
-)
-
+# The app image uses the same native rules_python binary as local runs and tests. It serves the
+# API, bridge and bundled SPA on debian slim as user 1000. Published as agentplane-app
+# (devinfra/ci/image_targets.json) and run by the Deployment in cluster/k8s/agentplane-staging.
 app_layers_oci_tars = shared_py_image_layers(
     name = "app_layers",
-    binary = ":app_image_bin",
+    aspect_venv = False,
+    binary = ":main_bin",
     group = "1000",
     owner = "1000",
 )
@@ -532,9 +524,10 @@ py_image_bytecode_layer(
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("app_image_bin"),
+    entrypoint = py_image_entrypoint("main_bin"),
     env = py_image_env(
-        binary_name = "app_image_bin",
+        aspect_venv = False,
+        binary_name = "main_bin",
         extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
     ),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
@@ -544,6 +537,27 @@ oci_image(
     ],
     user = "1000:1000",
     visibility = ["//agentplane/x/k3s_env:__pkg__"],
+)
+
+oci_layout_rloc(
+    name = "app_image_test_layout",
+    testonly = True,
+    image = ":image",
+)
+
+py_test(
+    name = "test_image",
+    size = "medium",
+    srcs = ["test_image.py"],
+    data = [":app_image_test_layout"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_library(

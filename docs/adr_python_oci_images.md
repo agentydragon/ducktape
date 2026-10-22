@@ -32,6 +32,10 @@ All Python OCI images use:
 - **Layering:** `py_image_layer` from `@aspect_rules_py`
 - **Entrypoint/env:** `py_image_entrypoint()` and `py_image_env()` helpers from `//devinfra/oci:py_image.bzl`
 
+The Agentplane app image uses the repository's standard `rules_python` `py_binary` as its entrypoint,
+the same target used by local app commands and tests. It keeps the shared `py_image_layer` packaging;
+the assembled image smoke test exercises that entrypoint and its generated `google.api` imports.
+
 ## Size impact
 
 | Component                     | Compressed size |
