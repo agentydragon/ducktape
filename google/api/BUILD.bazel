@@ -2,6 +2,9 @@ load("@aspect_bazel_lib//lib:copy_file.bzl", "copy_file")
 load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 
+# The proto sources here are wrapped from googleapis by copy_file targets.
+# gazelle:proto disable
+
 package(default_visibility = ["//visibility:public"])
 
 # Keep the upstream import paths for browser schemas that use google.api.http.

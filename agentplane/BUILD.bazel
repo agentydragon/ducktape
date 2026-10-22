@@ -1,5 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+# Generated Python modules are emitted outside their proto source package.
+# gazelle:proto file
 # gazelle:resolve py agentplane.egress.egress_admin_pb2 //agentplane/egress:egress_admin_pb2
 # gazelle:resolve py agentplane.egress.egress_admin_pb2_grpc //agentplane/egress:egress_admin_pb2_grpc
 # gazelle:resolve py agentplane.history_service.history_service_pb2 //agentplane/history_service:history_service_pb2

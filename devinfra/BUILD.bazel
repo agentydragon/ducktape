@@ -39,7 +39,10 @@ gazelle_python_manifest(
 
 gazelle_binary(
     name = "gazelle_python_binary",
-    languages = ["@rules_python_gazelle_plugin//python"],
+    languages = [
+        "@bazel_gazelle//language/proto",
+        "@rules_python_gazelle_plugin//python",
+    ],
 )
 
 gazelle(
