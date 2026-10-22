@@ -408,11 +408,6 @@ async def test_agent_mcp_bff_decision(
         if verdict == action_service_pb2.VERDICT_ALLOW
         else action_service_pb2.ACTION_STATE_DENIED
     )
-    expected_receipt_state = (
-        action_service_pb2.ACTION_STATE_ALLOWED
-        if verdict == action_service_pb2.VERDICT_ALLOW
-        else action_service_pb2.ACTION_STATE_DENIED
-    )
     if verdict == action_service_pb2.VERDICT_ALLOW:
         assert decided.state == action_service_pb2.ACTION_STATE_ALLOWED
         assert decided.HasField("execution")
@@ -434,7 +429,7 @@ async def test_agent_mcp_bff_decision(
     assert terminal.caller == pending.caller
     if terminal.decision != decided.decision:
         pytest.fail("Terminal Decision changed", pytrace=False)
-    assert terminal.state == expected_receipt_state
+    assert terminal.state == expected_completed_state
     if verdict == action_service_pb2.VERDICT_ALLOW:
         assert terminal.HasField("execution")
         assert decided.HasField("execution")
