@@ -12,15 +12,15 @@ The installed `provider-litellm:v2.1.0` reports two independent failures:
   `prevent_destroy` guard. In the provider's `readKeyWithTransport`,
   `organization_id` is only assigned when LiteLLM returns a non-empty string;
   unlike some neighboring optional fields, an unknown value is not cleared when
-  the API omits it. The merged attempt to set this optional field to `""` does
-  not fix that provider behavior: Crossplane v2.4.0's generated reference
-  resolver normalizes the empty string to nil, sends `organizationId: null`,
-  and the API server rejects that patch because the CRD schema requires a
-  string. The field must be omitted from the Key spec. Provider PR
-  [#1](https://github.com/TheCodingSheikh/provider-litellm/pull/1) adds a
-  regression-tested compatibility fix that resolves an omitted value to null
-  in Terraform state; it must be merged, released, and pinned before Keys can
-  reconcile successfully.
+  the API omits it. Setting this optional field to `""` does not fix that
+  provider behavior: Crossplane v2.4.0's generated reference resolver
+  normalizes the empty string to nil, sends `organizationId: null`, and the API
+  server rejects that patch because the CRD schema requires a string. The
+  recovery manifest now creates one LiteLLM Organization and uses the typed
+  `organizationIdRef` on every Key, so LiteLLM returns a concrete organization
+  ID. Provider PR [#1](https://github.com/TheCodingSheikh/provider-litellm/pull/1)
+  remains a general compatibility fix for keys that intentionally omit an
+  organization; it is no longer required for this migration's keys.
 - The Antigravity Team spec sent one fallback entry with an empty
   `fallback_models` list. LiteLLM's team-info response omitted that field, but
   the provider schema requires it for every fallback entry, so Observe failed
@@ -37,11 +37,12 @@ because the generated Crossplane connection Secrets expose `attribute.key`,
 while ESO requested a property named `key`. The Team fallback fix had already
 been applied, and a later event confirmed the provider requested Team creation.
 
-This follow-up omits `organizationId` from the Key specs and reads
-`attribute.key` from each provider connection Secret. The provider release is
-still required to resolve the separate unknown-value failure. After these
-manifest fixes and the provider fix are pinned and reconciled, verify all Team
-and Key resources become Synced, exported Secrets become Ready,
+This follow-up creates a top-level `ducktape` organization, associates all Keys
+through typed references, and reads `attribute.key` from each provider
+connection Secret. The user explicitly accepted key rotation and a brief
+outage if reassociation requires replacement. After the manifests are
+reconciled, verify the Organization, all Team and Key resources become Synced,
+exported Secrets become Ready,
 `litellm-crossplane-keys` becomes Ready, and then
 `litellm-buildbuddy-sync` applies and becomes Ready. Until then, BuildBuddy sync
 is blocked on its dependency.

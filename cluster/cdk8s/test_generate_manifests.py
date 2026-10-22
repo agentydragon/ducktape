@@ -257,6 +257,15 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
         {"name": "litellm-crossplane-keys", "namespace": "ducktape-flux"},
     ]
 
+    organizations = [
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Organization"
+    ]
+    assert len(organizations) == 1
+    assert organizations[0]["metadata"]["name"] == "ducktape"
+    assert organizations[0]["spec"]["forProvider"]["organizationAlias"] == "ducktape"
+
     keys = {
         doc["spec"]["forProvider"]["keyAlias"]: doc
         for doc in documents
@@ -282,7 +291,7 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
             "key": "api-key",
         }
 
-    assert all("organizationId" not in key["spec"]["forProvider"] for key in keys.values())
+    assert all(key["spec"]["forProvider"]["organizationIdRef"] == {"name": "ducktape"} for key in keys.values())
 
     published_key_secrets = [
         doc

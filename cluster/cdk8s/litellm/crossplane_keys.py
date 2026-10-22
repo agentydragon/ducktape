@@ -18,9 +18,16 @@ from litellm_key_crds.io.crossplane.m.litellm import (
     KeySpecForProvider,
     KeySpecForProviderKeyWoSecretRef,
     KeySpecForProviderMetadataSecretRef,
+    KeySpecForProviderOrganizationIdRef,
     KeySpecForProviderTeamIdRef,
     KeySpecProviderConfigRef,
     KeySpecWriteConnectionSecretToRef,
+)
+from litellm_organization_crds.io.crossplane.m.litellm import (
+    Organization,
+    OrganizationSpec,
+    OrganizationSpecForProvider,
+    OrganizationSpecProviderConfigRef,
 )
 from litellm_providerconfig_crds.io.crossplane.m.litellm import (
     ProviderConfig,
@@ -69,6 +76,7 @@ def _key_spec(
         key_alias=alias,
         models=list(models),
         metadata_secret_ref=KeySpecForProviderMetadataSecretRef(name=metadata_secret),
+        organization_id_ref=KeySpecForProviderOrganizationIdRef(name="ducktape"),
         max_budget=max_budget,
         budget_duration=budget_duration,
         team_id_ref=KeySpecForProviderTeamIdRef(name=team) if team is not None else None,
@@ -189,6 +197,16 @@ def chart(app: App) -> Chart:
                     name=_PROVIDER_CONFIG_SECRET, namespace=NAMESPACE, key="credentials"
                 ),
             )
+        ),
+    )
+
+    Organization(
+        chart,
+        "organization-ducktape",
+        metadata=ApiObjectMetadata(name="ducktape", namespace=NAMESPACE),
+        spec=OrganizationSpec(
+            for_provider=OrganizationSpecForProvider(organization_alias="ducktape"),
+            provider_config_ref=OrganizationSpecProviderConfigRef(kind="ProviderConfig", name="default"),
         ),
     )
 

@@ -1161,6 +1161,13 @@ http_file(
     urls = ["https://raw.githubusercontent.com/TheCodingSheikh/provider-litellm/v2.1.0/package/crds/litellm.m.crossplane.io_providerconfigs.yaml"],
 )
 
+http_file(
+    name = "crossplane_litellm_organizations_crd",
+    downloaded_file_path = "litellm.m.crossplane.io_organizations.yaml",
+    sha256 = "3c5f13122312d6083c66ab306498678e6827c2de6a73b0a31d3d6ef1c5917f43",
+    urls = ["https://raw.githubusercontent.com/TheCodingSheikh/provider-litellm/v2.1.0/package/crds/litellm.m.crossplane.io_organizations.yaml"],
+)
+
 # Match kube-prometheus-stack's operator version tracked by
 # cluster/cdk8s/flux_sources.py.
 http_file(
