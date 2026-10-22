@@ -171,7 +171,9 @@ Approved policy (2026-10-22): aggregate logical PVC capacity may exceed the
 physical thin-data pool, provided each PVC's declared size is bounded and actual
 pool use and headroom are monitored. Logical capacity is not a physical
 reservation, and this policy does not promise that all PVCs can be filled at
-once. On `ovh-ns103711`, other local claims request 566Gi, including a 500Gi
+once. Treat any such overcommit as temporary capacity debt to resolve through
+workload placement and balancing; do not assume extra disks or indefinite
+overcommit. On `ovh-ns103711`, other local claims request 566Gi, including a 500Gi
 ClickHouse claim. A proposed 1700Gi Seaweed PVC plus those claims totals 2266Gi
 against about 1855Gi of estimated thin-data capacity. That overcommit is
 permitted under this policy; the common 1700Gi HDD size remains a proposal and
@@ -184,6 +186,21 @@ destination's actual free-space reserve; pause new allocation or migration if
 samples are stale, the pool is unhealthy, or available headroom falls below
 the approved reserve. PVC totals and volume-slot limits do not establish
 physical headroom.
+
+When the first live pool's aggregate provisioned PVC capacities exceed its
+physical thin-data capacity, open a Ducktape GitHub issue for that pool and add
+the issue link here. Record physical capacity, total provisioned PVC capacities,
+actual data and metadata use, remaining headroom and alert state, contributing
+claims (including ClickHouse), and concrete mitigation or growth options. Track
+an exit plan such as rebalancing volumes or moving suitable workloads to SSD.
+Close the issue only after placement or size changes bring aggregate provisioned
+PVC capacities within the usable physical-pool budget, accounting for agreed
+reserve and overhead, and fresh data, metadata, and free-space measurements
+confirm the agreed headroom. Low current pool use alone does not resolve
+overcommit. If the owner explicitly accepts a revised target, record that
+target and its rationale in the issue before closing. The applied SSD pilot
+currently has 263Gi of application PVC capacity against a measured 468.94Gi
+thin-data LV, so this issue trigger is not met yet.
 
 ### HDD evacuation capacity checkpoint
 
