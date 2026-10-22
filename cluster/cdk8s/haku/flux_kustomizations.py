@@ -10,11 +10,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 
 
 def haku_kube_api_proxy_secret_prune(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    haku_console: Kustomization,
-    agentplane_staging: Kustomization,
-    authentik_tf: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_console: Kustomization
 ) -> Kustomization:
     """Temporarily track the retained Haku proxy TLS Secret so Flux can prune it."""
     return flux_kustomization(
@@ -24,7 +20,7 @@ def haku_kube_api_proxy_secret_prune(
         timeout="5m",
         prune=True,
         deletion_policy=KustomizationSpecDeletionPolicy.DELETE,
-        depends_on=flux_kustomization_depends_on_many(haku_console, agentplane_staging, authentik_tf),
+        depends_on=flux_kustomization_depends_on_many(haku_console),
         description=(
             "Temporarily tracks the retired Haku Kubernetes API proxy's cert-manager TLS Secret with the Merge "
             "apply policy so its data is preserved until this Kustomization is removed."
