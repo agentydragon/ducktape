@@ -79,6 +79,9 @@ class Gate:
 
 
 class StubActions(FederatedOperatorActions):
+    def __init__(self) -> None:
+        pass
+
     async def token_for_request(self, request: Request) -> str:
         return "test-actions-token"
 
