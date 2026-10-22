@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { Alert, Badge, Button, Center, Drawer, Group, Paper, Stack, Text } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 
@@ -66,10 +66,6 @@ export function SessionViewer(): JSX.Element {
   const [isResizing, setIsResizing] = useState(false);
   const layoutRef = useRef<HTMLDivElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const eventRefreshRef = useRef<(sessionId: string | null) => void>(() => {});
-  const refreshSelectedEvents = useCallback((sessionId: string | null): void => {
-    eventRefreshRef.current(sessionId);
-  }, []);
 
   const availableLayoutWidth = layoutWidth || Math.max(0, window.innerWidth - 64);
   const sidebarMaxWidth = maxSidebarWidth(availableLayoutWidth);
@@ -119,9 +115,13 @@ export function SessionViewer(): JSX.Element {
     };
   }, [isResizing]);
 
-  const directory = useSessionDirectory({ filter, selectedId, setSelectedId, refreshSelectedEvents });
   const transcriptHistory = useTranscriptHistory(selectedId);
-  eventRefreshRef.current = transcriptHistory.refreshSelectedEvents;
+  const directory = useSessionDirectory({
+    filter,
+    selectedId,
+    setSelectedId,
+    refreshSelectedEvents: transcriptHistory.refreshSelectedEvents,
+  });
 
   const visibleSessions = useMemo(() => {
     const needle = search.trim().toLowerCase();
