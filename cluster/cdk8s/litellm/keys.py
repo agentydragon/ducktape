@@ -30,6 +30,10 @@ class KeysVars(BaseModel):
         description="Policies keyed by client-lane identifier (for example codex_client_models), not model ID "
         "or provider. Terraform keys may combine the allowed_models from several lanes."
     )
+    # This required Terraform input comes from the runner's TF_VAR_buildbuddy_api_key env,
+    # sourced from a Kubernetes Secret. Keep it in the module contract model without writing
+    # a placeholder (or credential) into the Terraform CR's plaintext vars.
+    buildbuddy_api_key: str | None = Field(default=None, exclude=True)
 
     @field_serializer("model_lanes")
     def serialize_model_lanes(self, lanes: dict[str, ModelLaneRoutes]) -> dict[str, dict[str, list[str]]]:
