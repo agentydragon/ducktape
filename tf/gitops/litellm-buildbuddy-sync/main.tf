@@ -35,15 +35,15 @@ resource "terraform_data" "buildbuddy_live_tests_secret" {
   provisioner "local-exec" {
     command = "/usr/local/bin/buildbuddy-secret-sync set"
     environment = {
-      TF_VAR_buildbuddy_api_key = var.buildbuddy_api_key
-      LITELLM_API_KEY           = data.kubernetes_secret.litellm_buildbuddy_live_tests.data["api-key"]
+      BUILDBUDDY_API_KEY = var.buildbuddy_api_key
+      LITELLM_API_KEY    = data.kubernetes_secret.litellm_buildbuddy_live_tests.data["api-key"]
     }
   }
 
   provisioner "local-exec" {
     when    = destroy
     command = "/usr/local/bin/buildbuddy-secret-sync delete"
-    # TF_VAR_buildbuddy_api_key is injected into the runner pod and inherited by
+    # BUILDBUDDY_API_KEY is injected into the runner pod and inherited by
     # local-exec. Do not map it here: destroy provisioners cannot reference vars.
   }
 }

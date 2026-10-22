@@ -23,7 +23,8 @@ def keys_chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         "terraform",
         module=module,
         variables=None,
-        env=[terraform.secret_env("TF_VAR_buildbuddy_api_key", buildbuddy_api_key)],
+        additional_vars=[terraform.secret_var("buildbuddy_api_key", buildbuddy_api_key)],
+        env=[terraform.secret_env("BUILDBUDDY_API_KEY", buildbuddy_api_key)],
     )
     return chart
 

@@ -320,7 +320,7 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
     assert teams["team-gemini-clients"]["spec"]["forProvider"]["routerSettings"]["fallbacks"]
 
 
-def test_litellm_buildbuddy_terraform_runners_receive_api_key_environment(
+def test_litellm_buildbuddy_terraform_runners_receive_api_key_inputs(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
@@ -333,13 +333,18 @@ def test_litellm_buildbuddy_terraform_runners_receive_api_key_environment(
     assert set(terraform_resources) == {"litellm-keys", "litellm-buildbuddy-sync"}
 
     expected_env = {
-        "name": "TF_VAR_buildbuddy_api_key",
+        "name": "BUILDBUDDY_API_KEY",
+        "valueFrom": {"secretKeyRef": {"name": "buildbuddy-org-admin-api-key", "key": "api-key"}},
+    }
+    expected_var = {
+        "name": "buildbuddy_api_key",
         "valueFrom": {"secretKeyRef": {"name": "buildbuddy-org-admin-api-key", "key": "api-key"}},
     }
     for resource in terraform_resources.values():
         env = resource["spec"]["runnerPodTemplate"]["spec"]["env"]
         assert expected_env in env
-        assert not any(variable["name"] == "buildbuddy_api_key" for variable in resource["spec"].get("vars", []))
+        assert expected_var in resource["spec"]["vars"]
+        assert not any(variable["name"].startswith("TF_VAR_") for variable in env)
 
 
 def test_piraeus_controller_network_policy_only_admits_api_tls(

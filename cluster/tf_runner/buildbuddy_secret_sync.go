@@ -21,7 +21,7 @@ import (
 const (
 	apiURL        = "https://app.buildbuddy.io/rpc/BuildBuddyService/"
 	secretName    = "OPENAI_API_KEY"
-	adminKeyEnv   = "TF_VAR_buildbuddy_api_key"
+	adminKeyEnv   = "BUILDBUDDY_API_KEY"
 	litellmKeyEnv = "LITELLM_API_KEY"
 )
 
