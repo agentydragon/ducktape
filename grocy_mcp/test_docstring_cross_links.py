@@ -15,8 +15,8 @@ from fastmcp.client.transports import FastMCPTransport
 
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS
-from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_mcp
+from grocy_mcp.tool_models import ServerSettings
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 # Tool-ish identifiers that appear in docstrings but aren't live tools — MCP

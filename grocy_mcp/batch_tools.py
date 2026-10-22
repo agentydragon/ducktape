@@ -39,7 +39,7 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait
 
 from grocy_mcp.client import GrocyClient, ResolvedQU
 from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType
-from grocy_mcp.mcp_types import (
+from grocy_mcp.tool_models import (
     DETAIL_DESC,
     MAX_BATCH_SIZE,
     PRODUCT_DESC,

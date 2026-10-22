@@ -33,7 +33,7 @@ import {
   type PreviewVariant,
 } from "../vocabulary";
 
-// Argument validators generated from grocy_mcp's own Pydantic models (`grocy_mcp/mcp_types.py`):
+// Argument validators generated from grocy_mcp's own Pydantic models (`grocy_mcp/tool_models.py`):
 // the batch tools are reflected at build time (haku/console/mcp/export_tool_schemas.py) so these
 // stay in lockstep with the server instead of being hand-copied. `int | str` name-or-ID fields
 // come through as `string | number`; a `date` field as `string`; a `set` as an array.
@@ -264,7 +264,7 @@ function StockConsumePreview({ args, variant }: PreviewProps<StockConsumeArgs>) 
 }
 
 // -1 = never expires, 0 = same-day, N>0 = N days — mirrors DEFAULT_BBD_DESC in
-// grocy_mcp/mcp_types.py.
+// grocy_mcp/tool_models.py.
 function formatDefaultBestBeforeDays(days: number): string {
   if (days === -1) return "never expires";
   if (days === 0) return "same-day";

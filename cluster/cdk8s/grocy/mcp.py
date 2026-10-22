@@ -33,7 +33,7 @@ from cluster.cdk8s.mcp_oauth_state import CONSUMER_SECRET, GROCY_SF, GROCY_VALLE
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from grocy_mcp.mcp_types import CONFIG_FILE_ENV, ServerSettings
+from grocy_mcp.tool_models import CONFIG_FILE_ENV, ServerSettings
 from util.settings_contract import env_name, settings_file
 
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-image-pins"

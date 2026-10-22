@@ -83,7 +83,7 @@ function splitRows<Ok extends object>(rows: readonly (Ok | ErrorRow)[]): { ok: O
   const ok: Ok[] = [];
   const failed: ErrorRow[] = [];
   for (const row of rows) {
-    // An error row carries an `error` field; an ok row never does (see grocy_mcp.mcp_types). The
+    // An error row carries an `error` field; an ok row never does (see grocy_mcp.tool_models). The
     // `in` check picks the branch at runtime; both sides are cast because a generic `Ok` can't be
     // narrowed away from `ErrorRow` structurally.
     if ("error" in row) failed.push(row as ErrorRow);

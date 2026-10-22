@@ -42,10 +42,10 @@ from fastmcp.client.transports import FastMCPTransport
 from opentelemetry import trace
 
 from grocy_mcp.client import GrocyClient
-from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_mcp
 from grocy_mcp.testing.helpers import RefData, create_refunwrap_result, unwrap_result
 from grocy_mcp.tool_metadata import TOOL_OVERRIDES
+from grocy_mcp.tool_models import ServerSettings
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 logger = logging.getLogger(__name__)

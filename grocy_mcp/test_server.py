@@ -14,8 +14,8 @@ from prometheus_client import REGISTRY
 
 from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
-from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_mcp, record_tool_count
+from grocy_mcp.tool_models import ServerSettings
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 

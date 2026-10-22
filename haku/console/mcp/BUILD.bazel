@@ -8,7 +8,7 @@ py_library(
     deps = [
         "//grocy_mcp:batch_tools",
         "//grocy_mcp:client",
-        "//grocy_mcp:mcp_types",
+        "//grocy_mcp:tool_models",
         "//haku/console/tools:routine",
         "//mcp_infra:request_scoped_openapi",
         "//x/google_mcp_server:gmail",

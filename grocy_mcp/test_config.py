@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from grocy_mcp.mcp_types import ServerSettings
+from grocy_mcp.tool_models import ServerSettings
 from mcp_infra.persistence import ValkeyPersistence
 
 
