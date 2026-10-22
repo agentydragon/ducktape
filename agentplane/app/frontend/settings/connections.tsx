@@ -1,23 +1,27 @@
 import { Alert, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
 import "./connections.css";
-import { useSnapshotStream } from "../live_stream";
+import { type StreamConnection } from "../live_stream";
 import { Fragment, type JSX, useCallback, useEffect, useState } from "react";
 
 import {
-  connectionServiceAccounts,
   displayableError,
   HttpError,
   isEligibleCaller,
-  listConnections,
-  rebindConnection,
-  renameConnection,
   serviceAccountKey,
   type CallerServiceAccount,
   type CallerGrantReader,
   readCallerGrants,
   type Connection,
-  unbindConnection,
 } from "../client";
+import {
+  adaptConnectionWatchFrame,
+  connectionServiceAccounts,
+  listConnections,
+  rebindConnection,
+  renameConnection,
+  unbindConnection,
+} from "../connection_service_client";
+import { followWatch } from "../watch_stream";
 
 import { CallerGrants } from "../caller_grants";
 import { InlineName } from "../inline_name";
@@ -34,7 +38,8 @@ function currentGrant(connection: Connection): Grant | undefined {
 
 export function Connections({ readGrants = readCallerGrants }: { readGrants?: CallerGrantReader }): JSX.Element {
   const [expandedGrants, setExpandedGrants] = useState<string | null>(null);
-  const { snapshot, setSnapshot: setRows, connection } = useSnapshotStream<Connection[]>("/connections/stream");
+  const [snapshot, setRows] = useState<Connection[] | null>(null);
+  const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   const rows = snapshot ?? [];
   const loaded = snapshot !== null;
   const [accounts, setAccounts] = useState<CallerServiceAccount[]>([]);
@@ -42,6 +47,43 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
   const [error, setError] = useState<string | null>(null);
   const [unlinking, setUnlinking] = useState<Connection | null>(null);
   const [rebinding, setRebinding] = useState<{ row: Connection; target: string; confirm: boolean } | null>(null);
+
+  useEffect(() => {
+    let snapshot: Connection[] = [];
+    let readingSnapshot = false;
+    return followWatch("/upstream/actions/v1/operator/connections:watch", {
+      onOpen: () => {
+        snapshot = [];
+        readingSnapshot = true;
+      },
+      onFrame: (value) => {
+        const frame = adaptConnectionWatchFrame(value);
+        if (frame.kind === "snapshot") {
+          if (!readingSnapshot) throw new Error("ConnectionService sent a snapshot outside its initial replay");
+          snapshot.push(...frame.connections);
+          return;
+        }
+        if (frame.kind === "snapshot_complete") {
+          if (!readingSnapshot) throw new Error("ConnectionService completed a snapshot that was not open");
+          readingSnapshot = false;
+          setRows(snapshot);
+          return;
+        }
+        if (frame.kind === "upsert") {
+          if (readingSnapshot) throw new Error("ConnectionService sent an update before completing its snapshot");
+          setRows((current) => {
+            if (current === null) return [frame.connection];
+            const found = current.some((row) => row.id === frame.connection.id);
+            return found
+              ? current.map((row) => (row.id === frame.connection.id ? frame.connection : row))
+              : [...current, frame.connection];
+          });
+        }
+        // `reconnect_required` is followed by EOF; followWatch then reopens with a fresh snapshot.
+      },
+      onConnection: setConnection,
+    });
+  }, [setRows]);
 
   const load = useCallback(async (): Promise<void> => {
     const [connections, callers] = await Promise.all([listConnections(), connectionServiceAccounts()]);

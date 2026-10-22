@@ -3,9 +3,10 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { answerApi, mount, type Sent } from "./actions/testing";
+import { mount } from "./actions/testing";
+import { answerConnectionFacade, type Sent } from "./connection_service_test_support";
 import { ConnectionConsent } from "./consent";
-import type { ConsentPreview, ConsentResult } from "./consent_client";
+import type { ConsentPreview, ConsentResult } from "./connection_service_client";
 import { sampleConnection } from "./connections_fixture";
 
 function preview(): ConsentPreview {
@@ -15,22 +16,64 @@ function preview(): ConsentPreview {
       client_name: "Claude on wyrm2",
       redirect_uri: "https://client.test/oauth/callback",
       expires_at: "2026-09-09T12:00:00Z",
-      version: 1,
+      version: "1",
     },
     service_accounts: [{ namespace: "agentplane-test", name: "test-coder" }],
     connections: [],
   };
 }
 
-const PREVIEW = "/connection-enrollments/opaque-handle/preview";
-const DECISION = "/connection-enrollments/opaque-handle/decision";
+const ROOT = "/upstream/actions/v1/operator";
+const PREVIEW = `${ROOT}/connection-enrollments/opaque-handle/preview`;
+const DECISION = `${ROOT}/connection-enrollments/opaque-handle/decision`;
+const CALLERS = `${ROOT}/caller-service-accounts`;
+const CONNECTIONS = `${ROOT}/connections`;
+
+function connectionJson(row: ReturnType<typeof sampleConnection>): Record<string, unknown> {
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    version: row.version,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    grants: row.grants.map((grant) => ({
+      id: grant.id,
+      connectionId: grant.connection_id,
+      revision: grant.revision,
+      caller: grant.caller,
+      issuer: grant.issuer,
+      clientId: grant.client_id,
+      status: `GRANT_STATUS_${grant.status.toUpperCase()}`,
+      createdAt: grant.created_at,
+    })),
+    boundCaller: row.bound_caller,
+  };
+}
 
 /** Answers the preview with `previewed` and a decision with `decided`; a `Response` answers as an
  * HTTP failure. */
 function serve(previewed: ConsentPreview | Response, decided?: ConsentResult | Response): Sent[] {
-  return answerApi(({ path }) => {
-    if (path === PREVIEW) return previewed;
-    if (path === DECISION) return decided;
+  return answerConnectionFacade(({ path }) => {
+    if (path === PREVIEW) {
+      if (previewed instanceof Response) return previewed;
+      return {
+        clientId: previewed.enrollment.client_id,
+        clientName: previewed.enrollment.client_name,
+        redirectUri: previewed.enrollment.redirect_uri,
+        expiresAt: previewed.enrollment.expires_at,
+        version: previewed.enrollment.version,
+      };
+    }
+    if (path === CALLERS) return { serviceAccounts: previewed instanceof Response ? [] : previewed.service_accounts };
+    if (path === CONNECTIONS)
+      return { connections: previewed instanceof Response ? [] : previewed.connections.map(connectionJson) };
+    if (path === DECISION) {
+      if (decided instanceof Response || decided === undefined) return decided;
+      return {
+        verdict: decided.verdict === "allow" ? "VERDICT_ALLOW" : "VERDICT_DENY",
+        ...(decided.redirect_url === null ? {} : { redirectUrl: decided.redirect_url }),
+      };
+    }
   });
 }
 
@@ -99,14 +142,14 @@ describe("ConnectionConsent", () => {
     await decide(container, "Authorize", sent);
     expect(decisions(sent)).toEqual([
       {
-        verdict: "allow",
-        expected_version: 1,
-        service_account: TEST_CODER,
-        connection: {
-          kind: "reconnect",
-          connection_id: connection.id,
-          expected_version: connection.version,
-          authority_change_confirmed: true,
+        expectedVersion: "1",
+        allow: {
+          serviceAccount: TEST_CODER,
+          reconnect: {
+            connectionId: connection.id,
+            expectedVersion: connection.version,
+            authorityChangeConfirmed: true,
+          },
         },
       },
     ]);
@@ -118,7 +161,8 @@ describe("ConnectionConsent", () => {
     const navigate = vi.fn();
     const sent = serve(preview(), { verdict: "allow", redirect_url: "https://idp.test/held-authorization" });
     const container = await render(navigate);
-    expect(sent.map(({ path }) => path)).toEqual([PREVIEW]);
+    expect(sent.map(({ path }) => path)).toEqual(expect.arrayContaining([PREVIEW, CALLERS, CONNECTIONS]));
+    expect(sent).toHaveLength(3);
     expect(container.textContent).toContain("registered-client-id");
     expect(container.textContent).toContain("https://client.test/oauth/callback");
     expect(container.querySelector('option[value="agentplane-test/test-coder"]')).not.toBeNull();
@@ -128,10 +172,11 @@ describe("ConnectionConsent", () => {
     await vi.waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith("https://idp.test/held-authorization"));
     expect(decisions(sent)).toEqual([
       {
-        verdict: "allow",
-        expected_version: 1,
-        connection: { kind: "new", display_name: "Claude on wyrm2" },
-        service_account: TEST_CODER,
+        expectedVersion: "1",
+        allow: {
+          serviceAccount: TEST_CODER,
+          newConnection: { displayName: "Claude on wyrm2" },
+        },
       },
     ]);
   });
@@ -143,7 +188,7 @@ describe("ConnectionConsent", () => {
     expect(container.textContent).toContain("No labeled caller ServiceAccounts");
     await act(async () => button(container, "Deny").click());
     await vi.waitFor(() => expect(container.textContent).toContain("Connection denied"));
-    expect(decisions(sent)).toEqual([{ verdict: "deny", expected_version: 1 }]);
+    expect(decisions(sent)).toEqual([{ expectedVersion: "1", deny: {} }]);
     expect(navigate).not.toHaveBeenCalled();
   });
 

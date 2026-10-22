@@ -120,6 +120,14 @@ py_proto_library_with_mypy_stubs(
     deps = [":sandboxes_proto"],
 )
 
+ts_proto_library(
+    name = "sandboxes_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":sandboxes_proto",
+    visibility = ["//visibility:public"],
+)
+
 # The Sandbox controller calls `Runner.Seal` through the Runner Gateway's proxy.
 go_proto_library(
     name = "command_go_proto",

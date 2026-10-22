@@ -183,8 +183,6 @@ py_library(
     srcs = ["client.py"],
     deps = [
         ":catalog",
-        ":connections",
-        ":enrollments",
         ":mcp_linkage",
         ":models",
         ":policy_view",
@@ -1391,6 +1389,18 @@ proto_library(
         "@protobuf//:empty_proto",
         "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "action_service_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":action_service_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agentplane/proto:sandboxes_pb",
+        "//google/api:annotations_pb",
     ],
 )
 

@@ -101,8 +101,34 @@ export function modelsForHarness(catalog: ModelCatalog, harness: Harness): Model
 }
 export type ComponentStatus = components["schemas"]["ComponentStatus"];
 export type Decision = components["schemas"]["Decision"];
-export type Connection = components["schemas"]["Connection"];
-export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
+export interface CallerServiceAccount {
+  namespace: string;
+  name: string;
+}
+export type ConnectionGrant = {
+  id: string;
+  connection_id: string;
+  revision: number;
+  caller: CallerServiceAccount;
+  issuer: string;
+  client_id: string;
+  status: "pending" | "active" | "revoked";
+  activation_deadline: string | null;
+  created_at: string;
+  activated_at: string | null;
+  revoked_at: string | null;
+};
+/** The connection-service proto adapted to the existing UI's snake_case view. */
+export type Connection = {
+  id: string;
+  display_name: string;
+  /** Protobuf int64 is kept as a decimal string so updates do not lose precision. */
+  version: string;
+  created_at: string;
+  updated_at: string;
+  grants: ConnectionGrant[];
+  bound_caller: CallerServiceAccount | null;
+};
 
 export async function threadObservationEntry(
   threadId: string,
@@ -197,41 +223,6 @@ export type CallerGrantReader = (account: CallerServiceAccount, signal: AbortSig
 
 export const readCallerGrants: CallerGrantReader = async (account, signal) =>
   ok(await api.GET("/caller-grants/{namespace}/{name}", { params: { path: account }, signal }));
-
-export async function listConnections(): Promise<Connection[]> {
-  return ok(await api.GET("/connections"));
-}
-
-export async function connectionServiceAccounts(): Promise<CallerServiceAccount[]> {
-  return ok(await api.GET("/connection-service-accounts"));
-}
-
-export async function renameConnection(connection: Connection, displayName: string): Promise<Connection> {
-  return ok(
-    await api.PATCH("/connections/{connection_id}", {
-      params: { path: { connection_id: connection.id } },
-      body: { expected_version: connection.version, display_name: displayName },
-    })
-  );
-}
-
-export async function rebindConnection(connection: Connection, caller: CallerServiceAccount): Promise<Connection> {
-  return ok(
-    await api.POST("/connections/{connection_id}/rebind", {
-      params: { path: { connection_id: connection.id } },
-      body: { expected_version: connection.version, service_account: caller },
-    })
-  );
-}
-
-export async function unbindConnection(connection: Connection): Promise<Connection> {
-  return ok(
-    await api.POST("/connections/{connection_id}/unbind", {
-      params: { path: { connection_id: connection.id } },
-      body: { expected_version: connection.version },
-    })
-  );
-}
 
 export async function startMcpLinkage(serverId: string, scopes: string[]): Promise<McpLinkageStartView> {
   return ok(

@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from urllib.parse import parse_qs
-from uuid import uuid4
 
 import httpx
 import jwt
@@ -27,12 +26,12 @@ from starlette.routing import Route
 
 from agentplane.action_service import api as service_api
 from agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
-from agentplane.action_service.connections import ConnectionAuthority, GrantBinding, GrantStatus, NewConnection
+from agentplane.action_service.connections import ConnectionAuthority
 from agentplane.action_service.database_migrate import RUNNER as ACTIONS_RUNNER
 from agentplane.action_service.db import make_engine, make_sessionmaker
-from agentplane.action_service.enrollments import ConfirmedReconnectConnection, EnrollmentAuthority, EnrollmentInput
+from agentplane.action_service.enrollments import EnrollmentAuthority
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
-from agentplane.action_service.models import ActionRequestInput, ActionState, CallerPrincipal, OperatorPrincipal
+from agentplane.action_service.models import ActionRequestInput, ActionState, CallerPrincipal
 from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.policy_informer import PolicyIndex
@@ -46,7 +45,6 @@ from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.api import CallerGrantView, create_app
-from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
 from agentplane.app.database_updates import create_database_updates
 from agentplane.app.egress_access import EgressAccess
@@ -107,8 +105,6 @@ class Review:
     login_as: Callable[[str], None]
     issuer: str
     exchanged_subjects: list[str]
-    enrollments: EnrollmentAuthority
-    connections: ConnectionAuthority
     policies: PolicyIndex
     app: FastAPI
     # Every refresh token presented to the login provider, in order.
@@ -414,80 +410,26 @@ async def review(
             login_as,
             target_issuer,
             exchanged_subjects,
-            enrollments,
-            connections,
             policies,
             app,
             refreshes,
         )
 
 
-async def test_connection_management_preserves_federation_csrf_versions_and_history(
-    review: Review, agent_auth: dict[str, str]
-) -> None:
-    grant = await review.connections.bind(
-        GrantBinding(
-            grant_id=uuid4(),
-            service_account=PERSONAL,
-            issuer="https://test-actions.invalid",
-            client_id="test-external-client",
-            activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
-            connection=NewConnection(display_name="Original"),
-        )
-    )
-    await review.connections.activate(grant.id)
-    original = await review.connections.get(grant.connection_id)
-    path = f"/connections/{original.id}"
-    browser = review.browser
-    for endpoint in ["/connections", "/connection-service-accounts", path]:
-        assert (await browser.get(endpoint)).status_code == 401
-        assert (await browser.get(endpoint, headers=agent_auth)).status_code == 403
-    for method, endpoint, body in [
-        ("PATCH", path, {"display_name": "Renamed", "expected_version": original.version}),
-        ("POST", f"{path}/unbind", {"expected_version": original.version}),
-        ("POST", f"{path}/rebind", {"expected_version": original.version, "service_account": PERSONAL.model_dump()}),
+async def test_connection_and_consent_routes_have_moved_to_the_generated_facade(review: Review) -> None:
+    await review.browser.get("/auth/login")
+    for method, path in [
+        ("GET", "/connections"),
+        ("GET", "/connection-service-accounts"),
+        ("GET", "/connections/10000000-0000-4000-8000-000000000001"),
+        ("GET", "/connections/stream"),
+        ("PATCH", "/connections/10000000-0000-4000-8000-000000000001"),
+        ("POST", "/connections/10000000-0000-4000-8000-000000000001/rebind"),
+        ("POST", "/connections/10000000-0000-4000-8000-000000000001/unbind"),
+        ("POST", "/connection-enrollments/test-handle/preview"),
+        ("POST", "/connection-enrollments/test-handle/decision"),
     ]:
-        assert (await browser.request(method, endpoint, json=body)).status_code == 401
-        assert (await browser.request(method, endpoint, json=body, headers=agent_auth)).status_code == 403
-    await browser.get("/auth/login")
-    assert (await browser.get("/connection-service-accounts")).json() == [PERSONAL.model_dump()]
-    assert (await browser.get("/connections")).json() == [original.model_dump(mode="json")]
-    assert (await browser.get(path)).json() == original.model_dump(mode="json")
-    rename = {"display_name": " Renamed ", "expected_version": original.version}
-    for origin in ["https://cross-origin.invalid", "http://test-app.invalid.evil.example"]:
-        assert (await browser.patch(path, json=rename, headers={"Origin": origin})).status_code == 403
-        assert (
-            await browser.post(
-                f"{path}/unbind", json={"expected_version": original.version}, headers={"Origin": origin}
-            )
-        ).status_code == 403
-    saved_origin = browser.headers.pop("Origin")
-    assert (await browser.patch(path, json=rename)).status_code == 403
-    assert (await browser.post(f"{path}/unbind", json={"expected_version": original.version})).status_code == 403
-    browser.headers["Origin"] = saved_origin
-    assert await review.connections.get(original.id) == original
-    assert (await browser.patch(path, json={**rename, "service_account": PERSONAL.model_dump()})).status_code == 422
-    assert (await browser.patch(path, json={**rename, "expected_version": 0})).status_code == 422
-    renamed = await browser.patch(path, json=rename)
-    assert renamed.status_code == 200
-    assert renamed.json()["display_name"] == "Renamed"
-    assert renamed.json()["id"] == str(original.id)
-    assert renamed.json()["grants"] == original.model_dump(mode="json")["grants"]
-    assert (await browser.patch(path, json=rename)).status_code == 409
-    assert (
-        await browser.post(
-            f"{path}/rebind", json={"expected_version": original.version, "service_account": PERSONAL.model_dump()}
-        )
-    ).status_code == 409
-    assert (await browser.post(f"{path}/unbind", json={"expected_version": original.version})).status_code == 409
-    assert (await review.connections.get(original.id)).grants[0].status is GrantStatus.ACTIVE
-    unbound = await browser.post(f"{path}/unbind", json={"expected_version": renamed.json()["version"]})
-    assert unbound.status_code == 200
-    assert unbound.json()["grants"][0]["status"] == "revoked"
-    assert unbound.json()["grants"][0]["client_id"] == grant.client_id
-    assert unbound.json()["grants"][0]["id"] == str(grant.id)
-    assert len((await browser.get("/connections")).json()) == 1
-    assert review.calls == []
+        assert (await review.browser.request(method, path, json={} if method != "GET" else None)).status_code == 404
 
 
 def _bind_live_sandbox(policies: PolicyIndex, sandbox_namespace: str) -> None:
@@ -593,16 +535,6 @@ async def test_caller_grants_require_an_operator_session(
         path = f"/caller-grants/{namespace.name}/live"
         assert (await client.get(path)).status_code == 401
         assert (await client.get(path, headers=agent_auth)).status_code == 403
-
-
-@pytest.mark.parametrize("operator_connection", ["disabled", "target-subject-mismatch", "wrong-audience"])
-async def test_connection_management_fails_closed_without_valid_federation(
-    review: Review, operator_connection: str
-) -> None:
-    await review.browser.get("/auth/login")
-    expected = 503 if operator_connection == "disabled" else 403
-    assert (await review.browser.get("/connections")).status_code == expected
-    assert (await review.browser.get("/connection-service-accounts")).status_code == expected
 
 
 @pytest.mark.parametrize("direct_federation", [False, True], ids=["exchange", "direct"])
@@ -899,161 +831,6 @@ async def test_concurrent_cross_replica_callbacks_consume_pending_login_once(rev
     responses = await asyncio.gather(a.get(callback, follow_redirects=False), b.get(callback, follow_redirects=False))
     assert sorted(response.status_code for response in responses) == [303, 401]
     assert sorted([(await a.get("/auth/me")).status_code, (await b.get("/auth/me")).status_code]) == [200, 401]
-
-
-async def enrollment_path(review: Review, client_id: str = "test-external-client") -> str:
-    created = await review.enrollments.create(
-        EnrollmentInput(
-            issuer="https://actions.test",
-            client_id=client_id,
-            client_name="Claude on wyrm2",
-            redirect_uri="https://external-client.test/callback",
-            code_challenge=f"test-pkce-{client_id}",
-            upstream_url="https://authentik.test/authorize?state=server-held-state",
-            expires_at=datetime.now(UTC) + timedelta(minutes=10),
-        )
-    )
-    return f"/connection-enrollments/{created.handle}"
-
-
-async def test_consent_requires_operator_and_same_origin_and_decides_once(
-    review: Review, agent_auth: dict[str, str]
-) -> None:
-    path = await enrollment_path(review)
-    browser = review.browser
-    assert (await browser.post(f"{path}/preview")).status_code == 401
-    assert (await browser.post(f"{path}/preview", headers=agent_auth)).status_code == 403
-    await browser.get("/auth/login")
-    assert (await browser.post(f"{path}/preview", headers={"Origin": "https://evil.test"})).status_code == 403
-    assert (await browser.post(f"{path}/preview", headers={"Origin": "null"})).status_code == 403
-    body = {"verdict": "deny", "expected_version": 1}
-    # The Actions authority pins an enrollment at its first preview, and refuses a decision before one.
-    assert (await browser.post(f"{path}/decision", json=body)).status_code == 403
-    response = await browser.post(f"{path}/preview")
-    assert response.status_code == 200, response.text
-    preview = response.json()
-    assert preview["enrollment"]["client_id"] == "test-external-client"
-    assert preview["enrollment"]["redirect_uri"] == "https://external-client.test/callback"
-    assert preview["service_accounts"] == [PERSONAL.model_dump()]
-    assert "access_token" not in response.text
-    assert "server-held-state" not in response.text
-    assert (
-        await browser.post(f"{path}/decision", headers={"Origin": "https://evil.test"}, json=body)
-    ).status_code == 403
-    denied = await browser.post(f"{path}/decision", json=body)
-    assert denied.status_code == 200, denied.text
-    assert denied.json() == {"verdict": "deny", "redirect_url": None}
-    assert (await browser.post(f"{path}/decision", json=body)).status_code == 409
-
-
-async def test_consent_allow_round_trip_and_no_second_decision_from_a_replica(review: Review) -> None:
-    path = await enrollment_path(review)
-    browser = review.browser
-    await browser.get("/auth/login")
-    preview = (await browser.post(f"{path}/preview")).json()
-    body = {
-        "verdict": "allow",
-        "expected_version": preview["enrollment"]["version"],
-        "connection": {"kind": "new", "display_name": "My Claude on wyrm2"},
-        "service_account": PERSONAL.model_dump(),
-    }
-    result = await browser.post(f"{path}/decision", json=body)
-    assert result.status_code == 200, result.text
-    assert result.json() == {
-        "verdict": "allow",
-        "redirect_url": "https://authentik.test/authorize?state=server-held-state",
-    }
-    replica = review.second_browser
-    replica.cookies.update(browser.cookies)
-    for again in (body, {"verdict": "deny", "expected_version": body["expected_version"]}):
-        assert (await replica.post(f"{path}/decision", json=again)).status_code == 409
-    # The BFF does not activate a grant. The OAuth adapter must still verify the same upstream operator.
-    approved = await review.enrollments.approved(
-        client_id="test-external-client",
-        redirect_uri="https://external-client.test/callback",
-        code_challenge="test-pkce-test-external-client",
-        operator=OperatorPrincipal(issuer=review.issuer, subject=SUBJECT_A),
-    )
-    assert approved.service_account == PERSONAL
-    assert review.exchanged_subjects
-    assert set(review.exchanged_subjects) == {SUBJECT_A}
-
-
-async def test_consent_is_pinned_to_its_operator_not_their_session(review: Review) -> None:
-    path = await enrollment_path(review)
-    a, b = review.browser, review.second_browser
-    await a.get("/auth/login")
-    assert (await a.post(f"{path}/preview")).status_code == 200
-    review.login_as(SUBJECT_B)
-    await b.get("/auth/login")
-    assert (await b.post(f"{path}/preview")).status_code == 403
-    review.login_as(SUBJECT_A)
-    await a.post("/auth/logout")
-    await a.get("/auth/login")
-    preview = await a.post(f"{path}/preview")
-    assert preview.status_code == 200, preview.text
-    denied = await a.post(
-        f"{path}/decision", json={"verdict": "deny", "expected_version": preview.json()["enrollment"]["version"]}
-    )
-    assert denied.status_code == 200, denied.text
-
-
-async def test_existing_connection_consent_requires_confirmation_and_never_refreshes_the_reviewed_version(
-    review: Review,
-) -> None:
-    old = await review.connections.bind(
-        GrantBinding(
-            grant_id=uuid4(),
-            service_account=PERSONAL,
-            issuer="https://actions.test",
-            client_id="test-old-client",
-            activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
-            connection=NewConnection(display_name="Existing test client"),
-        )
-    )
-    old = await review.connections.activate(old.id)
-    connection = await review.connections.get(old.connection_id)
-    path = await enrollment_path(review)
-    browser = review.browser
-    await browser.get("/auth/login")
-    preview = (await browser.post(f"{path}/preview")).json()
-    assert preview["connections"] == [connection.model_dump(mode="json")]
-    body = ConsentAllow(
-        verdict="allow",
-        expected_version=preview["enrollment"]["version"],
-        service_account=PERSONAL,
-        connection=ConfirmedReconnectConnection(
-            connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
-        ),
-    ).model_dump(mode="json")
-    body["connection"].pop("authority_change_confirmed")
-    assert (await browser.post(f"{path}/decision", json=body)).status_code == 422
-    body["connection"]["authority_change_confirmed"] = True
-    assert (
-        await browser.post(f"{path}/decision", json=body, headers={"Origin": "https://evil.test"})
-    ).status_code == 403
-    result = await browser.post(f"{path}/decision", json=body)
-    assert result.status_code == 200, result.text
-    assert await review.connections.resolve(old.id, issuer=old.issuer, client_id=old.client_id) == old
-    renamed = await review.connections.rename(
-        connection.id, expected_version=connection.version, display_name="Changed after review"
-    )
-    reloaded = (await browser.post(f"{path}/preview")).json()
-    assert reloaded["connections"][0]["version"] == renamed.version
-    changed = {**body, "connection": {**body["connection"], "expected_version": renamed.version}}
-    assert (await browser.post(f"{path}/decision", json=changed)).status_code == 409
-
-
-async def test_consent_decision_rejects_extra_authority(review: Review) -> None:
-    path = await enrollment_path(review)
-    browser = review.browser
-    await browser.get("/auth/login")
-    version = (await browser.post(f"{path}/preview")).json()["enrollment"]["version"]
-    deny = {"verdict": "deny", "expected_version": version}
-    for extra in ({"redirect_url": "https://evil.test"}, {"service_account": PERSONAL.model_dump()}):
-        response = await browser.post(f"{path}/decision", json={**deny, **extra})
-        assert response.status_code == 422, response.text
-    assert (await browser.post(f"{path}/decision", json=deny)).status_code == 200
 
 
 if __name__ == "__main__":

@@ -3,33 +3,99 @@ import { act } from "react";
 import { MemoryRouter } from "react-router";
 import { expect, it, vi } from "vitest";
 
-import { answerApi, mount, TestEventSource, type Sent } from "../actions/testing";
+import { mount } from "../actions/testing";
 import type { CallerGrantReader, Connection } from "../client";
+import { answerConnectionFacade, type Sent } from "../connection_service_test_support";
 import { Connections } from "./connections";
 import { sampleConnection } from "../connections_fixture";
 
 const OTHER = { namespace: "agentplane-test", name: "other" };
+const ROOT = "/upstream/actions/v1/operator";
+const CONNECTIONS = `${ROOT}/connections`;
+const CALLERS = `${ROOT}/caller-service-accounts`;
+const WATCH = `${ROOT}/connections:watch`;
+
+function connectionJson(row: Connection): Record<string, unknown> {
+  const status = {
+    pending: "GRANT_STATUS_PENDING",
+    active: "GRANT_STATUS_ACTIVE",
+    revoked: "GRANT_STATUS_REVOKED",
+  } as const;
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    version: row.version,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    grants: row.grants.map((grant) => ({
+      id: grant.id,
+      connectionId: grant.connection_id,
+      revision: grant.revision,
+      caller: grant.caller,
+      issuer: grant.issuer,
+      clientId: grant.client_id,
+      status: status[grant.status],
+      ...(grant.activation_deadline === null ? {} : { activationDeadline: grant.activation_deadline }),
+      createdAt: grant.created_at,
+      ...(grant.activated_at === null ? {} : { activatedAt: grant.activated_at }),
+      ...(grant.revoked_at === null ? {} : { revokedAt: grant.revoked_at }),
+    })),
+    ...(row.bound_caller === null ? {} : { boundCaller: row.bound_caller }),
+  };
+}
+
+function watch(rows: Connection[], signal?: AbortSignal): Response {
+  const encoder = new TextEncoder();
+  const frames = [{ snapshot: { connections: rows.map(connectionJson) } }, { snapshotComplete: {} }];
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const result of frames) controller.enqueue(encoder.encode(`${JSON.stringify({ result })}\n`));
+        signal?.addEventListener(
+          "abort",
+          () => controller.error(new DOMException("The watch request was aborted", "AbortError")),
+          { once: true }
+        );
+      },
+    }),
+    { headers: { "content-type": "application/x-ndjson" } }
+  );
+}
 
 /** Answers the page's reads with `rows` (a function, to change between reads), an unlink with
  * `unbound` and a rename with `renamed`; a `Response` answers as an HTTP failure. */
 function serve(
-  rows: Connection[] | Response | (() => Connection[]) = [sampleConnection()],
+  rows: Connection[] | Response | (() => Connection[] | Response) = [sampleConnection()],
   { unbound, renamed }: { unbound?: () => Connection | Response; renamed?: () => Connection | Response } = {}
 ): Sent[] {
-  return answerApi(({ method, path }) => {
-    if (path === "/connections") return typeof rows === "function" ? rows() : rows;
-    if (path === "/connection-service-accounts") return [OTHER];
-    if (method === "POST" && path.endsWith("/unbind")) return unbound?.();
-    if (method === "PATCH") return renamed?.();
+  const sent = answerConnectionFacade(({ method, path }, request) => {
+    if (method === "GET" && path === CONNECTIONS) {
+      const current = typeof rows === "function" ? rows() : rows;
+      return current instanceof Response ? current : { connections: current.map(connectionJson) };
+    }
+    if (method === "GET" && path === WATCH) {
+      const current = typeof rows === "function" ? rows() : rows;
+      return current instanceof Response ? current : watch(current, request.signal);
+    }
+    if (method === "GET" && path === CALLERS) return { serviceAccounts: [OTHER] };
+    if (method === "POST" && path.endsWith("/rebind")) return { connection: connectionJson(sampleConnection()) };
+    if (method === "POST" && path.endsWith("/unbind")) {
+      const answer = unbound?.();
+      return answer instanceof Response || answer === undefined ? answer : { connection: connectionJson(answer) };
+    }
+    if (method === "PATCH") {
+      const answer = renamed?.();
+      return answer instanceof Response || answer === undefined ? answer : { connection: connectionJson(answer) };
+    }
   });
+  return sent;
 }
 
-const reads = (sent: Sent[]): number => sent.filter(({ path }) => path === "/connections").length;
+const reads = (sent: Sent[]): number => sent.filter(({ path }) => path === CONNECTIONS).length;
 const unbinds = (sent: Sent[]): Sent[] => sent.filter(({ path }) => path.endsWith("/unbind"));
 const renames = (sent: Sent[]): Sent[] => sent.filter(({ method }) => method === "PATCH");
 
 async function render(readGrants?: CallerGrantReader): Promise<HTMLDivElement> {
-  vi.stubGlobal("EventSource", TestEventSource);
   const container = await mount(
     <MemoryRouter>
       <Connections readGrants={readGrants} />
@@ -93,10 +159,11 @@ it("shows the most recent grant when a connection has more than one", async () =
 });
 it("requires confirmation, permits cancelling, and preserves the row after unlink", async () => {
   const row = sampleConnection();
+  row.version = "9007199254740993";
   const sent = serve([row], {
     unbound: () => ({
       ...row,
-      version: 3,
+      version: "3",
       grants: row.grants.map((grant) => ({ ...grant, status: "revoked" as const })),
       bound_caller: null,
     }),
@@ -114,14 +181,14 @@ it("requires confirmation, permits cancelling, and preserves the row after unlin
   await act(async () => button(container, "Confirm unlink").click());
   await vi.waitFor(() => expect(button(container, "Unlink").disabled).toBe(true));
   expect(unbinds(sent)).toMatchObject([
-    { path: `/connections/${row.id}/unbind`, body: { expected_version: row.version } },
+    { path: `${CONNECTIONS}/${row.id}/unbind`, body: { expectedVersion: row.version } },
   ]);
 });
 it("refreshes stale unlink state without destructive automatic retry", async () => {
   let rows = [sampleConnection()];
   const sent = serve(() => rows, {
     unbound: () => {
-      rows = [{ ...rows[0], display_name: "Changed elsewhere", version: 4 }];
+      rows = [{ ...rows[0], display_name: "Changed elsewhere", version: "4" }];
       return Response.json({ detail: "stale" }, { status: 409 });
     },
   });
@@ -137,7 +204,7 @@ it("refreshes stale unlink state without destructive automatic retry", async () 
 it("renames with the version it read and keeps the answered row", async () => {
   const row = sampleConnection();
   const sent = serve([row], {
-    renamed: () => ({ ...row, display_name: "Test renamed client", version: row.version + 1 }),
+    renamed: () => ({ ...row, display_name: "Test renamed client", version: "3" }),
     unbound: () => row,
   });
   const container = await render();
@@ -147,12 +214,12 @@ it("renames with the version it read and keeps the answered row", async () => {
 
   await vi.waitFor(() => expect(nameField(container).value).toBe("Test renamed client"));
   expect(renames(sent)).toMatchObject([
-    { path: `/connections/${row.id}`, body: { expected_version: row.version, display_name: "Test renamed client" } },
+    { path: `${CONNECTIONS}/${row.id}`, body: { expectedVersion: row.version, displayName: "Test renamed client" } },
   ]);
   // The next change on the row goes with the version the rename answered, not the one first read.
   await act(async () => button(container, "Unlink").click());
   await act(async () => button(container, "Confirm unlink").click());
-  await vi.waitFor(() => expect(unbinds(sent)).toMatchObject([{ body: { expected_version: row.version + 1 } }]));
+  await vi.waitFor(() => expect(unbinds(sent)).toMatchObject([{ body: { expectedVersion: "3" } }]));
 });
 it("keeps the stored name when a blank one is committed", async () => {
   const sent = serve();
@@ -170,7 +237,7 @@ it("loads the latest state on a rename conflict without retrying", async () => {
   let rows = [sampleConnection()];
   const sent = serve(() => rows, {
     renamed: () => {
-      rows = [{ ...rows[0], display_name: "Test renamed elsewhere", version: 4 }];
+      rows = [{ ...rows[0], display_name: "Test renamed elsewhere", version: "4" }];
       return Response.json({ detail: "stale" }, { status: 409 });
     },
   });
@@ -187,7 +254,7 @@ it("loads the latest state on a rename conflict without retrying", async () => {
   expect(reads(sent)).toBe(2);
 });
 it("distinguishes loading failures from an empty inventory", async () => {
-  serve(Response.json({ detail: "Service unavailable" }, { status: 503 }));
+  serve(() => Response.json({ detail: "Service unavailable" }, { status: 503 }));
   const container = await render();
   expect(container.textContent).toContain("Service unavailable");
   expect(container.textContent).not.toContain("No OAuth clients yet");

@@ -120,7 +120,8 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   reason, never an error response. LLM ingress is not probed: the app's NetworkPolicy has no egress
   to it. The Kubernetes API is not probed either; the freshness of the live views shows it.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
-- `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
+- `frontend/connection_service_client.ts`: generated ConnectionService HTTP/NDJSON message adapters for the consent
+  page and OAuth-client settings; the service owns Connections and consent.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
 - `database.py`: the declarative `Base` every table maps onto, and the app's one connection pool;
   `main.py` builds the pool and hands it to each store and to the database update listener.
@@ -407,10 +408,10 @@ requires explicit authority-replacement confirmation. Changing the ServiceAccoun
 confirmation. A fresh authorization can reconnect to the same ServiceAccount or choose another; no
 policy editing is offered.
 
-Both `/connection-enrollments/{handle}/preview` and `/decision` are operator-only POSTs
-with the existing exact-Origin check and per-request federation; the app relays them to the
-Actions authority and keeps no consent state. The decision carries the version the preview
-returned. The Actions authority pins the enrollment to the authenticated operator of the
+The page calls the generated ConnectionService facade through
+`/upstream/actions/v1/operator/connection-enrollments/{handle}/preview` and `/decision`;
+the ConnectionService authorizes each request and keeps consent state. The decision carries the
+version the preview returned. The service pins the enrollment to the authenticated operator of the
 first preview, in whichever browser session, owns expiry, and records one decision: it refuses
 any decision after that, even a repeat after a lost response, so a lost answer means a fresh
 OAuth authorization from the MCP client. An existing Connection's reviewed version is part of the
@@ -418,6 +419,10 @@ decision; a 409 never silently refreshes it. Consent does not revoke old authori
 exchange's version-checked reservation does, before replacement activation. Failed issuance does
 not restore old grants or rewrite Action provenance; deliberate operator Connection rebinding
 (below) is separate from consent and can change the account an existing credential acts as.
+
+The frontend parses generated protobuf JSON and adapts its field names and enum values to the
+existing page model. Preview combines the enrollment metadata with the service-account and
+Connection lists; the server-held continuation is not returned to the browser.
 
 Authorize resumes only the server-held continuation returned by the authenticated Actions
 authority; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
@@ -480,15 +485,15 @@ watch. Missing references, expiry and unsynced/unavailable Action policy stay vi
 Action Service does not hide bindings. The disclosure is read-only and does not calculate
 arbitrary Kubernetes RBAC. Existing Sandbox grant editing and live updates are unchanged.
 
-The BFF proxies `GET /connections[/{id}]`, `PATCH /connections/{id}`,
-`POST /connections/{id}/rebind`, `POST /connections/{id}/unbind`, and
-`GET /connection-service-accounts` through the same request-bound
-operator federation as Action review. Unsafe browser requests require exact Origin. Canonical
-`ConnectionRename`, `ConnectionRebind`, and `ConnectionVersion` models carry the version the operator reviewed; a 409
-refreshes the inventory and asks for review, never automatically retrying a destructive operation.
-The app owns no Connection state. Reconnect requires fresh OAuth authorization from the external
-client; the management rebind is a separate operator-authorized retarget of an existing token.
-Policy editing and deployment are outside this surface.
+The browser reads and updates Connections through the generated facade under
+`/upstream/actions/v1/operator/`: list, watch, rename, rebind, unbind, caller accounts, and consent.
+`WatchConnections` streams NDJSON, replacing the snapshot after reconnect and applying
+upserts by Connection ID. Protobuf int64 versions stay decimal strings in the UI adapter and are
+sent back as `expectedVersion`; an `ABORTED` response refreshes the inventory and asks for review,
+never automatically retrying a destructive operation. The app owns no Connection state. Reconnect
+requires fresh OAuth authorization from the external client; the management rebind is a separate
+operator-authorized retarget of an existing token. Policy editing and deployment are outside this
+surface.
 
 The MCP servers tab lists the Action Service's OAuth-linked MCP server groups and links or
 disconnects each one. The tab follows independent linkage and replica-local MCP health

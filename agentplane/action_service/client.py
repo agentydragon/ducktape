@@ -11,13 +11,6 @@ from anyio import CancelScope
 from pydantic import BaseModel, TypeAdapter
 
 from agentplane.action_service.catalog import ActionGroupView
-from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionRename, ConnectionVersion
-from agentplane.action_service.enrollments import (
-    EnrollmentDecisionInput,
-    EnrollmentDecisionResult,
-    EnrollmentPreview,
-    EnrollmentPreviewInput,
-)
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from agentplane.action_service.models import ActionHistoryPage, ActionRequestView, ActionState, DecisionInput
 from agentplane.action_service.policy_view import SubjectActionPolicyView
@@ -65,35 +58,6 @@ class OperatorActionServiceClient:
         url = f"/v1/operator/mcp-servers/{server_id}/linkage/disconnect"
         return await self._call(TypeAdapter(McpLinkageView), "POST", url)
 
-    async def caller_service_accounts(self) -> list[ServiceAccountRef]:
-        return await self._call(TypeAdapter(list[ServiceAccountRef]), "GET", "/v1/operator/caller-service-accounts")
-
-    async def preview_enrollment(self, handle: str, body: EnrollmentPreviewInput) -> EnrollmentPreview:
-        url = f"/v1/operator/connection-enrollments/{handle}/preview"
-        return await self._call(TypeAdapter(EnrollmentPreview), "POST", url, body=body)
-
-    async def decide_enrollment(self, handle: str, body: EnrollmentDecisionInput) -> EnrollmentDecisionResult:
-        url = f"/v1/operator/connection-enrollments/{handle}/decision"
-        return await self._call(TypeAdapter(EnrollmentDecisionResult), "POST", url, body=body)
-
-    async def connections(self) -> list[Connection]:
-        return await self._call(TypeAdapter(list[Connection]), "GET", "/v1/operator/connections")
-
-    async def connection(self, connection_id: UUID) -> Connection:
-        return await self._call(TypeAdapter(Connection), "GET", f"/v1/operator/connections/{connection_id}")
-
-    async def rename_connection(self, connection_id: UUID, body: ConnectionRename) -> Connection:
-        url = f"/v1/operator/connections/{connection_id}"
-        return await self._call(TypeAdapter(Connection), "PATCH", url, body=body)
-
-    async def rebind_connection(self, connection_id: UUID, body: ConnectionRebind) -> Connection:
-        url = f"/v1/operator/connections/{connection_id}/rebind"
-        return await self._call(TypeAdapter(Connection), "POST", url, body=body)
-
-    async def unbind_connection(self, connection_id: UUID, body: ConnectionVersion) -> Connection:
-        url = f"/v1/operator/connections/{connection_id}/unbind"
-        return await self._call(TypeAdapter(Connection), "POST", url, body=body)
-
     async def list_requests(
         self, *, states: tuple[ActionState, ...] = (), idempotency_key: str | None = None
     ) -> list[ActionRequestView]:
@@ -133,9 +97,6 @@ class OperatorActionServiceClient:
 
     def stream_requests(self, *, state: ActionState | None = None) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
         return self._stream_operator("/v1/operator/action-requests/stream", params={"state": state} if state else None)
-
-    def stream_connections(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
-        return self._stream_operator("/v1/operator/connections/stream")
 
     def stream_mcp_linkages(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
         return self._stream_operator("/v1/operator/mcp-servers/stream")
