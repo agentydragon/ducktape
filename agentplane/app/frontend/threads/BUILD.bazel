@@ -11,19 +11,9 @@ TSCONFIG = "//agentplane/app/frontend:tsconfig"
 js_openapi_zod(
     name = "thread_entity_view_generated",
     out = "thread_entity_view.zod.ts",
+    config_file = "thread_entity_view.codegen.mjs",
     generator = "//agentplane/history_service/fold:export_thread_entity_schema_bin",
-    strict_objects = True,
     tsconfig = "//agentplane/app/frontend:tsconfig_generated",
-)
-
-ts_library(
-    name = "thread_entity_view_schema",
-    srcs = ["thread_entity_view_schema.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":thread_entity_view_generated",
-        "//:node_modules/zod",
-    ],
 )
 
 ts_library(
@@ -484,7 +474,7 @@ ts_library(
     srcs = ["thread_store.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":thread_entity_view_schema",
+        ":thread_entity_view_generated",
         ":thread_sync",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
@@ -515,9 +505,10 @@ ts_library(
     srcs = ["thread_sync.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":thread_entity_view_schema",
+        ":thread_entity_view_generated",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/zod",
         "//agentplane/app/frontend:live_stream",
     ],
 )

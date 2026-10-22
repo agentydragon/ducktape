@@ -31,7 +31,7 @@ import { z } from "zod";
 
 import { displayableError, fetchWithLogin, threadScope, type ThreadScope } from "../client";
 import { backoff, type StreamConnection } from "../live_stream";
-import { threadEntityViewSchema } from "./thread_entity_view_schema";
+import { zThreadEntityView } from "./thread_entity_view.zod";
 import {
   decimalBigInt,
   type Decimal,
@@ -95,7 +95,7 @@ function threadEntity(row: Row): ThreadEntity {
   );
   wireRow.cursor = decimalString(row.cursor);
   wireRow.revision_cursor = decimalString(row.revisionCursor);
-  const view = threadEntityViewSchema.parse(wireRow);
+  const view = zThreadEntityView.parse(wireRow);
   const fields = {
     threadId: view.thread_id,
     projectionEpoch: view.projection_epoch,

@@ -6,7 +6,10 @@
 import { createContext, useContext, type Context, type JSX, type ReactNode } from "react";
 
 import type { StreamConnection } from "../live_stream";
-import type { ThreadEntityView } from "./thread_entity_view_schema";
+import type { zThreadEntityView } from "./thread_entity_view.zod";
+import type { z } from "zod";
+
+type ThreadEntityView = z.infer<typeof zThreadEntityView>;
 
 export type Decimal = string | bigint;
 export function decimalBigInt(value: Decimal): bigint {
