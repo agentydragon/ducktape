@@ -163,6 +163,9 @@ def public_coder_agent_secret_prune(
         chart,
         "public-coder-agent-secret-prune",
         artifact,
+        # The retired ExternalSecrets currently report source sync errors; their health must not
+        # block Flux from tracking and pruning their target Secret objects.
+        wait=None,
         timeout="5m",
         prune=True,
         deletion_policy=KustomizationSpecDeletionPolicy.DELETE,

@@ -4166,7 +4166,6 @@ spec:
     name: public-coder-agent-secret-prune
     namespace: ducktape-flux
   timeout: 5m
-  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
