@@ -164,7 +164,10 @@ func loadConfig() (config, error) {
 	}
 	// The deployed reader allowlist is a JSON environment value, as Pydantic reads it.
 	if raw := os.Getenv(settingPrefix + "READER_ACCOUNTS"); raw != "" {
-		var accounts []auth.Account
+		var accounts []struct {
+			Namespace string `json:"namespace"`
+			Name      string `json:"name"`
+		}
 		decoder := json.NewDecoder(strings.NewReader(raw))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&accounts); err != nil || accounts == nil {
@@ -173,7 +176,11 @@ func loadConfig() (config, error) {
 		if err := decoder.Decode(new(any)); err != io.EOF {
 			return config{}, errors.New("reader_accounts must contain one JSON array")
 		}
-		settings.Set("reader_accounts", accounts)
+		readers := make([]auth.Account, len(accounts))
+		for i, account := range accounts {
+			readers[i] = auth.Account{Namespace: account.Namespace, Name: account.Name}
+		}
+		settings.Set("reader_accounts", readers)
 	}
 	// The errors name no value: a setting can be a Secret.
 	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
