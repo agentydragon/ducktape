@@ -5,12 +5,36 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch
-from cdk8s_plus_34 import ServiceAccount
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import ServiceAccount, k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
+)
+from litellm_key_crds.io.crossplane.m.litellm import (
+    Key,
+    KeySpec,
+    KeySpecForProvider,
+    KeySpecForProviderKeyWoSecretRef,
+    KeySpecForProviderMetadataSecretRef,
+    KeySpecForProviderTeamIdRef,
+    KeySpecProviderConfigRef,
+    KeySpecWriteConnectionSecretToRef,
+)
+from litellm_providerconfig_crds.io.crossplane.m.litellm import (
+    ProviderConfig,
+    ProviderConfigSpec,
+    ProviderConfigSpecCredentials,
+    ProviderConfigSpecCredentialsSecretRef,
+)
+from litellm_team_crds.io.crossplane.m.litellm import (
+    Team,
+    TeamSpec,
+    TeamSpecForProvider,
+    TeamSpecForProviderRouterSettings,
+    TeamSpecForProviderRouterSettingsFallbacks,
+    TeamSpecProviderConfigRef,
 )
 
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
@@ -30,63 +54,49 @@ def _lane_models(*names: str) -> list[str]:
     return [route.id for name in names for route in KEY_MODEL_LANES[name].allowed]
 
 
-def _key(
-    chart: Chart,
+def _key_spec(
     *,
-    name: str,
     alias: str,
     models: Sequence[str],
-    consumer: str,
+    metadata_secret: str,
     max_budget: int | None = None,
     budget_duration: str | None = None,
     team: str | None = None,
     connection_secret: str | None = None,
     client_secret: str | None = None,
-) -> None:
-    for_provider: dict[str, object] = {"keyAlias": alias, "models": list(models), "metadata": {"consumer": consumer}}
-    if max_budget is not None:
-        for_provider["maxBudget"] = max_budget
-    if budget_duration is not None:
-        for_provider["budgetDuration"] = budget_duration
-    if team is not None:
-        for_provider["teamIdRef"] = {"name": team}
-    if client_secret is not None:
-        for_provider["keyWoSecretRef"] = {"name": client_secret, "key": "api-key"}
+) -> KeySpec:
+    for_provider = KeySpecForProvider(
+        key_alias=alias,
+        models=list(models),
+        metadata_secret_ref=KeySpecForProviderMetadataSecretRef(name=metadata_secret),
+        max_budget=max_budget,
+        budget_duration=budget_duration,
+        team_id_ref=KeySpecForProviderTeamIdRef(name=team) if team is not None else None,
+        key_wo_secret_ref=(
+            KeySpecForProviderKeyWoSecretRef(name=client_secret, key="api-key") if client_secret is not None else None
+        ),
         # The value is intentionally fixed in the SOPS Secret. Bump this when that
         # credential changes so Upjet updates the remote key instead of ignoring it.
-        for_provider["keyWoVersion"] = "1"
-
-    obj = ApiObject(
-        chart,
-        name,
-        api_version="litellm.m.crossplane.io/v1alpha1",
-        kind="Key",
-        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+        key_wo_version="1" if client_secret is not None else None,
     )
-    spec: dict[str, object] = {"forProvider": for_provider, "providerConfigRef": {"name": "default"}}
-    if connection_secret is not None:
-        spec["writeConnectionSecretToRef"] = {"name": connection_secret}
-    obj.add_json_patch(JsonPatch.add("/spec", spec))
+    return KeySpec(
+        for_provider=for_provider,
+        provider_config_ref=KeySpecProviderConfigRef(kind="ProviderConfig", name="default"),
+        write_connection_secret_to_ref=(
+            KeySpecWriteConnectionSecretToRef(name=connection_secret) if connection_secret is not None else None
+        ),
+    )
 
 
-def _team(chart: Chart, *, name: str, fallbacks: Sequence[str]) -> None:
-    ApiObject(
-        chart,
-        name,
-        api_version="litellm.m.crossplane.io/v1alpha1",
-        kind="Team",
-        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-    ).add_json_patch(
-        JsonPatch.add(
-            "/spec",
-            {
-                "forProvider": {
-                    "teamAlias": name.removeprefix("team-"),
-                    "routerSettings": {"fallbacks": [{"model": "*", "fallbackModels": list(fallbacks)}]},
-                },
-                "providerConfigRef": {"name": "default"},
-            },
-        )
+def _team_spec(*, name: str, fallbacks: Sequence[str]) -> TeamSpec:
+    return TeamSpec(
+        for_provider=TeamSpecForProvider(
+            team_alias=name.removeprefix("team-"),
+            router_settings=TeamSpecForProviderRouterSettings(
+                fallbacks=[TeamSpecForProviderRouterSettingsFallbacks(model="*", fallback_models=list(fallbacks))]
+            ),
+        ),
+        provider_config_ref=TeamSpecProviderConfigRef(kind="ProviderConfig", name="default"),
     )
 
 
@@ -164,38 +174,46 @@ def chart(app: App) -> Chart:
         ),
     )
 
-    ApiObject(
+    ProviderConfig(
         chart,
         "provider-config",
-        api_version="litellm.m.crossplane.io/v1beta1",
-        kind="ProviderConfig",
         metadata=ApiObjectMetadata(name="default", namespace=NAMESPACE),
-    ).add_json_patch(
-        JsonPatch.add(
-            "/spec",
-            {
-                "credentials": {
-                    "source": "Secret",
-                    "secretRef": {"name": _PROVIDER_CONFIG_SECRET, "namespace": NAMESPACE, "key": "credentials"},
-                }
-            },
-        )
+        spec=ProviderConfigSpec(
+            credentials=ProviderConfigSpecCredentials(
+                source="Secret",
+                secret_ref=ProviderConfigSpecCredentialsSecretRef(
+                    name=_PROVIDER_CONFIG_SECRET, namespace=NAMESPACE, key="credentials"
+                ),
+            )
+        ),
     )
 
-    _team(
+    Team(
         chart,
-        name="team-codex-clients",
-        fallbacks=[route.id for route in KEY_MODEL_LANES["codex_client_models"].fallbacks],
+        "team-codex-clients",
+        metadata=ApiObjectMetadata(name="team-codex-clients", namespace=NAMESPACE),
+        spec=_team_spec(
+            name="team-codex-clients",
+            fallbacks=[route.id for route in KEY_MODEL_LANES["codex_client_models"].fallbacks],
+        ),
     )
-    _team(
+    Team(
         chart,
-        name="team-gemini-clients",
-        fallbacks=[route.id for route in KEY_MODEL_LANES["gemini_client_models"].fallbacks],
+        "team-gemini-clients",
+        metadata=ApiObjectMetadata(name="team-gemini-clients", namespace=NAMESPACE),
+        spec=_team_spec(
+            name="team-gemini-clients",
+            fallbacks=[route.id for route in KEY_MODEL_LANES["gemini_client_models"].fallbacks],
+        ),
     )
-    _team(
+    Team(
         chart,
-        name="team-antigravity-clients",
-        fallbacks=[route.id for route in KEY_MODEL_LANES["antigravity_client_models"].fallbacks],
+        "team-antigravity-clients",
+        metadata=ApiObjectMetadata(name="team-antigravity-clients", namespace=NAMESPACE),
+        spec=_team_spec(
+            name="team-antigravity-clients",
+            fallbacks=[route.id for route in KEY_MODEL_LANES["antigravity_client_models"].fallbacks],
+        ),
     )
 
     dynamic_keys = [
@@ -295,20 +313,31 @@ def chart(app: App) -> Chart:
     # starts, so there is no duplicate-alias window.
     for key in dynamic_keys:
         connection_secret = f"litellm-crossplane-key-{key.name}"
-        _key(
+        metadata_secret = f"litellm-key-metadata-{key.name}"
+        k8s.KubeSecret(
             chart,
-            name=f"key-{key.name}",
-            alias=key.name,
-            models=key.models,
-            consumer=key.consumer,
-            max_budget=key.max_budget,
-            budget_duration=key.budget_duration,
-            connection_secret=connection_secret,
-            team={
-                "codex-clients": "team-codex-clients",
-                "gemini-clients": "team-gemini-clients",
-                "antigravity-clients": "team-antigravity-clients",
-            }.get(key.name),
+            f"key-metadata-{key.name}",
+            metadata=k8s.ObjectMeta(name=metadata_secret, namespace=NAMESPACE),
+            type="Opaque",
+            string_data={"consumer": key.consumer},
+        )
+        Key(
+            chart,
+            f"key-{key.name}",
+            metadata=ApiObjectMetadata(name=f"key-{key.name}", namespace=NAMESPACE),
+            spec=_key_spec(
+                alias=key.name,
+                models=key.models,
+                metadata_secret=metadata_secret,
+                max_budget=key.max_budget,
+                budget_duration=key.budget_duration,
+                connection_secret=connection_secret,
+                team={
+                    "codex-clients": "team-codex-clients",
+                    "gemini-clients": "team-gemini-clients",
+                    "antigravity-clients": "team-antigravity-clients",
+                }.get(key.name),
+            ),
         )
         _publish_key(
             chart,
@@ -326,14 +355,25 @@ def chart(app: App) -> Chart:
         ("gemini-clients", "gemini_client_models", "laptop-gemini-claude", "team-gemini-clients"),
         ("antigravity-clients", "antigravity_client_models", "laptop-antigravity-claude", "team-antigravity-clients"),
     ):
-        _key(
+        metadata_secret = f"litellm-key-metadata-{name}"
+        k8s.KubeSecret(
             chart,
-            name=f"key-{name}",
-            alias=name,
-            models=_lane_models(models),
-            consumer=consumer,
-            team=team,
-            client_secret=f"litellm-client-key-{name}",
+            f"key-metadata-{name}",
+            metadata=k8s.ObjectMeta(name=metadata_secret, namespace=NAMESPACE),
+            type="Opaque",
+            string_data={"consumer": consumer},
+        )
+        Key(
+            chart,
+            f"key-{name}",
+            metadata=ApiObjectMetadata(name=f"key-{name}", namespace=NAMESPACE),
+            spec=_key_spec(
+                alias=name,
+                models=_lane_models(models),
+                metadata_secret=metadata_secret,
+                team=team,
+                client_secret=f"litellm-client-key-{name}",
+            ),
         )
 
     return chart
