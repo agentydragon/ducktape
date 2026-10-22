@@ -55,7 +55,9 @@ class ServerSettings(BaseSettings):
     grocy_timeout: float = Field(default=30.0, description="Timeout (seconds) for Grocy API requests.")
     max_batch_size: int = Field(default=MAX_BATCH_SIZE, description="Maximum items per batch tool call.")
     max_concurrent_requests: int = Field(default=4, description="Maximum parallel Grocy API requests within a batch.")
-    max_retries: int = Field(default=2, description="Retry count for transient errors (timeouts, 5xx).")
+    max_retries: int = Field(
+        default=2, description="Additional retries for reads and mutating requests proven not to have been sent."
+    )
     retry_base_delay: float = Field(default=0.5, description="Initial retry delay in seconds; doubles each attempt.")
     persistence: PersistenceConfig = Field(default=FilePersistence(), description="OAuth state storage backend.")
 

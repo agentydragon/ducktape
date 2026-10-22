@@ -7,24 +7,24 @@ and collects results (continue-and-collect, never fail-fast).
 Concurrency is bounded by an asyncio.Semaphore so that large batches don't
 overwhelm Grocy's PHP/SQLite backend. The authenticated backend client is a
 FastMCP dependency resolved once before the batch tool body, then shared by its
-item workers. Transient errors (timeouts, 5xx) are retried with exponential
-backoff.
+item workers. Reads retry transient errors with exponential backoff.
 
 IMPORTANT: reads/GETs go through _retry(), which retries transient errors
-including timeouts. Mutating requests go through _retry_mutation(), which NEVER
-retries a timeout — a mutating request that times out may already have been
-applied server-side, so a blind re-send double-applies it (the 2026-04-17
-stock-inflation incident: products 90, 95, 97). On such a timeout it raises
+including timeouts. Mutating requests go through _retry_mutation(), which
+retries only errors that prove no request was sent. A timeout, transport
+failure, or server error may arrive after Grocy applied the mutation, so a
+blind re-send can double-apply it (the 2026-04-17 stock-inflation incident:
+products 90, 95, 97). Such ambiguous outcomes raise
 MutationMayHaveAppliedError so the caller can verify state before retrying
-manually. Server-side rejections (429/5xx) stay retryable there since the request
-was received but not applied. The follow-up GET that reads new_amount is
-best-effort, outside any retry loop.
+manually. The follow-up GET that reads new_amount is best-effort, outside any
+retry loop.
 """
 
 from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import logging
 import traceback
 from collections.abc import Awaitable, Callable
@@ -142,13 +142,21 @@ def _compute_default_bbd(product: dict[str, Any], *, is_freezer: bool) -> str:
 
 
 class MutationMayHaveAppliedError(Exception):
-    """A mutating request timed out before Grocy responded.
+    """A mutating request ended without an unambiguous success response.
 
     Grocy may or may not have applied the mutation, so it must never be
-    auto-retried — a blind re-send double-applies it (the 2026-04-17
-    stock-inflation incident: products 90, 95, 97). Surfaced to the caller with
-    instructions to verify state before retrying manually.
+    auto-retried — a blind re-send can double-apply it. Surfaced to the caller
+    with instructions to verify state before retrying manually.
     """
+
+    def __init__(self, operation: str, reason: str, details: str | None = None) -> None:
+        message = (
+            f"{operation} {reason}; the mutation may or may not have been applied. "
+            "Do NOT retry blindly — that risks double-applying it. Verify current state before retrying manually."
+        )
+        if details:
+            message += f"\n{details}"
+        super().__init__(message)
 
 
 def _format_exc(e: Exception) -> str:
@@ -182,15 +190,8 @@ def _is_retryable(exc: BaseException) -> bool:
 
 
 def _is_retryable_mutation(exc: BaseException) -> bool:
-    """Retry predicate for mutating requests.
-
-    Deviation from ``_is_retryable``: timeouts are NOT retryable. A mutating
-    request that times out may already have been applied server-side, so a
-    retry risks double-applying it. Server-side error responses (429/5xx) stay
-    retryable (matching prior behavior) — the request reached Grocy but was
-    rejected, so no mutation was applied to duplicate.
-    """
-    return isinstance(exc, httpx2.HTTPStatusError) and exc.response.status_code in {429, 500, 502, 503, 504}
+    """Whether the request is known not to have reached Grocy, so it can be retried."""
+    return isinstance(exc, (httpx2.ConnectError, httpx2.ConnectTimeout, httpx2.PoolTimeout))
 
 
 # ── Tool registration ────────────────────────────────────────────────────────
@@ -234,13 +235,23 @@ def register_batch_tools(
                 ):
                     with attempt:
                         return await fn()
-            except httpx2.TimeoutException as e:
+            except httpx2.HTTPStatusError as e:
+                if mutation and e.response.status_code >= 500:
+                    raise MutationMayHaveAppliedError(describe, "received an HTTP server error", _format_exc(e)) from e
+                raise
+            except httpx2.TransportError as e:
+                # Read, write, and protocol errors can happen after a write was applied.
+                if mutation and not _is_retryable_mutation(e) and not isinstance(e, httpx2.UnsupportedProtocol):
+                    raise MutationMayHaveAppliedError(describe, f"ended with {type(e).__name__}", str(e)) from e
+                raise
+            except json.JSONDecodeError as e:
                 if mutation:
+                    body = e.doc.strip()
+                    body_context = f"\nGrocy response body: {body[:1500]}" if body else ""
                     raise MutationMayHaveAppliedError(
-                        f"{describe} timed out before Grocy responded; the mutation may or may not "
-                        "have been applied. Do NOT retry blindly — that risks double-applying it. "
-                        "Verify current state (e.g. the stock_log entity via entities_list, or "
-                        "stock_get) before retrying manually."
+                        describe,
+                        "received a successful response with invalid JSON",
+                        body_context.removeprefix("\n") or None,
                     ) from e
                 raise
         raise AssertionError("unreachable")

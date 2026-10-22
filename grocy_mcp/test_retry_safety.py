@@ -33,7 +33,6 @@ QUS = [{"id": 1, "name": "pieces"}, {"id": 2, "name": "grams"}]
 CONVERSIONS: list[dict[str, object]] = []  # no conversions in these tests
 
 ADD_RESPONSE = [{"transaction_id": "tx-123", "amount": 5}]
-STOCK_RESPONSE = {"stock_amount": 5}
 
 
 def _settings() -> ServerSettings:
@@ -80,17 +79,17 @@ async def test_add_stock_post_not_retried_when_get_fails(mcp_client: tuple[Clien
     assert post_route.calls.call_count == 1
 
 
-async def test_add_stock_post_retried_on_transient_failure(mcp_client: tuple[Client, respx.Router]) -> None:
-    """POST fails with 500 then succeeds -> POST should be retried (legitimate)."""
+async def test_add_stock_post_not_retried_on_server_error(mcp_client: tuple[Client, respx.Router]) -> None:
+    """A 500 may follow an applied mutation, so surface it without resending."""
     client, router = mcp_client
 
+    error_body = {"error_message": "backend failed after starting the mutation"}
     post_route = router.post("/stock/products/1/add").mock(
         # respx's side_effect only recognizes real httpx.Response (see Route.resolve's
         # isinstance check); httpx2.Response looks identical but isn't cloned/bound to
-        # the request, which respx needs to replay these across the two calls.
-        side_effect=[httpx.Response(500, json={}), httpx.Response(200, json=ADD_RESPONSE)]
+        # the request. The second response would reveal an accidental retry.
+        side_effect=[httpx.Response(500, json=error_body), httpx.Response(200, json=ADD_RESPONSE)]
     )
-    router.get("/stock/products/1").respond(json=STOCK_RESPONSE)
 
     result = await client.call_tool(
         "stock_add", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
@@ -98,9 +97,12 @@ async def test_add_stock_post_retried_on_transient_failure(mcp_client: tuple[Cli
     sc = result.structured_content
     assert sc is not None
     op = sc["result"][0]
-    assert op["kind"] == "ok", f"expected ok, got: {op}"
-    assert op["new_amount"] == 5.0
-    assert post_route.calls.call_count == 2  # first attempt failed, second succeeded
+    assert op["kind"] == "error", f"expected error, got: {op}"
+    assert post_route.calls.call_count == 1, "mutating POST must not be resent after an HTTP 500"
+    assert "may or may not have been applied" in op["error"]
+    assert "HTTP 500 Internal Server Error" in op["error"]
+    assert "Grocy response body: " in op["error"]
+    assert error_body["error_message"] in op["error"]
 
 
 async def test_mutating_post_not_retried_on_timeout(mcp_client: tuple[Client, respx.Router]) -> None:
