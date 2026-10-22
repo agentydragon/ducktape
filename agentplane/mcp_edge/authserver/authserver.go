@@ -140,6 +140,13 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 
+// authServerMetadata omits jwks_uri when the issuer has no JWK Set endpoint. RFC 8414 makes that
+// member optional, while the SDK's AuthServerMeta always serializes it.
+type authServerMetadata struct {
+	oauthex.AuthServerMeta
+	JWKSURI *string `json:"jwks_uri,omitempty"`
+}
+
 // serveMetadata answers RFC 8414 authorization server metadata. op's own discovery document is OpenID Connect's,
 // which has no registration endpoint, CIMD or RFC 9207 field.
 func (s *Server) serveMetadata(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +155,7 @@ func (s *Server) serveMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(&oauthex.AuthServerMeta{
+	metadata := authServerMetadata{AuthServerMeta: oauthex.AuthServerMeta{
 		Issuer:                                     s.issuer,
 		AuthorizationEndpoint:                      s.issuer + authorizePath,
 		TokenEndpoint:                              s.issuer + tokenPath,
@@ -163,7 +170,8 @@ func (s *Server) serveMetadata(w http.ResponseWriter, r *http.Request) {
 		CodeChallengeMethodsSupported:              []string{string(oidc.CodeChallengeMethodS256)},
 		ClientIDMetadataDocumentSupported:          true,
 		AuthorizationResponseIssParameterSupported: true,
-	})
+	}}
+	_ = json.NewEncoder(w).Encode(metadata)
 }
 
 // anyOrigin lets a browser-based client call the endpoint from any origin. No endpoint reads a cookie, so a
