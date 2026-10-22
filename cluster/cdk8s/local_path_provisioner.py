@@ -33,12 +33,26 @@ _HOME_SSD = "local-path-home-ssd"
 # a Cluster on local-path-ovh-ssd must tolerate them (cnpg.py).
 SSD_STORAGE_CLASSES = {_OVH_SSD, _HOME_SSD}
 
+# OVH classes opt into these dedicated paths; unlisted nodes must not use the
+# provisioner's default system-disk path. Empty paths also deny provisioning.
+_OVH_NODE_PATHS = {
+    "ovh-ns103656": ["/var/mnt/local-path-ovh-hdd/local-path"],
+    "ovh-ns103711": ["/var/mnt/local-path-ovh-hdd/local-path"],
+    "ovh-ns102453": ["/var/mnt/local-path-ovh-hdd/local-path"],
+    "ovh-ns104952": ["/var/mnt/seaweedfs-data/local-path"],
+    "ovh-ns104963": ["/var/mnt/seaweedfs-data/local-path"],
+    # Its whole data disk belongs to Piraeus; retain the explicit fallback denial.
+    "ovh-ns1001419": [],
+}
+
 
 def _node_path(node: str, *paths: str) -> dict[str, object]:
     return {"node": node, "paths": list(paths)}
 
 
-def _storage_class(scope: Construct, name: str, *, reclaim_policy: ReclaimPolicy, topology: dict[str, str]) -> None:
+def _storage_class(
+    scope: Construct, name: str, *, reclaim_policy: ReclaimPolicy, topology: dict[str, list[str]]
+) -> None:
     """A WaitForFirstConsumer class whose one topology term ANDs every `topology` label."""
     k8s.KubeStorageClass(
         scope,
@@ -50,7 +64,7 @@ def _storage_class(scope: Construct, name: str, *, reclaim_policy: ReclaimPolicy
         allowed_topologies=[
             k8s.TopologySelectorTerm(
                 match_label_expressions=[
-                    k8s.TopologySelectorLabelRequirement(key=key, values=[value]) for key, value in topology.items()
+                    k8s.TopologySelectorLabelRequirement(key=key, values=values) for key, values in topology.items()
                 ]
             )
         ],
@@ -65,10 +79,14 @@ class ReclaimPolicy(StrEnum):
 @dataclass(frozen=True)
 class _Class:
     reclaim_policy: ReclaimPolicy
-    topology: dict[str, str]
+    topology: dict[str, list[str]]
 
 
-_OVH_HDD = {**node_scheduling.HIL_OVH_NODE_SELECTOR, _TIER: "hdd"}
+_OVH_TOPOLOGY = {
+    **{key: [value] for key, value in node_scheduling.HIL_OVH_NODE_SELECTOR.items()},
+    "kubernetes.io/hostname": [node for node, paths in _OVH_NODE_PATHS.items() if paths],
+}
+_OVH_HDD = {**_OVH_TOPOLOGY, _TIER: ["hdd"]}
 _CLASSES = {
     # DEPRECATED alias, re-pinned to the same media as local-path-ovh-hdd (KS-5 7200rpm HDD).
     # New OVH PVCs should target local-path-ovh-{hdd,ssd} explicitly; this stays only for the
@@ -79,7 +97,7 @@ _CLASSES = {
     # PVCs are unaffected (the SC is only read at provision time).
     # See cluster/docs/plans/ovh_storage_tiering.md.
     "local-path-ovh": _Class(ReclaimPolicy.DELETE, _OVH_HDD),
-    # Media-scoped OVH node-local storage: KS-5 7200rpm HDD data disks. Both keys are ANDed
+    # Media-scoped OVH node-local storage: KS-5 7200rpm HDD data disks. Keys are ANDed
     # in the same topology term -- zone keeps it OVH-scoped (never a non-OVH SSD node such as
     # wyrm2), and the tier is the hardware-keyed node label from
     # cluster/terraform/main/ovh-nodes.tf. Under WaitForFirstConsumer a PVC binds only where
@@ -94,12 +112,12 @@ _CLASSES = {
     # OVH ssd node is schedulable, else it stays Pending (loud) instead of silently landing
     # on HDD. Reserved for fsync/latency-critical data (Forgejo git, forgejo-db,
     # seaweedfs-filer-db). See cluster/docs/plans/ovh_storage_tiering.md.
-    _OVH_SSD: _Class(ReclaimPolicy.DELETE, {**node_scheduling.HIL_OVH_NODE_SELECTOR, _TIER: "ssd"}),
-    "local-path-proxmox": _Class(ReclaimPolicy.DELETE, {_REGION: "proxmox"}),
+    _OVH_SSD: _Class(ReclaimPolicy.DELETE, {**_OVH_TOPOLOGY, _TIER: ["ssd"]}),
+    "local-path-proxmox": _Class(ReclaimPolicy.DELETE, {_REGION: ["proxmox"]}),
     # Home automation is intentionally hardware- and LAN-pinned: integrations use the
     # OptiPlex's Bluetooth radio and the home multicast domain. VolSync copies this
     # node-local state to replicated SeaweedFS storage for disaster recovery.
-    _HOME_SSD: _Class(ReclaimPolicy.RETAIN, {_REGION: "home", _TIER: "ssd"}),
+    _HOME_SSD: _Class(ReclaimPolicy.RETAIN, {_REGION: ["home"], _TIER: ["ssd"]}),
 }
 # All of them are node-local: a local-path volume is a directory on one node.
 NODE_LOCAL_STORAGE_CLASSES = set(_CLASSES)
@@ -137,21 +155,7 @@ def chart(app: App) -> Chart:
             "nodePathMap": [
                 # /var/local-path-provisioner is writable on Talos and persists across reboots.
                 _node_path("DEFAULT_PATH_FOR_NON_LISTED_NODES", "/var/local-path-provisioner"),
-                # OVH Kimsufi nodes carve a dedicated XFS data disk via Talos
-                # UserVolumeConfig (cluster/terraform/main/ovh-nodes.tf), mounted at
-                # /var/mnt/seaweedfs-data. The local-path-ovh StorageClass
-                # (allowedTopologies zone=hil-ovh) routes OVH-local PVCs here.
-                #
-                # KS-5 nodes use /dev/sdb; NVMe nodes use their second NVMe. List every
-                # node that should be eligible for local-path-ovh placement.
-                _node_path("ovh-ns103656", "/var/mnt/local-path-ovh-hdd/local-path"),
-                _node_path("ovh-ns103711", "/var/mnt/local-path-ovh-hdd/local-path"),
-                _node_path("ovh-ns102453", "/var/mnt/local-path-ovh-hdd/local-path"),
-                _node_path("ovh-ns104952", "/var/mnt/seaweedfs-data/local-path"),
-                _node_path("ovh-ns104963", "/var/mnt/seaweedfs-data/local-path"),
-                # This node's data disk is reserved for Piraeus. An explicit empty
-                # list denies new local-path claims without falling back to /var.
-                _node_path("ovh-ns1001419"),
+                *[_node_path(node, *paths) for node, paths in _OVH_NODE_PATHS.items()],
                 # Home Assistant is deliberately tied to the physical home LAN and the
                 # OptiPlex's radios. Keep its local state on this machine's SSD.
                 _node_path("optiplex", "/var/local-path-provisioner"),

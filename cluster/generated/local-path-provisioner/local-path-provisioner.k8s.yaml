@@ -74,6 +74,13 @@ allowedTopologies:
       - key: topology.kubernetes.io/zone
         values:
           - hil-ovh
+      - key: kubernetes.io/hostname
+        values:
+          - ovh-ns103656
+          - ovh-ns103711
+          - ovh-ns102453
+          - ovh-ns104952
+          - ovh-ns104963
       - key: storage.allegedly.works/tier
         values:
           - hdd
@@ -90,6 +97,13 @@ allowedTopologies:
       - key: topology.kubernetes.io/zone
         values:
           - hil-ovh
+      - key: kubernetes.io/hostname
+        values:
+          - ovh-ns103656
+          - ovh-ns103711
+          - ovh-ns102453
+          - ovh-ns104952
+          - ovh-ns104963
       - key: storage.allegedly.works/tier
         values:
           - hdd
@@ -106,6 +120,13 @@ allowedTopologies:
       - key: topology.kubernetes.io/zone
         values:
           - hil-ovh
+      - key: kubernetes.io/hostname
+        values:
+          - ovh-ns103656
+          - ovh-ns103711
+          - ovh-ns102453
+          - ovh-ns104952
+          - ovh-ns104963
       - key: storage.allegedly.works/tier
         values:
           - hdd
@@ -122,6 +143,13 @@ allowedTopologies:
       - key: topology.kubernetes.io/zone
         values:
           - hil-ovh
+      - key: kubernetes.io/hostname
+        values:
+          - ovh-ns103656
+          - ovh-ns103711
+          - ovh-ns102453
+          - ovh-ns104952
+          - ovh-ns104963
       - key: storage.allegedly.works/tier
         values:
           - ssd
