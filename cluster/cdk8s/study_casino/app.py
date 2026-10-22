@@ -99,9 +99,9 @@ def _database(scope: Construct) -> None:
         "database",
         ref=POSTGRES,
         annotations={"description": "CNPG Postgres for study-casino state."},
-        # 3 instances, one per OVH SSD (control-plane) node. Tolerates 1-node loss without read-quorum or
-        # primary-availability impact.
-        instances=3,
+        # Temporary Piraeus-node maintenance reduction: keep 2 while the replica on
+        # ovh-ns1001419 is evacuated. Restore 3 only after a separate user-data handoff discussion.
+        instances=2,
         image_name=None,
         placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",

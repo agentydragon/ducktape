@@ -61,7 +61,8 @@ spec:
       isolationCheck:
         enabled: false
   storage:
-    size: 2Gi
+    resizeInUseVolumes: false
+    size: 8Gi
     storageClass: local-path-ovh-ssd
 ---
 apiVersion: seaweed.seaweedfs.com/v1

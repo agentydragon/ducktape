@@ -29,7 +29,7 @@ spec:
     initdb:
       database: studycasino
       owner: studycasino
-  instances: 3
+  instances: 2
   managed:
     roles:
       - comment: Read-only access for sandbox agents; object GRANTs come from the db-readonly-provisioner Job.

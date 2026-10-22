@@ -90,14 +90,15 @@ sweep them with:
 grep -rl 'kind: Cluster' cluster/k8s --include='postgres-cluster*.yaml'
 ```
 
-As of 2026-08, every **live** (unsuspended) cluster is 2-instance OVH-HA —
+As of 2026-08, most **live** (unsuspended) clusters are 2-instance OVH-HA —
 most on the deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
-`seaweedfs-filer-db-ssd` on the `local-path-ovh-ssd` tier — with one deviation:
+`seaweedfs-filer-db-ssd` on the `local-path-ovh-ssd` tier. Current exceptions:
 
-- `study-casino-db` (`generated/study-casino/`): 3 instances pinned
-  `zone: hil-ovh`, one per OVH node, so it tolerates a node loss without
-  quorum or primary impact. Deliberate deviation from the 2-instance
-  profile; the manifest comment is the record.
+- `study-casino-db` (`generated/study-casino/`): temporarily 2 instances while
+  the replica on `ovh-ns1001419` is evacuated for Piraeus maintenance. Restore
+  the third instance only after a separate user-data handoff discussion. Its
+  original 3-instance profile was a deliberate deviation to tolerate one-node
+  loss without quorum or primary impact; the source comment records the temporary reduction.
 - `postgres` (`generated/agentplane-testing/`): 1 instance pinned
   `zone: hil-ovh` on `local-path-ovh-ssd`, shared by testing's three disposable
   logical databases. This experimental environment deliberately accepts no

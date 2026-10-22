@@ -111,7 +111,11 @@ def _database(scope: Construct) -> None:
         # Instances whose PVs predate the move to SSD stay on their HDD worker until rebuilt; a
         # changed class only applies to PVCs CNPG creates afterwards.
         storage_class="local-path-ovh-ssd",
-        size="2Gi",
+        # The 2026-10-22 read-only inventory measured 2,523,403,967 database bytes plus
+        # 603,980,418 WAL bytes. New replica claims need headroom; keep existing 2Gi claims
+        # unchanged during this maintenance while new claims use the 8Gi template.
+        size="8Gi",
+        resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb("attic"),
         wal_archive=True,
         # Attic autocommits several statements per ~64 KiB chunk. With a commit per fsync on the HDD
