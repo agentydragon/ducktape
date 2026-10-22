@@ -50,6 +50,8 @@ with shared service constructs and explicit bare-k3s settings. It supplies fixtu
 local-path storage and a test egress CA. The fixture runs the Go egress proxy
 and Goose history migrator through the same construct as testing, with fixture-only PostgreSQL TLS
 settings. The shared construct supplies the egress RBAC, policies, trust mounts, images and flags.
+Actions uses its Go service and Goose migrator images, with native gRPC readiness and `livez` probes.
+The fixture selects that runtime explicitly; the deployed tiers select theirs independently.
 One PostgreSQL 18 Deployment uses the
 pinned published CNPG minimal image, an emptyDir data volume and
 [`postgres_entrypoint.sh`](postgres_entrypoint.sh) with [`bootstrap.sql`](bootstrap.sql) to create
