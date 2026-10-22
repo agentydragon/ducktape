@@ -51,11 +51,7 @@ export default function DefinitionDetail({ data }: Props): JSX.Element {
           </Text>
           <Text c="dimmed">{data.agent_type}</Text>
           <Text c="dimmed">
-            <RelativeTime
-              value={data.created_at}
-              dateTime={data.created_at}
-              format={(value) => ({ text: formatAge(value) })}
-            />
+            <RelativeTime value={new Date(data.created_at)} format={(value) => ({ text: formatAge(value) })} />
           </Text>
         </Group>
       </Paper>

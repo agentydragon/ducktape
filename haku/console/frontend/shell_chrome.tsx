@@ -134,7 +134,6 @@ function ScreenshotPanel({ sharing, onWithdraw }: { sharing: boolean; onWithdraw
 // panel's job is to make re-authentication a deliberate gesture — a tab that runs out mid-task
 // navigates itself to Authentik and takes the framed Haku UI's unsaved state with it.
 function SessionPanel({ expiresAt, onReauthenticate }: { expiresAt: Date; onReauthenticate: () => void }) {
-  const expiry = expiresAt.toISOString();
   return (
     <section className="haku-shell-card haku-shell-side-panel" aria-label="Console session">
       <Stack gap="xs">
@@ -143,7 +142,7 @@ function SessionPanel({ expiresAt, onReauthenticate }: { expiresAt: Date; onReau
             Console session
           </Text>
           <Badge color="orange" variant="light">
-            Ends <RelativeTime value={expiry} dateTime={expiry} format={formatTimestamp} />
+            Ends <RelativeTime value={expiresAt} format={formatTimestamp} />
           </Badge>
         </Group>
         <Text size="xs" c="dimmed">
@@ -195,7 +194,7 @@ function GeolocationApprovalCard({
         {detailed && (
           <div className="haku-shell-fields">
             <Field label="Requested">
-              <RelativeTime value={approval.createdAt} dateTime={approval.createdAt} format={formatTimestamp} />
+              <RelativeTime value={new Date(approval.createdAt)} format={formatTimestamp} />
             </Field>
             {approval.options && (
               <Field label="Options">
@@ -243,8 +242,7 @@ function ScreenshotApprovalCard({
             </Text>
             <Text size="xs">{SCREENSHOT_APPROVAL_BODY}</Text>
             <Text size="xs" c="dimmed">
-              Requested{" "}
-              <RelativeTime value={approval.createdAt} dateTime={approval.createdAt} format={formatTimestamp} />
+              Requested <RelativeTime value={new Date(approval.createdAt)} format={formatTimestamp} />
             </Text>
           </Stack>
           <Badge color={deciding ? "blue" : "yellow"} variant="light" style={{ flexShrink: 0 }}>

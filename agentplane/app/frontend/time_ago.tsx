@@ -4,11 +4,11 @@ import type { JSX } from "react";
 import { isoTime, timeAgo } from "./format_time";
 import { RelativeTime, type RelativeTimeDisplay } from "../../../util/frontend/relative_time";
 
-function formatTimeAgo(value: string | number | Date): RelativeTimeDisplay {
+function formatTimeAgo(value: Date): RelativeTimeDisplay {
   const timestamp = isoTime(value);
   return { text: timeAgo(value), title: timestamp };
 }
 
 export function TimeAgo({ value }: { value: string | number | Date }): JSX.Element {
-  return <RelativeTime value={value} dateTime={isoTime(value)} format={formatTimeAgo} />;
+  return <RelativeTime value={new Date(value)} format={formatTimeAgo} />;
 }

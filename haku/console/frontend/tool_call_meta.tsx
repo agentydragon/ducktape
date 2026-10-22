@@ -30,7 +30,7 @@ export function ToolCallMeta({
         <Field label="Caller">{callerDisplayName}</Field>
         {createdAt && (
           <Field label="Requested">
-            <RelativeTime value={createdAt} dateTime={createdAt} format={formatTimestamp} />
+            <RelativeTime value={new Date(createdAt)} format={formatTimestamp} />
           </Field>
         )}
         <Field label="Tool call id" mono>

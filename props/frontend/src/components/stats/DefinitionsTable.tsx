@@ -22,7 +22,7 @@ function getStats(definition: DefinitionRow, split: Split, kind: ExampleKind): S
   return definition.stats[split]?.[kind];
 }
 
-const formatTableAge = (isoDate: string) => ({ text: formatAge(isoDate, false) });
+const formatTableAge = (date: Date) => ({ text: formatAge(date, false) });
 const splits: Split[] = ["valid", "train"];
 const kinds: ExampleKind[] = ["whole_snapshot", "file_set"];
 const metricsPerKind = 5;
@@ -141,7 +141,7 @@ export default function DefinitionsTable({ definitions, exampleCounts, onCellCli
                 <DefinitionIdLink id={definition.image_digest} display_name={definition.display_name} />
               </Table.Td>
               <Table.Td className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
-                <RelativeTime value={definition.created_at} dateTime={definition.created_at} format={formatTableAge} />
+                <RelativeTime value={new Date(definition.created_at)} format={formatTableAge} />
               </Table.Td>
               {splits.map((split) =>
                 kinds.map((kind) => {

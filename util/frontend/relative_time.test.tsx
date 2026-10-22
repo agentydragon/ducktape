@@ -28,12 +28,14 @@ afterEach(async () => {
 
 describe("RelativeTime", () => {
   it("renders caller formatting and refreshes all timestamps from one clock", async () => {
-    const format = (_value: string) => ({ text: new Date().toISOString() });
+    const format = (_value: Date) => ({ text: new Date().toISOString() });
+    const first = new Date(0);
+    const second = new Date("2026-10-22T11:58:00Z");
     await act(async () =>
       root.render(
         <>
-          <RelativeTime value="2026-10-22T11:59:00Z" dateTime="2026-10-22T11:59:00Z" format={format} />
-          <RelativeTime value="2026-10-22T11:58:00Z" dateTime="2026-10-22T11:58:00Z" format={format} />
+          <RelativeTime value={first} format={format} />
+          <RelativeTime value={second} format={format} />
         </>
       )
     );
@@ -42,7 +44,7 @@ describe("RelativeTime", () => {
       "2026-10-22T12:00:00.000Z",
       "2026-10-22T12:00:00.000Z",
     ]);
-    expect(container.querySelector("time")?.getAttribute("dateTime")).toBe("2026-10-22T11:59:00Z");
+    expect(container.querySelector("time")?.getAttribute("dateTime")).toBe("1970-01-01T00:00:00.000Z");
     expect(vi.getTimerCount()).toBe(1);
 
     await act(async () => vi.advanceTimersByTime(30_000));
@@ -60,8 +62,7 @@ describe("RelativeTime", () => {
     await act(async () =>
       root.render(
         <RelativeTime
-          value="2026-10-22T11:59:00Z"
-          dateTime="2026-10-22T11:59:00Z"
+          value={new Date("2026-10-22T11:59:00Z")}
           format={() => ({ text: "1 minute ago", title: "October 22, 2026 at 11:59 AM" })}
         />
       )

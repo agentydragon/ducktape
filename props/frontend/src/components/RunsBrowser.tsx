@@ -312,11 +312,7 @@ export default function RunsBrowser({
                       {grading ? grading.total_credit.toFixed(2) : "—"}
                     </Table.Td>
                     <Table.Td c="dimmed" className="text-xs">
-                      <RelativeTime
-                        value={run.created_at}
-                        dateTime={run.created_at}
-                        format={(value) => ({ text: formatAge(value) })}
-                      />
+                      <RelativeTime value={new Date(run.created_at)} format={(value) => ({ text: formatAge(value) })} />
                     </Table.Td>
                   </Table.Tr>
                 );

@@ -2,8 +2,6 @@ import { type JSX, useSyncExternalStore } from "react";
 
 const REFRESH_MS = 30_000;
 
-export type RelativeTimeValue = string | number | Date;
-
 export interface RelativeTimeDisplay {
   text: string;
   title?: string;
@@ -35,17 +33,16 @@ function getNowMs(): number {
   return nowMs;
 }
 
-export function RelativeTime<T extends RelativeTimeValue>({
+export function RelativeTime({
   value,
-  dateTime,
   format,
 }: {
-  value: T;
-  dateTime: string;
-  format: (value: T) => RelativeTimeDisplay;
+  value: Date;
+  format: (value: Date) => RelativeTimeDisplay;
 }): JSX.Element {
   useSyncExternalStore(subscribe, getNowMs, getNowMs);
   const display = format(value);
+  const dateTime = value.toISOString();
   return (
     <time dateTime={dateTime} title={display.title}>
       {display.text}
