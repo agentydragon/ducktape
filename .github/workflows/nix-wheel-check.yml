@@ -3,7 +3,7 @@
 # against them. DUCKTAPE_ARTIFACT_OVERRIDES (see flake.nix) swaps the released
 # pin for the freshly-Bazel-built artifact so nix's `mkWheel` imports check
 # runs against PR source — catches "wheel forgot a package" bugs like the
-# gmail_api / ducktape_pkg drift in #2669 at PR time, before release.yml
+# missing Gmail modules in #2669 at PR time, before release.yml
 # publishes a broken artifact and sync-pins.yml rotates the pin onto it.
 #
 # nix-attic-push.yml still does the full-fleet build against pinned artifacts on

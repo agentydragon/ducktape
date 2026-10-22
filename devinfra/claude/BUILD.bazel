@@ -17,9 +17,6 @@ py_library(
     ],
 )
 
-# Packaging targets are in the root //:wheel (merged ducktape wheel).
-# See /BUILD.bazel for ducktape_pkg and wheel targets.
-
 # === Tests ===
 
 py_library(

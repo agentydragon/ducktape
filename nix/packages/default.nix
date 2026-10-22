@@ -6,7 +6,7 @@
   artifacts,
 }:
 let
-  # The ducktape umbrella wheel is built (on Bazel) against `fastmcp==4.0.3` /
+  # The MCP tools are built against `fastmcp==4.0.3` /
   # `mcp==2.2.0` (see requirements_bazel.txt). The pinned nixpkgs revision predates
   # both mcp-sdk v2 (nixpkgs still ships mcp 1.26.0) and mcp v2's new transitive
   # deps (mcp-types, httpx2/httpcore2 -- all three postdate the pin entirely), and
@@ -375,50 +375,6 @@ rec {
         '';
       });
 
-  ducktape = mkWheel {
-    pname = "ducktape";
-    description = "Ducktape command-line tools";
-    importsCheck = [
-      "difftree.cli"
-      "gmail_archiver.main"
-      "cluster.skills.proxmox_vm.vm_interact"
-      "devinfra.gc.output_base_gc"
-      "devinfra.ws.cli"
-    ];
-    propagatedBuildInputs = with python314Packages; [
-      aiodocker
-      anyio
-      httpx
-      jinja2
-      mako
-      openai
-      platformdirs
-      pydantic
-      pygit2
-      pygithub
-      rich
-      structlog
-      tenacity
-      typer
-      python314Packages.fastmcp
-      mcp
-      click
-      unidiff
-      humanize
-      tabulate
-      beautifulsoup4
-      google-api-python-client
-      google-auth-httplib2
-      google-auth-oauthlib
-      pydantic-settings
-      python-dateutil
-      pyyaml
-      # skills deps (proxmox_vm)
-      pillow
-      ducktape-util
-    ];
-  };
-
   claude-statusline = mkWheel {
     pname = "claude-statusline";
     description = "Python Claude Code statusline";
@@ -518,7 +474,6 @@ rec {
   chatgpt = pkgs.callPackage ./chatgpt.nix { };
   # fastmcp-slim owns the client CLI (`fastmcp call|list <url> --auth <bearer>`);
   # expose it as a standalone app for agent closures (nix/flake/packages.nix `.#agent-haku`).
-  # The root metapackage remains the dependency consumed by the ducktape wheel.
   fastmcp = python314Packages.toPythonApplication python314Packages.fastmcp-slim;
   bebas-neue-font = pkgs.callPackage ./bebas-neue-font.nix { };
   bb = pkgs.callPackage ./bb.nix { inherit artifacts; };

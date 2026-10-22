@@ -1,10 +1,5 @@
 {
   "pins": {
-    "ducktape": {
-      "target": "//:wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl",
-      "release": "ducktape"
-    },
     "workspace-gc": {
       "target": "//devinfra/gc:workspace_gc_wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/gc/workspace_gc-0.1.0-py3-none-any.whl",
@@ -122,10 +117,6 @@
     }
   },
   "releases": {
-    "ducktape": {
-      "tests": "//agent_core/... //difftree/... //gmail_api/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/... //devinfra/gc/...",
-      "nixPackage": true
-    },
     "workspace-gc": {
       "tests": "//devinfra/gc/...",
       "nixPackage": true
