@@ -14,7 +14,7 @@ Refresh all placements before choosing a window.
 
 | Node            | Reason / complication                                                                                                                                                                                               |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ovh-ns1001419` | First converted SSD control plane. Attic and Study Casino replicas returned on Piraeus; Seaweed passed a bounded native SSD move and separate S3 checks. Return master-2 from HDD before the next drain.            |
+| `ovh-ns1001419` | First converted SSD control plane. Attic and Study Casino replicas returned on Piraeus; Seaweed passed a bounded native SSD move and separate S3 checks. Master-2 also returned to its 4Gi Piraeus claim.           |
 | `ovh-ns104952`  | Hosts old SSD volume server `ssd-1`, so retiring the last ordinal permits shrinking the old group from two to one. Several PostgreSQL primaries, Seaweed master-1, and Forgejo Valkey member-1 must move first.     |
 | `ovh-ns104963`  | Hosts old SSD volume server `ssd-0`, Seaweed master-0, Forgejo Valkey member-0, and the single-instance `agentplane-testing/postgres`. The singleton needs an explicit native-replication handoff or agreed outage. |
 
@@ -132,6 +132,50 @@ Record actual resulting capacity after creation. Worker system-volume and HDD
 pool budgets need their own worksheet; do not copy the SSD disk identities or
 assume an ETCD volume is required on a worker.
 
+### Applied and proposed data-disk layouts
+
+Live LVM reporting on 2026-10-22 confirmed that the first node has one whole-device
+PV on `/dev/nvme1n1`, VG `piraeus_ssd`, with 4 MiB extents and no free VG extents.
+Its thin-data LV is exactly 503517806592 bytes. Other rows are estimates using
+the same layout; record the actual extent/alignment result after initialization.
+
+| Node                          | Physical data disk |         Thin-data LV | Thin metadata + spare | Seaweed volume-server PVC |
+| ----------------------------- | -----------------: | -------------------: | --------------------: | ------------------------: |
+| `ovh-ns1001419`, applied SSD  |         476.94 GiB | 468.94 GiB, measured |             4 + 4 GiB |                     250Gi |
+| `ovh-ns104952`, proposed SSD  |         419.19 GiB |     about 411.18 GiB |             4 + 4 GiB |                     250Gi |
+| `ovh-ns103656`, candidate HDD |        1863.02 GiB |    about 1855.02 GiB |             4 + 4 GiB |   1700Gi, sizing proposal |
+
+The HDD candidate's 2000398934016-byte HGST data disk has serial `K5H8UMLA`;
+its separate system disk is `K5H5NGHA`. Keep every converted SSD Seaweed replica
+at 250Gi. A common 1700Gi for converted HDD replicas is proposed pending actual
+consumer-usage checks and layout review; existing HDD claims request 1800Gi.
+Replace each old claim during its native migration rather than trying to shrink
+an existing PVC.
+
+These are thin logical volumes inside the shared pool, not fixed Seaweed-only
+partitions. Other applications use the remainder through their own PVCs. The
+first node's four application requests total 263Gi. On the HDD candidate, current
+requests are 1800Gi Seaweed plus 90Gi for other local claims: 1890Gi exceeds the
+estimated 1855Gi pool before DRBD overhead. Using 1700Gi leaves about 155Gi for
+other claims, or 65Gi beyond those current requests before overhead. Measure
+actual per-consumer usage: local-path requests were not enforced limits.
+
+### HDD evacuation capacity checkpoint
+
+On 2026-10-22 the HDD group had **496 logical volumes, 992 placements**, all with
+exactly two copies. Evacuating any one of its three servers requires all 496
+volumes on each survivor. The existing 400-slot cap therefore blocks complete
+evacuation; increasing to 600 slots gives 104 spare slots per survivor at this
+snapshot. A slot increase does not create physical space.
+
+For the preferred `103656` candidate, the observed missing-copy sizes were
+621350169600 bytes to `103711` and 427655280192 bytes to `102453`. Subtracting
+these from reported free space predicts about 236 GB and 1957 GB free afterward.
+The smaller survivor would be only about **36 GB above its 10% free-space
+threshold**, before copy overhead and new writes. Refresh actual copy sizes,
+other local usage, growth and headroom before declaring the space gate passed.
+Do not infer adequate headroom from the enlarged slot limit.
+
 ## 2. Evacuate application state while sources remain available
 
 Cordon the selected node after checking spare capacity. Inventory all Pods,
@@ -235,6 +279,24 @@ member control. The last-ordinal scale trick applies to master-2 only. Do not
 shrink the StatefulSet to remove master-0 or master-1.
 
 ### Other local consumers
+
+#### ClickHouse data and Keeper
+
+Include ClickHouse explicitly when preparing its worker nodes. Inventory each
+data replica and Keeper member, the actual backend and usage of its PVC, shard
+and replica identity, replication queues and any tables without replicated
+copies. Requested local-path capacity is not evidence that existing data fits
+the same limit on Piraeus.
+
+Move one member at a time, preserving Keeper majority and a verified healthy
+data replica outside the outage set. Prefer native replication to seed a new
+data replica on its Piraeus claim, wait for catch-up and client-query checks,
+then retire only the evacuated member. Use a consistent copy/restore procedure
+for state that has no replicated source. Keeper needs its own identity/log and
+membership handoff; a generic PVC deletion or empty replacement does not migrate
+it. Verify both data and Keeper health before moving another affected member.
+
+#### Remaining services
 
 Forgejo Valkey combines cache and queue state: verify role, healthy replication,
 offset catch-up and service cutover, or perform a consistent copy. Do not assume

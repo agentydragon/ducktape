@@ -21,8 +21,10 @@ Study Casino returned to three healthy members with their replacement replicas
 on strict-local Piraeus claims. The new Piraeus SSD volume server passed a
 bounded native move of one 239 MB volume and separate owned S3 write/read checks;
 all 34 SSD volume IDs retain two copies. Bulk redistribution has not run.
-Seaweed master-2 still uses its
-temporary HDD claim and must return through an identity-preserving cold handoff.
+Seaweed master-2 returned from its temporary HDD claim to a 4Gi strict-local
+Piraeus claim on the first node, preserving Raft identity and all cold-copy file
+hashes/metadata. Three-master agreement and owned S3 read/write checks passed;
+operator/Helm/Flux management resumed. The HDD source remains retained.
 The [node-roll runbook](../runbooks/piraeus_node_roll.md) records that handoff,
 the next control-plane candidates, per-node readiness gates and conditional
 HDD-worker/control-plane pairing. No later node roll has started.
