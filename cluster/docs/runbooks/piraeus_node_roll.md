@@ -157,12 +157,33 @@ Replace each old claim during its native migration rather than trying to shrink
 an existing PVC.
 
 These are thin logical volumes inside the shared pool, not fixed Seaweed-only
-partitions. Other applications use the remainder through their own PVCs. The
-first node's four application requests total 263Gi. On the HDD candidate, current
+partitions. Other applications use the pool through their own PVCs. The first
+node's four application requests total 263Gi. On the HDD candidate, current
 requests are 1800Gi Seaweed plus 90Gi for other local claims: 1890Gi exceeds the
-estimated 1855Gi pool before DRBD overhead. Using 1700Gi leaves about 155Gi for
-other claims, or 65Gi beyond those current requests before overhead. Measure
-actual per-consumer usage: local-path requests were not enforced limits.
+estimated 1855Gi pool before DRBD overhead. A proposed 1700Gi Seaweed PVC plus
+those 90Gi of other claims totals 1790Gi of logical capacity, 65Gi below the
+estimate. That difference is not 65Gi of reserved physical free space. Measure
+actual per-consumer usage: legacy local-path requests were not enforced limits.
+
+### Accepted thin-pool overcommit policy
+
+Approved policy (2026-10-22): aggregate logical PVC capacity may exceed the
+physical thin-data pool, provided each PVC's declared size is bounded and actual
+pool use and headroom are monitored. Logical capacity is not a physical
+reservation, and this policy does not promise that all PVCs can be filled at
+once. On `ovh-ns103711`, other local claims request 566Gi, including a 500Gi
+ClickHouse claim. A proposed 1700Gi Seaweed PVC plus those claims totals 2266Gi
+against about 1855Gi of estimated thin-data capacity. That overcommit is
+permitted under this policy; the common 1700Gi HDD size remains a proposal and
+no claim-size change is applied here.
+
+Enforce the planned per-PVC sizes. Monitor actual thin-data and thin-metadata
+utilization independently of PVC capacity, with fresh samples and alerts for
+each pool. Before evacuation or node maintenance, verify both metrics and the
+destination's actual free-space reserve; pause new allocation or migration if
+samples are stale, the pool is unhealthy, or available headroom falls below
+the approved reserve. PVC totals and volume-slot limits do not establish
+physical headroom.
 
 ### HDD evacuation capacity checkpoint
 

@@ -1,10 +1,9 @@
 # Piraeus local-path migration evidence
 
-The [production plan](../../docs/plans/piraeus_production.md) describes the
-migration sequence. The [node-roll runbook](../../docs/runbooks/piraeus_node_roll.md)
-holds the operational gates. This index separates the latest reported status
-from dated inventories, proofs, and benchmark results. Refresh live state and
-the runbook gates before any operation.
+The [node-roll runbook](../../docs/runbooks/piraeus_node_roll.md) holds the
+operational gates. This index separates the latest reported status from dated
+inventories, proofs, and benchmark results. Refresh live state and the runbook
+gates before any operation.
 
 ## Status snapshot — 2026-10-22
 
@@ -22,17 +21,22 @@ The inert `ovh-ns104952` storage configuration and its 11:46 UTC local-PV and
 disk inventory are documented in [`ovh_ns104952/`](ovh_ns104952/README.md).
 Its readiness gates remain separate from the completed SSD evacuation.
 
-After the 600-slot HDD configuration merged at 12:21:34 UTC, the operator
-reported the Seaweed volume-pod rollout in progress: `hdd2` was Ready at 600,
-`hdd1` was restarting at 600, and `hdd0` still had the old 400-slot template.
-The guarded first batch waits for all three pods to be Ready at 600, then checks
-two-copy placement and master quorum before moving about 150 copies (about 428
-GB) from `ovh-ns103656` to `ovh-ns102453`. The larger batch of about 151 copies
-(about 621 GB) to `ovh-ns103711` remains held pending headroom review. This is a
-Seaweed volume-pod rollout and copy gate; no OS node roll, reset, or disk wipe
-was underway in that status snapshot. The dated 400-slot worker audit remains
+After the 600-slot HDD configuration merged at 12:21:34 UTC, all three HDD
+volume-server pods reached Ready at 600 with stable Pod UIDs. The first batch
+from `ovh-ns103656` to `ovh-ns102453` stopped safely after nine of about 150
+copies (about 428 GB) when a read-only master-0 quorum check timed out after
+180 seconds, before copy 10 started. A fresh preflight at 12:35 UTC then
+verified the original pod UIDs, two-copy placement for all current logical
+volume IDs, agreement across all three masters, the nine completed placements,
+and destination free space above the 15% reserve. Move 10 (volume 934) started
+after those checks, with 141 copies remaining in this batch. The earlier timeout
+was not treated as quorum evidence. The larger batch of about 151 copies (about
+621 GB) to `ovh-ns103711` remains held pending headroom review. No OS node roll,
+reset, or disk wipe was underway. The dated 400-slot worker audit remains
 unchanged in `next_nodes/worker_pair_audit.md`; the current slot cap is 600 in
-[`cluster/cdk8s/seaweedfs/cluster.py`](../../cdk8s/seaweedfs/cluster.py).
+[`cluster/cdk8s/seaweedfs/cluster.py`](../../cdk8s/seaweedfs/cluster.py). The
+accepted thin-pool overcommit policy and sizing proposal are in the
+[node-roll runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
 
 ## Evidence map
 
