@@ -130,3 +130,26 @@ After the patched package is published and installed, remove the stale
 `organizationId` from the remaining live Key specs, then verify all Keys report
 `Synced=True`, all exported Secrets refresh successfully, and the BuildBuddy
 secret sync converges. Do not print or inspect any key values.
+
+## Follow-up at 2026-10-22 14:50 UTC
+
+PR #11591 merged the root-scoped Key spec and provider pin; its post-merge
+workflow published `v2.1.0-1.ducktape.8fc5d2ef39dd`, and Flux installed the
+package. Clearing the obsolete resolver-owned `organizationId` from the live
+Keys brought 11 of 12 to `Synced=True`. `key-codex-clients` still reports
+`Provider produced inconsistent result after apply: .key_wo: inconsistent
+values for sensitive attribute`.
+
+The remaining error traces to `KeyResource.Update` clearing `KeyWO` after
+Crossplane has resolved it from a Kubernetes Secret and included it in the
+planned state. The compatibility patch removes Terraform's `WriteOnly` marker
+for Upjet, so the provider must retain that sensitive planned value in its
+transient state. Provider-fork commit `5cc2f43` removes the Create/Update
+clears and adds protocol tests for both paths; `make test-terraform-provider-patch`
+passes. The adapter commit also carries the stale-organization fix, so the
+redundant Ducktape overlay has been removed. The follow-up package build pins
+`5cc2f4308916642f4342cfd61e6ffe1362570fb0` and publishes as
+`v2.1.0-1.ducktape.5cc2f4308916`; its build script runs the protocol tests
+before packaging. The PR build and publish are still pending. After deployment,
+verify provider health, all 12 Key conditions, ESO exports, and the BuildBuddy
+Tofu sync in the cluster.
