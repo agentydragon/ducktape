@@ -267,9 +267,11 @@ async def test_operator_links_oauth_mcp_server(
 ) -> None:
     """Links the OAuth-protected MCP server through Dex and executes its protected tool."""
     server_id = mcp_servers.OAUTH
-    start_response = await operator_bff.post(f"/mcp-servers/{server_id}/linkage/start", json={"scopes": []})
+    start_response = await operator_bff.post(
+        f"/upstream/actions/v1/operator/mcp-servers/{server_id}/linkage/start", json={"scopes": []}
+    )
     assert start_response.status_code == HTTPStatus.OK, start_response.text
-    authorization_url = start_response.json()["authorization_url"]
+    authorization_url = start_response.json()["authorizationUrl"]
 
     try:
         async with httpx.AsyncClient(follow_redirects=False, timeout=30) as dex_browser:

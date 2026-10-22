@@ -189,9 +189,6 @@ export function serviceAccountKey(account: CallerServiceAccount): string {
 export function isEligibleCaller(caller: CallerServiceAccount, accounts: CallerServiceAccount[]): boolean {
   return accounts.some((account) => serviceAccountKey(account) === serviceAccountKey(caller));
 }
-export type McpLinkageView = components["schemas"]["McpLinkageView"];
-export type McpLinkageStartView = components["schemas"]["McpLinkageStartView"];
-
 export type CallerGrantView = components["schemas"]["CallerGrantView"];
 export type CallerGrantReader = (account: CallerServiceAccount, signal: AbortSignal) => Promise<CallerGrantView>;
 
@@ -230,21 +227,6 @@ export async function unbindConnection(connection: Connection): Promise<Connecti
       params: { path: { connection_id: connection.id } },
       body: { expected_version: connection.version },
     })
-  );
-}
-
-export async function startMcpLinkage(serverId: string, scopes: string[]): Promise<McpLinkageStartView> {
-  return ok(
-    await api.POST("/mcp-servers/{server_id}/linkage/start", {
-      params: { path: { server_id: serverId } },
-      body: { scopes },
-    })
-  );
-}
-
-export async function disconnectMcpLinkage(serverId: string): Promise<McpLinkageView> {
-  return ok(
-    await api.POST("/mcp-servers/{server_id}/linkage/disconnect", { params: { path: { server_id: serverId } } })
   );
 }
 

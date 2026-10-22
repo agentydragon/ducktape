@@ -244,6 +244,50 @@ async def test_public_callback_proxy_omits_browser_credentials() -> None:
     assert request.headers.get("cookie") is None
 
 
+async def test_mcp_callback_is_public_bridges_query_and_redirects_without_decoding_body(app: FastAPI) -> None:
+    requests: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, text="not the browser contract")
+
+    async with (
+        operator_actions(app, httpx.MockTransport(answer)),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=APP_URL, follow_redirects=False) as browser,
+    ):
+        response = await browser.get(
+            "/mcp-linkage/callback?state=single-use&code=authorization-code",
+            headers={"Authorization": "Bearer browser-secret", "Cookie": "operator_session=browser-secret"},
+        )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/#/mcp-servers?linked=1"
+    request = requests[0]
+    assert request.url.path == "/v1/mcp-linkage/callback"
+    assert request.url.query == b"state=single-use&code=authorization-code"
+    assert request.headers["accept"] == "application/json"
+    assert request.headers.get("authorization") is None
+    assert request.headers.get("cookie") is None
+
+
+async def test_mcp_callback_preserves_action_service_failure_status(app: FastAPI) -> None:
+    requests: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(403, json={"code": 7, "message": "private provider detail"})
+
+    async with (
+        operator_actions(app, httpx.MockTransport(answer)),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=APP_URL) as browser,
+    ):
+        response = await browser.get("/mcp-linkage/callback?state=single-use&code=bad-code")
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "MCP linkage callback failed"}
+    assert len(requests) == 1
+
+
 async def test_facade_refuses_non_versioned_paths_before_opening_upstream(app: FastAPI) -> None:
     service = RecordingActionService()
     cookie = await login(app)
