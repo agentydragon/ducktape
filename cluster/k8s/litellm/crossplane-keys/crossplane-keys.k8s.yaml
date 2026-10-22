@@ -208,7 +208,6 @@ spec:
       - anthropic-api/ant-messages/claude-haiku-4-5-20251001
       - chatgpt-sub/ant-messages/gpt-6-luna
       - chatgpt-sub/oai-responses/gpt-6-luna
-    organizationId: ""
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -275,7 +274,7 @@ spec:
   data:
     - remoteRef:
         key: litellm-crossplane-key-cheap-experiments
-        property: key
+        property: attribute.key
       secretKey: api-key
   refreshInterval: 1h
   secretStoreRef:
@@ -360,7 +359,6 @@ spec:
       - anthropic-api/ant-messages/claude-haiku-4-5-20251001
       - chatgpt-sub/ant-messages/gpt-6-luna
       - chatgpt-sub/oai-responses/gpt-6-luna
-    organizationId: ""
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -427,7 +425,7 @@ spec:
   data:
     - remoteRef:
         key: litellm-crossplane-key-buildbuddy-live-tests
-        property: key
+        property: attribute.key
       secretKey: api-key
   refreshInterval: 1h
   secretStoreRef:
@@ -465,7 +463,6 @@ spec:
       - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
       - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
       - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
-    organizationId: ""
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -532,7 +529,7 @@ spec:
   data:
     - remoteRef:
         key: litellm-crossplane-key-disposable-env
-        property: key
+        property: attribute.key
       secretKey: api-key
   refreshInterval: 1h
   secretStoreRef:
@@ -594,7 +591,6 @@ spec:
       - ollama/olm-chat/gpt-oss-120b-128k
       - ollama/oai-chat/gemma4-31b-it-q8_0-128k
       - ollama/olm-chat/gemma4-31b-it-q8_0-128k
-    organizationId: ""
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -661,7 +657,7 @@ spec:
   data:
     - remoteRef:
         key: litellm-crossplane-key-agentplane-staging
-        property: key
+        property: attribute.key
       secretKey: api-key
   refreshInterval: 1h
   secretStoreRef:
@@ -700,7 +696,6 @@ spec:
       - chatgpt-sub/oai-responses/gpt-6-astra
       - chatgpt-sub/oai-responses/gpt-6-luna
       - chatgpt-sub/oai-responses/gpt-6-sol
-    organizationId: ""
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -767,7 +762,7 @@ spec:
   data:
     - remoteRef:
         key: litellm-crossplane-key-codex-pod
-        property: key
+        property: attribute.key
       secretKey: api-key
   refreshInterval: 1h
   secretStoreRef:
@@ -825,7 +820,6 @@ spec:
       - google/goog-embed/gemini-embedding-2
       - google/goog-embed/gemini-embedding-001
       - ollama/olm-embed/qwen3-embedding-4b
-    organizationId: ""
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -892,7 +886,7 @@ spec:
   data:
     - remoteRef:
         key: litellm-crossplane-key-public-coder-agent
-        property: key
+        property: attribute.key
       secretKey: api-key
   refreshInterval: 1h
   secretStoreRef:
@@ -934,7 +928,6 @@ spec:
       - chatgpt-sub/ant-messages/gpt-6-astra
       - chatgpt-sub/ant-messages/gpt-6-luna
       - chatgpt-sub/ant-messages/gpt-6-sol
-    organizationId: ""
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -1001,7 +994,7 @@ spec:
   data:
     - remoteRef:
         key: litellm-crossplane-key-codex-pod-messages
-        property: key
+        property: attribute.key
       secretKey: CODEX_LITELLM_KEY
   refreshInterval: 1h
   secretStoreRef:
@@ -1043,7 +1036,6 @@ spec:
       - chatgpt-sub/oai-responses/gpt-6-astra
       - chatgpt-sub/oai-responses/gpt-6-luna
       - chatgpt-sub/oai-responses/gpt-6-sol
-    organizationId: ""
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -1110,7 +1102,7 @@ spec:
   data:
     - remoteRef:
         key: litellm-crossplane-key-agent-workspaces-codex
-        property: key
+        property: attribute.key
       secretKey: api-key
   refreshInterval: 1h
   secretStoreRef:
@@ -1157,7 +1149,6 @@ spec:
       - anthropic-max20/ant-messages/claude-sonnet-5-5
       - anthropic-max20/ant-messages/claude-fable-5-1
       - anthropic-max20/ant-messages/claude-haiku-5-5
-    organizationId: ""
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -1189,7 +1180,6 @@ spec:
       - chatgpt-sub/ant-messages/gpt-6-astra
       - chatgpt-sub/ant-messages/gpt-6-sol
       - chatgpt-sub/ant-messages/gpt-6-luna
-    organizationId: ""
     teamIdRef:
       name: team-codex-clients
   providerConfigRef:
@@ -1222,7 +1212,6 @@ spec:
     models:
       - google/goog-generate/gemini-3.7-flash
       - google/goog-generate/gemini-3.5-flash-lite
-    organizationId: ""
     teamIdRef:
       name: team-gemini-clients
   providerConfigRef:
@@ -1260,7 +1249,6 @@ spec:
       - antigravity/ant-messages/gemini-3.8-flash-high
       - antigravity/ant-messages/gemini-3.1-flash-image
       - antigravity/ant-messages/gpt-oss-120b-medium
-    organizationId: ""
     teamIdRef:
       name: team-antigravity-clients
   providerConfigRef:

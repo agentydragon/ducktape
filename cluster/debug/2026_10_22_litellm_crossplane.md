@@ -12,18 +12,36 @@ The installed `provider-litellm:v2.1.0` reports two independent failures:
   `prevent_destroy` guard. In the provider's `readKeyWithTransport`,
   `organization_id` is only assigned when LiteLLM returns a non-empty string;
   unlike some neighboring optional fields, an unknown value is not cleared when
-  the API omits it. The cdk8s Key spec now sets the optional field to `""`. The
-  provider omits empty organization IDs from API requests, while the configured
-  value gives Terraform a known result.
+  the API omits it. The merged attempt to set this optional field to `""` does
+  not fix that provider behavior: Crossplane v2.4.0's generated reference
+  resolver normalizes the empty string to nil, sends `organizationId: null`,
+  and the API server rejects that patch because the CRD schema requires a
+  string. The field must be omitted from the Key spec. Provider PR
+  [#1](https://github.com/TheCodingSheikh/provider-litellm/pull/1) adds a
+  regression-tested compatibility fix that resolves an omitted value to null
+  in Terraform state; it must be merged, released, and pinned before Keys can
+  reconcile successfully.
 - The Antigravity Team spec sent one fallback entry with an empty
   `fallback_models` list. LiteLLM's team-info response omitted that field, but
   the provider schema requires it for every fallback entry, so Observe failed
   while refreshing `router_settings`. The Antigravity lane has no fallbacks;
-  the cdk8s spec now omits `router_settings` for that Team. The live Team has no
-  external-name or external-create-succeeded annotation, so there is no
-  provider-created Team to delete before retrying.
+  the cdk8s spec now omits `router_settings` for that Team. At the first
+  observation, the live Team had no external name or create-succeeded
+  annotation, so retrying did not require deleting a provider-created Team.
 
-The generated-manifest test passes with these changes. After merge, verify that
-all Team and Key resources become Synced, `litellm-crossplane-keys` becomes Ready,
-and then `litellm-buildbuddy-sync` applies and becomes Ready. The BuildBuddy
-sync has not run yet while its dependency is blocked.
+At 2026-10-22 08:04 UTC, Flux was on a new 20-minute health-check cycle for
+artifact `latest@sha256:d44f154c9f758e8127ca60126d22500a8b37bfc06c56cb3858ce5f3e996e529b`.
+All twelve Keys reported `Synced=False`, with recent events showing the
+`organizationId: null` patch rejection. Eight ExternalSecrets were unready
+because the generated Crossplane connection Secrets expose `attribute.key`,
+while ESO requested a property named `key`. The Team fallback fix had already
+been applied, and a later event confirmed the provider requested Team creation.
+
+This follow-up omits `organizationId` from the Key specs and reads
+`attribute.key` from each provider connection Secret. The provider release is
+still required to resolve the separate unknown-value failure. After these
+manifest fixes and the provider fix are pinned and reconciled, verify all Team
+and Key resources become Synced, exported Secrets become Ready,
+`litellm-crossplane-keys` becomes Ready, and then
+`litellm-buildbuddy-sync` applies and becomes Ready. Until then, BuildBuddy sync
+is blocked on its dependency.

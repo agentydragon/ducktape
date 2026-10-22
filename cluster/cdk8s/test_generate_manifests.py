@@ -282,7 +282,24 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
             "key": "api-key",
         }
 
-    assert all(key["spec"]["forProvider"]["organizationId"] == "" for key in keys.values())
+    assert all("organizationId" not in key["spec"]["forProvider"] for key in keys.values())
+
+    published_key_secrets = [
+        doc
+        for doc in documents
+        if doc.get("kind") == "ExternalSecret"
+        and any(
+            data.get("remoteRef", {}).get("key", "").startswith("litellm-crossplane-key-")
+            for data in doc.get("spec", {}).get("data", [])
+        )
+    ]
+    assert published_key_secrets
+    assert all(
+        data["remoteRef"]["property"] == "attribute.key"
+        for doc in published_key_secrets
+        for data in doc["spec"]["data"]
+        if data["remoteRef"]["key"].startswith("litellm-crossplane-key-")
+    )
 
     teams = {
         doc["metadata"]["name"]: doc
