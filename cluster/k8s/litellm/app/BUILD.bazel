@@ -1,5 +1,3 @@
-# gazelle:ignore
-
 # Cluster manifests for cluster/validation's flux-build test and the generator's parity
 # test (the //cluster/k8s:cluster_all_files glob stops at this package boundary).
 filegroup(

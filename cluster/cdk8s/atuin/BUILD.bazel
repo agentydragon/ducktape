@@ -1,5 +1,3 @@
-# gazelle:ignore
-
 load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
