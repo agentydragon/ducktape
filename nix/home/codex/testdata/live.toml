@@ -1,0 +1,17 @@
+approval_policy = "never"
+
+[features]
+rmcp_client = true
+streamable_shell = false
+view_image_tool = true
+manual_feature = true
+
+[profiles.openai]
+model = "gpt-5-codex"
+local_note = "keep"
+
+[profiles.scratch]
+model = "local"
+
+[projects."/repo"]
+trust_level = "trusted"

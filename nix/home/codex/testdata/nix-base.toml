@@ -1,0 +1,7 @@
+approval_policy = "on-request"
+
+[features]
+streamable_shell = true
+
+[profiles.openai]
+model = "gpt-5.1-codex"
