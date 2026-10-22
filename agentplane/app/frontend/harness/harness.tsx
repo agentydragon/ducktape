@@ -10,7 +10,6 @@ import {
   electricSubset,
   liveNdjsonWatch,
   ndjsonWatch,
-  liveNdjsonWatch,
   publishNdjsonWatch,
   routes,
   UNANSWERED,
