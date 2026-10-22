@@ -22,28 +22,115 @@ js_library(
 )
 
 ts_library(
-    name = "main",
-    srcs = [
-        "SpendingHistoryChart.tsx",
-        "assets.d.ts",
-        "configuration.tsx",
-        "main.tsx",
-        "rule_display.ts",
-        "spend_display.tsx",
-        "spending.tsx",
-        "transactions.tsx",
-        "types.ts",
-        "use_spend_data.ts",
-    ],
+    name = "types",
+    srcs = ["types.ts"],
+    tsconfig = ":tsconfig",
+    deps = [":schema"],
+)
+
+ts_library(
+    name = "rule_display",
+    srcs = ["rule_display.ts"],
+    tsconfig = ":tsconfig",
+    deps = [":types"],
+)
+
+ts_library(
+    name = "spend_display",
+    srcs = ["spend_display.tsx"],
     tsconfig = ":tsconfig",
     deps = [
-        ":schema",
-        ":styles",
+        ":types",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "SpendingHistoryChart",
+    srcs = ["SpendingHistoryChart.tsx"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":types",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/chart.js",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "configuration",
+    srcs = ["configuration.tsx"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":rule_display",
+        ":spend_display",
+        ":types",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "spending",
+    srcs = ["spending.tsx"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":SpendingHistoryChart",
+        ":spend_display",
+        ":types",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "transactions",
+    srcs = ["transactions.tsx"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":rule_display",
+        ":spend_display",
+        ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "use_spend_data",
+    srcs = ["use_spend_data.ts"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":types",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "main",
+    srcs = [
+        "assets.d.ts",
+        "main.tsx",
+    ],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":configuration",
+        ":spending",
+        ":styles",
+        ":transactions",
+        ":types",
+        ":use_spend_data",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
-        "//:node_modules/chart.js",
         "//:node_modules/react",
         "//:node_modules/react-dom",
     ],
