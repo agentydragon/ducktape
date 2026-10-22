@@ -339,6 +339,7 @@ def test_litellm_buildbuddy_terraform_runners_receive_api_key_environment(
     for resource in terraform_resources.values():
         env = resource["spec"]["runnerPodTemplate"]["spec"]["env"]
         assert expected_env in env
+        assert not any(variable["name"] == "buildbuddy_api_key" for variable in resource["spec"].get("vars", []))
 
 
 def test_piraeus_controller_network_policy_only_admits_api_tls(

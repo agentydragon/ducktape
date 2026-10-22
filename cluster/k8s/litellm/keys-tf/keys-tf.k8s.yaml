@@ -36,9 +36,3 @@ spec:
     kind: ExternalArtifact
     name: tf-gitops-litellm-keys
     namespace: ducktape-flux
-  vars:
-    - name: buildbuddy_api_key
-      valueFrom:
-        secretKeyRef:
-          key: api-key
-          name: buildbuddy-org-admin-api-key
