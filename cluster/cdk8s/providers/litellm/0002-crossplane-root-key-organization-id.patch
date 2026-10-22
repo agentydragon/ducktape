@@ -1,15 +1,24 @@
 diff --git a/internal/provider/resource_key.go b/internal/provider/resource_key.go
 --- a/internal/provider/resource_key.go
 +++ b/internal/provider/resource_key.go
-@@ -1686,0 +1687,4 @@
+@@ -1684,6 +1684,10 @@
+ 	}
+ 	if orgID, ok := info["organization_id"].(string); ok && orgID != "" {
+ 		data.OrganizationID = types.StringValue(orgID)
 +	} else if data.OrganizationID.IsUnknown() {
 +		// LiteLLM omits organization_id for keys without an organization.
 +		// Resolve that computed value to null instead of leaving it unknown after apply.
 +		data.OrganizationID = types.StringNull()
+ 	}
+ 	if projectID, ok := info["project_id"].(string); ok && projectID != "" {
+ 		data.ProjectID = types.StringValue(projectID)
 diff --git a/internal/provider/resource_key_test.go b/internal/provider/resource_key_test.go
 --- a/internal/provider/resource_key_test.go
 +++ b/internal/provider/resource_key_test.go
-@@ -661,0 +662,34 @@
+@@ -659,6 +659,40 @@
+ 	}
+ }
+ 
 +func TestReadKeyResolvesUnknownOrganizationIDWhenAPIOmitsIt(t *testing.T) {
 +	t.Parallel()
 +
@@ -44,3 +53,6 @@ diff --git a/internal/provider/resource_key_test.go b/internal/provider/resource
 +	}
 +}
 +
+ func TestReadKeyResolvesUnknownOptionalComputedCollections(t *testing.T) {
+ 	t.Parallel()
+ 
