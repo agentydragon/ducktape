@@ -16,12 +16,20 @@ Etcd recovery relies on the two surviving healthy members; preserve the cluster'
 existing identity and credentials and rehearse member removal/rejoin. This
 exception does not waive preservation of application data or SeaweedFS master state.
 
-This document records the agreed design and preparation sequence. No production
-node has been converted. The [disposable QEMU rehearsal](../../debug/piraeus_first_node_2026_10_21/README.md)
-now covers LVM_THIN PVC lifecycle, limits, discard and control-plane repartition/rejoin.
-Pool exhaustion/recovery, production alerting, application handoffs and per-node
-destructive execution remain outstanding. The
-previous shared-VG design with an ordinary legacy `localpath` LV is superseded.
+The first physical node, `ovh-ns1001419`, was converted on 2026-10-22. Attic and
+Study Casino returned to three healthy members with their replacement replicas
+on strict-local Piraeus claims. The new Piraeus SSD volume server is Ready;
+application-data acceptance remains in progress. Seaweed master-2 still uses its
+temporary HDD claim and must return through an identity-preserving cold handoff.
+The [node-roll runbook](../runbooks/piraeus_node_roll.md) records that handoff,
+the next control-plane candidates, per-node readiness gates and conditional
+HDD-worker/control-plane pairing. No later node roll has started.
+
+The [disposable QEMU rehearsal](../../debug/piraeus_first_node_2026_10_21/README.md)
+and physical first-node checks cover LVM_THIN lifecycle and control-plane
+repartition/rejoin. Do not infer production DRBD-pool or metadata exhaustion
+recovery from those checks. The previous shared-VG design with an ordinary
+legacy `localpath` LV is superseded.
 
 Keep the Talos rollout independent of NixOS, Atlas capacity and laptops. Begin
 with single-copy, strict-local storage. Replication, remote access and automatic
