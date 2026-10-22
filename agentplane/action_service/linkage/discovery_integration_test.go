@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
+	"github.com/agentydragon/ducktape/util/testing/nettest"
 )
 
 // answer is what a fake MCP server or authorization server answers at a path; every other path answers 404.
@@ -191,15 +192,14 @@ func TestAServerWhoseMetadataCannotBeUsedCannotBeLinked(t *testing.T) {
 	f := newFixture(t)
 	silent := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(silent.Close)
-	closed := httptest.NewServer(http.NotFoundHandler())
-	closed.Close()
+	unreachable := "http://" + nettest.RefusingAddress(t)
 	for name, server := range map[string]linkage.Server{
 		"no metadata and no configured endpoints": {
 			ServerID: testServer, ServerURL: silent.URL + "/mcp",
 			ClientID: new("test-client"), RedirectURI: "https://test-actions.example/callback",
 		},
 		"unreachable": {
-			ServerID: testServer, ServerURL: closed.URL + "/mcp", ClientID: new("test-client"),
+			ServerID: testServer, ServerURL: unreachable + "/mcp", ClientID: new("test-client"),
 			RedirectURI: "https://test-actions.example/callback", AuthorizationEndpoint: new("https://test-configured.example/authorize"),
 			TokenEndpoint: new("https://test-configured.example/token"),
 		},

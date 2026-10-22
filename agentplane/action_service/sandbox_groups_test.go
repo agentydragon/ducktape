@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"sync/atomic"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/util/testing/nettest"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -57,16 +57,12 @@ func sandboxNamespace(t *testing.T, kube *kubeapiserver.Server, sidecar bool) st
 // every connection.
 func sandboxGroups(t *testing.T, namespace, directTools string) *catalog.Catalog {
 	t.Helper()
-	refusing, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	refusing.Close()
+	refusing := nettest.RefusingAddress(t)
 	return newCatalog(t, `{
 		"test-sandbox": {"title": "t", "description": "d", "direct_tools": `+directTools+`,
 			"executor": {"kind": "pod", "description": "e", "namespace": "`+namespace+`",
 				"templates": {"test-template": "the test box"}}},
 		"test-mcp": {"title": "t", "description": "d", "executor": {"kind": "mcp", "description": "e",
-			"config": {"transport": "streamable-http", "url": "http://`+refusing.Addr().String()+`/mcp", "auth": "none"}}}
+			"config": {"transport": "streamable-http", "url": "http://`+refusing+`/mcp", "auth": "none"}}}
 	}`)
 }
