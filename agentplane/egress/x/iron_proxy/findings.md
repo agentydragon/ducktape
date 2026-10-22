@@ -26,6 +26,49 @@ comparison baseline until those remaining transport requirements have executable
 This experiment does not establish that a fork is cheaper to maintain, or that either proxy has
 better production throughput, latency, memory use, or security history.
 
+## Code size
+
+A mechanical comparison of the current central proxy with the existing external gRPC bridge saves
+**228 production Go code lines (about 7%)**, before implementing the remaining replacement work.
+Measured with `tokei 14.0.0`, excluding blanks and comment-only lines, at Agentplane
+`cff612c4e6827b8af45e76856ff50d671598396c` and upstream Iron
+`60ed3566e5b39b1ef74d4854c62eb2d9fc4b8f42`. The latter has identical Go runtime sources to the
+spike's pinned Iron revision.
+
+The central-backend scope is non-test Go under `agentplane/egress/`, excluding `sidecar/` and `x/`.
+The replacement column adds only `x/iron_proxy/bridge/bridge.go` and the maintained streaming patch.
+This compares production paths; the bridge is already tracked as a spike, so this is not a predicted
+git diff. Shared packages outside egress, Python, protobuf definitions, generated output, build files,
+and deployment configuration are outside the count.
+
+| Component                                                 | Current proxy | Iron plus external gRPC bridge |
+| --------------------------------------------------------- | ------------: | -----------------------------: |
+| Native transport, admission gate and lifecycle (`proxy/`) |           629 |                              0 |
+| Agentplane gRPC bridge                                    |             0 |                            391 |
+| Maintained streaming patch (net code added)               |             0 |                             10 |
+| Other central backend Go                                  |         2,628 |                          2,628 |
+| **Total**                                                 |     **3,257** |                      **3,029** |
+
+The streaming patch adds 12 code lines and removes two. Counting comments and blanks instead, the
+native proxy is 776 physical lines, the bridge is 453, and the patch adds 13 net physical lines:
+310 fewer physical lines in this same comparison.
+
+This is a prototype comparison, not a production replacement forecast. Policy evaluation, credential
+substitution, Kubernetes authentication and watchers, policy-aware upstream resolution, history and
+APIs largely remain ours. RPC authentication and wiring, policy-aware DNS/dial hooks, projected-token
+support, tunnel-state cleanup, draining, h2c and history integration still need work. Only 228 code
+lines of savings remain before those additions erase the reduction; some startup/configuration code
+might also shrink, but that has not been implemented or credited here.
+
+Current `proxy/` tests contain 1,494 Go code lines; all Iron spike tests contain 1,204. The spike covers
+less behavior, so that difference is not a test-code saving: the existing security and lifecycle
+coverage must be preserved or ported. Python end-to-end tests are outside these counts.
+
+Iron itself contributes 12,614 handwritten production Go code lines under `internal/` and `cmd/`,
+plus 806 generated lines under `gen/`, excluding tests. Reuse would trade our transport implementation
+for that dependency and a small maintained patch. The stronger case is upstream functionality and
+shared maintenance, rather than a large reduction in Agentplane-owned code.
+
 ## Executed comparisons
 
 [BuildBuddy invocation `27357bf8`](https://app.buildbuddy.io/invocation/27357bf8-7cc7-4acf-8670-8b2ce546041d)
