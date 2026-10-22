@@ -1,4 +1,5 @@
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
@@ -1669,4 +1670,11 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
+)
+
+ts_proto_library(
+    name = "web_push_service_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":web_push_service_proto",
 )

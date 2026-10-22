@@ -28,7 +28,7 @@ async def test_settings_push_registration_follows_other_browser(view: VisualPage
     await _open_settings(page)
     await page.get_by_role("tab", name="Notifications").click()
     await expect(page.get_by_text("Second browser")).to_have_count(0)
-    await app.publish(Flag.PUSH_BROWSER_ADDED, "/push/subscriptions/stream")
+    await app.publish(Flag.PUSH_BROWSER_ADDED, "/upstream/actions/v1/operator/push/subscriptions:watch")
     await expect(page.get_by_text("Second browser")).to_be_visible()
     await view.capture(name="settings_push_live_registration")
 

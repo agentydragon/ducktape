@@ -733,7 +733,7 @@ async def test_provider_availability_is_not_operator_rejection(
 ) -> None:
     await review.browser.get("/auth/login")
     caplog.set_level(logging.WARNING, logger="agentplane.app.action_federation")
-    for path in ("/actions", "/action-groups", "/push/config"):
+    for path in ("/actions", "/action-groups"):
         response = await review.browser.get(path)
         assert response.status_code == expected, response.text
         detail = response.json()["detail"]

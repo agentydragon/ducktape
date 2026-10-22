@@ -2,33 +2,32 @@
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 
-import { TestEventSource } from "../actions/testing";
+import { ServedWatch } from "../watch_fixture";
 import { PushSettings } from "./push";
 
-beforeEach(() => {
-  vi.stubGlobal("EventSource", TestEventSource);
-});
+const PUSH_PATH = "/upstream/actions/v1/operator/push";
+
+function watch(url: string, options?: RequestInit, subscriptions: unknown[] = []): ServedWatch {
+  const served = new ServedWatch(url, options?.signal ?? undefined);
+  served.send({ snapshot: { pushSubscriptions: subscriptions } });
+  served.send({ snapshotComplete: {} });
+  return served;
+}
 
 it("updates registered browsers from the stream without a refresh button", async () => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  const streams: EventTarget[] = [];
-  class Source extends EventTarget {
-    static readonly CLOSED = 2;
-    readyState = 1;
-    constructor(readonly url: string) {
-      super();
-      streams.push(this);
-    }
-    close() {
-      this.readyState = Source.CLOSED;
-    }
-  }
-  vi.stubGlobal("EventSource", Source);
+  let stream: ServedWatch | undefined;
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: string) => Response.json(url === "/push/config" ? { application_server_key: null } : []))
+    vi.fn(async (url: string, options?: RequestInit) => {
+      if (url.endsWith(":watch")) {
+        stream = watch(url, options);
+        return stream.response;
+      }
+      return Response.json(url === `${PUSH_PATH}/config` ? {} : { pushSubscriptions: [] });
+    })
   );
   const container = document.createElement("div");
   document.body.append(container);
@@ -43,19 +42,17 @@ it("updates registered browsers from the stream without a refresh button", async
     );
     expect(container.textContent).not.toContain("Refresh notification settings");
     await act(async () =>
-      streams[0]!.dispatchEvent(
-        new MessageEvent("snapshot", {
-          data: JSON.stringify([
-            {
-              endpoint: "https://push.example/other",
-              user_agent: "Another browser",
-              created_at: "2026-01-01T00:00:00Z",
-            },
-          ]),
-        })
-      )
+      stream?.send({
+        upsert: {
+          endpoint: "https://push.example/other",
+          userAgent: "Another browser",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      })
     );
     expect(container.textContent).toContain("Another browser");
+    await act(async () => stream?.send({ removedEndpoint: "https://push.example/other" }));
+    expect(container.textContent).not.toContain("Another browser");
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -75,16 +72,20 @@ it("lists registered browsers, identifies this browser, and unregisters it local
   });
   let registered = true;
   const transport = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.endsWith(":watch"))
+      return watch(url, options, [{ endpoint, userAgent: "Test browser", createdAt: "2026-09-09T00:00:00Z" }]).response;
     if (options?.method === "DELETE") {
       registered = false;
-      return new Response(null, { status: 204 });
+      return Response.json({});
     }
     return Response.json(
-      url === "/push/config"
-        ? { application_server_key: null }
-        : registered
-          ? [{ endpoint, user_agent: "Test browser", created_at: "2026-09-09" }]
-          : []
+      url === `${PUSH_PATH}/config`
+        ? {}
+        : {
+            pushSubscriptions: registered
+              ? [{ endpoint, userAgent: "Test browser", createdAt: "2026-09-09T00:00:00Z" }]
+              : [],
+          }
     );
   });
   vi.stubGlobal("fetch", transport);
@@ -111,7 +112,7 @@ it("lists registered browsers, identifies this browser, and unregisters it local
     expect(unsubscribe).toHaveBeenCalledOnce();
     expect(container.textContent).not.toContain("Test browser");
     expect(transport).toHaveBeenCalledWith(
-      `/push/subscriptions?endpoint=${encodeURIComponent(endpoint)}`,
+      `${PUSH_PATH}/subscriptions?endpoint=${encodeURIComponent(endpoint)}`,
       expect.objectContaining({ method: "DELETE" })
     );
   } finally {
@@ -128,8 +129,12 @@ it.each(["Forbidden", ""])("shows failed configuration HTTP status and body (sta
   const body = { detail: { code: "operator_federation_exchange_failed" } };
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: string) =>
-      url === "/push/config" ? Response.json(body, { status: 403, statusText }) : Response.json([])
+    vi.fn(async (url: string, options?: RequestInit) =>
+      url.endsWith(":watch")
+        ? watch(url, options).response
+        : url === `${PUSH_PATH}/config`
+          ? Response.json(body, { status: 403, statusText })
+          : Response.json({ pushSubscriptions: [] })
     )
   );
   const container = document.createElement("div");
@@ -144,7 +149,7 @@ it.each(["Forbidden", ""])("shows failed configuration HTTP status and body (sta
       )
     );
     expect(container.textContent).toContain(
-      `GET /push/config: HTTP 403${statusText ? ` ${statusText}` : ""}: ${JSON.stringify(body)}`
+      `GET ${PUSH_PATH}/config: HTTP 403${statusText ? ` ${statusText}` : ""}: ${JSON.stringify(body)}`
     );
   } finally {
     await act(async () => root.unmount());

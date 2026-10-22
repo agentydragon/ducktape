@@ -1,31 +1,72 @@
+import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
+import {
+  CreatePushSubscriptionRequestSchema,
+  GetPushConfigResponseSchema,
+  ListPushSubscriptionsResponseSchema,
+  WatchPushSubscriptionsResponseSchema,
+  type PushSubscription,
+} from "../../../action_service/web_push_service_pb";
 import { Button, Code, Group, Paper, Stack, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
-import { displayableError } from "../client";
-import { useSnapshotStream } from "../live_stream";
+import { displayableError, fetchWithLogin } from "../client";
+import { type StreamConnection } from "../live_stream";
+import { followWatch } from "../watch_stream";
 
-type Device = { endpoint: string; user_agent: string | null; created_at: string };
+const PUSH_PATH = "/upstream/actions/v1/operator/push";
 
 function keyBytes(value: string): Uint8Array {
   const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((value.length + 3) % 4);
   return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
 }
 
-async function json<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { credentials: "same-origin", ...init });
+async function json(url: string, init?: RequestInit): Promise<JsonValue> {
+  const response = await fetchWithLogin(url, { credentials: "same-origin", ...init });
   if (!response.ok) {
     const path = new URL(url, window.location.href).pathname;
     const status = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
     throw new Error(`${init?.method ?? "GET"} ${path}: ${status}: ${await response.text()}`);
   }
-  return response.status === 204 ? (undefined as T) : response.json();
+  return response.json() as Promise<JsonValue>;
 }
 
 export function PushSettings(): JSX.Element {
-  const {
-    snapshot: devices,
-    setSnapshot: setDevices,
-    connection,
-  } = useSnapshotStream<Device[]>("/push/subscriptions/stream");
+  const [devices, setDevices] = useState<PushSubscription[] | null>(null);
+  const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
+  useEffect(() => {
+    let snapshot: PushSubscription[] = [];
+    return followWatch(`${PUSH_PATH}/subscriptions:watch`, {
+      onOpen: () => {
+        snapshot = [];
+      },
+      onConnection: setConnection,
+      onFrame: (result) => {
+        const message = fromJson(WatchPushSubscriptionsResponseSchema, result as JsonValue);
+        switch (message.frame.case) {
+          case "snapshot":
+            snapshot.push(...message.frame.value.pushSubscriptions);
+            break;
+          case "snapshotComplete":
+            setDevices(snapshot);
+            break;
+          case "upsert": {
+            const changed = message.frame.value;
+            setDevices((current) => [
+              ...(current ?? []).filter((value) => value.endpoint !== changed.endpoint),
+              changed,
+            ]);
+            break;
+          }
+          case "removedEndpoint":
+            setDevices((current) => (current ?? []).filter((value) => value.endpoint !== message.frame.value));
+            break;
+          case "reconnectRequired":
+            break;
+          case undefined:
+            throw new Error("Push subscription watch returned an empty frame.");
+        }
+      },
+    });
+  }, []);
   const [key, setKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -36,11 +77,11 @@ export function PushSettings(): JSX.Element {
     setLoading(true);
     try {
       const [config, registered] = await Promise.all([
-        json<{ application_server_key: string | null }>("/push/config"),
-        json<Device[]>("/push/subscriptions"),
+        json(`${PUSH_PATH}/config`).then((value) => fromJson(GetPushConfigResponseSchema, value)),
+        json(`${PUSH_PATH}/subscriptions`).then((value) => fromJson(ListPushSubscriptionsResponseSchema, value)),
       ]);
-      setKey(config.application_server_key);
-      setDevices(registered);
+      setKey(config.applicationServerKey ?? null);
+      setDevices(registered.pushSubscriptions);
       if ("serviceWorker" in navigator) {
         const registration = await navigator.serviceWorker.getRegistration("/sw.js");
         setCurrent((await registration?.pushManager.getSubscription())?.endpoint ?? null);
@@ -80,10 +121,19 @@ export function PushSettings(): JSX.Element {
       const body = subscription.toJSON();
       if (!body.endpoint || !body.keys?.p256dh || !body.keys.auth)
         throw new Error("Browser returned an incomplete push subscription.");
-      await json<void>("/push/subscriptions", {
+      await json(`${PUSH_PATH}/subscriptions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint: body.endpoint, p256dh: body.keys.p256dh, auth: body.keys.auth }),
+        body: JSON.stringify(
+          toJson(
+            CreatePushSubscriptionRequestSchema,
+            create(CreatePushSubscriptionRequestSchema, {
+              endpoint: body.endpoint,
+              p256dh: body.keys.p256dh,
+              auth: body.keys.auth,
+            })
+          )
+        ),
       });
       await refresh();
     } catch (failure) {
@@ -96,7 +146,7 @@ export function PushSettings(): JSX.Element {
   async function forget(endpoint: string): Promise<void> {
     setBusy(true);
     try {
-      await json<void>(`/push/subscriptions?endpoint=${encodeURIComponent(endpoint)}`, { method: "DELETE" });
+      await json(`${PUSH_PATH}/subscriptions?endpoint=${encodeURIComponent(endpoint)}`, { method: "DELETE" });
       if (endpoint === current) {
         const registration = await navigator.serviceWorker.getRegistration("/sw.js");
         await (await registration?.pushManager.getSubscription())?.unsubscribe();
@@ -157,7 +207,7 @@ export function PushSettings(): JSX.Element {
           <Group justify="space-between">
             <Stack gap={2}>
               <Text size="sm">
-                {device.user_agent || "Unknown browser"}
+                {device.userAgent || "Unknown browser"}
                 {device.endpoint === current ? " (this browser)" : ""}
               </Text>
               <Code style={{ maxWidth: 500, overflow: "hidden", textOverflow: "ellipsis" }}>{device.endpoint}</Code>
