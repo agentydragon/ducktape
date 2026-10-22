@@ -95,6 +95,7 @@ it("renders independent linkage and health snapshots, then updates either withou
           last_discovery_at: null,
         },
         actions: [],
+        direct_tools: [],
       },
     ],
     HEALTH
@@ -119,6 +120,7 @@ it("renders independent linkage and health snapshots, then updates either withou
           last_discovery_at: null,
         },
         actions: [],
+        direct_tools: [],
       },
     ],
     HEALTH
@@ -149,6 +151,7 @@ it("shows a bearer-auth group with a live health badge and no link/disconnect bu
           failures: 0,
         },
         actions: [],
+        direct_tools: [],
       },
     ]
   );
@@ -190,6 +193,7 @@ it("labels a linked-but-disconnected server's two states and says why it cannot 
           failures: 3,
         },
         actions: [],
+        direct_tools: [],
       },
     ]
   );
@@ -225,11 +229,12 @@ it("excludes a non-mcp (e.g. sandbox-kind) group from the list", async () => {
         key: "sandbox",
         title: "Sandbox",
         description: "Runs in-process, not over MCP.",
-        executor_kind: "sandbox",
+        executor_kind: "pod",
         executor_description: "Stamped and exec'd by this service.",
         available: true,
         health: null,
         actions: [],
+        direct_tools: [],
       },
     ]
   );
@@ -293,6 +298,7 @@ it("does not repeat a linkage wait under a refresh failure that already explains
           failures: 1,
         },
         actions: [],
+        direct_tools: [],
       },
     ]
   );

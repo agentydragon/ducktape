@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { TextDecoder, TextEncoder } from "node:util";
+import { URLSearchParams } from "node:url";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
@@ -116,6 +117,7 @@ function loadWorker(): TestWorker {
     self,
     TextDecoder,
     TextEncoder,
+    URLSearchParams,
     fetch: async (url: string, options?: RequestInit) => {
       requests.push({ url, options });
       const actionRequest = pending?.[0];
@@ -210,7 +212,7 @@ describe("service worker notifications", () => {
       expectedVersion: "1",
       idempotencyKey: expect.any(String),
     });
-    expect(worker.requests[0]?.options?.credentials).toBe("include");
+    expect(worker.requests[0]?.options?.credentials).toBeUndefined();
 
     await dispatch(worker, "notificationclick", { action: "deny", notification });
     expect(JSON.parse(String(worker.requests[1]?.options?.body))).toMatchObject({
