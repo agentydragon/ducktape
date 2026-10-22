@@ -5,7 +5,7 @@ manifest and yields the app's address and a token once every Deployment is Avail
 first Deployment that does not, with the Pod states and logs of whatever did not start.
 
 The test process reaches the app (and Dex) by their in-cluster Service names, which it resolves
-through `/etc/hosts`: OIDC redirects name them, and the action is discarded after the test. Dex's
+through `/etc/hosts`: OIDC redirects name them. Dex's
 certificate comes from a CA made per stack, which `McpFixtureAccess.ca_bundle` adds to the system roots.
 In MCP fixtures the app and standalone MCP edge use loopback origins, served by port-forwards, so
 their plain HTTP URLs satisfy the OAuth endpoint contract.
@@ -31,6 +31,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import yaml
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.conftest import AUDIENCE, TESTING_SERVICE_ACCOUNT
 from agentplane.testing import tls
@@ -43,8 +44,12 @@ logger = logging.getLogger(__name__)
 
 DEPLOY_TIMEOUT_SECONDS = 480
 BOOTSTRAP_TIMEOUT_SECONDS = 180
+STOP_TIMEOUT_SECONDS = 60
 # k3s's default Pod CIDR.
 POD_CIDR = "10.42.0.0/16"
+CONTAINERD_SOCKET = "/run/k3s/containerd/containerd.sock"
+# Marks the `/etc/hosts` lines a stack wrote, which the next stack on a recycled runner replaces.
+HOSTS_MARKER = "# k3s-env"
 
 
 def run(*command: str, check: bool = True, input_text: str | None = None) -> str:
@@ -56,12 +61,13 @@ def run(*command: str, check: bool = True, input_text: str | None = None) -> str
     return result.stdout + result.stderr
 
 
-def _shadow_kernel_sysctls(work: Path) -> None:
-    """The Firecracker guest has no CONFIG_KEYS; the kubelet refuses to start without these files."""
+def _shadow_kernel_sysctls() -> None:
+    """The Firecracker guest has no CONFIG_KEYS; the kubelet refuses to start without these files. The
+    shadow outlives the stack, so the next stack on a recycled runner finds it mounted."""
     if Path("/proc/sys/kernel/keys/root_maxkeys").exists():
         return
-    fake = work / "proc-sys-kernel"
-    fake.mkdir()
+    fake = Path("/run/k3s-env-proc-sys-kernel")
+    fake.mkdir(exist_ok=True)
     for path in Path("/proc/sys/kernel").rglob("*"):
         target = fake / path.relative_to("/proc/sys/kernel")
         if path.is_dir():
@@ -76,6 +82,35 @@ def _shadow_kernel_sysctls(work: Path) -> None:
     (fake / "keys/root_maxkeys").write_text("1000000\n")
     (fake / "keys/root_maxbytes").write_text("25000000\n")
     run("mount", "--bind", str(fake), "/proc/sys/kernel")
+
+
+def _reset_previous_stack(data_dir: Path) -> None:
+    """The RBE platform recycles runners, so the VM may still hold the last test's stack, whose Pods its
+    teardown removed. Keep containerd's store, whose images are addressed by digest, and k3s's unpacked
+    binaries; reset the rest."""
+    if not data_dir.exists():
+        return
+    targets = [line.split()[1] for line in Path("/proc/mounts").read_text().splitlines()]
+    for target in reversed(targets):
+        if target.startswith(("/var/lib/kubelet/", "/run/k3s/", "/run/netns/")):
+            run("umount", "--lazy", target)
+    for entry in [*data_dir.iterdir(), *(data_dir / "agent").iterdir()]:
+        if entry.name not in {"agent", "data", "containerd"}:
+            shutil.rmtree(entry) if entry.is_dir() and not entry.is_symlink() else entry.unlink()
+    for state in (
+        "/var/lib/kubelet",
+        "/var/lib/cni",
+        "/var/log/pods",
+        "/var/log/containers",
+        "/run/k3s",
+        "/run/flannel",
+    ):
+        shutil.rmtree(state, ignore_errors=True)
+    # The kubelet spends about 3 s on each container cgroup it finds without a container before it
+    # registers the node, which the last stack's 40-odd added up to over two minutes.
+    for root in [*Path("/sys/fs/cgroup").glob("kubepods*"), *Path("/sys/fs/cgroup").glob("*/kubepods*")]:
+        for directory, _, _ in root.walk(top_down=False):
+            directory.rmdir()
 
 
 def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
@@ -138,13 +173,20 @@ class K3s:
         )
 
     def start(self, *, layers_in_memory: bool) -> subprocess.Popen[bytes]:
-        _shadow_kernel_sysctls(self.work)
-        if layers_in_memory:
-            # Unpacking image layers is bound by writes to the executor's disk. The tmpfs default cap, half
-            # of memory, makes a stack that outgrows it fail on a full filesystem rather than on the OOM killer.
-            layers = self.data_dir / "agent/containerd/io.containerd.snapshotter.v1.overlayfs"
-            layers.mkdir(parents=True)
-            run("mount", "-t", "tmpfs", "tmpfs", str(layers))
+        _reset_previous_stack(self.data_dir)
+        _shadow_kernel_sysctls()
+        # Unpacking image layers is bound by writes to the executor's disk. The tmpfs default cap, half of
+        # memory, makes a stack that outgrows it fail on a full filesystem rather than on the OOM killer.
+        layers = self.data_dir / "agent/containerd/io.containerd.snapshotter.v1.overlayfs"
+        if layers.is_mount() != layers_in_memory:
+            # A recycled runner's last stack kept its layers on the other medium, so containerd's metadata
+            # names snapshots this one would not see: start from an empty store.
+            if layers.is_mount():
+                run("umount", str(layers))
+            shutil.rmtree(self.data_dir / "agent/containerd", ignore_errors=True)
+            if layers_in_memory:
+                layers.mkdir(parents=True)
+                run("mount", "-t", "tmpfs", "tmpfs", str(layers))
         self.log_path = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", self.work)) / "k3s.log"
         log = self.log_path.open("wb")
         process = subprocess.Popen(
@@ -186,10 +228,13 @@ class K3s:
                 "get", "node/env", "-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}", expected="True"
             )
             # host-gw routes Pod traffic but does not translate it: without this, Pods cannot reach the internet.
+            # A recycled runner already has the rule.
             iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
-            run(
-                str(iptables), "-t", "nat", "-A", "POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE"
-            )
+            masquerade = ("POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE")
+            if subprocess.run(
+                [str(iptables), "-t", "nat", "-C", *masquerade], capture_output=True, check=False
+            ).returncode:
+                run(str(iptables), "-t", "nat", "-A", *masquerade)
         except BaseException:
             process.terminate()
             try:
@@ -200,11 +245,44 @@ class K3s:
             raise
         return process
 
+    def stop(self, process: subprocess.Popen[bytes]) -> None:
+        """End k3s, then remove every Pod, so the next stack on a recycled runner finds only images.
+
+        k3s's containerd dies with it (a parent-death signal) while the Pods' shims outlive it, so a containerd
+        started here removes the Pods, with no kubelet to recreate them or remove them concurrently. Pausing
+        k3s instead would block containerd, whose output k3s copies to its log."""
+        process.terminate()
+        process.wait(timeout=STOP_TIMEOUT_SECONDS)
+        binaries = self.data_dir / "data/current/bin"
+        crictl_config = self.work / "crictl.yaml"
+        crictl_config.write_text(f"runtime-endpoint: unix://{CONTAINERD_SOCKET}\ntimeout: {STOP_TIMEOUT_SECONDS}\n")
+        crictl = (str(self.binary), "crictl", "--config", str(crictl_config))
+        with contextlib.ExitStack() as cleanup:
+            log = cleanup.enter_context(self.log_path.with_name("containerd-teardown.log").open("wb"))
+            containerd = cleanup.enter_context(
+                subprocess.Popen(
+                    [str(binaries / "containerd"), "-c", str(self.data_dir / "agent/etc/containerd/config.toml")],
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    # The PATH k3s gives its containerd, which finds the runc shim there.
+                    env=os.environ | {"PATH": f"{binaries}:{os.environ['PATH']}:{binaries / 'aux'}"},
+                )
+            )
+            cleanup.callback(containerd.terminate)
+            for attempt in Retrying(
+                stop=stop_after_delay(STOP_TIMEOUT_SECONDS),
+                wait=wait_fixed(1),
+                retry=retry_if_exception_type(RuntimeError),
+                reraise=True,
+            ):
+                with attempt:
+                    run(*crictl, "pods")
+            run(*crictl, "rmp", "--all", "--force")
+
     def import_images(self, images: dict[str, Path], timeline: Timeline) -> None:
         """Import Bazel OCI layouts (`.rloc` files, keyed by the image reference each loads as) into
-        containerd one image at a time, timing each. Blob digests are preserved, and a blob an earlier
-        image already imported is not streamed again."""
-        imported: set[str] = set()
+        containerd one image at a time, timing each. Blob digests are preserved, and a blob containerd
+        already holds (an earlier image's, or on a recycled runner the last stack's) is not streamed again."""
         for image, rloc in images.items():
             started = time.monotonic()
             layout = get_required_path(rloc.read_text().strip())
@@ -212,24 +290,21 @@ class K3s:
             for descriptor in index["manifests"]:
                 descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = image
             blobs = {blob.relative_to(layout).as_posix(): blob for blob in (layout / "blobs").glob("*/*")}
-            self._import_layout(index["manifests"], {name: blobs[name] for name in blobs.keys() - imported})
-            imported |= blobs.keys()
+            stored = self._stored_blobs()
+            self._import_layout(index["manifests"], {name: blobs[name] for name in blobs.keys() - stored})
             timeline.image_imported(image, time.monotonic() - started)
+
+    def _stored_blobs(self) -> set[str]:
+        """The OCI layout paths (`blobs/sha256/<hex>`) of the blobs containerd holds."""
+        digests = run(
+            str(self.binary), "ctr", "--address", CONTAINERD_SOCKET, "-n", "k8s.io", "content", "ls", "--quiet"
+        )
+        return {"blobs/" + digest.replace(":", "/", 1) for digest in digests.split()}
 
     def _import_layout(self, manifests: list[dict[str, Any]], blobs: dict[str, Path]) -> None:
         with tempfile.TemporaryFile() as output:
             with subprocess.Popen(
-                [
-                    str(self.binary),
-                    "ctr",
-                    "--address",
-                    "/run/k3s/containerd/containerd.sock",
-                    "-n",
-                    "k8s.io",
-                    "images",
-                    "import",
-                    "-",
-                ],
+                [str(self.binary), "ctr", "--address", CONTAINERD_SOCKET, "-n", "k8s.io", "images", "import", "-"],
                 stdin=subprocess.PIPE,
                 stdout=output,
                 stderr=subprocess.STDOUT,
@@ -362,15 +437,17 @@ def _port_forward(k3s: K3s, namespace: str, service: str, origin: str, port: int
 
 
 def _resolve_on_node(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
-    """Resolve the Services a browser reaches by name for this process, as the cluster DNS does for Pods."""
-    with Path("/etc/hosts").open("a") as hosts:
-        # The RBE executor's file ends without a newline.
-        hosts.write("\n")
-        for service in fixture.browser_services:
-            address = k3s.kubectl(
-                "get", "service", "-n", fixture.namespace, service.name, "-o", "jsonpath={.spec.clusterIP}"
-            )
-            hosts.write(f"{address} {service.host} {service.fqdn}\n")
+    """Resolve the Services a browser reaches by name for this process, as the cluster DNS does for Pods,
+    replacing what the last stack on a recycled runner wrote."""
+    hosts = Path("/etc/hosts")
+    kept = [line for line in hosts.read_text().splitlines() if not line.endswith(HOSTS_MARKER)]
+    for service in fixture.browser_services:
+        address = k3s.kubectl(
+            "get", "service", "-n", fixture.namespace, service.name, "-o", "jsonpath={.spec.clusterIP}"
+        )
+        kept.append(f"{address} {service.host} {service.fqdn} {HOSTS_MARKER}")
+    # Rewritten in place: the file may be a mount.
+    hosts.write_text("\n".join(kept) + "\n")
 
 
 def _ci_image(rloc: Path) -> str:
@@ -416,7 +493,7 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
     timeline.mark("node Ready")
     with contextlib.ExitStack() as cleanup:
         cleanup.callback(shutil.rmtree, work, ignore_errors=True)
-        cleanup.callback(process.terminate)
+        cleanup.callback(k3s.stop, process)
         ca_cert, ca_key = _openssl_ca(work)
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
         system_roots = Path("/etc/ssl/certs/ca-certificates.crt").read_text()

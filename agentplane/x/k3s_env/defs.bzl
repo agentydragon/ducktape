@@ -2,7 +2,6 @@
 
 K3S_EXEC_PROPERTIES = {
     "dockerNetwork": "bridge",
-    "recycle-runner": "false",
     "EstimatedComputeUnits": "4",
     "EstimatedFreeDiskBytes": "50GB",
 }

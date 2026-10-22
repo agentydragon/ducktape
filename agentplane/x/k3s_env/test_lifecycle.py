@@ -48,7 +48,7 @@ async def wait_until_gone(client: Client, name: str) -> None:
 
 
 async def create_running(stack: Stack, client: Client, name: str, *, bootstrap: str = "") -> SandboxView:
-    """Sandboxes are not removed afterwards: the stack is discarded with the action."""
+    """Sandboxes are not removed afterwards: the stack ends with the test."""
     await client.create_sandbox(NewSandbox(name=name, template=POD_TEMPLATE, bootstrap=bootstrap))
     return await wait_until_running(client, name)
 

@@ -232,6 +232,7 @@ py_library(
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pyyaml",
+        "@pypi//tenacity",
     ],
 )
 
