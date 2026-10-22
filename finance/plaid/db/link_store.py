@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from pydantic import BaseModel
-from sqlalchemy import and_, delete, exists, func, literal, or_, select, text, union_all, update
+from sqlalchemy import Date as SQLDate, and_, delete, exists, func, literal, or_, select, text, union_all, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -35,7 +35,7 @@ from finance.plaid.db.models import (
     async_session_factory,
     utcnow,
 )
-from finance.plaid.models import AccountInventory, ItemInventory
+from finance.plaid.models import AccountDeletionPreview, AccountInventory, ItemInventory
 from finance.plaid.payloads import (
     PlaidAccount,
     PlaidBalance,
@@ -76,6 +76,22 @@ class SyncAlreadyRunningError(RuntimeError):
     def __init__(self, item_id: str) -> None:
         self.item_id = item_id
         super().__init__(f"sync already running for Plaid item {item_id}")
+
+
+class AccountNotFoundError(LookupError):
+    """The selected account is not part of the selected Plaid Item."""
+
+
+class AccountNotDetachedError(RuntimeError):
+    """The last complete account listing does not confirm that this account is detached."""
+
+
+class AccountDeletionPreviewChangedError(RuntimeError):
+    """The account or its mirrored data changed since deletion was previewed."""
+
+
+class ItemSyncQueuedError(RuntimeError):
+    """An Item sync is queued and can start after the current request."""
 
 
 @dataclass(frozen=True)
@@ -425,6 +441,59 @@ class PlaidLinkStorage:
             for item in grouped.values()
         ]
 
+    async def get_account_deletion_preview(self, *, item_id: str, account_id: str) -> AccountDeletionPreview:
+        async with self._session_factory() as session:
+            link, account = await _account_deletion_rows(session, item_id=item_id, account_id=account_id)
+            _require_detached_account(link, account)
+            if await _has_running_sync(session, item_id):
+                raise SyncAlreadyRunningError(item_id)
+            if await _has_queued_sync(session, item_id):
+                raise ItemSyncQueuedError(item_id)
+            return await _build_account_deletion_preview(session, link=link, account=account)
+
+    async def delete_detached_account(
+        self, *, item_id: str, account_id: str, expected_preview: AccountDeletionPreview
+    ) -> None:
+        if expected_preview.item_id != item_id or expected_preview.account.account_id != account_id:
+            raise AccountDeletionPreviewChangedError
+
+        async with self._session_factory() as session:
+            link = await session.scalar(select(LinkRow).where(LinkRow.item_id == item_id).with_for_update())
+            if link is None or link.status == "revoked":
+                raise AccountNotFoundError(account_id)
+            account = await session.scalar(
+                select(AccountRow)
+                .where(AccountRow.account_id == account_id, AccountRow.item_id == item_id)
+                .with_for_update()
+            )
+            if account is None:
+                raise AccountNotFoundError(account_id)
+            _require_detached_account(link, account)
+            if await _has_running_sync(session, item_id):
+                raise SyncAlreadyRunningError(item_id)
+            if await _has_queued_sync(session, item_id):
+                raise ItemSyncQueuedError(item_id)
+
+            current_preview = await _build_account_deletion_preview(session, link=link, account=account)
+            if current_preview != expected_preview:
+                raise AccountDeletionPreviewChangedError
+
+            for row_type in (
+                LiabilityCreditSnapshotRow,
+                LiabilityMortgageSnapshotRow,
+                LiabilityStudentSnapshotRow,
+                HoldingSnapshotRow,
+                InvestmentTransactionRow,
+                TransactionRow,
+                BalanceSnapshotRow,
+            ):
+                await session.execute(delete(row_type).where(row_type.account_id == account_id))
+            await session.execute(
+                delete(AccountRow).where(AccountRow.account_id == account_id, AccountRow.item_id == item_id)
+            )
+            await _notify_spend_changed(session)
+            await session.commit()
+
     async def get_link(self, item_id: str) -> StoredLink | None:
         async with self._session_factory() as session:
             row = await session.get(LinkRow, item_id)
@@ -502,6 +571,7 @@ class PlaidLinkStorage:
             },
         )
         async with self._session_factory() as session:
+            await session.scalar(select(LinkRow.item_id).where(LinkRow.item_id == item_id).with_for_update())
             await session.execute(statement)
             await session.commit()
 
@@ -853,6 +923,159 @@ def _stored_link(
         earliest_transaction_date=earliest_transaction_date,
         latest_transaction_date=latest_transaction_date,
         synced_transaction_count=synced_transaction_count,
+    )
+
+
+async def _account_deletion_rows(session: AsyncSession, *, item_id: str, account_id: str) -> tuple[LinkRow, AccountRow]:
+    row = (
+        await session.execute(
+            select(LinkRow, AccountRow)
+            .join(AccountRow, AccountRow.item_id == LinkRow.item_id)
+            .where(LinkRow.item_id == item_id, AccountRow.account_id == account_id)
+        )
+    ).one_or_none()
+    if row is None or row[0].status == "revoked":
+        raise AccountNotFoundError(account_id)
+    return row[0], row[1]
+
+
+def _require_detached_account(link: LinkRow, account: AccountRow) -> None:
+    if (
+        link.accounts_observed_at is None
+        or account.detached_at is None
+        or account.detached_at > link.accounts_observed_at
+    ):
+        raise AccountNotDetachedError(account.account_id)
+
+
+async def _has_running_sync(session: AsyncSession, item_id: str) -> bool:
+    return bool(
+        await session.scalar(select(exists().where(SyncRunRow.item_id == item_id, SyncRunRow.status == "running")))
+    )
+
+
+async def _has_queued_sync(session: AsyncSession, item_id: str) -> bool:
+    return bool(await session.scalar(select(exists().where(ItemSyncQueueRow.item_id == item_id))))
+
+
+async def _build_account_deletion_preview(
+    session: AsyncSession, *, link: LinkRow, account: AccountRow
+) -> AccountDeletionPreview:
+    records = union_all(
+        select(
+            literal("transaction").label("record_type"),
+            TransactionRow.date.label("history_date"),
+            TransactionRow.removed.label("removed"),
+        ).where(TransactionRow.account_id == account.account_id),
+        select(
+            literal("investment_transaction").label("record_type"),
+            InvestmentTransactionRow.date.label("history_date"),
+            InvestmentTransactionRow.removed.label("removed"),
+        ).where(InvestmentTransactionRow.account_id == account.account_id),
+        select(
+            literal("balance").label("record_type"),
+            literal(None, type_=SQLDate).label("history_date"),
+            literal(False).label("removed"),
+        ).where(BalanceSnapshotRow.account_id == account.account_id),
+        select(
+            literal("holding").label("record_type"),
+            literal(None, type_=SQLDate).label("history_date"),
+            literal(False).label("removed"),
+        ).where(HoldingSnapshotRow.account_id == account.account_id),
+        select(
+            literal("liability_credit").label("record_type"),
+            literal(None, type_=SQLDate).label("history_date"),
+            literal(False).label("removed"),
+        ).where(LiabilityCreditSnapshotRow.account_id == account.account_id),
+        select(
+            literal("liability_mortgage").label("record_type"),
+            literal(None, type_=SQLDate).label("history_date"),
+            literal(False).label("removed"),
+        ).where(LiabilityMortgageSnapshotRow.account_id == account.account_id),
+        select(
+            literal("liability_student").label("record_type"),
+            literal(None, type_=SQLDate).label("history_date"),
+            literal(False).label("removed"),
+        ).where(LiabilityStudentSnapshotRow.account_id == account.account_id),
+    ).subquery()
+    transaction_history = records.c.record_type.in_(("transaction", "investment_transaction"))
+    stats = (
+        (
+            await session.execute(
+                select(
+                    func.count().filter(records.c.record_type == "transaction").label("transaction_records"),
+                    func.count()
+                    .filter(records.c.record_type == "investment_transaction")
+                    .label("investment_transaction_records"),
+                    func.count().filter(records.c.record_type == "balance").label("balance_snapshot_records"),
+                    func.count().filter(records.c.record_type == "holding").label("holding_snapshot_records"),
+                    func.count()
+                    .filter(records.c.record_type.in_(("liability_credit", "liability_mortgage", "liability_student")))
+                    .label("liability_snapshot_records"),
+                    func.count()
+                    .filter(and_(records.c.record_type == "transaction", records.c.removed.is_(False)))
+                    .label("active_transactions"),
+                    func.count()
+                    .filter(and_(records.c.record_type == "investment_transaction", records.c.removed.is_(False)))
+                    .label("active_investment_transactions"),
+                    func.min(records.c.history_date)
+                    .filter(and_(transaction_history, records.c.removed.is_(False)))
+                    .label("active_earliest_history_date"),
+                    func.max(records.c.history_date)
+                    .filter(and_(transaction_history, records.c.removed.is_(False)))
+                    .label("active_latest_history_date"),
+                    func.min(records.c.history_date).filter(transaction_history).label("earliest_history_date"),
+                    func.max(records.c.history_date).filter(transaction_history).label("latest_history_date"),
+                ).select_from(records)
+            )
+        )
+        .mappings()
+        .one()
+    )
+    balance = await session.scalar(
+        select(BalanceSnapshotRow)
+        .where(BalanceSnapshotRow.account_id == account.account_id)
+        .order_by(BalanceSnapshotRow.captured_at.desc(), BalanceSnapshotRow.id.desc())
+        .limit(1)
+    )
+    latest_sync_run_id = await session.scalar(
+        select(SyncRunRow.run_id)
+        .where(SyncRunRow.item_id == link.item_id)
+        .order_by(SyncRunRow.started_at.desc(), SyncRunRow.run_id.desc())
+        .limit(1)
+    )
+    inventory = AccountInventory(
+        account_id=account.account_id,
+        name=account.name,
+        official_name=account.official_name,
+        mask=account.mask,
+        type=account.type,
+        subtype=account.subtype,
+        iso_currency_code=account.iso_currency_code,
+        last_seen_at=account.updated_at,
+        detached_at=account.detached_at,
+        balance_captured_at=balance.captured_at if balance is not None else None,
+        balance_available=balance.available if balance is not None else None,
+        balance_current=balance.current if balance is not None else None,
+        balance_limit=balance.limit if balance is not None else None,
+        balance_iso_currency_code=balance.iso_currency_code if balance is not None else None,
+        transaction_count=stats["active_transactions"],
+        investment_transaction_count=stats["active_investment_transactions"],
+        earliest_transaction_date=stats["active_earliest_history_date"],
+        latest_transaction_date=stats["active_latest_history_date"],
+    )
+    return AccountDeletionPreview(
+        item_id=link.item_id,
+        accounts_observed_at=link.accounts_observed_at,
+        latest_sync_run_id=latest_sync_run_id,
+        account=inventory,
+        transaction_records=stats["transaction_records"],
+        investment_transaction_records=stats["investment_transaction_records"],
+        balance_snapshot_records=stats["balance_snapshot_records"],
+        holding_snapshot_records=stats["holding_snapshot_records"],
+        liability_snapshot_records=stats["liability_snapshot_records"],
+        earliest_history_date=stats["earliest_history_date"],
+        latest_history_date=stats["latest_history_date"],
     )
 
 

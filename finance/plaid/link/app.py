@@ -20,12 +20,21 @@ from pydantic import BaseModel, Field, ValidationError
 
 from finance.plaid.db.client import InstitutionDetail, PlaidClient, PlaidClientError, PlaidCreds
 from finance.plaid.db.config import MAX_TRANSACTION_DAYS, PlaidWebSettings
-from finance.plaid.db.link_store import ItemSyncClaim, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
+from finance.plaid.db.link_store import (
+    AccountDeletionPreviewChangedError,
+    AccountNotDetachedError,
+    AccountNotFoundError,
+    ItemSyncClaim,
+    ItemSyncQueuedError,
+    PlaidLinkStorage,
+    StoredLink,
+    SyncAlreadyRunningError,
+)
 from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import PlaidApiLike, sync_link, sync_transactions_only
 from finance.plaid.link.webhooks import InvalidPlaidWebhookError, PlaidWebhookVerifier
-from finance.plaid.models import ItemInventory
+from finance.plaid.models import AccountDeletionPreview, ItemInventory
 from util.oidc_login import LoginConfig, install_login
 
 logger = logging.getLogger(__name__)
@@ -350,6 +359,36 @@ def create_app(
     async def account_inventory() -> list[ItemInventory]:
         return await require_storage().list_account_inventory()
 
+    @app.get("/api/links/{item_id}/accounts/{account_id}/deletion-preview")
+    async def account_deletion_preview(
+        item_id: Annotated[str, ApiPath(description="Plaid item_id")],
+        account_id: Annotated[str, ApiPath(description="Plaid account_id")],
+    ) -> AccountDeletionPreview:
+        try:
+            return await require_storage().get_account_deletion_preview(item_id=item_id, account_id=account_id)
+        except (AccountNotFoundError, AccountNotDetachedError, ItemSyncQueuedError, SyncAlreadyRunningError) as exc:
+            raise _account_deletion_error(exc) from exc
+
+    @app.post("/api/links/{item_id}/accounts/{account_id}/delete-local-data")
+    async def delete_account_local_data(
+        item_id: Annotated[str, ApiPath(description="Plaid item_id")],
+        account_id: Annotated[str, ApiPath(description="Plaid account_id")],
+        expected_preview: AccountDeletionPreview,
+    ) -> dict[str, str]:
+        try:
+            await require_storage().delete_detached_account(
+                item_id=item_id, account_id=account_id, expected_preview=expected_preview
+            )
+        except (
+            AccountNotFoundError,
+            AccountNotDetachedError,
+            AccountDeletionPreviewChangedError,
+            ItemSyncQueuedError,
+            SyncAlreadyRunningError,
+        ) as exc:
+            raise _account_deletion_error(exc) from exc
+        return {"status": "deleted"}
+
     @app.get("/api/links/{item_id}")
     async def get_link_state(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> LinkSummary:
         link = await require_storage().get_link(item_id)
@@ -519,6 +558,44 @@ def create_app(
         return {"status": "removed"}
 
     return app
+
+
+def _account_deletion_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, AccountNotFoundError):
+        return HTTPException(404, "The selected Plaid account was not found on this Item.")
+    if isinstance(exc, AccountNotDetachedError):
+        return HTTPException(
+            409,
+            {
+                "error_code": "ACCOUNT_NOT_DETACHED",
+                "error_message": "Delete is available only after a complete Plaid listing confirms this account is detached.",
+            },
+        )
+    if isinstance(exc, SyncAlreadyRunningError):
+        return HTTPException(
+            409,
+            {
+                "error_code": "SYNC_ALREADY_RUNNING",
+                "error_message": "This Item has a sync marked as running. Wait for it to finish, refresh the preview, and try again.",
+            },
+        )
+    if isinstance(exc, ItemSyncQueuedError):
+        return HTTPException(
+            409,
+            {
+                "error_code": "ITEM_SYNC_QUEUED",
+                "error_message": "This Item has a sync queued. Wait for it to finish, refresh the preview, and try again.",
+            },
+        )
+    if isinstance(exc, AccountDeletionPreviewChangedError):
+        return HTTPException(
+            409,
+            {
+                "error_code": "ACCOUNT_PREVIEW_CHANGED",
+                "error_message": "This account or its mirrored records changed after the preview. Refresh and confirm the updated preview.",
+            },
+        )
+    raise exc
 
 
 async def _sync_one_link(

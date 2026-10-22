@@ -251,6 +251,28 @@ function accountHistorySummary(account) {
       : "date span unavailable";
   return `${parts.map(escapeHtml).join(" · ")}<div class="meta muted">${dates}</div>`;
 }
+function accountDeletionConfirmation(preview) {
+  const account = preview.account;
+  const accountType = account.subtype ? `${account.type} / ${account.subtype}` : account.type;
+  const historyRange =
+    preview.earliest_history_date && preview.latest_history_date
+      ? `${preview.earliest_history_date} to ${preview.latest_history_date}`
+      : "no transaction or investment transaction dates";
+  const records = [
+    `${Number(preview.transaction_records).toLocaleString()} transaction records, including removed records`,
+    `${Number(preview.investment_transaction_records).toLocaleString()} investment transaction records`,
+    `${Number(preview.balance_snapshot_records).toLocaleString()} balance snapshots`,
+    `${Number(preview.holding_snapshot_records).toLocaleString()} holding snapshots`,
+    `${Number(preview.liability_snapshot_records).toLocaleString()} liability snapshots`,
+  ];
+  return [
+    `Delete locally mirrored data for ${account.name}${account.mask ? ` ···${account.mask}` : ""} (${accountType})?`,
+    `Account ID: ${account.account_id}\nItem ID: ${preview.item_id}`,
+    `This removes 1 account record and:\n${records.join("\n")}\nHistory date range: ${historyRange}.`,
+    "The Item, access-token Secret, shared investment security reference rows, and audit records stay. Retained API audit payloads may include multiple accounts, so this is not complete erasure.",
+    "A later Plaid sync can import this account again if Plaid returns it.",
+  ].join("\n\n");
+}
 function itemSyncSummary(item) {
   const syncAt = item.latest_sync_finished_at || item.latest_sync_started_at;
   if (item.latest_sync_status === "running") return `Latest sync in progress since ${escapeHtml(displayTime(syncAt))}`;
@@ -263,7 +285,7 @@ async function refreshInventory() {
   const tbody = document.getElementById("account-inventory");
   tbody.innerHTML = "";
   if (items.length === 0) {
-    tbody.innerHTML = '<tr><td class="empty" colspan="4">No linked Items.</td></tr>';
+    tbody.innerHTML = '<tr><td class="empty" colspan="5">No linked Items.</td></tr>';
     return;
   }
   for (const item of items) {
@@ -276,7 +298,7 @@ async function refreshInventory() {
     const header = document.createElement("tr");
     header.className = "inventory-item";
     header.innerHTML = `
-      <td colspan="4">
+      <td colspan="5">
         <div class="name">${escapeHtml(item.label || item.institution_name || item.item_id)}</div>
         <div class="meta muted">${escapeHtml(item.institution_name || "Institution unknown")} · Item: ${escapeHtml(
           item.item_id
@@ -289,7 +311,7 @@ async function refreshInventory() {
       const message = item.accounts_observed_at
         ? `Plaid returned no accounts in the last complete listing at ${displayTime(item.accounts_observed_at)}.`
         : "No account rows are recorded; membership is unknown until a complete listing succeeds.";
-      empty.innerHTML = `<td class="empty" colspan="4">${escapeHtml(message)}</td>`;
+      empty.innerHTML = `<td class="empty" colspan="5">${escapeHtml(message)}</td>`;
       tbody.appendChild(empty);
       continue;
     }
@@ -303,6 +325,8 @@ async function refreshInventory() {
             ? "Membership not yet confirmed"
             : "Present in last complete listing";
       const row = document.createElement("tr");
+      row.dataset.item = item.item_id;
+      row.dataset.account = account.account_id;
       row.innerHTML = `
         <td>
           <div class="name">${escapeHtml(account.name)}${account.mask ? ` ···${escapeHtml(account.mask)}` : ""}</div>
@@ -316,7 +340,12 @@ async function refreshInventory() {
           <div class="meta muted">Last seen: ${escapeHtml(displayTime(account.last_seen_at))}</div>
         </td>
         <td>${accountBalanceSummary(account, membership)}</td>
-        <td>${accountHistorySummary(account)}</td>`;
+        <td>${accountHistorySummary(account)}</td>
+        <td>${
+          membership === "detached"
+            ? '<button type="button" class="danger" data-action="delete-account-data">Delete local data</button>'
+            : `<span class="muted">${membership === "current" ? "Available after detachment" : "Unavailable until membership is confirmed"}</span>`
+        }</td>`;
       tbody.appendChild(row);
     }
   }
@@ -435,6 +464,35 @@ document.getElementById("links").addEventListener("click", async (event) => {
       openPlaid(pending);
     }
   );
+});
+document.getElementById("account-inventory").addEventListener("click", async (event) => {
+  const button = event.target.closest('button[data-action="delete-account-data"]');
+  if (!button) return;
+  const row = button.closest("tr[data-item][data-account]");
+  if (!row) return;
+  const { item, account } = row.dataset;
+  await withStatus("Preparing account deletion preview...", async () => {
+    try {
+      const preview = await apiFetch(
+        `/api/links/${encodeURIComponent(item)}/accounts/${encodeURIComponent(account)}/deletion-preview`
+      );
+      if (!window.confirm(accountDeletionConfirmation(preview))) {
+        setStatus("Account data was not deleted.");
+        return;
+      }
+      await apiFetch(
+        `/api/links/${encodeURIComponent(item)}/accounts/${encodeURIComponent(account)}/delete-local-data`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(preview),
+        }
+      );
+      setStatus(`Deleted locally mirrored data for ${preview.account.name}.`);
+    } finally {
+      await refreshData();
+    }
+  });
 });
 document.getElementById("products").addEventListener("change", setFormEnabled);
 document.getElementById("institution-results").addEventListener("click", async (event) => {
