@@ -8,7 +8,7 @@ import logging
 import re
 import sys
 from collections.abc import AsyncIterator
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from importlib import resources
 from typing import Annotated, Literal
 from uuid import UUID
@@ -16,11 +16,17 @@ from uuid import UUID
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Path as ApiPath, Query, Request
 from fastapi.responses import HTMLResponse, Response
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from finance.plaid.db.client import InstitutionDetail, PlaidClient, PlaidClientError, PlaidCreds
 from finance.plaid.db.config import MAX_TRANSACTION_DAYS, PlaidWebSettings
-from finance.plaid.db.link_store import ItemSyncClaim, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
+from finance.plaid.db.link_store import (
+    ItemInventory,
+    ItemSyncClaim,
+    PlaidLinkStorage,
+    StoredLink,
+    SyncAlreadyRunningError,
+)
 from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import PlaidApiLike, sync_link, sync_transactions_only
@@ -146,44 +152,6 @@ class LinkSummary(BaseModel):
     # one of them is a problem.
     addable_products: list[Product] | None
     sync_running: bool
-
-
-class AccountInventoryAccount(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    account_id: str
-    name: str
-    official_name: str | None
-    mask: str | None
-    type: str
-    subtype: str | None
-    iso_currency_code: str | None
-    last_seen_at: datetime
-    detached_at: datetime | None
-    balance_captured_at: datetime | None
-    balance_available: float | None
-    balance_current: float | None
-    balance_limit: float | None
-    balance_iso_currency_code: str | None
-    transaction_count: int
-    investment_transaction_count: int
-    earliest_transaction_date: date | None
-    latest_transaction_date: date | None
-
-
-class AccountInventoryItem(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    item_id: str
-    label: str | None
-    institution_name: str | None
-    status: str
-    accounts_observed_at: datetime | None
-    last_successful_sync_at: datetime | None
-    latest_sync_status: str | None
-    latest_sync_started_at: datetime | None
-    latest_sync_finished_at: datetime | None
-    accounts: list[AccountInventoryAccount]
 
 
 def _login_config(settings: PlaidWebSettings) -> LoginConfig:
@@ -384,11 +352,8 @@ def create_app(
         ]
 
     @app.get("/api/account-inventory")
-    async def account_inventory() -> list[AccountInventoryItem]:
-        return [
-            AccountInventoryItem.model_validate(item, from_attributes=True)
-            for item in await require_storage().list_account_inventory()
-        ]
+    async def account_inventory() -> list[ItemInventory]:
+        return await require_storage().list_account_inventory()
 
     @app.get("/api/links/{item_id}")
     async def get_link_state(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> LinkSummary:

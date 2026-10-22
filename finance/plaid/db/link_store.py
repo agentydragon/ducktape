@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import and_, delete, exists, func, literal, or_, select, text, union_all, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -96,8 +96,9 @@ class StoredLink:
     synced_transaction_count: int = 0
 
 
-@dataclass(frozen=True)
-class StoredAccountInventory:
+class AccountInventory(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     account_id: str
     name: str
     official_name: str | None
@@ -118,8 +119,9 @@ class StoredAccountInventory:
     latest_transaction_date: date | None
 
 
-@dataclass(frozen=True)
-class StoredItemInventory:
+class ItemInventory(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     item_id: str
     label: str | None
     institution_name: str | None
@@ -129,7 +131,7 @@ class StoredItemInventory:
     latest_sync_status: str | None
     latest_sync_started_at: datetime | None
     latest_sync_finished_at: datetime | None
-    accounts: tuple[StoredAccountInventory, ...]
+    accounts: tuple[AccountInventory, ...]
 
 
 @dataclass
@@ -138,7 +140,7 @@ class _ItemInventoryAccumulator:
     latest_sync_status: str | None
     latest_sync_started_at: datetime | None
     latest_sync_finished_at: datetime | None
-    accounts: list[StoredAccountInventory] = field(default_factory=list)
+    accounts: list[AccountInventory] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -325,7 +327,7 @@ class PlaidLinkStorage:
                 for row, earliest_transaction_date, latest_transaction_date, synced_transaction_count in rows
             ]
 
-    async def list_account_inventory(self) -> list[StoredItemInventory]:
+    async def list_account_inventory(self) -> list[ItemInventory]:
         activity = union_all(
             select(
                 TransactionRow.account_id.label("account_id"),
@@ -423,7 +425,7 @@ class PlaidLinkStorage:
             if account is None:
                 continue
             grouped[link.item_id].accounts.append(
-                StoredAccountInventory(
+                AccountInventory(
                     account_id=account.account_id,
                     name=account.name,
                     official_name=account.official_name,
@@ -445,7 +447,7 @@ class PlaidLinkStorage:
                 )
             )
         return [
-            StoredItemInventory(
+            ItemInventory(
                 item_id=item.link.item_id,
                 label=item.link.label,
                 institution_name=item.link.institution_name,
