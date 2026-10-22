@@ -37,12 +37,27 @@ because the generated Crossplane connection Secrets expose `attribute.key`,
 while ESO requested a property named `key`. The Team fallback fix had already
 been applied, and a later event confirmed the provider requested Team creation.
 
-This follow-up creates a top-level `ducktape` organization, associates all Keys
-through typed references, and reads `attribute.key` from each provider
-connection Secret. The user explicitly accepted key rotation and a brief
-outage if reassociation requires replacement. After the manifests are
-reconciled, verify the Organization, all Team and Key resources become Synced,
-exported Secrets become Ready,
-`litellm-crossplane-keys` becomes Ready, and then
-`litellm-buildbuddy-sync` applies and becomes Ready. Until then, BuildBuddy sync
-is blocked on its dependency.
+The first recovery attempt created a top-level `ducktape` organization and
+associated every Key through typed references. A live in-pod probe has since
+shown that this route is unavailable on the deployed LiteLLM license:
+`GET /organization/info?organization_id=ducktape` returns HTTP 403 with the
+detail that Organizations are only available to LiteLLM Enterprise users. The
+running LiteLLM process also reports `LITELLM_LICENSE` unset. The organization
+resource therefore cannot become usable here, regardless of key rotation.
+
+The keys must remain at the root level. The currently installed
+`provider-litellm:v2.1.0` has a separate compatibility bug for that shape: its
+read path leaves computed `organization_id` unknown when LiteLLM omits it.
+Provider PR [#1](https://github.com/TheCodingSheikh/provider-litellm/pull/1)
+adds the required unknown-to-null resolution and a regression test; it is still
+open. Remove the Organization resource and Key references after a provider
+package containing that fix is available and pinned. Key rotation is acceptable
+if reconciliation requires it, though retaining the existing keys is
+preferable if the provider can observe them in place.
+
+At the latest live check, `litellm-crossplane-keys` is Ready and has applied the
+current artifact, but the Organization is Synced=False and all twelve Keys are
+Synced=False. `litellm-buildbuddy-sync` is still Progressing. A successful
+Kustomization apply therefore does not mean the key migration or BuildBuddy
+sync is healthy; confirm all Key resources and exported Secrets, then confirm
+the BuildBuddy Terraform reconciliation after the provider fix lands.
