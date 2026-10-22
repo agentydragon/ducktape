@@ -22,17 +22,25 @@ import uuid
 _NAMESPACE = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
 
 
-def invocation_id(*, run_id: str, attempt: str, role: str) -> uuid.UUID:
-    return uuid.uuid5(_NAMESPACE, f"ducktape/bazel-ci/{run_id}/{attempt}/{role}")
+def invocation_id(*, run_id: str, attempt: str, role: str, scope: str = "") -> uuid.UUID:
+    identity = f"ducktape/bazel-ci/{run_id}/{attempt}/{role}"
+    if scope:
+        identity = f"{identity}/{scope}"
+    return uuid.uuid5(_NAMESPACE, identity)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--attempt", required=True)
-    parser.add_argument("--role", required=True, choices=["test", "build", "nix-wheel-build"])
+    parser.add_argument(
+        "--role", required=True, choices=["test", "build", "nix-wheel-build", "release-unstamped", "release-stamped"]
+    )
+    parser.add_argument("--scope", default="", help="Optional scope to separate parallel invocations of one role")
     args = parser.parse_args()
-    print(invocation_id(run_id=args.run_id, attempt=args.attempt, role=args.role))
+    if args.role.startswith("release-") and not args.scope:
+        parser.error("--scope is required for release invocations")
+    print(invocation_id(run_id=args.run_id, attempt=args.attempt, role=args.role, scope=args.scope))
 
 
 if __name__ == "__main__":
