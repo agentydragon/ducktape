@@ -20,7 +20,7 @@ import SnapshotDetailPage from "../../src/pages/SnapshotDetailPage";
 
 import { definitionData } from "./fixtures/definition";
 import { critiqueIssues, fileContent, fps, gradingEdges, tps } from "./fixtures/files";
-import { llmRequests } from "./fixtures/llm_requests";
+import { llmChatRequests, llmRequests } from "./fixtures/llm_requests";
 import { criticRunDetail, runs } from "./fixtures/runs";
 import { fileTree, snapshotDetail } from "./fixtures/snapshot";
 import { RunModalContext } from "../../src/lib/runModalContext";
@@ -87,6 +87,15 @@ const pages: Record<string, ScenarioPage> = {
     props: {
       requests: llmRequests,
       initialExpanded: [2],
+    },
+  },
+
+  // Raw Chat Completions request/response JSON and the upstream error-body JSON.
+  LLMRequestsChatCompletions: {
+    component: LLMRequestViewer,
+    props: {
+      requests: llmChatRequests,
+      initialExpanded: [4, 5],
     },
   },
 

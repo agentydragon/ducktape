@@ -172,3 +172,52 @@ export const llmRequests = [
     created_at: "2025-01-20T10:02:00Z",
   },
 ];
+
+/** Raw JSON viewer states for the Chat Completions API shape, including an upstream error body. */
+export const llmChatRequests = [
+  {
+    id: 4,
+    model: "gpt-4o-mini",
+    api_shape: "chat_completions",
+    request_body: {
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "Answer clearly and briefly." },
+        { role: "user", content: "What is the capital of France?" },
+      ],
+      temperature: 0.2,
+    },
+    response_body: {
+      id: "chatcmpl_abc123",
+      object: "chat.completion",
+      model: "gpt-4o-mini-2025-01-20",
+      choices: [{ index: 0, message: { role: "assistant", content: "Paris." }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 24, completion_tokens: 2, total_tokens: 26 },
+    },
+    response_error_body: null,
+    error: null,
+    latency_ms: 412,
+    created_at: "2025-01-20T10:03:00Z",
+  },
+  {
+    id: 5,
+    model: "gpt-4o-mini",
+    api_shape: "chat_completions",
+    request_body: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "Generate a very long response." }],
+    },
+    response_body: null,
+    response_error_body: {
+      error: {
+        message: "Request exceeds the context window.",
+        type: "invalid_request_error",
+        param: null,
+        code: "context_length_exceeded",
+      },
+    },
+    error: "Request failed with status 400",
+    latency_ms: 89,
+    created_at: "2025-01-20T10:04:00Z",
+  },
+];
