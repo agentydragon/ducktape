@@ -18,6 +18,10 @@ py_library(
 py_library(
     name = "proxy",
     srcs = ["proxy.py"],
+    data = [
+        "capture-storage-budget.promql",
+        "capture-storage-budget-inputs-missing.promql",
+    ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cilium",
@@ -39,6 +43,7 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

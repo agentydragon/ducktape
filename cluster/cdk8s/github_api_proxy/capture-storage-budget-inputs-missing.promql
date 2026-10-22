@@ -1,0 +1,3 @@
+absent(github_api_proxy:capture_collection_physical_storage_budget:ratio{
+  namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"
+})
