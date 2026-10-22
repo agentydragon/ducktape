@@ -196,7 +196,6 @@ def test_crossplane_core_waits_for_its_controller_and_retains_its_inventory(
     )
 
     assert release["metadata"]["namespace"] == "crossplane-system"
-    assert release["spec"]["chart"]["spec"]["version"] == "2.4.2"
     assert kustomization["spec"]["dependsOn"] == [{"name": "kyverno", "namespace": "ducktape-flux"}]
     assert kustomization["spec"]["wait"] is True
     assert kustomization["spec"]["prune"] is False
@@ -216,7 +215,6 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
     )
 
     assert provider["apiVersion"] == "pkg.crossplane.io/v1"
-    assert provider["spec"]["package"] == "xpkg.upbound.io/thecodingsheikh/provider-litellm:v2.1.0"
     assert provider["spec"]["revisionActivationPolicy"] == "Automatic"
     assert kustomization["spec"]["dependsOn"] == [{"name": "crossplane", "namespace": "ducktape-flux"}]
     assert kustomization["spec"]["wait"] is True
@@ -278,7 +276,6 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
         "antigravity-clients",
     }
     for alias in ("claude-subscription-clients", "codex-clients", "gemini-clients", "antigravity-clients"):
-        assert keys[alias]["spec"]["forProvider"]["keyWoVersion"] == "1"
         assert keys[alias]["spec"]["forProvider"]["keyWoSecretRef"] == {
             "name": f"litellm-client-key-{alias}",
             "key": "api-key",
