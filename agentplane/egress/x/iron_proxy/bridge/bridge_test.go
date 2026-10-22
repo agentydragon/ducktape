@@ -23,7 +23,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	transformv1 "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"
@@ -90,17 +91,19 @@ type testBridge struct {
 func newTestBridge(t *testing.T) testBridge {
 	t.Helper()
 	reviews := &tokenReviews{valid: map[string]bool{testToken: true}}
-	resolver, err := auth.NewResolver(reviews, testAudience, []string{"workloads"})
+	// Revocation is controlled at the TokenReview boundary; review each call rather than
+	// reusing the production resolver's bounded acceptance cache.
+	resolver, err := auth.NewResolver(reviews, testAudience, []string{"workloads"}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	index := policy.NewIndex(time.Hour)
 	now := time.Now()
-	for _, kind := range []policy.Kind{policy.Credentials, policy.PolicySets, policy.Bindings, policy.Secrets} {
-		index.RecordCycle(kind, now)
+	for _, kind := range []reader.Kind{policy.Credentials, reader.PolicySets, reader.PolicyBindings, policy.Secrets} {
+		index.Freshness.RecordCycle(kind, now)
 	}
-	index.MarkSynced()
+	index.Freshness.MarkSynced()
 	index.PutCredential(resources.Credential{
 		Name:   "api",
 		Source: resources.SecretKey{Name: "keys", Key: "api"},
@@ -110,7 +113,7 @@ func newTestBridge(t *testing.T) testBridge {
 		},
 	})
 	index.PutSecret(resources.NewSecret("keys", map[string]string{"api": "real-api-secret"}))
-	index.PutPolicySet(&policyapi.PolicySet{
+	index.Rules.PutPolicySet(&policyapi.PolicySet{
 		ObjectMeta: metav1.ObjectMeta{Name: "egress", Namespace: "policies"},
 		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{
 			Type:          resources.EgressRuleType,
@@ -120,7 +123,7 @@ func newTestBridge(t *testing.T) testBridge {
 			CredentialRef: &policyapi.CredentialRef{Name: "api"},
 		}}},
 	})
-	index.PutBinding(&policyapi.PolicyBinding{
+	index.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: "policies"},
 		Spec: policyapi.PolicyBindingSpec{
 			Subject:    policyapi.ServiceAccountRef{Namespace: "workloads", Name: "runner"},
@@ -468,7 +471,7 @@ func TestTransformRequestReadinessRejectsBeforeTokenReview(t *testing.T) {
 
 func TestTransformRequestRequiresAvailablePolicyIndex(t *testing.T) {
 	lab := newTestBridge(t)
-	lab.index.MarkDraining()
+	lab.index.Freshness.MarkDraining()
 	response, err := lab.client.TransformRequest(context.Background(), &transformv1.TransformRequestRequest{
 		Request: &transformv1.HttpRequest{
 			Method: http.MethodConnect,

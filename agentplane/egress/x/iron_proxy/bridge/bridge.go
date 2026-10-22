@@ -22,7 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	transformv1 "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
 
@@ -36,7 +36,7 @@ const (
 )
 
 // Options are the Agentplane authorities the adapter delegates to. Ready can add a component-local
-// readiness gate; Policy.Available remains mandatory regardless of that callback.
+// readiness gate; Policy.Freshness.Available remains mandatory regardless of that callback.
 type Options struct {
 	Identity *auth.Resolver
 	Policy   *policy.Index
@@ -194,7 +194,7 @@ func (b *Bridge) available() bool {
 	if b.ready != nil && !b.ready() {
 		return false
 	}
-	return b.policy.Available(time.Now())
+	return b.policy.Freshness.Available(time.Now())
 }
 
 func (b *Bridge) authenticate(ctx context.Context, headers http.Header, previous *tunnelState) (tunnelState, decision.Reason, int) {

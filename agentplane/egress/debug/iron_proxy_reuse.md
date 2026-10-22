@@ -1,10 +1,10 @@
 # iron-proxy reuse comparison
 
-2026-10-18. Compare Agentplane [PR #10816](https://github.com/agentydragon/ducktape/pull/10816)
-at `98438a446d502d86d76c348040d8a41547148a63` with iron-proxy
+Compare Agentplane `devel` at `dacc69719d6fffc710414ccd9e966861e60fa60a` with iron-proxy
 [`7c6a6e9261f09aa4f4efdb0bc20bdbbfb306603d`](https://github.com/paradigmxyz/iron-proxy/tree/7c6a6e9261f09aa4f4efdb0bc20bdbbfb306603d).
 The executable experiment is [`../x/iron_proxy/`](../x/iron_proxy/README.md).
-It changes no deployed service or production proxy code.
+It changes no deployed service or production proxy code. Upstream `60ed3566` adds only a Go
+toolchain/build update over the pinned Iron revision; its transport and transform sources are unchanged.
 
 ## Recommendation
 
@@ -21,17 +21,17 @@ cleartext HTTP/2, trusted identity state, and draining.
 
 For a replacement candidate, prefer an in-process Agentplane transform plus narrow upstream
 transport/context hooks. The external gRPC adapter below is a working integration route, but adds
-an RPC, a secret-bearing interface, and server-side tunnel state. Keep #10816 as the current
+an RPC, a secret-bearing interface, and server-side tunnel state. Keep the current central proxy as the
 comparison baseline until those remaining transport requirements have executable acceptance.
 This experiment does not establish that a fork is cheaper to maintain, or that either proxy has
 better production throughput, latency, memory use, or security history.
 
 ## Executed comparisons
 
-[BuildBuddy invocation `820cc08f`](https://app.buildbuddy.io/invocation/820cc08f-b1e2-4a5c-a893-ba7fabcea13b)
-passed all four test targets: the original and patched transport comparisons executed; the bridge
-and Agentplane's existing `//agentplane/egress/proxy:proxy_test` passed from cache. The bridge also
-executed successfully in [invocation `3fa68cd9`](https://app.buildbuddy.io/invocation/3fa68cd9-ea0a-4775-a5ae-237886edf3e5).
+[BuildBuddy invocation `27357bf8`](https://app.buildbuddy.io/invocation/27357bf8-7cc7-4acf-8670-8b2ce546041d)
+executed and passed all four test targets against the Agentplane baseline above: the original and
+patched transport comparisons, the gRPC bridge including its Iron CLI subprocess, and the current
+`//agentplane/egress/proxy:proxy_test`. None of the four test results came from cache.
 The patch and the adapter are separate experiments; the patched transport was not combined with
 the bridge in these runs.
 
@@ -59,6 +59,7 @@ limitations, so a green characterization suite is not a claim of replacement par
 - Revoking the controlled TokenReview result refuses the next request on that same tunnel, before
   a second request reaches the upstream.
 
+The bridge uses the shared PolicySet reader and its freshness gate.
 This fixture uses plaintext HTTP/1.1 inside CONNECT and permits loopback only for its local upstream.
 It does not prove real Kubernetes token issuance/revocation, production network isolation, TLS
 bridge interoperability, or full protocol parity.
@@ -92,9 +93,11 @@ The bridge reuses the existing evaluator and authentication resolver. It does no
 PolicySets into a second policy language. The schema is taken from the pinned archive and generated
 in Agentplane's Go graph; the Iron process uses its own generated types across the wire.
 
-CONNECT annotations carry a random lookup handle. The bearer stays in bridge memory and is reviewed
-again for each inner request. The handle is read only from this transform's own trace. Identity is
-not inferred from a source address, client header, or the initial CONNECT host.
+CONNECT annotations carry a random lookup handle. The bearer stays in bridge memory and is resolved
+again for each inner request. The controlled TokenReview fixtures disable the resolver's acceptance
+cache; the production resolver reuses a successful verdict for up to 30 seconds. The handle is read
+only from this transform's own trace. Identity is not inferred from a source address, client header,
+or the initial CONNECT host.
 
 Costs that the prototype leaves open:
 

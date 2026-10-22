@@ -1,7 +1,6 @@
 # iron-proxy reuse experiment
 
-Executable comparisons against the central proxy proposed in
-[PR #10816](https://github.com/agentydragon/ducktape/pull/10816).
+Executable comparisons against the current [central proxy](../../README.md).
 [Findings and remaining gaps](../../debug/iron_proxy_reuse.md) are the decision document.
 
 ```bash
