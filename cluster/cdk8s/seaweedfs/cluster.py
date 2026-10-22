@@ -3,8 +3,8 @@ replication-repair `AdminScript`, the PodDisruptionBudgets the operator CRD has 
 field for, and the `tenants` grant letting the `TENANTS` namespaces' S3 objects reference it.
 
 Replication "001" (1 copy on a different node, same rack) survives a single node loss.
-Volume server PVCs use `local-path-ovh-*`, plus `piraeus-ssd-local` on the rebuilt SSD
-pilot. The two SSD topology groups share one Seaweed placement domain. S3 runs as a standalone
+Volume server PVCs use `local-path-ovh-*`, plus `piraeus-ssd-local` on rebuilt SSD
+nodes. The SSD topology groups share one Seaweed placement domain. S3 runs as a standalone
 deployment (`spec.s3`, not `filer.s3`); the filer stays because S3 needs it for metadata.
 Every component is pinned to OVH nodes: the operator default would let pods land anywhere.
 
@@ -377,6 +377,19 @@ def seaweed(scope: Construct) -> Seaweed:
                     additional_node_selector={_HOSTNAME: "ovh-ns1001419"},
                     # Match both SSD groups without rolling the existing ssd template.
                     # Required anti-affinity also protects this pod when peers are scheduled.
+                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
+                ),
+                "ssd-piraeus-104952": _volume_topology(
+                    rack="hil-ovh-h108b01",
+                    storage="250Gi",
+                    storage_class="piraeus-ssd-local",
+                    disk="ssd",
+                    replicas=1,
+                    max_volume_counts=200,
+                    additional_node_selector={
+                        _HOSTNAME: "ovh-ns104952",
+                        "storage.allegedly.works/piraeus-ready": "true",
+                    },
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
             },

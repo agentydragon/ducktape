@@ -502,6 +502,10 @@ Restore applications in bounded steps:
    and required anti-affinity across old and new volume groups consistent.
    The first `ssd-piraeus` group hard-pins `ovh-ns1001419`; scaling it up without
    changing that placement cannot add a server on the next node.
+   `ssd-piraeus-104952` requests a fresh 250Gi claim and requires both hostname
+   `ovh-ns104952` and `storage.allegedly.works/piraeus-ready=true`. It remains
+   unscheduled until that node passes pool admission and is uncordoned. Its
+   addition preserves the running legacy and first Piraeus server templates.
 3. Verify server registration, metrics and claim/pool placement. Use a bounded
    native canary move plus owned S3 write/read verification before gradual,
    rate-limited redistribution. Existing Seaweed CSI application PVCs and
