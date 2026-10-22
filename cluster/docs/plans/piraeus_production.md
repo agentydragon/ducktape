@@ -75,6 +75,81 @@ tests used FILE_THIN; they do not validate LVM_THIN or its failure behavior.
 Keep the existing file-backed canary separate during transition, and do not
 silently mix backend types or reuse its discard tuning without new measurements.
 
+### Scheduling locality and network budget
+
+Scheduling goal added 2026-10-21: **prefer nodes that already hold a diskful
+copy of a workload's volume, while keeping remote-capable nodes as fallback**.
+This may reduce ordinary I/O over the Talos inter-node links and avoid triggering
+a copy move just because a pod restarted elsewhere. The link bandwidth has not
+been measured here.
+
+Piraeus' `allowRemoteVolumeAccess` controls which nodes may attach a volume; it
+does not express a soft preference for nodes that hold a copy. With remote
+access disabled, Piraeus uses strict PV node affinity, so placement is a hard
+constraint; the optional LINSTOR Affinity Controller keeps that affinity current
+when diskful copies move. With remote access enabled, a pod may attach disklessly
+to a remote copy and the auto-diskful policy can make its node diskful after the
+configured delay. The canary demonstrated this follow-the-pod behavior on two
+Talos nodes with FILE_THIN.
+
+Upstream already provides a separate `linstor-scheduler` Helm chart and
+scheduler extender. It uses LINSTOR placement information to prefer nodes with
+local data, and workloads opt in by setting `schedulerName: linstor`. It is not
+installed by the Piraeus Operator or declared in this repo. This is distinct
+from the LINSTOR Affinity Controller above: that controller keeps PV node
+affinity synchronized with placement, which is a hard constraint rather than a
+soft preference. See the [scheduler chart release notes](https://github.com/piraeusdatastore/helm-charts/releases)
+and [scheduler extender README](https://github.com/piraeusdatastore/linstor-scheduler-extender).
+
+Do not deploy the upstream scheduler image unchanged yet. Its source currently
+pins Kubernetes scheduler libraries at v1.25.6, while this cluster defaults to
+Kubernetes v1.35.1; Kubernetes supports a kube-scheduler matching the API
+server or one minor version older. A supported build/version is therefore the
+main compatibility question. It also needs LINSTOR API client credentials: this
+cluster exposes only the mTLS API on port 3371, while the upstream example uses
+a plain-HTTP in-cluster endpoint. Start with explicit
+`schedulerName: linstor` on a canary workload; the optional admission webhook
+mutates pods cluster-wide and is not needed for a first trial.
+
+Planning estimate (2026-10-21): reserve 1–2 engineering days for a compatibility
+spike. If the scheduler can be rebuilt cleanly against the cluster's Kubernetes
+version, expect another 4–8 days for declarative deployment, mTLS wiring,
+opt-in workload integration, and validation of local preference and remote
+fallback. If upgrading the old scheduler fork requires substantial API work,
+budget 1–3 weeks total. The design must also handle pods with multiple PVCs
+whose copies are on different nodes and tolerate copy placement changing while
+a pod waits to be scheduled.
+
+Before choosing that mechanism or its score, measure Nebula latency and sustained
+throughput between eligible Talos nodes, including during DRBD resync with
+application I/O and shared-disk contention. Existing movement tests used a
+configured `32M` resync rate on small shared-HDD canaries; they do not establish
+available link bandwidth or production resync times. Use the measurements to set
+the locality preference and resync limits, then validate remote fallback and
+local-copy behavior together.
+
+### Storage and replication metrics
+
+LINSTOR exposes Prometheus metrics for configured storage-pool capacity and
+cluster resources/nodes. Scraping pool free/used capacity over time will show
+consumption and growth rate; pool/resource counts can show how many storage
+targets and diskful copies LINSTOR manages. Physical drive inventory/health and
+LVM thin-pool data/metadata headroom still need node-level metrics. DRBD Reactor
+exports per-peer bytes sent/received, bytes currently out of sync, and TCP
+congestion state. Pair those with per-interface Nebula traffic metrics to see
+actual link throughput during resync and ordinary I/O. See the [LINSTOR monitoring
+guide](https://linbit.com/drbd-user-guide/linstor-guide-1_0-en/) and [DRBD Reactor
+metric list](https://github.com/LINBIT/drbd-reactor/blob/master/doc/prometheus.md).
+
+The current canary deliberately keeps the unauthenticated DRBD Reactor endpoint
+on localhost and disables monitoring; it is not scraped. The LINSTOR controller
+also has no ServiceMonitor/PodMonitor in this repo. Before relying on dashboards
+or alerts, expose and scrape the controller and satellite metrics through the
+existing monitoring stack while preserving the controller API TLS/network policy
+and restricting access to the host-networked Reactor endpoint. Confirm the
+per-peer byte metric behavior during a real resync before charting it as a
+transfer rate.
+
 ## Proposed allocation and order
 
 For OVH, replace the evacuated whole-device XFS data filesystem with one
@@ -94,6 +169,17 @@ consumers), not Piraeus files. Keep its current mount name for the first convers
 `seaweedfs-data` on SSD, `local-path-ovh-hdd` on HDD. Names in new LVM objects are
 provider-neutral. Any mount-path rename is a separate coordinated change.
 
+The `localpath` LV is a migration bridge, not a permanent Piraeus requirement.
+Keeping it for the first cut lets local-path consumers remain on their existing
+provisioner while applications move in later changes. It does not preserve their
+bytes through the initial device conversion: each node's consumers still need to
+be evacuated before reformatting the data disk, then restored or rebuilt onto the
+new storage. Omitting the LV is also valid, but requires moving or retiring every
+local-path consumer on that node as part of its first conversion, including any
+Seaweed volume server. Size a temporary LV from measured use and the workloads
+that must remain there, not the sum of PVC requests; keep unallocated VG extents
+for later growth.
+
 XFS retains the current filesystem and project-quota capability; it is not a
 Piraeus requirement. Its inability to shrink means moving capacity from this LV
 to the thin pool later still requires evacuation/recreation or removing the LV
@@ -101,11 +187,132 @@ after its consumers migrate. LVM makes unallocated space reusable without changi
 partition boundaries; it does not make XFS shrinkable. Ext4 is an alternative if
 offline shrinking becomes a requirement, with a separately tested maintenance path.
 
+### SeaweedFS and changing the capacity split
+
+Keep SeaweedFS and Piraeus as separate storage layers for the initial rollout.
+The current Seaweed volume-server PVCs are node-local `local-path` claims (up to
+1800 GiB requested on HDD nodes); Seaweed's `defaultReplication: "001"` supplies
+its own second copy. Seaweed already has `weed shell`'s `volume.move` operation
+to move an individual Seaweed volume between volume servers, so it can drain a
+server by moving only selected volumes when that is sufficient; `volumeServer.evacuate`
+can drain all data from a server. These operations follow Seaweed's own placement
+and replication model ([SeaweedFS shell command reference](https://github.com/seaweedfs/seaweedfs/wiki/weed-shell)).
+Putting each volume-server directory on Piraeus is therefore optional, not a
+prerequisite for moving Seaweed data. The existing S3 and Seaweed CSI services
+remain in use.
+
+If Piraeus becomes the preferred provisioner for new node-local application
+PVCs, make that an explicit choice of new Piraeus StorageClasses on prepared
+nodes. Keep the current SeaweedFS class as the app-data default and migrate
+existing local-path claims individually after data and restore checks; changing
+a StorageClass does not move already-bound PVs.
+
+A one-copy Piraeus class for a Seaweed volume-server PVC is a reasonable later
+pilot if relocating the whole server filesystem is useful. It would be a thin
+LINSTOR volume backed by one diskful replica on one node's LVM thin pool, not a
+separate physical disk and not another Seaweed data replica. Piraeus could move
+that block volume to another node by copying it over the network; moving it can
+transfer the whole server filesystem, and does not by itself make Kubernetes
+prefer the node with its diskful copy. Seaweed's own replication remains
+responsible for surviving loss of the server's disk. Avoid adding a second
+Piraeus copy by default: that would duplicate the Seaweed data server filesystem
+as well as Seaweed's per-volume replication. Keep the current volume-server PVCs
+on `local-path` until an opt-in Piraeus pilot measures resync traffic,
+interruption behavior, and failure recovery.
+
+### Existing local-path workload candidates
+
+The 2026-10-19 PVC inventory is a dated snapshot, not a current migration list.
+For larger node-local workloads, the desired access policy is a dedicated
+single-copy class with `placementCount: 1` and
+`linstor.csi.linbit.com/allowRemoteVolumeAccess: "false"`. Because remote-access
+permission is a StorageClass parameter, remote-capable and strict-local claims
+need separate classes. A strict-local PV's node affinity keeps its pod on the
+node with its diskful volume and avoids remote block I/O. With one diskful copy,
+a node failure loses Piraeus' live copy; recovery must come from application
+replication or backup. Relocating a healthy volume is a separate copy operation
+over the network. For databases with application replicas, use one strict-local
+Piraeus volume per member and rely on the database's own replication; do not add
+a second Piraeus copy by default. Schedule and rate-limit deliberate relocations.
+
+| Workload                 | Snapshot from the inventory                                                                                                     | Migration shape and data-preservation gate                                                                                                                                                                                                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Home Assistant config    | 32 GiB on `optiplex`, `local-path-home-ssd`; hardware-bound to that host.                                                       | Existing VolSync Restic backups go to SeaweedFS, and Home Assistant has its own backup integration. It is a reasonable restore-to-new-PVC candidate after restore validation, but the proposed OVH pools cannot host this node-pinned workload. Add a dedicated Piraeus pool on OptiPlex first; do not use its Talos `/var` as an improvised pool. |
+| Grocy                    | Two 1 GiB household config claims on `ovh-ns103711`, with VolSync backup PVCs on SeaweedFS.                                     | Good first app-data migration candidate: provision a new strict-local PVC, stop/quiesce Grocy for a final copy, restore, run SQLite `PRAGMA integrity_check`, and verify the app before cutover. Existing direct-rsync backups are crash-consistent and can occasionally catch torn SQLite writes, so validate the selected restore point.         |
+| Haku Anki collection     | 2 GiB on `ovh-ns103711`.                                                                                                        | The owner has said this collection is disposable. A future migration can recreate it empty; that statement is not an instruction to delete the live PVC now.                                                                                                                                                                                       |
+| Mimir ingesters          | Two 10 GiB claims, one each on `ovh-ns102453` and `ovh-ns103711`; RF=2, with blocks in SeaweedFS S3.                            | These PVCs hold ingester WAL and recent head data, not merely disposable cache. Migrate one member at a time with Mimir's drain/flush path, verify the survivor and recent queries, then confirm the resulting blocks in S3. A fresh empty claim is only appropriate with an explicitly accepted recent-data loss window.                          |
+| Loki write               | Two 10 GiB claims on separate OVH HDD nodes; write replicas use RF=2 and chunks/index live in SeaweedFS S3.                     | The PVCs hold ingester WAL, so treat them like recent write state. Drain and flush one writer at a time and verify queries before proceeding. Loki backend cache is already `emptyDir`; it does not need a Piraeus PVC.                                                                                                                            |
+| ActivityWatch            | 10 GiB SQLite database on `wyrm2` via `local-path-proxmox`.                                                                     | Not in the initial Talos rollout; Wyrm2/NixOS is a later Piraeus phase. Device importers can rebuild only history still retained on those devices. Preserve and restore the database unless completeness of that source history has been checked.                                                                                                  |
+| ClickHouse               | Two 500 GiB retained data claims on separate HDD nodes; one shard with two ClickHouse replicas, plus three 2 GiB Keeper claims. | Large, non-cache state. If moved, give each ClickHouse member one strict-local Piraeus volume and use ClickHouse replication to rebuild/validate one member at a time. Keep Keeper quorum healthy during the move and confirm queries before advancing; avoid duplicating ClickHouse's replica with Piraeus replication by default.                |
+| PostgreSQL/CNPG replicas | Multiple per-instance claims across local-path SSD/HDD classes.                                                                 | Treat each database separately because backup configuration and recovery paths vary. A plausible target is one strict-local Piraeus volume per CNPG member, with controlled switchover/rebuild and each cluster's configured backup/WAL recovery gate verified first.                                                                              |
+| Valkey replicas          | Multiple small per-member claims; the inventory includes Forgejo, Langfuse, and OCI-cache instances.                            | Decide per instance whether its contents are rebuildable cache or meaningful persisted state. For replicated instances, use one strict-local Piraeus volume per member and validate application replication or restore; do not assume that two Valkey pods are a backup.                                                                           |
+
+These classifications come from the [dated PVC inventory](../../debug/piraeus_inventory_2026_10_19/pv-consumers.tsv)
+and current checked-in workload definitions, including [Mimir](../../cdk8s/monitoring/mimir.py),
+[Loki](../../cdk8s/monitoring/loki.py), [ActivityWatch](../../cdk8s/activitywatch/app.py),
+[Grocy](../../cdk8s/grocy/app.py), [Home Assistant](../../cdk8s/home_assistant/app.py),
+and [ClickHouse](../../cdk8s/clickhouse/installation.py). Refresh live placement,
+actual bytes used, backup restoreability and app replication health before turning
+any candidate into a migration sequence.
+
+The local-path PVC requests are not disk quotas or reservations: they are
+directories sharing the node's XFS filesystem. In particular, an 1800 GiB
+Seaweed claim does not mean 1800 GiB is occupied, and the declared local-path
+requests can exceed the physical filesystem. Base any future capacity split on
+measured bytes, growth and restore headroom, Seaweed's replica placement, and
+each node's other consumers, rather than adding PVC request sizes.
+
+Moving application data from SeaweedFS to Piraeus and freeing one node's
+Seaweed-backed disk are separate steps. The first reduces Seaweed's live dataset
+only after cutover and cleanup; it does not resize the Seaweed server PVC or the
+XFS/localpath LV. Seaweed `volume.move` or `volumeServer.evacuate` can relocate
+server-side data to peer servers and clear a node, but does not reduce the
+cluster-wide Seaweed dataset.
+
+Treat capacity transfer as a staged node maintenance operation, not a PVC
+shrink:
+
+- Kubernetes does not support shrinking a bound PVC ([Persistent Volumes
+  documentation](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#expanding-persistent-volumes-claims)).
+  LINSTOR can shrink a volume definition when its storage layers support it, but
+  only after shrinking the filesystem safely ([LINSTOR User Guide](https://linbit.com/drbd-user-guide/linstor-guide-1_0-en/));
+  that lower-level capability does not make CSI PVC shrink a supported
+  Kubernetes workflow. Migrate data to a newly sized PVC when the requested
+  Kubernetes capacity needs to go down.
+- LVM thin pools can be extended but not reduced in size. Reclaiming blocks
+  inside a thin pool can make them reusable by its thin volumes when discard is
+  supported and propagated; it does not release the pool's physical VG extents
+  to the `localpath` LV. Do not size the initial pool on the assumption that it
+  can later be shrunk ([LVM thin-pool administration](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/7/html/logical_volume_manager_administration/lv)).
+- For this proposed VG layout, start with a conservative thin pool and leave
+  free VG extents as the flexible reserve. Grow the pool from that reserve as
+  Piraeus demand is demonstrated. To move more disk from the legacy XFS LV into
+  Piraeus, first evacuate all of that node's local-path consumers. Seaweed data
+  can be moved or evacuated with Seaweed's own placement/replication tools;
+  other state needs its own migration and restore gate. If no local-path users
+  remain, unmount and remove the whole `localpath` LV, then extend the Piraeus
+  thin pool from the extents returned to the VG. This later capacity handoff
+  does not reformat the physical disk or recreate the PV/VG; only the first
+  conversion from today's whole-device XFS filesystem to LVM requires evacuating
+  data and recreating the disk layout. If some local-path use remains, XFS cannot
+  be shrunk: evacuate it, remove the old LV, create a smaller XFS LV, and restore
+  the remaining users. That partial handoff needs temporary capacity or an
+  offline maintenance window. Thin-pool growth is one-way, so retain some free
+  VG extents unless the larger pool size has been accepted.
+
+If retained, the proposed Talos `localpath` LV remains XFS so current project-quota
+behavior is preserved. Choosing ext4 could enable an offline filesystem shrink,
+but would add an untested filesystem and maintenance procedure; it still would
+not enable shrinking a Piraeus PVC or its LVM thin pool.
+
 All sizes below are **GiB**, including the converted physical device capacities.
 Thin-data sizes remain starting acceptance budgets, not final workload sizing or
 a promise that Forgejo's current 200 GiB claim fits. Reserve 1 GiB thin metadata
 and 1 GiB metadata spare initially; free extents are approximate after that allowance
 and before small VG overhead. Recheck actual geometry during allocation.
+The `localpath` column is the staged-conversion option; if a node can retire all
+local-path users in its first cut, those proposed extents stay as VG reserve until
+thin-pool growth is justified. They are not an automatic increase to the pool.
 
 | Talos hardware / nodes                     | Data disk GiB |   `localpath` LV GiB | `piraeus` thin data GiB |  Approximate free VG GiB | Decision                                                                         |
 | ------------------------------------------ | ------------: | -------------------: | ----------------------: | -----------------------: | -------------------------------------------------------------------------------- |
@@ -186,12 +393,84 @@ with `--mode metal --strict`. This checks syntax/config constraints, not runtime
 device matching, provisioning or Talos/LINSTOR interoperability.
 
 Talos owns PV/VG membership, activation, the ordinary `localpath` LV and its
-filesystem/mount. A separately reviewed bootstrap creates `data_ssd/piraeus` or
-`data_hdd/piraeus` with the fixed initial thin-data/metadata budgets. Talos's
-`LVMLogicalVolumeConfig` supports ordinary/RAID LVs, not thin-pool creation;
-do not declare the thin pool as a linear LV. LINSTOR owns the thin volumes inside
-that pool. Verify shared-VG discovery, locking, reboot ordering and reconciliation
-on disposable storage before using this division of ownership.
+filesystem/mount. Creating and growing `data_ssd/piraeus` or `data_hdd/piraeus`
+with the initial thin-data/metadata budgets needs a separate supported lifecycle.
+Talos's `LVMLogicalVolumeConfig` supports ordinary/RAID LVs, not thin-pool
+creation; do not declare the thin pool as a linear LV. LINSTOR owns the thin
+volumes inside that pool. Prove shared-VG discovery, locking, reboot ordering
+and reconciliation on disposable storage before using this division of ownership.
+
+Retiring `localpath` is not a single machine-config deletion. First stop or
+migrate every host-path consumer, then remove its `UserVolumeConfig` so Talos
+unmounts the user volume and drops its mount/volume status. Remove the
+`LVMLogicalVolumeConfig` so Talos stops reconciling the LV, then explicitly run
+`talosctl wipe lv data_hdd/localpath` (or the matching SSD VG/LV) to delete the
+on-disk LV and release its extents. Removing the user-volume config alone leaves
+the LV data intact. `talosconfig` supplies `talosctl`'s client context and
+credentials; the machine-config declarations themselves remain owned by the
+checked-in Terraform source and must be removed there to prevent re-creation.
+The LV wipe leaves the PV and VG intact. Extending the LINSTOR thin pool from
+the freed extents is a separate operation.
+
+#### Growing the prepared thin pool
+
+At the LVM layer, `lvextend` grows an existing thin pool by allocating VG free
+extents to its data LV; LVM also extends its metadata LV when needed. Check VG
+free space before the change and retain the agreed reserve; do not consume all
+free extents by default. This changes the backing capacity available for thin
+volumes. It does not change any LINSTOR volume definition or Kubernetes PVC
+request. Each node has its own VG and thin pool, so growing one adds placement
+capacity on that node only; repeat for other nodes as their own capacity needs
+justify it.
+
+Talos 1.14 can declaratively grow ordinary LVs by raising `maxSize`, but its
+`LVMLogicalVolumeConfig` supports only `linear`, `raid0`, `raid1`, and `raid10`
+types. Its `LVMService` RPCs remove LVs/VGs/PVs; it does not expose an operation
+to extend a thin pool. `talosconfig` therefore cannot request this resize through
+`talosctl`. The proposed Piraeus `lvmThinPool` entry registers the named pool if
+it already exists; it has no desired-size field in this mode. The current design
+has no supported, declarative owner for thin-pool creation or growth on Talos.
+Before production conversion, either add a Talos-supported thin-pool lifecycle
+or choose a different storage ownership/layout that has one. Do not treat a
+manual host command or an unreviewed privileged Kubernetes workload as the
+operational solution.
+
+After extending, verify the new thin-pool size and inspect data and metadata
+usage through a supported status/metrics surface; then verify LINSTOR reports the
+new storage-pool capacity and remains healthy without re-registering the pool.
+The LVM docs warn to extend data and metadata before either reaches 100%. Prove
+the operation with an existing LINSTOR resource in the canary, including its
+availability during the change and the time LINSTOR takes to observe the updated
+capacity. Do not enable automatic extension until Talos ownership, metadata/data
+alerts, and protection of the shared VG reserve have been demonstrated together.
+
+#### What upstream documents for Talos
+
+The [Piraeus Talos guide](https://piraeus.io/docs/v2/how-to/talos/) is a guide to
+loading DRBD and adapting the Satellite deployment to Talos. It calls out the
+`dm-thin-pool` kernel module for LVM_THIN, but does not describe a Talos-native
+PV/VG/thin-pool creation or resize lifecycle. The
+[Talos 1.14 LVM guide](https://docs.siderolabs.com/talos/v1.14/configure-your-talos-cluster/storage-and-disk-management/lvm)
+documents PVs, VGs and ordinary logical volumes; its supported LV types do not
+include thin pools.
+
+Piraeus's
+[`LinstorSatelliteConfiguration` reference](https://piraeus.io/docs/v2/reference/linstorsatelliteconfiguration/)
+documents two relevant paths: register an already existing VG/thin pool, or
+initialize backing storage from `source.hostDevices` with creation arguments.
+The latter is initialization from raw devices, not a desired-size declaration
+for a pool Talos already manages. Existing-pool registration has no capacity
+field, so it cannot declare or grow the pool. In the upstream material reviewed,
+there is no end-to-end recipe for this plan's shared Talos-managed VG, ordinary
+localpath LV, and Piraeus LVM_THIN pool lifecycle.
+
+A [Piraeus maintainer response](https://github.com/piraeusdatastore/piraeus-operator/issues/437)
+describes using a separate provisioning system to maintain the effective storage
+pool, with LINSTOR concerned with the VG/thin-pool it consumes. This supports
+keeping disk/VG/thin-pool lifecycle ownership explicit, but is maintainer guidance
+rather than a Talos integration contract. Unofficial examples that run LVM
+commands from privileged Satellite workloads do not establish a supported or
+safe Talos lifecycle and are not a production recommendation.
 
 Piraeus then registers the prepared pool, for example on SSD nodes:
 
@@ -215,9 +494,10 @@ For HDD use `hdd`, `data_hdd`, and the matching selector. Omit `source.hostDevic
 this is registration of a prepared pool, not permission for Piraeus to initialize
 the disk or legacy LV. The operator's
 [pool reference](https://piraeus.io/docs/v2/reference/linstorsatelliteconfiguration/)
-requires the backing thin pool to exist in this mode. Pool creation/extension
-ownership and repeatable bootstrap are part of the LVM canary deliverable; do not
-claim this registration manifest creates the proposed 64/128 GiB pool itself.
+requires the backing thin pool to exist in this mode. Neither registration nor
+reconciliation declares its capacity. Pool creation and growth ownership and
+repeatable bootstrap are unresolved requirements for the LVM canary; do not
+claim this manifest creates or resizes the proposed 64/128 GiB pool.
 
 For OptiPlex, retain every system partition and its current local-path directory.
 Once an additional SSD is identified, select only that new disk into `data_ssd`,
@@ -283,8 +563,14 @@ testing this design; neither tested three-node two-copy movement or WAN boundari
       Account for control-plane taints and temporarily offline satellites.
 - [ ] **LVM canary:** prove the shared-VG/ordinary-localpath-LV/thin-pool layout,
       repeatable pool bootstrap and ownership on disposable Talos storage before
-      production disk conversion. Verify host LVM reconciliation preserves LINSTOR
-      volumes, locking and activation work across reboot, and mount readiness gates consumers.
+      production disk conversion. Establish a Talos-supported lifecycle for
+      creating and growing the pool. Verify host LVM reconciliation preserves
+      LINSTOR volumes, locking and activation work across reboot, and mount
+      readiness gates consumers.
+      Grow the existing thin pool from VG reserve and from extents released by a
+      retired ordinary LV. Verify data/metadata headroom, existing resource
+      availability, and LINSTOR's refreshed storage-pool capacity while preserving
+      the reserve.
       Arrange that capacity independently of NixOS enrollment or Atlas availability.
 - [ ] **Pool allocation changes:** one node per reviewed destructive conversion;
       record exact device identities, all current consumers, replica/writer state,
