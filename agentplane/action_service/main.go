@@ -362,12 +362,14 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
 	)
 	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Freshness})
-	action_servicepb.RegisterActionServiceServer(grpcServer, api.NewService(requests, hub, c.ActionGroups, admission, policy, api.Submissions{
+	connectionStore := connections.NewStore(db, policy)
+	actionAPI := api.NewService(requests, hub, c.ActionGroups, admission, policy, api.Submissions{
 		Executors: actions, Provider: policies.NewProvider(visibility),
-	}))
+	})
+	action_servicepb.RegisterActionServiceServer(grpcServer, actionAPI)
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests, hub, admission, linkages))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, api.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
-	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connections.NewStore(db, policy), admission, hub))
+	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connectionStore, admission, hub))
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
 	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish
 	// while draining.
@@ -390,6 +392,11 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	// The OAuth provider's redirect to the callback and the authorization server's fetch of the document carry no
 	// bearer, so they are plain HTTP beside the facade.
 	linkages.Mount(routes)
+	if c.OAuth != nil {
+		if err := mountMCPEdge(ctx, routes, c, db, connectionStore, actionAPI, admission); err != nil {
+			return err
+		}
+	}
 	server := &http.Server{Handler: routes, ReadHeaderTimeout: readHeaderTimeout}
 	facade.MountGRPC(server, grpcServer)
 
