@@ -1,0 +1,12 @@
+{
+  "observed_at_utc": "2026-10-22T08:13:32.473806+00:00",
+  "read_scope": "only objects conditionally written by this run",
+  "payload_bytes": 65536,
+  "payload_sha256": "df2400d028eef7782c8960623c41a8d8e3e28905375461e8dedf733d49f8e2cf",
+  "retained_probe_read_after_restart": true,
+  "fresh_probe_write_read_after_restart": true,
+  "three_masters_agreed_after_restart": true,
+  "original_topology_identity_recovered_after_restart": true,
+  "owned_probe_objects_removed": 2,
+  "existing_application_objects_read": false
+}

@@ -1,0 +1,25 @@
+{
+  "observed_at_utc": "2026-10-22T07:54:37.699851+00:00",
+  "evacuated_volume_ids": [867, 868, 869, 870, 871, 872, 873, 874, 875, 876, 877, 878, 879, 880, 881, 882],
+  "source_server": {
+    "name": "seaweedfs-volume-ssd-2",
+    "remaining_volumes": 0,
+    "alive": true,
+    "maintenance": true,
+    "inflight_requests": 0,
+    "request_counters_unchanged_seconds": 40
+  },
+  "survivors": [
+    {
+      "name": "seaweedfs-volume-ssd-0",
+      "volume_locations": 16
+    },
+    {
+      "name": "seaweedfs-volume-ssd-1",
+      "volume_locations": 16
+    }
+  ],
+  "each_evacuated_volume_has_two_locations": true,
+  "replication_dry_run_findings": 0,
+  "fuse_clients_refreshed_and_quiet": true
+}

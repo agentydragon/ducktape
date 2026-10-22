@@ -1,18 +1,68 @@
 # First Piraeus node: execution evidence
 
 Started 2026-10-21 PDT (2026-10-22 UTC). Target: `ovh-ns1001419` only.
-The operator authorized executing the conversion, without an etcd snapshot,
-using existing rehearsal capacity. No production node has been drained, reset
-or repartitioned at this checkpoint. Rehearsal and implementation remain in progress.
+The operator authorized the conversion without an etcd snapshot, using existing
+rehearsal capacity. The off-node CNPG and Seaweed handoffs are complete, with
+their recovery evidence below. No target-node cordon/drain, Talos upgrade/reset,
+or physical data-disk wipe has started. The target has no `piraeus-ready` label;
+no production application PVC has been created on Piraeus. The explicit user
+pause before any Piraeus application restore remains in force.
 
-The operator resumed through node rebuild/storage acceptance, with an explicit
-stop before restoring application data onto Piraeus (step 6 of the execution
-outline). Application placement, replacement claims and restore method will be
-discussed before that step. Preserve application data off-node through this pause.
+## Production handoff checkpoint (2026-10-22 08:20 UTC)
 
-## Production preflight
+The following handoffs moved data to existing off-node storage; they did not
+restore application data to Piraeus.
 
-Kubernetes/Talos observations (application/storage operations remain read-only):
+- **Etcd:** the last observation found all three members healthy at the same
+  applied index; `ovh-ns1001419` was leader. Refresh membership and catch-up
+  immediately before any reboot.
+- **CNPG:** Attic is 2/2 ready, primary `attic-db-2` on `ovh-ns104952`, standby
+  `attic-db-3` on `ovh-ns104963`; the new standby uses an 8 GiB request while
+  the original 2 GiB claims remain unchanged. Study Casino is 2/2 ready,
+  primary `study-casino-db-6` on `ovh-ns104952`, standby
+  `study-casino-db-1` on `ovh-ns104963`; all remaining Study Casino claims stay
+  at 1 GiB. Both target members were removed, their source PVs remain
+  `Released` with `Retain`, and replication lag was zero. See the
+  [CNPG off-node proof](cnpg_offnode_handoff_proof.json).
+- **Seaweed volume server:** all 16 volumes (IDs 867–882) have two locations on
+  the two surviving SSD servers, with no replication dry-run findings. The
+  evacuated source remains alive, empty, and in maintenance. FUSE clients were
+  refreshed; source request counters stayed unchanged for 40 seconds with no
+  in-flight requests. See the
+  [volume evacuation proof](seaweed_volume_evacuation_proof.json).
+- **Seaweed master:** master 2 now uses a temporary 4 GiB HDD-backed claim on
+  `ovh-ns102453`, preserving the original topology identity. All three masters
+  agree on the leader and volume high-water mark; the two surviving master Pod
+  UIDs and StatefulSet template were unchanged. The Seaweed CR stayed at three
+  replicas while its operator was briefly set to zero for the cold state copy;
+  the CR and HelmRelease holds were then removed. Its original source PV remains
+  `Released`/`Retain`. A 64 KiB owned S3 probe was read after restart and a fresh
+  probe write/read also matched. See the
+  [master handoff proof](seaweed_master_handoff_proof.json) and
+  [S3 recovery proof](seaweed_master_s3_recovery_proof.json).
+  BusyBox tar did not preserve directory mtimes during restore; UTC directory
+  mtimes were restored explicitly and all six entries were verified afterward.
+- **Reconciliation holds:** all temporary holds are removed. A direct suspend
+  of the child CNPG Kustomization was reverted by its parent and briefly
+  downscaled the first Attic clone; the original two members stayed healthy.
+  The handoff then used the documented per-resource reconcile annotation on the
+  Cluster. Do not repeat the child-Kustomization suspend approach. The Seaweed
+  handoff separately used resource annotations on its CR and HelmRelease; the
+  operator was restored after the cold copy and the Seaweed CR replica count
+  remained three.
+- **Still gated:** monitoring PR #11512 is merged, but the production Piraeus
+  metrics DaemonSet has desired count 0 and the existing FILE_THIN canary pools
+  are unchanged. Production thin-pool alert delivery and target pool
+  acceptance remain unproven. Do not create an application Piraeus PVC or
+  restore app data until the explicit user pause is lifted.
+
+## Initial production preflight snapshot (2026-10-21)
+
+This is a historical baseline from before the off-node handoffs. Refresh live
+placement, capacity and health before any future operation.
+
+These Kubernetes/Talos observations were captured read-only before application
+handoffs:
 
 - All three OVH control planes were Ready. Etcd members `.16`, `.17`, `.19`
   reported no errors and applied indexes within one entry of each other;
@@ -26,8 +76,8 @@ Kubernetes/Talos observations (application/storage operations remain read-only):
   server 2.0 GB and master state 9.7 kB. These are directory-usage observations,
   not database logical sizes or PVC reservations.
 - The other SSD data filesystems used approximately 31 GB (`104952`) and
-  27 GB (`104963`). Refresh filesystem free space, Seaweed placement and replica
-  health before evacuation; directory totals alone do not authorize a wipe.
+  27 GB (`104963`). This is only a pre-evacuation snapshot; refresh filesystem
+  free space and workload placement before any future disk operation.
 - Piraeus controller/operator/CSI controller run on `ovh-ns102453`, independently
   of the target. Existing satellites are still the two FILE_THIN canary workers.
 - The Seaweed operator's previous exit reported loss of its Kubernetes leader
@@ -109,8 +159,9 @@ unlimited local-path directory; they are not byte-exact filesystem quotas.
 The empty pool's metadata usage was approximately 1.6%; formatting two ext4
 volumes and seeding all four claims used under 2% of the 30 GiB physical data
 pool. Thin allocation does not make pool exhaustion safe. Snapshots also retain
-blocks after the source deletes or discards them. Protected production alerts and first-node acceptance are still required. The
-STORAGE-only aggregate data-pool exhaustion/recovery result is recorded below.
+blocks after the source deletes or discards them. Production alerts and
+first-node acceptance are still required. The STORAGE-only aggregate data-pool
+exhaustion/recovery result is recorded below.
 
 The four initial snapshots exceeded the 120-second wait, then became ready
 without a controller restart. During that interval the Kubernetes API logged
@@ -139,7 +190,8 @@ Filesystem restores and the later Block restores.
 
 - Talos provider 0.12 uses the 1.14 SDK needed by the additional system volumes;
   0.11 uses the 1.13 SDK, whose VolumeConfig validator accepts only STATE,
-  EPHEMERAL and IMAGE-CACHE. The provider upgrade is a separate prerequisite PR.
+  EPHEMERAL and IMAGE-CACHE. The provider 0.12 upgrade merged in PR #11507 and
+  Flux applied it.
 - Only the target's desired Talos configuration removes its old whole-disk
   UserVolumeConfig, selects the verified system disk, adds the five fixed system
   volumes and uses the existing DRBD image schematic. Other nodes keep their
@@ -154,14 +206,21 @@ Filesystem restores and the later Block restores.
 - An explicit empty local-path `nodePathMap` entry denies new local-path claims
   on the target instead of silently placing them on the system disk.
 
-No production Talos/provider configuration has been applied. Direct authenticated `talosctl -e 51.81.245.180 -n 51.81.245.180 version`
-passed from Wyrm2 after earlier timeouts. The temporary relay Pod, ConfigMap and
-NetworkPolicy have been removed; no relay is needed. Four exact source PVs were subsequently changed to Retain with PV/claim UID tests
-and verified readback. No cordon, drain, promotion, claim deletion, node reset or
-disk write has occurred.
-Capacity alert delivery, same-member Seaweed master restoration and the application
-handoff are not yet qualified. Aggregate DATA exhaustion/recovery passed on the lab
-STORAGE-only stack, with the limits recorded below.
+No target Talos machine configuration has been applied. The target's
+`piraeus-ready` label remains absent. The preserved configuration still matches
+the original byte-for-byte. Direct authenticated
+`talosctl -e 51.81.245.180 -n 51.81.245.180 version` passed from Wyrm2 after
+earlier timeouts. The temporary relay Pod, ConfigMap and NetworkPolicy have
+been removed; no relay is needed. All four exact source PVs were changed to
+`Retain` with PV/claim UID guards and verified readback. The CNPG and Seaweed
+off-node handoffs have since completed as recorded above. No target-node
+cordon/drain, Talos reset/upgrade or physical data-disk wipe has occurred.
+
+Same-member Seaweed master recovery and CNPG/volume off-node recovery are now
+qualified. Production Piraeus pool acceptance, alert delivery, and any Piraeus
+application PVC creation/restoration remain outstanding. Aggregate DATA
+exhaustion/recovery passed on the lab STORAGE-only stack, with the limits
+recorded below.
 
 ### Rehearsal friction
 

@@ -1,10 +1,14 @@
 # CNPG handoff for the first Piraeus node
 
-Read-only handoff prepared 2026-10-21. Maintenance is authorized; none of the
-application handoff operations below has been executed at this checkpoint. The
-source PV retention protection has been applied with exact UID guards.
+Off-node application handoffs completed 2026-10-22. This record distinguishes
+the completed move to existing survivor storage from the deferred Piraeus
+restore. No Piraeus application PVC has been created and no app data has been
+restored to Piraeus. The explicit user pause before that work remains in force.
 
-## Observed state
+## Initial preflight snapshot (2026-10-21)
+
+This is the read-only baseline before the handoffs below; it is not current
+placement state.
 
 Read-only live inspection found the CNPG operator image at `1.30.0` and the
 installed `kubectl cnpg` client at `1.30.1`. The Flux owners
@@ -12,146 +16,131 @@ installed `kubectl cnpg` client at `1.30.1`. The Flux owners
 `Suspended=False` at inspection; both must continue to own their Cluster
 resources throughout this procedure.
 
-| Cluster                        | Current members                        | Target member                                                                                                             | Off-target members                                                                   |
+| Cluster                        | Members at snapshot                    | Target member                                                                                                             | Off-target members                                                                   |
 | ------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `nix-cache/attic-db`           | 2/2 ready; primary `attic-db-1`        | `attic-db-1` on `ovh-ns1001419`; 2 GiB `local-path-ovh-ssd`, PV `pvc-5973cabc-c6a0-4d8e-b2a1-f2fcdafa1db3`                | `attic-db-2` on `ovh-ns104952`                                                       |
 | `study-casino/study-casino-db` | 3/3 ready; primary `study-casino-db-6` | replica `study-casino-db-2` on `ovh-ns1001419`; 1 GiB `local-path-ovh-ssd`, PV `pvc-3c5bf403-1bfc-45bf-a208-443919aa1703` | `study-casino-db-1` on `ovh-ns104963`; primary `study-casino-db-6` on `ovh-ns104952` |
 
-Both target PVs had reclaim policy `Delete` at inspection. Their old data
-volumes must be retained before CNPG removes their claims. Read-only checks found
-`.spec.maxSyncReplicas` evaluates to `0` for both Clusters, so the controller's
-sync-replica floor does not block the proposed counts; recheck before execution.
-The target Attic filesystem directory was measured at 3.3 decimal GB against a
-2 GiB claim; the Study Casino directory was 620 MB against 1 GiB. Recheck PostgreSQL data, WAL,
-peak/temp use and free space before choosing Attic replacement sizing; 8 GiB is
-the reviewed creation template for its off-node replica. The operator confirmed
-Study Casino keeps its existing 1 GiB capacity; no increase is planned.
+Both target PVs had reclaim policy `Delete` at this snapshot. Before removing
+their claims, both were changed to `Retain` after exact PV/claim UID checks.
+`.spec.maxSyncReplicas` evaluated to `0` for both Clusters, so the controller's
+sync-replica floor did not block reducing them to two instances. The target
+Attic directory measured 3.3 decimal GB against a 2 GiB claim; Study Casino
+measured 620 MB against 1 GiB. The completed new Attic replica uses 8 GiB with
+`resizeInUseVolumes: false`; existing 2 GiB claims were unchanged. Study Casino
+keeps its existing 1 GiB instance claims.
 
-Both Clusters are generated: Attic from `cluster/cdk8s/nix_cache/attic.py`
-and Study Casino from `cluster/cdk8s/study_casino/app.py`. Change those sources
-and regenerate their manifests for the final desired state. Keep the existing
-Flux owners. A short, recorded suspension of the two owning Kustomizations can
-hold the reviewed maintenance phases; resume them against matching committed
-configuration. No global Flux or CNPG operator shutdown is required. The live/repo Piraeus class
-`local-canary` is constrained to the canary pool and is not the target class.
+Both Clusters are generated: Attic from `cluster/cdk8s/nix_cache/attic.py` and
+Study Casino from `cluster/cdk8s/study_casino/app.py`. Keep their existing Flux
+owners. A child Kustomization suspension was attempted during the Attic
+handoff, but its parent reverted it and the first clone briefly scaled down;
+the original two members remained healthy. The completed handoff instead used
+the documented per-resource `kustomize.toolkit.fluxcd.io/reconcile: disabled`
+annotation on the Cluster and removed it after the transition. No such holds
+remain. No global Flux or CNPG operator shutdown is needed. The live/repo
+Piraeus class `local-canary` remains constrained to the canary pool and is not
+the production target class.
+
+## Completed off-node handoff (2026-10-22)
+
+- **Study Casino:** target member `study-casino-db-2` and its claim were removed
+  after confirming the two off-target members. The Cluster is now 2/2 ready:
+  primary `study-casino-db-6` on `ovh-ns104952`, standby
+  `study-casino-db-1` on `ovh-ns104963`, zero replication lag. The released
+  target PV remains `Retain`; remaining instance claims are still 1 GiB.
+- **Attic:** updated only the new-claim template to 8 GiB with
+  `resizeInUseVolumes: false`; existing 2 GiB claims were unchanged. Fresh
+  member `attic-db-3` cloned to `ovh-ns104963`, read successfully, and caught up
+  with zero lag. After promotion of `attic-db-2` on `ovh-ns104952`, member 3 is
+  the healthy standby. The old target claim was retired only after this proof;
+  its source PV remains `Released` with `Retain`.
+- Both Clusters are 2/2 ready on separate off-target nodes. The old target PVs
+  were protected by exact PV/claim UID checks, and all temporary Flux holds have
+  been removed. See the [sanitized handoff proof](cnpg_offnode_handoff_proof.json).
+
+The node remains untouched: no target cordon/drain, Talos reset/upgrade, or
+physical disk wipe has occurred. Do not create production Piraeus claims until
+node/pool acceptance is complete and the user explicitly authorizes the
+Piraeus restore.
 
 ## Handoff sequence
 
-1. **Gate the Piraeus destination.** Before either database is restored, deploy
-   and verify a production strict-local StorageClass backed by an SSD pool
-   available on `ovh-ns1001419`. Require `volumeBindingMode: WaitForFirstConsumer`,
-   single-node placement and remote access disabled. Verify the target's
-   Piraeus satellite, pool capacity, and CSI provisioner are healthy after the
-   node returns. Do not use `local-canary`, edit a shared `local-path` class, or
-   statically pre-create a CNPG PVC. CNPG's dynamic PVC creation lets the Pod's
-   required anti-affinity select the target host before Piraeus provisions its
-   volume.
+Steps 2–5 completed on existing off-node storage. Piraeus restoration remains
+paused; no application PVC may be created until node/pool acceptance and the
+user's explicit approval.
 
-2. **Prove the remaining data path and protect the old sources.** Refresh member
-   readiness, primary identity, replication lag, latest base-backup completion
-   and WAL archive health. Record each target PVC's PV name and UID, node and
-   volume identity. Recheck the PV UID and patch only these two target PVs to
-   `persistentVolumeReclaimPolicy: Retain` before lowering either Cluster's
-   desired instance count. Do not change the `local-path` StorageClass. Continue
-   only after the patch is observed on the same PV UIDs. `Retain` protects the
-   backing volume from PVC reclaim; it cannot protect data from a later disk
-   reformat, so prove off-node recovery before any conversion that can overwrite
-   the source disk.
+1. **Deferred: gate the Piraeus destination.** After first-node acceptance and
+   explicit approval, deploy and verify a production strict-local StorageClass
+   backed by an SSD pool available on `ovh-ns1001419`. Require
+   `volumeBindingMode: WaitForFirstConsumer`, single-node placement and remote
+   access disabled. Verify the target satellite, pool capacity, protected data
+   and metadata alerts, and CSI provisioner after the node returns. Do not use
+   `local-canary`, edit a shared `local-path` class, or statically pre-create a
+   CNPG PVC. Both this gate and user approval must pass before the first
+   production Piraeus PVC is created.
 
-3. **Retire Study Casino's target replica declaratively.** Recheck that member
-   `-2` is still a ready, active replica on `ovh-ns1001419`, primary `-6` is on
-   `ovh-ns104952`, and replica `-1` is ready on `ovh-ns104963`. Set the
-   Cluster's reviewed maintenance phase to `instances: 2`, preserving its required hostname
-   anti-affinity and storage settings. CNPG 1.30.0's downscale selector protects
-   the primary and removes the highest-serial ready replica, so under those
-   verified conditions it selects target member `-2`. Wait for that Pod and
-   PVC to be gone, the retained source PV to be `Released` and still present,
-   and members `-1` and `-6` to remain healthy on their original nodes. Desired
-   count 2 prevents CNPG from replacing the removed member; do not run
-   `kubectl cnpg destroy` while `instances: 3` is desired. No anti-affinity
-   relaxation or operator pause is needed. Keep count 2 through target
-   maintenance.
+2. **Complete: protect the original CNPG sources.** Both target PVs were set to
+   `Retain` and read back after exact PV/claim UID checks before their claims
+   were removed. The Study Casino and Attic target PVs remain `Released` with
+   `Retain`; the Attic PV name and UID are in the
+   [handoff proof](cnpg_offnode_handoff_proof.json). Retain protects a backing
+   volume from PVC reclaim, not from disk reformat.
 
-4. **Evacuate Attic while retaining two off-target copies.** First remeasure
-   PostgreSQL data/WAL and verify capacity on `ovh-ns104963`; select a size with
-   headroom (8 GiB is the initial candidate). Set the evidence-based
-   `storage.size` together with `storage.resizeInUseVolumes: false`, keeping
-   `instances: 2` and the current storage class. Observe that
-   template on the live Cluster before scaling up. This leaves both 2 GiB existing
-   claims untouched while a new member uses the larger claim. Then set
-   `instances: 3` while `attic-db-1` is still on the target. Required hostname
-   anti-affinity should place new member `attic-db-3` on the only unoccupied
-   survivor, `ovh-ns104963`; verify its node, Ready state, streaming lag and
-   healthy PVC before continuing. Confirm `attic-db-2` is a healthy, caught-up
-   standby on `ovh-ns104952`, then use
-   `kubectl cnpg promote attic-db 2 --namespace nix-cache` and wait until `-2`
-   is primary and `-1` (target) and `-3` (104963) are healthy standbys.
+3. **Complete: evacuate Study Casino's target replica.** Member `-2` and its
+   claim were removed after verifying the two surviving members. Member `-6`
+   remains primary on `ovh-ns104952`; member `-1` is the healthy standby on
+   `ovh-ns104963`. The Cluster is 2/2 ready with zero lag, the source PV is
+   `Released`/`Retain`, and remaining instance claims are 1 GiB.
 
-   CNPG 1.30.0 supports the per-Cluster annotation
-   `cnpg.io/reconciliationLoop: "disabled"`; upstream documents that it
-   disables all Cluster reconciliation, including self-healing and failover.
-   Keep this as a short, supervised hold. Set the annotation while desired
-   instances remains 3 and observe it on the live Cluster before setting
-   `instances: 2`. This ordering prevents the normal downscale selector from
-   choosing higher-serial standby `-3` instead of target member `-1`. Use the
-   recorded scoped Flux hold to keep these intermediate fields from reverting.
+4. **Complete: evacuate Attic while retaining two off-target copies.** A fresh
+   8 GiB member 3 was created on `ovh-ns104963` with
+   `resizeInUseVolumes: false`; both existing 2 GiB claims were unchanged. After
+   clone read and catch-up, member 2 on `ovh-ns104952` was promoted and member 3
+   became its healthy standby. The old target claim was detached and removed
+   only after recovery proof; its source PV remains `Released`/`Retain`. Attic
+   is 2/2 ready with zero lag.
 
-   With the operator held and the target PV already set to `Retain`, run the
-   installed, version-verified plugin command:
-   `kubectl cnpg destroy attic-db 1 --keep-pvc --namespace nix-cache`. In CNPG
-   plugin 1.30.1, `--keep-pvc` detaches the claim from the Cluster, marks it
-   detached, then deletes the exact member Pod; it does not delete the PVC. Verify
-   `attic-db-1` is gone, its detached PVC remains bound to the recorded retained
-   PV, and `attic-db-2` primary plus `attic-db-3` standby remain healthy on
-   separate survivor nodes. Resume CNPG by removing the annotation; keep `instances: 2`
-   through the node rebuild. Verify
-   the same two off-target members remain healthy and the detached target claim
-   is still present. Do not leave the reconciliation-disable annotation in place:
-   while set, the Cluster cannot self-heal or fail over.
+   A direct suspend of the child `nix-cache` Kustomization was reverted by its
+   parent and briefly scaled the first clone back down; the original two
+   members stayed healthy. The successful hold used the documented per-resource
+   `kustomize.toolkit.fluxcd.io/reconcile: disabled` annotation on the Attic
+   Cluster, then removed it. Do not repeat the child-Kustomization suspend
+   approach. Keep any resource-level hold short because it disables CNPG
+   reconciliation, self-healing and failover.
 
-5. **Prove off-node recovery before conversion.** Confirm the Study Casino
-   target claim has been deleted with its source PV retained, and Attic's
-   detached target PVC/PV and backing source data are still intact. Record the fresh off-node rebuild of Attic member 3, its successful
-   catch-up to the promoted primary and database access through that member.
-   Verify Study Casino's two surviving members are caught up and usable on
-   separate nodes. These application-native copies are the maintenance recovery
-   path; an additional etcd snapshot or S3 restore is not a prerequisite. If that proof
-   fails, stop before touching the source disk. Once it passes, remove Attic's
-   detached old claim with the supported
-   `kubectl cnpg destroy attic-db 1 --namespace nix-cache` command; this deletes
-   the detached PVC, while its `Retain` PV/backing data remains. Confirm the PV
-   is `Released` and still present. Only then may the node maintenance procedure
-   convert/reformat the source disk. Retain the old PV objects until the new
-   Piraeus members are healthy and recovery is again demonstrated.
+5. **Complete: prove off-node recovery.** Both Clusters are healthy at count 2
+   on separate nodes and have zero lag. The handoff proof records the retained
+   Attic PV identity, primary/standby placement, and unchanged Study Casino
+   1 GiB claims. This completes the data-preservation gate only; target-node
+   maintenance has not started and this does not authorize Piraeus PVC creation.
 
-6. **Restore one new member per Cluster on Piraeus.** After the target is Ready,
-   its production Piraeus pool is healthy, and backup/WAL plus surviving-member
-   health are rechecked, update each existing Cluster source to its verified
-   new `storageClass`, agreed size (Attic 8 GiB,
-   Study Casino unchanged at 1 GiB), and `storage.resizeInUseVolumes: false`. In the committed final
-   desired state, raise Attic from 2 to 3 and Study Casino from 2 to 3. Keep Study
-   Casino's required hostname anti-affinity unchanged. CNPG will make new
-   dynamically provisioned claims using the current Cluster storage template;
-   `WaitForFirstConsumer` binds the strict-local Piraeus volume with the Pod on
-   the only host permitted by anti-affinity. Wait for each new Pod/PVC to be
-   Ready, confirm its node is `ovh-ns1001419`, its new PV uses the production
-   Piraeus class and strict-local pool, and all pre-existing sibling PVCs retain
-   their original class and size. `resizeInUseVolumes: false` is the documented
-   guard that prevents the new size from expanding the siblings' existing PVCs.
+6. **Deferred: restore one new member per Cluster on Piraeus.** Only after the
+   target is Ready, its production Piraeus pool and data/metadata alert delivery
+   pass acceptance, and the user authorizes this restore, recheck backups/WAL and
+   surviving-member health. Update each existing Cluster source to its verified
+   production `storageClass`, agreed size (Attic 8 GiB, Study Casino unchanged
+   at 1 GiB), and `storage.resizeInUseVolumes: false`. Raise Attic and Study
+   Casino from 2 to 3 while keeping Study Casino's required hostname
+   anti-affinity unchanged. CNPG dynamically provisions claims using the
+   current Cluster storage template; `WaitForFirstConsumer` binds the strict-
+   local Piraeus volume with the Pod on the only host permitted by anti-affinity.
+   Verify each new Pod/PVC is Ready on `ovh-ns1001419`, its PV uses the
+   production Piraeus class and strict-local pool, and existing sibling PVCs
+   retain their class and size. `resizeInUseVolumes: false` prevents the new
+   size from expanding sibling claims.
 
-7. **Close only after recovery is demonstrated.** Verify both Clusters' desired
-   member counts and health, primary roles, target-local placement, new PVC/PV
-   identities and successful archive/backup progression. Retain the old source
-   PVs until the off-node database recovery path has been proved to the operator's
-   acceptance criteria. Only then consider separately authorized cleanup.
+7. **Deferred: close only after recovery is demonstrated.** Verify both
+   Clusters' desired counts and health, primary roles, target-local placement,
+   new PVC/PV identities and successful archive/backup progression. Retain the
+   old source PVs until off-node database recovery has again been demonstrated.
+   Only then consider separately authorized cleanup.
 
 CNPG 1.30 assigns the lowest free instance serial, so the retired Study member
-will normally be recreated as `study-casino-db-2` and Attic as `attic-db-1`.
-For Attic, remove the old detached PVC only after off-node recovery proof and
-before scaling up; otherwise that claim name would obstruct or be mistaken for
-the new member's claim. Treat serial reuse as an expectation, not a command
-target: inspect the actual Pod, PVC and owner labels after scaling up before
-evaluating its new storage.
+is expected to be recreated as `study-casino-db-2` and Attic as `attic-db-1`.
+Attic's old detached PVC was removed after off-node recovery proof, freeing its
+claim name before the deferred Piraeus restore. Treat serial reuse as an
+expectation, not a command target: inspect the actual Pod, PVC and owner labels
+after scaling up before evaluating its new storage.
 
 ## Controller and storage details
 
@@ -170,15 +159,18 @@ evaluating its new storage.
 - The source CRs currently have no dedicated WAL PVC. If that changes before
   execution, identify and retain the matching WAL PV too; the CNPG re-creation
   procedure requires handling both data and WAL claims.
-- If a downscale event proposes a member other than the verified Study target,
-  stop before proceeding. The selection depends on current active/ready state,
-  primary role and serial. The Attic path deliberately holds reconciliation
-  instead of relying on downscale selection. The nix-cache Flux Kustomization
-  uses the repository helper's `wait: true` default. While the CNPG annotation is
-  set and `instances` is changed, verify Flux's applied revision and the live
-  Cluster fields directly; the CNPG Ready status may be stale. After removing the
-  annotation, confirm CNPG health and Flux readiness recover. Resume any scoped Flux holds against the final committed desired state;
-  preserve the existing owners.
+- The Study Casino downscale selected `-2` only after checking the current
+  active/ready members, primary and serial. For any future intentional
+  downscale, stop if the proposed member differs from the verified target.
+- CNPG documents `cnpg.io/reconciliationLoop: "disabled"` as disabling all
+  Cluster reconciliation, including self-healing and failover. The completed
+  Attic handoff used this as a short hold on the Cluster while changing
+  `instances`; a direct child-Kustomization suspend was parent-reverted and
+  briefly downscaled the first clone. Use the per-resource Flux reconcile
+  annotation on the exact Cluster instead, verify the applied revision and live
+  fields directly because CNPG Ready may be stale, then remove the annotation
+  promptly. Confirm CNPG health and Flux readiness recover. All temporary holds
+  were removed after the completed handoffs; preserve the existing Flux owners.
 
 ## Upstream references
 
