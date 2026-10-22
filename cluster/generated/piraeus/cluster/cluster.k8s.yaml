@@ -41,7 +41,7 @@ data:
           '# HELP lvm_thin_pool_collector_success Whether both thin-pool percentages were collected.' \
           '# TYPE lvm_thin_pool_collector_success gauge' \
           "lvm_thin_pool_collector_success{vg=\"${vg}\",pool=\"${pool}\"} 0"
-      } > "$tmp" || return 0
+      } >"$tmp" || return 0
       /bin/mv -f "$tmp" "$output" || return 0
       return 0
     }
@@ -70,7 +70,7 @@ data:
       metadata_percent="$(printf '%s' "$values" | /usr/bin/cut -f 2)"
       for percentage in "$data_percent" "$metadata_percent"; do
         case "$percentage" in
-          ''|*[!0-9.]*|.*|*.)
+          '' | *[!0-9.]* | .* | *.)
             write_failure
             return 0
             ;;
@@ -88,7 +88,7 @@ data:
         return 0
       }
       case "$now" in
-        ''|*[!0-9]*)
+        '' | *[!0-9]*)
           write_failure
           return 0
           ;;
@@ -108,7 +108,7 @@ data:
           "lvm_thin_pool_metadata_percent{vg=\"${vg}\",pool=\"${pool}\"} ${metadata_percent}" \
           "lvm_thin_pool_collector_last_success_timestamp_seconds{vg=\"${vg}\",pool=\"${pool}\"} ${now}" \
           "lvm_thin_pool_collector_success{vg=\"${vg}\",pool=\"${pool}\"} 1"
-      } > "$tmp" || {
+      } >"$tmp" || {
         write_failure
         return 0
       }
