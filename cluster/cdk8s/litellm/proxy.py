@@ -175,6 +175,11 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
             replicas=2,
             env=_langfuse_env(
+                # The Langfuse OTel callback needs v2 plus span content to populate
+                # the /v1/responses root observation. Keep Langfuse as the exporter;
+                # a console exporter would write captured prompts into pod logs.
+                _LiteralEnv("LITELLM_OTEL_V2", "true"),
+                _LiteralEnv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "span_only"),
                 _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY),
                 _SecretEnv("DATABASE_URL", database.DATABASE.app_secret.key("uri")),
                 _SecretEnv("LITELLM_SALT_KEY", SecretRef(namespace=_NAMESPACE, name="litellm-salt-key").key("key")),
