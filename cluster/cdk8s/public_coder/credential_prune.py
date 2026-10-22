@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from trust_manager_crds.io.cert_manager.trust import (
+    BundleSpecSources,
+    BundleSpecSourcesSecret,
+    BundleSpecTarget,
+    BundleSpecTargetConfigMap,
+    BundleSpecTargetConfigMapMetadata,
+    BundleSpecTargetNamespaceSelector,
+    BundleSpecTargetNamespaceSelectorMatchExpressions,
+)
 
 from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA, ROOT_CA_SECRET
 from cluster.cdk8s.cert_manager.interception_ca import BUNDLE_KEY
@@ -23,15 +32,6 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
     remote_data,
 )
 from cluster.cdk8s.reflector import mirror_annotations
-from trust_manager_crds.io.cert_manager.trust import (
-    BundleSpecSources,
-    BundleSpecSourcesSecret,
-    BundleSpecTarget,
-    BundleSpecTargetConfigMap,
-    BundleSpecTargetConfigMapMetadata,
-    BundleSpecTargetNamespaceSelector,
-    BundleSpecTargetNamespaceSelectorMatchExpressions,
-)
 
 NAME = "public-coder-agent-secret-prune"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/public-coder-agent/secret-prune"
@@ -45,9 +45,7 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         brave_search_api_key,
-        metadata=ApiObjectMetadata(
-            name=brave_search_api_key, namespace=NAMESPACE, annotations=_MERGE_ANNOTATION
-        ),
+        metadata=ApiObjectMetadata(name=brave_search_api_key, namespace=NAMESPACE, annotations=_MERGE_ANNOTATION),
         refresh_interval="1m",
         secret_store_ref=SecretStoreRef.cluster("kubernetes-external-creds-secret-store"),
         data=[remote_data(brave_search_api_key, "api-key")],

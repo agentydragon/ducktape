@@ -1,3 +1,5 @@
+# gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
+
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__subpackages__"])
@@ -113,10 +115,10 @@ py_library(
     name = "credential_prune",
     srcs = ["credential_prune.py"],
     deps = [
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:reflector",
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/cert_manager:interception_ca",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/cert_manager:bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
