@@ -226,44 +226,6 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
-  # The devbox's sshd host key, delivered the same way public-coder-devbox secrets are: decrypted by
-  # kustomize-controller and attached as a guest disk, with no on-guest decryption identity. Its
-  # public half is committed at ssh_keys/public-coder-devbox-host.pub, which is what pins the
-  # upstream in sshpiper's Pipe.
-  - path_regex: cluster/parked/public-coder-agent/devbox/ssh-host-key\.sops\.yaml$
-    encrypted_regex: ^(data|stringData)$
-    key_groups:
-      - age:
-          - *admin
-          - *cluster-secrets
-
-  # sshpiper's own host key -- the identity the Agent pins in known_hosts, the SSH counterpart of
-  # trusting the iron-proxy interception CA. Only the piper Pod ever reads it.
-  - path_regex: cluster/parked/public-coder-agent/sshpiper/host-key\.sops\.yaml$
-    encrypted_regex: ^(data|stringData)$
-    key_groups:
-      - age:
-          - *admin
-          - *cluster-secrets
-
-  # The mapping key sshpiper signs with to reach coder@public-coder-devbox. This is the credential
-  # the Agent is deliberately not given; it exists only in the piper Pod.
-  - path_regex: cluster/parked/public-coder-agent/sshpiper/devbox-key\.sops\.yaml$
-    encrypted_regex: ^(data|stringData)$
-    key_groups:
-      - age:
-          - *admin
-          - *cluster-secrets
-
-  # The Agent's own downstream key. Worthless anywhere but sshpiper's listener, which is the point:
-  # possessing it authenticates to the piper, it does not open the devbox.
-  - path_regex: cluster/parked/public-coder-agent/app/devbox-ssh-key\.sops\.yaml$
-    encrypted_regex: ^(data|stringData)$
-    key_groups:
-      - age:
-          - *admin
-          - *cluster-secrets
-
   # AIQuota's read-only bearer is also consumed by the local CLI/GNOME clients.
   # Keep the same token as the cluster Secret, but let the configured user
   # identities decrypt it without granting them access to other cluster secrets.

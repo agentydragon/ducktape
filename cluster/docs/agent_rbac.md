@@ -261,7 +261,7 @@ retired Kyverno policy, dedicated background-controller ClusterRole, and old bin
 names in rendered manifests, and checks binding scope against namespace classification
 labels (including the rendered Flux bootstrap overlay).
 It checks static/managed parity, finance's exact Coinbase addition, and
-explicit denials for staging operator/login, devbox restart, and node proxy (every profile).
+explicit denials for staging operator/login and node proxy (every profile).
 The separate legacy accounts have their own contracts; their permissions are not
 unioned with Haku's to mask missing access on a particular path.
 
@@ -384,9 +384,8 @@ status Role. The former namespace and Role are owned by the bootstrap Flux
 source, so its independent delegation Kustomization has no generated predecessor;
 the latter depends on the public-coder app Kustomization. Public-coder's wider
 reader observes Pods, logs, ConfigMaps, service and workload metadata, RBAC/Flux
-metadata, Pod metrics, and the named `public-coder-devbox` VM/VMI. It grants no
-Secret read, Pod exec, or VMI deletion. Managed Haku's broader cluster reader
-already covers public coder's two narrow cluster readers.
+metadata, and Pod metrics. It grants no Secret read or Pod exec. Managed Haku's
+broader cluster reader already covers public coder's two narrow cluster readers.
 
 ### Testing-only Agentplane operator access
 
@@ -413,16 +412,6 @@ It grants no write access in `agentplane-staging` and no direct Kubernetes
 Secret read. Pod exec can expose data mounted in testing Pods, and a holder can
 operate every Sandbox in the testing namespace and use that environment's
 credentialless MCP fixtures. Treat it as operator authority, not a diagnostics reader.
-
-### Retired devbox restart capability
-
-The image rollout controller, not agents, owns devbox restarts. No preset or
-catalog entry selects `public-coder-agent-devbox-vmi-restart`, and its static
-RoleBinding is removed. Its Role temporarily remains **empty**, revoking the
-permission even for existing managed bindings. Deleting the Role immediately
-would make the reconciler mark Sandboxes with that snapshotted grant unready.
-Remove the empty Role once those old Sandboxes have been replaced. Namespace
-cleanup delegation remains available for their old bindings.
 
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
 read selection. `namespace_access.py` is the single reviewed namespace classification.

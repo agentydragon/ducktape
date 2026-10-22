@@ -53,7 +53,6 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
-from cluster.cdk8s.public_coder import proxy as public_coder_proxy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
@@ -177,8 +176,8 @@ def _users() -> dict[str, object]:
         "grafana/quota": "readonly",
         "grafana/grants/query": ["GRANT SELECT ON aiquota.*"],
         # The public-coder agent receives a non-secret placeholder only. Its
-        # dedicated Iron proxy replaces that placeholder in Basic auth before
-        # forwarding to the private ClusterIP service. Keep the account scoped
+        # Agentplane egress credential replaces that placeholder in Basic auth
+        # before forwarding to the private ClusterIP service. Keep the account scoped
         # to the AIQuota tenant tables: ClickHouse system metadata remains
         # unavailable to the agent.
         f"{client.PUBLIC_CODER_USER}/password": _password(client.PUBLIC_CODER_CREDENTIALS),
@@ -529,13 +528,8 @@ def networkpolicy_chart(app: App) -> Chart:
                     #   its old ReplicaSet is gone); the API server applies its schema over HTTP.
                     ports=_ports(client.HTTP.pod_port, client.NATIVE.pod_port),
                 ),
-                # The agent app itself cannot reach ClickHouse. Its credential-bearing
-                # egress proxy is the only cross-namespace client admitted for the native
-                # read-only public_coder_analytics account.
-                k8s.NetworkPolicyIngressRule(
-                    from_=_from_namespace(public_coder_proxy.NAMESPACE, public_coder_proxy.LABELS),
-                    ports=_ports(client.HTTP.pod_port),
-                ),
+                # The agent app itself cannot reach ClickHouse. Agentplane egress is the only
+                # public-coder-side caller admitted for its native read-only account.
                 k8s.NetworkPolicyIngressRule(
                     from_=_from_namespace(
                         cilium.AGENTPLANE_STAGING_PROXY.namespace, {"app.kubernetes.io/name": "egress"}

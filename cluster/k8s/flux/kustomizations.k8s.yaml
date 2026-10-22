@@ -399,7 +399,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: The sshpiper Pipe CRD, sourced from the tag used by the deployed image.
+    description: The upstream sshpiper Pipe CRD; pruning is disabled to protect any remaining Pipe resources.
   name: sshpiper-crds
   namespace: ducktape-flux
 spec:
@@ -3996,7 +3996,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: OpenClaw coder agent namespace, application, Iron proxy and SSH bastion; devbox and backups reconcile separately.
+    description: OpenClaw coder agent application; its state and retained SSH audit recordings stay in the parked namespace. Backups reconcile separately.
     ducktape.org/parked: "true"
   name: public-coder-agent-app
   namespace: ducktape-flux
@@ -4007,13 +4007,7 @@ spec:
       name: sops-age-cluster-secrets
   deletionPolicy: Orphan
   dependsOn:
-    - name: cert-manager
-      namespace: ducktape-flux
-    - name: cert-manager-trust
-      namespace: ducktape-flux
     - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: sshpiper-crds
       namespace: ducktape-flux
     - name: agentplane-staging
       namespace: ducktape-flux
@@ -4021,22 +4015,6 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: public-coder-agent
-      namespace: public-coder-agent
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: proxy
-      namespace: public-coder-agent
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: sshpiper
-      namespace: public-coder-agent
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: public-coder-agent-proxy-root-ca
-      namespace: public-coder-agent
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: brave-search-api-key
       namespace: public-coder-agent
   interval: 10m
   path: ./cluster/parked/public-coder-agent/app
@@ -4048,37 +4026,6 @@ spec:
     namespace: ducktape-flux
   suspend: true
   timeout: 5m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    description: "Paused Public Coder devbox: VM halted and image restart controller removed; the separately declared Bazel cache PVC and SSH identity are retained."
-    ducktape.org/parked: "true"
-  name: public-coder-agent-devbox
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: kubevirt
-      namespace: ducktape-flux
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/parked/public-coder-agent/devbox
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: public-coder-agent-devbox
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 30m
-  wait: false
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

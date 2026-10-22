@@ -547,21 +547,6 @@
           };
         };
 
-        # public-coder-devbox - isolated NixOS build/test VM for the public-coder
-        # OpenClaw agent. It is intentionally separate from agent-box so the
-        # agent's toolchain and egress policy can evolve independently.
-        public-coder-devbox = mkNixos {
-          hostname = "public-coder-devbox";
-          username = "coder";
-          hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
-          hostModule = ./openclaw/public_coder_agent/devbox/nixos.nix;
-          inlineHomeManager = {
-            enableGui = false;
-            isK8sWorker = false;
-            module = ./openclaw/public_coder_agent/devbox/home.nix;
-          };
-        };
-
         # Gecko - headless CLI-only KubeVirt VM for Claude Code / Codex
         gecko = mkNixos {
           hostname = "gecko";

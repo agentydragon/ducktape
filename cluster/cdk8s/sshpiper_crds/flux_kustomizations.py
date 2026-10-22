@@ -3,8 +3,8 @@
 file through the SHA-256-pinned `sshpiper_pipe_crd` repository in `MODULE.bazel`; the CRD is
 never copied into this repository.
 
-The CRD has its own Kustomization, not its consumer's (today only `public_coder_sshpiper`), so
-that it outlives any one sshpiperd deployment.
+The CRD has its own non-pruning Kustomization so it outlives individual sshpiperd deployments.
+Keep it until a cluster-wide inventory confirms no other Pipe resources depend on it.
 """
 
 from __future__ import annotations
@@ -28,5 +28,5 @@ def sshpiper_crds(chart: Chart) -> Kustomization:
         # Pruning a CRD deletes every instance with it; removing one is a deliberate manual step, as
         # for the other CRD Kustomizations (agentplane-crds, external-secrets-crds).
         prune=False,
-        description="The sshpiper Pipe CRD, sourced from the tag used by the deployed image.",
+        description="The upstream sshpiper Pipe CRD; pruning is disabled to protect any remaining Pipe resources.",
     )

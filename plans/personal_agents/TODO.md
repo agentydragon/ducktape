@@ -27,23 +27,12 @@ next refresh (1h) with no manifest change.
 
 **Delete this section once rotated.**
 
-## Decide deliberately how the iron-proxy image is pinned
+## Public-coder Iron proxy image — retired
 
-The adoption decision asked for digest pinning plus a mirror
-(<../../cluster/docs/container-images.md>), and the answer moved underneath the
-question. The Docker Hub half is settled: production no longer runs
-`ironsh/iron-proxy:0.49.0` but a commit-built image of our own
-(<../../cluster/images/iron-proxy/>, upstream `v0.50.0`) from
-`git.allegedly.works`, so no third-party account stands between an attacker and the
-one process holding the GitHub credential.
-
-What remains is that the image now tracks a **moving tag** under Flux image
-automation, on that same process — see
-<../../docs/personal_agents/README.md> § "Rough edges". Defensible because
-the build is ours, but it should be a decision rather than a side effect of how the
-temporary fork was packaged. Fold it into the return to the official image that
-<../../cluster/parked/public-coder-agent/README.md> already schedules for
-iron-proxy v0.50.0.
+The public-coder Iron proxy was retired on 2026-10-21 after OpenClaw had moved to
+Agentplane egress and the KubeVirt devbox was decommissioned. Its image pinning
+question and return-to-upstream TODO no longer apply. Haku sandbox/CI continue to
+use their separate mitmproxy-based egress fence.
 
 ## Cost a Kubernetes `WorkerProvider` — the live candidate for W2
 
@@ -223,7 +212,7 @@ enforced at `CONNECT`, before TLS — so this is an integrity and observability 
 not an escape.
 
 Cheap detector, since every request already transits an intercepting proxy —
-iron-proxy for `public-coder-agent`, mitmproxy in the retired Haku zones. The proxy sees
+Agentplane egress for `public-coder-agent`, mitmproxy for Haku sandbox and CI. The proxy sees
 which client connections skip verification, and `-k`/`sslVerify=false` appearing in
 an agent's command history is a reliable signal that some control has broken. Worth
 alerting on rather than discovering by reading transcripts weeks later.

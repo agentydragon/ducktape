@@ -52,7 +52,6 @@ data:
     wyrm2.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICAwoT0hzkNNzOUjFqb1g7jKQ3phR5XmPU5R52hfFCJZ
     rugged.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA5khWiTDnTSkz83F+0JwYIOOT+QpV0/u3cc02L5LLFm
     atlas.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINI/boyFdYuUJYBF4mnkK4O8/YcSfhZUSaUx1Mhdis+G
-    public-coder-devbox-ssh.public-coder-agent.svc.cluster.local ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIARgvl0zwplvewSpQLX6v8ayfrwo4bsuLBIOwNstBzQB
     192.168.1.100 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDJKANlp+W5MVndg58Qaf78yjTCJydv9S+D2Xx2p3wbX+143lJ7plTW87NTj87gQ6NV/ZaEAE6eHL2HH53m+yG8bc7DSwfrD12OJU5M6y8b+KZY/6johBx7geWp7BL1VsigZV2hncHCrcIP+I85wFw1Z3kFj2VZvoCOAnEaVrJ6PbS/AKJ2yKhdaS74E4R+ke0rD6wdfRikCwOnB/XSpY82OZKm/N0io0/dDSE8A96pcDPjh/AuIQOu8j+XDiziLmVX/crJiZSPagN3ei7F6Zxs9pau3BukreByEoy83iDFtDP7uxPs704PDUKcbmvq8/CzcYg4Q5TOgXquCAYcWgsN
   settings.yaml: |
     known_hosts_file: /etc/ssh-mcp/known_hosts
@@ -73,12 +72,6 @@ data:
       - host: rugged.nebula.allegedly.works
         user: root
         identity_file: /etc/ssh-mcp/keys/rugged-root
-      - host: public-coder-devbox-ssh.public-coder-agent.svc.cluster.local
-        user: root
-        identity_file: /etc/ssh-mcp/keys-public-coder-devbox/public-coder-devbox-root
-      - host: public-coder-devbox-ssh.public-coder-agent.svc.cluster.local
-        user: coder
-        identity_file: /etc/ssh-mcp/keys-public-coder-devbox/public-coder-devbox-coder
       - host: atlas.nebula.allegedly.works
         user: root
         identity_file: /etc/ssh-mcp/keys-atlas/atlas-root
@@ -177,9 +170,6 @@ spec:
             - mountPath: /etc/ssh-mcp/keys
               name: keys
               readOnly: true
-            - mountPath: /etc/ssh-mcp/keys-public-coder-devbox
-              name: keys-public-coder-devbox
-              readOnly: true
             - mountPath: /etc/ssh-mcp/keys-atlas
               name: keys-atlas
               readOnly: true
@@ -222,10 +212,6 @@ spec:
           secret:
             optional: true
             secretName: ssh-mcp-keys
-        - name: keys-public-coder-devbox
-          secret:
-            optional: true
-            secretName: ssh-mcp-keys-public-coder-devbox
         - name: keys-atlas
           secret:
             optional: true
@@ -271,14 +257,6 @@ spec:
     - toEntities:
         - host
         - remote-node
-      toPorts:
-        - ports:
-            - port: "22"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: public-coder-agent
-            kubevirt.io/domain: public-coder-devbox
       toPorts:
         - ports:
             - port: "22"

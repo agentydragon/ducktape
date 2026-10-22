@@ -86,7 +86,6 @@ spec:
         - litellm
         - monitoring
         - nix-cache
-        - public-coder-agent
         - tana-mcp
   provider:
     kubernetes:

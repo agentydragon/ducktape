@@ -1,6 +1,9 @@
-"""The hand-written side of public-coder's mediated ClickHouse reader: the SOPS Secret holding
-its password, which Reflector mirrors into the Iron proxy's namespace. The constructs share
-`cluster.cdk8s.clickhouse.client`'s account, Secret and address."""
+"""The hand-written canonical Secret for public-coder's mediated ClickHouse reader.
+
+Agentplane egress reads it through an exact-secret ExternalSecret store; it is not reflected into
+the workload namespace. The constructs share `cluster.cdk8s.clickhouse.client`'s account,
+Secret and address.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +15,6 @@ import pytest_bazel
 import yaml
 
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.public_coder import proxy as public_coder_proxy
 
 
 @pytest.fixture
@@ -23,14 +25,14 @@ def source_secret(k8s_dir: Path) -> dict[str, Any]:
 
 
 def test_public_coder_clickhouse_reader_contract(source_secret: dict[str, Any]) -> None:
-    """The real password is reflected into the Iron proxy's namespace."""
+    """The canonical credential stays in ClickHouse for Agentplane's exact-secret reader."""
     metadata = source_secret["metadata"]
     assert metadata["name"] == client.PUBLIC_CODER_CREDENTIALS
     assert metadata["namespace"] == client.NAMESPACE
     assert client.PASSWORD_KEY in source_secret["stringData"]
-    annotations = metadata["annotations"]
-    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == public_coder_proxy.NAMESPACE
-    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == public_coder_proxy.NAMESPACE
+    annotations = metadata.get("annotations", {})
+    assert "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" not in annotations
+    assert "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces" not in annotations
 
 
 if __name__ == "__main__":

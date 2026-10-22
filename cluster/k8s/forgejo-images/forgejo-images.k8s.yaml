@@ -326,11 +326,6 @@ spec:
       name: homeassistant-token-provisioner
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'iron-proxy'
-      kind: ImageRepository
-      name: iron-proxy
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'loki-read-proxy'
       kind: ImageRepository
       name: loki-read-proxy
@@ -384,11 +379,6 @@ spec:
       filter: req.package.name == 'public-coder-agent'
       kind: ImageRepository
       name: public-coder-agent
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'public-coder-devbox'
-      kind: ImageRepository
-      name: public-coder-devbox
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'rtl-tcp'

@@ -120,10 +120,7 @@ def public_coder_agent_access(chart: Chart, directory: RenderedDirectory) -> Kus
 def public_coder_agent_app(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager: Kustomization,
-    cert_manager_trust: Kustomization,
     external_secrets_operator: Kustomization,
-    sshpiper_crds: Kustomization,
     agentplane_staging: Kustomization,
 ) -> Kustomization:
     name = "public-coder-agent-app"
@@ -139,37 +136,16 @@ def public_coder_agent_app(
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         decryption=SOPS_DECRYPTION,
         timeout="5m",
-        # Admission prerequisites for Certificate, Bundle, ExternalSecret and Pipe resources.
-        # Runtime credentials and services can reconcile after the namespace and workloads land.
-        depends_on=flux_kustomization_depends_on_many(
-            cert_manager, cert_manager_trust, external_secrets_operator, sshpiper_crds, agentplane_staging
-        ),
+        # Runtime credentials and services can reconcile after the namespace and workload land.
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, agentplane_staging),
         health_checks=[
             KustomizationSpecHealthChecks(
                 api_version="apps/v1", kind="Deployment", name="public-coder-agent", namespace="public-coder-agent"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="proxy", namespace="public-coder-agent"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="sshpiper", namespace="public-coder-agent"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="cert-manager.io/v1",
-                kind="Certificate",
-                name="public-coder-agent-proxy-root-ca",
-                namespace="public-coder-agent",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name="brave-search-api-key",
-                namespace="public-coder-agent",
-            ),
+            )
         ],
         description=(
-            "OpenClaw coder agent namespace, application, Iron proxy and SSH bastion; "
-            "devbox and backups reconcile separately."
+            "OpenClaw coder agent application; its state and retained SSH audit recordings stay "
+            "in the parked namespace. Backups reconcile separately."
         ),
     )
 

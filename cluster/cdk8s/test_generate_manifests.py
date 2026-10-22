@@ -423,7 +423,7 @@ def test_openclaw_cutover_waits_for_agentplane_credentials(
     }
 
 
-def test_public_coder_pause_retains_storage_without_running_agents(
+def test_public_coder_pause_retains_state_after_devbox_retirement(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     roots = (generated / "cluster/parked/public-coder-agent", generated / "cluster/generated/agents/public-coder-agent")
@@ -435,17 +435,12 @@ def test_public_coder_pause_retains_storage_without_running_agents(
         if isinstance(doc, dict)
     ]
     deployments = [doc for doc in objects if doc["kind"] == "Deployment"]
-    assert {doc["metadata"]["name"] for doc in deployments} == {"public-coder-agent", "proxy", "sshpiper"}
+    assert {doc["metadata"]["name"] for doc in deployments} == {"public-coder-agent"}
     assert all(doc["spec"]["replicas"] == 0 for doc in deployments)
-    vms = [doc for doc in objects if doc["kind"] == "VirtualMachine"]
-    assert len(vms) == 1
-    assert vms[0]["spec"]["runStrategy"] == "Halted"
-    assert "ducktape.org/auto-restart-template-changes" not in vms[0]["metadata"].get("annotations", {})
     assert {doc["metadata"]["name"] for doc in objects if doc["kind"] == "PersistentVolumeClaim"} == {
         "public-coder-agent-state-v2",
         "public-coder-agent-diagnostics",
         "public-coder-agent-sshpiper-recordings",
-        "public-coder-devbox-bazel-cache",
     }
     assert any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in objects)
     # VolSync owns its cache PVC; keep the backup source rather than deleting its owner.
@@ -456,10 +451,10 @@ def test_public_coder_pause_retains_storage_without_running_agents(
         for doc in docs
         if isinstance(doc, dict) and doc.get("kind") == "Kustomization" and "spec" in doc
     }
-    for name in ("public-coder-agent-access", "public-coder-agent-app", "public-coder-agent-devbox"):
+    for name in ("public-coder-agent-access", "public-coder-agent-app", "public-coder-agent-backup"):
         assert owners[name]["deletionPolicy"] == "Orphan"
-    assert all(owners[f"public-coder-agent-{part}"]["suspend"] for part in ("app", "backup", "devbox"))
-    assert owners["public-coder-agent-devbox"]["wait"] is False
+    assert all(owners[f"public-coder-agent-{part}"]["suspend"] for part in ("app", "backup"))
+    assert "public-coder-agent-devbox" not in owners
 
 
 if __name__ == "__main__":

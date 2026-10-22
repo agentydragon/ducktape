@@ -47,7 +47,6 @@ py_library(
     srcs = ["installation.py"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
         ":client",
@@ -63,7 +62,6 @@ py_library(
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
-        "//cluster/cdk8s/public_coder:proxy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

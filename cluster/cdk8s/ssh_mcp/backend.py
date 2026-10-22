@@ -46,7 +46,6 @@ from cluster.cdk8s.ssh_mcp.config import (
     SERVICE,
     LanDestination,
     NebulaDestination,
-    ServiceDestination,
     SshMcpConfig,
 )
 from cluster.scripts.nebula_mesh import Mesh
@@ -56,7 +55,6 @@ PLACEHOLDER_TAG = "unset"
 _BEARER = SecretRef(namespace=NAMESPACE, name=BEARER_SECRET_NAME).key(BEARER_SECRET_KEY)
 _KEY_VOLUMES = (
     ("keys", "ssh-mcp-keys", f"{CONFIG_DIR}/keys"),
-    ("keys-public-coder-devbox", "ssh-mcp-keys-public-coder-devbox", f"{CONFIG_DIR}/keys-public-coder-devbox"),
     ("keys-atlas", "ssh-mcp-keys-atlas", f"{CONFIG_DIR}/keys-atlas"),
     ("keys-agentplane", "ssh-mcp-keys-agentplane", f"{CONFIG_DIR}/keys-agentplane"),
 )
@@ -83,11 +81,6 @@ def _egress(mesh: Mesh, config: SshMcpConfig) -> list[CiliumNetworkPolicySpecEgr
         for destination in destinations
     ):
         rules.append(EgressRule.to_entities(Entity.HOST, Entity.REMOTE_NODE, ports=[22]))
-
-    # Kubernetes Services are selected by their backend Pod endpoints.
-    rules.extend(
-        destination.service.egress() for destination in destinations if isinstance(destination, ServiceDestination)
-    )
 
     nebula_ips = [
         f"{mesh.hosts[hostname].nebula_ip}/32"

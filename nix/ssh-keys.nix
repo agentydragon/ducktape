@@ -11,12 +11,8 @@ in
   rugged_wyrm = readKey "rugged-wyrm.pub";
   atlas = readKey "atlas-default.pub";
   gecko = readKey "gecko-default.pub";
-  publicCoderDevbox = readKey "public-coder-devbox.pub";
-  publicCoderAgentSshpiper = readKey "public-coder-agent-sshpiper.pub";
   wyrm2McpAgentydragon = readKey "wyrm2-mcp-agentydragon.pub";
   wyrm2McpRoot = readKey "wyrm2-mcp-root.pub";
   ruggedMcpAgentydragon = readKey "rugged-mcp-agentydragon.pub";
   ruggedMcpRoot = readKey "rugged-mcp-root.pub";
-  publicCoderDevboxMcpRoot = readKey "public-coder-devbox-mcp-root.pub";
-  publicCoderDevboxMcpCoder = readKey "public-coder-devbox-mcp-coder.pub";
 }

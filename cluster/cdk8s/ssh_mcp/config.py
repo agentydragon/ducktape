@@ -1,8 +1,4 @@
-"""The shared SSH MCP service, credential, and target configuration contract.
-
-Keep SSH targets, their private-key paths, and pinned host keys in one place so the
-generated ssh-mcp ConfigMap and sshpiper Pipe cannot disagree.
-"""
+"""The SSH MCP service's credential and target configuration contract."""
 
 from __future__ import annotations
 
@@ -27,8 +23,6 @@ BEARER_SECRET_KEY = "bearer-token"
 CONFIG_MAP_NAME = "config"
 CONFIG_DIR = "/etc/ssh-mcp"
 
-DEVBOX_HOST_KEY = "ssh_keys/public-coder-devbox-host.pub"
-AGENT_DOWNSTREAM_KEY = "ssh_keys/public-coder-agent-devbox.pub"
 SWITCH_HOST_KEY = "ssh_keys/home-switch-host-key.pub"
 SWITCH_AGENT_PUBLIC_KEY = "ssh_keys/home-switch-agentplane.pub"
 NEBULA_SUFFIX = ".nebula.allegedly.works"
@@ -51,18 +45,6 @@ class NebulaDestination:
 
 
 @dataclass(frozen=True)
-class ServiceDestination:
-    """An SSH destination selected by a Kubernetes Service's Pod endpoints."""
-
-    service: ServiceRef
-    host_key_file: str
-
-    @property
-    def host(self) -> str:
-        return self.service.fqdn
-
-
-@dataclass(frozen=True)
 class LanDestination:
     """An SSH destination addressed directly on the home LAN."""
 
@@ -74,7 +56,7 @@ class LanDestination:
         return str(self.address)
 
 
-Destination = NebulaDestination | ServiceDestination | LanDestination
+Destination = NebulaDestination | LanDestination
 
 
 @dataclass(frozen=True)
@@ -89,14 +71,9 @@ class Target:
 
 @dataclass(frozen=True)
 class SshMcpConfig:
-    devbox_host: str
-    devbox_key_type: str
-    devbox_key: str
-    devbox_port: int
     targets: tuple[Target, ...]
     settings: dict[str, object]
     known_hosts: str
-    agent_downstream_key: str
     switch_agent_public_key: str
 
     @property
@@ -105,17 +82,11 @@ class SshMcpConfig:
         return _ordered_destinations(self.targets)
 
 
-def _targets(devbox_ssh: ServiceRef) -> tuple[Target, ...]:
+def _targets() -> tuple[Target, ...]:
     """A missing identity file leaves a target listed as unavailable, never silently omitted."""
     return (
         *_targets_for(NebulaDestination("wyrm2"), ("agentydragon", "root"), "keys", "wyrm2"),
         *_targets_for(NebulaDestination("rugged"), ("agentydragon", "root"), "keys", "rugged"),
-        *_targets_for(
-            ServiceDestination(devbox_ssh, DEVBOX_HOST_KEY),
-            ("root", "coder"),
-            "keys-public-coder-devbox",
-            "public-coder-devbox",
-        ),
         *_targets_for(NebulaDestination("atlas"), ("root", "agentydragon"), "keys-atlas", "atlas"),
         Target(
             LanDestination(HOME_LAN.switch, SWITCH_HOST_KEY),
@@ -138,7 +109,6 @@ def _ordered_destinations(targets: tuple[Target, ...]) -> tuple[Destination, ...
     unique = tuple(dict.fromkeys(target.destination for target in targets))
     return (
         *(destination for destination in unique if isinstance(destination, NebulaDestination)),
-        *(destination for destination in unique if isinstance(destination, ServiceDestination)),
         *(destination for destination in unique if isinstance(destination, LanDestination)),
     )
 
@@ -152,11 +122,9 @@ def _host_key(relative: str) -> str:
     return f"{key_type} {key}"
 
 
-def load(devbox_ssh: ServiceRef) -> SshMcpConfig:
-    """Read canonical key inputs and derive the SSH endpoint from its Service reference."""
-    devbox_host = devbox_ssh.fqdn
-    key_type, key, *_comment = _read_input(DEVBOX_HOST_KEY).split()
-    targets = _targets(devbox_ssh)
+def load() -> SshMcpConfig:
+    """Read canonical host and identity keys and build the validated SSH target roster."""
+    targets = _targets()
     settings: dict[str, object] = {
         "known_hosts_file": f"{CONFIG_DIR}/known_hosts",
         "command_timeout_seconds": 300,
@@ -170,16 +138,7 @@ def load(devbox_ssh: ServiceRef) -> SshMcpConfig:
     known_hosts = "".join(
         f"{destination.host} {_host_key(destination.host_key_file)}\n" for destination in destinations
     )
-    agent_downstream_key = _read_input(AGENT_DOWNSTREAM_KEY)
     switch_agent_public_key = " ".join(_read_input(SWITCH_AGENT_PUBLIC_KEY).split()[:2])
     return SshMcpConfig(
-        devbox_host=devbox_host,
-        devbox_key_type=key_type,
-        devbox_key=key,
-        devbox_port=devbox_ssh.port.number,
-        targets=targets,
-        settings=settings,
-        known_hosts=known_hosts,
-        agent_downstream_key=agent_downstream_key,
-        switch_agent_public_key=switch_agent_public_key,
+        targets=targets, settings=settings, known_hosts=known_hosts, switch_agent_public_key=switch_agent_public_key
     )

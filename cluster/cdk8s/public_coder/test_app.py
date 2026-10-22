@@ -1,7 +1,7 @@
 """public-coder's access boundaries, across the charts that grant or carry them.
 
 The profile's RBAC is spread over the rbac-base, Haku console, ClickHouse diagnostics,
-ducktape-flux and public-coder rbac charts; its traffic over the app and its credential proxy.
+ducktape-flux and public-coder rbac charts; its traffic over the app and Agentplane egress.
 The ClickHouse reader's hand-written Secret is checked in
 `//cluster/validation:test_public_coder_clickhouse_reader_contract`.
 """
@@ -21,15 +21,10 @@ from cdk8s import (
 )
 from more_itertools import one
 
-from cluster.cdk8s import agent_rbac_base, agent_shared_rbac, aiquota
+from cluster.cdk8s import agent_rbac_base, agent_shared_rbac
 from cluster.cdk8s.clickhouse import client, installation
 from cluster.cdk8s.haku.charts import console_chart
-from cluster.cdk8s.public_coder import (
-    app as public_coder_app,
-    devbox as public_coder_devbox,
-    egress as public_coder_egress,
-    proxy as public_coder_proxy,
-)
+from cluster.cdk8s.public_coder import app as public_coder_app, egress as public_coder_egress
 
 _HAKU_SUBJECTS = {
     ("Group", "oidc-ksbx-groups:haku", None),
@@ -67,11 +62,6 @@ def app_objects() -> list[dict[str, Any]]:
 @pytest.fixture(scope="module")
 def rbac_objects() -> list[dict[str, Any]]:
     return _synth(public_coder_app.rbac_chart)
-
-
-@pytest.fixture(scope="module")
-def proxy_objects() -> list[dict[str, Any]]:
-    return _synth(lambda app: public_coder_proxy.chart(app, aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key))
 
 
 @pytest.fixture(scope="module")
@@ -123,19 +113,6 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     assert _subjects(haku_cluster_binding) >= _HAKU_SUBJECTS
 
 
-def test_agents_no_longer_restart_the_devbox(rbac_objects: list[dict[str, Any]]) -> None:
-    reader = _one(_named(rbac_objects, "public-coder-agent-reader"), "Role")
-    reader_vmi_rule = one(rule for rule in reader["rules"] if "virtualmachineinstances" in rule["resources"])
-    assert reader_vmi_rule["verbs"] == _READ
-    assert "delete" not in {verb for rule in reader["rules"] for verb in rule["verbs"]}
-
-    retired = _named(rbac_objects, "public-coder-agent-devbox-vmi-restart")
-    # Existing managed Sandboxes retain a resolved reference to this Role. Keep
-    # the reference readable, but revoke every permission and every static binding.
-    assert not _one(retired, "Role").get("rules")
-    assert not any(obj["kind"] == "RoleBinding" for obj in retired)
-
-
 def test_app_egress_reaches_the_internet_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
     egress = _one(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
     assert all(rule.get("to") for rule in egress)
@@ -164,9 +141,9 @@ def test_openclaw_uses_relay_without_receiving_its_token(app_objects: list[dict[
         assert "agentplane-egress-token" not in {v["name"] for v in container["volumeMounts"]}
 
 
-def test_openclaw_cannot_dial_iron_or_clickhouse_directly(app_objects: list[dict[str, Any]]) -> None:
+def test_openclaw_cannot_bypass_agentplane_egress(app_objects: list[dict[str, Any]]) -> None:
     rules = _one(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
-    assert {p["port"] for r in rules for p in r["ports"]} == {53, 8888, 2222, 4000}
+    assert {p["port"] for r in rules for p in r["ports"]} == {53, 8888, 4000}
     gateway = one(r for r in rules if r["ports"] == [{"port": 8888, "protocol": "TCP"}])
     assert gateway["to"] == [
         {
@@ -174,15 +151,6 @@ def test_openclaw_cannot_dial_iron_or_clickhouse_directly(app_objects: list[dict
             "podSelector": {"matchLabels": public_coder_egress.GATEWAY.pods.selector},
         }
     ]
-
-
-def test_iron_only_admits_the_vm(proxy_objects: list[dict[str, Any]]) -> None:
-    ingress = _one(proxy_objects, "CiliumNetworkPolicy", "allow-public-coder-agent-proxy-ingress")["spec"]["ingress"]
-    source = one(one(ingress)["fromEndpoints"])["matchLabels"]
-    assert source == {
-        "k8s:io.kubernetes.pod.namespace": "public-coder-agent",
-        **{f"k8s:{key}": value for key, value in public_coder_devbox.SSH.pods.selector.items()},
-    }
 
 
 def test_kubeconfig_retains_haku_identity_over_the_relay() -> None:

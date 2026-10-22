@@ -54,7 +54,7 @@ same-namespace administration and Alloy metrics scraping.
 Haku Console-managed public-coder agent. It can `SELECT` only the normalized
 `aiquota.aiquota_windows` and raw `aiquota.raw_http_observations` tables, under
 the shared bounded `readonly` profile and quota. The agent holds only an
-Iron-proxy placeholder; the real password is reflected exclusively into its
-Iron proxy, which is the sole cross-namespace Pod permitted to reach this
-ClusterIP service on HTTP port 8123. ClickHouse is not exposed through an
-HTTPRoute.
+Agentplane credential placeholder; the real password is held by Agentplane
+egress. The ClickHouse NetworkPolicy admits the Agentplane gateway from outside
+the `clickhouse` namespace on HTTP port 8123. ClickHouse is not exposed through
+an HTTPRoute.

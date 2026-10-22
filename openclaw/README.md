@@ -8,9 +8,6 @@ The public-coder agent consumes this gateway derivation:
 - `default.nix` — `git.allegedly.works/ducktape-ci/public-coder-agent`, the public-coder agent image;
   adds the proxy preload, the Matrix and Brave runtime plugins, and the
   command-line toolset.
-- `public_coder_agent/devbox/` — the public-coder agent's separate NixOS
-  build/test VM and containerDisk recipe; its Kubernetes manifests stay under
-  `cluster/parked/public-coder-agent/devbox/`.
 
 Build either directly:
 

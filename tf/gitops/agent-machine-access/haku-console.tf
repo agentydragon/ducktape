@@ -93,28 +93,28 @@ resource "kubernetes_secret" "haku_console_oidc_source" {
 }
 
 
-# Dedicated static-Agent bearer for public-coder-agent -> Haku Kubernetes authorization proxy.
-# The real value is delivered only to Haku Console and iron-proxy; the OpenClaw container gets a
-# non-secret placeholder that the proxy replaces only for haku-kubeapi.allegedly.works
-# Authorization headers. Console uses this identity to authorize Kubernetes requests; possession
+# Dedicated static-Agent bearer for public-coder-agent's Haku Kubernetes API access.
+# The real value is delivered to Haku Console and the Agentplane egress credential store. OpenClaw
+# gets a non-secret placeholder that egress replaces only in Authorization headers for
+# haku-kubeapi.allegedly.works. Console uses this identity to authorize Kubernetes requests; possession
 # of the bearer does not grant the projected ServiceAccount's Kubernetes permissions directly.
 resource "random_password" "haku_console_public_coder_agent" {
   length  = 48
   special = false
 }
 
-# Canonical static-Agent bearer. Reflector mirrors it into both the Console and
-# proxy namespaces so both hops use one generated value.
+# Canonical static-Agent bearer. Reflector mirrors it into Haku Console; Agentplane egress reads
+# this canonical Secret through its exact-secret ExternalSecret store.
 resource "kubernetes_secret" "haku_console_public_coder_agent_source" {
   metadata {
     name      = "haku-console-public-coder-agent"
     namespace = "authentik"
     annotations = {
-      description                                                     = "Proxy-mediated static-Agent bearer for public-coder-agent -> Haku Kubernetes authorization proxy"
+      description                                                     = "Public-coder Haku API static-Agent bearer for Agentplane egress and Haku Console"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-console,public-coder-agent"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-console"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-console,public-coder-agent"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-console"
     }
   }
 

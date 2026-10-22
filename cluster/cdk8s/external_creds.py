@@ -71,7 +71,6 @@ CREDENTIALS = (
         secret_file="brave-search-api-key.sops.yaml",
         secret_name="brave-search-api-key",
         consumers=(
-            ApprovedConsumer("public-coder-agent", "brave-search-api-key-public-coder-agent-reader"),
             ApprovedConsumer(
                 "agentplane-staging-egress-credentials",
                 "brave-search-api-key-agentplane-staging-egress-credentials-reader",
@@ -91,7 +90,6 @@ CREDENTIALS = (
         secret_name="buildbuddy-api-key",
         consumers=(
             ApprovedConsumer("claude-sandbox", "buildbuddy-api-key-claude-sandbox-reader"),
-            ApprovedConsumer("public-coder-agent", "buildbuddy-api-key-public-coder-agent-reader"),
             ApprovedConsumer("agentplane-staging", "buildbuddy-api-key-agentplane-staging-reader"),
             ApprovedConsumer("flux-system", "buildbuddy-api-key-flux-system-reader"),
             ApprovedConsumer(
@@ -113,7 +111,6 @@ CREDENTIALS = (
         secret_file="github-agentydragon-agent.sops.yaml",
         secret_name="github-agentydragon-agent",
         consumers=(
-            ApprovedConsumer("public-coder-agent", "github-agentydragon-agent-public-coder-agent-reader"),
             ApprovedConsumer("haku-console", "github-agentydragon-agent-haku-console-reader"),
             ApprovedConsumer("monitoring", "github-agentydragon-agent-monitoring-reader"),
             ApprovedConsumer(

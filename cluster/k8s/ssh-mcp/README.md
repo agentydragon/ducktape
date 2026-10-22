@@ -10,8 +10,8 @@ the backend owns SSH transport and private keys.
 `cluster/cdk8s/ssh_mcp/backend.py`; the SOPS-encrypted key files remain hand-written
 siblings. The component's generator reads the target roster from
 `cluster/cdk8s/ssh_mcp/config.py`, the captured Nebula host keys from
-`ssh_keys/<host>-host-ed25519.pub`, the devbox Service and its canonical public host key, and
-`nebula-mesh.json`. The switch's pinned host key and Agentplane public key come from
+`ssh_keys/<host>-host-ed25519.pub`, and `nebula-mesh.json`. The switch's pinned host key and
+Agentplane public key come from
 `ssh_keys/home-switch-host-key.pub` and `ssh_keys/home-switch-agentplane.pub`.
 
 The generated manifest includes the Password and ExternalSecret for the bearer,
@@ -35,9 +35,6 @@ The `settings.yaml` and `known_hosts` ConfigMap entries are generated. Edit the 
 in <../../cdk8s/ssh_mcp/config.py> or a Nebula host's key in `ssh_keys/<host>-host-ed25519.pub`
 (the corresponding file for each mesh host in the roster), then run
 `bb run //cluster/cdk8s:generate_manifests`.
-The devbox hostname comes from its Service and the key from `ssh_keys/public-coder-devbox-host.pub`;
-the same run generates sshpiper's typed Pipe and matching host-key pins.
-
 `ssh-mcp-keys` holds SOPS-encrypted per-`(host,user)` ed25519 keys for `{wyrm2,rugged} ×
 {agentydragon,root}`, with the public halves
 in each host's NixOS `authorizedKeys`.
@@ -50,18 +47,8 @@ offline; when it does, its targets fail closed the same way an absent key or hos
 would — the designed behaviour for a target that currently can't be reached, not a
 wiring gap.
 
-`public-coder-devbox × {root,coder}` targets are keyed in a **separate**
-Secret, `ssh-mcp-keys-public-coder-devbox` (`keys-public-coder-devbox.sops.yaml`),
-mounted alongside `ssh-mcp-keys`. Deviation from the pattern above:
-whoever adds a target normally appends to `keys.sops.yaml` with `sops <file>`, which needs
-the cluster decryption identity; an agent session that can only encrypt (not decrypt) that
-file cannot safely do that without risking the working `wyrm2`/`rugged` keys it already
-holds, so it mints a new Secret instead. Reaching the devbox is a normal in-cluster
-`toEndpoints`/Service DNS path (`cluster/parked/public-coder-agent/devbox/`), not a
-Nebula hostAlias — it is an ordinary pod (a KubeVirt VM), not a cluster node.
-
 `atlas × {root,agentydragon}` targets follow the same
-separate-Secret pattern as the devbox pair: `ssh-mcp-keys-atlas`
+separate-Secret pattern: `ssh-mcp-keys-atlas`
 (`keys-atlas.sops.yaml`). `atlas` is a Nebula mesh peer like `wyrm2`/`rugged`
 (reached over the same `hostAliases` pinning), but unlike them it is not a registered
 Kubernetes node (`nebula-mesh.json`: `role: "non-k8s"`), so it needs its own network
@@ -86,8 +73,7 @@ the Tofu runner. The generated source is <../../cdk8s/ssh_mcp/backend.py>.
 
 `wyrm2`/`rugged` are cluster nodes reached over Nebula, so neither a CIDR selector nor
 cluster DNS resolves them the way a host on the mesh does — hence entities + hostAliases.
-`public-coder-devbox` is an ordinary pod, so it gets a normal cross-namespace
-`toEndpoints` rule instead. `atlas` is a Nebula peer but not a cluster node, so its address
+`atlas` is a Nebula peer but not a cluster node, so its address
 never gets the host/remote-node identity the entities rule relies on; a plain `toCIDR` rule
 naming its Nebula IP is the selector for a genuinely external destination. Unlike the
 entities rule (proven by the working `wyrm2` targets), the `toCIDR` rule for `atlas` is

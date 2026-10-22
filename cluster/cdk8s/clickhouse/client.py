@@ -50,7 +50,7 @@ SCHEMA_FILE = "schema.sql"  # the key of every schema ConfigMap, and the hand-wr
 PASSWORD_KEY = "password"  # the key of every user's credentials Secret
 ADMIN_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="clickhouse-admin-credentials")  # admin-credentials.sops.yaml
 # public-coder's read-only account. Its credentials Secret (public-coder-credentials.sops.yaml) is
-# reflected, under the same name, into the namespace of the proxy that presents it.
+# read by Agentplane egress through an exact-secret ExternalSecret store.
 PUBLIC_CODER_USER = "public_coder_analytics"
 PUBLIC_CODER_CREDENTIALS = "clickhouse-public-coder-credentials"
 AIQUOTA_HISTORY_USER = "aiquota_history_reader"

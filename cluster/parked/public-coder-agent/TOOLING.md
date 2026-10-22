@@ -20,7 +20,7 @@ authorization proxy. It is not an alternate shell for the Pod in which the Agent
 Use this order:
 
 1. local workspace files, processes, tests, and desired-state Git;
-2. direct Git or GitHub REST as `agentydragon-agent` through iron-proxy; and
+2. direct Git or GitHub REST as `agentydragon-agent` through Agentplane egress; and
 3. direct reader kubectl after checking its live RBAC when necessary.
 
 ## Check the current capabilities
@@ -41,9 +41,9 @@ closure and workspace-local tools first. If the operation targets Pod-local stat
 
 ### GitHub identity
 
-`GH_PAT` and `GITHUB_TOKEN` are the same non-secret placeholder. iron-proxy replaces either value
-only in authentication headers sent to scoped GitHub hosts. Use them exactly like a real token
-without printing them.
+`GH_PAT` and `GITHUB_TOKEN` are the same non-secret placeholder. Agentplane egress replaces either
+value only in authentication headers sent to scoped GitHub hosts. Use them exactly like a real
+token without printing them.
 
 The expected identity and permissions are:
 
@@ -72,7 +72,7 @@ curl --fail-with-body \
   https://aiquota.allegedly.works/v1/quotas
 ```
 
-The actual bearer is reflected only into the trusted egress proxy, never into the OpenClaw
+The actual bearer is reflected only into the trusted Agentplane egress gateway, never into the OpenClaw
 container. Requests to other hosts, methods, or paths retain the useless placeholder.
 
 ### ClickHouse analytics reader
@@ -80,11 +80,11 @@ container. Requests to other hosts, methods, or paths retain the useless placeho
 `CLICKHOUSE_PUBLIC_CODER_USER=public_coder_analytics` and
 `CLICKHOUSE_PUBLIC_CODER_PASSWORD` are the native ClickHouse reader identity for
 normalized and raw AIQuota history. The password value in the OpenClaw runner is a
-non-secret placeholder; Iron replaces it inside the HTTP Basic-auth header only
+non-secret placeholder; Agentplane egress replaces it inside the HTTP Basic-auth header only
 for the private ClusterIP host
 `clickhouse.clickhouse.svc.cluster.local`. Do not print either value.
 
-Use the existing HTTP proxy and ClickHouse's HTTP endpoint normally, for
+Use the existing Agentplane egress proxy and ClickHouse's HTTP endpoint normally, for
 example:
 
 ```sh
@@ -96,7 +96,7 @@ curl --fail-with-body --user "$CLICKHOUSE_PUBLIC_CODER_USER:$CLICKHOUSE_PUBLIC_C
 The native account has `SELECT` only on `aiquota.aiquota_windows` and
 `aiquota.raw_http_observations`, under the bounded ClickHouse `readonly` profile
 and quota. It has no `system.*`, DDL, or write access. `NO_PROXY` intentionally excludes the
-ClickHouse Service, so bypassing Iron would send the useless placeholder and
+ClickHouse Service, so bypassing egress would send the useless placeholder and
 fail; do not add `.svc.cluster.local` or the Service CIDR to it.
 
 ### Kubernetes RBAC
@@ -166,8 +166,7 @@ Pod and public GitHub cannot show, ask the Operator to collect that evidence.
 ### Kubernetes diagnostics
 
 Try direct kubectl first for reads covered by the public-coder RBAC. Typical examples include the
-agent namespace, Node inventory, Pod logs where granted, Ducktape Flux status projections, and VM
-image publisher metadata.
+agent namespace, Node inventory, Pod logs where granted, and Ducktape Flux status projections.
 
 For Flux-managed systems, change desired state in Git and verify reconciliation. Do not patch live
 objects as a substitute for the Git change.
@@ -176,42 +175,6 @@ When standing RBAC denies a necessary operation, ask the Operator to issue a tem
 Haku Console. Secrets, Pod exec, cluster writes, and privileged node operations are not routine
 direct-reader diagnostics.
 
-### SSH to the devbox
-
-`ssh devbox` reaches the dedicated devbox VM as the unprivileged `coder` account through a
-terminating bastion (`cluster/parked/public-coder-agent/sshpiper`). It is a separate route from
-the Haku Kubernetes authorization proxy.
-
-Use it for watching a long build as it runs, interactive sessions, and `scp` (`rsync` is in neither
-image).
-
-Two things it deliberately cannot do, both rejected at the piper rather than by convention:
-port forwarding (`ssh -L`/`-D`/`-R`), and reaching any account but `coder` — the destination user
-is fixed upstream and no `ssh root@…` spelling changes it.
-
-### Manual Agentplane acceptance from the devbox
-
-The public-coder devbox is the controlled host for Agentplane's live acceptance targets. Run these
-tests from the devbox, not from the OpenClaw Pod and not through `bbr`/RBE: the test process needs
-the devbox's local Bazel execution, mediated kubeconfig, cluster route, and teardown lifecycle.
-
-Use a fresh checkout path for each run and invoke only an explicit manual target:
-
-```bash
-ssh devbox
-checkout=/home/coder/agentplane-acceptance-$(date -u +%Y%m%d%H%M%S)
-git clone https://github.com/agentydragon/ducktape.git "$checkout"
-cd "$checkout"
-bazelisk test //agentplane/acceptance:test_mcp --test_output=streamed --test_arg=-s
-```
-
-The default acceptance target is `agentplane-testing` with `AGENTPLANE_ACCEPTANCE_IDP=dex` and its
-dedicated operator Secret path. Staging remains available for ad hoc Authentik click-through tests
-by overriding the URL, namespace, IDP, and Secret path. Do not put the acceptance
-operator password or workload token in shell history, command arguments, checkout files, or test
-artifacts. The devbox's mediated kubeconfig is the only supported way for the test to mint its
-short-lived workload token and read the named operator Secret.
-
-This is a manual behavioral test, not a CI gate. It creates real Sandboxes and can call the existing
-cheap-model LiteLLM route; inspect the Action/egress evidence and complete teardown before starting
-another run. Retain the devbox checkout only as long as needed for the run.
+The retired public-coder devbox was the controlled host for Agentplane's manual live acceptance
+targets. No replacement host is implied by this guide; choose an explicitly authorized environment
+and identity before running those targets.

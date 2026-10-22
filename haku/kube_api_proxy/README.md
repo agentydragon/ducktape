@@ -207,7 +207,7 @@ be revalidated.
 
 The capability-neutral production cutover deploys this proxy at
 `haku-kubeapi.allegedly.works`. Public Coder reaches it only through its mandatory
-iron-proxy, which substitutes the Agent's Haku bearer for that exact hostname.
+Agentplane egress, which substitutes the Agent's Haku bearer for that exact hostname.
 The Agent has no Kubernetes credential and its NetworkPolicy has no direct
 kube-apiserver path. The proxy uses a rotating projected ServiceAccount token with a deliberately
 reviewed `cluster-admin` static ceiling. That ceiling creates no standing Agent authority: Console

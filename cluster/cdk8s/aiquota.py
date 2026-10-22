@@ -63,7 +63,6 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
-from cluster.cdk8s.public_coder import proxy as public_coder_proxy
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import checked_value, env_name, settings_file
@@ -127,14 +126,7 @@ class BearerMirror:
         return SecretRef(namespace=self.namespace, name=f"{BEARER_SECRET_NAME}-{self.consumer}").key(_BEARER_KEY)
 
 
-# In the destination namespace only the trusted egress proxy consumes this Secret; the OpenClaw
-# workload receives a non-secret placeholder instead.
-PUBLIC_CODER_BEARER = BearerMirror(
-    consumer="public-coder",
-    namespace=public_coder_proxy.NAMESPACE,
-    description="Shared AIQuota API bearer mirrored only to public-coder-agent's trusted egress proxy.",
-)
-# The same for agentplane-staging's egress proxy (agentplane/egress_staging_credentials.py).
+# Agentplane egress consumes this Secret; its workload receives only a non-secret placeholder.
 AGENTPLANE_STAGING_BEARER = BearerMirror(
     consumer="agentplane-staging",
     namespace=STAGING_CREDENTIALS_NAMESPACE,
@@ -142,7 +134,6 @@ AGENTPLANE_STAGING_BEARER = BearerMirror(
 )
 
 BEARER_MIRRORS = (
-    PUBLIC_CODER_BEARER,
     # Haku's runtimes outside the egress fence (the Claude Code web home, plain kubectl) read
     # /v1/quotas directly with no per-call approval.
     BearerMirror(

@@ -1,8 +1,7 @@
 # Parked public-coder-agent image CI
 
-Workflows and smoke script that build the OpenClaw image and the public-coder devbox
-containerDisk, parked with the instance (<../README.md>).
+The OpenClaw image workflow and smoke script are parked with the instance (<../README.md>).
 
-To resume, move `openclaw-image.yml` and `public-coder-devbox-image.yml` back to
-`.github/workflows/` and `smoke-openclaw-image.sh` to `.github/scripts/`, then let them publish
-fresh images before unparking the instance.
+To resume, move `openclaw-image.yml` back to `.github/workflows/` and
+`smoke-openclaw-image.sh` to `.github/scripts/`, then let the workflow publish a fresh image
+before unparking OpenClaw. The KubeVirt devbox and its image workflow were retired.

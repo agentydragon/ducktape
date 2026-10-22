@@ -2,8 +2,7 @@
 
 The image tag is the placeholder "unset"; the hand-written
 cluster/parked/public-coder-agent/app/image-pins/kustomization.yaml overrides it at
-`kustomize build` time via Flux's image-automation marker. The `ssh devbox` ConfigMap comes
-from the kustomization.yaml's configMapGenerator.
+`kustomize build` time via Flux's image-automation marker.
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -21,7 +20,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.egress.resources import placeholder_of
-from cluster.cdk8s import agent_access_profiles as access, external_creds, namespaces
+from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -30,14 +29,7 @@ from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
-from cluster.cdk8s.public_coder import (
-    config as public_coder_config,
-    egress as public_coder_egress,
-    egress_proxy_url,
-    proxy as public_coder_proxy,
-    sshpiper as public_coder_sshpiper,
-)
+from cluster.cdk8s.public_coder import config as public_coder_config, egress as public_coder_egress, egress_proxy_url
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -51,7 +43,8 @@ _SERVICE = ServiceRef(
 )
 _NAMESPACE_ANNOTATIONS = {
     "description": (
-        "Second OpenClaw agent, egress-confined to a CONNECT proxy and reachable only through the Authentik proxy "
+        "Second OpenClaw agent, egress-confined to Agentplane's CONNECT relay "
+        "and reachable only through the Authentik proxy "
         "outpost. Opens pull requests against public repositories as agentydragon-agent."
     )
 }
@@ -65,8 +58,6 @@ _GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gate
 _EGRESS_PROXY = egress_proxy_url.PROXY_URL
 _NO_PROXY = "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
 _KUBECONFIG_CONFIG_MAP_NAME = "kubeconfig"
-# Rendered by the kustomization.yaml's configMapGenerator.
-_SSH_CONFIG_MAP_NAME = "public-coder-agent-ssh"
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]
 
@@ -181,20 +172,20 @@ def _openclaw_container() -> k8s.Container:
             # logging captures them in Loki. OpenClaw's sensitive-value redaction remains enabled
             # at its default.
             _env("OPENCLAW_LOG_LEVEL", "debug"),
-            # A placeholder, not a credential. The real PAT lives in the egress proxy, which swaps
+            # A placeholder, not a credential. The real PAT lives in Agentplane egress, which swaps
             # this value into `Authorization` on the way out to GitHub -- in `Bearer <value>` and
             # inside base64 `Basic user:<value>` alike, so both the REST API and the git transport
             # work. The agent cannot read the token from its environment or from /proc, which is
             # what F7 previously left exposed.
             #
-            # The agent has to be told the contract, because the proxy only acts on requests
+            # The agent has to be told the contract, because egress only acts on requests
             # carrying the placeholder: authenticate to GitHub with $GH_PAT as if it were a real
             # token. A request without it is not a failure, just an unauthenticated request.
             #
             # Also expose the same inert placeholder under GitHub's standard `GITHUB_TOKEN` name.
             # OpenClaw's generic exec environment filter treats it as a credential, although its
             # current local-Gateway path can restore ambient values for native GitHub tooling.
-            # The proxy still sees only the placeholder and replaces it in scoped outbound
+            # Egress still sees only the placeholder and replaces it in scoped outbound
             # Authorization headers. See F7, F10, F16.
             _env("GITHUB_TOKEN", placeholder_of(public_coder_egress.GITHUB_CREDENTIAL)),
             _env("GH_PAT", placeholder_of(public_coder_egress.GITHUB_CREDENTIAL)),
@@ -209,10 +200,10 @@ def _openclaw_container() -> k8s.Container:
             _env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", placeholder_of(public_coder_egress.CLICKHOUSE_CREDENTIAL)),
             # This placeholder grants access only when Agentplane egress substitutes it for
             # aiquota.allegedly.works' two read-only API paths. The actual shared bearer is
-            # mounted only into the proxy container.
+            # mounted only into the Agentplane egress gateway.
             _env("AIQUOTA_API_BEARER_TOKEN", placeholder_of(public_coder_egress.AIQUOTA_CREDENTIAL)),
             # This is likewise an inert placeholder. The real Brave Search API key is mounted only
-            # in the egress proxy and substituted solely in X-Subscription-Token requests to
+            # in Agentplane egress and substituted solely in X-Subscription-Token requests to
             # api.search.brave.com.
             _env("BRAVE_API_KEY", placeholder_of(public_coder_egress.BRAVE_CREDENTIAL)),
             SecretRef(namespace=NAMESPACE, name="litellm-key-public-coder-agent")
@@ -239,7 +230,7 @@ def _openclaw_container() -> k8s.Container:
             # unchanged.
             _env("NO_PROXY", _NO_PROXY),
             _env("no_proxy", _NO_PROXY),
-            # The proxy terminates TLS, so its root must be trusted. The proxy's trust Bundle is
+            # Agentplane egress terminates TLS, so its root must be trusted. Its trust Bundle is
             # mounted over the system trust store below, which covers every OpenSSL and GnuTLS
             # client at once -- so no per-tool variables are needed.
             #
@@ -288,11 +279,8 @@ def _openclaw_container() -> k8s.Container:
             k8s.VolumeMount(name="kubeconfig", mount_path=f"{_HOME}/.kube", read_only=True),
             # Over the system trust store, not alongside it. The Bundle is built with
             # useDefaultCAs, so it already contains the public roots plus the cluster root plus
-            # this proxy's interception root -- replacing the distro file loses nothing.
+            # Agentplane egress's interception root -- replacing the distro file loses nothing.
             k8s.VolumeMount(name="trust", mount_path=_CA_BUNDLE, sub_path="ca-certificates.crt", read_only=True),
-            # `ssh devbox` -- config, host-key pin, and the Agent's own downstream key, projected
-            # into one directory because ~/.ssh has to be a single path. See ./ssh_config.
-            k8s.VolumeMount(name="ssh", mount_path=f"{_HOME}/.ssh", read_only=True),
             k8s.VolumeMount(name="tmp", mount_path="/tmp"),
             # Heap snapshots and Node reports. Separate from /tmp so a capture outlives the Pod;
             # see _claims. The path is half of a contract with
@@ -374,8 +362,6 @@ def _deployment(scope: Construct) -> None:
                             )
                         )
                     ),
-                    # The Secret comes from public_coder_proxy's ExternalSecret, rendered into this
-                    # same Flux Kustomization through app/kustomization.yaml's ../proxy.
                     image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
                     init_containers=[
                         k8s.Container(
@@ -409,22 +395,6 @@ def _deployment(scope: Construct) -> None:
                         k8s.Volume(name="cfg", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP_NAME)),
                         k8s.Volume(
                             name="trust", config_map=k8s.ConfigMapVolumeSource(name=public_coder_egress.CA_BUNDLE_NAME)
-                        ),
-                        # 0440 rather than 0400: fsGroup makes these root:1000, so owner-only would
-                        # be unreadable by the container's own uid. OpenSSH's "unprotected private
-                        # key" check only fires on a key the caller owns, and this one is
-                        # root-owned, so group-readable is accepted.
-                        k8s.Volume(
-                            name="ssh",
-                            projected=k8s.ProjectedVolumeSource(
-                                default_mode=0o440,
-                                sources=[
-                                    k8s.VolumeProjection(config_map=k8s.ConfigMapProjection(name=_SSH_CONFIG_MAP_NAME)),
-                                    k8s.VolumeProjection(
-                                        secret=k8s.SecretProjection(name="public-coder-agent-devbox-ssh-key")
-                                    ),
-                                ],
-                            ),
                         ),
                         k8s.Volume(name="tmp", empty_dir=k8s.EmptyDirVolumeSource()),
                         k8s.Volume(
@@ -502,6 +472,25 @@ def _claims(scope: Construct) -> None:
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("20Gi")}),
         ),
     )
+    # Keep the SSH session audit trail after retiring the devbox route. These recordings are
+    # separate from guest state and remain available for later review.
+    k8s.KubePersistentVolumeClaim(
+        scope,
+        "sshpiper-recordings",
+        metadata=k8s.ObjectMeta(
+            name="public-coder-agent-sshpiper-recordings",
+            namespace=NAMESPACE,
+            annotations={
+                "kustomize.toolkit.fluxcd.io/prune": "disabled",
+                "description": "Retained audit recordings from the retired public-coder SSH route.",
+            },
+        ),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="local-path-ovh",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("5Gi")}),
+        ),
+    )
 
 
 def _service(scope: Construct) -> None:
@@ -547,18 +536,6 @@ def _network_policies(scope: Construct) -> None:
                     to=[_peer(public_coder_egress.GATEWAY.pods.namespace, public_coder_egress.GATEWAY.pods.selector)],
                     ports=[_tcp(public_coder_egress.GATEWAY.pod_port)],
                 ),
-                # `ssh devbox`. Deliberately the piper and not the devbox itself: without a route
-                # to port 22 on the VM, terminating at the piper is the only way through, which is
-                # what makes the credential split enforced rather than advisory -- the same
-                # argument as the proxy above.
-                k8s.NetworkPolicyEgressRule(
-                    to=[
-                        k8s.NetworkPolicyPeer(
-                            pod_selector=k8s.LabelSelector(match_labels=public_coder_sshpiper.SERVICE.pods.selector)
-                        )
-                    ],
-                    ports=[_tcp(public_coder_sshpiper.SERVICE.pod_port)],
-                ),
                 k8s.NetworkPolicyEgressRule(
                     to=[_peer("litellm", {"app.kubernetes.io/name": "litellm"})], ports=[_tcp(4000)]
                 ),
@@ -591,22 +568,6 @@ def _network_policies(scope: Construct) -> None:
 
 
 def _credentials(scope: Construct) -> None:
-    # The agentydragon-agent GitHub PAT. The agent has its own GitHub account; it opens pull
-    # requests from its own forks, so this token needs no write access to any repository owned
-    # by someone else.
-    #
-    # Consumed by the **egress proxy**, not by the agent. The agent container holds only a
-    # placeholder, which the proxy swaps for this value on requests bound for GitHub.
-    ExternalSecret(
-        scope,
-        "github-token",
-        metadata=ApiObjectMetadata(name=public_coder_proxy.GITHUB_TOKEN.secret.name, namespace=NAMESPACE),
-        refresh_interval="1h",
-        secret_store_ref=external_creds.STORE,
-        data=[remote_data("github-agentydragon-agent", "token", secret_key=public_coder_proxy.GITHUB_TOKEN.key)],
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-    )
     # Gateway auth normally arrives through the Authentik trusted proxy. OpenClaw subagents and
     # other backend clients instead call the gateway over its loopback WebSocket, so they never
     # carry Authentik's identity headers.
@@ -639,7 +600,7 @@ def _rbac(scope: Construct) -> None:
     #
     # Deliberately narrow to start: the agent can observe its own deployment, pods, config,
     # events, and the resources that commonly fail in ways that are visible here (PVCs, network
-    # policies, the proxy deployment). No secrets, no exec, no write verbs.
+    # policies and the egress path). No secrets, no exec, no write verbs.
     #
     # Expand by adding RoleBindings in other namespaces that reference the deploy-owned
     # access-profile group, or by graduating to a ClusterRole when the scope warrants it.
@@ -678,23 +639,6 @@ def _rbac(scope: Construct) -> None:
             ),
             # Pod metrics (metrics.k8s.io) -- nodes_top / pods_top equivalents.
             k8s.PolicyRule(api_groups=["metrics.k8s.io"], resources=["pods"], verbs=["get", "list"]),
-            # The devbox is the public-coder agent's ephemeral build machine. Restrict
-            # image-rollout inspection to this one named KubeVirt VM/VMI. The rollout
-            # controller, not the agents, owns restarts.
-            k8s.PolicyRule(
-                api_groups=["kubevirt.io"],
-                resources=["virtualmachines"],
-                resource_names=["public-coder-devbox"],
-                verbs=["get"],
-            ),
-            k8s.PolicyRule(
-                api_groups=["kubevirt.io"],
-                resources=["virtualmachineinstances"],
-                resource_names=["public-coder-devbox"],
-                # A named VMI waiter establishes its resource version with a list+watch;
-                # resourceNames requires the caller to field-select this exact VMI.
-                verbs=["get", "list", "watch"],
-            ),
         ],
     )
     k8s.KubeRoleBinding(
@@ -707,18 +651,6 @@ def _rbac(scope: Construct) -> None:
         ),
         role_ref=access.role_ref("public-coder-agent-reader"),
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-agent-reader")],
-    )
-
-    # Revoke agent-driven restarts: the image rollout controller owns them now.
-    # Keep an empty Role until old managed Sandboxes with this snapshotted grant
-    # have been replaced. The reconciler reads the Role even for existing bindings;
-    # deleting it immediately would mark those Sandboxes unready. No new selection
-    # or static binding points here, and old bindings now confer no permissions.
-    k8s.KubeRole(
-        scope,
-        "devbox-vmi-restart",
-        metadata=k8s.ObjectMeta(name="public-coder-agent-devbox-vmi-restart", namespace=NAMESPACE),
-        rules=[],
     )
 
     # Additional secret-free status for the public-coder workload itself.
@@ -831,7 +763,7 @@ def namespace_chart(app: App) -> Chart:
 
     The ServiceAccount carries the pull secret for ducktape-ci, a private tenant in the in-cluster
     Forgejo registry; cluster/k8s/forgejo-images reflects `forgejo-images-creds` into this namespace.
-    Workloads that don't set their own imagePullSecrets (the devbox VM's containerDisk pull) need it.
+    The OpenClaw workload uses it to pull its private ducktape-ci image.
     """
     chart = Chart(app, "namespace", disable_resource_name_hashes=True)
     namespace = namespaces.namespace(
@@ -849,6 +781,7 @@ def namespace_chart(app: App) -> Chart:
 def app_chart(app: App) -> Chart:
     """The OpenClaw workload, its credentials, storage, network policy and RBAC."""
     workload = Chart(app, _NAME, disable_resource_name_hashes=True)
+    pull_credentials.forgejo_images_creds_external_secret(workload, "forgejo-images-creds", namespace=NAMESPACE)
     _credentials(workload)
     _claims(workload)
     _deployment(workload)

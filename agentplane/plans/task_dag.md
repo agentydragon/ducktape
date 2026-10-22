@@ -1006,7 +1006,6 @@ observations. New database work follows the task-specific review and rollout req
 
 ```mermaid
 flowchart LR
-    PC_EGRESS[Unscheduled: prune OpenClaw-only wiring from the Iron proxy]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
@@ -1016,13 +1015,6 @@ flowchart LR
     NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
     PC_KUBERNETES_POLICY_SET[Unscheduled: public-coder's Kubernetes access as one PolicySet]
 ```
-
-### `PC_EGRESS` — prune OpenClaw-only wiring from the Iron proxy
-
-**Unscheduled; the cutover landed and the public-coder Pod is paused (`replicas=0`).** Remove only the
-Iron proxy substitutions and credentials the KubeVirt devbox does not use (`_substitutions` and its
-ExternalSecrets); retain shared Iron/Haku consumers. Confirm the first resumed run uses the Agentplane
-route. Source: [public-coder wiring](../../cluster/cdk8s/public_coder/proxy.py).
 
 ### `PC_KUBERNETES_POLICY_SET` — public-coder's Kubernetes access as one PolicySet
 

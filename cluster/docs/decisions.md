@@ -522,10 +522,11 @@ than treating that proposal as the implementation plan.
   the reported offline session-database migration prerequisite, and the outstanding
   acceptance checks. [#8857](https://github.com/agentydragon/ducktape/issues/8857) tracks
   completion; readiness alone does not prove working sessions or credential substitution.
-- **Public-coder devbox:** stays on Iron, with its storage, credentials, proxy aliases
-  and trust intact. [#8856](https://github.com/agentydragon/ducktape/issues/8856) owns the
-  VM-compatible relay/identity design and migration. Do not assume KubeVirt needs a
-  hook/webhook before evaluating a supported placement and lifecycle.
+- **Public-coder devbox:** retired on 2026-10-21 instead of migrating its Iron dependency.
+  Its VM and disposable Bazel cache are removed; the OpenClaw state, diagnostics, and SSH audit
+  recordings remain. The old public-coder Iron proxy and SSH route are no longer needed. This
+  supersedes the migration question in [#8856](https://github.com/agentydragon/ducktape/issues/8856);
+  Haku sandbox/CI egress stays separate and is not affected.
 - **Other Haku sandbox/CI/egress consumers:** require fresh inventory and an explicit
   keep/migrate/consolidate/park decision under #5140. The public-coder migration does
   not authorize deleting them. Previously retired/parked workloads above stay retired;

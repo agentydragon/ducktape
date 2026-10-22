@@ -346,7 +346,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "//cluster/cdk8s/clickhouse:client",
-        "//cluster/cdk8s/public_coder:proxy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

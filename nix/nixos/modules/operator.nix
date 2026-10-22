@@ -2,8 +2,8 @@
 # when someone administers the box from a keyboard.
 #
 # Split out of base.nix because `username` names two different things across this flake. On
-# wyrm2/rugged/iguana/gecko/bootstrap/cpap-gateway it is the operator. On the agent VMs --
-# agent-box's `codex`, public-coder-devbox's `coder` -- it is the confinement target an agent
+# wyrm2/rugged/iguana/gecko/bootstrap/cpap-gateway it is the operator. On the agent VM --
+# agent-box's `codex` -- it is the confinement target an agent
 # lands in. While base.nix granted `wheel` and Nix `trusted-users` to whatever `username` held,
 # those accounts were built as operators, and `haku/docs/security.md` invariant #9 described them
 # as unprivileged while the configuration said otherwise.

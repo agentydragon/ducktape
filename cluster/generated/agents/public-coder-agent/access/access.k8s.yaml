@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   annotations:
-    description: Second OpenClaw agent, egress-confined to a CONNECT proxy and reachable only through the Authentik proxy outpost. Opens pull requests against public repositories as agentydragon-agent.
+    description: Second OpenClaw agent, egress-confined to Agentplane's CONNECT relay and reachable only through the Authentik proxy outpost. Opens pull requests against public repositories as agentydragon-agent.
   labels:
     goldilocks.fairwinds.com/vpa-update-mode: auto
     name: public-coder-agent
@@ -93,24 +93,6 @@ rules:
     verbs:
       - get
       - list
-  - apiGroups:
-      - kubevirt.io
-    resourceNames:
-      - public-coder-devbox
-    resources:
-      - virtualmachines
-    verbs:
-      - get
-  - apiGroups:
-      - kubevirt.io
-    resourceNames:
-      - public-coder-devbox
-    resources:
-      - virtualmachineinstances
-    verbs:
-      - get
-      - list
-      - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -136,13 +118,6 @@ subjects:
   - kind: ServiceAccount
     name: claude-ai
     namespace: agentplane-staging
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: public-coder-agent-devbox-vmi-restart
-  namespace: public-coder-agent
-rules: []
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

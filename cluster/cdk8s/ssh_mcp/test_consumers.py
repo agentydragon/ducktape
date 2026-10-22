@@ -1,12 +1,11 @@
 """The SSH MCP backend and its consumer share a generated URL and bearer contract.
 
-The backend and sshpiper charts are synthesized from their cdk8s constructs here; this
-checks their resource relationships without reading committed generated YAML.
+The backend chart is synthesized from its cdk8s construct here; this checks its resource
+relationships without reading committed generated YAML.
 """
 
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -17,8 +16,7 @@ import yaml
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
-from cluster.cdk8s.public_coder import devbox as public_coder_devbox
-from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config, sshpiper
+from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 
@@ -34,7 +32,7 @@ def _locate(relative: str) -> Path:
 
 @pytest.fixture(scope="module")
 def ssh_config() -> ssh_mcp_config.SshMcpConfig:
-    return ssh_mcp_config.load(public_coder_devbox.SSH)
+    return ssh_mcp_config.load()
 
 
 @pytest.fixture(scope="module")
@@ -43,13 +41,6 @@ def ssh_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any
     ssh_mcp_backend.SshMcp(
         chart, ssh_mcp_config.NAME, config=ssh_config, mesh=nebula_mesh.load(_locate("nebula-mesh.json"))
     )
-    return Cdk8sTesting.synth(chart)
-
-
-@pytest.fixture(scope="module")
-def sshpiper_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any]]:
-    chart = Cdk8sTesting.chart()
-    sshpiper.construct(chart, config=ssh_config, downstream_key=ssh_config.agent_downstream_key)
     return Cdk8sTesting.synth(chart)
 
 
@@ -161,32 +152,6 @@ def test_bearer_reaches_exactly_the_namespaces_that_may_call(
     }
     assert readers == admitted
     assert "agentplane-staging" in admitted
-
-
-def test_backend_and_sshpiper_pin_the_canonical_devbox_key(
-    ssh_config: ssh_mcp_config.SshMcpConfig,
-    ssh_resources: list[dict[str, Any]],
-    sshpiper_resources: list[dict[str, Any]],
-) -> None:
-    expected = f"{ssh_config.devbox_host} {ssh_config.devbox_key_type} {ssh_config.devbox_key}"
-    config_map = one(r for r in ssh_resources if r["kind"] == "ConfigMap")
-    known_hosts = config_map["data"]["known_hosts"].splitlines()
-    assert expected in known_hosts
-    assert set(ssh_config.known_hosts.splitlines()) <= set(known_hosts)
-
-    pipe = one(r for r in sshpiper_resources if r["kind"] == "Pipe")
-    pipe_known_hosts = base64.b64decode(pipe["spec"]["to"]["known_hosts_data"]).decode().splitlines()
-    assert expected in pipe_known_hosts
-    assert (
-        f"[{ssh_config.devbox_host}]:{ssh_config.devbox_port} {ssh_config.devbox_key_type} {ssh_config.devbox_key}"
-        in pipe_known_hosts
-    )
-    assert pipe["spec"]["to"]["host"] == f"{ssh_config.devbox_host}:{ssh_config.devbox_port}"
-
-    settings = yaml.safe_load(config_map["data"]["settings.yaml"])
-    assert {target["host"] for target in settings["targets"] if target["host"] == ssh_config.devbox_host} == {
-        ssh_config.devbox_host
-    }
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 """The shared shape of every TLS-interception root CA in this cluster (mitmproxy,
-haku-egress-proxy, public-coder-agent's iron-proxy, the Agentplane egress proxy): a
+haku-egress-proxy, the Agentplane egress proxy): a
 `cluster-ca-bootstrap`-issued, 10-year ECDSA P-256 self-signed CA, reflected by
 trust-manager into `reflection_namespaces` and published as a `ca-certificates.crt`
 trust bundle ConfigMap into `target_namespaces`. Callers differ only in naming, which

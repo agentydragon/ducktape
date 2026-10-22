@@ -86,9 +86,9 @@ therefore be treated as stable identities and protected with
 
 MAS returns a personal access token only when the session is created. The
 initial implementation can extract that creation response and write the token
-to the Kubernetes Secret consumed by iron-proxy. OpenClaw continues to use an
-access token, with iron-proxy holding the real value and replacing the
-placeholder in the outbound `Authorization` header.
+to the canonical Kubernetes Secret read by Agentplane egress. OpenClaw continues to
+use an access-token placeholder; Agentplane egress holds the real value and replaces
+it in the outbound `Authorization` header.
 
 This has a deliberate trade-off: the token would be present in Terraform
 state. Before implementing this path, verify that the in-cluster Terraform
@@ -106,7 +106,7 @@ The rollout should be staged:
 3. Take the planned homeserver downtime and run the Synapse-to-MAS import.
 4. Enable MAS integration and its compatibility endpoints in Synapse.
 5. Apply the Terraform MAS resources and verify the bot's Matrix access.
-6. Switch OpenClaw and iron-proxy from password placeholders to the MAS token.
+6. Switch OpenClaw and Agentplane egress from password placeholders to the MAS token.
 7. Remove the shared-secret bot registration, Synapse bot-password Secret, and
    legacy Matrix user provisioner only after all consumers have migrated.
 

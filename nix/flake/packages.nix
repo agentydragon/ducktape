@@ -190,12 +190,4 @@ ducktapePkgs
   cpap-gateway-container-disk = import ../../cpap/gateway/container-disk.nix {
     inherit pkgs self;
   };
-  # Ephemeral KubeVirt containerDisk for public-coder-devbox. The VM boots into
-  # its build/test configuration and handles fresh-disk setup through NixOS
-  # systemd units.
-  public-coder-devbox-container-disk =
-    import ../../openclaw/public_coder_agent/devbox/container-disk.nix
-      {
-        inherit pkgs self;
-      };
 }

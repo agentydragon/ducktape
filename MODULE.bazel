@@ -1200,7 +1200,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/external-secrets/external-secrets/v2.10.0/deploy/crds/bundle.yaml"],
 )
 
-# Match the sshpiper image tag in cluster/cdk8s/public_coder_sshpiper.py.
+# Match the upstream Pipe CRD version in cluster/cdk8s/flux_sources.py.
 http_file(
     name = "sshpiper_pipe_crd",
     downloaded_file_path = "crd-pipes.yaml",

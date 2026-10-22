@@ -1,8 +1,9 @@
 # Public coder OpenClaw: Agentplane egress cutover
 
-Only the OpenClaw Deployment migrates. The KubeVirt devbox, its PVCs, Iron credentials,
-proxy aliases, and Iron trust bundle remain in service. OpenClaw's state and diagnostics
-PVCs also remain; do not reset its Matrix session or rotate the Matrix account.
+OpenClaw moved to Agentplane egress on 2026-10-03. On 2026-10-21 the public-coder
+KubeVirt devbox, its disposable Bazel cache, and the now-unused public-coder Iron proxy
+were retired. OpenClaw's state, diagnostics, and retained SSH audit-recording PVC remain;
+do not reset its Matrix session or rotate the Matrix account.
 
 ## Handoff — 2026-10-03
 
@@ -31,7 +32,7 @@ Dated observations from the rollout, not ongoing monitoring:
   **Pod readiness does not establish session or Matrix health.** No database repair,
   manual Gateway shutdown/restart or data deletion was performed by this verification.
 
-The VM deliberately stays on Iron pending
+The owner retired the VM instead of migrating it; this supersedes
 [#8856](https://github.com/agentydragon/ducktape/issues/8856). Remaining proxy consumers
 and retirement sequencing are tracked in
 [#5140](https://github.com/agentydragon/ducktape/issues/5140).
@@ -70,7 +71,7 @@ The staging gateway admits that exact ServiceAccount through an explicit `Policy
 This does **not** grant access to the staging application's operator API or login secret,
 and does not change any managed-agent preset or testing-environment binding. Public
 Internet access preserves Iron's existing unrestricted public destinations. The app's
-network policy still forbids direct Internet, ClickHouse, and Iron connections.
+network policy still forbids direct Internet and direct ClickHouse access.
 
 The gateway reads canonical credential sources into its isolated credentials namespace,
 not from the app's Iron mirrors. Haku, ClickHouse and Matrix each get an exact-source
@@ -103,15 +104,16 @@ LiteLLM, local gateway authentication, and SSH credentials are unchanged.
 2. Only then land the Pod cutover. Flux additionally makes the app depend on staging,
    whose health checks include the new credential copies. Dependency readiness is not an
    atomic same-revision deployment barrier; the two merge steps are deliberate.
-3. Verify the OpenClaw Pod is 2/2 Ready (Deployment 1/1), its relay is ready, and the VM and Iron
-   remain healthy. Check exact effective Kubernetes permissions and Action policy first;
+3. Verify the OpenClaw Pod is 2/2 Ready (Deployment 1/1) and its relay is ready. Confirm the
+   retired devbox and public-coder Iron proxy remain absent. Check exact effective Kubernetes
+   permissions and Action policy first;
    prefer standing access or a matching auto-approved Action, requesting operator approval
    only where needed. Check authenticated GitHub, Haku diagnostics, `SELECT 1` on ClickHouse,
    AIQuota and Brave through the relay; report status only, never
    credential-bearing response bodies. Confirm Matrix sync/message health using its
    existing cached session. Exercise fresh login separately only if needed, without
    printing or persisting the returned session token.
-4. Verify direct public, ClickHouse and Iron egress fails; direct access to the gateway
+4. Verify direct public and ClickHouse egress fails; direct access to the gateway
    without the relay's token must fail authentication. Confirm the relay's projected-token
    mount is absent from OpenClaw and its init container. No token needs to be read.
 5. Record evidence in #8857, including ordinary public Internet access, preserved state
@@ -127,10 +129,12 @@ was merged in [#8852](https://github.com/agentydragon/ducktape/pull/8852).
 Tell the agent after rollout: use the existing environment variables rather than old
 `proxy-...` literals. Persistent private scripts were not scanned as part of this change;
 if needed, perform an approved scan that reports filenames/matching placeholder names
-only, never file contents. Do not globally replace placeholders: the devbox intentionally
-continues using Iron values. Generated config is re-seeded automatically; preserve the
-rest of the OpenClaw PVC, including Matrix state.
+only, never file contents. Do not globally replace placeholders in persisted state.
+Generated config is re-seeded automatically; preserve the rest of the OpenClaw PVC,
+including Matrix state.
 
-For rollback, revert the Pod cutover and restore the OpenClaw-to-Iron network hop on
-both sides, leaving preparation in place. Iron's service, credentials and trust never
-left. Reverting the cutover does not require PVC deletion or a devbox restart.
+The public-coder Iron proxy and devbox were removed after OpenClaw's Agentplane cutover;
+reverting the 2026-10-03 cutover alone no longer restores a working route. Any future
+rollback to Iron requires an explicit reintroduction of its workload, trust, credentials,
+and network policy. The devbox and its cache are not part of that rollback. No OpenClaw PVC
+deletion or Matrix reset is needed for egress changes.

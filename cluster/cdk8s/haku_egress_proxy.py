@@ -41,8 +41,8 @@ def _ca(chart: Chart) -> None:
         reflection_namespaces=("cert-manager",),
         # Written into Haku trust domains. The CLIProxyAPI-backed aiquota path connects
         # directly to the in-cluster management service and does not trust or use this
-        # inspected egress listener. public-coder-agent has its own separate interception CA
-        # (public_coder/proxy.py) and does not consume this bundle.
+        # inspected egress listener. public-coder-agent uses Agentplane egress and does not
+        # consume this Haku sandbox bundle.
         target_namespaces=("haku-sandbox", "haku-ci"),
     )
 

@@ -220,13 +220,7 @@ from cluster.cdk8s.plaid_mcp import (
     pgweb as plaid_mcp_pgweb,
     spend as plaid_mcp_spend,
 )
-from cluster.cdk8s.public_coder import (
-    app as public_coder_app,
-    backup as public_coder_backup,
-    devbox as public_coder_devbox,
-    proxy as public_coder_proxy,
-    sshpiper as public_coder_sshpiper,
-)
+from cluster.cdk8s.public_coder import app as public_coder_app, backup as public_coder_backup
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
@@ -271,14 +265,7 @@ def generate_manifests(root: Path) -> None:
         agentplane_testing_resource_chart, testing.ENV.namespace
     )
     public_coder_app.write_manifests(root)
-    public_coder_proxy.write_manifests(root, aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key)
-    ssh_config = ssh_mcp_config.load(public_coder_devbox.SSH)
-    public_coder_sshpiper.write_manifests(
-        root,
-        functools.partial(ssh_mcp_generation.sshpiper_pipe_chart, ssh_config=ssh_config),
-        app_namespace=public_coder_app.NAMESPACE,
-        app_labels=public_coder_app.LABELS,
-    )
+    ssh_config = ssh_mcp_config.load()
     seaweedfs_cluster.write_manifests(root)
     litellm_namespace.write_manifests(root)
     litellm_proxy.write_manifests(root, mesh)
@@ -409,7 +396,7 @@ def generate_manifests(root: Path) -> None:
     piraeus_operator_kustomization = piraeus.operator_kustomization(
         flux_chart, write_directory(root, piraeus_operator_artifact, piraeus.operator_chart)
     )
-    sshpiper_crds_kustomization = sshpiper_crds_flux_kustomizations.sshpiper_crds(flux_chart)
+    sshpiper_crds_flux_kustomizations.sshpiper_crds(flux_chart)
     talos_cloud_controller_manager_artifact = artifact(
         "talos-cloud-controller-manager", talos_cloud_controller_manager.OUTPUT_DIR
     )
@@ -1637,33 +1624,12 @@ def generate_manifests(root: Path) -> None:
             root, public_coder_agent_access_artifact, public_coder_app.namespace_chart, public_coder_app.rbac_chart
         ),
     )
-    public_coder_agent_app_artifact = artifact(
-        "public-coder-agent-app",
-        public_coder_app.APP_DIR,
-        public_coder_proxy.OUTPUT_DIR,
-        public_coder_sshpiper.OUTPUT_DIR,
-    )
+    public_coder_agent_app_artifact = artifact("public-coder-agent-app", public_coder_app.APP_DIR)
     agents_flux_kustomizations.public_coder_agent_app(
         flux_chart,
         public_coder_agent_app_artifact,
-        cert_manager_kustomization,
-        cert_manager_trust_kustomization,
         external_secrets_operator_kustomization,
-        sshpiper_crds_kustomization,
         agentplane_staging_kustomization,
-    )
-    public_coder_agent_devbox_artifact = artifact("public-coder-agent-devbox", public_coder_devbox.OUTPUT_DIR)
-    public_coder_devbox.public_coder_agent_devbox(
-        flux_chart,
-        write_directory(
-            root,
-            public_coder_agent_devbox_artifact,
-            public_coder_devbox.chart,
-            siblings=["ssh-host-key.sops.yaml"],
-            components=["./image-pins"],
-        ),
-        kubevirt_kustomization,
-        external_secrets_operator_kustomization,
     )
     namespace_dependencies = {
         "activitywatch": activitywatch_kustomization,

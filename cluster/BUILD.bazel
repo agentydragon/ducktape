@@ -45,8 +45,6 @@ filegroup(
         "parked/**/*.k8s.yaml",
         "parked/haku-openclaw-spike/backup/**",
         "parked/public-coder-agent/backup/kustomization.yaml",
-        "parked/public-coder-agent/devbox/kustomization.yaml",
-        "parked/public-coder-agent/sshpiper/kustomization.yaml",
     ]),
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

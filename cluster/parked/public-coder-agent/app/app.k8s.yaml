@@ -350,22 +350,21 @@ data:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: public-coder-agent-github-token
+  name: forgejo-images-creds
   namespace: public-coder-agent
 spec:
-  data:
-    - remoteRef:
-        key: github-agentydragon-agent
-        property: token
-      secretKey: GITHUB_TOKEN
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
   refreshInterval: 1h
   secretStoreRef:
     kind: ClusterSecretStore
-    name: kubernetes-external-creds-secret-store
+    name: kubernetes-forgejo-images-secret-store
   target:
-    creationPolicy: Owner
-    deletionPolicy: Retain
-    name: public-coder-agent-github-token
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
@@ -431,6 +430,22 @@ spec:
     requests:
       storage: 20Gi
   storageClassName: local-path-ovh-hdd
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    description: Retained audit recordings from the retired public-coder SSH route.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: public-coder-agent-sshpiper-recordings
+  namespace: public-coder-agent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path-ovh
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -585,9 +600,6 @@ spec:
               name: trust
               readOnly: true
               subPath: ca-certificates.crt
-            - mountPath: /home/openclaw/.ssh
-              name: ssh
-              readOnly: true
             - mountPath: /tmp
               name: tmp
             - mountPath: /diag
@@ -675,14 +687,6 @@ spec:
         - configMap:
             name: agentplane-egress-ca
           name: trust
-        - name: ssh
-          projected:
-            defaultMode: 288
-            sources:
-              - configMap:
-                  name: public-coder-agent-ssh
-              - secret:
-                  name: public-coder-agent-devbox-ssh-key
         - emptyDir: {}
           name: tmp
         - name: diagnostics
@@ -732,13 +736,6 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: egress
-    - ports:
-        - port: 2222
-          protocol: TCP
-      to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: public-coder-agent-sshpiper
     - ports:
         - port: 4000
           protocol: TCP

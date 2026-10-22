@@ -1,13 +1,13 @@
 # This is the only copy of the Brave Search API key in the repository. It
 # authenticates to an external platform rather than a service this cluster owns.
 #
-# Flux applies the canonical Secret in ducktape-flux; the public-coder-agent
-# proxy consumes it through ESO. Workstations decrypt this same file as
+# Flux applies the canonical Secret in ducktape-flux; Agentplane egress
+# consumes it through ESO. Workstations decrypt this same file as
 # $BRAVE_API_KEY through ducktape.sopsEnv, which is why .sops.yaml gives it
 # user keys in addition to the cluster pair. Rotation changes one file.
 #
 # Agent containers never receive it. They get a non-secret placeholder that
-# their proxy substitutes into X-Subscription-Token on api.search.brave.com.
+# Agentplane egress substitutes into X-Subscription-Token on api.search.brave.com.
 apiVersion: v1
 kind: Secret
 metadata:

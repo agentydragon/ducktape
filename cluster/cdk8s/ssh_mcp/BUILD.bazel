@@ -11,8 +11,6 @@ py_library(
         "//ssh_keys:atlas-host-ed25519.pub",
         "//ssh_keys:home-switch-agentplane.pub",
         "//ssh_keys:home-switch-host-key.pub",
-        "//ssh_keys:public-coder-agent-devbox.pub",
-        "//ssh_keys:public-coder-devbox-host.pub",
         "//ssh_keys:rugged-host-ed25519.pub",
         "//ssh_keys:wyrm2-host-ed25519.pub",
     ],
@@ -52,23 +50,10 @@ py_library(
 )
 
 py_library(
-    name = "sshpiper",
-    srcs = ["sshpiper.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        ":config",
-        "//third_party/sshpiper:pipe",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "generation",
     srcs = ["generation.py"],
     deps = [
         ":config",
-        ":sshpiper",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -90,10 +75,8 @@ py_test(
     deps = [
         ":backend",
         ":config",
-        ":sshpiper",
         "//:conftest",
         "//cluster/cdk8s/agentplane:conftest",
-        "//cluster/cdk8s/public_coder:devbox",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",

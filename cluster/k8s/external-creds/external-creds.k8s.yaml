@@ -181,21 +181,6 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: brave-search-api-key-public-coder-agent-reader
-  namespace: ducktape-flux
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: brave-search-api-key-reader
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: external-creds-reader
-    namespace: public-coder-agent
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
   name: brave-search-api-key-agentplane-staging-egress-credentials-reader
   namespace: ducktape-flux
 roleRef:
@@ -282,21 +267,6 @@ subjects:
     kind: ServiceAccount
     name: external-creds-reader
     namespace: claude-sandbox
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: buildbuddy-api-key-public-coder-agent-reader
-  namespace: ducktape-flux
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: buildbuddy-api-key-reader
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: external-creds-reader
-    namespace: public-coder-agent
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -402,21 +372,6 @@ rules:
       - secrets
     verbs:
       - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: github-agentydragon-agent-public-coder-agent-reader
-  namespace: ducktape-flux
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: github-agentydragon-agent-reader
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: external-creds-reader
-    namespace: public-coder-agent
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

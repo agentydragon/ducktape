@@ -631,7 +631,6 @@ def test_agent_permission_denials(
     )
     denied = {
         Permission("public-coder-agent", "", "secrets", "list"),
-        Permission("public-coder-agent", "kubevirt.io", "virtualmachineinstances", "delete", "public-coder-devbox"),
         Permission("agentplane-staging", "", "pods/exec", "create"),
         Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "create"),
         Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "patch"),

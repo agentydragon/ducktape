@@ -94,8 +94,7 @@ def _models_claim(scope: Construct) -> None:
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             # OpenEBS LVM HDD on wyrm2 — co-located with GPUs. VG is 500GB
-            # (proxmox-vms.tf); this PVC plus the 20Gi public-coder-devbox PVC are its
-            # only other consumers. 350Gi covers the ~228GB roster
+            # (proxmox-vms.tf); no other workloads use this VG. 350Gi covers the ~228GB roster
             # (setup-gpt-oss-v2.sh) with headroom for future additions.
             storage_class_name="lvm-proxmox-hdd",
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("350Gi")}),

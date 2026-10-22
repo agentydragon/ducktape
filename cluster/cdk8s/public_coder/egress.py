@@ -1,4 +1,4 @@
-"""Static OpenClaw's Agentplane attachment. The devbox deliberately stays on Iron.
+"""Static OpenClaw's Agentplane egress attachment.
 
 Only the relay holds the Pod-bound token. Credential values stay in the gateway's
 isolated namespace; the app receives canonical placeholders under its existing env names.
@@ -110,7 +110,7 @@ def token_volume() -> k8s.Volume:
 def add_gateway_resources(
     scope: Construct, *, namespace: str, credentials_namespace: str, reader: ServiceAccount
 ) -> None:
-    """Copy canonical sources, never the app's Iron mirrors (no app/bootstrap dependency)."""
+    """Copy canonical credentials into Agentplane's isolated store through exact-secret stores."""
     scope = Construct(scope, "public-coder-openclaw-egress")
     _copied_credential(
         scope,

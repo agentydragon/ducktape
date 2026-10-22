@@ -1,30 +1,16 @@
-"""SSH MCP's Kustomization, and the sshpiper Pipe chart for public-coder-agent's
-sshpiper directory."""
+"""SSH MCP's Kustomization and hand-written encrypted key siblings."""
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.ssh_mcp import config, sshpiper
+from cluster.cdk8s.ssh_mcp import config
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ssh-mcp"
-KEY_FILES = (
-    "keys-agentplane.sops.yaml",
-    "keys-atlas.sops.yaml",
-    "keys-public-coder-devbox.sops.yaml",
-    "keys.sops.yaml",
-)
-
-
-def sshpiper_pipe_chart(app: App, *, ssh_config: config.SshMcpConfig) -> Chart:
-    """The devbox Pipe, which `public_coder_sshpiper.write_manifests` writes into
-    public-coder-agent's sshpiper directory."""
-    chart = Chart(app, "pipe-devbox", disable_resource_name_hashes=True)
-    sshpiper.construct(chart, config=ssh_config, downstream_key=ssh_config.agent_downstream_key)
-    return chart
+KEY_FILES = ("keys-agentplane.sops.yaml", "keys-atlas.sops.yaml", "keys.sops.yaml")
 
 
 def ssh_mcp(flux_chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization) -> Kustomization:

@@ -106,7 +106,7 @@ activation, `envfs`, or automatic `nix-ld` setup; downloaded FHS-linked tools
 need actual filesystem defaults such as `/lib64/ld-linux-x86-64.so.2`, expected
 library directories, `/bin/bash`, and `/usr/bin/env`.
 
-The public-coder image should keep this compatibility surface in its Nix image
+The public-coder OpenClaw image should keep this compatibility surface in its Nix image
 definition. A controlled NixOS devbox/VM should keep the host-specific pieces
 in the NixOS module. Neither environment should leak Nix store paths into
 remote actions; see the shell-path and strict-action-environment rules below.
@@ -118,10 +118,9 @@ falls back to `/etc/ssl/certs/ca-certificates.crt` when unset or empty. The pinn
 `devShell` does not set this variable, so `use flake` leaves the caller's choice
 intact. Keep that property when adding shell packages or environment settings.
 
-On `public-coder-devbox`, the NixOS host definition owns the generated runtime
-PEM bundle and client environment, plus the separate JKS used by Bazel's JVM.
-In an Agentplane sandbox box the Pod owns them: the egress proxy's bundle over
-the image's own and as a PKCS12 trust store, and a system rc that points Bazel's
+In an Agentplane sandbox box the Pod owns its generated runtime PEM bundle and
+client environment, plus a separate PKCS12 trust store for Bazel's JVM. It adds
+the egress proxy's bundle to the image's own roots and uses a system rc that points Bazel's
 JVM at that store and passes the proxy and CA variables to tests
 (`cluster/cdk8s/agentplane/sandbox_pod.py`).
 The generic repository shell must not replace that bundle or hardcode its path.

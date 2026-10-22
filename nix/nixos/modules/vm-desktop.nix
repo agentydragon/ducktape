@@ -1,7 +1,7 @@
 # SPICE guest tooling for VM guests with a display attached.
 #
 # Split out of vm-hardware.nix, which every VM imports: the headless guests (agent-box,
-# public-coder-devbox, gecko, bootstrap, cpap-gateway) were running spice-vdagentd and carrying a
+# gecko, bootstrap, cpap-gateway) were running spice-vdagentd and carrying a
 # user unit waiting on a graphical-session.target that never arrives.
 { pkgs, ... }:
 {
