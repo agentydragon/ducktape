@@ -54,7 +54,7 @@ async function renderHistory(
   return container;
 }
 
-function group(key: string, executorKind: string): ActionGroupView {
+function group(key: string, executorKind: "mcp" | "pod"): ActionGroupView {
   return {
     key,
     title: key,
@@ -66,7 +66,7 @@ function group(key: string, executorKind: string): ActionGroupView {
   };
 }
 
-function succeeded(groupKey: string, result: unknown): ActionRequestView {
+function succeeded(groupKey: string, result: NonNullable<ActionRequestView["execution"]>["result"]): ActionRequestView {
   const row = request("succeeded", 1);
   return { ...row, action: { group: groupKey, name: "test_tool" }, execution: { ...row.execution!, result } };
 }
@@ -202,6 +202,7 @@ describe("ActionHistory", () => {
             source: "rules",
             index: 0,
             type: "exact_actions",
+            repository: null,
           },
         },
       },
