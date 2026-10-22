@@ -1677,4 +1677,5 @@ ts_proto_library(
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":web_push_service_proto",
+    deps = ["//google/api:annotations_pb"],
 )
