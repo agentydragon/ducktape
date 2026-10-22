@@ -375,12 +375,12 @@ gates, then perform the extended observation with redundancy restored.
 
 Restore Seaweed master 2 first onto its replacement Piraeus claim, preserving
 identity and verifying three healthy members. Rebuild the database members on
-new strict-local claims, then restore an SSD volume server using a single-copy
-local Piraeus claim and validate Seaweed replication and application reads/writes.
-Use a reviewed operator handoff for individual claims; do not change every
-member's immutable storage at once through a group-wide template edit.
+new strict-local claims. Keep the two existing SSD local-path volume servers
+serving the existing Seaweed volumes. Do not edit their immutable claim
+templates or move SSD volumes onto Piraeus in this step; that work waits for
+step 6 and the node/pool acceptance gate.
 
-The volume-server migration changes Seaweed's backing claim. Applications using
+Use a reviewed operator handoff for each replacement claim. Applications using
 existing SeaweedFS CSI claims keep those claims and their service endpoints.
 Seaweed and CNPG provide their own replication; avoid adding a second Piraeus
 copy by default for each member. Keep LINSTOR controller metadata/recovery
@@ -393,13 +393,68 @@ recovery depends on the verified off-node source. Once replacement claims accept
 writes, old copies are stale; rollback requires write quiescence and data
 reconciliation rather than simply switching claim names.
 
+### 5. Complete node and pool acceptance before production PVCs
+
+Complete the checks in [First SSD node, strict-local mode](#first-ssd-node-strict-local-mode),
+including observed thin-pool data and metadata alerts, before creating a
+Piraeus-backed Seaweed volume-server claim or moving production data. The
+[first-node execution record](../../debug/piraeus_first_node_2026_10_21/README.md)
+still stops before step 6. This design does not authorize production PVC
+creation or data movement; obtain the user's explicit approval at that stop.
+
+### 6. Add the Piraeus-backed SSD Seaweed server and move data gradually
+
+Keep the two existing `local-path-ovh-ssd` volume servers and their claims.
+Add a separate Seaweed `volumeTopology` group, such as `ssd-piraeus`, with one
+filesystem-backed volume-server claim on the accepted rebuilt node:
+
+| Setting                      | Proposed value                                  |
+| ---------------------------- | ----------------------------------------------- |
+| Kubernetes topology group    | `ssd-piraeus`                                   |
+| Replicas                     | `1`                                             |
+| Storage class                | `piraeus-ssd-local`                             |
+| Volume-server PVC request    | `250Gi` (initial sizing proposal)               |
+| Seaweed disk argument        | `-disk=ssd`                                     |
+| Seaweed data center and rack | `hil` / `hil-ovh-h108b01`                       |
+| Seaweed default replication  | `001` (two copies across the SSD placement set) |
+| Piraeus placement            | One local copy; remote access disabled          |
+
+Keep the existing `ssd` group's `local-path-ovh-ssd` claim template unchanged;
+StatefulSet claim templates are immutable. The new Kubernetes topology group
+name must not create a separate Seaweed placement domain: retain the existing
+Seaweed `disk=ssd`, `dataCenter=hil` and `rack=hil-ovh-h108b01` identity so
+`defaultReplication: "001"` places two Seaweed copies across the existing and
+new SSD servers. Piraeus supplies one local backing copy for the new server;
+Seaweed supplies the second data copy.
+
+An empty new server registers with the normal Seaweed heartbeat but does not
+automatically attract volumes that already have two healthy copies. Start with
+a bounded canary set moved using Seaweed's native volume-move operations. Verify
+reads and writes, two healthy copies, expected SSD placement, and adequate thin
+pool data and metadata headroom before each further batch. Then rebalance SSD
+volumes gradually, checking the same gates as placement changes.
+
+Before creating the new claim or moving data, confirm the node and pool passed
+step 5 and that the data/metadata alerts report fresh samples with usable
+headroom. Ensure Seaweed volume-server monitoring covers both SSD topology
+groups. Review generated pod labels and anti-affinity across both groups: the
+current helper matches `seaweedfs/topology` using the disk value, which may not
+match a new group named `ssd-piraeus`. Extend the selector so all SSD volume
+servers remain separated across hosts; do not assume the distinct Kubernetes
+group name changes Seaweed's replication placement.
+
+Use the [volume-server runbook](../runbooks/rolling_seaweedfs_volume_pvc.md)
+for replication convergence and the alive-empty-server/FUSE-client gate if a
+server endpoint is later retired. This step retains both existing local-path
+servers; their later retirement is a separate reviewed change.
+
 ### SeaweedFS and later conversions
 
-After the pilot, each converted data disk's remaining local-path consumers must
-move or be rebuilt. Seaweed volume-server claims on those disks move to local
-Piraeus claims too; the previous proposal to retain them on a legacy localpath LV
-is superseded. Use application-native replication or a quiesced final copy for
-other state, keeping the next conversion serial and independently reviewable.
+For later converted disks, move or rebuild each remaining local-path consumer.
+Move Seaweed volume-server claims to Piraeus-backed groups rather than retaining
+them on a legacy `localpath` LV. Use application-native replication or a quiesced
+final copy for other state, keeping each conversion serial and independently
+reviewable.
 
 ### Existing local-path workload candidates
 
