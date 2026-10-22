@@ -215,29 +215,11 @@ export function serviceAccountKey(account: CallerServiceAccount): string {
 export function isEligibleCaller(caller: CallerServiceAccount, accounts: CallerServiceAccount[]): boolean {
   return accounts.some((account) => serviceAccountKey(account) === serviceAccountKey(caller));
 }
-export type McpLinkageView = components["schemas"]["McpLinkageView"];
-export type McpLinkageStartView = components["schemas"]["McpLinkageStartView"];
-
 export type CallerGrantView = components["schemas"]["CallerGrantView"];
 export type CallerGrantReader = (account: CallerServiceAccount, signal: AbortSignal) => Promise<CallerGrantView>;
 
 export const readCallerGrants: CallerGrantReader = async (account, signal) =>
   ok(await api.GET("/caller-grants/{namespace}/{name}", { params: { path: account }, signal }));
-
-export async function startMcpLinkage(serverId: string, scopes: string[]): Promise<McpLinkageStartView> {
-  return ok(
-    await api.POST("/mcp-servers/{server_id}/linkage/start", {
-      params: { path: { server_id: serverId } },
-      body: { scopes },
-    })
-  );
-}
-
-export async function disconnectMcpLinkage(serverId: string): Promise<McpLinkageView> {
-  return ok(
-    await api.POST("/mcp-servers/{server_id}/linkage/disconnect", { params: { path: { server_id: serverId } } })
-  );
-}
 
 export function displayableError(error: unknown): string {
   if (error instanceof Error) return error.message;

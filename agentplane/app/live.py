@@ -38,7 +38,7 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane import sandbox_resource
-from agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
+from agentplane.app.action_federation import OperatorFederationError, operator_action_token, upstream_failure_detail
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.database_updates import Channel
 from agentplane.app.identity import CallerIdentity, require_caller
@@ -46,6 +46,7 @@ from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sand
 from agentplane.app.shutdown import Shutdown
 from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.changes import ChangeSignal
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision
@@ -319,7 +320,11 @@ async def action_policy_frame(
     """The Action Service's answer for the subject, or why it could not be asked, carried in the
     frame rather than ending a stream that also carries the sandbox itself."""
     try:
-        return await inventory.for_subject(operator_actions(request, caller), subject)
+        bearer = await operator_action_token(request, caller)
+        actions_http = request.app.state.services.actions_http
+        if not isinstance(actions_http, UpstreamProxy):
+            return ActionPolicyUnavailable(code="action_facade_not_configured")
+        return await inventory.for_subject(actions_http, bearer, subject)
     except OperatorFederationError as error:
         return ActionPolicyUnavailable(code=str(error))
     except (httpx.HTTPStatusError, httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError) as error:

@@ -1,7 +1,7 @@
 # Submit an Action and establish its result
 
 The commands are `agentplane actions …`; each command's `--help` lists its flags and exit statuses.
-Without the command, the routes behind them are in the [HTTP reference](http_api.md).
+Without the command, use the generated [OpenAPI reference](/openapi.json) for HTTP routes and schemas.
 
 ## Discover and check access
 

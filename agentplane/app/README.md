@@ -434,16 +434,15 @@ ServiceAccount share receipts while submitted Actions preserve exact connection 
 
 ## Action review
 
-`/#/actions` renders canonical Action Service receipts. The app's `GET /actions`,
-`GET /actions/{request_id}` and `POST /actions/{request_id}/decision` are an
-operator-only BFF over `OperatorActionServiceClient`. They use the service's models
-unchanged, including expected versions, idempotency keys, and the human-authored `decision_note`.
-The same note is visible to the requesting caller and operator; the existing UI displays it.
-Provider-authored bounded `reason_code`/`reason_description` are separate outcome evidence, not
-another human note. OpenAPI and frontend types are generated from the canonical models.
-A receipt names its caller ServiceAccount, whether a Pod or a Connection acting as it submitted it.
-Event reads return canonical `ActionEventView` entries in sequence order, strictly after the
-non-negative cursor (default 0).
+`/#/actions` renders Action Service receipts through the generated HTTP/JSON facade. The browser
+lists and reads receipts under `/upstream/actions/v1/action-requests`, decides through
+`/upstream/actions/v1/operator/action-requests/{request_id}/decision`, and watches pending requests
+at `/upstream/actions/v1/action-requests:watch`. The proxy accepts only versioned `/v1/` paths and
+forwards the current operator session's federated bearer; browser cookies and credentials are not
+sent upstream. ProtoJSON uses lower-camel field names and symbolic enum names on the wire. The
+frontend converts generated messages into local presentation types while preserving caller
+arguments and execution results as their original JSON. A receipt names its caller ServiceAccount,
+whether a Pod or a Connection acting as it submitted it.
 The service owns persistence, authorization, Decisions, dispatch, and recovery. Workload
 submission and owner-scoped reads use the service's `/v1/action-requests` API, not the app.
 
@@ -496,13 +495,16 @@ operator-authorized retarget of an existing token. Policy editing and deployment
 surface.
 
 The MCP servers tab lists the Action Service's OAuth-linked MCP server groups and links or
-disconnects each one. The tab follows independent linkage and replica-local MCP health
-snapshots via session-bound `/mcp-servers/stream` and `/action-groups/stream` routes; neither a
-linkage-only event nor a stale health read is presented as a fully live view. The BFF also proxies
-`POST /mcp-servers/{id}/linkage/start` and `POST /mcp-servers/{id}/linkage/disconnect` through the
-same operator federation; the provider's redirect lands on `GET /mcp-linkage/callback`, which
-completes the link and returns the browser to `/#/mcp-servers`. What a link authorizes and when a
-linked group becomes available is the Action Service's contract
+disconnects each one. It follows independent generated facade watches for linkage and replica-local
+MCP health at `/upstream/actions/v1/operator/mcp-servers:watch` and
+`/upstream/actions/v1/action-groups:watch`. Both replay a bounded snapshot before upserts; the tab
+joins their latest states by group key/server ID without coupling their change rates. Link and
+disconnect use the generated `POST /upstream/actions/v1/operator/mcp-servers/{id}/linkage/start`
+and `.../linkage/disconnect` routes through the request-bound operator federation. The provider's
+registered redirect remains the public `GET /mcp-linkage/callback`; the app forwards its state and
+code to the Action Service's public callback and returns the browser to `/#/mcp-servers`. The Go callback's
+ProtoJSON response is not part of the browser contract. What a link authorizes and when a linked
+group becomes available is the Action Service's contract
 ([its README](../action_service/README.md#action-catalog)).
 
 ## Launch presets
@@ -565,8 +567,8 @@ applied again. **Grant policy sets** adds a binding naming the Sandbox and is, w
 launch pick (drawn from `GET /sandboxes/form`, the namespace's PolicySet names), the only write the tab makes.
 
 Below the bindings, **Auto-approve if** is the Action Service's own answer for that account, read through
-the operator federation (`/v1/operator/action-policy/service-accounts/{namespace}/{name}`, so an operator
-session is required as for the Actions page): the `action_auto_approve` policies in the order the service
+the generated facade (`/upstream/actions/v1/action-policy?subject.namespace=...&subject.name=...`, so an
+operator session is required as for the Actions page): the `action_auto_approve` policies in the order the service
 walks them, each entry naming the binding, set and index a Decision's evidence names, and `synced`, false
 while the service's watch has not synced and nothing auto-decides. It is the resolution an admission would
 use now, from the service that would use it, and says nothing about past Decisions; the Actions page holds
@@ -617,17 +619,13 @@ one. Which lists the service enforces is its contract
 
 ## Action live updates and browser notifications
 
-`/#/actions` follows the Action Service's operator SSE stream through `/actions/stream`, replacing
-its old two-second timer poll. Streams provide fresh snapshots after reconnect, and an unavailable
-stream is shown as disconnected rather than silently presenting stale state as live. The BFF keeps
-the stream open for as long as its browser session. Deleting a session row (logout, a login's
-rotation, expiry cleanup) sends a transactional `NOTIFY` every replica hears; the stream then
-re-reads its own row, as it also does after a listener reconnect and at the row's `expires_at`, and
-ends once the row is gone or expired. The Action Service ends its side when the one-minute token it
-was opened with expires; the BFF exchanges a fresh one and reopens the upstream behind the same
-browser response. That response forwards whole SSE frames and drops a `snapshot` identical to the
-last one it forwarded, so the snapshot each new upstream opens with reaches the tab only if the
-list changed. An upstream that ends before its first frame ends the browser stream instead.
+`/#/actions` follows the Action Service's generated NDJSON watch at
+`/upstream/actions/v1/action-requests:watch`, replacing its old two-second timer poll. Watches send a
+bounded snapshot followed by upserts; reconnecting opens a new watch and replays a fresh snapshot.
+An unavailable watch is shown as disconnected rather than silently presenting stale state as live.
+Each stream is tied to the operator session and a fresh federated bearer. The browser reconnects
+after an upstream stream ends, so the next request exchanges a fresh token. Logout or session
+expiry closes the response, and the browser cannot supply an upstream bearer or cookie.
 
 While the navigation sidebar is closed (phone width by default) and the route is not under
 `/actions`, a strip under the top bar shows "N Actions waiting for review" so a pending decision is

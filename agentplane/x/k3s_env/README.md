@@ -26,13 +26,12 @@ A target declared with `mcp_fixtures = True` takes the `rendered/local-model-mcp
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture
 (`mcp_fixtures/*_layout`), with test-only Dex clients, operator, MCP server and Action groups. Dex
 reads a config Secret the chart writes, holding the bcrypt hash of a generated operator password.
-The app and Dex serve on their in-cluster Service names, which OIDC redirects carry;
-[`stack.py`](stack.py) adds the Services' addresses to the node's `/etc/hosts` so the test process
-reaches the same names. The app serves http. Dex serves TLS too, because the app and the Action
-Service accept a plain-http issuer only on loopback: a CA made per stack signs its certificate, and
-the app, the Action Service and the test process trust it through `SSL_CERT_FILE`. The Action
-Service's own OAuth server, which `test_dcr` registers with, is such an issuer too, so it names itself
-by a loopback origin that `stack.py` port-forwards to the Action Service.
+Dex serves on its in-cluster Service name, which the test process resolves through `/etc/hosts`.
+It serves TLS because the app and Action Service accept a plain-http issuer only on loopback: a CA
+made per stack signs its certificate, and both services trust that CA. In MCP fixtures the app and
+Action Service use separate loopback HTTP origins, which `stack.py` port-forwards to their Services.
+The app login callback, MCP linkage callback and OAuth enrollment links use that same app origin,
+satisfying the Go OAuth endpoint validation without allowing insecure non-loopback URLs.
 
 Both targets drive the app's REST/SSE API and omit Electric and the browser frontend. Tests of the
 frontend sync protocol run Electric separately. The database bootstrap still creates the `electric`
@@ -50,6 +49,8 @@ with shared service constructs and explicit bare-k3s settings. It supplies fixtu
 local-path storage and a test egress CA. The fixture runs the Go egress proxy
 and Goose history migrator through the same construct as testing, with fixture-only PostgreSQL TLS
 settings. The shared construct supplies the egress RBAC, policies, trust mounts, images and flags.
+Actions uses its Go service and Goose migrator images, with native gRPC readiness and `livez` probes.
+The fixture selects that runtime explicitly; the deployed tiers select theirs independently.
 One PostgreSQL 18 Deployment uses the
 pinned published CNPG minimal image, an emptyDir data volume and
 [`postgres_entrypoint.sh`](postgres_entrypoint.sh) with [`bootstrap.sql`](bootstrap.sql) to create

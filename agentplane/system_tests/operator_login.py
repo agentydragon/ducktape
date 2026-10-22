@@ -16,7 +16,6 @@ import httpx
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict, SecretStr
 
-from agentplane.app.action_federation import UpstreamFailure
 from agentplane.app.oidc import INSECURE_COOKIE, SECURE_COOKIE
 
 # The k3s fixture's own apiserver (`agentplane/x/k3s_env`), which holds only its test operator.
@@ -29,9 +28,10 @@ _DEX_OAUTH_PATH = re.compile(r"/dex/(auth|auth/local|auth/local/login|approval|c
 
 
 def _transport_allowed(url: httpx.URL) -> bool:
-    """HTTPS, or http to a cluster-internal Service name: the k3s fixture serves its app and Dex so,
-    and its test process reaches them on the node."""
-    return url.scheme == "https" or (url.scheme == "http" and url.host.endswith(".svc"))
+    """HTTPS, or HTTP to loopback/cluster Service names used by the disposable k3s fixture."""
+    return url.scheme == "https" or (
+        url.scheme == "http" and (url.host in {"localhost", "127.0.0.1", "::1"} or url.host.endswith(".svc"))
+    )
 
 
 class LoginBlockedError(Exception):
@@ -43,19 +43,9 @@ async def verify_action_federation(http: httpx.AsyncClient) -> None:
     __tracebackhide__ = True
     request_id = uuid4()
     try:
-        response = await http.get(f"/actions/{request_id}")
-        failure = UpstreamFailure.model_validate(response.json()["detail"])
-        upstream = httpx.URL(failure.url)
-        if (
-            response.status_code == HTTPStatus.NOT_FOUND
-            and failure.upstream_status == HTTPStatus.NOT_FOUND
-            and failure.method == "GET"
-            and failure.error_type == "HTTPStatusError"
-            and upstream.scheme in {"http", "https"}
-            and upstream.host
-            and not (upstream.userinfo or upstream.query or upstream.fragment)
-            and upstream.path == f"/v1/operator/action-requests/{request_id}"
-        ):
+        response = await http.get(f"/upstream/actions/v1/action-requests/{request_id}")
+        failure = response.json()
+        if response.status_code == HTTPStatus.NOT_FOUND and isinstance(failure, dict) and failure.get("code") == 5:
             return
     except httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError:
         # Malformed responses and transport exceptions may contain private auth material.

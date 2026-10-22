@@ -10,10 +10,10 @@ import { displayableError } from "../client";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../clamped_block";
 import { JsonBlock } from "../text_block";
 import { useOptionalStreamStatus } from "../stream_status";
-import { followStream, type StreamConnection } from "../live_stream";
+import type { StreamConnection } from "../live_stream";
 import { ActionCall } from "./call";
 import { CallToolResultView, parseCallToolResult, type CallToolResult } from "./call_tool_result";
-import { actionHistory, getAction, listActionGroups, type ActionRequestView } from "./client";
+import { actionHistory, followActionRequests, getAction, listActionGroups, type ActionRequestView } from "./client";
 import {
   renderActionCall,
   renderActionOutcome,
@@ -328,8 +328,11 @@ function ActionHistoryRequests({
         }
       }
     }
-    const stop = followStream("/actions/stream?state=decision_pending", {
-      events: { snapshot: () => void refresh() },
+    const stop = followActionRequests({
+      onOpen: () => undefined,
+      onFrame: (frame) => {
+        if (frame.kind === "snapshot_complete" || frame.kind === "upsert") void refresh();
+      },
       onConnection: setConnection,
     });
     void refresh();

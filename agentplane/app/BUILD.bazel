@@ -9,6 +9,8 @@ package(default_visibility = [
     "//agentplane/system_tests:__pkg__",
 ])
 
+# gazelle:resolve py agentplane.action_service.action_service_pb2 //agentplane/action_service:action_service_pb2
+
 # No test here is small, and none of that is about the tests being slow: on the CI executor image
 # they are killed at a small target's 60s with the budget spent fetching inputs rather than running
 # -- 70s of `fileDownloadDurationUsec` against 12KB actually fetched and, for two of them, no CPU
@@ -60,10 +62,7 @@ py_library(
         ":upstream_proxy",
         "//agentplane:sse",
         "//agentplane:subjects",
-        "//agentplane/action_service:catalog",
         "//agentplane/action_service:client",
-        "//agentplane/action_service:mcp_linkage",
-        "//agentplane/action_service:models",
         "//agentplane/action_service:policy_view",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:runner_directory",
@@ -254,6 +253,7 @@ py_test(
         "//agentplane:changes",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
+        "//agentplane/action_service:action_service_pb2",
         "//agentplane/action_service:api",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:connections",
@@ -292,6 +292,7 @@ py_test(
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
+        "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//pytest",
@@ -719,6 +720,7 @@ py_library(
         ":identity",
         ":sandbox_models",
         ":shutdown",
+        ":upstream_proxy",
         "//agentplane:changes",
         "//agentplane:crd_group",
         "//agentplane:kubernetes_watch",
@@ -856,11 +858,11 @@ py_test(
         ":electric",
         ":live",
         ":notifications_operator_client",
+        ":oidc",
         ":operator_sessions",
         ":sandbox_access",
         ":upstream_proxy",
         "//:conftest",
-        "//agentplane/action_service:client",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/testing:operator_streams",
@@ -919,12 +921,16 @@ py_library(
     srcs = ["action_policy.py"],
     deps = [
         ":action_federation",
+        ":upstream_proxy",
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
         "//agentplane:subjects",
-        "//agentplane/action_service:client",
+        "//agentplane/action_service:action_service_pb2",
+        "//agentplane/action_service:models",
         "//agentplane/action_service:policy_view",
         "//agentplane/sandboxes:action_policy_views",
+        "@pypi//anyio",
+        "@pypi//protobuf",
         "@pypi//pydantic",
     ],
 )
@@ -936,12 +942,14 @@ py_test(
     deps = [
         ":action_policy",
         ":conftest",
+        ":upstream_proxy",
         "//:conftest",
         "//agentplane:subjects",
-        "//agentplane/action_service:client",
+        "//agentplane/action_service:action_service_pb2",
         "//agentplane/action_service:models",
         "//agentplane/action_service:policy_view",
         "@pypi//httpx",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
 )
@@ -1281,7 +1289,6 @@ py_test(
         ":sandbox_access",
         ":upstream_proxy",
         "//:conftest",
-        "//agentplane/action_service:client",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/testing:replication_source",

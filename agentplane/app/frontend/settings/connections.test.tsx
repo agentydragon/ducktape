@@ -3,9 +3,8 @@ import { act } from "react";
 import { MemoryRouter } from "react-router";
 import { expect, it, vi } from "vitest";
 
-import { mount } from "../actions/testing";
 import type { CallerGrantReader, Connection } from "../client";
-import { answerConnectionFacade, type Sent } from "../connection_service_test_support";
+import { answerConnectionFacade, mountConnectionService, type Sent } from "../connection_service_test_support";
 import { Connections } from "./connections";
 import { sampleConnection } from "../connections_fixture";
 
@@ -96,7 +95,7 @@ const unbinds = (sent: Sent[]): Sent[] => sent.filter(({ path }) => path.endsWit
 const renames = (sent: Sent[]): Sent[] => sent.filter(({ method }) => method === "PATCH");
 
 async function render(readGrants?: CallerGrantReader): Promise<HTMLDivElement> {
-  const container = await mount(
+  const container = await mountConnectionService(
     <MemoryRouter>
       <Connections readGrants={readGrants} />
     </MemoryRouter>
@@ -127,8 +126,15 @@ async function pressEnter(input: HTMLInputElement): Promise<void> {
   });
 }
 it("renders the Client/Service account table with the immutable client ID and an unlabeled caller flagged", async () => {
-  serve();
+  const sent = serve();
   const container = await render();
+  expect(sent).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ method: "GET", path: CONNECTIONS }),
+      expect.objectContaining({ method: "GET", path: CALLERS }),
+      expect.objectContaining({ method: "GET", path: WATCH }),
+    ])
+  );
   expect(container.textContent).toContain("Client");
   expect(container.textContent).toContain("Service account");
   expect(nameField(container).value).toBe("Claude desktop");

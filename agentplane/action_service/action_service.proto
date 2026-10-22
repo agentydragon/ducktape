@@ -18,8 +18,8 @@ import "google/protobuf/timestamp.proto";
 // read the events of every account's requests. An operator's bearer is the OIDC token the integration app forwards
 // for the operator, verified as for `OperatorActionService`. An operator reads every account's requests and also sees
 // what a workload is not shown, `McpHealth.detail` and the binding diagnostics of `CallerActionPolicy`, but submits
-// and cancels nothing. A request reads the same for every reader. An agent reaches the HTTP routes through the egress
-// proxy; `agentplane actions` wraps them.
+// and cancels nothing. A request reads the same for every reader. A workload reaches the service through the egress
+// proxy; `agentplane actions` uses this generated gRPC API, while other callers may use its HTTP facade.
 //
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
 // expired, or a workload's whose ServiceAccount is not labeled; the answer does not say which. `INVALID_ARGUMENT` is

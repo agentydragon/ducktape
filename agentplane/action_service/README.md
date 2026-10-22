@@ -5,7 +5,8 @@ schema and `/v1/action-requests` lifecycle; the Agentplane integration app, Haku
 external harnesses remain clients rather than state owners.
 
 Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked lifecycle, recovery and
-Kubernetes/grant workflows and an HTTP reference served under `/docs/agents/`. Update the guides when those contracts change.
+Kubernetes/grant workflows. The generated HTTP/JSON API reference is `/openapi.json`; update the guides
+when those contracts change.
 
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
 `ActionGroup` mounts one MCP server, mirrors its `tools/list` into the catalog, and this service
@@ -277,7 +278,7 @@ decision's note or reason, or the executor's error. `request_action` answers the
 wait ends unless asked for its receipt, so an Action a policy approves comes back as its tool's own
 answer from the one call. A receipt's `execution` has its state, error and timing but no result.
 
-Submission, receipt and result reads take one shared `wait` object (`wait_seconds`, 0 through this
+MCP submission, receipt and result tools take one shared `wait` object (`wait_seconds`, 0 through this
 instance's `max_wait_seconds` setting, default 0; the setting defaults to 30 seconds;
 `wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
 Set `max_wait_seconds` in the Action Service settings file or with
@@ -290,11 +291,12 @@ failure must not prompt a new Action. Workload authorization is revalidated afte
 before returning data. The generic MCP tool schemas never expand the dynamic Action catalog, and no
 Action output-schema metadata is added.
 
-`GET /v1/action-requests/{id}` takes the same two options as the query parameters `wait_seconds`
-and `wait_until`, with the same bounds (HTTP 422 above `max_wait_seconds`) and the same revalidation
-(HTTP 401 if the bearer no longer authenticates when the wait ends). `GET /v1/action-requests`
-takes `limit` (1 through 128; without it every match is returned) and `after_id`, the last request
-the caller already has: the page starts after it in newest-first order, whatever `state` or
+`GET /v1/action-requests/{id}` reads one current receipt; it has no wait query parameters.
+`GET /v1/action-requests/{id}:watch` is the generated server stream, beginning with the current
+receipt and continuing on committed changes until the `until` condition holds or the client deadline
+ends. The MCP wait options above remain available to MCP callers. `GET /v1/action-requests` takes
+`limit` (1 through 128; without it every match is returned) and `after_id`, the last request the
+caller already has: the page starts after it in newest-first order, whatever `state` or
 `idempotency_key` filter applies, and an `after_id` the caller does not own is HTTP 404.
 
 Workflow: list identifiers, fetch one input schema if needed, submit once, then wait/read the
@@ -406,16 +408,19 @@ and on a fresh connection after failure. Correlate with backend/proxy evidence; 
 retry `tools/call` or report recovery merely because catalog refresh succeeds. Deployment and live
 reproduction require separate authorization; unit/HTTP-peer tests do not establish the live cause.
 
-Operators follow linkage on `GET /v1/operator/mcp-servers/stream` (below) and manage it with
-`POST /v1/operator/mcp-servers/{server_id}/linkage/start` and `POST .../linkage/disconnect`; the provider returns to the
-unauthenticated `GET /v1/mcp-linkage/callback?state&code`, which accepts only an unconsumed,
-unexpired flow matching `state`. Operators also read `GET /v1/action-groups` directly (it accepts
-either bearer scheme): the same group diagnostics above (lifecycle, reason, last discovery,
-failures, retry time), for every mcp-kind group regardless of auth mechanism, so a static-bearer
-group's connectivity is visible to operators too, not only OAuth-linked ones. Startup unwinds already-opened adapters, including a
-partially started adapter. Drain fences claims and reconnects but retains published connections
-through execution completion persistence. Shutdown joins supervisors and bounded connection cleanup
-after draining service tasks, then closes Kubernetes and database resources.
+Operators follow linkage on the generated HTTP/JSON facade at
+`GET /v1/operator/mcp-servers:watch`: newline-delimited ProtoJSON frames contain bounded snapshot
+chunks, `snapshot_complete`, later `upsert` frames, or `reconnect_required`. They manage it with
+`POST /v1/operator/mcp-servers/{server_id}/linkage/start` and `POST .../linkage/disconnect`; the
+provider returns to the unauthenticated `GET /v1/mcp-linkage/callback?state&code`, which accepts only
+an unconsumed, unexpired flow matching `state`. Operators also read `GET /v1/action-groups` directly
+(it accepts either bearer scheme): the same group diagnostics above (lifecycle, reason, last
+discovery, failures, retry time), for every mcp-kind group regardless of auth mechanism, so a
+static-bearer group's connectivity is visible to operators too, not only OAuth-linked ones. Startup
+unwinds already-opened adapters, including a partially started adapter. Drain fences claims and
+reconnects but retains published connections through execution completion persistence. Shutdown
+joins supervisors and bounded connection cleanup after draining service tasks, then closes Kubernetes
+and database resources.
 
 Each linked MCP server is configured with either a fixed `client_id` or `use_shared_cimd`. The
 Action Service has one `mcp_client_metadata` setting for its public CIMD identity, served without
@@ -553,12 +558,14 @@ connection; none depends on the process which accepted the write. Notification l
 streams explicitly. Reconnection obtains an authoritative snapshot rather than treating NOTIFY
 as a durable log. Operator bearer authorization is rechecked on updates and keepalives.
 
-The operator-only `/v1/operator/mcp-servers/stream` follows committed linkage/token-state
-changes on every replica, and sends a fresh snapshot when a linked token expires without a write.
-`/v1/operator/action-groups/stream` follows the local MCP supervisor's catalog/health transitions;
-health is replica-local, not an invented cluster aggregate. Both use the snapshot/authorization
-recheck loop above. The app proxies them separately, and the MCP Settings tab joins their latest
-snapshots by group key/server ID rather than coupling their change rates.
+The operator-only `/v1/operator/mcp-servers:watch` follows committed linkage/token-state changes on
+every replica, and sends an `upsert` when a linked token expires without a write. The watch starts
+with bounded `snapshot` chunks and `snapshot_complete`, then sends `upsert` frames as rows change.
+The service rechecks authorization before every frame and ends at bearer expiry or with
+`reconnect_required`. `/v1/operator/action-groups:watch` follows the local MCP supervisor's
+catalog/health transitions; health is replica-local, not an invented cluster aggregate. The app
+follows these facade watches independently and joins their latest snapshots by group key/server ID
+rather than coupling their change rates.
 
 The optional `web_push` configuration enables browser subscription storage and background delivery:
 

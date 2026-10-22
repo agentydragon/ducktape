@@ -1,16 +1,110 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
-import { type JSX, type ReactNode, useState } from "react";
-import { useSnapshotStream } from "../live_stream";
+import { type Dispatch, type JSX, type ReactNode, type SetStateAction, useEffect, useState } from "react";
+import { type StreamConnection } from "../live_stream";
 
-import { disconnectMcpLinkage, displayableError, startMcpLinkage, type McpLinkageView } from "../client";
-import type { ActionGroupView } from "../actions/client";
+import { displayableError } from "../client";
+import { followActionGroups, type ActionGroupView, type ActionGroupWatchFrame } from "../actions/client";
 import { TimeAgo } from "../time_ago";
+import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage, type McpLinkageView } from "../mcp_linkage_client";
 
 type McpHealth = ActionGroupView["health"];
 
 type Row =
   | { kind: "oauth"; linkage: McpLinkageView; group: ActionGroupView | null }
   | { kind: "health-only"; group: ActionGroupView };
+
+function useMcpLinkages(): {
+  snapshot: McpLinkageView[] | null;
+  setSnapshot: Dispatch<SetStateAction<McpLinkageView[] | null>>;
+  connection: StreamConnection;
+} {
+  const [snapshot, setSnapshot] = useState<McpLinkageView[] | null>(null);
+  const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
+
+  useEffect(() => {
+    let pendingSnapshot: Map<string, McpLinkageView> | null = new Map();
+    const stop = followMcpLinkages({
+      onOpen: () => {
+        // Keep the last complete snapshot visible during reconnect; replace it after the new
+        // stream's full snapshot arrives.
+        pendingSnapshot = new Map();
+      },
+      onFrame: (frame) => {
+        switch (frame.kind) {
+          case "snapshot":
+            if (pendingSnapshot === null) throw new Error("MCP linkage snapshot arrived after completion.");
+            for (const linkage of frame.linkages) pendingSnapshot.set(linkage.server_id, linkage);
+            break;
+          case "snapshot_complete":
+            if (pendingSnapshot === null) throw new Error("MCP linkage snapshot completed more than once.");
+            setSnapshot([...pendingSnapshot.values()]);
+            pendingSnapshot = null;
+            break;
+          case "upsert":
+            if (pendingSnapshot !== null) {
+              pendingSnapshot.set(frame.linkage.server_id, frame.linkage);
+              break;
+            }
+            setSnapshot((current) => {
+              if (current === null) return current;
+              const exists = current.some((linkage) => linkage.server_id === frame.linkage.server_id);
+              return exists
+                ? current.map((linkage) => (linkage.server_id === frame.linkage.server_id ? frame.linkage : linkage))
+                : [...current, frame.linkage];
+            });
+            break;
+          case "reconnect_required":
+            // The server ends this stream after the frame; followWatch opens a fresh snapshot.
+            break;
+        }
+      },
+      onConnection: setConnection,
+    });
+    return stop;
+  }, []);
+
+  return { snapshot, setSnapshot, connection };
+}
+
+function useActionGroupHealth(): {
+  snapshot: ActionGroupView[] | null;
+  connection: StreamConnection;
+} {
+  const [snapshot, setSnapshot] = useState<ActionGroupView[] | null>(null);
+  const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
+  useEffect(() => {
+    let replay: ActionGroupView[] = [];
+    return followActionGroups({
+      onOpen: () => {
+        replay = [];
+      },
+      onFrame: (frame: ActionGroupWatchFrame) => {
+        switch (frame.kind) {
+          case "snapshot":
+            replay.push(...frame.groups);
+            break;
+          case "snapshot_complete":
+            setSnapshot(replay);
+            replay = [];
+            break;
+          case "upsert":
+            setSnapshot((current) => {
+              if (current === null) return [frame.group];
+              const exists = current.some(({ key }) => key === frame.group.key);
+              return exists
+                ? current.map((group) => (group.key === frame.group.key ? frame.group : group))
+                : [...current, frame.group].sort((left, right) => left.key.localeCompare(right.key));
+            });
+            break;
+          case "reconnect_required":
+            break;
+        }
+      },
+      onConnection: setConnection,
+    });
+  }, []);
+  return { snapshot, connection };
+}
 
 // /action-groups returns every configured group, sandbox-kind included; this page only cares
 // about mcp-kind ones. Every mcp-kind group whose config carries a server_id is guaranteed (by a
@@ -112,8 +206,8 @@ function HealthDetail({ health }: { health: McpHealth }): JSX.Element | null {
 }
 
 export function McpServers(): JSX.Element {
-  const linkages = useSnapshotStream<McpLinkageView[]>("/mcp-servers/stream");
-  const health = useSnapshotStream<ActionGroupView[]>("/action-groups/stream");
+  const linkages = useMcpLinkages();
+  const health = useActionGroupHealth();
   const [busy, setBusy] = useState<{ serverId: string; operation: "link" | "disconnect" } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,8 +215,8 @@ export function McpServers(): JSX.Element {
     setBusy({ serverId: linkage.server_id, operation: "link" });
     setError(null);
     try {
-      const flow = await startMcpLinkage(linkage.server_id, linkage.scopes);
-      window.location.assign(flow.authorization_url);
+      const authorizationUrl = await startMcpLinkage(linkage.server_id, linkage.scopes);
+      window.location.assign(authorizationUrl);
     } catch (failure) {
       setError(displayableError(failure));
       setBusy(null);

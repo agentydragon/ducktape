@@ -16,26 +16,17 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import pytest
 import pytest_bazel
+from google.protobuf import json_format
+from google.protobuf.struct_pb2 import Value
 from more_itertools import one
-from pydantic import JsonValue
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.action_service.models import (
-    ActionRequestView,
-    ActionState,
-    DecisionInput,
-    ExecutionState,
-    MatchedPolicy,
-    OperatorPrincipal,
-    PolicyKind,
-    PolicySource,
-    Verdict,
-)
+from agentplane.action_service import action_service_pb2, operator_action_service_pb2
 from agentplane.action_service.policies.resources import ACTION_RULE_TYPE, ACTIONS_READY_CONDITION
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from agentplane.app.action_policy import ActionPolicyView
@@ -70,11 +61,15 @@ POLICY_READY_SECONDS = 120.0
 CLI = "/run/agentplane/runner/bin/agentplane"
 
 
-def _assert_echoed(result: JsonValue, message: str) -> None:
+def _assert_echoed(result: Value, message: str) -> None:
     """A call of either MCP server's echo tool recorded its text; the OAuth fixture, a FastMCP server,
     records structured content and metadata beside it."""
-    assert isinstance(result, dict), result
-    assert (result["content"], result["isError"]) == ([{"type": "text", "text": f"Echo: {message}"}], False)
+    result_json = json_format.MessageToDict(result)
+    assert isinstance(result_json, dict), result_json
+    assert (result_json["content"], result_json.get("isError", False)) == (
+        [{"type": "text", "text": f"Echo: {message}"}],
+        False,
+    )
 
 
 @dataclass(frozen=True)
@@ -98,7 +93,7 @@ class ScriptedAgent:
         agent = await Agent.open(client, sandbox=sandbox.name, harness=harness, model=model)
         return cls(agent=agent, model=upstream.model(sandbox.pod.name, harness))
 
-    async def run(self, *args: str) -> ActionRequestView:
+    async def run(self, *args: str) -> action_service_pb2.ActionRequest:
         """The receipt `agentplane --json ARGS` printed, as the harness reported it to the model."""
         call_id = f"agentplane-{uuid4().hex[:8]}"
         command = shlex.join([CLI, "--json", *args])
@@ -110,11 +105,13 @@ class ScriptedAgent:
             reported = one(output for output in request.tool_outputs if output.call_id == call_id)
             await self.model.reply(request, Text("Done."))
         # A harness frames the command's output with its own lines; `--json` prints the receipt as one.
-        return ActionRequestView.model_validate_json(
-            one(line for block in reported.blocks for line in block.splitlines() if line.startswith("{"))
+        receipt = action_service_pb2.ActionRequest()
+        json_format.Parse(
+            one(line for block in reported.blocks for line in block.splitlines() if line.startswith("{")), receipt
         )
+        return receipt
 
-    async def submit_echo(self, group: str, message: str, *, wait: bool) -> ActionRequestView:
+    async def submit_echo(self, group: str, message: str, *, wait: bool) -> action_service_pb2.ActionRequest:
         return await self.run(
             "actions",
             "submit",
@@ -245,8 +242,8 @@ async def test_agent_executes_mcp_action(
     agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
     marker = f"MCP0-{uuid4()}"
     receipt = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=True)
-    assert receipt.state is ActionState.SUCCEEDED
-    assert receipt.execution is not None
+    assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
+    assert receipt.HasField("execution")
     _assert_echoed(receipt.execution.result, marker)
 
 
@@ -263,9 +260,11 @@ async def test_operator_links_oauth_mcp_server(
 ) -> None:
     """Links the OAuth-protected MCP server through Dex and executes its protected tool."""
     server_id = mcp_servers.OAUTH
-    start_response = await operator_bff.post(f"/mcp-servers/{server_id}/linkage/start", json={"scopes": []})
+    start_response = await operator_bff.post(
+        f"/upstream/actions/v1/operator/mcp-servers/{server_id}/linkage/start", json={"scopes": []}
+    )
     assert start_response.status_code == HTTPStatus.OK, start_response.text
-    authorization_url = start_response.json()["authorization_url"]
+    authorization_url = start_response.json()["authorizationUrl"]
 
     try:
         async with httpx.AsyncClient(follow_redirects=False, timeout=30) as dex_browser:
@@ -289,8 +288,8 @@ async def test_operator_links_oauth_mcp_server(
     agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
     marker = f"MCP-OAUTH-{uuid4()}"
     receipt = await agent.submit_echo(mcp_servers.OAUTH, marker, wait=True)
-    assert receipt.state is ActionState.SUCCEEDED
-    assert receipt.execution is not None
+    assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
+    assert receipt.HasField("execution")
     _assert_echoed(receipt.execution.result, marker)
 
 
@@ -329,17 +328,34 @@ async def operator_bff(base_url: str, operator_credentials: OperatorCredentials)
         logging.disable(previous_logging)
 
 
-def _bff_request(response: httpx.Response) -> ActionRequestView:
-    """Validation errors must not render the response's operator identity into test artifacts."""
+def _bff_request(response: httpx.Response) -> action_service_pb2.ActionRequest:
+    """Decode an Actions facade response to its generated request; never render identity details."""
     __tracebackhide__ = True
     try:
-        return ActionRequestView.model_validate(response.json())
-    except ValueError:
-        pytest.fail("BFF returned an invalid ActionRequestView; response body withheld", pytrace=False)
+        envelope = action_service_pb2.GetActionRequestResponse()
+        json_format.Parse(response.text, envelope)
+        if not envelope.HasField("action_request"):
+            raise ValueError("Action Service response omitted its request")
+        return envelope.action_request
+    except json_format.ParseError, ValueError:
+        pytest.fail("BFF returned an invalid ActionRequest; response body withheld", pytrace=False)
+
+
+def _bff_decision(response: httpx.Response) -> action_service_pb2.ActionRequest:
+    """Decode an operator decision response to its generated ActionRequest."""
+    __tracebackhide__ = True
+    try:
+        envelope = operator_action_service_pb2.DecideActionRequestResponse()
+        json_format.Parse(response.text, envelope)
+        if not envelope.HasField("action_request"):
+            raise ValueError("Action Service response omitted its request")
+        return envelope.action_request
+    except json_format.ParseError, ValueError:
+        pytest.fail("BFF returned an invalid decision response; response body withheld", pytrace=False)
 
 
 @pytest.mark.scripted_model
-@pytest.mark.parametrize("verdict", list(Verdict))
+@pytest.mark.parametrize("verdict", [action_service_pb2.VERDICT_ALLOW, action_service_pb2.VERDICT_DENY])
 async def test_agent_mcp_bff_decision(
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
@@ -348,56 +364,64 @@ async def test_agent_mcp_bff_decision(
     harness: runner_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
-    verdict: Verdict,
+    verdict: action_service_pb2.Verdict,
 ) -> None:
     view = await sandbox(f"systest-mcp-{harness}-{verdict}")
     agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
     # Nothing binds this Sandbox to a policy set, so every Action of its waits for the operator.
     marker = f"MCP-BFF-{uuid4()}-" + "x" * 201
     submitted = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=False)
-    assert submitted.state is ActionState.DECISION_PENDING
+    assert submitted.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
     request_id = submitted.id
-    path = f"/actions/{request_id}"
+    path = f"/upstream/actions/v1/action-requests/{request_id}"
+    decision_path = f"/upstream/actions/v1/operator/action-requests/{request_id}/decision"
     pending_response = await operator_bff.get(path)
     assert pending_response.status_code == HTTPStatus.OK
     pending = _bff_request(pending_response)
     assert pending.id == request_id
     assert pending.idempotency_key
     assert (pending.action.group, pending.action.name) == (mcp_servers.EVERYTHING_GROUP, mcp_servers.ECHO)
-    assert pending.arguments == {"message": marker}
-    assert pending.state is ActionState.DECISION_PENDING
+    assert json_format.MessageToDict(pending.arguments) == {"message": marker}
+    assert pending.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
     assert pending.version == 1
-    if pending.decision is not None:
+    if pending.HasField("decision"):
         pytest.fail("Pending request already has a Decision", pytrace=False)
-    assert pending.execution is None
+    assert not pending.HasField("execution")
 
-    decision = DecisionInput(verdict=verdict, expected_version=pending.version, idempotency_key=str(uuid4()))
-    decided_response = await operator_bff.post(f"{path}/decision", json=decision.model_dump(mode="json"))
+    decision = operator_action_service_pb2.DecideActionRequestRequest(
+        request_id=str(request_id), verdict=verdict, expected_version=pending.version, idempotency_key=str(uuid4())
+    )
+    decided_response = await operator_bff.post(decision_path, json=json_format.MessageToDict(decision))
     assert decided_response.status_code == HTTPStatus.OK
-    decided = _bff_request(decided_response)
+    decided = _bff_decision(decided_response)
     assert decided.id == request_id
-    assert decided.arguments == pending.arguments
+    assert json_format.MessageToDict(decided.arguments) == json_format.MessageToDict(pending.arguments)
     assert decided.version == pending.version + 1
-    assert decided.decision is not None
-    assert decided.decision.verdict is verdict
+    assert decided.HasField("decision")
+    assert decided.decision.verdict == verdict
     assert decided.decision.provider == "human_operator"
-    if decided.decision.operator != OperatorPrincipal(
-        issuer=operator_credentials.issuer.get_secret_value(), subject=operator_credentials.subject.get_secret_value()
+    if not decided.decision.HasField("operator") or (
+        decided.decision.operator.issuer != operator_credentials.issuer.get_secret_value()
+        or decided.decision.operator.subject != operator_credentials.subject.get_secret_value()
     ):
         pytest.fail("Decision operator identity differs from the dedicated Secret", pytrace=False)
     assert decided.decision.idempotency_key == decision.idempotency_key
-    expected_state = ActionState.SUCCEEDED if verdict is Verdict.ALLOW else ActionState.DENIED
-    if verdict is Verdict.ALLOW:
-        assert decided.state is ActionState.ALLOWED
-        assert decided.execution is not None
+    expected_completed_state = (
+        action_service_pb2.ACTION_STATE_SUCCEEDED
+        if verdict == action_service_pb2.VERDICT_ALLOW
+        else action_service_pb2.ACTION_STATE_DENIED
+    )
+    if verdict == action_service_pb2.VERDICT_ALLOW:
+        assert decided.state == action_service_pb2.ACTION_STATE_ALLOWED
+        assert decided.HasField("execution")
     else:
-        assert decided.state is ActionState.DENIED
-        assert decided.execution is None
+        assert decided.state == action_service_pb2.ACTION_STATE_DENIED
+        assert not decided.HasField("execution")
 
     # What the agent learns of the operator's decision.
     completed = await agent.run("actions", "wait", str(request_id))
     assert completed.id == request_id
-    assert completed.state is expected_state
+    assert completed.state == expected_completed_state
     terminal_response = await operator_bff.get(path)
     assert terminal_response.status_code == HTTPStatus.OK
     terminal = _bff_request(terminal_response)
@@ -408,26 +432,34 @@ async def test_agent_mcp_bff_decision(
     assert terminal.caller == pending.caller
     if terminal.decision != decided.decision:
         pytest.fail("Terminal Decision changed", pytrace=False)
-    assert terminal.state is expected_state
-    if verdict is Verdict.ALLOW:
-        assert terminal.execution is not None
-        assert decided.execution is not None
+    assert terminal.state == expected_completed_state
+    if verdict == action_service_pb2.VERDICT_ALLOW:
+        assert terminal.HasField("execution")
+        assert decided.HasField("execution")
         assert terminal.execution.id == decided.execution.id
-        assert terminal.execution.state is ExecutionState.SUCCEEDED
+        assert terminal.execution.state == action_service_pb2.EXECUTION_STATE_SUCCEEDED
         _assert_echoed(terminal.execution.result, marker)
-        assert terminal.execution.error is None
-        assert completed.execution == terminal.execution
+        assert not terminal.execution.HasField("error")
+        assert completed.HasField("execution")
+        assert completed.execution.state == action_service_pb2.EXECUTION_STATE_SUCCEEDED
+        assert completed.execution.id == terminal.execution.id
+        assert json_format.MessageToDict(completed.execution.result) == json_format.MessageToDict(
+            terminal.execution.result
+        )
+        assert not completed.execution.HasField("error")
     else:
-        assert terminal.execution is None
-        assert completed.execution is None
+        assert not terminal.HasField("execution")
+        assert not completed.HasField("execution")
 
     # Replay the original version/key after completion: same Decision and Execution, no new dispatch.
-    duplicate = await operator_bff.post(f"{path}/decision", json=decision.model_dump(mode="json"))
+    duplicate = await operator_bff.post(decision_path, json=json_format.MessageToDict(decision))
     assert duplicate.status_code == HTTPStatus.OK
-    if _bff_request(duplicate) != terminal:
+    if _bff_decision(duplicate) != terminal:
         pytest.fail("Duplicate decision changed the terminal request", pytrace=False)
-    stale = decision.model_copy(update={"idempotency_key": str(uuid4())})
-    refused = await operator_bff.post(f"{path}/decision", json=stale.model_dump(mode="json"))
+    stale = operator_action_service_pb2.DecideActionRequestRequest()
+    stale.CopyFrom(decision)
+    stale.idempotency_key = str(uuid4())
+    refused = await operator_bff.post(decision_path, json=json_format.MessageToDict(stale))
     assert refused.status_code == HTTPStatus.CONFLICT
     unchanged = await operator_bff.get(path)
     assert unchanged.status_code == HTTPStatus.OK
@@ -435,15 +467,27 @@ async def test_agent_mcp_bff_decision(
         pytest.fail("Stale decision changed the terminal request", pytrace=False)
 
 
-async def _deny_pending(operator_bff: httpx.AsyncClient, request_id: UUID) -> ActionRequestView:
+async def _deny_pending(operator_bff: httpx.AsyncClient, request_id: str) -> action_service_pb2.ActionRequest:
     """Check a request waited for the operator, then close it so nothing lingers undecided."""
-    receipt = _bff_request(await operator_bff.get(f"/actions/{request_id}"))
-    assert receipt.state is ActionState.DECISION_PENDING
-    if receipt.decision is not None:
+    path = f"/upstream/actions/v1/action-requests/{request_id}"
+    receipt = _bff_request(await operator_bff.get(path))
+    assert receipt.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
+    if receipt.HasField("decision"):
         pytest.fail("Request expected on the human path already has a Decision", pytrace=False)
-    denial = DecisionInput(verdict=Verdict.DENY, expected_version=receipt.version, idempotency_key=str(uuid4()))
-    denied = await operator_bff.post(f"/actions/{request_id}/decision", json=denial.model_dump(mode="json"))
+    denial = operator_action_service_pb2.DecideActionRequestRequest(
+        request_id=str(request_id),
+        verdict=action_service_pb2.VERDICT_DENY,
+        expected_version=receipt.version,
+        idempotency_key=str(uuid4()),
+    )
+    denied = await operator_bff.post(
+        f"/upstream/actions/v1/operator/action-requests/{request_id}/decision", json=json_format.MessageToDict(denial)
+    )
     assert denied.status_code == HTTPStatus.OK
+    denied_request = _bff_decision(denied)
+    assert denied_request.state == action_service_pb2.ACTION_STATE_DENIED
+    assert denied_request.HasField("decision")
+    assert denied_request.decision.verdict == action_service_pb2.VERDICT_DENY
     return receipt
 
 
@@ -482,27 +526,26 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
 
     marker = f"MCP-POLICY-{uuid4()}"
     approved = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=True)
-    assert approved.state is ActionState.SUCCEEDED
-    assert approved.execution is not None
+    assert approved.state == action_service_pb2.ACTION_STATE_SUCCEEDED
+    assert approved.HasField("execution")
     _assert_echoed(approved.execution.result, marker)
-    receipt = _bff_request(await operator_bff.get(f"/actions/{approved.id}"))
-    assert receipt.state is ActionState.SUCCEEDED
-    assert receipt.decision is not None
+    receipt = _bff_request(await operator_bff.get(f"/upstream/actions/v1/action-requests/{approved.id}"))
+    assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
+    assert receipt.HasField("decision")
     assert receipt.decision.provider == PROVIDER_NAME
+    assert receipt.decision.HasField("policy_evidence")
     evidence = receipt.decision.policy_evidence
-    assert evidence is not None
     # Our Sandbox kind brings a PolicyBinding of its own, so the evidence may name more than ours.
     assert binding_name in {binding.name for binding in evidence.bindings}
     assert set_name in {policy_set.name for policy_set in evidence.policy_sets}
-    assert evidence.matched == MatchedPolicy(
-        namespace=policy_objects.namespace,
-        policy_set=set_name,
-        source=PolicySource.RULES,
-        index=0,
-        type=PolicyKind.ARGUMENT_SCHEMA,
-    )
-    assert receipt.execution is not None
-    assert receipt.execution.state is ExecutionState.SUCCEEDED
+    assert evidence.HasField("matched")
+    assert evidence.matched.namespace == policy_objects.namespace
+    assert evidence.matched.policy_set == set_name
+    assert evidence.matched.source == action_service_pb2.POLICY_SOURCE_RULES
+    assert evidence.matched.index == 0
+    assert evidence.matched.type == action_service_pb2.POLICY_KIND_ARGUMENT_SCHEMA
+    assert receipt.HasField("execution")
+    assert receipt.execution.state == action_service_pb2.EXECUTION_STATE_SUCCEEDED
 
     too_long = f"MCP-POLICY-{uuid4()}-" + "x" * 201
     missed = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, too_long, wait=False)
