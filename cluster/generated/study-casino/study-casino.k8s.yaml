@@ -18,7 +18,7 @@ metadata:
 spec:
   affinity:
     nodeSelector:
-      topology.kubernetes.io/region: hil
+      topology.kubernetes.io/zone: hil-ovh
     podAntiAffinityType: required
     tolerations:
       - effect: NoSchedule

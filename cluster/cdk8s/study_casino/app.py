@@ -103,7 +103,7 @@ def _database(scope: Construct) -> None:
         # primary-availability impact.
         instances=3,
         image_name=None,
-        placement=node_scheduling.Placement(node_selector={"topology.kubernetes.io/region": _REGION}),
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",
         size="1Gi",
         # CNPG creates the read-only role on first reconcile and sets its password from
