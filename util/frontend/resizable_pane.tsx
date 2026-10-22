@@ -13,7 +13,13 @@ export interface PaneSize {
 }
 
 /** Persists the preferred size while limiting the displayed size to the current layout bounds. */
-export function usePaneSize(key: string, initial: number, min: number, max: number, effectiveMax = max): PaneSize {
+export function usePaneSize(
+  key: string,
+  initial: number,
+  min: number,
+  max: number,
+  effectiveMax: number = max
+): PaneSize {
   const clamp = (size: number, upperBound: number): number => Math.min(upperBound, Math.max(min, size));
   const [preferredSize, setPreferredSize] = useLocalStorage({
     key,
