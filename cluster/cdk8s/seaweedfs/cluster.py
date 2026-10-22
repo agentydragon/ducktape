@@ -362,7 +362,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     storage="250Gi",
                     storage_class="local-path-ovh-ssd",
                     disk="ssd",
-                    replicas=2,
+                    replicas=1,
                     max_volume_counts=200,
                 ),
                 # Same Seaweed disk/DC/rack as ssd; only the Kubernetes claim template differs.
