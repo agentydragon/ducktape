@@ -495,13 +495,16 @@ operator-authorized retarget of an existing token. Policy editing and deployment
 surface.
 
 The MCP servers tab lists the Action Service's OAuth-linked MCP server groups and links or
-disconnects each one. The tab follows linkage snapshots through `/mcp-servers/stream` and replica-local
-MCP health through the generated `/upstream/actions/v1/action-groups:watch` facade; neither a
-linkage-only event nor a stale health read is presented as a fully live view. The BFF also proxies
-`POST /mcp-servers/{id}/linkage/start` and `POST /mcp-servers/{id}/linkage/disconnect` through the
-same operator federation; the provider's redirect lands on `GET /mcp-linkage/callback`, which
-completes the link and returns the browser to `/#/mcp-servers`. What a link authorizes and when a
-linked group becomes available is the Action Service's contract
+disconnects each one. It follows independent generated facade watches for linkage and replica-local
+MCP health at `/upstream/actions/v1/operator/mcp-servers:watch` and
+`/upstream/actions/v1/action-groups:watch`. Both replay a bounded snapshot before upserts; the tab
+joins their latest states by group key/server ID without coupling their change rates. Link and
+disconnect use the generated `POST /upstream/actions/v1/operator/mcp-servers/{id}/linkage/start`
+and `.../linkage/disconnect` routes through the request-bound operator federation. The provider's
+registered redirect remains the public `GET /mcp-linkage/callback`; the app forwards its state and
+code to the Action Service's public callback and returns the browser to `/#/mcp-servers`. The Go callback's
+ProtoJSON response is not part of the browser contract. What a link authorizes and when a linked
+group becomes available is the Action Service's contract
 ([its README](../action_service/README.md#action-catalog)).
 
 ## Launch presets

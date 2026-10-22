@@ -408,16 +408,19 @@ and on a fresh connection after failure. Correlate with backend/proxy evidence; 
 retry `tools/call` or report recovery merely because catalog refresh succeeds. Deployment and live
 reproduction require separate authorization; unit/HTTP-peer tests do not establish the live cause.
 
-Operators follow linkage on `GET /v1/operator/mcp-servers/stream` (below) and manage it with
-`POST /v1/operator/mcp-servers/{server_id}/linkage/start` and `POST .../linkage/disconnect`; the provider returns to the
-unauthenticated `GET /v1/mcp-linkage/callback?state&code`, which accepts only an unconsumed,
-unexpired flow matching `state`. Operators also read `GET /v1/action-groups` directly (it accepts
-either bearer scheme): the same group diagnostics above (lifecycle, reason, last discovery,
-failures, retry time), for every mcp-kind group regardless of auth mechanism, so a static-bearer
-group's connectivity is visible to operators too, not only OAuth-linked ones. Startup unwinds already-opened adapters, including a
-partially started adapter. Drain fences claims and reconnects but retains published connections
-through execution completion persistence. Shutdown joins supervisors and bounded connection cleanup
-after draining service tasks, then closes Kubernetes and database resources.
+Operators follow linkage on the generated HTTP/JSON facade at
+`GET /v1/operator/mcp-servers:watch`: newline-delimited ProtoJSON frames contain bounded snapshot
+chunks, `snapshot_complete`, later `upsert` frames, or `reconnect_required`. They manage it with
+`POST /v1/operator/mcp-servers/{server_id}/linkage/start` and `POST .../linkage/disconnect`; the
+provider returns to the unauthenticated `GET /v1/mcp-linkage/callback?state&code`, which accepts only
+an unconsumed, unexpired flow matching `state`. Operators also read `GET /v1/action-groups` directly
+(it accepts either bearer scheme): the same group diagnostics above (lifecycle, reason, last
+discovery, failures, retry time), for every mcp-kind group regardless of auth mechanism, so a
+static-bearer group's connectivity is visible to operators too, not only OAuth-linked ones. Startup
+unwinds already-opened adapters, including a partially started adapter. Drain fences claims and
+reconnects but retains published connections through execution completion persistence. Shutdown
+joins supervisors and bounded connection cleanup after draining service tasks, then closes Kubernetes
+and database resources.
 
 Each linked MCP server is configured with either a fixed `client_id` or `use_shared_cimd`. The
 Action Service has one `mcp_client_metadata` setting for its public CIMD identity, served without
@@ -555,12 +558,14 @@ connection; none depends on the process which accepted the write. Notification l
 streams explicitly. Reconnection obtains an authoritative snapshot rather than treating NOTIFY
 as a durable log. Operator bearer authorization is rechecked on updates and keepalives.
 
-The operator-only `/v1/operator/mcp-servers/stream` follows committed linkage/token-state
-changes on every replica, and sends a fresh snapshot when a linked token expires without a write.
-`/v1/operator/action-groups/stream` follows the local MCP supervisor's catalog/health transitions;
-health is replica-local, not an invented cluster aggregate. Both use the snapshot/authorization
-recheck loop above. The app proxies them separately, and the MCP Settings tab joins their latest
-snapshots by group key/server ID rather than coupling their change rates.
+The operator-only `/v1/operator/mcp-servers:watch` follows committed linkage/token-state changes on
+every replica, and sends an `upsert` when a linked token expires without a write. The watch starts
+with bounded `snapshot` chunks and `snapshot_complete`, then sends `upsert` frames as rows change.
+The service rechecks authorization before every frame and ends at bearer expiry or with
+`reconnect_required`. `/v1/operator/action-groups:watch` follows the local MCP supervisor's
+catalog/health transitions; health is replica-local, not an invented cluster aggregate. The app
+follows these facade watches independently and joins their latest snapshots by group key/server ID
+rather than coupling their change rates.
 
 The optional `web_push` configuration enables browser subscription storage and background delivery:
 

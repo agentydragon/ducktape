@@ -13,6 +13,7 @@ import type { ActionGroupView, ActionRequestView, ActionState } from "./client";
 export const DECISION_NOTE = "test decision note";
 export const ACTION_REQUEST_WATCH = "/upstream/actions/v1/action-requests:watch?state=ACTION_STATE_DECISION_PENDING";
 export const ACTION_GROUP_WATCH = "/upstream/actions/v1/action-groups:watch";
+export const MCP_LINKAGE_WATCH = "/upstream/actions/v1/operator/mcp-servers:watch";
 
 export function request(state: ActionState, index: number): ActionRequestView {
   const decided = state !== "decision_pending";
@@ -119,7 +120,11 @@ function toProtoJson(value: unknown, parentKey = "", ownerKey = ""): unknown {
                   ? "POLICY_KIND_"
                   : parentKey === "reason" && ownerKey === "health"
                     ? "MCP_UNAVAILABLE_REASON_"
-                    : undefined;
+                    : parentKey === "status"
+                      ? "MCP_LINKAGE_STATUS_"
+                      : parentKey === "action" && ownerKey === "refresh_failure"
+                        ? "MCP_REFRESH_ACTION_"
+                        : undefined;
       if (prefix !== undefined) return `${prefix}${value.toUpperCase()}`;
       if (parentKey === "version" || parentKey === "generation") return value;
     }
@@ -139,7 +144,14 @@ function toProtoJson(value: unknown, parentKey = "", ownerKey = ""): unknown {
 
 function actionResponse(path: string, value: unknown): unknown {
   if (value instanceof Response || value === undefined || value === null || typeof value !== "object") return value;
-  if ("actionRequest" in value || "actionRequests" in value || "actionGroups" in value) return value;
+  if (
+    "actionRequest" in value ||
+    "actionRequests" in value ||
+    "actionGroups" in value ||
+    "authorizationUrl" in value ||
+    "linkage" in value
+  )
+    return value;
   if (path.endsWith("/action-requests:history")) {
     const page = value as { items?: unknown[]; next_cursor?: string | null };
     return {
@@ -195,13 +207,21 @@ export class TestNdjsonWatch {
   send(value: unknown): void {
     if (this.controller === undefined) return;
     const groupWatch = this.url.includes("action-groups:watch");
+    const linkageWatch = this.url.includes("mcp-servers:watch");
     const snapshot = groupWatch
       ? { actionGroups: (value as ActionGroupView[]).map((item) => toProtoJson(item)) }
-      : {
-          actionRequests: (value as ActionRequestView[]).map((item) => toProtoJson(item)),
-        };
+      : linkageWatch
+        ? { linkages: (value as object[]).map((item) => toProtoJson(item)) }
+        : { actionRequests: (value as ActionRequestView[]).map((item) => toProtoJson(item)) };
     this.controller.enqueue(this.encoder.encode(`${JSON.stringify({ result: { snapshot } })}\n`));
     this.controller.enqueue(this.encoder.encode(`${JSON.stringify({ result: { snapshotComplete: {} } })}\n`));
+  }
+
+  sendUpserts(values: readonly unknown[]): void {
+    if (this.controller === undefined) return;
+    for (const value of values) {
+      this.controller.enqueue(this.encoder.encode(`${JSON.stringify({ result: { upsert: toProtoJson(value) } })}\n`));
+    }
   }
 
   sendRaw(line: string): void {
@@ -250,7 +270,7 @@ function installActionFetch(): void {
       query: url.searchParams,
       body: requestBody ? (JSON.parse(requestBody) as unknown) : undefined,
     };
-    const answer = actionAnswer(sent);
+    const answer = await actionAnswer(sent);
     if (answer === undefined) throw new Error(`unexpected ${method} ${url.pathname}`);
     if (answer instanceof Response) return answer;
     return Response.json(actionResponse(url.pathname, answer));
@@ -295,9 +315,11 @@ export async function send(value: unknown, url?: string): Promise<void> {
         : [...TestNdjsonWatch.opened.keys()].at(-1)
       : url.includes("action-groups:watch")
         ? ACTION_GROUP_WATCH
-        : url.includes("action-requests:watch") || url.startsWith("/upstream/actions/")
-          ? ACTION_REQUEST_WATCH
-          : undefined;
+        : url.includes("mcp-servers:watch")
+          ? MCP_LINKAGE_WATCH
+          : url.includes("action-requests:watch") || url.startsWith("/upstream/actions/")
+            ? ACTION_REQUEST_WATCH
+            : undefined;
   const watch = watchUrl === undefined ? undefined : TestNdjsonWatch.opened.get(watchUrl);
   if (watch !== undefined && typeof value !== "string") {
     await act(async () => watch.send(value));
@@ -315,6 +337,20 @@ export async function send(value: unknown, url?: string): Promise<void> {
   });
 }
 
+/** Pushes upsert frames down a generated watch, as the service does after its initial snapshot. */
+export async function sendUpserts(values: readonly unknown[], url: string): Promise<void> {
+  const watchUrl = url.includes("action-groups:watch")
+    ? ACTION_GROUP_WATCH
+    : url.includes("mcp-servers:watch")
+      ? MCP_LINKAGE_WATCH
+      : url.includes("action-requests:watch")
+        ? ACTION_REQUEST_WATCH
+        : undefined;
+  const watch = watchUrl === undefined ? undefined : TestNdjsonWatch.opened.get(watchUrl);
+  if (watch === undefined) throw new Error(`No generated watch is open for ${url}`);
+  await act(async () => watch.sendUpserts(values));
+}
+
 export interface Sent {
   method: string;
   path: string;
@@ -328,9 +364,9 @@ const ejects: (() => void)[] = [];
  * answer is a JSON body or a ready `Response`; `undefined` fails the request as unexpected. */
 export function answerApi(answer: (sent: Sent) => unknown): Sent[] {
   const sent: Sent[] = [];
-  actionAnswer = (entry) => {
+  actionAnswer = async (entry) => {
     sent.push(entry);
-    return actionResponse(entry.path, answer(entry));
+    return actionResponse(entry.path, await answer(entry));
   };
   installActionFetch();
   const middleware = {
