@@ -6,7 +6,7 @@ import { type JSX, useContext, useEffect, useMemo, useRef, useState } from "reac
 import { Link, useLocation } from "react-router";
 
 import { JsonBlock } from "../text_block";
-import { ResizeHandle, usePaneSize } from "../resize_handle";
+import { ResizeHandle, usePaneSize } from "../../../../util/frontend/resizable_pane";
 import {
   actionOffersCardDecisionButtons,
   renderActionLabel,

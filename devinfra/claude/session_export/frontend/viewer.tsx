@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { Alert, Badge, Button, Center, Drawer, Group, Paper, Stack, Text } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 
+import { ResizeHandle, usePaneSize } from "../../../../util/frontend/resizable_pane";
 import { SessionList } from "./session-list";
 import { sessionMatchesFilter, type StatusFilter } from "./session-info";
 import { TranscriptView } from "./transcript-view";
@@ -15,20 +16,6 @@ const TRANSCRIPT_MIN_WIDTH = 420;
 const SIDEBAR_RESIZER_WIDTH = 8;
 const SIDEBAR_WIDTH_STORAGE_KEY = "claude-session-sidebar-width";
 const SIDEBAR_VISIBLE_STORAGE_KEY = "claude-session-sidebar-visible";
-
-function clampSidebarWidth(width: number): number {
-  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
-}
-
-function readSidebarWidth(): number {
-  try {
-    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
-    const width = stored === null ? SIDEBAR_DEFAULT_WIDTH : Number(stored);
-    return Number.isFinite(width) ? clampSidebarWidth(width) : SIDEBAR_DEFAULT_WIDTH;
-  } catch {
-    return SIDEBAR_DEFAULT_WIDTH;
-  }
-}
 
 function readSidebarVisibility(): boolean {
   try {
@@ -60,7 +47,6 @@ export function SessionViewer(): JSX.Element {
   const [showRawEvents, setShowRawEvents] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(readSidebarVisibility);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const [layoutWidth, setLayoutWidth] = useState(0);
   const [isResizing, setIsResizing] = useState(false);
   const layoutRef = useRef<HTMLDivElement>(null);
@@ -68,15 +54,17 @@ export function SessionViewer(): JSX.Element {
 
   const availableLayoutWidth = layoutWidth || Math.max(0, window.innerWidth - 64);
   const sidebarMaxWidth = maxSidebarWidth(availableLayoutWidth);
-  const visibleSidebarWidth = Math.min(sidebarWidth, sidebarMaxWidth);
+  const pane = usePaneSize(
+    SIDEBAR_WIDTH_STORAGE_KEY,
+    SIDEBAR_DEFAULT_WIDTH,
+    SIDEBAR_MIN_WIDTH,
+    SIDEBAR_MAX_WIDTH,
+    sidebarMaxWidth
+  );
 
   useEffect(() => {
     storeSidebarPreference(SIDEBAR_VISIBLE_STORAGE_KEY, String(sidebarVisible));
   }, [sidebarVisible]);
-
-  useEffect(() => {
-    storeSidebarPreference(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
-  }, [sidebarWidth]);
 
   useEffect(() => {
     const layout = layoutRef.current;
@@ -94,25 +82,6 @@ export function SessionViewer(): JSX.Element {
       observer.disconnect();
     };
   }, [isMobile, sidebarVisible]);
-
-  useEffect(() => {
-    if (!isResizing) return;
-    const resize = (event: PointerEvent): void => {
-      const bounds = layoutRef.current?.getBoundingClientRect();
-      if (bounds !== undefined) {
-        setSidebarWidth(clampSidebarWidth(Math.min(event.clientX - bounds.left, maxSidebarWidth(bounds.width))));
-      }
-    };
-    const stopResizing = (): void => setIsResizing(false);
-    window.addEventListener("pointermove", resize);
-    window.addEventListener("pointerup", stopResizing);
-    window.addEventListener("pointercancel", stopResizing);
-    return () => {
-      window.removeEventListener("pointermove", resize);
-      window.removeEventListener("pointerup", stopResizing);
-      window.removeEventListener("pointercancel", stopResizing);
-    };
-  }, [isResizing]);
 
   const transcriptHistory = useTranscriptHistory(selectedId);
   const directory = useSessionDirectory({
@@ -219,44 +188,22 @@ export function SessionViewer(): JSX.Element {
           >
             {!isMobile && sidebarVisible && (
               <div
-                data-session-sidebar-width={visibleSidebarWidth}
-                style={{ flex: `0 0 ${visibleSidebarWidth}px`, minWidth: 0, overflow: "hidden" }}
+                data-session-sidebar-width={pane.size}
+                style={{ flex: `0 0 ${pane.size}px`, minWidth: 0, overflow: "hidden" }}
               >
                 {renderSessionList("session-sidebar", false)}
               </div>
             )}
             {!isMobile && sidebarVisible && (
-              <div
-                role="separator"
+              <ResizeHandle
+                pane={pane}
+                axis="x"
                 aria-label="Resize session list"
                 aria-controls="session-sidebar"
-                aria-orientation="vertical"
-                aria-valuemin={SIDEBAR_MIN_WIDTH}
-                aria-valuemax={sidebarMaxWidth}
-                aria-valuenow={visibleSidebarWidth}
-                aria-valuetext={`${visibleSidebarWidth} pixels`}
-                tabIndex={0}
+                aria-valuetext={`${pane.size} pixels`}
                 data-session-sidebar-resizer
-                onPointerDown={(event) => {
-                  if (event.button !== 0 || event.isPrimary === false) return;
-                  event.preventDefault();
-                  setIsResizing(true);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowLeft") {
-                    event.preventDefault();
-                    setSidebarWidth(clampSidebarWidth(visibleSidebarWidth - 16));
-                  } else if (event.key === "ArrowRight") {
-                    event.preventDefault();
-                    setSidebarWidth(clampSidebarWidth(Math.min(visibleSidebarWidth + 16, sidebarMaxWidth)));
-                  } else if (event.key === "Home") {
-                    event.preventDefault();
-                    setSidebarWidth(SIDEBAR_MIN_WIDTH);
-                  } else if (event.key === "End") {
-                    event.preventDefault();
-                    setSidebarWidth(sidebarMaxWidth);
-                  }
-                }}
+                onResizeStart={() => setIsResizing(true)}
+                onResizeEnd={() => setIsResizing(false)}
                 style={{
                   alignSelf: "stretch",
                   cursor: "col-resize",
@@ -275,7 +222,7 @@ export function SessionViewer(): JSX.Element {
                     width: 1,
                   }}
                 />
-              </div>
+              </ResizeHandle>
             )}
 
             <Paper
