@@ -58,6 +58,7 @@ and responses return there; neither Pod accepts an inbound Gateway connection.
 ```mermaid
 flowchart LR
     browser([Browser])
+    frontend[Static frontend]
     app[Integration app]
     history[History Service]
     history_db[(History PostgreSQL)]
@@ -73,7 +74,8 @@ flowchart LR
         relay[Egress relay]
     end
 
-    browser -->|API + shape requests| app
+    browser -->|HTML, assets and service worker| frontend
+    browser -->|API + shape requests, same origin| app
     app -->|gRPC reads and watch| history
     app -->|proxied shape request| electric
     electric -->|shape response data| app
@@ -88,6 +90,8 @@ flowchart LR
 
 The app initiates each Electric HTTP request and streams the shape response through to the browser.
 The separate `History PostgreSQL → Electric → app → browser` arrows show replicated and returned data.
+The HTTPS Gateway routes static files directly to the frontend Service and all API, login and stream
+requests to the app Service. The frontend has no backend credentials or outbound service calls.
 
 ## Notifications
 

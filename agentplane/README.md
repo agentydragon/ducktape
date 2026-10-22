@@ -28,7 +28,7 @@ an MCP approval gateway for any MCP-capable LLM product.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
 - [Indexing](indexing/README.md): Git semantic search.
 - [Integration app](app/README.md): the human-facing frontend over the services above, and a
-  client of them.
+  client of them. Its static browser shell has a separate [frontend image](app/frontend/serving/README.md).
 
 ## Go service images
 
@@ -50,7 +50,9 @@ history and browser sync, notifications, actions and egress) and direct API defi
 ```mermaid
 flowchart LR
     browser([Browser])
-    app[Integration app]
+    edge[HTTPS Gateway]
+    frontend[Static frontend]
+    app[Integration API]
     subgraph services[Agentplane services]
         direction TB
         gw[Runner Gateway: queue, proxy and tunnel]
@@ -83,7 +85,9 @@ flowchart LR
         index[Git index]
     end
 
-    browser -->|HTTPS requests| app
+    browser -->|HTTPS, one origin| edge
+    edge -->|HTML, assets and service worker| frontend
+    edge -->|API, auth and streams| app
     app -->|gRPC health + tunneled Runner RPCs| gw
     app -->|Dispatcher API: gRPC and HTTP/JSON reads| gw
     app --> hs

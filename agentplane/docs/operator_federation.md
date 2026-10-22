@@ -359,5 +359,5 @@ The single human-authored `decision_note` is shared unchanged with caller and op
 canonical polling/BFF projections; provider outcome reason fields remain separate. There is no
 private human-note path. [Caller cancellation](../action_service/README.md#cancellation) is available
 before dispatch claim; the operator/BFF surface has no cancellation override. Approval Web Push is
-served by the app (`/push/*`, the service worker at `/sw.js`); only the Event & Notification Hub is
+handled by the app API (`/push/*`) and its separately served frontend worker (`/sw.js`); only the Event & Notification Hub is
 deferred.

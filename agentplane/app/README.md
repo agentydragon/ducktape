@@ -8,10 +8,13 @@ the History Service and synchronizes selected rows and content to the browser th
 Electric endpoints. It also presents Actions, operator decisions and Connection consent.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
-Set `AGENTPLANE_ELECTRIC_URL` to serve the browser frontend and its thread-sync API. Omit it for
-an API-only deployment: REST and SSE remain available, while the SPA, service worker, Electric
-sync routes and Electric health probe are absent. Backend lifecycle and model-smoke fixtures use
-this composition without running Electric.
+The API image contains no browser assets. The separate [static frontend](frontend/serving/README.md)
+serves the SPA and service worker on the same public origin through Gateway path routing; API,
+authentication and streaming requests reach this service directly.
+
+Set `AGENTPLANE_ELECTRIC_URL` to enable the authenticated thread-sync API and Electric health probe.
+Omitting it leaves REST and SSE available without Electric; backend lifecycle and model-smoke
+fixtures use this composition. Electric configuration does not control static-file serving.
 
 ## Sandbox lifecycle ownership
 
@@ -281,8 +284,8 @@ that is not current and why. Every stream, and the server's watch behind it, ret
 
 ## Authentication and authorization
 
-Every API route needs a caller; only `/healthz`, `/readyz`, the `/auth/*` endpoints, the service
-worker at `/sw.js`, and the SPA's static files mounted at `/` answer without one. There are two credentials,
+Every API route needs a caller; only `/healthz`, `/readyz` and the `/auth/*` endpoints answer without
+one. The separate frontend serves public static files, including `/sw.js`. There are two credentials,
 and both are cryptographic:
 
 - **An operator's OIDC session.** `AGENTPLANE_OIDC_ISSUER` and its siblings register the app as an

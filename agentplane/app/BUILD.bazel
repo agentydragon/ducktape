@@ -18,10 +18,6 @@ package(default_visibility = [
 
 py_binary(
     name = "main_bin",
-    data = [
-        "//agentplane/app/frontend:bundle",
-        "//agentplane/app/frontend/service_worker:service_worker_js",
-    ],
     main_module = "agentplane.app.main",
     deps = [":main"],
 )
@@ -151,9 +147,7 @@ py_library(
         "//agentplane/runner_gateway:client",
         "//agentplane/sandboxes:inventory",
         "//util:kubernetes",
-        "//util/bazel:runfiles",
         "@pypi//anyio",
-        "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//sqlalchemy",
@@ -471,15 +465,11 @@ py_library(
     ],
 )
 
-# The app image: the API, the bridge, and the bundled SPA it serves, on debian slim as user 1000.
+# The app image: the API and the bridge, on debian slim as user 1000.
 # Published as agentplane-app (devinfra/ci/image_targets.json) and run by the Deployment in
 # cluster/k8s/agentplane-staging.
 aspect_py_binary(
     name = "app_image_bin",
-    data = [
-        "//agentplane/app/frontend:bundle",
-        "//agentplane/app/frontend/service_worker:service_worker_js",
-    ],
     main = "main.py",
     deps = [":main"],
 )
@@ -597,7 +587,6 @@ py_test(
         "//agentplane/postgres:wakeups",
         "//agentplane/sandboxes/testing:sandbox_namespace",
         "//util:net",
-        "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",

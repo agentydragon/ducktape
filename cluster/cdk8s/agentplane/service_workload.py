@@ -100,6 +100,8 @@ def add_service_workload(
     traffic_distribution: str | None = None,
     placement: node_scheduling.Placement | None = None,
     registry_secret_name: str | None = None,
+    automount_service_account_token: bool = True,
+    read_only_root_filesystem: bool = False,
 ) -> ServiceWorkload:
     """`serves` identify the Pod ports and shared name/labels. Normally build their Service here;
     a separately reconciled Service can instead use the same refs. Mount into the returned container."""
@@ -110,10 +112,12 @@ def add_service_workload(
     for ref in serves:
         ports.setdefault(ref.pod_port, ref.container_port())
     replicas = replica_profile or env.replicas
-    # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; every service calls
-    # TokenReview as itself.
+    # API services call TokenReview; static workloads can opt out of both token mounts.
     account = ServiceAccount(
-        scope, "account", metadata=ApiObjectMetadata(name=name, namespace=env.namespace), automount_token=True
+        scope,
+        "account",
+        metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
+        automount_token=automount_service_account_token,
     )
     deployment = Deployment(
         scope,
@@ -126,7 +130,7 @@ def add_service_workload(
         termination_grace_period=termination_grace,
         service_account=account,
         # Independent of the ServiceAccount's own automount_token, and also False by default.
-        automount_service_account_token=True,
+        automount_service_account_token=automount_service_account_token,
         docker_registry_auth=(
             Secret.from_secret_name(scope, "images-creds", registry_secret_name)
             if registry_secret_name is not None
@@ -146,8 +150,8 @@ def add_service_workload(
         readiness=readiness,
         liveness=liveness,
         resources=resources,
-        # Writable: its root filesystem writes are unaudited.
-        security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+        # API services' writes remain unaudited; static workloads opt into a read-only root.
+        security_context=ContainerSecurityContextProps(read_only_root_filesystem=read_only_root_filesystem),
     )
     # With the database (cnpg_conventions R5).
     if placement is not None:

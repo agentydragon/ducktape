@@ -3,19 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import mimetypes
-import os
 import socket
-from collections.abc import MutableMapping
 from contextlib import AsyncExitStack
-from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import anyio
 import httpx
 import uvicorn
-from fastapi import Response
-from fastapi.staticfiles import StaticFiles
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -55,40 +49,10 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.subjects import ServiceAccountRef
-from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
-
-# The serving executables supply the frontend assets in their runfiles.
-# The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
-FRONTEND_INDEX = "_main/agentplane/app/frontend/dist/index.html"
-SERVICE_WORKER = "_main/agentplane/app/frontend/service_worker/bundled/sw.js"
 
 # Each System page probe's budget; the probes run together, so the page answers within it.
 SYSTEM_STATUS_TIMEOUT_S = 5
-
-
-class SpaFiles(StaticFiles):
-    """The SPA, served so a browser never keeps a deploy-old copy.
-
-    The bundle keeps one name and Bazel stamps every file with the same fixed mtime, so a plain
-    `StaticFiles` mount lets the browser's heuristic freshness reuse `main.js` for months and
-    answers a same-sized `index.html` with a false 304 from its mtime-and-size ETag.
-    """
-
-    def file_response(
-        self,
-        full_path: str | os.PathLike[str],
-        stat_result: os.stat_result,
-        scope: MutableMapping[str, Any],
-        status_code: int = 200,
-    ) -> Response:
-        path = Path(full_path)
-        return Response(
-            content=path.read_bytes(),
-            media_type=mimetypes.guess_type(path.name)[0],
-            headers={"Cache-Control": "no-store"},
-            status_code=status_code,
-        )
 
 
 class AppServer(uvicorn.Server):
@@ -115,7 +79,7 @@ def main() -> None:
 async def async_main(settings: Settings) -> None:
     oidc = OIDCSettings()
     async with (
-        AsyncExitStack() as frontend,
+        AsyncExitStack() as upstream_clients,
         ApiClient(configuration=await kubernetes_configuration(settings.kubeconfig)) as api,
         httpx.AsyncClient(base_url=str(settings.action_federation.service_url), timeout=10) as actions_http,
         httpx.AsyncClient(base_url=str(settings.connection_service_url), timeout=10) as connection_http,
@@ -196,7 +160,7 @@ async def async_main(settings: Settings) -> None:
         ]
         electric = None
         if settings.electric_url is not None:
-            electric_http = await frontend.enter_async_context(
+            electric_http = await upstream_clients.enter_async_context(
                 httpx.AsyncClient(base_url=str(settings.electric_url), timeout=httpx.Timeout(65, connect=5))
             )
             electric = ElectricProxy(
@@ -204,7 +168,9 @@ async def async_main(settings: Settings) -> None:
             )
             system_probes.append(http_health_probe("Electric", electric_http, "/v1/health"))
         dispatcher_http = UpstreamProxy(
-            await frontend.enter_async_context(httpx.AsyncClient(base_url=str(settings.session_dispatcher_http_url))),
+            await upstream_clients.enter_async_context(
+                httpx.AsyncClient(base_url=str(settings.session_dispatcher_http_url))
+            ),
             settings.session_dispatcher_token_file,
         )
         app = create_app(
@@ -235,17 +201,6 @@ async def async_main(settings: Settings) -> None:
             connection_http=UpstreamProxy(connection_http, token_file=None),
             system_status=SystemStatusChecker(system_probes, timeout_s=SYSTEM_STATUS_TIMEOUT_S),
         )
-        if electric is not None:
-            worker = await asyncio.to_thread(Path(get_required_path(SERVICE_WORKER)).read_bytes)
-
-            @app.get("/sw.js")
-            async def service_worker() -> Response:
-                return Response(
-                    content=worker, media_type="application/javascript", headers={"Cache-Control": "no-store"}
-                )
-
-            # The SPA, mounted last so the API routes above it win; index.html answers the rest.
-            app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         async with background(watch.run(), name="live-watch"), background(history_watch.run(), name="history-watch"):
             await serve_then_close(
                 AppServer(

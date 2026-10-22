@@ -1,5 +1,4 @@
-"""The SPA mount's cache contract, the two settings models the Deployment's environment feeds, and
-the shutdown the Deployment's grace period is sized for."""
+"""The settings models fed by the Deployment and the shutdown its grace period is sized for."""
 
 from __future__ import annotations
 
@@ -13,8 +12,6 @@ import httpx
 import pytest
 import pytest_bazel
 import uvicorn
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -26,7 +23,7 @@ from agentplane.app.database_updates import create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
-from agentplane.app.main import AppServer, SpaFiles, serve_then_close
+from agentplane.app.main import AppServer, serve_then_close
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -104,28 +101,6 @@ def set_app_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     config = tmp_path / "config.yaml"
     config.write_text("default_policy_sets: [test-basic]\n")
     monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
-
-
-def test_spa_files_are_never_reused_from_a_browser_cache(tmp_path: Path) -> None:
-    """Bazel's fixed mtimes would otherwise validate a stale bundle: no-store, and no 304."""
-    (tmp_path / "index.html").write_text("<!doctype html>")
-    (tmp_path / "main.js").write_text("console.log(1)")
-    app = FastAPI()
-    app.mount("/", SpaFiles(directory=tmp_path, html=True), name="frontend")
-    client = TestClient(app)
-
-    first = client.get("/main.js")
-    again = client.get("/main.js", headers={"If-None-Match": first.headers.get("etag", "*")})
-    shell = client.get("/")
-
-    assert first.headers["cache-control"] == "no-store"
-    assert "etag" not in first.headers
-    assert again.status_code == 200
-    assert (shell.status_code, shell.headers["cache-control"], shell.headers["content-type"]) == (
-        200,
-        "no-store",
-        "text/html; charset=utf-8",
-    )
 
 
 def test_the_two_settings_models_read_environment_and_config_without_colliding(

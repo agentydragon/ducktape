@@ -110,7 +110,7 @@ class Settings(AppSettingsConfig):
     database_url: str = Field(description="PostgreSQL connection URI of the thread store.")
     electric_url: HttpEndpointUrl | None = Field(
         default=None,
-        description="Electric replicating the History Service fold; omit to serve the REST/SSE API without the frontend.",
+        description="Electric replicating the History Service fold; omit to disable authenticated thread-sync routes.",
     )
     egress_admin_token_file: Path = Path("/var/run/secrets/agentplane-egress-admin/token")
     egress_admin_timeout: float = Field(

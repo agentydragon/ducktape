@@ -3897,6 +3897,10 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
+      name: frontend
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
       name: sandbox-controller
       namespace: agentplane-testing
     - apiVersion: apps/v1
@@ -4096,6 +4100,10 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: app
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: frontend
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment

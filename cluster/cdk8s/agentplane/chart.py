@@ -17,6 +17,7 @@ from cluster.cdk8s.agentplane import (
     database,
     egress,
     electric,
+    frontend,
     history_service,
     llm_ingress,
     mcp_edge,
@@ -131,6 +132,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         registry_secret_name=REGISTRY_SECRET_NAME,
         runner_control_target=runner_gateway.control_target(env.namespace),
     ).add_platform_resources()
+    frontend.Frontend(chart, "frontend", env).add_platform_resources()
     runner_sandbox.RunnerSandbox(
         chart,
         "runner-sandbox",

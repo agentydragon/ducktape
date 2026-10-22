@@ -353,6 +353,7 @@ py_library(
         ":egress",
         ":electric",
         ":environment",
+        ":frontend",
         ":history_service",
         ":migrate_container",
         ":runner_gateway",
@@ -1263,6 +1264,40 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_frontend",
+    size = "medium",
+    srcs = ["test_frontend.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":app",
+        ":conftest",
+        ":frontend",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "frontend",
+    srcs = ["frontend.py"],
+    deps = [
+        ":environment",
+        ":service_workload",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )
