@@ -78,8 +78,9 @@ enrollments) and `WebPushService`. They live in files apart from `action_service
 - `/openapi.json`, which `/llms.txt` already links, replaces `docs/agents/http_api.md` (stage L).
 - The CLI's receipt wait moves to `WatchActionRequest`, which ends at the terminal or decision condition or the
   client's deadline, and `wait_seconds` and `wait_until` go (stage L).
-- The app's `_renewed` and `_without_repeated_snapshots` go when it reads the set watches, which end at the
-  bearer's expiry with `UNAUTHENTICATED` (stage L).
+- The app's Action watches now use the generated NDJSON facade through the generic proxy; the Python SSE relay,
+  token-renewal wrapper and duplicate-snapshot filter are gone. Stage L remains in flight until the Go-backed
+  aggregate acceptance exercises the caller path and live/suspended Sandbox compatibility is established.
 - Hand-written HTTP stays: `/mcp`, the OAuth endpoints and well-known documents, `/oauth/client-metadata.json`,
   `/v1/mcp-linkage/callback`. `/healthz` and `/readyz` become `grpc.health.v1`; `/metrics` stays.
 - The `_ERRORS` table becomes one interceptor mapping each domain error to a gRPC code and detail. Drain answers
@@ -106,12 +107,12 @@ and asserts the Go values against them before any Go code writes to a shared dat
 
 Each stage is a small PR or a few, in dependency order. The service keeps serving from Python until the cutover.
 
-| Stage | Change                                                                                                                                                                                                                                                                                                           |
-| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| L     | Callers, prepared against the protos and merged with the cutover: the app's Action routes and relays, `OperatorActionServiceClient`, the CLI's generated client, the Go Notification Service's HTTP client, acceptance tests.                                                                                    |
-| M     | Testing cutover: soak the Go migrator the roster publishes, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                                                                                                                                    |
-| N     | Staging cutover, below.                                                                                                                                                                                                                                                                                          |
-| O     | Python retirement: delete the Python service, tests, Alembic directory, migration image, `agentplane_oauth_kv`, `connection_enrollment`'s `decision_digest` and `browser_hash`, `external_connection_grant`'s `request_digest` and `activation_deadline` (a migration), the `fastmcp` pin and CI roster entries. |
+| Stage | Change                                                                                                                                                                                                                                                                                                                                                                               |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| L     | Caller source migration is on the acceptance branch: the app uses generated facades, the CLI and Notification Service use generated clients, and acceptance tests use the new contract; the Python client and app Action routes/relay are removed. **Still in flight:** Go-backed aggregate acceptance and live/suspended Sandbox CLI compatibility evidence before testing rollout. |
+| M     | Testing cutover: soak the Go migrator the roster publishes, roll the image with its callers, update the README system overview and `docs/system_overview.md`.                                                                                                                                                                                                                        |
+| N     | Staging cutover, below.                                                                                                                                                                                                                                                                                                                                                              |
+| O     | Python retirement: delete the Python service, tests, Alembic directory, migration image, `agentplane_oauth_kv`, `connection_enrollment`'s `decision_digest` and `browser_hash`, `external_connection_grant`'s `request_digest` and `activation_deadline` (a migration), the `fastmcp` pin and CI roster entries.                                                                     |
 
 Stage O also deletes the Python-parity golden generators and tests (`generate_golden.py`, `generate_mcp_golden.py`,
 `generate_mcp_executor_golden.py`, `generate_catalog_golden.py`, `policies/generate_golden.py` and their
@@ -133,12 +134,15 @@ test still earns it without the Python reference.
 - **External MCP clients re-authorize once**, at the flip and not again at the edge split. Their FastMCP-issued
   tokens cannot be honored. Connections and grants survive in the same tables and the existing reconnect path binds
   the new authorization to the old Connection after the operator confirms it. Say so in the cutover PR.
-- **Workload `/mcp` egress.** The `agentplane-workload` rule in `cluster/cdk8s/agentplane/egress.py` lets Sandboxes
-  reach `/mcp`, which no in-repo client calls and the Go service serves only to OAuth callers. The path leaves the
-  rule, with its `test_egress.py` assertion, at the staging cutover.
-- **Live Sandboxes.** A Sandbox started before the cutover has the old CLI and guides, which cannot talk to the
-  receipt stream until it restarts. That is the "decision card before PRs breaking live Sandboxes" case: ask at
-  stage L, with the number of live Sandboxes in hand.
+- **Workload Actions egress.** `BASIC_POLICY` in `cluster/cdk8s/agentplane/egress.py` already admits the full Actions
+  service host and applies `agentplane-workload` Authorization bearer substitution, with no method or path filter.
+  There is no path-only `/mcp` rule or matching assertion in `test_egress.py` to remove. Keep the host rule; Stage L
+  still needs Go-backed CLI acceptance through the egress `CONNECT`/h2c path with the substituted workload token.
+- **Live and suspended Sandboxes.** A Sandbox started before the cutover has the old CLI and guides. Its receipt
+  wait still calls the removed HTTP wait parameters, so refresh its runner image/CLI before it resumes against Go.
+  Inventory both live and suspended Sandboxes at stage L; a suspended Sandbox is not an active caller, but can resume
+  with the stale CLI. The staging inventory on 2026-10-21 had three suspended Sandboxes and none running. This is the
+  "decision card before PRs breaking live Sandboxes" case: carry that inventory into the cutover acceptance.
 
 ### After the flip: the edge split
 

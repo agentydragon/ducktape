@@ -215,14 +215,6 @@ async def stored_login(store: OperatorSessionStore, login: OperatorSession) -> S
     return SessionRow(store, row.id, idle=timedelta(hours=1), step=timedelta(minutes=5))
 
 
-OPERATOR_TOKEN = "test-operator-token"  # a test literal, not a real credential
-
-
-async def operator_token() -> str:
-    """The bearer token provider an `OperatorActionServiceClient` under test is given."""
-    return OPERATOR_TOKEN
-
-
 @pytest.fixture
 async def namespace(api_server: KubernetesApiServer) -> SandboxNamespace:
     return await SandboxNamespace.new(api_server)

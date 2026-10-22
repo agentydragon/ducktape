@@ -1825,11 +1825,12 @@ approved its destination, an `actions` core with `mcp-edge` split out after the 
 Goose migrator, the four proto services (`ActionService`, `OperatorActionService`, `WebPushService`, and
 `ConnectionService` in `agentplane/mcp_edge/`), the lifecycle store, the service skeleton, the dispatch worker,
 workload and operator admission, policy providers, the request RPCs and watches, the catalog, both executors, `/mcp`,
-Connections, the authorization server and Web Push. Serve
-them as generated facades and delete `OperatorActionServiceClient`, the app's Action routes and relays, and the Go
-Notification Service's hand-written HTTP client for the two request reads it makes. The request watch sends delta frames
-from the start: its first frame is the whole history (megabytes, #7922) and it ends every minute with the exchanged
-token. The MCP endpoint, OAuth metadata and consent callbacks stay hand-written HTTP. The receipt wait (`wait_seconds`,
+Connections, the authorization server and Web Push. The CLI, app, Notification Service and acceptance fixtures now
+use generated facades/clients; the Python `OperatorActionServiceClient` and app Action routes/relay are removed on the
+acceptance branch. **Stage L remains in flight** until Go-backed aggregate acceptance and caller compatibility evidence
+cover the testing cutover. The request watch sends delta frames from the start: its first frame is the whole history
+(megabytes, #7922) and it ends every minute with the exchanged token. The MCP endpoint, OAuth metadata and consent
+callbacks stay hand-written HTTP. The receipt wait (`wait_seconds`,
 `wait_until`) and request paging (`limit`, `after_id`) the [agent CLI](../docs/agent_cli.md) calls are served by the
 Python service today; the port keeps them, and a server stream of receipts that ends at the condition replaces the wait
 with the CLI updated in the same change. Stages, stored-data risks and cutover: [Action Service Go
