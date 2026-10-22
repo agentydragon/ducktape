@@ -13,11 +13,8 @@ images:
     newTag: devel-20261021215800-6f00f44 # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate
     newTag: devel-20261021215830-6f00f44 # {"$imagepolicy": "flux-system:agentplane-egress-history-migrate:tag"}
-  # CLEANUP(added 2026-10-21): Restore the `agentplane-app` Flux image-policy tag marker
-  #   with the testing Actions Go cutover (ACTION_SERVICE_GO_PORT stage M); this caller must
-  #   remain on the Python API until its generated-client image rolls with the Go service.
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261021232336-0489262
+    newTag: devel-20261022070752-e2ee72e # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261021225349-df10d2e # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
@@ -27,33 +24,21 @@ images:
   # Initial publication on devel supplies the tag through Flux image automation.
   - name: git.allegedly.works/ducktape-ci/runner
     newTag: devel-20261022070155-2adfbc1 # {"$imagepolicy": "flux-system:runner:tag"}
-  # CLEANUP(added 2026-10-21): Restore the `agentplane-sandbox` Flux image-policy tag marker
-  #   with the testing Actions Go cutover (ACTION_SERVICE_GO_PORT stage M); this caller must
-  #   remain on the Python API until its generated-client image rolls with the Go service.
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
-    newTag: devel-20261022022637-3ae6082
-  # CLEANUP(added 2026-10-21): Restore the `agentplane-sandbox-build` Flux image-policy tag marker
-  #   with the testing Actions Go cutover (ACTION_SERVICE_GO_PORT stage M); this caller must
-  #   remain on the Python API until its generated-client image rolls with the Go service.
+    newTag: devel-20261022070830-e1ec276 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
-    newTag: devel-20261022022658-3ae6082
+    newTag: devel-20261022070905-e1ec276 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20261021215652-6f00f44 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
-  # CLEANUP(added 2026-10-21): Restore this pin's Flux image-policy marker (policy `agentplane-action-service`, field
-  #   `tag`) in the testing flip of ACTION_SERVICE_GO_PORT (stage M), which pins the Go tag with its settings, probes and
-  #   callers; until then testing keeps the Python service while the roster publishes the Go image.
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20261021205128-9f23b65
+    newTag: devel-20261022070659-e2ee72e # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
     newTag: devel-20261021220301-bdeae93 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
     newTag: devel-20261022061700-dacc697 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
   # Bootstrap only: CI publishes the first images after merge; Flux must select real tags before rollout.
-  # CLEANUP(added 2026-10-21): Restore the `agentplane-notification-service` Flux image-policy tag marker
-  #   with the testing Actions Go cutover (ACTION_SERVICE_GO_PORT stage M); this caller must
-  #   remain on the Python API until its generated-client image rolls with the Go service.
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261021215549-6f00f44
+    newTag: devel-20261022045403-c9b9417 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261022061651-dacc697 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
@@ -64,10 +49,7 @@ images:
     newTag: devel-20261022070242-2adfbc1 # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
   # The runner and `agentplane` command: a disk beside the VM guest, and an image volume in the
   # runner Pod, both reached through kustomizeconfig.
-  # CLEANUP(added 2026-10-21): Restore the `agentplane-runner-disk` Flux image-policy tag marker
-  #   with the testing Actions Go cutover (ACTION_SERVICE_GO_PORT stage M); this caller must
-  #   remain on the Python API until its generated-client image rolls with the Go service.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261021215656-6f00f44
+    newTag: devel-20261022070843-e2ee72e # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
