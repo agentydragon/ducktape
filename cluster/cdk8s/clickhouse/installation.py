@@ -347,17 +347,7 @@ def clickhouse_chart(app: App) -> Chart:
                                     "ports": [_METRICS.k8s_container_port()],
                                     "resources": {
                                         "requests": {"cpu": "500m", "memory": "2Gi"},
-                                        "limits": {
-                                            "cpu": "4",
-                                            # The remaining Langfuse v4 backfill part exceeds the
-                                            # 10.8 GiB server cap derived from a 12 GiB limit.
-                                            # See https://github.com/agentydragon/ducktape/issues/6956.
-                                            # CLEANUP(langfuse-v4-migration): restore 8Gi once
-                                            # background-migration steps 3 and 4 have finished
-                                            # successfully with no failed chunks; do not remove this
-                                            # while historic backfill is still active.
-                                            "memory": "16Gi",
-                                        },
+                                        "limits": {"cpu": "4", "memory": "8Gi"},
                                     },
                                     "securityContext": _CONTAINER_SECURITY_CONTEXT,
                                 }
