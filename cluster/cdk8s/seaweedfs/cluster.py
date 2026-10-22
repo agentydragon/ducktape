@@ -2,9 +2,9 @@
 replication-repair `AdminScript`, the PodDisruptionBudgets the operator CRD has no
 field for, and the `tenants` grant letting the `TENANTS` namespaces' S3 objects reference it.
 
-Replication "001" (1 copy on a different node, same rack) survives a single node loss in
-each 3-node, single-rack topology group. Volume server PVCs use the `local-path-ovh-*`
-classes, bound to the Talos data user volume on each node. S3 runs as a standalone
+Replication "001" (1 copy on a different node, same rack) survives a single node loss.
+Volume server PVCs use `local-path-ovh-*`, plus `piraeus-ssd-local` on the rebuilt SSD
+pilot. The two SSD topology groups share one Seaweed placement domain. S3 runs as a standalone
 deployment (`spec.s3`, not `filer.s3`); the filer stays because S3 needs it for metadata.
 Every component is pinned to OVH nodes: the operator default would let pods land anywhere.
 
@@ -133,7 +133,16 @@ def _component_labels(component: str) -> dict[str, str]:
 
 
 def _volume_topology(
-    *, rack: str, storage: str, storage_class: str, disk: str, replicas: int, max_volume_counts: int
+    *,
+    rack: str,
+    storage: str,
+    storage_class: str,
+    disk: str,
+    replicas: int,
+    max_volume_counts: int,
+    additional_node_selector: dict[str, str] | None = None,
+    additional_tolerations: list[SeaweedSpecVolumeTopologyTolerations] | None = None,
+    anti_affinity_labels: dict[str, str] | None = None,
 ) -> SeaweedSpecVolumeTopology:
     return SeaweedSpecVolumeTopology(
         replicas=replicas,
@@ -175,18 +184,23 @@ def _volume_topology(
         # collection. Thin volumes make over-committing ~free; disk-full is bounded by
         # minFreeSpacePercent, not the slot cap.
         max_volume_counts=max_volume_counts,
-        node_selector={"storage.allegedly.works/tier": disk},
+        node_selector={"storage.allegedly.works/tier": disk, **(additional_node_selector or {})},
         tolerations=[
             SeaweedSpecVolumeTopologyTolerations(
                 key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
-            )
+            ),
+            *(additional_tolerations or []),
         ],
         affinity=SeaweedSpecVolumeTopologyAffinity(
             pod_anti_affinity=SeaweedSpecVolumeTopologyAffinityPodAntiAffinity(
                 required_during_scheduling_ignored_during_execution=[
                     SeaweedSpecVolumeTopologyAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
                         label_selector=SeaweedSpecVolumeTopologyAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
-                            match_labels={"app.kubernetes.io/instance": NAME, "seaweedfs/topology": disk}
+                            match_labels=(
+                                anti_affinity_labels
+                                if anti_affinity_labels is not None
+                                else {"app.kubernetes.io/instance": NAME, "seaweedfs/topology": disk}
+                            )
                         ),
                         topology_key=_HOSTNAME,
                     )
@@ -341,10 +355,8 @@ def seaweed(scope: Construct) -> Seaweed:
                 # 200 slots: -max=0 auto-derives only ~24 on the 419 GB NVMe. 200 gives
                 # 2*200 = 400 slots across any two survivors; the current 2-copy set uses 68
                 # (34 logical volumes), leaving room for the planned SSD migrations.
-                # Keep these two local-path servers after the first-node rebuild. Once the
-                # node and pool pass acceptance and the operator approves step 6, add the
-                # third SSD server in a separate Piraeus-backed topology group; leave this
-                # group's immutable local-path claim template unchanged.
+                # Keep the existing pod and claim templates unchanged while the separate
+                # Piraeus server joins: changing anti-affinity here would roll live servers.
                 "ssd": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
@@ -352,6 +364,26 @@ def seaweed(scope: Construct) -> Seaweed:
                     disk="ssd",
                     replicas=2,
                     max_volume_counts=200,
+                ),
+                # Same Seaweed disk/DC/rack as ssd; only the Kubernetes claim template differs.
+                # metricsPort also makes the operator create this group's ServiceMonitor.
+                "ssd-piraeus": _volume_topology(
+                    rack="hil-ovh-h108b01",
+                    storage="250Gi",
+                    storage_class="piraeus-ssd-local",
+                    disk="ssd",
+                    replicas=1,
+                    max_volume_counts=200,
+                    additional_node_selector={_HOSTNAME: "ovh-ns1001419"},
+                    # Admit only this server while the pilot remains cordoned.
+                    additional_tolerations=[
+                        SeaweedSpecVolumeTopologyTolerations(
+                            key="node.kubernetes.io/unschedulable", operator="Exists", effect="NoSchedule"
+                        )
+                    ],
+                    # Match both SSD groups without rolling the existing ssd template.
+                    # Required anti-affinity also protects this pod when peers are scheduled.
+                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
             },
             filer=SeaweedSpecFiler(

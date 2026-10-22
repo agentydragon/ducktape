@@ -411,7 +411,11 @@ Proceed only after step 5 acceptance and explicit user approval. This is the
 first step that may create production Piraeus PVCs. Keep verified off-node data
 and temporary HDD sources until each replacement is accepted.
 
-Restore the evacuated Seaweed master 2 using its application-specific handoff:
+Restore the CNPG members and SSD volume server first. Seaweed master 2 is healthy
+on its temporary HDD claim and can return in a separate handoff afterward; it
+does not block restoring SSD capacity or admitting ordinary workloads.
+
+When returning the evacuated Seaweed master 2, use its application-specific handoff:
 copy the verified Raft state from the temporary HDD-backed claim to a
 replacement Piraeus claim, preserve the member identity, and verify three
 healthy masters, leader agreement, and application S3 reads/writes before
@@ -425,7 +429,7 @@ Applications continue to use their existing SeaweedFS CSI claims and service
 endpoints. Do not add a second Piraeus copy by default when the application
 already provides replication.
 
-Then keep the two existing `local-path-ovh-ssd` volume servers and their claims,
+Keep the two existing `local-path-ovh-ssd` volume servers and their claims,
 and add a separate Seaweed `volumeTopology` group, such as `ssd-piraeus`, with
 one filesystem-backed volume-server claim on the accepted rebuilt node:
 
