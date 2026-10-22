@@ -111,9 +111,7 @@ def _database(scope: Construct) -> None:
         # Instances whose PVs predate the move to SSD stay on their HDD worker until rebuilt; a
         # changed class only applies to PVCs CNPG creates afterwards.
         storage_class="local-path-ovh-ssd",
-        # The 2026-10-22 read-only inventory measured 2,523,403,967 database bytes plus
-        # 603,980,418 WAL bytes. New replica claims need headroom; keep existing 2Gi claims
-        # unchanged during this maintenance while new claims use the 8Gi template.
+        # Give new replica claims headroom while retaining the existing claim sizes during evacuation.
         size="8Gi",
         resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb("attic"),
