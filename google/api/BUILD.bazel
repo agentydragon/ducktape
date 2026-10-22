@@ -1,0 +1,48 @@
+load("@aspect_bazel_lib//lib:copy_file.bzl", "copy_file")
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Keep the upstream import paths for browser schemas that use google.api.http.
+# Sources come from the pinned googleapis module; no vendored proto copy drifts.
+copy_file(
+    name = "annotations_source",
+    src = "@googleapis//google/api:annotations.proto",
+    out = "annotations.proto",
+)
+
+copy_file(
+    name = "http_source",
+    src = "@googleapis//google/api:http.proto",
+    out = "http.proto",
+)
+
+proto_library(
+    name = "http_proto",
+    srcs = [":http_source"],
+)
+
+proto_library(
+    name = "annotations_proto",
+    srcs = [":annotations_source"],
+    deps = [
+        ":http_proto",
+        "@protobuf//:descriptor_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "http_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":http_proto",
+)
+
+ts_proto_library(
+    name = "annotations_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":annotations_proto",
+    deps = [":http_pb"],
+)
