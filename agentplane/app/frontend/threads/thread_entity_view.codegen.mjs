@@ -1,6 +1,4 @@
-import { defineConfig } from "@hey-api/openapi-ts";
-
-export default defineConfig({
+export default {
   plugins: [
     {
       name: "zod",
@@ -12,4 +10,4 @@ export default defineConfig({
       },
     },
   ],
-});
+};
