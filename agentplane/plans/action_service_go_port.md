@@ -136,9 +136,11 @@ test still earns it without the Python reference.
 - **Workload `/mcp` egress.** The `agentplane-workload` rule in `cluster/cdk8s/agentplane/egress.py` lets Sandboxes
   reach `/mcp`, which no in-repo client calls and the Go service serves only to OAuth callers. The path leaves the
   rule, with its `test_egress.py` assertion, at the staging cutover.
-- **Live Sandboxes.** A Sandbox started before the cutover has the old CLI and guides, which cannot talk to the
-  receipt stream until it restarts. That is the "decision card before PRs breaking live Sandboxes" case: ask at
-  stage L, with the number of live Sandboxes in hand.
+- **Live and suspended Sandboxes.** A Sandbox started before the cutover has the old CLI and guides. Its receipt
+  wait still calls the removed HTTP wait parameters, so refresh its runner image/CLI before it resumes against Go.
+  Inventory both live and suspended Sandboxes at stage L; a suspended Sandbox is not an active caller, but can resume
+  with the stale CLI. The staging inventory on 2026-10-21 had three suspended Sandboxes and none running. This is the
+  "decision card before PRs breaking live Sandboxes" case: carry that inventory into the cutover acceptance.
 
 ### After the flip: the edge split
 

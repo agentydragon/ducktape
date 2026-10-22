@@ -23,7 +23,6 @@ execution result are authoritative; approval alone is not success.
 
 ## Reference
 
-- [HTTP reference](/docs/agents/http_api.md): Routes, request fields and query parameters, for a harness without the command.
-- [OpenAPI](/openapi.json): Request and response schemas.
+- [OpenAPI](/openapi.json): Generated HTTP routes, request fields, response schemas and streaming waits, for a harness without the command.
 - [Action catalog](/v1/action-groups): Available operations; fetch individual argument schemas as needed.
 - [Current Action policy](/v1/action-policy): Your effective auto-approval bindings, not a dry-run guarantee.
