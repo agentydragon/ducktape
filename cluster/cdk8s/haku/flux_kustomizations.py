@@ -4,32 +4,8 @@ from __future__ import annotations
 
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-
-
-def haku_kube_api_proxy_secret_prune(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    haku_console: Kustomization,
-    agentplane_staging: Kustomization,
-    authentik_tf: Kustomization,
-) -> Kustomization:
-    """Temporarily track retired proxy Secrets until Flux prunes them."""
-    return flux_kustomization(
-        chart,
-        "haku-kube-api-proxy-secret-prune",
-        artifact,
-        timeout="5m",
-        prune=True,
-        deletion_policy=KustomizationSpecDeletionPolicy.DELETE,
-        depends_on=flux_kustomization_depends_on_many(haku_console, agentplane_staging, authentik_tf),
-        description=(
-            "Temporarily tracks the retired Haku Kubernetes API proxy's cert-manager and reflected Secrets without "
-            "applying data; remove this Kustomization after its source owners reconcile to prune them."
-        ),
-    )
 
 
 def haku_mailbox(

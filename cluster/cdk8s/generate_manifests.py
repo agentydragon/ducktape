@@ -159,7 +159,6 @@ from cluster.cdk8s.haku import (
     charts as haku_charts,
     flux_kustomizations as haku_flux_kustomizations,
     forgejo_tea as haku_forgejo_tea,
-    kube_api_proxy_secret_prune as haku_kube_api_proxy_secret_prune,
     mailbox as haku_mailbox,
     namespace as haku_namespace,
     rbac as haku_rbac,
@@ -858,7 +857,7 @@ def generate_manifests(root: Path) -> None:
     agent_machine_access_module = terraform.gitops_module(agent_machine_access.NAME)
     gatus_sso_module = terraform.gitops_module(gatus_sso.NAME)
     alloy_otlp_bearer_token_module = terraform.gitops_module(alloy_otlp_bearer_token.NAME)
-    authentik_tf_kustomization = authentik_tf.authentik_tf(
+    authentik_tf.authentik_tf(
         flux_chart,
         write_directory(
             root,
@@ -1667,18 +1666,6 @@ def generate_manifests(root: Path) -> None:
         agentplane_staging_kustomization,
     )
     public_coder_agent_access_artifact = artifact("public-coder-agent-access", public_coder_app.ACCESS_DIR)
-    haku_kube_api_proxy_secret_prune_artifact = artifact(
-        haku_kube_api_proxy_secret_prune.NAME, haku_kube_api_proxy_secret_prune.OUTPUT_DIR
-    )
-    write_directory(root, haku_kube_api_proxy_secret_prune_artifact, haku_kube_api_proxy_secret_prune.chart)
-    haku_flux_kustomizations.haku_kube_api_proxy_secret_prune(
-        flux_chart,
-        haku_kube_api_proxy_secret_prune_artifact,
-        haku_console_kustomization,
-        agentplane_staging_kustomization,
-        authentik_tf_kustomization,
-    )
-
     public_coder_agent_access_kustomization = agents_flux_kustomizations.public_coder_agent_access(
         flux_chart,
         write_directory(
@@ -1847,7 +1834,6 @@ def generate_manifests(root: Path) -> None:
             grocy_sf_user_perms_artifact,
             grocy_vallejo_user_perms_artifact,
             haku_console_artifact,
-            haku_kube_api_proxy_secret_prune_artifact,
             haku_mailbox_artifact,
             haku_forgejo_tea_artifact,
             haku_ui_image_webhook_artifact,
