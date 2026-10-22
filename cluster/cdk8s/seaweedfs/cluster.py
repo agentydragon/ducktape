@@ -347,22 +347,15 @@ def seaweed(scope: Construct) -> Seaweed:
                 # The usual 3-server OVH NVMe group serves Forgejo git via the
                 # seaweedfs-ovh-ssd StorageClass (diskType=ssd -> -disk=ssd).
                 #
-                # Real OVH rack -- both KS-GAME nodes (104952, 104963) are physically in
-                # H108B01 (verified via the ovh_dedicated_server data source for the existing
-                # nodes). The logical rack label keeps repl 001's two git copies in this group
-                # while the SYS-1 provides a third evacuation target.
-                #
-                # 200 slots: -max=0 auto-derives only ~24 on the 419 GB NVMe. 200 gives
-                # 2*200 = 400 slots across any two survivors; the current 2-copy set uses 68
-                # (34 logical volumes), leaving room for the planned SSD migrations.
-                # Keep the existing pod and claim templates unchanged while the separate
-                # Piraeus server joins: changing anti-affinity here would roll live servers.
+                # Keep the evacuated legacy StatefulSet and retained claim template for
+                # rollback, with no running local-path volume servers. The two Piraeus
+                # groups below now hold every logical SSD volume on different nodes.
                 "ssd": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
                     storage_class="local-path-ovh-ssd",
                     disk="ssd",
-                    replicas=1,
+                    replicas=0,
                     max_volume_counts=200,
                 ),
                 # Same Seaweed disk/DC/rack as ssd; only the Kubernetes claim template differs.

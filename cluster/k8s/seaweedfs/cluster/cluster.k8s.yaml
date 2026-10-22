@@ -160,7 +160,7 @@ spec:
         storage.allegedly.works/tier: ssd
       priorityClassName: stateful-infra
       rack: hil-ovh-h108b01
-      replicas: 1
+      replicas: 0
       requests:
         cpu: 100m
         memory: 512Mi
