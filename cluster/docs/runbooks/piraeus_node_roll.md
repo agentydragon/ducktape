@@ -230,28 +230,38 @@ Review emptyDir contents before allowing drain to delete them.
 
 Use CNPG's native streaming replication, one cluster at a time:
 
-1. Record desired instance count, each Pod/PVC UID, size, SC and primary. Set
-   the future claim class to `piraeus-ssd-local`, retaining size and disabling
-   resize-in-use for this migration.
-2. For a two-member cluster on the old SSD nodes, temporarily request a third
-   member. Required hostname anti-affinity should place its new Piraeus claim
-   on an available converted SSD node. Verify actual placement, healthy member
-   count and replay of an observed primary WAL position before promotion.
+1. For each of the seven clusters listed in
+   [CNPG conventions](../cnpg_conventions.md#current-compliance), work serially:
+   finish and verify one before starting the next. Record its desired count
+   (two), each Pod/PVC UID, size, StorageClass and primary. The prepared Git
+   template keeps two instances, retains the existing size, uses
+   `piraeus-ssd-local` for a new claim, and disables resize-in-use. Existing
+   claims keep their StorageClass and size.
+2. Put a brief, resource-specific Flux hold on that Cluster, then temporarily
+   request a third member. Required hostname anti-affinity should place the new
+   Piraeus claim on the available converted SSD node. Verify actual placement,
+   three healthy members, and replay through an observed primary WAL position
+   before promotion. Do not start another cluster during this sequence.
 3. Switch primary off-target and observe the new primary plus streaming
    standbys. This includes the filer DB and Terraform state DB before depending
    on their availability for other maintenance.
-4. Remove only the identified target member using the CNPG-supported workflow.
-   Check the operator's member selection; scaling down alone does not identify
-   which ordinal it will remove. UID-guard Pod/PVC operations and retain the PV.
-   Two healthy members must remain outside the outage set.
-5. For Attic and Study Casino, already at three members, move a target primary
-   first and retain two healthy off-target members. Study Casino stays **1Gi**.
+4. Retire the exact member on the target node using the CNPG-supported
+   workflow. Check the operator's member selection; scaling down alone does
+   not identify which ordinal it will remove. UID-guard Pod/PVC operations and
+   retain the PV. Verify two healthy members remain outside the outage set.
+5. Restore the Cluster's desired count to two before removing its Flux hold.
+   Verify Flux and CNPG agree on two members, then proceed to the next cluster.
+   Repeat until all seven have been evacuated.
+6. Attic and Study Casino are already at three members and are outside this
+   seven-cluster procedure. Move a target primary first and retain two healthy
+   off-target members. Study Casino stays **1Gi**.
 
-Use a brief, resource-specific Flux hold if needed to prevent desired state
-from undoing a handoff. A parent can undo suspension of a child Kustomization;
-hold the managed resource instead. Pause the CNPG operator only for a bounded
-member-removal transaction if necessary, not while waiting for CI or replication.
-Record and remove every hold.
+Use a brief, resource-specific Flux hold for each temporary member change. A
+parent can undo suspension of a child Kustomization; hold the managed resource
+instead. Remove the hold only after the Cluster and CNPG agree on the restored
+desired count. Pause the CNPG operator only for a bounded member-removal
+transaction if necessary, not while waiting for replication. Record and remove
+every hold.
 
 The singleton on `ovh-ns104963` needs a separate reviewed CNPG clone/promotion or
 explicit outage procedure. Do not delete its only data claim.

@@ -38,8 +38,9 @@ def _chart(app: App) -> Chart:
         # Existing SSD-local replicas remain pinned by their PVs; the node
         # affinity only steers placements no existing claim constrains.
         placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh-ssd",
+        storage_class="piraeus-ssd-local",
         size="10Gi",
+        resize_in_use_volumes=False,
         # The cluster was created by pg_basebackup from the retired forgejo-db, so this
         # stanza never initializes anything. It names the application role CNPG
         # reconciles: the cloned owner `forgejo`, not CNPG's default `app`, which does

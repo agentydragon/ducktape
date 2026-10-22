@@ -39,8 +39,9 @@ spec:
       isolationCheck:
         enabled: false
   storage:
+    resizeInUseVolumes: false
     size: 2Gi
-    storageClass: local-path-ovh-ssd
+    storageClass: piraeus-ssd-local
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket

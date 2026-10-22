@@ -502,8 +502,9 @@ spec:
       cpu: 100m
       memory: 512Mi
   storage:
+    resizeInUseVolumes: false
     size: 2Gi
-    storageClass: local-path-ovh-ssd
+    storageClass: piraeus-ssd-local
 ---
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass

@@ -91,8 +91,9 @@ class Db(Construct):
             ref=cluster,
             instances=env.db.instances,
             placement=node_scheduling.HIL_OVH,
-            storage_class=_STORAGE_CLASS,
+            storage_class=env.db.storage_class or _STORAGE_CLASS,
             size=_STORAGE_SIZE,
+            resize_in_use_volumes=env.db.resize_in_use_volumes,
             # Electric's WAL-loss recovery purges every shape, then stays unready while
             # rebuilding its replication pipeline. Keep a bounded outage budget below the
             # 5Gi volume instead of silently recycling the logical slot's WAL.

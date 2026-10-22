@@ -60,8 +60,9 @@ def _database(scope: Construct) -> None:
         "database",
         ref=DATABASE,
         placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh-ssd",
+        storage_class="piraeus-ssd-local",
         size="10Gi",
+        resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb("langfuse"),
         wal_archive=True,
     )

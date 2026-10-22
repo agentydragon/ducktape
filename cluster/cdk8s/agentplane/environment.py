@@ -43,6 +43,9 @@ class DbProps:
     # Archive WAL and take base backups into the environment's SeaweedFS bucket
     # (agentplane/db_backups.py) through the barman-cloud plugin.
     wal_archive: bool
+    # Optional overrides for the CNPG Cluster's new-instance storage template.
+    storage_class: str | None = None
+    resize_in_use_volumes: bool | None = None
 
 
 @dataclass(frozen=True)

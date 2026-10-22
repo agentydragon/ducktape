@@ -33,5 +33,6 @@ spec:
       isolationCheck:
         enabled: false
   storage:
+    resizeInUseVolumes: false
     size: 8Gi
-    storageClass: local-path-ovh-ssd
+    storageClass: piraeus-ssd-local

@@ -14,8 +14,8 @@ from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/db"
 _NAMESPACE = "authentik"
-# The database is on node-local `local-path-ovh` storage and cannot move; Authentik's server
-# selects the same zone to stay beside it.
+# Existing replicas have node-local claims and cannot move; Authentik's server selects the
+# same OVH zone to stay beside all database members.
 PLACEMENT = node_scheduling.HIL_OVH
 DATABASE = "authentik"
 POSTGRES = cnpg.PostgresRef(
@@ -34,8 +34,9 @@ def chart(app: App) -> Chart:
         "cluster",
         ref=POSTGRES,
         placement=PLACEMENT,
-        storage_class="local-path-ovh-ssd",
+        storage_class="piraeus-ssd-local",
         size="8Gi",
+        resize_in_use_volumes=False,
         # The cluster was created by pg_basebackup from the retired authentik-db, so this
         # stanza never initializes anything. It names the application database and role
         # CNPG uses: the metrics exporter runs its default queries against the database,

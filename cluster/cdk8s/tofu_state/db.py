@@ -67,8 +67,9 @@ def chart(app: App) -> Chart:
             parameters={"tcp_keepalives_idle": "60", "tcp_keepalives_interval": "10", "tcp_keepalives_count": "6"}
         ),
         placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh-ssd",
+        storage_class="piraeus-ssd-local",
         size="1Gi",
+        resize_in_use_volumes=False,
         # CNPG's default bootstrap: an `app` database and owner. Terraform's `tfstate` role is
         # managed below.
         initdb=None,

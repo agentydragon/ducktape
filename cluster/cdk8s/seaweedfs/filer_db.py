@@ -46,11 +46,12 @@ def chart(app: App) -> Chart:
                 " seaweedfs-filer-db, Case B git-latency migration)"
             )
         },
-        # Existing SSD-local replicas remain pinned by their PVs. Prefer a worker for
-        # any future placement that is not constrained by an existing claim.
+        # Existing local-path SSD replicas remain pinned by their PVs. A new Piraeus-local
+        # replica uses the current pool on ovh-ns1001419.
         placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh-ssd",
+        storage_class="piraeus-ssd-local",
         size="2Gi",
+        resize_in_use_volumes=False,
         # QoS / eviction protection. Without these the instance pods are BestEffort -- the
         # kubelet's first node-pressure eviction target and the OOM-killer's first victim
         # -- which is backwards for the store holding all filer metadata: every SeaweedFS
