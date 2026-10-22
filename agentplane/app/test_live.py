@@ -211,7 +211,6 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
                 scope="openid",
             ),
             oidc,
-            httpx.AsyncClient(base_url="http://test-actions.invalid"),
         )
         if configured
         else None

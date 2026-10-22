@@ -8,7 +8,6 @@ from datetime import UTC, datetime, timedelta
 from time import time
 from urllib.parse import parse_qs
 
-import httpx
 import pytest
 import pytest_bazel
 from pydantic import AnyHttpUrl, SecretStr
@@ -99,14 +98,13 @@ async def test_direct_dex_token_requires_both_explicit_profiles(
         scope="openid",
     )
     row = await stored_login(operator_sessions, dex_session)
-    async with httpx.AsyncClient() as http:
-        federation = FederatedOperatorActions(config, oidc, http)
-        if accepted:
-            assert dex_session.tokens is not None
-            assert await federation.exchange(row) == dex_session.tokens.access_token.get_secret_value()
-        else:
-            with pytest.raises(OperatorFederationError, match="operator_federation_token_invalid"):
-                await federation.exchange(row)
+    federation = FederatedOperatorActions(config, oidc)
+    if accepted:
+        assert dex_session.tokens is not None
+        assert await federation.exchange(row) == dex_session.tokens.access_token.get_secret_value()
+    else:
+        with pytest.raises(OperatorFederationError, match="operator_federation_token_invalid"):
+            await federation.exchange(row)
 
 
 @dataclass
@@ -147,32 +145,31 @@ async def login_provider() -> AsyncIterator[LoginProvider]:
         expires_at=datetime.now(UTC) - timedelta(seconds=1),
         refresh_token=SecretStr(SPENT),
     )
-    async with httpx.AsyncClient() as http:
-        provider = LoginProvider(
-            FederatedOperatorActions(config, oidc, http),
-            OperatorSession(issuer=issuer, subject=SUBJECT, username="test-operator", tokens=expired),
+    provider = LoginProvider(
+        FederatedOperatorActions(config, oidc),
+        OperatorSession(issuer=issuer, subject=SUBJECT, username="test-operator", tokens=expired),
+    )
+
+    async def renew(request: Request) -> JSONResponse:
+        form = parse_qs((await request.body()).decode())
+        assert form["grant_type"] == ["refresh_token"]
+        provider.presented.append(form["refresh_token"][0])
+        if provider.refuse:
+            return JSONResponse({"error": "invalid_grant"}, status_code=400)
+        now = int(time())
+        claims = {"iss": issuer, "aud": CLIENT, "azp": CLIENT, "sub": SUBJECT, "iat": now, "exp": now + 600}
+        return JSONResponse(
+            {
+                "access_token": sign_jwt(private, claims),
+                "token_type": "Bearer",
+                "expires_in": 600,
+                "refresh_token": f"test-rotated-refresh-token-{len(provider.presented)}",
+            }
         )
 
-        async def renew(request: Request) -> JSONResponse:
-            form = parse_qs((await request.body()).decode())
-            assert form["grant_type"] == ["refresh_token"]
-            provider.presented.append(form["refresh_token"][0])
-            if provider.refuse:
-                return JSONResponse({"error": "invalid_grant"}, status_code=400)
-            now = int(time())
-            claims = {"iss": issuer, "aud": CLIENT, "azp": CLIENT, "sub": SUBJECT, "iat": now, "exp": now + 600}
-            return JSONResponse(
-                {
-                    "access_token": sign_jwt(private, claims),
-                    "token_type": "Bearer",
-                    "expires_in": 600,
-                    "refresh_token": f"test-rotated-refresh-token-{len(provider.presented)}",
-                }
-            )
-
-        idp.routes.insert(0, Route("/application/o/token/", renew, methods=["POST"]))
-        async with serve_app(idp, sock=sock):
-            yield provider
+    idp.routes.insert(0, Route("/application/o/token/", renew, methods=["POST"]))
+    async with serve_app(idp, sock=sock):
+        yield provider
 
 
 async def _stored_tokens(store: OperatorSessionStore, row_id: str) -> LoginTokens | None:

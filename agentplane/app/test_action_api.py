@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -17,7 +17,6 @@ import jwt
 import pytest
 import pytest_bazel
 from fastapi import FastAPI
-from fastmcp import FastMCP
 from google.protobuf.json_format import MessageToJson
 from pydantic import AnyHttpUrl
 from sqlalchemy import select
@@ -25,23 +24,11 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from agentplane.action_service import action_service_pb2 as action_pb, api as service_api
-from agentplane.action_service.catalog import ActionCatalog, ActionGroup, McpExecutorBinding
-from agentplane.action_service.connections import ConnectionAuthority
-from agentplane.action_service.database_migrate import RUNNER as ACTIONS_RUNNER
-from agentplane.action_service.db import make_engine, make_sessionmaker
-from agentplane.action_service.enrollments import EnrollmentAuthority
-from agentplane.action_service.mcp_executor import McpActionGroupExecutor
-from agentplane.action_service.models import CallerPrincipal
-from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
+from agentplane.action_service import action_service_pb2 as action_pb
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.policy_informer import PolicyIndex
-from agentplane.action_service.service import ActionService
-from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
-from agentplane.action_service.testing.lifecycle import wait_available
 from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
-from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
@@ -64,7 +51,6 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.upstream_proxy import UpstreamProxy
-from agentplane.changes import ChangeSignal
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
@@ -73,28 +59,12 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.principal import (
-    WorkloadPrincipal,
-    WorkloadPrincipalRejectedError,
-    WorkloadPrincipalResolver,
-)
 from util.net import bind_free_port, pick_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 
-CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-sandbox"))
 SUBJECT_A = "test-operator-subject"
 SUBJECT_B = "test-second-subject"
-
-
-class _RejectAllWorkloadResolver:
-    """This fixture's downstream app has no real workload identities; only its operator/BFF flow
-    is under test, but /v1/action-groups now also tries workload auth before falling back to
-    operator, so a resolver that correctly rejects (rather than a None placeholder) is required."""
-
-    async def resolve_workload(self, token: str) -> WorkloadPrincipal:
-        raise WorkloadPrincipalRejectedError("test: this fixture has no workload identities")
 
 
 @dataclass
@@ -120,24 +90,6 @@ def operator_connection() -> str:
 @pytest.fixture
 def direct_federation() -> bool:
     return False
-
-
-@pytest.fixture(scope="module")
-def action_api_template(
-    postgres_admin_url: str, app_database_template: PostgresDatabaseTemplate
-) -> Iterator[PostgresDatabaseTemplate]:
-    with migrated_database_template(
-        postgres_admin_url,
-        "agentplane_action_api_template",
-        ACTIONS_RUNNER,
-        template=app_database_template.template_name,
-    ) as template:
-        yield template
-
-
-@pytest.fixture
-def db_url(action_api_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
-    return database_clones.clone(action_api_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture
@@ -169,23 +121,7 @@ async def review(
     This fixture verifies the app's generated ProtoJSON policy/proxy contract. The separate K3s
     acceptance test exercises the actual Go Action Service and its cross-service authorization.
     """
-    server = FastMCP("test-review")
-    calls: list[str] = []
-
-    @server.tool
-    def record(message: str) -> dict[str, str]:
-        calls.append(message)
-        return {"recorded": message}
-
-    group = ActionGroup(
-        title="Test review", description="Test-only MCP tool", executor=McpExecutorBinding(description="in-memory MCP")
-    )
-    catalog = ActionCatalog(groups={"test_review": group})
     async with AsyncExitStack() as stack:
-        engine = make_engine(db_url)
-        stack.push_async_callback(engine.dispose)
-        executor = await stack.enter_async_context(McpActionGroupExecutor("test_review", group, server))
-        await wait_available(group)
         private_key, public_key = generate_rsa_keypair()
         idp_sock = bind_free_port()
         idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"
@@ -197,32 +133,6 @@ async def review(
             jwks_uri=f"{idp_url}jwks/",
         )
         policies = admitted_callers(PERSONAL)
-        service = await stack.enter_async_context(
-            ActionService(
-                ActionStore(make_sessionmaker(engine)),
-                catalog,
-                {"test_review": executor},
-                policies=policies,
-                dispatches=ChangeSignal(),
-            )
-        )
-        connections = ConnectionAuthority(make_sessionmaker(engine), policies)
-        enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
-        downstream = service_api.create_app(
-            service,
-            cast(WorkloadPrincipalResolver, _RejectAllWorkloadResolver()),
-            OidcOperatorAuthenticator(target),
-            catalog,
-            callers=policies,
-            connections=connections,
-            enrollments=enrollments,
-            updates=ActionUpdateBroker(db_url),
-            direct_wait_seconds=30.0,
-            max_wait_seconds=30.0,
-        )
-        downstream_http = await stack.enter_async_context(
-            httpx.AsyncClient(transport=httpx.ASGITransport(app=downstream), base_url="http://test-actions.invalid")
-        )
         facade_requests: list[httpx.Request] = []
 
         async def action_service_facade(request: httpx.Request) -> httpx.Response:
@@ -389,9 +299,7 @@ async def review(
                 scope="openid profile",
             )
         )
-        operator_client = (
-            None if operator_connection == "disabled" else FederatedOperatorActions(federation, oidc, downstream_http)
-        )
+        operator_client = None if operator_connection == "disabled" else FederatedOperatorActions(federation, oidc)
         app = create_app(
             inventory,
             bridge,
@@ -434,9 +342,7 @@ async def review(
             action_policy,
             oidc,
             reviewer,
-            operator_actions=None
-            if operator_connection == "disabled"
-            else FederatedOperatorActions(federation, oidc, downstream_http),
+            operator_actions=None if operator_connection == "disabled" else FederatedOperatorActions(federation, oidc),
             event_logs=SeededEventLogStore(
                 replica_engine, history=history, history_reader=history_client, summaries=replica_summaries
             ),

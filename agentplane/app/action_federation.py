@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from functools import partial
 
 import httpx
 import httpx2
@@ -21,7 +20,6 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
-from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.operator_oidc import resolver_for
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.action_federation_settings import ActionFederationSettings
@@ -72,9 +70,8 @@ async def _check_token_response(response: httpx2.Response) -> None:
 
 
 class FederatedOperatorActions:
-    def __init__(self, config: ActionFederationSettings, oidc: OIDCSettings, http: httpx.AsyncClient) -> None:
+    def __init__(self, config: ActionFederationSettings, oidc: OIDCSettings) -> None:
         self._config = config
-        self._http = http
         self._login_issuer = oidc.issuer
         self._renew_before = timedelta(seconds=oidc.token_renew_before_seconds)
         self._login = build_oauth(oidc).create_client(CLIENT_NAME)
@@ -87,9 +84,6 @@ class FederatedOperatorActions:
             )
         )
         self._target = resolver_for(config.target)
-
-    def for_request(self, request: Request) -> OperatorActionServiceClient:
-        return OperatorActionServiceClient(self._http, partial(self.exchange, operator_session_row(request)))
 
     async def token_for_request(self, request: Request) -> str:
         """A fresh target token for one facade request, bound to this operator session."""
@@ -219,12 +213,6 @@ def _operator_action_provider(request: Request, caller: CallerIdentity) -> Feder
     if operator_session(request) is None:
         raise OperatorFederationError("operator_reauthentication_required", status_code=401)
     return provider
-
-
-def operator_actions(request: Request, caller: CallerIdentity) -> OperatorActionServiceClient:
-    """The request's operator-bound client. The exchange happens at its first request."""
-    provider = _operator_action_provider(request, caller)
-    return provider.for_request(request)
 
 
 async def operator_action_token(request: Request, caller: CallerIdentity) -> str:
