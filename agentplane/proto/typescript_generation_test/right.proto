@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package agentplane.proto.typescript_generation_test;
+
+import "fixture/shared.proto";
+
+message Right {
+  Shared shared = 1;
+}

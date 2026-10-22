@@ -83,23 +83,16 @@ load("@rules_python//python/uv:lock.bzl", "lock")
 load("//agentplane/proto:typescript_proto.bzl", "typescript_proto_compile")
 load("//devinfra/python:defs.bzl", "py_library")
 
-# Generate all browser-facing Agentplane proto code in one workspace-relative namespace.
-# `proto_compile` generates only the listed protos, so imports that need TypeScript modules
-# are direct inputs too, including Google's HTTP annotations.
+# Generate browser-facing Agentplane protos from its API roots. Imported schemas, including
+# Google HTTP annotations, are discovered from each ProtoInfo closure.
 typescript_proto_compile(
     name = "agentplane_proto_generated",
     protos = [
-        "//agentplane/action_service:action_service_proto",
         "//agentplane/action_service:operator_action_service_proto",
         "//agentplane/action_service:web_push_service_proto",
         "//agentplane/mcp_edge:connection_service_proto",
-        "//agentplane/proto:command_proto",
         "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:event_proto",
         "//agentplane/proto:runner_proto",
-        "//agentplane/proto:sandboxes_proto",
-        "@googleapis//google/api:annotations_proto",
-        "@googleapis//google/api:http_proto",
     ],
     visibility = ["//agentplane:__subpackages__"],
 )
