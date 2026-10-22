@@ -40,12 +40,15 @@ spec:
       - effect: NoSchedule
         key: node-role.kubernetes.io/control-plane
         operator: Exists
+      - effect: NoSchedule
+        key: node.kubernetes.io/unschedulable
+        operator: Exists
     topologyKey: kubernetes.io/hostname
   bootstrap:
     initdb:
       database: attic
       owner: attic
-  instances: 2
+  instances: 3
   monitoring:
     enablePodMonitor: true
   plugins:
@@ -63,7 +66,7 @@ spec:
   storage:
     resizeInUseVolumes: false
     size: 8Gi
-    storageClass: local-path-ovh-ssd
+    storageClass: piraeus-ssd-local
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket

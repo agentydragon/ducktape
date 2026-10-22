@@ -13,7 +13,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecAffinityTolerations, ClusterSpecPostgresql
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -108,12 +108,19 @@ def _database(scope: Construct) -> None:
         ref=DATABASE,
         image_name=None,
         placement=node_scheduling.HIL_OVH,
-        # Instances whose PVs predate the move to SSD stay on their HDD worker until rebuilt; a
-        # changed class only applies to PVCs CNPG creates afterwards.
-        storage_class="local-path-ovh-ssd",
-        # Give new replica claims headroom while retaining the existing claim sizes during evacuation.
+        tolerations=[
+            # This Cluster alone may schedule onto the still-cordoned Piraeus pilot node.
+            # CLEANUP(added 2026-10-22): Remove after ovh-ns1001419 is uncordoned.
+            ClusterSpecAffinityTolerations(
+                key="node.kubernetes.io/unschedulable", operator="Exists", effect="NoSchedule"
+            )
+        ],
+        # Existing replicas keep their local-path PVCs and sizes; CNPG applies this Piraeus class and
+        # the 8Gi template only when it creates another claim.
+        storage_class="piraeus-ssd-local",
         size="8Gi",
         resize_in_use_volumes=False,
+        instances=3,
         initdb=cnpg.same_owner_initdb("attic"),
         wal_archive=True,
         # Attic autocommits several statements per ~64 KiB chunk. With a commit per fsync on the HDD

@@ -10,28 +10,35 @@ Every PostgreSQL database in the cluster must be a CloudNativePG `Cluster`
 resource. No bare StatefulSets, Helm-bundled postgres subcharts, or custom
 postgres deployments.
 
-### R2: Two allowed configurations
+### R2: Allowed configurations
 
 Only these CNPG cluster profiles are permitted:
 
-| Profile            | Instances | Pin                                      | Storage                        | Anti-affinity                      |
-| ------------------ | --------- | ---------------------------------------- | ------------------------------ | ---------------------------------- |
-| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh-hdd` or `-ssd` | required, `kubernetes.io/hostname` |
-| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`           | n/a                                |
+| Profile                               | Instances | Pin                                      | Storage                                           | Anti-affinity                      |
+| ------------------------------------- | --------- | ---------------------------------------- | ------------------------------------------------- | ---------------------------------- |
+| **OVH-HA**                            | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh-hdd` or `-ssd`                    | required, `kubernetes.io/hostname` |
+| **OVH-HA with Piraeus pilot replica** | 3         | `topology.kubernetes.io/zone: hil-ovh`   | Existing claims unchanged; new claim uses Piraeus | required, `kubernetes.io/hostname` |
+| **Proxmox-single**                    | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`                              | n/a                                |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
 nodes. Two instances on separate nodes.
 
+**OVH-HA with Piraeus pilot replica**: Only for Attic and Study Casino while
+the `piraeus-ssd-local` class has a single local pool on `ovh-ns1001419`. Their
+existing two PVCs keep their current StorageClass and size; CNPG applies the
+Piraeus class and configured size only to a newly-created claim.
+
 **Placement** (`cnpg.cluster` derives it; no site builds its own): pod
-anti-affinity is `required` on `kubernetes.io/hostname` for every Cluster, and
-a Cluster tolerates the control-plane taint exactly when its storage class is
-SSD (`SSD_STORAGE_CLASSES` in `cdk8s/local_path_provisioner.py`) — OVH's
-`tier=ssd` nodes are its control planes, its `tier=hdd` nodes its workers.
-A running instance's local-path PV pins it to its node, so before an instance
-on a class that loses the toleration can restart, rebuild it on a worker.
-**Gotcha:** PVs provisioned before `local-path-ovh` was pinned to `tier=hdd` can
-still sit on a control plane's NVMe; check where an instance's PV lives, not
-only its Cluster's class.
+anti-affinity is `required` on `kubernetes.io/hostname` for every OVH Cluster,
+and a Cluster tolerates the control-plane taint for local-path SSD classes
+(`SSD_STORAGE_CLASSES` in `cdk8s/local_path_provisioner.py`) and for
+`piraeus-ssd-local`, whose only pool is on an OVH control-plane. The two
+Piraeus pilot Clusters also tolerate `node.kubernetes.io/unschedulable` while
+the pilot node remains cordoned. CNPG's default PodSpec reconciliation may
+restart existing Pods when these affinity tolerations change.
+**Gotcha:** a local PV pins a running instance to its node; before removing a
+class-specific toleration, check where its PV lives and rebuild the instance on
+a schedulable node if needed.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
 app on Proxmox. Relies on ZFS for local reliability; off-site backups via
@@ -49,7 +56,9 @@ OVH-HA uses `local-path-ovh-hdd` or, for fsync/latency-critical DBs, the
 `seaweedfs-filer-db-ssd`) — both constrained to OVH nodes via
 `allowedTopologies`. (`local-path-ovh` is a deprecated alias re-pinned to the
 same media as `-hdd`, kept only for already-bound PVCs — see the SC manifest;
-new clusters name the tiered classes explicitly.) Proxmox-single uses
+new clusters name the tiered classes explicitly.) The Piraeus pilot profile's
+new claim uses `piraeus-ssd-local`; this local, one-node class does not replace
+the existing replicas' bound volumes. Proxmox-single uses
 `local-path-proxmox`. OVH-HA gets
 replication at the CNPG level (2 instances on separate nodes);
 Proxmox-single gets replication at the storage level (ZFS on the Proxmox
@@ -90,15 +99,17 @@ sweep them with:
 grep -rl 'kind: Cluster' cluster/k8s --include='postgres-cluster*.yaml'
 ```
 
-As of 2026-08, most **live** (unsuspended) clusters are 2-instance OVH-HA —
-most on the deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
+Most active Cluster manifests describe 2-instance OVH-HA — most on the
+deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
 `seaweedfs-filer-db-ssd` on the `local-path-ovh-ssd` tier. Current exceptions:
 
-- `study-casino-db` (`generated/study-casino/`): temporarily 2 instances while
-  the replica on `ovh-ns1001419` is evacuated for Piraeus maintenance. Restore
-  the third instance only after a separate user-data handoff discussion. Its
-  original 3-instance profile was a deliberate deviation to tolerate one-node
-  loss without quorum or primary impact; the source comment records the temporary reduction.
+- `attic-db` (`nix-cache/`): 3 instances using the Piraeus pilot profile. Its
+  two existing local-path PVCs remain unchanged; the new claim uses
+  `piraeus-ssd-local`.
+- `study-casino-db` (`generated/study-casino/`): remains at 2 instances until
+  Attic's third Piraeus-backed replica is accepted. Its original 3-instance
+  profile was a deliberate deviation to tolerate one-node loss without quorum
+  or primary impact.
 - `postgres` (`generated/agentplane-testing/`): 1 instance pinned
   `zone: hil-ovh` on `local-path-ovh-ssd`, shared by testing's three disposable
   logical databases. This experimental environment deliberately accepts no
@@ -126,8 +137,8 @@ database resources or PVCs.
       Strategy" in <plan.md>)
 - [ ] Machine-check R1: pre-commit or CI check that no `image: postgres:*`
       appears in StatefulSets/Deployments outside of CNPG
-- [ ] Machine-check R2: validate that every CNPG Cluster matches one of the
-      two allowed profiles (instance count, region)
+- [ ] Machine-check R2: validate that every CNPG Cluster matches an allowed
+      profile (instance count, region and storage class)
 - [ ] Machine-check R3: validate that every CNPG Cluster uses the storage
       class R3 prescribes for its profile
 - [ ] Machine-check R5: validate that app `nodeSelector` region matches its
