@@ -226,10 +226,7 @@ repos:
         language: system
         # Only root-level ansible/*.yaml (playbooks), not roles/vars/etc subdirs.
         files: "^ansible/[^/]+\\.yaml$"
-        # TODO: Re-enable gpd.yaml once all machines use Nix home-manager
-        # and legacy_* roles are deleted. Currently gpd.yaml → legacy_gui →
-        # petermosmans.customize-gnome (missing galaxy role) breaks syntax-check.
-        exclude: "^ansible/(gpd|requirements|inventory)\\.yaml$"
+        exclude: "^ansible/(requirements|inventory)\\.yaml$"
         pass_filenames: true
 
       # Prettier formatter - uses .prettierrc.cjs config and .prettierignore.

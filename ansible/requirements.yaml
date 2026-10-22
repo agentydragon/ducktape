@@ -1,2 +1,6 @@
 collections:
   - name: ansible.posix # ansible.posix.authorized_key, used by atlas.yaml
+
+roles:
+  - name: petermosmans.customize-gnome
+    version: "0.2.12"
