@@ -17,7 +17,7 @@ const (
 // requiredFile is a settings file with every setting that has no default and is not a Secret.
 const requiredFile = `namespace: test-agentplane
 actions:
-  target: test-actions.invalid:8080
+  url: http://test-actions.invalid:8080
   token_file: /test/tokens/actions
 runner_gateway:
   control_target: "{sandbox}-control.{namespace}.svc:8080"
@@ -38,7 +38,7 @@ notice_debounce:
   quiet_seconds: 60
   max_wait_seconds: 120
 actions:
-  target: test-actions.invalid:8080
+  url: http://test-actions.invalid:8080
   token_file: /test/tokens/actions
 runner_gateway:
   control_target: "{sandbox}-control.{namespace}.svc:8080"
@@ -79,7 +79,7 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 	}
 	if c.DatabaseURL == "" || c.Namespace != "test-agentplane" || c.TokenAudience != "test-notifications" ||
 		c.OperatorReaderAccount != "test-app" || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
-		c.Actions.Target != "test-actions.invalid:8080" || c.Actions.TokenFile != "/test/tokens/actions" ||
+		c.Actions.URL != "http://test-actions.invalid:8080" || c.Actions.TokenFile != "/test/tokens/actions" ||
 		c.RunnerGateway.ControlTarget != "{sandbox}-control.{namespace}.svc:8080" || c.RunnerGateway.TokenFile != "/test/tokens/gateway" ||
 		c.HistoryService.Target != "test-history.invalid:8080" || c.HistoryService.TokenFile != "/test/tokens/history" ||
 		c.SessionDispatcher.Target != "test-dispatcher.invalid:8080" || c.SessionDispatcher.TokenFile != "/test/tokens/dispatcher" {
@@ -126,6 +126,32 @@ func TestAnEnvironmentVariableOverridesTheFileAtTopLevelAndNested(t *testing.T) 
 	}
 }
 
+func TestActionsURLDerivesItsGRPCTargetAndTransport(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		url       string
+		target    string
+		tlsServer string
+	}{
+		{name: "HTTP with port", url: "http://actions.test:8080", target: "actions.test:8080"},
+		{name: "HTTP normalizes scheme and port", url: "HTTP://actions.test:00080", target: "actions.test:80"},
+		{name: "HTTP default port", url: "http://actions.test/", target: "actions.test:80"},
+		{name: "HTTPS with port", url: "https://actions.test:8443", target: "actions.test:8443", tlsServer: "actions.test"},
+		{name: "HTTPS default port", url: "https://actions.test", target: "actions.test:443", tlsServer: "actions.test"},
+		{name: "IPv6", url: "http://[::1]:8080", target: "[::1]:8080"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			endpoint, err := (actionPeer{URL: tc.url}).grpcEndpoint()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if endpoint.target != tc.target || endpoint.tlsServerName != tc.tlsServer {
+				t.Errorf("endpoint = %+v, want target %q and TLS server %q", endpoint, tc.target, tc.tlsServer)
+			}
+		})
+	}
+}
+
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, tc := range map[string]struct {
 		file    string
@@ -134,7 +160,11 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"unknown key":                 {file: requiredFile + "bogus: 1\n"},
 		"unknown nested key":          {file: strings.Replace(requiredFile, "  target: test-history.invalid:8080\n", "  target: test-history.invalid:8080\n  bogus: 1\n", 1)},
 		"no namespace":                {file: strings.Replace(requiredFile, "namespace: test-agentplane\n", "", 1)},
-		"no Actions target":           {file: strings.Replace(requiredFile, "  target: test-actions.invalid:8080\n", "", 1)},
+		"no Actions URL":              {file: strings.Replace(requiredFile, "  url: http://test-actions.invalid:8080\n", "", 1)},
+		"Actions URL path":            {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:8080/v1", 1)},
+		"Actions URL query":           {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:8080?", 1)},
+		"Actions URL credentials":     {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-user@actions.invalid:8080", 1)},
+		"Actions URL invalid port":    {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:70000", 1)},
 		"no Actions token file":       {file: strings.Replace(requiredFile, "  token_file: /test/tokens/actions\n", "", 1)},
 		"no control target":           {file: strings.Replace(requiredFile, "  control_target: \"{sandbox}-control.{namespace}.svc:8080\"\n", "", 1)},
 		"no History token file":       {file: strings.Replace(requiredFile, "  token_file: /test/tokens/history\n", "", 1)},

@@ -252,7 +252,7 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 	historyAddress := serveGRPC(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })
 	dispatcherAddress := serveGRPC(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })
 	peers := func(c *config) {
-		c.Actions.Target = actionService
+		c.Actions.URL = "http://" + actionService
 		c.HistoryService.Target, c.SessionDispatcher.Target = historyAddress, dispatcherAddress
 		c.NoticeDebounce.QuietSeconds = 0
 	}

@@ -111,7 +111,7 @@ class Notifications(Construct):
                 "operator_reader_account": "app",
                 "notice_debounce": {"quiet_seconds": 60, "max_wait_seconds": 120},
                 "actions": {
-                    "target": f"{actions.fqdn}:{actions.port.number}",
+                    "url": f"http://{actions.fqdn}:{actions.port.number}",
                     "token_file": "/var/run/secrets/notifications/actions",
                 },
                 "runner_gateway": {

@@ -40,6 +40,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -170,7 +171,16 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 		return err
 	}
 	defer dispatcherConnection.Close()
-	actionsConnection, err := bearer.Dial(c.Actions.Target, c.Actions.TokenFile, seconds(c.Actions.RequestTimeoutSeconds))
+	actionEndpoint, err := c.Actions.grpcEndpoint()
+	if err != nil {
+		return err
+	}
+	var actionDialOptions []grpc.DialOption
+	if actionEndpoint.tlsServerName != "" {
+		actionDialOptions = append(actionDialOptions,
+			grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, actionEndpoint.tlsServerName)))
+	}
+	actionsConnection, err := bearer.Dial(actionEndpoint.target, c.Actions.TokenFile, seconds(c.Actions.RequestTimeoutSeconds), actionDialOptions...)
 	if err != nil {
 		return err
 	}

@@ -149,7 +149,7 @@ func restart(t *testing.T, tune func(*config)) running {
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
 	c.Namespace, c.TokenAudience = testNamespace, testAudience
-	c.Actions = peer{Target: actionAddress, TokenFile: tokenFile("actions"), RequestTimeoutSeconds: 5}
+	c.Actions = actionPeer{URL: "http://" + actionAddress, TokenFile: tokenFile("actions"), RequestTimeoutSeconds: 5}
 	c.RunnerGateway = runnerGateway{ControlTarget: runnerAddress, TokenFile: tokenFile("gateway"), RequestTimeoutSeconds: 5}
 	c.HistoryService = peer{Target: historyAddress, TokenFile: tokenFile("history"), RequestTimeoutSeconds: 5}
 	c.SessionDispatcher = peer{Target: dispatcherAddress, TokenFile: tokenFile("dispatcher"), RequestTimeoutSeconds: 5}

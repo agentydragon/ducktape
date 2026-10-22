@@ -108,7 +108,7 @@ def test_notifications_use_the_configured_dispatcher(
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     actions = action_service.service(namespace)
     assert settings["actions"] == {
-        "target": f"{actions.fqdn}:{actions.port.number}",
+        "url": f"http://{actions.fqdn}:{actions.port.number}",
         "token_file": "/var/run/secrets/notifications/actions",
     }
     dispatcher = session_dispatcher.service(namespace)

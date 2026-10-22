@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,7 +41,7 @@ type config struct {
 	OperatorReaderAccount string       `mapstructure:"operator_reader_account"`
 	Quotas                store.Quotas `mapstructure:"quotas"`
 	worker.Settings       `mapstructure:",squash"`
-	Actions               peer          `mapstructure:"actions"`
+	Actions               actionPeer    `mapstructure:"actions"`
 	RunnerGateway         runnerGateway `mapstructure:"runner_gateway"`
 	HistoryService        peer          `mapstructure:"history_service"`
 	SessionDispatcher     peer          `mapstructure:"session_dispatcher"`
@@ -75,6 +78,51 @@ type peer struct {
 	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
 }
 
+// actionPeer retains the deployment's HTTP(S) URL key while composing the Action Service's gRPC transport.
+type actionPeer struct {
+	URL                   string  `mapstructure:"url"`
+	TokenFile             string  `mapstructure:"token_file"`
+	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
+}
+
+type actionGRPCEndpoint struct {
+	target        string
+	tlsServerName string
+}
+
+func (p actionPeer) grpcEndpoint() (actionGRPCEndpoint, error) {
+	parsed, err := url.Parse(p.URL)
+	if err != nil {
+		return actionGRPCEndpoint{}, errors.New("actions.url must be an http or https origin without credentials, path, query or fragment")
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if (scheme != "http" && scheme != "https") || parsed.Hostname() == "" ||
+		parsed.User != nil || parsed.Opaque != "" || (parsed.Path != "" && parsed.Path != "/") || parsed.RawPath != "" ||
+		parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.RawFragment != "" ||
+		strings.ContainsAny(p.URL, "?#") || strings.HasSuffix(parsed.Host, ":") {
+		return actionGRPCEndpoint{}, errors.New("actions.url must be an http or https origin without credentials, path, query or fragment")
+	}
+	port := parsed.Port()
+	if port == "" {
+		if scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	} else {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return actionGRPCEndpoint{}, errors.New("actions.url has an invalid port")
+		}
+		port = strconv.Itoa(number)
+	}
+	endpoint := actionGRPCEndpoint{target: net.JoinHostPort(parsed.Hostname(), port)}
+	if scheme == "https" {
+		endpoint.tlsServerName = parsed.Hostname()
+	}
+	return endpoint, nil
+}
+
 func defaultConfig() config {
 	return config{
 		TokenAudience: tokenAudience,
@@ -82,7 +130,7 @@ func defaultConfig() config {
 			InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000, UnacknowledgedMessagesPerSender: 128,
 		},
 		Settings:      worker.DefaultSettings(),
-		Actions:       peer{RequestTimeoutSeconds: 5},
+		Actions:       actionPeer{RequestTimeoutSeconds: 5},
 		RunnerGateway: runnerGateway{RequestTimeoutSeconds: 5},
 		// A delivery reads a page of a Session's entries, which can be large.
 		HistoryService:        peer{RequestTimeoutSeconds: 20},
@@ -130,7 +178,7 @@ func (c *config) validate() error {
 		{"namespace", c.Namespace},
 		{"token_audience", c.TokenAudience},
 		{"host", c.Host},
-		{"actions.target", c.Actions.Target},
+		{"actions.url", c.Actions.URL},
 		{"actions.token_file", c.Actions.TokenFile},
 		{"runner_gateway.control_target", c.RunnerGateway.ControlTarget},
 		{"runner_gateway.token_file", c.RunnerGateway.TokenFile},
@@ -142,6 +190,9 @@ func (c *config) validate() error {
 		if required.value == "" {
 			return fmt.Errorf("%s is required", required.name)
 		}
+	}
+	if _, err := c.Actions.grpcEndpoint(); err != nil {
+		return err
 	}
 	if c.Port < 1 || c.Port > 65535 {
 		return errors.New("port must be between 1 and 65535")

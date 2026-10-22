@@ -68,13 +68,15 @@ Environment variables override YAML using `__` for nested fields. [settings.py](
 manifests render and their descriptions, and `config.go` with the settings of its packages reads them.
 Configuration changes require a service restart.
 
-`actions` contains a gRPC `target`, `token_file`, and optional `request_timeout_s` (default 5);
-`runner_gateway` uses `control_target` and `token_file` for per-Sandbox runner live-state checks.
+`actions` retains its `url` and `token_file` settings, plus optional `request_timeout_s` (default 5).
+The URL must be an HTTP(S) origin; Go derives the gRPC host and port from it, using h2c for `http`
+and TLS for `https`. `runner_gateway` uses `control_target` and `token_file` for per-Sandbox
+runner live-state checks.
 `history_service` and `session_dispatcher` each contain a `target` and `token_file`
 (`request_timeout_s` is optional for both). The Dispatcher setting is required. Each service checks
 its own token audience, so each token file holds a token projected for that service. Token paths refer
-to rotating projected ServiceAccount tokens, not static secrets. Actions rereads its token file for
-each RPC. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
+to rotating projected ServiceAccount tokens, not static secrets. The Action Service client rereads its
+token file for each RPC. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
 environment variable rather than putting the DSN in the ConfigMap.
 
 The service persists a notice's stable command ID before calling `SubmitInput`. A queued response means
