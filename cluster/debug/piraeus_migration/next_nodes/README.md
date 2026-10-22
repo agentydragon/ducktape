@@ -25,6 +25,25 @@ Keep the old endpoint available until long-lived FUSE clients are refreshed and
 its request counters are quiet. Empty storage alone does not complete the
 application drain or authorize deleting the StatefulSet/PVC.
 
+## Database replacement capacity — 2026-10-22
+
+Read-only `du -s -B1 "$PGDATA"` and PostgreSQL catalog queries showed two
+source databases already larger than their local-path requests:
+
+| Cluster                            | Old request | PGDATA allocated bytes | Database total bytes | WAL bytes, included in PGDATA | Replacement request |
+| ---------------------------------- | ----------: | ---------------------: | -------------------: | ----------------------------: | ------------------: |
+| `agentplane-staging/postgres`      |         5Gi |             8215187456 |           7466563591 |                     587231232 |                12Gi |
+| `seaweedfs/seaweedfs-filer-db-ssd` |         2Gi |             6645886976 |           6015649356 |                     620793856 |                12Gi |
+
+The replacement sizes leave about 4.35Gi and 5.81Gi beyond the observed PGDATA,
+respectively. WAL is part of PGDATA and must not be added again. Both templates
+keep `resizeInUseVolumes: false`; existing claims retain their classes and sizes.
+Agentplane testing remains 5Gi, and Study Casino remains 1Gi.
+
+These corrections take the seven proposed new PostgreSQL claims from 38Gi to
+55Gi total. Five smaller source databases fit their unchanged template sizes;
+refresh usage and available pool capacity immediately before each clone.
+
 ## HDD worker comparison and first-copy boundary
 
 The [read-only worker audit](worker_pair_audit.md) compares `103656` and `102453`,

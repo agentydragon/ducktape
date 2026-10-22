@@ -50,7 +50,7 @@ def chart(app: App) -> Chart:
         # replica uses the current pool on ovh-ns1001419.
         placement=node_scheduling.HIL_OVH,
         storage_class="piraeus-ssd-local",
-        size="2Gi",
+        size="12Gi",
         resize_in_use_volumes=False,
         # QoS / eviction protection. Without these the instance pods are BestEffort -- the
         # kubelet's first node-pressure eviction target and the OOM-killer's first victim

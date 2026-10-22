@@ -234,9 +234,12 @@ Use CNPG's native streaming replication, one cluster at a time:
    [CNPG conventions](../cnpg_conventions.md#current-compliance), work serially:
    finish and verify one before starting the next. Record its desired count
    (two), each Pod/PVC UID, size, StorageClass and primary. The prepared Git
-   template keeps two instances, retains the existing size, uses
-   `piraeus-ssd-local` for a new claim, and disables resize-in-use. Existing
+   template keeps two instances, sizes the replacement for measured PGDATA
+   plus headroom, uses `piraeus-ssd-local` for a new claim, and disables resize-in-use. Existing
    claims keep their StorageClass and size.
+   Measure actual PGDATA, including WAL: legacy local-path requests were not
+   enforced limits. Stop before requesting a replacement that cannot hold the
+   current data and agreed reserve.
 2. Put a brief, resource-specific Flux hold on that Cluster, then temporarily
    request a third member. Required hostname anti-affinity should place the new
    Piraeus claim on the available converted SSD node. Verify actual placement,

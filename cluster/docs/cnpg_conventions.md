@@ -32,8 +32,8 @@ Piraeus class and configured size only to a newly-created claim.
 **OVH-HA with Piraeus migration template**: A bounded preparation profile for
 the seven clusters preparing for the `ovh-ns104952` SSD evacuation, listed
 under Current Compliance below. Git keeps their desired count at two and their
-existing claims unchanged; the new-claim template uses `piraeus-ssd-local` at
-the existing size with `resizeInUseVolumes: false`. During the serial roll, a
+existing claims unchanged; the new-claim template uses `piraeus-ssd-local`,
+sized for measured PGDATA plus headroom, with `resizeInUseVolumes: false`. During the serial roll, a
 resource-specific Flux hold permits one temporary third member at a time. The
 operator procedure and restoration to two members before releasing each hold
 are in the [Piraeus node roll runbook](runbooks/piraeus_node_roll.md#postgresql).
@@ -125,7 +125,7 @@ deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   `tofu-state-db-ovh`: 2 desired instances using the Piraeus migration-template
   profile while preparing the `ovh-ns104952` SSD evacuation. Existing PVCs
   keep their current StorageClass and size; a new claim uses
-  `piraeus-ssd-local` at the existing template size, with
+  `piraeus-ssd-local` sized for measured data and headroom, with
   `resizeInUseVolumes: false`. Create the temporary third member one cluster
   at a time under a resource-specific Flux hold. After switchover, keep the
   Piraeus-seeded member and retire only the exact old member on `ovh-ns104952`;

@@ -321,7 +321,7 @@ spec:
         enabled: false
   storage:
     resizeInUseVolumes: false
-    size: 5Gi
+    size: 12Gi
     storageClass: piraeus-ssd-local
 ---
 apiVersion: postgresql.cnpg.io/v1

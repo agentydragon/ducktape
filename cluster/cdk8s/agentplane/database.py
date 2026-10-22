@@ -25,7 +25,6 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 from cluster.cdk8s.providers.cnpg.database import Database
 
 _STORAGE_CLASS = "local-path-ovh-ssd"
-_STORAGE_SIZE = "5Gi"
 _CLUSTER_NAME = "postgres"
 
 # The logical databases services own on the shared Cluster; the initdb-owned
@@ -92,11 +91,11 @@ class Db(Construct):
             instances=env.db.instances,
             placement=node_scheduling.HIL_OVH,
             storage_class=env.db.storage_class or _STORAGE_CLASS,
-            size=_STORAGE_SIZE,
+            size=env.db.size,
             resize_in_use_volumes=env.db.resize_in_use_volumes,
             # Electric's WAL-loss recovery purges every shape, then stays unready while
             # rebuilding its replication pipeline. Keep a bounded outage budget below the
-            # 5Gi volume instead of silently recycling the logical slot's WAL.
+            # configured volume instead of silently recycling the logical slot's WAL.
             # Every service Deployment's pools and LISTEN connections, summed at full overflow over
             # its replicas plus a rollout's surge Pod, exceed the default 100; a rejected connection
             # fails requests and can stop background loops such as the History Service fold.
