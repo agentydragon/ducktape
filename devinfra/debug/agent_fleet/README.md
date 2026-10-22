@@ -216,7 +216,7 @@ A live `sk-...` key is needed; from a web session three no-approval routes were 
 operator-approved hostexec read above got past this):
 
 - **SOPS decrypt** — dead this session: the session-start hook's `claude-web` age identity did not
-  match recipients (`github-pat`, aiquota bearer, and the pinned `litellm-*-clients-key.yaml`
+  match recipients (`github-pat`, aiquota bearer, and the pinned `litellm-*-clients-key.sops.yaml`
   files all fail to decrypt here). Not just a recipient-list gap — the private key isn't
   functioning in this session.
 - **kubectl read of `litellm` secrets** — the web session's own identity can't

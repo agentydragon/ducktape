@@ -1,7 +1,7 @@
 # `antigravity-claude`: Claude Code on Google's Antigravity OAuth session (a personal
 # "Google AI Plus" subscription, distinct from the AI-Studio GEMINI_API_KEY that
 # gemini-claude uses) via the cluster LiteLLM proxy, reading the litellm_antigravity_key
-# sops secret — an antigravity-scoped virtual key (SSOT in tf/gitops/litellm-keys).
+# sops secret — an antigravity-scoped virtual key (SSOT in cluster/k8s/litellm/crossplane-keys).
 # LiteLLM reaches CLIProxyAPI's antigravity/ant-messages/* route with Claude Code's native
 # Anthropic /v1/messages wire; CLIProxyAPI holds the OAuth session against Google's
 # internal Cloud Code API (cloudcode-pa.googleapis.com), so this key never carries it.
@@ -10,7 +10,7 @@
 # does not set a Haiku submodel until its tool behavior is validated. Before enabling it,
 # make sure all configured names are served by the proxy and admitted by the key
 # (ANTIGRAVITY_ROUTES in model_catalog/catalog.py, antigravity_client_models in
-# tf/gitops/litellm-keys/main.tf). See ./gateway.nix for the shared wrapper pattern.
+# cluster/cdk8s/litellm/crossplane_keys.py). See ./gateway.nix for the shared wrapper pattern.
 #
 # The Antigravity wrapper uses Gemini 3 Flash because the direct GEMINI_API_KEY route
 # for 3.1 Pro preview returned RESOURCE_EXHAUSTED (quota 0, per model_catalog/catalog.py).

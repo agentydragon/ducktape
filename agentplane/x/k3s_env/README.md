@@ -801,7 +801,7 @@ result for the new Go composition. Breaks found on the way, in order:
   reply is retained as `answer.txt`. Lifecycle tests use the harness-free variant.
 - **Storage classes:** the manifest's `local-path-ovh-hdd` does not exist on k3s, so every `storageClassName`
   becomes `local-path`; without it the Sandbox's state PVC never binds and the Pod stays Pending.
-- **LiteLLM:** `LITELLM_QWEN_KEY` (the Qwen-only key Terraform provisions as
+- **LiteLLM:** `LITELLM_QWEN_KEY` (the Qwen-only key Crossplane provisions as
   `litellm/litellm-key-disposable-env`; pass it with `--test_env=LITELLM_QWEN_KEY=...`) is required. It replaces
   `litellm-key-cheap-experiments`, and llm-ingress and the egress rules dial `https://litellm.allegedly.works`
   instead of the cluster-internal Service.

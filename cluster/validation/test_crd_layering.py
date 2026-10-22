@@ -22,6 +22,7 @@ from cluster.validation.kustomize import KustomizeBuildResult
         ("Cluster", "postgresql.cnpg.io/v1", "cnpg"),
         ("ServiceMonitor", "monitoring.coreos.com/v1", "monitoring-crds"),
         ("Provider", "pkg.crossplane.io/v1", "crossplane"),
+        ("Key", "litellm.m.crossplane.io/v1alpha1", "crossplane-provider-litellm"),
     ],
 )
 def test_app_helmrelease_can_share_operator_instances(

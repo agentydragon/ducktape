@@ -178,8 +178,9 @@ tf.download(
         "helm": "hashicorp/helm:3.3.0",
         "http": "hashicorp/http:3.6.2",
         "kubernetes": "hashicorp/kubernetes:3.2.1",
-        # CAUTION: low-user-count community provider that authenticates with the
-        # LiteLLM master key (tf/gitops/litellm-keys). On every version bump,
+        # CAUTION: low-user-count community provider; the Upjet Crossplane
+        # provider is generated from it, and the one-shot Terraform handoff still
+        # uses it to delete the previous key resources. On every version bump,
         # manually review the source diff since the last pinned tag (focus:
         # request construction/egress and release workflow) BEFORE updating.
         # Do not auto-merge Renovate/update_deps bumps.

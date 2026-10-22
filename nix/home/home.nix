@@ -131,20 +131,20 @@ in
       key = "litellm_tana_key";
     };
     litellm_codex_key = {
-      sopsFile = ../../tf/gitops/litellm-keys/litellm-codex-clients-key.yaml;
-      key = "litellm_codex_key";
+      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-codex-clients-key.sops.yaml;
+      key = "stringData/api-key";
     };
     litellm_gemini_key = {
-      sopsFile = ../../tf/gitops/litellm-keys/litellm-gemini-clients-key.yaml;
-      key = "litellm_gemini_key";
+      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-gemini-clients-key.sops.yaml;
+      key = "stringData/api-key";
     };
     litellm_antigravity_key = {
-      sopsFile = ../../tf/gitops/litellm-keys/litellm-antigravity-clients-key.yaml;
-      key = "litellm_antigravity_key";
+      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-antigravity-clients-key.sops.yaml;
+      key = "stringData/api-key";
     };
     litellm_claude_subscription_key = {
-      sopsFile = ../../tf/gitops/litellm-keys/litellm-claude-subscription-clients-key.yaml;
-      key = "litellm_claude_subscription_key";
+      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-claude-subscription-clients-key.sops.yaml;
+      key = "stringData/api-key";
     };
   };
 

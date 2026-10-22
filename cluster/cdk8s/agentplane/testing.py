@@ -76,7 +76,7 @@ from model_catalog.catalog import GPT6_LUNA_RESPONSES
 _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
-# The Terraform-owned key, replicated into this namespace by `litellm/credentials.py`'s
+# The Crossplane-owned key, replicated into this namespace by `litellm/credentials.py`'s
 # ExternalSecret.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
 
@@ -412,6 +412,7 @@ def agentplane_testing(
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     kyverno: Kustomization,
+    crossplane_keys: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -431,6 +432,6 @@ def agentplane_testing(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator, kyverno
+            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator, kyverno, crossplane_keys
         ),
     )

@@ -70,7 +70,7 @@ spec:
                   key: api-key
                   optional: true
             # LiteLLM virtual key (`chatgpt/oai-responses/*` models) minted by
-            # tf/gitops/litellm-keys and reflected into this namespace. Codex's
+            # cluster/cdk8s/litellm/crossplane_keys.py and reflected into this namespace. Codex's
             # baked config.toml points its `litellm` model_provider at this via
             # env_key=LITELLM_API_KEY, so codex routes to LiteLLM instead of a
             # ChatGPT sign-in. Optional during the pre-reflection window.
@@ -81,7 +81,7 @@ spec:
                   key: api-key
                   optional: true
             # Codex-claude LiteLLM virtual key (codex-* models via LiteLLM → CLIProxyAPI),
-            # minted by tf/gitops/litellm-keys and reflected into this namespace.
+            # minted by Crossplane and reflected into this namespace.
             - name: CODEX_LITELLM_KEY
               valueFrom:
                 secretKeyRef:

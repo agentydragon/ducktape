@@ -3623,6 +3623,8 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: Retire the Terraform-owned LiteLLM resources before Crossplane recreates them.
   name: litellm-keys-tf
   namespace: ducktape-flux
 spec:
@@ -3633,6 +3635,8 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
+    - name: litellm
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/litellm/keys-tf
   prune: true
@@ -3641,7 +3645,61 @@ spec:
     kind: ExternalArtifact
     name: litellm-keys-tf
     namespace: ducktape-flux
-  timeout: 10m
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Own LiteLLM teams and virtual keys in Crossplane after the provider, proxy, and Tofu handoff are ready.
+  name: litellm-crossplane-keys
+  namespace: ducktape-flux
+spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: crossplane-provider-litellm
+      namespace: ducktape-flux
+    - name: litellm
+      namespace: ducktape-flux
+    - name: litellm-keys-tf
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/litellm/crossplane-keys
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: litellm-crossplane-keys
+    namespace: ducktape-flux
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Publish Crossplane's LiteLLM live-test key as the sealed BuildBuddy OPENAI_API_KEY secret.
+  name: litellm-buildbuddy-sync
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: tofu-controller
+      namespace: ducktape-flux
+    - name: litellm-crossplane-keys
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/litellm/buildbuddy-sync
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: litellm-buildbuddy-sync
+    namespace: ducktape-flux
+  timeout: 20m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -3689,6 +3747,8 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: kyverno
+      namespace: ducktape-flux
+    - name: litellm-crossplane-keys
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
@@ -3878,6 +3938,8 @@ spec:
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
+    - name: litellm-crossplane-keys
+      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
@@ -3987,6 +4049,10 @@ spec:
       kind: ExternalSecret
       name: brave-search
       namespace: agentplane-staging-egress-credentials
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: litellm-key-agentplane-staging
+      namespace: agentplane-staging
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
       name: agentplane-staging-session-secret

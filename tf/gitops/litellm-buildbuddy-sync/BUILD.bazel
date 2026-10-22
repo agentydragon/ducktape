@@ -1,0 +1,24 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+exports_files([
+    "main.tf",
+    "variables.tf",
+])
+
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "external": "hashicorp/external:~>2.3",
+        "kubernetes": "hashicorp/kubernetes:~>3.0",
+    },
+    tf_version = "1.12.6",
+)
+
+tf_module(
+    name = "litellm-buildbuddy-sync",
+    providers = [
+        "external",
+        "kubernetes",
+    ],
+    providers_versions = ":providers",
+)

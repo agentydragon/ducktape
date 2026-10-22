@@ -500,6 +500,28 @@ def chart(app: App) -> Chart:
     )
     ExternalSecret(
         chart,
+        "litellm-key-external-secret",
+        metadata=ApiObjectMetadata(
+            name=_LITELLM_KEY_SECRET,
+            namespace=STAGING_NAMESPACE,
+            annotations={"description": "ESO copy of the Crossplane-managed Agentplane staging LiteLLM key."},
+        ),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster(
+            single_secret_store(
+                chart,
+                "agentplane-staging-litellm-key",
+                reader=reader,
+                source_namespace="litellm",
+                source_secret=_LITELLM_KEY_SECRET,
+                consumer_namespace=STAGING_NAMESPACE,
+            )
+        ),
+        data=[remote_data(_LITELLM_KEY_SECRET, "api-key")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+    )
+    ExternalSecret(
+        chart,
         "tana-pat-external-secret",
         metadata=ApiObjectMetadata(
             name=_TANA_MCP_BEARER_SECRET,
@@ -594,6 +616,7 @@ def agentplane_staging(
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     kyverno: Kustomization,
+    crossplane_keys: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -625,6 +648,12 @@ def agentplane_staging(
             KustomizationSpecHealthChecks(
                 api_version="external-secrets.io/v1",
                 kind="ExternalSecret",
+                name=_LITELLM_KEY_SECRET,
+                namespace=STAGING_NAMESPACE,
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="external-secrets.io/v1",
+                kind="ExternalSecret",
                 name=_OIDC_SESSION_SECRET,
                 namespace=STAGING_NAMESPACE,
             ),
@@ -636,6 +665,6 @@ def agentplane_staging(
         ],
         decryption=sops_decryption(ENV.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator, kyverno
+            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator, kyverno, crossplane_keys
         ),
     )

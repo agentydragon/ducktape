@@ -213,6 +213,60 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
     ]
 
 
+def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    kustomizations = {
+        doc["metadata"]["name"]: doc
+        for doc in documents
+        if doc.get("kind") == "Kustomization"
+        and doc.get("metadata", {}).get("name")
+        in {"litellm-keys-tf", "litellm-crossplane-keys", "litellm-buildbuddy-sync"}
+    }
+
+    assert kustomizations["litellm-keys-tf"]["spec"]["dependsOn"] == [
+        {"name": "tofu-controller", "namespace": "ducktape-flux"},
+        {"name": "litellm", "namespace": "ducktape-flux"},
+    ]
+    assert kustomizations["litellm-crossplane-keys"]["spec"]["dependsOn"] == [
+        {"name": "crossplane-provider-litellm", "namespace": "ducktape-flux"},
+        {"name": "litellm", "namespace": "ducktape-flux"},
+        {"name": "litellm-keys-tf", "namespace": "ducktape-flux"},
+    ]
+    assert kustomizations["litellm-crossplane-keys"]["spec"]["wait"] is True
+    assert kustomizations["litellm-buildbuddy-sync"]["spec"]["dependsOn"] == [
+        {"name": "tofu-controller", "namespace": "ducktape-flux"},
+        {"name": "litellm-crossplane-keys", "namespace": "ducktape-flux"},
+    ]
+
+    keys = {
+        doc["spec"]["forProvider"]["keyAlias"]: doc
+        for doc in documents
+        if doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Key"
+    }
+    assert set(keys) == {
+        "cheap-experiments",
+        "buildbuddy-live-tests",
+        "disposable-env",
+        "agentplane-staging",
+        "codex-pod",
+        "public-coder-agent",
+        "codex-pod-messages",
+        "agent-workspaces-codex",
+        "claude-subscription-clients",
+        "codex-clients",
+        "gemini-clients",
+        "antigravity-clients",
+    }
+    for alias in ("claude-subscription-clients", "codex-clients", "gemini-clients", "antigravity-clients"):
+        assert keys[alias]["spec"]["forProvider"]["keyWoVersion"] == "1"
+        assert keys[alias]["spec"]["forProvider"]["keyWoSecretRef"] == {
+            "name": f"litellm-client-key-{alias}",
+            "key": "api-key",
+        }
+
+
 def test_piraeus_controller_network_policy_only_admits_api_tls(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:

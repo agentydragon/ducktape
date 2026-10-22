@@ -66,7 +66,7 @@ class ModelLaneRoutes:
             raise ValueError("lane selects fallback routes outside its allowlist")
 
 
-# Lane identifiers bind these policies to Terraform keys/teams; a key may combine lanes.
+# Lane identifiers bind these policies to Crossplane keys/teams; a key may combine lanes.
 KEY_MODEL_LANES = {
     "gpt6_oai_lane_models": ModelLaneRoutes(allowed=GPT6_RESPONSES_ROUTES),
     "gpt6_codex_client_models": ModelLaneRoutes(allowed=GPT6_MESSAGES_ROUTES),

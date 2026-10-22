@@ -24,6 +24,11 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "cert-manager-environment": set(),
     "cluster-ca": set(),
     "crossplane": {"Provider.pkg.crossplane.io"},
+    "crossplane-provider-litellm": {
+        "Key.litellm.m.crossplane.io",
+        "Team.litellm.m.crossplane.io",
+        "ProviderConfig.litellm.m.crossplane.io",
+    },
     "keda": {"ScaledJob", "TriggerAuthentication"},
     "kyverno": {"ClusterPolicy", "Policy", "CleanupPolicy"},
     "kyverno-policies": set(),

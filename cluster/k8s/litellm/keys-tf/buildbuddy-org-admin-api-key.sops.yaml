@@ -4,7 +4,7 @@ metadata:
     name: buildbuddy-org-admin-api-key
     namespace: flux-system
     annotations:
-        description: BuildBuddy org-admin API key used only by the litellm-keys Terraform runner to manage BuildBuddy Secrets API entries.
+        description: BuildBuddy org-admin API key used by the LiteLLM Tofu handoff and BuildBuddy sync runners.
 type: Opaque
 stringData:
     api-key: ENC[AES256_GCM,data:fXyM0n3HCUV8q7ZZJmrZRevLDWA=,iv:hz6V3OgRT7fmRMdDGMSpkLs6rY4tNsSWQibDY80p7VA=,tag:DyAFHcxz2f7UBkvxt+EE2Q==,type:str]
@@ -74,6 +74,6 @@ sops:
             -----END AGE ENCRYPTED FILE-----
           recipient: age1wjv755gsh9l02wm3wet48kjl6ju5ckk3jgllfpe8xmfauqqardgq7pt7ud
     encrypted_regex: ^(data|stringData)$
-    lastmodified: "2026-10-21T22:59:44Z"
-    mac: ENC[AES256_GCM,data:DPlQXaYn1tKZlGEGv4lMmKcljMUGf/4YOajBooshgsnbpMEiBwI6zHXZ/4iwrU8gJWmdSKX4OApPlJxtjmY07ixFWOYYoUIZhg1/IsnztuW0ewuD/kccCCB07/05Uj7vZOZxtZT40zhQKT+m9wTFmcMExlv0AHB8Gn9tNA8foZg=,iv:4Wf3kT0DrC5DRFDZlxeWEx+IWBXvfVeYVM7GNubOwGw=,tag:rtTivZ+HZ39iDX9+yYICjA==,type:str]
+    lastmodified: "2026-10-22T05:30:40Z"
+    mac: ENC[AES256_GCM,data:mgMw1G4V/PPWCOY6QRGJQVJDqmPdVKoWmj6cu4YYAB4m7iALOoJg/QDYqdi5dCr8dIg1QSzvOoJKH+m+CC6ALiTxT4mo2cVjR1f7gZlIPqRPVL/JkJkw9nLyM0/GfhtzYznqIE9gdkF/S/ZzLPxM2O3ZDTblVI/Vv2B+8VnQNQk=,iv:dN3D/DmL4KwE8ww1FKJRi+GWzcdPDSq4iS7h9B3JTno=,tag:hrstzBvkXuyD1DZcJJmUnw==,type:str]
     version: 3.13.3

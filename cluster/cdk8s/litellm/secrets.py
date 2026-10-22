@@ -130,7 +130,7 @@ def _chart(app: App) -> Chart:
         data=[remote_data(_TANA_REFRESH_TOKEN, "refresh_token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
-    # The Qwen-only key tf/gitops/litellm-keys mints for the disposable test environment, which
+    # The Qwen-only key Crossplane mints for the disposable test environment, which
     # claude-ai's sandboxes read to put into BuildBuddy; no other Secret here is readable.
     reader_role = "claude-ai-disposable-env-key-reader"
     k8s.KubeRole(

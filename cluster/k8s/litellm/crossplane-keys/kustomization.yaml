@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - crossplane-keys.k8s.yaml
+  - litellm-claude-subscription-clients-key.sops.yaml
+  - litellm-codex-clients-key.sops.yaml
+  - litellm-gemini-clients-key.sops.yaml
+  - litellm-antigravity-clients-key.sops.yaml
