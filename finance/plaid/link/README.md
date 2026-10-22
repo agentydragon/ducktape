@@ -42,11 +42,25 @@ reads them.
 - Active Items with requested/authorized/billed products, sync time, Secret name; update mode to
   repair/renew; a widen button (shown only when the institution offers unauthorized products,
   and naming them); manual sync.
+- Account inventory by Item from the persisted mirror.
 - `/item/remove` deletes the access-token Secret and purges mirrored link/account/transaction
   rows; append-only `sync_runs`, `plaid_api_events` and webhook audit rows are kept.
 
 All Link flows use the OAuth redirect `https://plaid-mcp.allegedly.works/link/callback`, which
 must stay allowlisted in the Plaid dashboard.
+
+## Account inventory
+
+Only a successful `/accounts/get` response with an explicit account list reconciles membership;
+omitted IDs become detached, while missing or invalid account data leaves membership unchanged.
+Legacy rows remain unknown until a complete listing succeeds. `accounts.updated_at` records the
+last listing that returned that account, and a later listing restores membership only for that exact
+Plaid account ID.
+
+Balances are cached `/accounts/get` snapshots, not live balances. The UI separates the latest sync
+result from the last successful sync. Detached accounts leave current cash and holdings projections,
+but transaction and investment history remains stored and queryable. Plaid Spend and Budget retain
+their existing history semantics; Item removal keeps its existing whole-Item behavior.
 
 ### Products vs accounts
 

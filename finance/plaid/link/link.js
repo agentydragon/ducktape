@@ -219,6 +219,111 @@ async function refreshLinks() {
     tbody.appendChild(tr);
   }
 }
+function displayTime(value) {
+  return value ? new Date(value).toLocaleString() : "unknown";
+}
+function balanceValue(value, currency) {
+  if (value === null || value === undefined) return "—";
+  if (currency && /^[A-Z]{3}$/.test(currency))
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(value));
+  return `${Number(value).toLocaleString()} ${currency || "currency unknown"}`;
+}
+function accountBalanceSummary(account, state) {
+  if (!account.balance_captured_at) return '<span class="muted">No balance snapshot</span>';
+  const currency = account.balance_iso_currency_code || account.iso_currency_code;
+  const freshness = state === "detached" ? "Last stored snapshot; account detached" : "Captured from Plaid";
+  return `
+    <div>Current: ${escapeHtml(balanceValue(account.balance_current, currency))}</div>
+    <div class="meta muted">Available: ${escapeHtml(balanceValue(account.balance_available, currency))} · Limit: ${escapeHtml(
+      balanceValue(account.balance_limit, currency)
+    )}</div>
+    <div class="meta muted">${freshness} ${escapeHtml(displayTime(account.balance_captured_at))}</div>`;
+}
+function accountHistorySummary(account) {
+  const parts = [];
+  if (account.transaction_count) parts.push(`${Number(account.transaction_count).toLocaleString()} transactions`);
+  if (account.investment_transaction_count)
+    parts.push(`${Number(account.investment_transaction_count).toLocaleString()} investment transactions`);
+  if (parts.length === 0) return '<span class="muted">No synced transaction history</span>';
+  const dates =
+    account.earliest_transaction_date && account.latest_transaction_date
+      ? `${escapeHtml(account.earliest_transaction_date)} to ${escapeHtml(account.latest_transaction_date)}`
+      : "date span unavailable";
+  return `${parts.map(escapeHtml).join(" · ")}<div class="meta muted">${dates}</div>`;
+}
+function itemSyncSummary(item) {
+  const syncAt = item.latest_sync_finished_at || item.latest_sync_started_at;
+  if (item.latest_sync_status === "running") return `Latest sync in progress since ${escapeHtml(displayTime(syncAt))}`;
+  if (item.latest_sync_status === "failed") return `Latest sync failed at ${escapeHtml(displayTime(syncAt))}`;
+  if (item.latest_sync_status === "succeeded") return `Latest sync succeeded at ${escapeHtml(displayTime(syncAt))}`;
+  return "Latest sync status unknown; no sync run recorded";
+}
+async function refreshInventory() {
+  const items = await apiFetch("/api/account-inventory");
+  const tbody = document.getElementById("account-inventory");
+  tbody.innerHTML = "";
+  if (items.length === 0) {
+    tbody.innerHTML = '<tr><td class="empty" colspan="4">No linked Items.</td></tr>';
+    return;
+  }
+  for (const item of items) {
+    const listing = item.accounts_observed_at
+      ? `Last complete account listing: ${escapeHtml(displayTime(item.accounts_observed_at))}`
+      : "Membership unknown; no complete account listing recorded";
+    const successfulSync = item.last_successful_sync_at
+      ? `Last successful sync: ${escapeHtml(displayTime(item.last_successful_sync_at))}`
+      : "Last successful sync: none recorded";
+    const header = document.createElement("tr");
+    header.className = "inventory-item";
+    header.innerHTML = `
+      <td colspan="4">
+        <div class="name">${escapeHtml(item.label || item.institution_name || item.item_id)}</div>
+        <div class="meta muted">${escapeHtml(item.institution_name || "Institution unknown")} · Item: ${escapeHtml(
+          item.item_id
+        )} · Link status: ${escapeHtml(item.status)}</div>
+        <div class="meta">${listing} · ${itemSyncSummary(item)} · ${successfulSync}</div>
+      </td>`;
+    tbody.appendChild(header);
+    if (item.accounts.length === 0) {
+      const empty = document.createElement("tr");
+      const message = item.accounts_observed_at
+        ? `Plaid returned no accounts in the last complete listing at ${displayTime(item.accounts_observed_at)}.`
+        : "No account rows are recorded; membership is unknown until a complete listing succeeds.";
+      empty.innerHTML = `<td class="empty" colspan="4">${escapeHtml(message)}</td>`;
+      tbody.appendChild(empty);
+      continue;
+    }
+    for (const account of item.accounts) {
+      const membership = !item.accounts_observed_at ? "unknown" : account.detached_at ? "detached" : "current";
+      const state = membership === "detached" ? "Detached" : membership === "current" ? "Current" : "Unknown";
+      const stateDetail =
+        membership === "detached" && account.detached_at
+          ? `Detached at ${displayTime(account.detached_at)}`
+          : membership === "unknown"
+            ? "Membership not yet confirmed"
+            : "Present in last complete listing";
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>
+          <div class="name">${escapeHtml(account.name)}${account.mask ? ` ···${escapeHtml(account.mask)}` : ""}</div>
+          ${account.official_name ? `<div class="meta muted">${escapeHtml(account.official_name)}</div>` : ""}
+          <div class="meta muted">${escapeHtml(account.type)}${account.subtype ? ` / ${escapeHtml(account.subtype)}` : ""}</div>
+          <div class="meta muted">Account: ${escapeHtml(account.account_id)}</div>
+        </td>
+        <td>
+          <div>${state}</div>
+          <div class="meta muted">${escapeHtml(stateDetail)}</div>
+          <div class="meta muted">Last seen: ${escapeHtml(displayTime(account.last_seen_at))}</div>
+        </td>
+        <td>${accountBalanceSummary(account, membership)}</td>
+        <td>${accountHistorySummary(account)}</td>`;
+      tbody.appendChild(row);
+    }
+  }
+}
+async function refreshData() {
+  await Promise.all([refreshLinks(), refreshInventory()]);
+}
 async function exchangePublicToken(public_token, metadata, pending) {
   try {
     await apiFetch("/api/exchange-public-token", {
@@ -242,7 +347,7 @@ async function exchangePublicToken(public_token, metadata, pending) {
     setStatus(`Link connected, but sync failed: ${error.message || error}`);
   } finally {
     sessionStorage.removeItem(pendingKey);
-    await refreshLinks();
+    await refreshData();
   }
 }
 async function completeUpdate(metadata, pending) {
@@ -257,7 +362,7 @@ async function completeUpdate(metadata, pending) {
     setStatus(`Link updated, but sync failed: ${error.message || error}`);
   } finally {
     sessionStorage.removeItem(pendingKey);
-    await refreshLinks();
+    await refreshData();
   }
 }
 function openPlaid(pending, receivedRedirectUri) {
@@ -285,19 +390,27 @@ document.getElementById("links").addEventListener("click", async (event) => {
   const action = button.dataset.action;
   if (!item || !action) return;
   if (action === "remove") {
-    if (!window.confirm("Remove this Plaid link and delete its access-token Secret?")) return;
+    if (
+      !window.confirm(
+        "Remove this Plaid link, delete its access-token Secret, and delete its locally mirrored data and transaction history?"
+      )
+    )
+      return;
     await withStatus("Removing link...", async () => {
       await apiFetch(`/api/links/${encodeURIComponent(item)}/remove`, { method: "POST" });
-      await refreshLinks();
+      await refreshData();
       setStatus("Link removed.");
     });
     return;
   }
   if (action === "sync") {
     await withStatus("Syncing link...", async () => {
-      const result = await apiFetch(`/api/links/${encodeURIComponent(item)}/sync`, { method: "POST" });
-      await refreshLinks();
-      setStatus(`Sync completed: ${result.run_id}`);
+      try {
+        const result = await apiFetch(`/api/links/${encodeURIComponent(item)}/sync`, { method: "POST" });
+        setStatus(`Sync completed: ${result.run_id}`);
+      } finally {
+        await refreshData();
+      }
     });
     return;
   }
@@ -369,7 +482,7 @@ document.getElementById("link-form").addEventListener("submit", async (event) =>
 });
 async function init() {
   await loadConfig();
-  await refreshLinks();
+  await refreshData();
   const pending = JSON.parse(sessionStorage.getItem(pendingKey) || "null");
   if (pending && new URLSearchParams(window.location.search).has("oauth_state_id")) {
     setStatus("Completing Plaid redirect...");

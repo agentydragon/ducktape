@@ -42,7 +42,7 @@ class PlaidAccount(PlaidPayload):
 
 
 class AccountsGetResponse(PlaidApiResponse):
-    accounts: list[PlaidAccount] | None = None
+    accounts: list[PlaidAccount]
 
 
 class PlaidItem(PlaidPayload):

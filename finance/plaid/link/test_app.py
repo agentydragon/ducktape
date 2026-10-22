@@ -302,7 +302,7 @@ def test_link_ui_exposes_management_actions() -> None:
     assert root_response.status_code == 200
     assert root_response.text == response.text
     # The elements link.js looks up by id.
-    for element_id in ("connect", "links", "transaction-days", "products"):
+    for element_id in ("connect", "links", "transaction-days", "products", "account-inventory"):
         assert f'id="{element_id}"' in response.text
 
 

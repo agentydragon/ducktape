@@ -178,9 +178,7 @@ async def sync_transactions_only(
             link.item_id,
             response_model=AccountsGetResponse,
         )
-        await storage.apply_accounts(
-            item_id=link.item_id, accounts=accounts_payload.accounts or [], captured_at=captured_at
-        )
+        await storage.apply_accounts(item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at)
         await _sync_transactions_inner(
             api=api,
             storage=storage,
@@ -262,9 +260,7 @@ async def _sync_link_inner(
         link.item_id,
         response_model=AccountsGetResponse,
     )
-    await storage.apply_accounts(
-        item_id=link.item_id, accounts=accounts_payload.accounts or [], captured_at=captured_at
-    )
+    await storage.apply_accounts(item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at)
 
     if Product.TRANSACTIONS.value in link.products_requested:
         await _sync_transactions_inner(

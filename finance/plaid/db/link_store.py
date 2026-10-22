@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from pydantic import BaseModel
-from sqlalchemy import delete, exists, func, or_, select, text, update
+from sqlalchemy import and_, delete, exists, func, literal, or_, select, text, union_all, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -94,6 +94,51 @@ class StoredLink:
     earliest_transaction_date: date | None = None
     latest_transaction_date: date | None = None
     synced_transaction_count: int = 0
+
+
+@dataclass(frozen=True)
+class StoredAccountInventory:
+    account_id: str
+    name: str
+    official_name: str | None
+    mask: str | None
+    type: str
+    subtype: str | None
+    iso_currency_code: str | None
+    last_seen_at: datetime
+    detached_at: datetime | None
+    balance_captured_at: datetime | None
+    balance_available: float | None
+    balance_current: float | None
+    balance_limit: float | None
+    balance_iso_currency_code: str | None
+    transaction_count: int
+    investment_transaction_count: int
+    earliest_transaction_date: date | None
+    latest_transaction_date: date | None
+
+
+@dataclass(frozen=True)
+class StoredItemInventory:
+    item_id: str
+    label: str | None
+    institution_name: str | None
+    status: str
+    accounts_observed_at: datetime | None
+    last_successful_sync_at: datetime | None
+    latest_sync_status: str | None
+    latest_sync_started_at: datetime | None
+    latest_sync_finished_at: datetime | None
+    accounts: tuple[StoredAccountInventory, ...]
+
+
+@dataclass
+class _ItemInventoryAccumulator:
+    link: LinkRow
+    latest_sync_status: str | None
+    latest_sync_started_at: datetime | None
+    latest_sync_finished_at: datetime | None
+    accounts: list[StoredAccountInventory] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -279,6 +324,141 @@ class PlaidLinkStorage:
                 )
                 for row, earliest_transaction_date, latest_transaction_date, synced_transaction_count in rows
             ]
+
+    async def list_account_inventory(self) -> list[StoredItemInventory]:
+        activity = union_all(
+            select(
+                TransactionRow.account_id.label("account_id"),
+                TransactionRow.date.label("activity_date"),
+                literal(False).label("is_investment"),
+            ).where(TransactionRow.removed.is_(False)),
+            select(
+                InvestmentTransactionRow.account_id.label("account_id"),
+                InvestmentTransactionRow.date.label("activity_date"),
+                literal(True).label("is_investment"),
+            ).where(InvestmentTransactionRow.removed.is_(False)),
+        ).subquery()
+        activity_stats = (
+            select(
+                activity.c.account_id,
+                func.count().filter(activity.c.is_investment.is_(False)).label("transaction_count"),
+                func.count().filter(activity.c.is_investment.is_(True)).label("investment_transaction_count"),
+                func.min(activity.c.activity_date).label("earliest_transaction_date"),
+                func.max(activity.c.activity_date).label("latest_transaction_date"),
+            )
+            .group_by(activity.c.account_id)
+            .subquery()
+        )
+        latest_balances = select(
+            BalanceSnapshotRow.id.label("balance_id"),
+            BalanceSnapshotRow.account_id.label("account_id"),
+            func.row_number()
+            .over(
+                partition_by=BalanceSnapshotRow.account_id,
+                order_by=(BalanceSnapshotRow.captured_at.desc(), BalanceSnapshotRow.id.desc()),
+            )
+            .label("row_number"),
+        ).subquery()
+        latest_syncs = (
+            select(
+                SyncRunRow.item_id.label("item_id"),
+                SyncRunRow.status.label("sync_status"),
+                SyncRunRow.started_at.label("sync_started_at"),
+                SyncRunRow.finished_at.label("sync_finished_at"),
+                func.row_number()
+                .over(partition_by=SyncRunRow.item_id, order_by=SyncRunRow.started_at.desc())
+                .label("row_number"),
+            )
+            .where(SyncRunRow.item_id.isnot(None))
+            .subquery()
+        )
+        async with self._session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        LinkRow,
+                        AccountRow,
+                        BalanceSnapshotRow,
+                        activity_stats.c.transaction_count,
+                        activity_stats.c.investment_transaction_count,
+                        activity_stats.c.earliest_transaction_date,
+                        activity_stats.c.latest_transaction_date,
+                        latest_syncs.c.sync_status,
+                        latest_syncs.c.sync_started_at,
+                        latest_syncs.c.sync_finished_at,
+                    )
+                    .select_from(LinkRow)
+                    .outerjoin(AccountRow, AccountRow.item_id == LinkRow.item_id)
+                    .outerjoin(activity_stats, activity_stats.c.account_id == AccountRow.account_id)
+                    .outerjoin(
+                        latest_balances,
+                        and_(latest_balances.c.account_id == AccountRow.account_id, latest_balances.c.row_number == 1),
+                    )
+                    .outerjoin(BalanceSnapshotRow, BalanceSnapshotRow.id == latest_balances.c.balance_id)
+                    .outerjoin(
+                        latest_syncs, and_(latest_syncs.c.item_id == LinkRow.item_id, latest_syncs.c.row_number == 1)
+                    )
+                    .where(LinkRow.status != "revoked")
+                    .order_by(LinkRow.institution_name, LinkRow.item_id, AccountRow.name, AccountRow.account_id)
+                )
+            ).all()
+
+        grouped: dict[str, _ItemInventoryAccumulator] = {}
+        for (
+            link,
+            account,
+            balance,
+            transaction_count,
+            investment_transaction_count,
+            earliest_transaction_date,
+            latest_transaction_date,
+            latest_sync_status,
+            latest_sync_started_at,
+            latest_sync_finished_at,
+        ) in rows:
+            if link.item_id not in grouped:
+                grouped[link.item_id] = _ItemInventoryAccumulator(
+                    link, latest_sync_status, latest_sync_started_at, latest_sync_finished_at
+                )
+            if account is None:
+                continue
+            grouped[link.item_id].accounts.append(
+                StoredAccountInventory(
+                    account_id=account.account_id,
+                    name=account.name,
+                    official_name=account.official_name,
+                    mask=account.mask,
+                    type=account.type,
+                    subtype=account.subtype,
+                    iso_currency_code=account.iso_currency_code,
+                    last_seen_at=account.updated_at,
+                    detached_at=account.detached_at,
+                    balance_captured_at=balance.captured_at if balance is not None else None,
+                    balance_available=balance.available if balance is not None else None,
+                    balance_current=balance.current if balance is not None else None,
+                    balance_limit=balance.limit if balance is not None else None,
+                    balance_iso_currency_code=balance.iso_currency_code if balance is not None else None,
+                    transaction_count=transaction_count or 0,
+                    investment_transaction_count=investment_transaction_count or 0,
+                    earliest_transaction_date=earliest_transaction_date,
+                    latest_transaction_date=latest_transaction_date,
+                )
+            )
+        return [
+            StoredItemInventory(
+                item_id=item.link.item_id,
+                label=item.link.label,
+                institution_name=item.link.institution_name,
+                status=item.link.status,
+                accounts_observed_at=item.link.accounts_observed_at,
+                last_successful_sync_at=item.link.last_synced_at,
+                latest_sync_status=item.latest_sync_status,
+                latest_sync_started_at=item.latest_sync_started_at,
+                latest_sync_finished_at=item.latest_sync_finished_at,
+                accounts=tuple(item.accounts),
+            )
+            for item in grouped.values()
+        ]
 
     async def get_link(self, item_id: str) -> StoredLink | None:
         async with self._session_factory() as session:
@@ -481,9 +661,13 @@ class PlaidLinkStorage:
     async def apply_accounts(
         self, *, item_id: str, accounts: Sequence[PlaidAccount | dict[str, Any]], captured_at: datetime
     ) -> None:
+        validated_accounts = [_validated_payload(PlaidAccount, account) for account in accounts]
+        seen_account_ids = [account.account_id for account in validated_accounts]
         async with self._session_factory() as session:
-            for account_value in accounts:
-                account = _validated_payload(PlaidAccount, account_value)
+            link = await session.get(LinkRow, item_id)
+            if link is None:
+                raise ValueError(f"cannot observe accounts for missing Plaid Item: {item_id}")
+            for account in validated_accounts:
                 balances = account.balances or PlaidBalance()
                 values = {
                     "account_id": account.account_id,
@@ -496,6 +680,7 @@ class PlaidLinkStorage:
                     "iso_currency_code": balances.iso_currency_code,
                     "raw_json": account.model_dump(mode="json", exclude_unset=True),
                     "updated_at": captured_at,
+                    "detached_at": None,
                 }
                 stmt = pg_insert(AccountRow).values(**values)
                 stmt = stmt.on_conflict_do_update(
@@ -513,6 +698,13 @@ class PlaidLinkStorage:
                         iso_currency_code=balances.iso_currency_code,
                     )
                 )
+            absent_accounts = update(AccountRow).where(AccountRow.item_id == item_id, AccountRow.detached_at.is_(None))
+            if seen_account_ids:
+                absent_accounts = absent_accounts.where(~AccountRow.account_id.in_(seen_account_ids))
+            absent_accounts = absent_accounts.values(detached_at=captured_at)
+            await session.execute(absent_accounts)
+            link.accounts_observed_at = captured_at
+            await _notify_spend_changed(session)
             await session.commit()
 
     async def apply_transaction_delta(
