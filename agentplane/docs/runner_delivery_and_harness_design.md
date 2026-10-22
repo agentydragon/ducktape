@@ -272,7 +272,7 @@ facade and CLI; a transport conversion must not weaken a service's existing perm
 Agent tooling should support both concise commands and composable JSON for listing Action groups and
 Actions, inspecting an Action schema, reading the authenticated caller's own Action status/results,
 waiting for completion, and subscribing to or cancelling GitHub PR notifications. The
-[`agentplane` CLI](agent_cli.md) does this over the services' HTTP routes. No runtime
+[`agentplane` CLI](agent_cli.md) uses each service's generated client and HTTP facade as appropriate. No runtime
 API implementation is authorized by this direction alone.
 
 ## Harness process, store and Session identity

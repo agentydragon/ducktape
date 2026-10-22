@@ -26,8 +26,6 @@ from agentplane.sandboxes.kubernetes_views import CREATE_INTENT
 from agentplane.sandboxes.testing.sandbox_namespace import TEMPLATE, SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
 
-# gazelle:include_dep @pypi//protobuf
-
 CALLER = ServiceAccountRef(namespace="test-callers", name="test-caller")
 OTHER = ServiceAccountRef(namespace="test-callers", name="other-caller")
 

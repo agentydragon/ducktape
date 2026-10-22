@@ -1,7 +1,6 @@
 """Resolve a live Sandbox's current runner destination for its control Service."""
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep @pypi//types_protobuf
 
 from agentplane.app.live import LiveIndex
 from agentplane.app.sandbox_models import sandbox_is_ready

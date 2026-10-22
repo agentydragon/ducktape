@@ -1,0 +1,5 @@
+disk_usage:filesystem_size_bytes - disk_usage:filesystem_free_bytes
+- on (node, device) (
+  sum by (node, device) (disk_usage:component_used_bytes)
+  or on (node, device) 0 * disk_usage:filesystem_size_bytes
+)

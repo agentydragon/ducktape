@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from functools import partial
 
 import httpx
 import httpx2
@@ -21,7 +20,6 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
-from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.operator_oidc import resolver_for
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.action_federation_settings import ActionFederationSettings
@@ -72,9 +70,8 @@ async def _check_token_response(response: httpx2.Response) -> None:
 
 
 class FederatedOperatorActions:
-    def __init__(self, config: ActionFederationSettings, oidc: OIDCSettings, http: httpx.AsyncClient) -> None:
+    def __init__(self, config: ActionFederationSettings, oidc: OIDCSettings) -> None:
         self._config = config
-        self._http = http
         self._login_issuer = oidc.issuer
         self._renew_before = timedelta(seconds=oidc.token_renew_before_seconds)
         self._login = build_oauth(oidc).create_client(CLIENT_NAME)
@@ -88,8 +85,9 @@ class FederatedOperatorActions:
         )
         self._target = resolver_for(config.target)
 
-    def for_request(self, request: Request) -> OperatorActionServiceClient:
-        return OperatorActionServiceClient(self._http, partial(self.exchange, operator_session_row(request)))
+    async def token_for_request(self, request: Request) -> str:
+        """A fresh target token for one facade request, bound to this operator session."""
+        return await self.exchange(operator_session_row(request))
 
     async def exchange(self, row: SessionRow) -> str:
         """A target token for the operator whose login `row` holds, renewing the login token first if
@@ -203,10 +201,8 @@ class FederatedOperatorActions:
         )
 
 
-def operator_actions(request: Request, caller: CallerIdentity) -> OperatorActionServiceClient:
-    """The request's operator-bound client, or the `OperatorFederationError` naming why it has none:
-    the caller is not an operator session, federation is not configured, or the session has to log in
-    again. The exchange itself happens at the first request the client makes."""
+def _operator_action_provider(request: Request, caller: CallerIdentity) -> FederatedOperatorActions:
+    """The configured federation provider for this live operator session."""
     if caller.kind is not CallerKind.OPERATOR:
         raise OperatorFederationError("operator_session_required")
     provider = request.app.state.services.operator_actions
@@ -216,4 +212,10 @@ def operator_actions(request: Request, caller: CallerIdentity) -> OperatorAction
         raise TypeError("operator_actions must be FederatedOperatorActions")
     if operator_session(request) is None:
         raise OperatorFederationError("operator_reauthentication_required", status_code=401)
-    return provider.for_request(request)
+    return provider
+
+
+async def operator_action_token(request: Request, caller: CallerIdentity) -> str:
+    """The federated bearer for a generated Action facade request from this operator session."""
+    provider = _operator_action_provider(request, caller)
+    return await provider.token_for_request(request)

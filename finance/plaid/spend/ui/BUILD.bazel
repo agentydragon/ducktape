@@ -54,7 +54,10 @@ py_test(
     name = "visual_test",
     size = "large",
     srcs = ["visual_test.py"],
-    data = [":bundle"],
+    data = [
+        "accordion-readiness-fixture.html",
+        ":bundle",
+    ],
     tags = ["visual"],
     deps = [
         "//:conftest",

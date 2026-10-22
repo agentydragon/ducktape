@@ -17,7 +17,6 @@ from agentplane.runner_gateway.api import (
     SANDBOX_UID_HEADER,
 )
 
-# gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
 

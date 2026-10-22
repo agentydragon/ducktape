@@ -2,194 +2,268 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/url"
-	"strconv"
+	"io"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/sethvargo/go-retry"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const (
-	// maxServerWait is the longest wait asked of the server in one request: the Action Service's
-	// default max_wait_seconds. Longer budgets re-issue the wait.
-	maxServerWait = 30 * time.Second
-	// waitMargin keeps a server wait shorter than the deadline, so the server answers with the
-	// current receipt before the client gives up on the request.
-	waitMargin = 500 * time.Millisecond
-	// minServerWait is the shortest wait worth a request.
-	minServerWait = 50 * time.Millisecond
-)
-
-// receipt is an ActionRequest as the Action Service returned it. raw is what it sent.
+// receipt is the ActionRequest as the Action Service returned it.
 type receipt struct {
-	raw    json.RawMessage
-	ID     string `json:"id"`
-	State  string `json:"state"`
-	Title  string `json:"title"`
-	Action struct {
-		Group string `json:"group"`
-		Name  string `json:"name"`
-	} `json:"action"`
-	Decision *struct {
-		Note   *string `json:"decision_note"`
-		Reason *string `json:"reason_description"`
-	} `json:"decision"`
-	Execution *struct {
-		Result json.RawMessage `json:"result"`
-		Error  json.RawMessage `json:"error"`
-	} `json:"execution"`
+	request *action_servicepb.ActionRequest
 }
 
-func parseReceipt(raw []byte) (*receipt, error) {
-	parsed := &receipt{raw: raw}
-	if err := json.Unmarshal(raw, parsed); err != nil {
+func receiptFromProto(message *action_servicepb.ActionRequest) (*receipt, error) {
+	if err := validateActionRequest(message); err != nil {
+		return nil, err
+	}
+	return &receipt{request: message}, nil
+}
+
+func validateActionRequest(message *action_servicepb.ActionRequest) error {
+	if message == nil {
+		return invalidResponse("response has no Action request")
+	}
+	switch message.GetState() {
+	case action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
+		action_servicepb.ActionState_ACTION_STATE_ALLOWED,
+		action_servicepb.ActionState_ACTION_STATE_DENIED,
+		action_servicepb.ActionState_ACTION_STATE_DISPATCHING,
+		action_servicepb.ActionState_ACTION_STATE_RUNNING,
+		action_servicepb.ActionState_ACTION_STATE_SUCCEEDED,
+		action_servicepb.ActionState_ACTION_STATE_FAILED,
+		action_servicepb.ActionState_ACTION_STATE_CANCELLED,
+		action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
+	default:
+		return invalidResponse("unrecognized Action state %q", message.GetState())
+	}
+	return nil
+}
+
+func parseReceipt(raw []byte) (*action_servicepb.ActionRequest, error) {
+	message := &action_servicepb.ActionRequest{}
+	if err := protojson.Unmarshal(raw, message); err != nil {
 		return nil, invalidResponse("%v", err)
 	}
-	return parsed, nil
+	if err := validateActionRequest(message); err != nil {
+		return nil, err
+	}
+	return message, nil
 }
 
 // waitUntil is a condition on a receipt, in the Action Service's own terms.
-type waitUntil string
+type waitUntil action_servicepb.WatchUntil
 
 const (
-	untilDecision waitUntil = "decision"
-	untilTerminal waitUntil = "terminal"
+	untilDecision waitUntil = waitUntil(action_servicepb.WatchUntil_WATCH_UNTIL_DECISION)
+	untilTerminal waitUntil = waitUntil(action_servicepb.WatchUntil_WATCH_UNTIL_TERMINAL)
 )
 
 func parseUntil(value string) (waitUntil, error) {
-	switch until := waitUntil(value); until {
-	case untilDecision, untilTerminal:
-		return until, nil
+	switch value {
+	case "decision":
+		return untilDecision, nil
+	case "terminal":
+		return untilTerminal, nil
+	default:
+		return 0, usageFailure("--until must be decision or terminal")
 	}
-	return "", usageFailure("--until must be decision or terminal")
 }
 
-// holds is the Action Service's rule: `decision` once the state is not decision_pending, `terminal`
-// once it is none of decision_pending, allowed, dispatching or running. A state it has never heard
-// of holds, so finish refuses it instead of the wait going on.
-func (u waitUntil) holds(state string) bool {
+// holds is the Action Service's rule: decision holds once the state is not decision_pending;
+// terminal holds only at an execution outcome or a denial/cancellation.
+func (u waitUntil) holds(state action_servicepb.ActionState) bool {
 	switch state {
-	case "decision_pending":
+	case action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING:
 		return false
-	case "allowed", "dispatching", "running":
+	case action_servicepb.ActionState_ACTION_STATE_ALLOWED,
+		action_servicepb.ActionState_ACTION_STATE_DISPATCHING,
+		action_servicepb.ActionState_ACTION_STATE_RUNNING:
 		return u == untilDecision
+	case action_servicepb.ActionState_ACTION_STATE_DENIED,
+		action_servicepb.ActionState_ACTION_STATE_SUCCEEDED,
+		action_servicepb.ActionState_ACTION_STATE_FAILED,
+		action_servicepb.ActionState_ACTION_STATE_CANCELLED,
+		action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
+		return true
+	default:
+		return false
 	}
-	return true
 }
 
-// exitStatus is what a state that holds exits with. It is the platform's answer from the Action's
-// state, never from its result.
+// exitStatus is what a state that holds exits with. It never derives success from the result.
 func (r *receipt) exitStatus() (int, error) {
-	switch r.State {
-	case "succeeded", "allowed", "dispatching", "running":
+	switch r.request.GetState() {
+	case action_servicepb.ActionState_ACTION_STATE_SUCCEEDED,
+		action_servicepb.ActionState_ACTION_STATE_ALLOWED,
+		action_servicepb.ActionState_ACTION_STATE_DISPATCHING,
+		action_servicepb.ActionState_ACTION_STATE_RUNNING:
 		return 0, nil
-	case "denied":
+	case action_servicepb.ActionState_ACTION_STATE_DENIED:
 		return exitDenied, nil
-	case "failed":
+	case action_servicepb.ActionState_ACTION_STATE_FAILED:
 		return exitFailed, nil
-	case "cancelled":
+	case action_servicepb.ActionState_ACTION_STATE_CANCELLED:
 		return exitCancelled, nil
-	case "execution_unknown":
+	case action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
 		return exitExecutionUnknown, nil
+	default:
+		return 0, invalidResponse("unrecognized Action state %q", r.request.GetState())
 	}
-	return 0, invalidResponse("unrecognized Action state %q", r.State)
 }
 
-// reader reads the current receipt. A positive wait asks the server to hold the answer until the
-// condition holds or that many seconds pass.
-type reader func(ctx context.Context, wait float64) (*receipt, error)
+type receiptReader func(context.Context) (*receipt, error)
 
-func readReceipt(ctx context.Context, svc *service, id string, until waitUntil, wait float64) (*receipt, error) {
-	query := url.Values{}
-	if wait > 0 {
-		query.Set("wait_seconds", strconv.FormatFloat(wait, 'f', 3, 64))
-		query.Set("wait_until", string(until))
-	}
-	body, err := svc.do(ctx, request{method: http.MethodGet, path: "/v1/action-requests/" + url.PathEscape(id), query: query})
+func readReceipt(ctx context.Context, client action_servicepb.ActionServiceClient, id string) (*receipt, error) {
+	response, err := client.GetActionRequest(ctx, &action_servicepb.GetActionRequestRequest{RequestId: id})
 	if err != nil {
-		return nil, err
+		return nil, grpcFailure(ctx, err)
 	}
-	return parseReceipt(body)
+	return receiptFromProto(response.GetActionRequest())
 }
 
 // lookupByKey reads the request submitted under an idempotency key.
-func lookupByKey(ctx context.Context, svc *service, key string) (*receipt, error) {
-	body, err := svc.do(ctx, request{method: http.MethodGet, path: "/v1/action-requests", query: url.Values{"idempotency_key": {key}}})
+func lookupByKey(ctx context.Context, client action_servicepb.ActionServiceClient, key string) (*receipt, error) {
+	response, err := client.ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{IdempotencyKey: &key})
 	if err != nil {
-		return nil, err
+		return nil, grpcFailure(ctx, err)
 	}
-	items, err := decode[[]json.RawMessage](body)
-	if err != nil {
-		return nil, err
-	}
-	switch len(items) {
+	switch len(response.GetActionRequests()) {
 	case 0:
 		return nil, clientFailure(exitNotFound, "NOT_FOUND", "no Action request was submitted under idempotency key %q", key)
 	case 1:
-		return parseReceipt(items[0])
+		return receiptFromProto(response.GetActionRequests()[0])
+	default:
+		return nil, invalidResponse("%d requests under one idempotency key", len(response.GetActionRequests()))
 	}
-	return nil, invalidResponse("%d requests under one idempotency key", len(items))
 }
 
-// waitSlice is how long to ask the server to wait, within what is left of the deadline.
-func waitSlice(ctx context.Context) time.Duration {
-	deadline, bounded := ctx.Deadline()
-	if !bounded {
-		return 0
-	}
-	if slice := min(time.Until(deadline)-waitMargin, maxServerWait); slice >= minServerWait {
-		return slice
-	}
-	return 0
-}
-
-// await reads the receipt until its state satisfies until or the deadline of ctx. It re-issues
-// server-side waits, never polling; between failed attempts it backs off. last is the latest
-// receipt read (it starts as given). The result:
-//
-//   - nil error and a receipt that holds: the condition was reached;
-//   - nil error and one that does not: the deadline came first while the service was answering;
-//   - an error: the service was unreachable when the deadline came, or the failure was not transient.
-func await(ctx context.Context, until waitUntil, last *receipt, read reader) (*receipt, error) {
+// await reads once for an unbounded invocation, otherwise follows WatchActionRequest until the
+// condition holds or the command deadline arrives. A watch starts with the current receipt, so a
+// change between the initial read and opening the stream cannot be lost.
+func await(
+	ctx context.Context,
+	client action_servicepb.ActionServiceClient,
+	until waitUntil,
+	last *receipt,
+	read receiptReader,
+) (*receipt, error) {
 	_, bounded := ctx.Deadline()
-	var lastFailure error
 	backoff := newBackoff()
+	var lastFailure error
+	if last == nil {
+		for {
+			current, err := read(ctx)
+			if err == nil {
+				last, lastFailure, backoff = current, nil, newBackoff()
+				break
+			}
+			var failed *failure
+			if !errors.As(err, &failed) || failed.exit != exitTransient || !bounded {
+				return nil, err
+			}
+			if ctx.Err() != nil {
+				return nil, err
+			}
+			lastFailure = err
+			pause(ctx, backoff, failed)
+		}
+	}
+	if until.holds(last.request.GetState()) {
+		return last, nil
+	}
+	if !bounded {
+		return last, nil
+	}
 	for {
-		if last != nil && until.holds(last.State) {
+		if ctx.Err() == context.Canceled {
+			return last, errInterrupted
+		}
+		if deadlineElapsed(ctx) {
+			if lastFailure != nil {
+				return last, lastFailure
+			}
 			return last, nil
 		}
-		var slice time.Duration
-		if last != nil {
-			if slice = waitSlice(ctx); slice == 0 {
-				return last, lastFailure
+		stream, err := client.WatchActionRequest(ctx, &action_servicepb.WatchActionRequestRequest{
+			RequestId: last.request.GetId(), Until: action_servicepb.WatchUntil(until),
+		})
+		if err != nil {
+			if ctx.Err() == context.Canceled {
+				return last, errInterrupted
 			}
-		}
-		next, err := read(ctx, slice.Seconds())
-		if err == nil {
-			last, lastFailure, backoff = next, nil, newBackoff()
-			continue
-		}
-		var failed *failure
-		if !errors.As(err, &failed) || failed.exit != exitTransient || !bounded {
-			return last, err
-		}
-		if ctx.Err() != nil {
-			// The deadline ended this request. After an outage, that outage is the failure; with a
-			// healthy service before it, the deadline was reached.
-			switch {
-			case lastFailure != nil:
-				return last, lastFailure
-			case last != nil:
+			if deadlineElapsed(ctx) {
+				if lastFailure != nil {
+					return last, lastFailure
+				}
 				return last, nil
 			}
-			return last, err
+			rpcErr := grpcFailure(ctx, err)
+			var failed *failure
+			if !errors.As(rpcErr, &failed) || failed.exit != exitTransient {
+				return last, rpcErr
+			}
+			lastFailure = rpcErr
+			pause(ctx, backoff, failed)
+			continue
 		}
-		lastFailure = err
-		pause(ctx, backoff, failed)
+		sawFrame := false
+		for {
+			frame, err := stream.Recv()
+			if err == nil {
+				sawFrame = true
+				last, err = receiptFromProto(frame.GetActionRequest())
+				if err != nil {
+					return nil, err
+				}
+				lastFailure, backoff = nil, newBackoff()
+				if until.holds(last.request.GetState()) {
+					return last, nil
+				}
+				continue
+			}
+			if errors.Is(err, io.EOF) {
+				return last, invalidResponse("WatchActionRequest ended before the condition held")
+			}
+			if ctx.Err() == context.Canceled {
+				return last, errInterrupted
+			}
+			if deadlineElapsed(ctx) {
+				if lastFailure != nil {
+					return last, lastFailure
+				}
+				return last, nil
+			}
+			if status.Code(err) == codes.Unauthenticated && sawFrame {
+				// A long-lived watch can outlive the projected token. Opening a new RPC lets the
+				// egress sidecar substitute its current token; refusal before a new frame is final.
+				break
+			}
+			rpcErr := grpcFailure(ctx, err)
+			var failed *failure
+			if !errors.As(rpcErr, &failed) || failed.exit != exitTransient || !bounded {
+				return last, rpcErr
+			}
+			lastFailure = rpcErr
+			pause(ctx, backoff, failed)
+			break
+		}
 	}
+}
+
+// deadlineElapsed recognizes the RPC deadline boundary even if the context timer has not yet
+// published DeadlineExceeded to Err. grpc-go may surface that deadline just before ctx.Err flips.
+func deadlineElapsed(ctx context.Context) bool {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return true
+	}
+	deadline, bounded := ctx.Deadline()
+	return bounded && !time.Now().Before(deadline)
 }
 
 func newBackoff() retry.Backoff {
@@ -213,8 +287,11 @@ func pause(ctx context.Context, backoff retry.Backoff, after *failure) {
 // finish prints the receipt a wait ended with and exits as its state says: 10 when the condition
 // had not held by the deadline.
 func (a *app) finish(last *receipt, until waitUntil) error {
+	if last == nil {
+		return invalidResponse("wait ended without a receipt")
+	}
 	code := exitDeadline
-	if until.holds(last.State) {
+	if until.holds(last.request.GetState()) {
 		var err error
 		if code, err = last.exitStatus(); err != nil {
 			return err

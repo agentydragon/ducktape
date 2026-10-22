@@ -178,8 +178,9 @@ tf.download(
         "helm": "hashicorp/helm:3.3.0",
         "http": "hashicorp/http:3.6.2",
         "kubernetes": "hashicorp/kubernetes:3.2.1",
-        # CAUTION: low-user-count community provider that authenticates with the
-        # LiteLLM master key (tf/gitops/litellm-keys). On every version bump,
+        # CAUTION: low-user-count community provider; the Upjet Crossplane
+        # provider is generated from it, and the one-shot Terraform handoff still
+        # uses it to delete the previous key resources. On every version bump,
         # manually review the source diff since the last pinned tag (focus:
         # request construction/egress and release workflow) BEFORE updating.
         # Do not auto-merge Renovate/update_deps bumps.
@@ -1135,6 +1136,29 @@ http_file(
     downloaded_file_path = "notification.toolkit.fluxcd.io_alerts.yaml",
     sha256 = "2b8f79249b39881bd23c49868f114c44c6e632dfcda451da576adfa16c64226f",
     urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_alerts.yaml"],
+)
+
+# Crossplane LiteLLM CRDs used by cluster/cdk8s/providers/litellm. Keep this package pin equal to
+# cluster/cdk8s/crossplane.py's provider package version.
+http_file(
+    name = "crossplane_litellm_keys_crd",
+    downloaded_file_path = "litellm.m.crossplane.io_keys.yaml",
+    sha256 = "32d300667e360c9717e25a8f119827354aa4aef3cad1358d83d56239315ac092",
+    urls = ["https://raw.githubusercontent.com/TheCodingSheikh/provider-litellm/v2.1.0/package/crds/litellm.m.crossplane.io_keys.yaml"],
+)
+
+http_file(
+    name = "crossplane_litellm_teams_crd",
+    downloaded_file_path = "litellm.m.crossplane.io_teams.yaml",
+    sha256 = "9901d8048720c7a2e5d8c945d4c28e9bc60502c27ccff32a98cf619fb780859a",
+    urls = ["https://raw.githubusercontent.com/TheCodingSheikh/provider-litellm/v2.1.0/package/crds/litellm.m.crossplane.io_teams.yaml"],
+)
+
+http_file(
+    name = "crossplane_litellm_providerconfigs_crd",
+    downloaded_file_path = "litellm.m.crossplane.io_providerconfigs.yaml",
+    sha256 = "8d648d919dd7aeed3a1a2efdc895d093c43a3bd0f8a76fcf0166553f24aa3758",
+    urls = ["https://raw.githubusercontent.com/TheCodingSheikh/provider-litellm/v2.1.0/package/crds/litellm.m.crossplane.io_providerconfigs.yaml"],
 )
 
 # Match kube-prometheus-stack's operator version tracked by

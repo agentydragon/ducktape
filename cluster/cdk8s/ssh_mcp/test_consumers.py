@@ -22,7 +22,6 @@ from util.bazel.runfiles import get_required_path
 
 # pytest_plugins loads cluster.cdk8s.agentplane.conftest by name; gazelle cannot see
 # the dependency.
-# gazelle:include_dep //cluster/cdk8s/agentplane:conftest
 pytest_plugins = ("cluster.cdk8s.agentplane.conftest",)
 
 

@@ -12,7 +12,6 @@ SOPS Secrets, `config.json` (rendered by the `configMapGenerator`) and that
 from __future__ import annotations
 
 from pathlib import Path
-from textwrap import dedent
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -59,6 +58,7 @@ from cluster.cdk8s.providers.gateway_api.gateway import Gateway
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
 _APP_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/app"
@@ -118,35 +118,9 @@ _RULES = [
     ),
     Rule.record(
         "github_api_proxy:capture_collection_physical_storage_budget:ratio",
-        dedent(
-            """\
-            sum by (namespace, persistentvolumeclaim) (
-              label_replace(
-                sum by (collection) (
-                  max by (collection, instance) (
-                    SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal"}
-                  )
-                ),
-                "volumename", "$1", "collection", "(.+)"
-              )
-              * on (volumename) group_left(namespace, persistentvolumeclaim)
-                max by (volumename, namespace, persistentvolumeclaim) (
-                  kube_persistentvolumeclaim_info{
-                    namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture",
-                    storageclass="seaweedfs-ovh"
-                  }
-                )
-            )
-            / on (namespace, persistentvolumeclaim)
-              (
-                max by (namespace, persistentvolumeclaim) (
-                  kube_persistentvolumeclaim_resource_requests_storage_bytes{
-                    namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"
-                  }
-                ) > 0
-              )
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/github_api_proxy/capture-storage-budget.promql")
+        ).read_text(),
     ),
     Rule.alert(
         "GitHubProxyCaptureCollectionStorageBudgetHigh",
@@ -163,13 +137,9 @@ _RULES = [
     ),
     Rule.alert(
         "GitHubProxyCaptureStorageBudgetInputsMissing",
-        dedent(
-            """\
-            absent(github_api_proxy:capture_collection_physical_storage_budget:ratio{
-              namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"
-            })
-            """
-        ),
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/github_api_proxy/capture-storage-budget-inputs-missing.promql")
+        ).read_text(),
         for_="5m",
         labels={"severity": "warning"},
         summary="Central GitHub proxy collection storage budget cannot be observed",

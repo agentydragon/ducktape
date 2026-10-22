@@ -19,15 +19,15 @@ provider metadata does not select client budgets.
 
 ## Projections
 
-| Consumer                     | Input                                                               | Output                                                       |
-| ---------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------ |
-| LiteLLM                      | `SERVED_ROUTES`, `HIDDEN_ALIASES`, deployment bindings              | Proxy config and alias settings                              |
-| Terraform virtual keys       | `KEY_MODEL_LANES`                                                   | `model_lanes`: allowed IDs and ordered fallback IDs          |
-| Agentplane app               | `HarnessRoutes`                                                     | App-owned `ModelCatalog` records and harness ID lists        |
-| Paused Public Coder renderer | Explicit selections and budgets in `public_coder/app.py`            | OpenClaw IDs, names, limits, and reasoning flags             |
-| Parked Haku OpenClaw         | Selected subscription routes and command aliases                    | Native Claude Code model slugs                               |
-| Gatus                        | Selected Ollama route                                               | Probe request model ID                                       |
-| LLM ingress                  | Environment-selected routes and explicit `RUNNER_CONTEXT_OVERRIDES` | Ingress-owned model configuration and authenticated response |
+| Consumer                     | Input                                                               | Output                                                         |
+| ---------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------- |
+| LiteLLM                      | `SERVED_ROUTES`, `HIDDEN_ALIASES`, deployment bindings              | Proxy config and alias settings                                |
+| Crossplane virtual keys      | `KEY_MODEL_LANES`                                                   | `Key.forProvider.models` and `Team.forProvider.routerSettings` |
+| Agentplane app               | `HarnessRoutes`                                                     | App-owned `ModelCatalog` records and harness ID lists          |
+| Paused Public Coder renderer | Explicit selections and budgets in `public_coder/app.py`            | OpenClaw IDs, names, limits, and reasoning flags               |
+| Parked Haku OpenClaw         | Selected subscription routes and command aliases                    | Native Claude Code model slugs                                 |
+| Gatus                        | Selected Ollama route                                               | Probe request model ID                                         |
+| LLM ingress                  | Environment-selected routes and explicit `RUNNER_CONTEXT_OVERRIDES` | Ingress-owned model configuration and authenticated response   |
 
 The app projects named routes into IDs, display names and reasoning choices;
 keys serialize route IDs. Offering a route does not grant access to it. Keep
@@ -42,10 +42,10 @@ of Kubernetes; generation instructions are in the [package entry point](../../mo
 Each `KEY_MODEL_LANES` entry is one `ModelLaneRoutes(allowed=..., fallbacks=...)`
 record. Allowed routes scope virtual keys; ordered fallbacks configure team wildcard
 routing and do not grant additional access. Empty fallbacks mean no configured
-fallback. The Terraform projection emits one `model_lanes` map whose values contain
-`allowed_models` and `fallback_models`, not parallel dictionaries. Lane names bind
-these records to Terraform keys/teams; keys may combine several lanes. Regenerate
-the Terraform CR with `bb run //cluster/cdk8s:generate_manifests`.
+fallback. The Crossplane projection reads this catalog directly when building each
+key's allowed models and each team's ordered fallback list. Lane names bind these
+records to Crossplane keys/teams; keys may combine several lanes. Regenerate the
+manifests with `bb run //cluster/cdk8s:generate_manifests`.
 
 Each environment projects selected routes and explicit `RUNNER_CONTEXT_OVERRIDES`
 into `LlmIngressProps.models`. The runner consumes the shared `ModelConfig` contract

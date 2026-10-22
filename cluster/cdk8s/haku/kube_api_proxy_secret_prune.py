@@ -1,4 +1,4 @@
-"""Temporary inventory to prune orphaned Haku Kubernetes API proxy Secrets."""
+"""Temporary inventory for pruning the retained Haku Kubernetes API proxy TLS Secret."""
 
 from __future__ import annotations
 
@@ -11,21 +11,17 @@ NAME = "haku-kube-api-proxy-secret-prune"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku-kube-api-proxy-secret-prune"
 NAMESPACE = "haku-console"
 
-# cert-manager and Reflector leave these output Secrets without owner references. This
-# temporary inventory adopts them without applying data; remove its Flux Kustomization
-# after the source owners have reconciled away to let Flux prune the keys.
-_SECRETS = (("haku-console-public-coder-agent", "Opaque"), ("haku-kube-api-proxy-tls", "kubernetes.io/tls"))
-
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    for name, secret_type in _SECRETS:
-        k8s.KubeSecret(
-            chart,
-            name,
-            metadata=k8s.ObjectMeta(
-                name=name, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/ssa": "IfNotPresent"}
-            ),
-            type=secret_type,
-        )
+    k8s.KubeSecret(
+        chart,
+        "haku-kube-api-proxy-tls",
+        metadata=k8s.ObjectMeta(
+            name="haku-kube-api-proxy-tls",
+            namespace=NAMESPACE,
+            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
+        ),
+        type="kubernetes.io/tls",
+    )
     return chart

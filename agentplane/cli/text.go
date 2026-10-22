@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 // The text forms are for a reader; a script uses --json.
@@ -27,90 +32,104 @@ func indented(raw json.RawMessage) (string, error) {
 	return out.String(), nil
 }
 
+func unmarshalActionJSON(raw json.RawMessage, message proto.Message) error {
+	if err := protojson.Unmarshal(raw, message); err != nil {
+		return invalidResponse("%v", err)
+	}
+	return nil
+}
+
+func actionEnumText(value string, prefix string) string {
+	return strings.ToLower(strings.TrimPrefix(value, prefix))
+}
+
 func groupLine(raw json.RawMessage) (string, error) {
-	group, err := decode[struct {
-		Key          string            `json:"key"`
-		Title        string            `json:"title"`
-		ExecutorKind string            `json:"executor_kind"`
-		Available    bool              `json:"available"`
-		Actions      []json.RawMessage `json:"actions"`
-	}](raw)
-	if err != nil {
+	group := &action_servicepb.ActionGroup{}
+	if err := unmarshalActionJSON(raw, group); err != nil {
 		return "", err
 	}
-	status := strconv.Itoa(len(group.Actions)) + " actions"
-	if !group.Available {
+	status := strconv.Itoa(len(group.GetActions())) + " actions"
+	if !group.GetAvailable() {
 		status += " (unavailable)"
 	}
-	return fields(group.Key, group.ExecutorKind, status, group.Title), nil
+	kind := actionEnumText(group.GetExecutorKind().String(), "EXECUTOR_KIND_")
+	return fields(group.GetKey(), kind, status, group.GetTitle()), nil
 }
 
 func actionLine(raw json.RawMessage) (string, error) {
-	action, err := decode[struct {
-		Group       string `json:"group"`
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}](raw)
-	return fields(action.Group+"/"+action.Name, firstLine(action.Description)), err
+	action := &action_servicepb.Action{}
+	if err := unmarshalActionJSON(raw, action); err != nil {
+		return "", err
+	}
+	return fields(action.GetGroup()+"/"+action.GetName(), firstLine(action.GetDescription())), nil
 }
 
 func actionDetail(raw json.RawMessage) (string, error) {
-	action, err := decode[struct {
-		Group       string          `json:"group"`
-		Name        string          `json:"name"`
-		Description string          `json:"description"`
-		InputSchema json.RawMessage `json:"input_schema"`
-	}](raw)
+	action := &action_servicepb.Action{}
+	if err := unmarshalActionJSON(raw, action); err != nil {
+		return "", err
+	}
+	schema := []byte("{}")
+	if action.GetInputSchema() != nil {
+		var err error
+		schema, err = protojson.Marshal(action.GetInputSchema())
+		if err != nil {
+			return "", invalidResponse("input schema: %v", err)
+		}
+	}
+	formatted, err := indented(schema)
 	if err != nil {
 		return "", err
 	}
-	schema, err := indented(action.InputSchema)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%s/%s\n%s\ninput schema:\n%s", action.Group, action.Name, action.Description, schema), nil
+	return fmt.Sprintf("%s/%s\n%s\ninput schema:\n%s", action.GetGroup(), action.GetName(), action.GetDescription(), formatted), nil
 }
 
 func policyText(raw json.RawMessage) (string, error) {
-	policy, err := decode[struct {
-		Subject struct {
-			Namespace string `json:"namespace"`
-			Name      string `json:"name"`
-		} `json:"subject"`
-		Synced   bool `json:"synced"`
-		Bindings []struct {
-			Name       string   `json:"name"`
-			ExpiresAt  *string  `json:"expires_at"`
-			PolicySets []string `json:"policy_sets"`
-		} `json:"bindings"`
-		AutoApproveIf []struct {
-			PolicySet string `json:"policy_set"`
-			Index     int    `json:"index"`
-			Policy    struct {
-				Type    string              `json:"type"`
-				Actions map[string][]string `json:"actions"`
-			} `json:"policy"`
-		} `json:"auto_approve_if"`
-	}](raw)
-	if err != nil {
+	policy := &action_servicepb.CallerActionPolicy{}
+	if err := unmarshalActionJSON(raw, policy); err != nil {
 		return "", err
 	}
-	lines := []string{fmt.Sprintf("subject %s/%s  synced %t", policy.Subject.Namespace, policy.Subject.Name, policy.Synced)}
-	for _, binding := range policy.Bindings {
-		line := fields("binding "+binding.Name, "sets "+strings.Join(binding.PolicySets, ","))
-		if binding.ExpiresAt != nil {
-			line += "  expires " + *binding.ExpiresAt
+	lines := []string{fmt.Sprintf("subject %s/%s  synced %t", policy.GetSubject().GetNamespace(), policy.GetSubject().GetName(), policy.GetSynced())}
+	for _, binding := range policy.GetBindings() {
+		var sets []string
+		for _, set := range binding.GetPolicySets() {
+			sets = append(sets, set.GetName())
+		}
+		line := fields("binding "+binding.GetName(), "sets "+strings.Join(sets, ","))
+		if binding.GetExpiresAt() != nil {
+			line += "  expires " + binding.GetExpiresAt().AsTime().Format("2006-01-02T15:04:05.999999999Z07:00")
 		}
 		lines = append(lines, line)
 	}
-	for _, entry := range policy.AutoApproveIf {
+	for _, entry := range policy.GetAutoApproveIf() {
 		var actions []string
-		for group, names := range entry.Policy.Actions {
-			for _, name := range names {
+		var policyType string
+		var actionNames map[string]*action_servicepb.StringList
+		switch value := entry.GetPolicy().GetKind().(type) {
+		case *action_servicepb.Policy_ExactActions:
+			policyType, actionNames = "exact_actions", value.ExactActions.GetActions()
+		case *action_servicepb.Policy_ArgumentSchema:
+			policyType, actionNames = "argument_schema", value.ArgumentSchema.GetActions()
+		case *action_servicepb.Policy_GithubRepository:
+			policyType, actionNames = "github_repository", value.GithubRepository.GetActions()
+		case *action_servicepb.Policy_GithubPublicRepository:
+			policyType, actionNames = "github_public_repository", value.GithubPublicRepository.GetActions()
+		case *action_servicepb.Policy_HomeAssistantEntityControl:
+			policyType, actionNames = "home_assistant_entity_control", value.HomeAssistantEntityControl.GetActions()
+		default:
+			return "", invalidResponse("policy entry %q has no policy kind", entry.GetPolicySet())
+		}
+		groups := make([]string, 0, len(actionNames))
+		for group := range actionNames {
+			groups = append(groups, group)
+		}
+		sort.Strings(groups)
+		for _, group := range groups {
+			for _, name := range actionNames[group].GetValues() {
 				actions = append(actions, group+"/"+name)
 			}
 		}
-		lines = append(lines, fields(fmt.Sprintf("auto-approve %s#%d", entry.PolicySet, entry.Index), entry.Policy.Type, strings.Join(actions, ",")))
+		lines = append(lines, fields(fmt.Sprintf("auto-approve %s#%d", entry.GetPolicySet(), entry.GetIndex()), policyType, strings.Join(actions, ",")))
 	}
 	return strings.Join(lines, "\n"), nil
 }
@@ -120,17 +139,22 @@ func receiptLine(raw json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	line := fields(r.ID, r.State, r.Action.Group+"/"+r.Action.Name, strconv.Quote(r.Title))
-	if r.Decision != nil {
-		for _, reason := range []*string{r.Decision.Note, r.Decision.Reason} {
+	state := actionEnumText(r.GetState().String(), "ACTION_STATE_")
+	line := fields(r.GetId(), state, r.GetAction().GetGroup()+"/"+r.GetAction().GetName(), strconv.Quote(r.GetTitle()))
+	if decision := r.GetDecision(); decision != nil {
+		for _, reason := range []*string{decision.DecisionNote, decision.ReasonDescription} {
 			if reason != nil {
 				line += "  decision: " + strconv.Quote(*reason)
 				break
 			}
 		}
 	}
-	if r.Execution != nil && len(r.Execution.Error) > 0 && string(r.Execution.Error) != "null" {
-		line += "  error: " + string(r.Execution.Error)
+	if execution := r.GetExecution(); execution != nil && execution.GetError() != nil {
+		errorJSON, err := protojson.Marshal(execution.GetError())
+		if err != nil {
+			return "", invalidResponse("execution error: %v", err)
+		}
+		line += "  error: " + string(errorJSON)
 	}
 	return line, nil
 }
@@ -159,29 +183,39 @@ func resultText(raw json.RawMessage) (string, error) {
 }
 
 func eventLine(raw json.RawMessage) (string, error) {
-	event, err := decode[struct {
-		Sequence int             `json:"sequence"`
-		State    string          `json:"state"`
-		At       string          `json:"at"`
-		Actor    json.RawMessage `json:"actor"`
-	}](raw)
-	line := fields(strconv.Itoa(event.Sequence), event.State, event.At)
-	if len(event.Actor) > 0 && string(event.Actor) != "null" {
-		line += "  actor " + string(event.Actor)
+	event := &action_servicepb.ActionEvent{}
+	if err := unmarshalActionJSON(raw, event); err != nil {
+		return "", err
 	}
-	return line, err
+	line := fields(strconv.Itoa(int(event.GetSequence())), actionEnumText(event.GetState().String(), "ACTION_STATE_"))
+	if event.GetAt() != nil {
+		line += "  " + event.GetAt().AsTime().Format("2006-01-02T15:04:05.999999999Z07:00")
+	}
+	if event.GetActor() != nil {
+		actor, err := protojson.Marshal(event.GetActor())
+		if err != nil {
+			return "", invalidResponse("event actor: %v", err)
+		}
+		line += "  actor " + string(actor)
+	}
+	return line, nil
 }
 
 func cancellationLine(raw json.RawMessage) (string, error) {
-	cancellation, err := decode[struct {
-		Outcome string          `json:"outcome"`
-		Request json.RawMessage `json:"request"`
-	}](raw)
+	cancellation := &action_servicepb.CancelActionRequestResponse{}
+	if err := unmarshalActionJSON(raw, cancellation); err != nil {
+		return "", err
+	}
+	request, err := protoJSON(cancellation.GetActionRequest())
 	if err != nil {
 		return "", err
 	}
-	request, err := receiptLine(cancellation.Request)
-	return fields(cancellation.Outcome, request), err
+	requestLine, err := receiptLine(request)
+	if err != nil {
+		return "", err
+	}
+	outcome := actionEnumText(cancellation.GetOutcome().String(), "CANCELLATION_OUTCOME_")
+	return fields(outcome, requestLine), nil
 }
 
 func rulesText(raw json.RawMessage) (string, error) {

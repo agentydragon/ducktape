@@ -190,9 +190,8 @@ def test_upstream_auth_headers_openai_uses_bearer() -> None:
     assert "x-api-key" not in headers
 
 
-def test_props_metadata_anthropic_uses_litellm_metadata() -> None:
-    # Anthropic's `metadata` only allows `user_id`, so props correlation goes under
-    # `litellm_metadata` (LiteLLM consumes it and strips it before forwarding to z.ai).
+@pytest.mark.parametrize("api_shape", [LLMApiShape.ANTHROPIC, LLMApiShape.RESPONSES])
+def test_props_metadata_uses_logging_field(api_shape: LLMApiShape) -> None:
     body: dict = {}
     _merge_props_metadata(
         body,
@@ -203,22 +202,33 @@ def test_props_metadata_anthropic_uses_litellm_metadata() -> None:
             parent_agent_run_id=None,
             agent_type="critic",
         ),
-        api_shape=LLMApiShape.ANTHROPIC,
+        api_shape=api_shape,
         logical_model="glm-4.6",
         upstream_model="glm-4.6-anthropic",
     )
     assert "metadata" not in body
-    assert body["litellm_metadata"] == {
+    assert body["litellm_metadata"]["trace_metadata"] == {
         "props.agent_run_id": "00000000-0000-0000-0000-000000000001",
         "props.agent_type": "critic",
-        "props.api_shape": "anthropic",
+        "props.api_shape": api_shape.value,
         "props.logical_model": "glm-4.6",
         "props.upstream_model": "glm-4.6-anthropic",
     }
 
 
-def test_props_metadata_is_merged_for_langfuse_correlation() -> None:
-    body = {"metadata": {"client.run_id": "external"}}
+@pytest.mark.parametrize(
+    ("api_shape", "field"),
+    [
+        (LLMApiShape.CHAT_COMPLETIONS, "metadata"),
+        (LLMApiShape.RESPONSES, "litellm_metadata"),
+        (LLMApiShape.ANTHROPIC, "litellm_metadata"),
+    ],
+)
+def test_props_metadata_is_merged_for_langfuse_correlation(api_shape: LLMApiShape, field: str) -> None:
+    provider_metadata = {"user_id": "external"}
+    body: dict = {field: {"tags": ["external"], "trace_metadata": {"client.run_id": "external"}}}
+    if field != "metadata":
+        body["metadata"] = provider_metadata
     _merge_props_metadata(
         body,
         access=LLMAccess(
@@ -228,17 +238,20 @@ def test_props_metadata_is_merged_for_langfuse_correlation() -> None:
             parent_agent_run_id=UUID("00000000-0000-0000-0000-000000000002"),
             agent_type="critic",
         ),
-        api_shape=LLMApiShape.CHAT_COMPLETIONS,
+        api_shape=api_shape,
         logical_model="glm-4.6",
         upstream_model="glm-4.6",
     )
 
-    assert body["metadata"] == {
+    if field != "metadata":
+        assert body["metadata"] == provider_metadata
+    assert body[field]["tags"] == ["external"]
+    assert body[field]["trace_metadata"] == {
         "client.run_id": "external",
         "props.agent_run_id": "00000000-0000-0000-0000-000000000001",
         "props.parent_agent_run_id": "00000000-0000-0000-0000-000000000002",
         "props.agent_type": "critic",
-        "props.api_shape": "chat_completions",
+        "props.api_shape": api_shape.value,
         "props.logical_model": "glm-4.6",
         "props.upstream_model": "glm-4.6",
     }

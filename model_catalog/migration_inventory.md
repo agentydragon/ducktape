@@ -13,14 +13,15 @@ The [routing review](routing_review.md#work-ordering-routing-decision-before-fur
 precedes further roster restructuring. This inventory remains a record of existing
 responsibilities and unfinished acceptance, not a queue to implement while the routing
 architecture is reconsidered. Reconcile dispositions after that decision; some LiteLLM
-configuration and projection wiring may no longer be needed. No runtime change follows
-from this checkpoint.
+configuration and projection wiring may no longer be needed. The separate Crossplane key
+ownership handoff is recorded in the LiteLLM disposition below; it keeps the served roster
+unchanged while rotating key values.
 
 ## Consumer inventory and side effects
 
 Before deletion or renaming, check these as well as the obvious clients:
 
-- Terraform virtual-key allowlists, team fallback order, and experiment keys.
+- Crossplane virtual-key allowlists, team fallback order, and experiment keys.
 - Agentplane picker/default selections, LLM ingress metadata/auth routing, and
   runner environment/guest configuration. These are not interchangeable registries.
 - Hidden Codex recognition aliases and the public embedding compatibility alias.
@@ -62,7 +63,7 @@ finds another consumer or source of independently maintained configuration.
 | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cluster/cdk8s/litellm/config.py`                                                                                          | Which logic is necessary LiteLLM serialization, which repeats catalogue facts, and where can the agreed publication contract actually be enforced?                                                    |
 | `cluster/cdk8s/litellm/upstreams.py`                                                                                       | What deployment endpoint/auth binding shape is needed without duplicating account/adapter identity?                                                                                                   |
-| `cluster/cdk8s/litellm/keys.py`; `tf/gitops/litellm-keys/main.tf`                                                          | Where should lane-to-key/team binding and ordered fallback projection live, and are either side's inputs redundant?                                                                                   |
+| `cluster/cdk8s/litellm/crossplane_keys.py`; `tf/gitops/litellm-keys/main.tf`                                               | Reviewed 2026-10-21: Crossplane reads `KEY_MODEL_LANES` and owns keys/teams; Tofu retains the old state only for the ordered teardown handoff. Key rotation and a brief auth outage are accepted.     |
 | `tana/litellm_proxy/` (including `custom_handler.py`, `provider.py`, `BUILD.bazel`, `requirements.in`, `requirements.txt`) | Does the chosen publication/adapter solution require changes here at all? Avoid an unneeded proxy framework or incidental dependency upgrade.                                                         |
 | `tana/litellm_proxy/model_registry.py`                                                                                     | Which entries are necessary Tana protocol/discovery mappings versus duplicate definitions of our selected models/routes? Do not assume that another “registry” is redundant without tracing its role. |
 
@@ -127,7 +128,7 @@ Reviewed 2026-10-10; no structural rewrite justified:
 - `cluster/cdk8s/gatus/config.py` selects the named GPT-OSS 20B 128K route for its
   probe. It does not reconstruct route slugs or maintain a second model catalogue.
 - `model_catalog/policies.py` owns key lanes and fallback subsets;
-  `cluster/cdk8s/litellm/keys.py` serializes them, and Terraform owns explicit
+  `cluster/cdk8s/litellm/crossplane_keys.py` serializes them, and Crossplane owns explicit
   key/team/accounting bindings. Combining lanes is authorization policy, not
   duplicate model identity. Keep these boundaries.
 

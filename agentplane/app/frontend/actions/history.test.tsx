@@ -5,11 +5,13 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ActionGroupView, ActionRequestView, ActionState } from "./client";
+import type { JsonValue } from "./types";
 import { TestIntersectionObserver } from "../test_intersection_observer.js";
 import { ActionHistory } from "./history";
 import { stateLabel } from "./requests";
 import {
-  TestEventSource,
+  ACTION_REQUEST_WATCH,
+  TestNdjsonWatch,
   answerApi,
   button,
   DECISION_NOTE,
@@ -36,11 +38,11 @@ async function renderHistory(
   let resolve = (): void => {};
   const groupsAnswered = new Promise<void>((done) => (resolve = done));
   answerApi(async ({ path }) => {
-    if (path === "/action-groups") {
+    if (path === "/upstream/actions/v1/action-groups") {
       resolve();
       return groups instanceof Response ? groups.clone() : groups;
     }
-    if (path !== "/actions/history") return undefined;
+    if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
     await groupsAnswered;
     return rows instanceof Response ? rows.clone() : { items: rows, next_cursor: null };
   });
@@ -53,7 +55,7 @@ async function renderHistory(
   return container;
 }
 
-function group(key: string, executorKind: string): ActionGroupView {
+function group(key: string, executorKind: "mcp" | "pod"): ActionGroupView {
   return {
     key,
     title: key,
@@ -61,11 +63,13 @@ function group(key: string, executorKind: string): ActionGroupView {
     executor_kind: executorKind,
     executor_description: "test executor",
     available: true,
+    health: null,
     actions: [],
+    direct_tools: [],
   };
 }
 
-function succeeded(groupKey: string, result: unknown): ActionRequestView {
+function succeeded(groupKey: string, result: NonNullable<ActionRequestView["execution"]>["result"]): ActionRequestView {
   const row = request("succeeded", 1);
   return { ...row, action: { group: groupKey, name: "test_tool" }, execution: { ...row.execution!, result } };
 }
@@ -98,7 +102,7 @@ function gmailDraft(): ActionRequestView {
 
 // base64 of "test-image-bytes": nothing here decodes it.
 const IMAGE_DATA = "dGVzdC1pbWFnZS1ieXRlcw==";
-const IMAGE_RESULT = {
+const IMAGE_RESULT: JsonValue = {
   content: [
     { type: "text", text: "test caption" },
     { type: "image", data: IMAGE_DATA, mimeType: "image/png" },
@@ -201,6 +205,7 @@ describe("ActionHistory", () => {
             source: "rules",
             index: 0,
             type: "exact_actions",
+            repository: null,
           },
         },
       },
@@ -212,8 +217,8 @@ describe("ActionHistory", () => {
 
   it("loads a bounded history page, follows invalidations, and pages on demand", async () => {
     const sent = answerApi(({ path, query }) => {
-      if (path === "/action-groups") return [];
-      if (path !== "/actions/history") return undefined;
+      if (path === "/upstream/actions/v1/action-groups") return [];
+      if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
       return query.get("cursor") === "page2"
         ? { items: [request("succeeded", 2)], next_cursor: null }
         : { items: [request("denied", 1)], next_cursor: "page2" };
@@ -230,17 +235,17 @@ describe("ActionHistory", () => {
     await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
     expect(sent.filter(({ query }) => query.get("cursor") === "page2")).toHaveLength(1);
     expect(container.textContent).toContain("End of action history.");
-    const stream = TestEventSource.current;
-    expect(stream?.url).toBe("/actions/stream?state=decision_pending");
+    const stream = TestNdjsonWatch.opened.get(ACTION_REQUEST_WATCH);
+    expect(stream?.url).toBe(ACTION_REQUEST_WATCH);
     await unmountLast();
-    expect(stream?.close).toHaveBeenCalledOnce();
+    expect(stream?.signal?.aborted).toBe(true);
   });
 
   it("defaults to excluding auto-allows and resets pagination when the filter changes", async () => {
     const sent = answerApi(({ path, query }) => {
-      if (path === "/action-groups") return [];
-      if (path !== "/actions/history") return undefined;
-      const all = query.get("include_auto_allowed") === "true";
+      if (path === "/upstream/actions/v1/action-groups") return [];
+      if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
+      const all = query.get("includeAutoAllowed") === "true";
       return {
         items: [
           request(
@@ -259,8 +264,8 @@ describe("ActionHistory", () => {
     await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
     expect(
       sent
-        .filter(({ path }) => path === "/actions/history")
-        .every(({ query }) => query.get("include_auto_allowed") === "false")
+        .filter(({ path }) => path === "/upstream/actions/v1/action-requests:history")
+        .every(({ query }) => query.get("includeAutoAllowed") === "false")
     ).toBe(true);
     await showNextPage(container);
     await vi.waitFor(() => expect(container.textContent).toContain("cancelled"));
@@ -268,8 +273,8 @@ describe("ActionHistory", () => {
     await act(async () => all.click());
     await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
     expect(container.textContent).not.toContain("cancelled");
-    const latest = sent.filter(({ path }) => path === "/actions/history").at(-1)!;
-    expect(latest.query.get("include_auto_allowed")).toBe("true");
+    const latest = sent.filter(({ path }) => path === "/upstream/actions/v1/action-requests:history").at(-1)!;
+    expect(latest.query.get("includeAutoAllowed")).toBe("true");
     expect(latest.query.get("cursor")).toBeNull();
     const filtered = container.querySelector<HTMLInputElement>('input[value="not-auto-allowed"]')!;
     await act(async () => filtered.click());
@@ -280,9 +285,10 @@ describe("ActionHistory", () => {
   it("refreshes an unfinished receipt beyond the newest page on invalidation", async () => {
     const older = request("running", 2);
     const sent = answerApi(({ path, query }) => {
-      if (path === "/action-groups") return [];
-      if (path === `/actions/${older.id}`) return { ...older, state: "succeeded", version: 3 };
-      if (path !== "/actions/history") return undefined;
+      if (path === "/upstream/actions/v1/action-groups") return [];
+      if (path === `/upstream/actions/v1/action-requests/${older.id}`)
+        return { ...older, state: "succeeded", version: 3 };
+      if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
       if (query.has("cursor")) return { items: [older], next_cursor: null };
       return { items: [request("denied", 1)], next_cursor: "page2" };
     });
@@ -296,14 +302,14 @@ describe("ActionHistory", () => {
     await vi.waitFor(() => expect(container.textContent).toContain("running"));
     await send([]);
     await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
-    expect(sent.some(({ path }) => path === `/actions/${older.id}`)).toBe(true);
+    expect(sent.some(({ path }) => path === `/upstream/actions/v1/action-requests/${older.id}`)).toBe(true);
   });
 
   it("stops automatic pagination after a failure and retries the same cursor explicitly", async () => {
     let fail = true;
     const sent = answerApi(({ path, query }) => {
-      if (path === "/action-groups") return [];
-      if (path !== "/actions/history") return undefined;
+      if (path === "/upstream/actions/v1/action-groups") return [];
+      if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
       if (!query.has("cursor")) return { items: [request("denied", 1)], next_cursor: "page2" };
       return fail
         ? Response.json({ detail: "try again" }, { status: 503 })
@@ -326,8 +332,8 @@ describe("ActionHistory", () => {
 
   it("restores the all-actions filter from its URL", async () => {
     const sent = answerApi(({ path }) => {
-      if (path === "/action-groups") return [];
-      if (path === "/actions/history") return { items: [], next_cursor: null };
+      if (path === "/upstream/actions/v1/action-groups") return [];
+      if (path === "/upstream/actions/v1/action-requests:history") return { items: [], next_cursor: null };
       return undefined;
     });
     const container = await renderLive(
@@ -339,8 +345,8 @@ describe("ActionHistory", () => {
     expect(container.querySelector<HTMLInputElement>('input[value="all"]')?.checked).toBe(true);
     expect(
       sent
-        .filter(({ path }) => path === "/actions/history")
-        .every(({ query }) => query.get("include_auto_allowed") === "true")
+        .filter(({ path }) => path === "/upstream/actions/v1/action-requests:history")
+        .every(({ query }) => query.get("includeAutoAllowed") === "true")
     ).toBe(true);
   });
 
@@ -406,10 +412,7 @@ describe("ActionHistory", () => {
   });
 
   it("keeps a sandbox group's result as its stored JSON, without a Raw switch, even one shaped like a CallToolResult", async () => {
-    const container = await renderHistory(
-      [succeeded("test_sandbox", IMAGE_RESULT)],
-      [group("test_sandbox", "sandbox")]
-    );
+    const container = await renderHistory([succeeded("test_sandbox", IMAGE_RESULT)], [group("test_sandbox", "pod")]);
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain('"mimeType": "image/png"');
@@ -431,7 +434,7 @@ it("renders native sandbox results and keeps the original payload available thro
   row.action = { group: "sandbox", name: "dispose" };
   row.arguments = { name: "absent-sandbox" };
   row.execution!.result = { name: "absent-sandbox", existed: false };
-  const container = await renderHistory([row], [group("sandbox", "sandbox")]);
+  const container = await renderHistory([row], [group("sandbox", "pod")]);
   expect(container.textContent).toContain("already absent");
   const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
   expect(raw).not.toBeNull();

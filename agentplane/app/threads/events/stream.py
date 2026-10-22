@@ -17,8 +17,6 @@ from agentplane.app.threads.summaries import FeedEnd, FeedError
 from agentplane.changes import ChangeSignal
 from agentplane.sse import frame
 
-# gazelle:include_dep @pypi//protobuf
-
 REPLAY_PAGE = 1000
 KEEPALIVE_S = 15
 

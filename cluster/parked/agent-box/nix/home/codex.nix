@@ -34,11 +34,11 @@ in
   };
 
   # Codex-claude LiteLLM virtual key (codex-* models via LiteLLM → CLIProxyAPI). Same SSOT
-  # as workstations and codex-pod (reflected kubernetes_secret); the agent-box codex
+  # as workstations and codex-pod (same SOPS Kubernetes Secret); the agent-box codex
   # identity is an explicit SOPS recipient of the pinned-key file.
   sops.secrets.litellm_codex_key = {
-    sopsFile = ../../../../../tf/gitops/litellm-keys/litellm-codex-clients-key.yaml;
-    key = "litellm_codex_key";
+    sopsFile = ../../../../../cluster/k8s/litellm/crossplane-keys/litellm-codex-clients-key.sops.yaml;
+    key = "stringData/api-key";
   };
 
   # Minimal Claude Code config for this unattended agent identity. Do not import

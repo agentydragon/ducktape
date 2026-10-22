@@ -126,6 +126,7 @@ ts_proto_library(
     node_modules = "//:node_modules",
     proto = ":sandboxes_proto",
     visibility = ["//visibility:public"],
+    deps = [":runner_pb"],
 )
 
 # The Sandbox controller calls `Runner.Seal` through the Runner Gateway's proxy.

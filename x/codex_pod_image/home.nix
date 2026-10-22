@@ -142,7 +142,7 @@ in
     # Route Codex at LiteLLM's Codex-subscription models instead of an
     # interactive ChatGPT sign-in. `env_key` names the env var carrying the
     # LiteLLM virtual key (LITELLM_API_KEY, from the reflected litellm-key-codex-pod
-    # secret; see deployment.yaml + tf/gitops/litellm-keys). wire_api=responses:
+    # secret; see deployment.yaml + cluster/cdk8s/litellm/crossplane_keys.py). wire_api=responses:
     # LiteLLM's hidden gpt-6-astra alias targets the Responses route. Using the
     # bare slug lets Codex 0.153+ load Astra's bundled model metadata instead of
     # treating the multi-segment LiteLLM route as an unknown model.

@@ -1,0 +1,11 @@
+action_groups:
+  remote:
+    title: Remote
+    description: Reviewed peer
+    executor:
+      kind: mcp
+      description: No credentials
+      config:
+        transport: streamable-http
+        url: http://test-peer.invalid/mcp
+        auth: none

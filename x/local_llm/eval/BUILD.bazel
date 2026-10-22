@@ -1,8 +1,15 @@
-load("//devinfra/python:defs.bzl", "py_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "offline_bootstrap",
+    srcs = ["offline_bootstrap.py"],
+)
 
 py_binary(
     name = "offline_exec",
     srcs = ["offline_exec.py"],
+    data = ["offline_bootstrap.py"],
+    deps = ["//util/bazel:runfiles"],
 )
 
 py_binary(

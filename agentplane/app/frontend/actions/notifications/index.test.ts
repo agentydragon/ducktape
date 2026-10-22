@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ActionRequestView } from "../types";
+import type { ActionRequestView, JsonValue } from "../types";
 import { formatActionNotification } from "./index";
 
 function actionRequest(
@@ -20,7 +20,7 @@ function actionRequest(
   };
 }
 
-const kubernetesNotificationCases = [
+const kubernetesNotificationCases: [string, { [key: string]: JsonValue }, string][] = [
   ["resources_create_or_update", { resource: "apiVersion: v1\nkind: Secret" }, "Apply Kubernetes resource"],
   [
     "resources_get",
@@ -49,9 +49,9 @@ const kubernetesNotificationCases = [
     { name: "api-0", namespace: "apps", container: "api", previous: false, tail: 50 },
     "View logs for Pod apps/api-0",
   ],
-] as const;
+];
 
-const malformedKubernetesNotificationCases = [
+const malformedKubernetesNotificationCases: [string, { [key: string]: JsonValue }][] = [
   ["resources_create_or_update", { resource: 123 }],
   ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api", namespace: 7 }],
   ["resources_delete", { apiVersion: "apps/v1", kind: "Deployment", name: "api", gracePeriodSeconds: "0" }],
@@ -60,7 +60,7 @@ const malformedKubernetesNotificationCases = [
   ["pods_exec", { name: "api-0", namespace: "apps", command: "id" }],
   ["pods_get", { name: "api-0", namespace: 7 }],
   ["pods_log", { name: "api-0", namespace: "apps", previous: "false" }],
-] as const;
+];
 
 describe("action notification formatting", () => {
   it("snapshots the fallback for an unhandled Action", () => {

@@ -1,0 +1,2 @@
+kube_customresource_flux_helmrelease_ready{status!="True"} == 1
+unless on (namespace, name) (kube_customresource_flux_helmrelease_suspended == 1)

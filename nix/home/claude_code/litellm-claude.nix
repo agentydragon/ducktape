@@ -6,7 +6,7 @@
 # models are unremarkable and the proxy is the deviation.
 #
 # Reads $CLAUDE_SUBSCRIPTION_LITELLM_KEY, a virtual key scoped to the subscription roster
-# (SSOT in tf/gitops/litellm-keys). CLIProxyAPI holds the OAuth session, so this key never
+# (SSOT in cluster/k8s/litellm/crossplane-keys). CLIProxyAPI holds the OAuth session, so this key never
 # carries it. Mirrors the in-cluster haku-console `claude_code` harness
 # (cluster/k8s/haku/console/config.yaml), which runs this same lane. See ./gateway.nix for
 # the shared wrapper pattern.

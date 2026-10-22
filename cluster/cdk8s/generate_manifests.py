@@ -179,7 +179,9 @@ from cluster.cdk8s.kubevirt import app as kubevirt_app, cdi as kubevirt_cdi, ope
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
 from cluster.cdk8s.langfuse import app as langfuse_app
 from cluster.cdk8s.litellm import (
+    buildbuddy_sync as litellm_buildbuddy_sync,
     credentials as litellm_credentials,
+    crossplane_keys as litellm_crossplane_keys,
     database as litellm_database,
     keys as litellm_keys,
     namespace as litellm_namespace,
@@ -366,7 +368,7 @@ def generate_manifests(root: Path) -> None:
     crossplane_litellm_provider_artifact = artifact(
         crossplane.LITELLM_PROVIDER_KUSTOMIZATION_NAME, crossplane.LITELLM_PROVIDER_OUTPUT_DIR
     )
-    crossplane.litellm_provider(
+    crossplane_provider_kustomization = crossplane.litellm_provider(
         flux_chart,
         write_directory(root, crossplane_litellm_provider_artifact, crossplane.litellm_provider_chart),
         crossplane_kustomization,
@@ -1550,15 +1552,46 @@ def generate_manifests(root: Path) -> None:
     haku_workloads.haku_workloads(flux_chart, write_directory(root, haku_workloads_artifact, haku_workloads.chart))
     litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)
     litellm_keys_module = terraform.gitops_module(litellm_keys.TF_MODULE)
-    litellm_keys.litellm_keys_tf(
+    litellm_keys_tf_kustomization = litellm_keys.litellm_keys_tf(
         flux_chart,
         write_directory(
             root,
             litellm_keys_tf_artifact,
             functools.partial(litellm_keys.keys_chart, module=litellm_keys_module),
-            siblings=["litellm-clients-sops-age-key.sops.yaml", "buildbuddy-org-admin-api-key.sops.yaml"],
+            siblings=["buildbuddy-org-admin-api-key.sops.yaml"],
         ),
         tofu_controller_kustomization,
+        litellm_kustomization,
+    )
+    litellm_crossplane_keys_artifact = artifact("litellm-crossplane-keys", litellm_crossplane_keys.OUTPUT_DIR)
+    litellm_crossplane_keys_kustomization = litellm_crossplane_keys.resources(
+        flux_chart,
+        write_directory(
+            root,
+            litellm_crossplane_keys_artifact,
+            litellm_crossplane_keys.chart,
+            siblings=[
+                "litellm-claude-subscription-clients-key.sops.yaml",
+                "litellm-codex-clients-key.sops.yaml",
+                "litellm-gemini-clients-key.sops.yaml",
+                "litellm-antigravity-clients-key.sops.yaml",
+            ],
+        ),
+        crossplane_provider_kustomization,
+        litellm_kustomization,
+        litellm_keys_tf_kustomization,
+    )
+    litellm_buildbuddy_sync_artifact = artifact("litellm-buildbuddy-sync", litellm_buildbuddy_sync.OUTPUT_DIR)
+    litellm_buildbuddy_sync_module = terraform.gitops_module(litellm_buildbuddy_sync.TF_MODULE)
+    litellm_buildbuddy_sync.resources(
+        flux_chart,
+        write_directory(
+            root,
+            litellm_buildbuddy_sync_artifact,
+            functools.partial(litellm_buildbuddy_sync.chart, module=litellm_buildbuddy_sync_module),
+        ),
+        tofu_controller_kustomization,
+        litellm_crossplane_keys_kustomization,
     )
     haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
     haku_workspaces.haku_workspaces(
@@ -1578,6 +1611,7 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         kyverno_kustomization,
+        litellm_crossplane_keys_kustomization,
     )
     agentplane_testing_delivery_artifact = artifact(
         "agentplane-testing-delivery", testing.ENV.delivery_output_dir, testing.ENV.image_pins
@@ -1617,6 +1651,7 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         kyverno_kustomization,
+        litellm_crossplane_keys_kustomization,
     )
     agentplane_staging_delivery_artifact = artifact(
         "agentplane-staging-delivery", staging.ENV.delivery_output_dir, staging.ENV.image_pins
@@ -1729,6 +1764,8 @@ def generate_manifests(root: Path) -> None:
             gateway_artifact,
             kyverno_artifact,
             litellm_keys_tf_artifact,
+            litellm_crossplane_keys_artifact,
+            litellm_buildbuddy_sync_artifact,
             local_path_provisioner_artifact,
             reflector_artifact,
             seaweedfs_cluster_artifact,
@@ -1873,6 +1910,7 @@ def generate_manifests(root: Path) -> None:
             finance_agent_module,
             forgejo_images_module,
             litellm_keys_module,
+            litellm_buildbuddy_sync_module,
         ],
         flux_system=[external_creds_artifact],
     )

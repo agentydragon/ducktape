@@ -334,7 +334,8 @@ system_test(
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
-        "//agentplane/action_service:models",
+        "//agentplane/action_service:action_service_pb2",
+        "//agentplane/action_service:operator_action_service_pb2",
         "//agentplane/action_service:policy_evaluation",
         "//agentplane/action_service/policies:resources",
         "//agentplane/app:action_policy",
@@ -346,7 +347,6 @@ system_test(
         "@pypi//httpx",
         "@pypi//more_itertools",
         "@pypi//protobuf",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
@@ -363,7 +363,6 @@ py_library(
     testonly = True,
     srcs = ["operator_login.py"],
     deps = [
-        "//agentplane/app:action_federation",
         "//agentplane/app:oidc",
         "@pypi//beautifulsoup4",
         "@pypi//httpx",

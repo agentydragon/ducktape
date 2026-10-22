@@ -26,10 +26,8 @@ keys:
   # user's age decryption identity.
   - &agent-box-host age1gzgkw3pcyd4aan0ndqnc7g7q4rrg3ufpd7n2hepuqpjcmqjj056s4lqawx
   - &agent-box-codex-user age16madmg3yjv39dekr6dscqr2slv0haxcw7lw25v8vmly4wl95td4qwev54u
-  # Dedicated, narrow age key for the scoped LiteLLM client-key SSOT files. Its
-  # private half lives only in the litellm-keys tf-runner (SOPS_AGE_KEY, via the
-  # litellm-clients-sops-age-key Secret) so TF can decrypt those files via
-  # sops_external — it is NOT the broad cluster SOPS key.
+  # Legacy narrow recipient for Tana's parked LiteLLM key file. Active laptop
+  # client keys now live in the Crossplane Kustomization and use machine readers.
   - &litellm-clients age165jt8xt99jzfjk9y03tkt34hxcpx0ues3fmzdpgh9vq9gva28adqdarctz
   # CI key (GitHub Actions, narrow access to CI-only SOPS secrets)
   # Private key: k8s Secret in github-secrets-sync namespace, synced to GHA as SOPS_AGE_KEY.
@@ -282,6 +280,33 @@ creation_rules:
           - *admin
           - *cluster-secrets
           - *ci
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+
+  # Crossplane's laptop client tokens are applied in-cluster and consumed from
+  # the same SOPS files by home-manager. Keep each token readable
+  # by Flux and the machines that run its client; Codex also serves agent-box.
+  - path_regex: cluster/k8s/litellm/crossplane-keys/litellm-codex-clients-key\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+          - *agent-box-codex-user
+  - path_regex: cluster/k8s/litellm/crossplane-keys/litellm-(claude-subscription|gemini|antigravity)-clients-key\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon
@@ -768,55 +793,9 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # tana-clients virtual key (laptop tana-claude — laptop-only). Reuses the narrow
-  # litellm-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts it too.
+  # Tana's parked client key is retained for recovery; its Crossplane resource and
+  # route are intentionally absent until Tana is re-enabled with a reviewed allowlist.
   - path_regex: tf/gitops/litellm-keys/litellm-tana-clients-key\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *litellm-clients
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-  # claude-subscription-clients virtual key (laptop litellm-claude — laptop-only). Reuses the narrow
-  # litellm-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts it too.
-  - path_regex: tf/gitops/litellm-keys/litellm-claude-subscription-clients-key\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *litellm-clients
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-  # codex-clients virtual key (laptop + agent-box codex-claude; codex-pod receives it via
-  # the reflected kubernetes_secret, not sops). Reuses the narrow litellm-clients key.
-  - path_regex: tf/gitops/litellm-keys/litellm-codex-clients-key\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *litellm-clients
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-          - *agent-box-codex-user
-  # gemini-clients virtual key (laptop gemini-claude — laptop-only). Reuses the narrow
-  # litellm-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts it too.
-  - path_regex: tf/gitops/litellm-keys/litellm-gemini-clients-key\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *litellm-clients
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-  # antigravity-clients virtual key (laptop antigravity-claude — laptop-only). Reuses
-  # the narrow litellm-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts
-  # it too.
-  - path_regex: tf/gitops/litellm-keys/litellm-antigravity-clients-key\.yaml$
     key_groups:
       - age:
           - *admin

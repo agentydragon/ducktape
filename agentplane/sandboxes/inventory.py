@@ -343,6 +343,3 @@ class SandboxInventory(SandboxReader):
             },
             _content_type=_MERGE_PATCH,
         )
-
-
-# gazelle:include_dep @pypi//protobuf

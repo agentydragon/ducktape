@@ -11,33 +11,20 @@ import pytest_bazel
 
 from agentplane.native.claude import facade, wire
 from agentplane.native.testing.async_process import AsyncNativeProcess, NativeProcessEofError
-
-# A pipe peer, not a mock model: it copies the actual request ID from the
-# facade's outbound frame and deliberately interleaves unrelated traffic.
-PEER = """
-import json
-import sys
-request = json.loads(sys.stdin.readline())
-frames = [
-    {"type": "system", "subtype": "task_notification", "task_id": "child", "status": "stopped"},
-    {"type": "result", "subtype": "success", "is_error": False, "result": "", "num_turns": 0,
-     "origin": {"kind": "task-notification"}},
-    {"type": "result", "subtype": "error_during_execution", "is_error": True},
-    {"type": "control_response", "response": {"subtype": "success", "request_id": "another-request"}},
-]
-if sys.argv[1] != "eof":
-    frames.append({"type": "control_response", "response": {
-        "subtype": sys.argv[1], "request_id": request["request_id"], "error": "probe rejection"
-    }})
-for frame in frames:
-    print(json.dumps(frame), flush=True)
-"""
+from util.bazel.runfiles import get_required_path
 
 
 @pytest.mark.parametrize("outcome", ["success", "error", "eof"])
 async def test_initialize_requires_its_control_reply(tmp_path: Path, outcome: str) -> None:
     async with AsyncNativeProcess(
-        tmp_path, [sys.executable, "-c", PEER, outcome], cwd=tmp_path, environment=dict(os.environ)
+        tmp_path,
+        [
+            sys.executable,
+            str(get_required_path("_main/agentplane/native/claude/testing/control_reply_peer.py")),
+            outcome,
+        ],
+        cwd=tmp_path,
+        environment=dict(os.environ),
     ) as process:
         observed = process.frames()
         harness = facade.ClaudeHarness(process)

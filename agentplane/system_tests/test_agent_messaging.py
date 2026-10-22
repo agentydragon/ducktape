@@ -37,7 +37,6 @@ from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
-# gazelle:include_dep @pypi//protobuf
 
 BODY = "Test message: the change is ready for review."
 # What a notice's user message starts with, before its JSON (agentplane/notification_service/store/notices.go).

@@ -6,29 +6,12 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { ActionsAttentionBar, ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
-import { mount, request, unmountLast } from "./testing";
-
-const stream: { current?: EventTarget } = {};
-
-class ActionStream extends EventTarget {
-  close = vi.fn();
-
-  constructor(url: string) {
-    super();
-    if (url !== "/actions/stream?state=decision_pending") throw new Error(`unexpected Action stream URL: ${url}`);
-    stream.current = this;
-  }
-}
+import { mount, request, send, unmountLast } from "./testing";
+import type { ActionRequestView } from "./types";
 
 function CurrentPath(): JSX.Element {
   const location = useLocation();
   return <div data-testid="current-path">{location.pathname}</div>;
-}
-
-async function send(rows: ReturnType<typeof request>[]): Promise<void> {
-  await act(async () => {
-    stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
-  });
 }
 
 afterEach(async () => {
@@ -40,7 +23,6 @@ afterEach(async () => {
 });
 
 it("resizes the open Actions area with the keyboard and remembers its height", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>
@@ -63,7 +45,6 @@ it("resizes the open Actions area with the keyboard and remembers its height", a
 });
 
 it("keeps the Actions section available and suppresses auto-open until the pending queue clears", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>
@@ -99,7 +80,6 @@ it("keeps the Actions section available and suppresses auto-open until the pendi
 });
 
 it("expands a compact action preview and only offers a decision on the compact card to eligible actions", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>
@@ -162,7 +142,6 @@ it("expands a compact action preview and only offers a decision on the compact c
 });
 
 it("shows approval widgets for Kubernetes resource, pod-list, and log reads", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>
@@ -170,50 +149,61 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
       </ActionRequestsProvider>
     </MemoryRouter>
   );
-  const reads = [
+  const reads: { request: ActionRequestView; visible: string[] }[] = [
     {
-      ...request("decision_pending", 3),
-      action: { group: "kubernetes_admin", name: "resources_get" },
-      arguments: { apiVersion: "apps/v1", kind: "Deployment", name: "api" },
-      title: "inspect deployment",
+      request: {
+        ...request("decision_pending", 3),
+        action: { group: "kubernetes_admin", name: "resources_get" },
+        arguments: { apiVersion: "apps/v1", kind: "Deployment", name: "api" },
+        title: "inspect deployment",
+      },
       visible: ["Read with API version apps/v1"],
     },
     {
-      ...request("decision_pending", 4),
-      action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
-      arguments: { namespace: "test-namespace", labelSelector: "app=example", fieldSelector: "status.phase=Running" },
-      title: "list namespace pods",
+      request: {
+        ...request("decision_pending", 4),
+        action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+        arguments: {
+          namespace: "test-namespace",
+          labelSelector: "app=example",
+          fieldSelector: "status.phase=Running",
+        },
+        title: "list namespace pods",
+      },
       visible: ["List pods in namespace", "test-namespace", "app=example", "status.phase=Running"],
     },
     {
-      ...request("decision_pending", 5),
-      action: { group: "kubernetes_admin", name: "pods_log" },
-      arguments: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
-      title: "inspect pod logs",
+      request: {
+        ...request("decision_pending", 5),
+        action: { group: "kubernetes_admin", name: "pods_log" },
+        arguments: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
+        title: "inspect pod logs",
+      },
       visible: ['"container": "sidecar"', '"previous": true', '"tail": -1'],
     },
     {
-      ...request("decision_pending", 7),
-      action: { group: "gmail", name: "threads_list" },
-      arguments: { q: "from:deployments@example.com", maxResults: 5 },
-      title: "search deployment mail",
+      request: {
+        ...request("decision_pending", 7),
+        action: { group: "gmail", name: "threads_list" },
+        arguments: { q: "from:deployments@example.com", maxResults: 5 },
+        title: "search deployment mail",
+      },
       visible: ["from:deployments@example.com", '"maxResults": 5'],
     },
   ];
-  await send(reads);
-  expect(container.textContent).toContain("Previous logs");
-  for (const read of reads) {
+  await send(reads.map(({ request: row }) => row));
+  await vi.waitFor(() => expect(container.textContent).toContain("Previous logs"));
+  for (const { request: read, visible } of reads) {
     const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${read.title}"]`);
     if (!disclosure) throw new Error(`missing disclosure for ${read.title}`);
     await act(async () => disclosure.click());
-    for (const value of read.visible) expect(container.textContent).toContain(value);
+    for (const value of visible) expect(container.textContent).toContain(value);
     expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
     expect(container.textContent).not.toContain("Decisions require full review.");
   }
 });
 
 it("offers Approve and Deny on a collapsed card of an opted-in Action, including one from an external caller", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>
@@ -234,7 +224,6 @@ it("offers Approve and Deny on a collapsed card of an opted-in Action, including
 });
 
 it("shows the closed-sidebar queue as a collapsed strip only while requests are pending", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>

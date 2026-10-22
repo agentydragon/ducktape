@@ -2,9 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,9 +13,19 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
-const testCredential = "agentplane-credential-test-placeholder"
+const (
+	testCredential = "agentplane-credential-test-placeholder"
+	missingID      = "00000000-0000-0000-0000-00000000dead"
+)
 
 type syncBuffer struct {
 	mu  sync.Mutex
@@ -143,23 +154,6 @@ func drop(w http.ResponseWriter) {
 	}
 }
 
-// receiptJSON is an ActionRequest as the Action Service sends it.
-func receiptJSON(id, state, key string) string {
-	return receiptWithExecution(id, state, key, "null")
-}
-
-func receiptWithExecution(id, state, key, execution string) string {
-	return fmt.Sprintf(`{"id":%q,"idempotency_key":%q,"action":{"group":"test-group","name":"test-action"},`+
-		`"arguments":{},"title":"test title","description":null,"caller":{"namespace":"test-namespace","name":"test-account"},"state":%q,"version":1,`+
-		`"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","decision":null,"execution":%s}`,
-		id, key, state, execution)
-}
-
-func succeededWith(result string) string {
-	return fmt.Sprintf(`{"id":"00000000-0000-0000-0000-0000000000e1","state":"succeeded","result":%s,"error":null,`+
-		`"created_at":"2026-01-01T00:00:00Z","started_at":null,"completed_at":null,"reconciled_at":null}`, result)
-}
-
 func decodeObject(t *testing.T, text string) map[string]any {
 	t.Helper()
 	var object map[string]any
@@ -189,4 +183,152 @@ func jsonLines(t *testing.T, stdout string) []map[string]any {
 		}
 	}
 	return objects
+}
+
+type actionCallRecord struct {
+	method        string
+	authorization []string
+}
+
+type actionFake struct {
+	action_servicepb.UnimplementedActionServiceServer
+	mu    sync.Mutex
+	calls []actionCallRecord
+
+	listGroups    func(context.Context, *action_servicepb.ListActionGroupsRequest) (*action_servicepb.ListActionGroupsResponse, error)
+	getAction     func(context.Context, *action_servicepb.GetActionRequest) (*action_servicepb.GetActionResponse, error)
+	getPolicy     func(context.Context, *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error)
+	submit        func(context.Context, *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error)
+	listRequests  func(context.Context, *action_servicepb.ListActionRequestsRequest) (*action_servicepb.ListActionRequestsResponse, error)
+	getRequest    func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error)
+	watchRequest  func(*action_servicepb.WatchActionRequestRequest, grpc.ServerStreamingServer[action_servicepb.WatchActionRequestResponse]) error
+	cancelRequest func(context.Context, *action_servicepb.CancelActionRequestRequest) (*action_servicepb.CancelActionRequestResponse, error)
+	listEvents    func(context.Context, *action_servicepb.ListActionRequestEventsRequest) (*action_servicepb.ListActionRequestEventsResponse, error)
+}
+
+func newActionFake(t *testing.T) (*actionFake, string) {
+	t.Helper()
+	for _, variable := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"} {
+		t.Setenv(variable, "")
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	fake := &actionFake{}
+	action_servicepb.RegisterActionServiceServer(server, fake)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+	return fake, "http://" + listener.Addr().String()
+}
+
+func (s *actionFake) record(ctx context.Context, method string) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, actionCallRecord{method: method, authorization: md.Get("authorization")})
+}
+
+func (s *actionFake) callLog() []actionCallRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.calls)
+}
+
+func (s *actionFake) count(method string) int {
+	count := 0
+	for _, call := range s.callLog() {
+		if call.method == method {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *actionFake) ListActionGroups(ctx context.Context, request *action_servicepb.ListActionGroupsRequest) (*action_servicepb.ListActionGroupsResponse, error) {
+	s.record(ctx, "ListActionGroups")
+	if s.listGroups != nil {
+		return s.listGroups(ctx, request)
+	}
+	return &action_servicepb.ListActionGroupsResponse{}, nil
+}
+
+func (s *actionFake) GetAction(ctx context.Context, request *action_servicepb.GetActionRequest) (*action_servicepb.GetActionResponse, error) {
+	s.record(ctx, "GetAction")
+	if s.getAction != nil {
+		return s.getAction(ctx, request)
+	}
+	return nil, status.Error(codes.NotFound, "Action not found")
+}
+
+func (s *actionFake) GetActionPolicy(ctx context.Context, request *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error) {
+	s.record(ctx, "GetActionPolicy")
+	if s.getPolicy != nil {
+		return s.getPolicy(ctx, request)
+	}
+	return &action_servicepb.GetActionPolicyResponse{ActionPolicy: &action_servicepb.CallerActionPolicy{}}, nil
+}
+
+func (s *actionFake) SubmitActionRequest(ctx context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
+	s.record(ctx, "SubmitActionRequest")
+	if s.submit != nil {
+		return s.submit(ctx, request)
+	}
+	return &action_servicepb.SubmitActionRequestResponse{ActionRequest: testActionRequest("test-request-id", action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING)}, nil
+}
+
+func (s *actionFake) ListActionRequests(ctx context.Context, request *action_servicepb.ListActionRequestsRequest) (*action_servicepb.ListActionRequestsResponse, error) {
+	s.record(ctx, "ListActionRequests")
+	if s.listRequests != nil {
+		return s.listRequests(ctx, request)
+	}
+	return &action_servicepb.ListActionRequestsResponse{}, nil
+}
+
+func (s *actionFake) GetActionRequest(ctx context.Context, request *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
+	s.record(ctx, "GetActionRequest")
+	if s.getRequest != nil {
+		return s.getRequest(ctx, request)
+	}
+	return nil, status.Error(codes.NotFound, "Action request not found")
+}
+
+func (s *actionFake) WatchActionRequest(request *action_servicepb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[action_servicepb.WatchActionRequestResponse]) error {
+	s.record(stream.Context(), "WatchActionRequest")
+	if s.watchRequest != nil {
+		return s.watchRequest(request, stream)
+	}
+	return status.Error(codes.Unimplemented, "WatchActionRequest not configured")
+}
+
+func (s *actionFake) CancelActionRequest(ctx context.Context, request *action_servicepb.CancelActionRequestRequest) (*action_servicepb.CancelActionRequestResponse, error) {
+	s.record(ctx, "CancelActionRequest")
+	if s.cancelRequest != nil {
+		return s.cancelRequest(ctx, request)
+	}
+	return &action_servicepb.CancelActionRequestResponse{
+		Outcome:       action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_CANCELLED,
+		ActionRequest: testActionRequest(request.GetRequestId(), action_servicepb.ActionState_ACTION_STATE_CANCELLED),
+	}, nil
+}
+
+func (s *actionFake) ListActionRequestEvents(ctx context.Context, request *action_servicepb.ListActionRequestEventsRequest) (*action_servicepb.ListActionRequestEventsResponse, error) {
+	s.record(ctx, "ListActionRequestEvents")
+	if s.listEvents != nil {
+		return s.listEvents(ctx, request)
+	}
+	return &action_servicepb.ListActionRequestEventsResponse{}, nil
+}
+
+func testActionRequest(id string, state action_servicepb.ActionState) *action_servicepb.ActionRequest {
+	return &action_servicepb.ActionRequest{
+		Id: id, IdempotencyKey: "test-idempotency-key",
+		Action:    &action_servicepb.ActionIdentity{Group: "test-group", Name: "test-action"},
+		Arguments: &structpb.Struct{Fields: map[string]*structpb.Value{}},
+		Title:     "test action title", State: state, Version: 1,
+	}
 }

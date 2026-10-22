@@ -289,9 +289,15 @@ py_test(
 py_test(
     name = "test_bazel_ci",
     srcs = ["test_bazel_ci.py"],
-    data = ["bazel_ci.py"],
+    data = [
+        "bazel_ci.py",
+        "//devinfra/ci/testing:fake_bazel",
+        "//devinfra/ci/testing:fake_bazel_diff",
+        "//devinfra/ci/testing:fake_git",
+    ],
     deps = [
         ":bazel_ci",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

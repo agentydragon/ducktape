@@ -56,9 +56,9 @@ the request body (Claude Code, Codex, OpenClaw), and on this stack a model name 
 rides in a URL path or a Kubernetes resource name.
 
 The provider segment rides in front, not behind, because a key allowlist is a provider
-lane: each `litellm_key.models` list in tf/gitops/litellm-keys/main.tf (exported from
-litellm/keys.py) enumerates one provider's names explicitly, so the lane is the common
-prefix (and a LiteLLM prefix wildcard would carve the same lane). Deliberately not
+lane: each Crossplane `Key`'s `forProvider.models` list in
+cluster/cdk8s/litellm/crossplane_keys.py enumerates one provider's names explicitly, so
+the lane is the common prefix (and a LiteLLM prefix wildcard would carve the same lane). Deliberately not
 renamed: the raw upstream model slugs inside the exposed names, and the two groq whisper
 entries, whose historical bare IDs are retained even though their outbound shape is known. The bare
 `gemini-embedding-2` alias (GEMINI_EMBEDDING_COMPAT_ALIAS) is exempt too: it predates the

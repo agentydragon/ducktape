@@ -376,12 +376,38 @@ ts_library(
 )
 
 ts_library(
+    name = "mcp_linkage_client",
+    srcs = ["mcp_linkage_client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":live_stream",
+        ":watch_stream",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/action_service:operator_action_service_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "mcp_linkage_client_test",
+    srcs = ["mcp_linkage_client.test.ts"],
+    deps = [
+        ":live_stream",
+        ":mcp_linkage_client",
+        ":watch_fixture",
+        "//:node_modules/@types/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "mcp_servers",
     srcs = ["settings/mcp_servers.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
         ":live_stream",
+        ":mcp_linkage_client",
         ":time_ago",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -395,6 +421,7 @@ agentplane_vitest_test(
     srcs = ["settings/mcp_servers.test.tsx"],
     deps = [
         ":client",
+        ":mcp_linkage_client",
         ":mcp_servers",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -417,7 +444,14 @@ ts_library(
     testonly = True,
     srcs = ["connection_service_test_support.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//:node_modules/vitest"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
 )
 
 ts_library(
@@ -1410,6 +1444,7 @@ ts_library(
         ":disclosure",
         ":harness_network",
         ":live",
+        ":mcp_linkage_client",
         ":notification_types",
         ":stream_status",
         ":test_model_catalog",
@@ -1423,6 +1458,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions:proto_test_fixtures",
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",

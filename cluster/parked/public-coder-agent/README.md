@@ -20,10 +20,10 @@ cleanup inventories were removed after reconciliation in PR #11457. The
 Namespace and Roles that Haku and Agentplane Sandboxes still read. This change removes
 the Haku proxy's cluster-admin binding from that inventory.
 
-The temporary `haku-kube-api-proxy-secret-prune` Flux owner adopts only the proxy's
-cert-manager TLS Secret and the reflected Haku bearer Secret, without applying their
-data. Remove that owner in a later revision after the proxy, Terraform source, and
-Agentplane egress owners have reconciled; Flux will then prune those two Secrets.
+The reflected Haku bearer Secret was pruned after its source owner reconciled. The
+cert-manager TLS Secret remained because Flux's `IfNotPresent` policy skips an
+existing Secret. A temporary Flux owner now adopts only its metadata with `Merge`,
+preserving the TLS data until that owner is removed to prune the Secret.
 
 To resume, move the app directory back under `cluster/k8s` and drop the parked
 annotation, per `cluster/AGENTS.md`; restore the OpenClaw replica count and

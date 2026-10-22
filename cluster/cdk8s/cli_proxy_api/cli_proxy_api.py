@@ -10,8 +10,6 @@ files beside the generated output.
 
 from __future__ import annotations
 
-import textwrap
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
@@ -38,6 +36,7 @@ from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPo
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
 NAME = "cli-proxy-api"
@@ -56,24 +55,7 @@ _ADMIN_OIDC = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-admin-oidc")
 MANAGEMENT_PASSWORD = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-management").key("management-password")
 KEY_FILES = ("client-key.sops.yaml", "management-key.sops.yaml")
 
-_CONFIG = textwrap.dedent(
-    """\
-    host: "0.0.0.0"
-    port: 8317
-    auth-dir: "/data/auth"
-    api-keys:
-      - "{{ .client_key }}"
-    debug: false
-    # Recheck restored provider quota instead of honoring stale local cooldown windows.
-    disable-cooling: true
-    streaming:
-      bootstrap-retries: 3
-    # Permit AIQuota's management-key requests from its separate pod.
-    # Browser management access uses native OIDC (deployment.yaml).
-    remote-management:
-      allow-remote: true
-    """
-)
+_CONFIG = get_required_path(own_repo_rlocation("cluster/cdk8s/cli_proxy_api/config.yaml")).read_text()
 
 
 def _namespace(scope: Construct) -> None:

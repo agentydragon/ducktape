@@ -15,8 +15,6 @@ from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode, SuspendedBy
 from agentplane.subjects import ServiceAccountRef
 
-# gazelle:include_dep @pypi//protobuf
-
 # Mirrors the CEL floor on `spec.idleSuspendAfter` in agentplane/sandboxes/api/types.go; the CRD is the authority.
 MIN_IDLE_SUSPEND_AFTER_SECONDS = 60
 

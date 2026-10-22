@@ -84,7 +84,6 @@ from util.net import pick_free_port
 # gazelle:include_dep @pypi//protobuf
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
-# gazelle:include_dep @pypi//httpx
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 
@@ -211,7 +210,6 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
                 scope="openid",
             ),
             oidc,
-            httpx.AsyncClient(base_url="http://test-actions.invalid"),
         )
         if configured
         else None

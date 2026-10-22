@@ -1,0 +1,14 @@
+host: "0.0.0.0"
+port: 8317
+auth-dir: "/data/auth"
+api-keys:
+  - "{{ .client_key }}"
+debug: false
+# Recheck restored provider quota instead of honoring stale local cooldown windows.
+disable-cooling: true
+streaming:
+  bootstrap-retries: 3
+# Permit AIQuota's management-key requests from its separate pod.
+# Browser management access uses native OIDC (deployment.yaml).
+remote-management:
+  allow-remote: true

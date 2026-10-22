@@ -18,7 +18,7 @@ _READER_SERVICE_ACCOUNT_NAME = "external-creds-reader"
 
 
 class CheapExperimentsCredentials(Construct):
-    """Distributes the Terraform-owned LiteLLM key into Agentplane testing."""
+    """Distributes the Crossplane-owned LiteLLM key into Agentplane testing."""
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)

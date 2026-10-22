@@ -16,7 +16,7 @@ def haku_kube_api_proxy_secret_prune(
     agentplane_staging: Kustomization,
     authentik_tf: Kustomization,
 ) -> Kustomization:
-    """Temporarily track retired proxy Secrets until Flux prunes them."""
+    """Temporarily track the retained Haku proxy TLS Secret so Flux can prune it."""
     return flux_kustomization(
         chart,
         "haku-kube-api-proxy-secret-prune",
@@ -26,8 +26,8 @@ def haku_kube_api_proxy_secret_prune(
         deletion_policy=KustomizationSpecDeletionPolicy.DELETE,
         depends_on=flux_kustomization_depends_on_many(haku_console, agentplane_staging, authentik_tf),
         description=(
-            "Temporarily tracks the retired Haku Kubernetes API proxy's cert-manager and reflected Secrets without "
-            "applying data; remove this Kustomization after its source owners reconcile to prune them."
+            "Temporarily tracks the retired Haku Kubernetes API proxy's cert-manager TLS Secret with the Merge "
+            "apply policy so its data is preserved until this Kustomization is removed."
         ),
     )
 

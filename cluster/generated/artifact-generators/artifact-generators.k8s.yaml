@@ -122,6 +122,16 @@ spec:
       name: litellm-keys-tf
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/litellm/crossplane-keys/**"
+          to: "@artifact/cluster/k8s/litellm/crossplane-keys/"
+      name: litellm-crossplane-keys
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/k8s/litellm/buildbuddy-sync/**"
+          to: "@artifact/cluster/k8s/litellm/buildbuddy-sync/"
+      name: litellm-buildbuddy-sync
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/local-path-provisioner/**"
           to: "@artifact/cluster/generated/local-path-provisioner/"
       name: local-path-provisioner
@@ -882,6 +892,11 @@ spec:
         - from: "@repo/tf/gitops/litellm-keys/**"
           to: "@artifact/tf/gitops/litellm-keys/"
       name: tf-gitops-litellm-keys
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/litellm-buildbuddy-sync/**"
+          to: "@artifact/tf/gitops/litellm-buildbuddy-sync/"
+      name: tf-gitops-litellm-buildbuddy-sync
       originRevision: "@repo"
   sources:
     - alias: repo

@@ -13,7 +13,6 @@ from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import Viewport
 from util.testing.visual_capture import VisualHarness, VisualPage
 
-# gazelle:include_dep //util/testing:visual_fixtures
 pytest_plugins = ("util.testing.visual_fixtures",)
 
 

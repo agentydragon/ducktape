@@ -8,6 +8,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -175,21 +176,6 @@ py_library(
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//starlette",
-    ],
-)
-
-py_library(
-    name = "client",
-    srcs = ["client.py"],
-    deps = [
-        ":catalog",
-        ":mcp_linkage",
-        ":models",
-        ":policy_view",
-        "//agentplane:subjects",
-        "@pypi//anyio",
-        "@pypi//httpx",
-        "@pypi//pydantic",
     ],
 )
 
@@ -376,7 +362,9 @@ py_test(
     name = "test_mcp_executor",
     size = "medium",
     srcs = ["test_mcp_executor.py"],
-    data = ["//agentplane/action_service/testing:fake_mcp_server_bin"],
+    data = [
+        "//agentplane/action_service/testing:fake_mcp_server_bin",
+    ],
     requires_docker = True,
     deps = [
         ":catalog",
@@ -428,10 +416,12 @@ py_test(
 py_test(
     name = "test_catalog",
     srcs = ["test_catalog.py"],
+    data = ["testdata/configured_action_groups.yaml"],
     deps = [
         ":catalog",
         ":conftest",
         "//:conftest",
+        "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -491,7 +481,10 @@ py_test(
     name = "test_runtime",
     size = "medium",
     srcs = ["test_runtime.py"],
-    data = ["//agentplane/action_service/testing:fake_mcp_server_bin"],
+    data = [
+        "testdata/remote_actions.yaml",
+        "//agentplane/action_service/testing:fake_mcp_server_bin",
+    ],
     requires_docker = True,
     deps = [
         ":api",
@@ -1392,16 +1385,9 @@ proto_library(
     ],
 )
 
-ts_proto_library(
-    name = "action_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":action_service_proto",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//agentplane/proto:sandboxes_pb",
-        "//google/api:annotations_pb",
-    ],
+py_proto_library_with_mypy_stubs(
+    name = "action_service_pb2",
+    deps = [":action_service_proto"],
 )
 
 go_proto_library(
@@ -1416,6 +1402,17 @@ go_proto_library(
     deps = [
         "//agentplane/proto:sandboxes_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
+
+ts_proto_library(
+    name = "action_service_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":action_service_proto",
+    deps = [
+        "//agentplane/proto:sandboxes_pb",
+        "//google/api:annotations_pb",
     ],
 )
 
@@ -1437,6 +1434,11 @@ proto_library(
     ],
 )
 
+py_proto_library_with_mypy_stubs(
+    name = "operator_action_service_pb2",
+    deps = [":operator_action_service_proto"],
+)
+
 go_proto_library(
     name = "operator_action_service_go_proto",
     compilers = [
@@ -1449,6 +1451,17 @@ go_proto_library(
     deps = [
         ":action_service_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
+
+ts_proto_library(
+    name = "operator_action_service_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":operator_action_service_proto",
+    deps = [
+        ":action_service_pb",
+        "//google/api:annotations_pb",
     ],
 )
 

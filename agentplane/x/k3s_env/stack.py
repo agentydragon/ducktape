@@ -7,7 +7,8 @@ first Deployment that does not, with the Pod states and logs of whatever did not
 The test process reaches the app (and Dex) by their in-cluster Service names, which it resolves
 through `/etc/hosts`: OIDC redirects name them, and the action is discarded after the test. Dex's
 certificate comes from a CA made per stack, which `McpFixtureAccess.ca_bundle` adds to the system roots.
-The Action Service's OAuth server names itself by a loopback origin, which a port-forward serves.
+In MCP fixtures the app and the Action Service's OAuth server use loopback origins, served by
+port-forwards, so their plain HTTP URLs satisfy the OAuth endpoint contract.
 """
 
 import contextlib
@@ -321,15 +322,18 @@ class Stack:
 def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
     ca = tls.make_ca("test-k3s-fixture-ca")
     cert, key = tls.issue_leaf(ca, dex_host, work)
-    # A free port now; the port-forward listens on it once the Action Service is Available.
-    with socket.socket() as probe:
+    # Free ports now; port-forwards listen once the app and Action Service are Available.
+    with socket.socket() as probe, socket.socket() as app_probe:
         probe.bind(("127.0.0.1", 0))
+        app_probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
+        app_port = app_probe.getsockname()[1]
     return rendered_fixture.McpInputs(
         dex_ca_cert=ca.cert_pem.decode(),
         dex_cert=cert.read_text(),
         dex_key=key.read_text(),
         actions_origin=f"http://127.0.0.1:{port}",
+        app_origin=f"http://127.0.0.1:{app_port}",
     )
 
 
@@ -482,6 +486,15 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
                     fixture.mcp_fixtures.actions_service,
                     mcp.actions_origin,
                     fixture.mcp_fixtures.actions_port,
+                )
+            )
+            cleanup.enter_context(
+                _port_forward(
+                    k3s,
+                    fixture.namespace,
+                    fixture.mcp_fixtures.app_service,
+                    mcp.app_origin,
+                    fixture.mcp_fixtures.app_port,
                 )
             )
             access = McpFixtureAccess(

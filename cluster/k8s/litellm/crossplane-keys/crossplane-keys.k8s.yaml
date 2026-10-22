@@ -1,0 +1,1260 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crossplane-provider-credentials-reader
+  namespace: litellm
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: litellm-crossplane-provider-credentials-reader
+  namespace: litellm
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-master-key
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: litellm-crossplane-provider-credentials-reader
+  namespace: litellm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: litellm-crossplane-provider-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-provider-credentials-reader
+    namespace: litellm
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-litellm-crossplane-provider-credentials-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - litellm
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: crossplane-provider-credentials-reader
+      remoteNamespace: litellm
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: litellm-crossplane-provider-credentials
+  namespace: litellm
+spec:
+  data:
+    - remoteRef:
+        key: litellm-master-key
+        property: api-key
+      secretKey: api_key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-litellm-crossplane-provider-credentials-secret-store
+  target:
+    creationPolicy: Owner
+    name: litellm-crossplane-provider-credentials
+    template:
+      data:
+        credentials: '{"api_base":"http://litellm.litellm.svc.cluster.local:4000","api_key":"{{ .api_key }}"}'
+      type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+  namespace: litellm
+spec:
+  credentials:
+    secretRef:
+      key: credentials
+      name: litellm-crossplane-provider-credentials
+      namespace: litellm
+    source: Secret
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Team
+metadata:
+  name: team-codex-clients
+  namespace: litellm
+spec:
+  forProvider:
+    routerSettings:
+      fallbacks:
+        - fallbackModels:
+            - chatgpt/ant-messages/gpt-6-luna
+          model: "*"
+    teamAlias: codex-clients
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Team
+metadata:
+  name: team-gemini-clients
+  namespace: litellm
+spec:
+  forProvider:
+    routerSettings:
+      fallbacks:
+        - fallbackModels:
+            - google/goog-generate/gemini-3.5-flash-lite
+          model: "*"
+    teamAlias: gemini-clients
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Team
+metadata:
+  name: team-antigravity-clients
+  namespace: litellm
+spec:
+  forProvider:
+    routerSettings:
+      fallbacks:
+        - fallbackModels: []
+          model: "*"
+    teamAlias: antigravity-clients
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-cheap-experiments
+  namespace: litellm
+stringData:
+  consumer: haku-console-temporary-agent-experiments
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-cheap-experiments
+  namespace: litellm
+spec:
+  forProvider:
+    budgetDuration: 30d
+    keyAlias: cheap-experiments
+    maxBudget: 50
+    metadataSecretRef:
+      name: litellm-key-metadata-cheap-experiments
+    models:
+      - google/goog-generate/gemini-3.7-flash
+      - google/goog-generate/gemini-3.5-flash-lite
+      - google/goog-embed/gemini-embedding-2
+      - google/goog-embed/gemini-embedding-001
+      - mistral/oai-chat/codestral-2508
+      - mistral/oai-chat/codestral-latest
+      - mistral/oai-chat/magistral-medium-latest
+      - mistral/oai-chat/magistral-small-latest
+      - mistral/oai-chat/ministral-14b-latest
+      - mistral/oai-chat/ministral-14b-2512
+      - mistral/oai-chat/ministral-8b-latest
+      - mistral/oai-chat/ministral-8b-2512
+      - mistral/oai-chat/ministral-3b-latest
+      - mistral/oai-chat/ministral-3b-2512
+      - mistral/oai-chat/mistral-code-fim-latest
+      - mistral/oai-chat/mistral-code-latest
+      - mistral/oai-chat/mistral-medium
+      - mistral/oai-chat/mistral-medium-2604
+      - mistral/oai-chat/mistral-medium-3
+      - mistral/oai-chat/mistral-medium-3-5
+      - mistral/oai-chat/mistral-medium-3.5
+      - mistral/oai-chat/mistral-medium-latest
+      - mistral/oai-chat/mistral-small-2603
+      - mistral/oai-chat/mistral-small-latest
+      - mistral/oai-chat/mistral-vibe-cli-fast
+      - mistral/oai-chat/mistral-vibe-cli-latest
+      - mistral/oai-chat/mistral-vibe-cli-with-tools
+      - mistral/oai-chat/voxtral-small-2507
+      - mistral/oai-chat/voxtral-small-latest
+      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
+      - ollama/oai-chat/gpt-oss-20b-128k
+      - ollama/olm-chat/gpt-oss-20b-128k
+      - ollama/olm-chat/gpt-oss-20b-256k
+      - ollama/olm-chat/gpt-oss-20b-512k
+      - ollama/olm-chat/gpt-oss-20b-1m
+      - ollama/oai-chat/gpt-oss-120b-128k
+      - ollama/olm-chat/gpt-oss-120b-128k
+      - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+      - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+      - rugged-local/oai-chat/qwen3-4b-instruct-2507-q4-k-m
+      - rugged-local/oai-chat/gemma4-e4b
+      - rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental
+      - anthropic-api/ant-messages/claude-haiku-4-5-20251001
+      - chatgpt/ant-messages/gpt-6-luna
+      - chatgpt/oai-responses/gpt-6-luna
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: litellm-crossplane-key-cheap-experiments
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crossplane-key-cheap-experiments-reader
+  namespace: litellm
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-crossplane-key-cheap-experiments
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crossplane-key-cheap-experiments-reader
+  namespace: litellm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crossplane-key-cheap-experiments-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-provider-credentials-reader
+    namespace: litellm
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-crossplane-key-cheap-experiments-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - litellm
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: crossplane-provider-credentials-reader
+      remoteNamespace: litellm
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: litellm-key-cheap-experiments
+  namespace: litellm
+spec:
+  data:
+    - remoteRef:
+        key: litellm-crossplane-key-cheap-experiments
+        property: key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-crossplane-key-cheap-experiments-secret-store
+  target:
+    creationPolicy: Owner
+    name: litellm-key-cheap-experiments
+    template:
+      metadata:
+        annotations:
+          description: LiteLLM virtual key for temporary agent experiments; Mistral, Google, Ollama, Anthropic Haiku, and OpenAI Luna only
+      type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-buildbuddy-live-tests
+  namespace: litellm
+stringData:
+  consumer: buildbuddy-live-openai-tests
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-buildbuddy-live-tests
+  namespace: litellm
+spec:
+  forProvider:
+    budgetDuration: 30d
+    keyAlias: buildbuddy-live-tests
+    maxBudget: 50
+    metadataSecretRef:
+      name: litellm-key-metadata-buildbuddy-live-tests
+    models:
+      - google/goog-generate/gemini-3.7-flash
+      - google/goog-generate/gemini-3.5-flash-lite
+      - google/goog-embed/gemini-embedding-2
+      - google/goog-embed/gemini-embedding-001
+      - mistral/oai-chat/codestral-2508
+      - mistral/oai-chat/codestral-latest
+      - mistral/oai-chat/magistral-medium-latest
+      - mistral/oai-chat/magistral-small-latest
+      - mistral/oai-chat/ministral-14b-latest
+      - mistral/oai-chat/ministral-14b-2512
+      - mistral/oai-chat/ministral-8b-latest
+      - mistral/oai-chat/ministral-8b-2512
+      - mistral/oai-chat/ministral-3b-latest
+      - mistral/oai-chat/ministral-3b-2512
+      - mistral/oai-chat/mistral-code-fim-latest
+      - mistral/oai-chat/mistral-code-latest
+      - mistral/oai-chat/mistral-medium
+      - mistral/oai-chat/mistral-medium-2604
+      - mistral/oai-chat/mistral-medium-3
+      - mistral/oai-chat/mistral-medium-3-5
+      - mistral/oai-chat/mistral-medium-3.5
+      - mistral/oai-chat/mistral-medium-latest
+      - mistral/oai-chat/mistral-small-2603
+      - mistral/oai-chat/mistral-small-latest
+      - mistral/oai-chat/mistral-vibe-cli-fast
+      - mistral/oai-chat/mistral-vibe-cli-latest
+      - mistral/oai-chat/mistral-vibe-cli-with-tools
+      - mistral/oai-chat/voxtral-small-2507
+      - mistral/oai-chat/voxtral-small-latest
+      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
+      - ollama/oai-chat/gpt-oss-20b-128k
+      - ollama/olm-chat/gpt-oss-20b-128k
+      - ollama/olm-chat/gpt-oss-20b-256k
+      - ollama/olm-chat/gpt-oss-20b-512k
+      - ollama/olm-chat/gpt-oss-20b-1m
+      - ollama/oai-chat/gpt-oss-120b-128k
+      - ollama/olm-chat/gpt-oss-120b-128k
+      - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+      - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+      - rugged-local/oai-chat/qwen3-4b-instruct-2507-q4-k-m
+      - rugged-local/oai-chat/gemma4-e4b
+      - rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental
+      - anthropic-api/ant-messages/claude-haiku-4-5-20251001
+      - chatgpt/ant-messages/gpt-6-luna
+      - chatgpt/oai-responses/gpt-6-luna
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: litellm-crossplane-key-buildbuddy-live-tests
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crossplane-key-buildbuddy-live-tests-reader
+  namespace: litellm
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-crossplane-key-buildbuddy-live-tests
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crossplane-key-buildbuddy-live-tests-reader
+  namespace: litellm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crossplane-key-buildbuddy-live-tests-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-provider-credentials-reader
+    namespace: litellm
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-crossplane-key-buildbuddy-live-tests-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - litellm
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: crossplane-provider-credentials-reader
+      remoteNamespace: litellm
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: litellm-key-buildbuddy-live-tests
+  namespace: litellm
+spec:
+  data:
+    - remoteRef:
+        key: litellm-crossplane-key-buildbuddy-live-tests
+        property: key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-crossplane-key-buildbuddy-live-tests-secret-store
+  target:
+    creationPolicy: Owner
+    name: litellm-key-buildbuddy-live-tests
+    template:
+      metadata:
+        annotations: {}
+      type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-disposable-env
+  namespace: litellm
+stringData:
+  consumer: agentplane-disposable-env
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-disposable-env
+  namespace: litellm
+spec:
+  forProvider:
+    keyAlias: disposable-env
+    metadataSecretRef:
+      name: litellm-key-metadata-disposable-env
+    models:
+      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: litellm-crossplane-key-disposable-env
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crossplane-key-disposable-env-reader
+  namespace: litellm
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-crossplane-key-disposable-env
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crossplane-key-disposable-env-reader
+  namespace: litellm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crossplane-key-disposable-env-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-provider-credentials-reader
+    namespace: litellm
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-crossplane-key-disposable-env-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - litellm
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: crossplane-provider-credentials-reader
+      remoteNamespace: litellm
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: litellm-key-disposable-env
+  namespace: litellm
+spec:
+  data:
+    - remoteRef:
+        key: litellm-crossplane-key-disposable-env
+        property: key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-crossplane-key-disposable-env-secret-store
+  target:
+    creationPolicy: Owner
+    name: litellm-key-disposable-env
+    template:
+      metadata:
+        annotations:
+          description: LiteLLM virtual key for the disposable k3s test environment; local Ollama Qwen routes only
+      type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-agentplane-staging
+  namespace: litellm
+stringData:
+  consumer: agentplane-staging
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-agentplane-staging
+  namespace: litellm
+spec:
+  forProvider:
+    keyAlias: agentplane-staging
+    metadataSecretRef:
+      name: litellm-key-metadata-agentplane-staging
+    models:
+      - chatgpt/oai-responses/gpt-6-astra
+      - chatgpt/oai-responses/gpt-6-luna
+      - chatgpt/oai-responses/gpt-6-sol
+      - anthropic-max20/ant-messages/claude-opus-5-5
+      - anthropic-max20/ant-messages/claude-sonnet-5-5
+      - anthropic-max20/ant-messages/claude-fable-5-1
+      - anthropic-max20/ant-messages/claude-haiku-5-5
+      - antigravity/ant-messages/claude-opus-4-6-thinking
+      - antigravity/ant-messages/claude-sonnet-4-6
+      - antigravity/ant-messages/gemini-3-flash
+      - antigravity/ant-messages/gemini-3.5-flash-lite
+      - antigravity/ant-messages/gemini-3.8-flash-high
+      - antigravity/ant-messages/gemini-3.1-flash-image
+      - antigravity/ant-messages/gpt-oss-120b-medium
+      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
+      - ollama/oai-chat/gpt-oss-20b-128k
+      - ollama/olm-chat/gpt-oss-20b-128k
+      - ollama/olm-chat/gpt-oss-20b-256k
+      - ollama/olm-chat/gpt-oss-20b-512k
+      - ollama/olm-chat/gpt-oss-20b-1m
+      - ollama/oai-chat/gpt-oss-120b-128k
+      - ollama/olm-chat/gpt-oss-120b-128k
+      - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+      - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: litellm-crossplane-key-agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crossplane-key-agentplane-staging-reader
+  namespace: litellm
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-crossplane-key-agentplane-staging
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crossplane-key-agentplane-staging-reader
+  namespace: litellm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crossplane-key-agentplane-staging-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-provider-credentials-reader
+    namespace: litellm
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-crossplane-key-agentplane-staging-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - litellm
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: crossplane-provider-credentials-reader
+      remoteNamespace: litellm
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: litellm-key-agentplane-staging
+  namespace: litellm
+spec:
+  data:
+    - remoteRef:
+        key: litellm-crossplane-key-agentplane-staging
+        property: key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-crossplane-key-agentplane-staging-secret-store
+  target:
+    creationPolicy: Owner
+    name: litellm-key-agentplane-staging
+    template:
+      metadata:
+        annotations: {}
+      type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-codex-pod
+  namespace: litellm
+stringData:
+  consumer: codex-pod
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-codex-pod
+  namespace: litellm
+spec:
+  forProvider:
+    budgetDuration: 30d
+    keyAlias: codex-pod
+    maxBudget: 50
+    metadataSecretRef:
+      name: litellm-key-metadata-codex-pod
+    models:
+      - chatgpt/oai-responses/gpt-6-astra
+      - chatgpt/oai-responses/gpt-6-luna
+      - chatgpt/oai-responses/gpt-6-sol
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: litellm-crossplane-key-codex-pod
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crossplane-key-codex-pod-reader
+  namespace: litellm
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-crossplane-key-codex-pod
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crossplane-key-codex-pod-reader
+  namespace: litellm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crossplane-key-codex-pod-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-provider-credentials-reader
+    namespace: litellm
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-crossplane-key-codex-pod-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - litellm
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: crossplane-provider-credentials-reader
+      remoteNamespace: litellm
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: litellm-key-codex-pod
+  namespace: litellm
+spec:
+  data:
+    - remoteRef:
+        key: litellm-crossplane-key-codex-pod
+        property: key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-crossplane-key-codex-pod-secret-store
+  target:
+    creationPolicy: Owner
+    name: litellm-key-codex-pod
+    template:
+      metadata:
+        annotations:
+          description: LiteLLM virtual key for the codex-pod agent (chatgpt/oai-responses/gpt-6-* models only); reflected into codex-pod as LITELLM_API_KEY
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: codex-pod
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: codex-pod
+      type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-public-coder-agent
+  namespace: litellm
+stringData:
+  consumer: public-coder-agent
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-public-coder-agent
+  namespace: litellm
+spec:
+  forProvider:
+    keyAlias: public-coder-agent
+    metadataSecretRef:
+      name: litellm-key-metadata-public-coder-agent
+    models:
+      - chatgpt/ant-messages/gpt-6-astra
+      - chatgpt/ant-messages/gpt-6-luna
+      - chatgpt/ant-messages/gpt-6-sol
+      - chatgpt/oai-responses/gpt-6-astra
+      - chatgpt/oai-responses/gpt-6-luna
+      - chatgpt/oai-responses/gpt-6-sol
+      - google/goog-generate/gemini-3.7-flash
+      - google/goog-generate/gemini-3.5-flash-lite
+      - antigravity/ant-messages/claude-opus-4-6-thinking
+      - antigravity/ant-messages/claude-sonnet-4-6
+      - antigravity/ant-messages/gemini-3-flash
+      - antigravity/ant-messages/gemini-3.5-flash-lite
+      - antigravity/ant-messages/gemini-3.8-flash-high
+      - antigravity/ant-messages/gemini-3.1-flash-image
+      - antigravity/ant-messages/gpt-oss-120b-medium
+      - gemini-embedding-2
+      - google/goog-embed/gemini-embedding-2
+      - google/goog-embed/gemini-embedding-001
+      - ollama/olm-embed/qwen3-embedding-4b
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: litellm-crossplane-key-public-coder-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crossplane-key-public-coder-agent-reader
+  namespace: litellm
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-crossplane-key-public-coder-agent
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crossplane-key-public-coder-agent-reader
+  namespace: litellm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crossplane-key-public-coder-agent-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-provider-credentials-reader
+    namespace: litellm
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-crossplane-key-public-coder-agent-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - litellm
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: crossplane-provider-credentials-reader
+      remoteNamespace: litellm
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: litellm-key-public-coder-agent
+  namespace: litellm
+spec:
+  data:
+    - remoteRef:
+        key: litellm-crossplane-key-public-coder-agent
+        property: key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-crossplane-key-public-coder-agent-secret-store
+  target:
+    creationPolicy: Owner
+    name: litellm-key-public-coder-agent
+    template:
+      metadata:
+        annotations:
+          description: LiteLLM virtual key for public-coder-agent OpenClaw and least-credential runner-proxy-mediated Haku Console Codex shells; Gemini chat models, plus embeddings
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: public-coder-agent,haku-console
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: public-coder-agent,haku-console
+      type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-codex-pod-messages
+  namespace: litellm
+stringData:
+  consumer: codex-pod codex-claude
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-codex-pod-messages
+  namespace: litellm
+spec:
+  forProvider:
+    keyAlias: codex-pod-messages
+    metadataSecretRef:
+      name: litellm-key-metadata-codex-pod-messages
+    models:
+      - chatgpt/ant-messages/gpt-6-astra
+      - chatgpt/ant-messages/gpt-6-luna
+      - chatgpt/ant-messages/gpt-6-sol
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: litellm-crossplane-key-codex-pod-messages
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crossplane-key-codex-pod-messages-reader
+  namespace: litellm
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-crossplane-key-codex-pod-messages
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crossplane-key-codex-pod-messages-reader
+  namespace: litellm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crossplane-key-codex-pod-messages-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-provider-credentials-reader
+    namespace: litellm
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-crossplane-key-codex-pod-messages-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - litellm
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: crossplane-provider-credentials-reader
+      remoteNamespace: litellm
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: litellm-codex-pod-messages-key
+  namespace: litellm
+spec:
+  data:
+    - remoteRef:
+        key: litellm-crossplane-key-codex-pod-messages
+        property: key
+      secretKey: CODEX_LITELLM_KEY
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-crossplane-key-codex-pod-messages-secret-store
+  target:
+    creationPolicy: Owner
+    name: litellm-codex-pod-messages-key
+    template:
+      metadata:
+        annotations:
+          description: GPT-6-only LiteLLM Messages key for codex-pod; reflected as CODEX_LITELLM_KEY
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: codex-pod
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: codex-pod
+      type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-agent-workspaces-codex
+  namespace: litellm
+stringData:
+  consumer: retired standalone Codex workspaces; key retained for future use
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-agent-workspaces-codex
+  namespace: litellm
+spec:
+  forProvider:
+    keyAlias: agent-workspaces-codex
+    metadataSecretRef:
+      name: litellm-key-metadata-agent-workspaces-codex
+    models:
+      - chatgpt/oai-responses/gpt-6-astra
+      - chatgpt/oai-responses/gpt-6-luna
+      - chatgpt/oai-responses/gpt-6-sol
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: litellm-crossplane-key-agent-workspaces-codex
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crossplane-key-agent-workspaces-codex-reader
+  namespace: litellm
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-crossplane-key-agent-workspaces-codex
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crossplane-key-agent-workspaces-codex-reader
+  namespace: litellm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crossplane-key-agent-workspaces-codex-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-provider-credentials-reader
+    namespace: litellm
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-crossplane-key-agent-workspaces-codex-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - litellm
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: crossplane-provider-credentials-reader
+      remoteNamespace: litellm
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: litellm-key-agent-workspaces-codex
+  namespace: litellm
+spec:
+  data:
+    - remoteRef:
+        key: litellm-crossplane-key-agent-workspaces-codex
+        property: key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-crossplane-key-agent-workspaces-codex-secret-store
+  target:
+    creationPolicy: Owner
+    name: litellm-key-agent-workspaces-codex
+    template:
+      metadata:
+        annotations:
+          description: LiteLLM virtual key for a future Codex workspace lane (chatgpt/oai-responses/gpt-6-* models only); reflected into agent-workspaces if restored
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: agent-workspaces
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: agent-workspaces
+      type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-claude-subscription-clients
+  namespace: litellm
+stringData:
+  consumer: laptop-litellm-claude
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-claude-subscription-clients
+  namespace: litellm
+spec:
+  forProvider:
+    keyAlias: claude-subscription-clients
+    keyWoSecretRef:
+      key: api-key
+      name: litellm-client-key-claude-subscription-clients
+    keyWoVersion: "1"
+    metadataSecretRef:
+      name: litellm-key-metadata-claude-subscription-clients
+    models:
+      - anthropic-max20/ant-messages/claude-opus-5-5
+      - anthropic-max20/ant-messages/claude-sonnet-5-5
+      - anthropic-max20/ant-messages/claude-fable-5-1
+      - anthropic-max20/ant-messages/claude-haiku-5-5
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-codex-clients
+  namespace: litellm
+stringData:
+  consumer: laptop-codex-claude, agent-box-codex
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-codex-clients
+  namespace: litellm
+spec:
+  forProvider:
+    keyAlias: codex-clients
+    keyWoSecretRef:
+      key: api-key
+      name: litellm-client-key-codex-clients
+    keyWoVersion: "1"
+    metadataSecretRef:
+      name: litellm-key-metadata-codex-clients
+    models:
+      - chatgpt/ant-messages/gpt-6-astra
+      - chatgpt/ant-messages/gpt-6-sol
+      - chatgpt/ant-messages/gpt-6-luna
+    teamIdRef:
+      name: team-codex-clients
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-gemini-clients
+  namespace: litellm
+stringData:
+  consumer: laptop-gemini-claude
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-gemini-clients
+  namespace: litellm
+spec:
+  forProvider:
+    keyAlias: gemini-clients
+    keyWoSecretRef:
+      key: api-key
+      name: litellm-client-key-gemini-clients
+    keyWoVersion: "1"
+    metadataSecretRef:
+      name: litellm-key-metadata-gemini-clients
+    models:
+      - google/goog-generate/gemini-3.7-flash
+      - google/goog-generate/gemini-3.5-flash-lite
+    teamIdRef:
+      name: team-gemini-clients
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-key-metadata-antigravity-clients
+  namespace: litellm
+stringData:
+  consumer: laptop-antigravity-claude
+type: Opaque
+---
+apiVersion: litellm.m.crossplane.io/v1alpha1
+kind: Key
+metadata:
+  name: key-antigravity-clients
+  namespace: litellm
+spec:
+  forProvider:
+    keyAlias: antigravity-clients
+    keyWoSecretRef:
+      key: api-key
+      name: litellm-client-key-antigravity-clients
+    keyWoVersion: "1"
+    metadataSecretRef:
+      name: litellm-key-metadata-antigravity-clients
+    models:
+      - antigravity/ant-messages/claude-opus-4-6-thinking
+      - antigravity/ant-messages/claude-sonnet-4-6
+      - antigravity/ant-messages/gemini-3-flash
+      - antigravity/ant-messages/gemini-3.5-flash-lite
+      - antigravity/ant-messages/gemini-3.8-flash-high
+      - antigravity/ant-messages/gemini-3.1-flash-image
+      - antigravity/ant-messages/gpt-oss-120b-medium
+    teamIdRef:
+      name: team-antigravity-clients
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default

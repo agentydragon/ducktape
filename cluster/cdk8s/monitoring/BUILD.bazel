@@ -1,19 +1,3 @@
-# gazelle:resolve py flux_helm //cluster/cdk8s/providers/flux:helmrelease
-# gazelle:resolve py flux_source //cluster/cdk8s/providers/flux:helmrepository
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
-# gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
-# gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
-# gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
-# gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
-# gazelle:resolve py grafana_grafana_crds //cluster/cdk8s/providers/grafana_operator:grafana
-# gazelle:resolve py grafana_grafanadashboard_crds //cluster/cdk8s/providers/grafana_operator:grafanadashboard
-# gazelle:resolve py grafana_grafanadatasource_crds //cluster/cdk8s/providers/grafana_operator:grafanadatasource
-# gazelle:resolve py seaweed_bucket_crds //cluster/cdk8s/providers/seaweedfs:bucket
-# gazelle:resolve py seaweed_resourcereferencegrant_crds //cluster/cdk8s/providers/seaweedfs:resourcereferencegrant
-# gazelle:resolve py seaweed_s3credentials_crds //cluster/cdk8s/providers/seaweedfs:s3credentials
-# gazelle:resolve py seaweed_s3identity_crds //cluster/cdk8s/providers/seaweedfs:s3identity
-# gazelle:resolve py tofu_controller //cluster/cdk8s/providers/tofu_controller:terraform
-
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -139,6 +123,7 @@ py_library(
 py_library(
     name = "loki",
     srcs = ["loki.py"],
+    data = ["journal-scrape.yaml"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/gatus:__pkg__",
@@ -156,6 +141,7 @@ py_library(
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/seaweedfs:s3",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
     ],
 )
@@ -240,9 +226,33 @@ filegroup(
 py_library(
     name = "rules",
     srcs = ["rules.py"],
+    data = [
+        "clickhouse-disk-usage.promql",
+        "control-plane-lease-put-latency-critical.promql",
+        "control-plane-lease-put-latency-warning.promql",
+        "control-plane-pod-system-disk-writer-high-warning.promql",
+        "control-plane-system-disk-busy-warning.promql",
+        "disk-usage-pvc-path-info.promql",
+        "disk-usage-unattributed-bytes.promql",
+        "external-secrets-controller-backlogged-warning.promql",
+        "flux-git-repository-not-ready-warning.promql",
+        "flux-helm-release-not-ready-warning.promql",
+        "flux-kustomization-not-ready-warning.promql",
+        "github-graphql-quota-observations-missing-warning.promql",
+        "kube-node-not-ready-warning.promql",
+        "kube-node-unreachable-warning.promql",
+        "kube-pod-not-ready-warning.promql",
+        "kubelet-instance-unreachable-warning.promql",
+        "postgres-disk-usage.promql",
+        "pvc-disk-usage.promql",
+        "seaweedfs-deleted-disk-usage.promql",
+        "seaweedfs-disk-usage.promql",
+        "target-down-warning.promql",
+    ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
     ],
 )

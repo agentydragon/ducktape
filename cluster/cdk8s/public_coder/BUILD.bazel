@@ -1,7 +1,3 @@
-# gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
-# gazelle:resolve py agentplane_egresscredential_crds //agentplane/crds:egresscredential
-# gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
-# gazelle:resolve py volsync_replicationsource_crds //cluster/cdk8s/providers/volsync:replicationsource
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__subpackages__"])

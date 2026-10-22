@@ -29,7 +29,6 @@ from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
-# gazelle:include_dep @pypi//protobuf
 
 
 # Not a word, not a plausible identifier, and in no harness's vocabulary: a model reaches for it

@@ -1,6 +1,6 @@
 # `codex-claude`: Claude Code on ChatGPT/Codex (GPT-6 Astra etc.) via the cluster LiteLLM
 # proxy (→ CLIProxyAPI), reading the litellm_codex_key sops secret — a codex-scoped virtual key (SSOT in
-# tf/gitops/litellm-keys). LiteLLM fronts CLIProxyAPI with the `anthropic/` provider (no
+# cluster/k8s/litellm/crossplane-keys). LiteLLM fronts CLIProxyAPI with the `anthropic/` provider (no
 # shape translation), so CLIProxyAPI still does the Codex tool-call translation
 # (function_call -> tool_use) that LiteLLM's own Responses bridge couldn't. Reasoning effort
 # is driven by Claude Code's `effortLevel`. Also baked into the codex-pod image. See

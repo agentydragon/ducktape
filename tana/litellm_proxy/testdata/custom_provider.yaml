@@ -1,0 +1,14 @@
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: tana/tana/gpt-4o-mini
+      custom_llm_provider: tana
+      api_key: refresh-token
+    model_info:
+      mode: chat
+      supports_function_calling: true
+litellm_settings:
+  drop_params: true
+  custom_provider_map:
+    - provider: tana
+      custom_handler: tana.litellm_proxy.custom_handler.tana_handler

@@ -1,0 +1,12 @@
+model_list:
+  - model_name: rugged-local
+    litellm_params:
+      model: openai/qwen3:4b
+      api_base: http://ollama.test/v1
+      api_key: sk-test
+      extra_body:
+        reasoning_effort: none
+litellm_settings:
+  drop_params: true
+router_settings:
+  num_retries: 0

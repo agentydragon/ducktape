@@ -3,6 +3,9 @@
 Shared infrastructure for critic developer agents (optimize and improve modes).
 """
 
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 exports_files([
@@ -85,6 +88,12 @@ py_library(
 )
 
 py_library(
+    name = "registry_push_probe",
+    testonly = True,
+    srcs = ["registry_push_probe.py"],
+)
+
+py_library(
     name = "loop",
     srcs = ["loop.py"],
     visibility = ["//props:__subpackages__"],
@@ -153,12 +162,14 @@ py_test(
     size = "medium",
     srcs = ["test_e2e.py"],
     data = [
+        ":critic_registry_probe_image",
         "//props/agents/critic:image",
         "//props/agents/critic_dev/optimize:image",
         "//props/agents/grader:image",
     ],
     requires_docker = True,
     deps = [
+        ":registry_push_probe",
         "//:conftest",
         "//agent_core/testing:responses",
         "//mcp_infra/testing:matchers",
@@ -174,9 +185,31 @@ py_test(
         "//props/db:models",
         "//props/testing",
         "//props/testing:constants",
+        "//util:oci",
         "//util/exec:models",
         "@pypi//more_itertools",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
     ],
+)
+
+pkg_files(
+    name = "registry_push_probe_file",
+    testonly = True,
+    srcs = ["registry_push_probe.py"],
+    prefix = "/tmp",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "registry_push_probe_layer",
+    testonly = True,
+    srcs = [":registry_push_probe_file"],
+)
+
+oci_image(
+    name = "critic_registry_probe_image",
+    testonly = True,
+    base = "//props/agents/critic:image",
+    tars = [":registry_push_probe_layer"],
 )

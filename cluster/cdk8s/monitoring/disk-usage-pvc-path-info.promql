@@ -1,0 +1,17 @@
+max by (namespace, pod, volume, persistentvolumeclaim, node, path) (
+  max by (namespace, pod, volume, persistentvolumeclaim) (kube_pod_spec_volumes_persistentvolumeclaims_info)
+  * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{node!=""})
+  * on (namespace, persistentvolumeclaim) group_left (persistentvolume)
+    label_replace(
+      max by (namespace, persistentvolumeclaim, volumename) (kube_persistentvolumeclaim_info),
+      "persistentvolume", "$1", "volumename", "(.+)"
+    )
+  * on (persistentvolume) group_left (path)
+    label_replace(
+      label_replace(
+        max by (persistentvolume, host_path, local_path) (kube_persistentvolume_info),
+        "path", "$1", "host_path", "(.+)"
+      ),
+      "path", "$1", "local_path", "(.+)"
+    )
+)

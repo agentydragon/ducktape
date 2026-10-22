@@ -5,6 +5,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "cli_proxy_api",
     srcs = ["cli_proxy_api.py"],
+    data = ["config.yaml"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cilium",
@@ -20,6 +21,7 @@ py_library(
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

@@ -24,8 +24,6 @@ from google.protobuf.message import Message
 from agentplane.grpc.serving import serving
 from agentplane.proto import grpc_tunnel_pb2
 
-# gazelle:include_dep @pypi//protobuf
-
 logger = logging.getLogger(__name__)
 
 _TUNNEL_ENDED_BEFORE_CALLEE_ANSWER = "the tunnel ended before the callee answered"

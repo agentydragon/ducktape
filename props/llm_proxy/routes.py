@@ -278,14 +278,8 @@ def _log_request(
 
 
 def _props_metadata_field(api_shape: LLMApiShape) -> str:
-    """Request-body field that carries props correlation metadata to the upstream.
-
-    OpenAI shapes use the standard `metadata` map (LiteLLM forwards it to Langfuse).
-    The Anthropic Messages `metadata` object only permits `user_id`, so for that shape
-    we use LiteLLM's `litellm_metadata` field instead — LiteLLM consumes it for logging
-    and strips it before forwarding to the provider, so the Anthropic schema stays valid.
-    """
-    return "litellm_metadata" if api_shape == LLMApiShape.ANTHROPIC else "metadata"
+    """Responses/Anthropic reserve `metadata` for the provider's own schema."""
+    return "metadata" if api_shape == LLMApiShape.CHAT_COMPLETIONS else "litellm_metadata"
 
 
 def _merge_props_metadata(
@@ -298,6 +292,12 @@ def _merge_props_metadata(
     if not isinstance(metadata, dict):
         raise HTTPException(status_code=400, detail=f"{field} must be an object when provided")
 
+    trace_metadata = metadata.get("trace_metadata")
+    if trace_metadata is None:
+        trace_metadata = {}
+    if not isinstance(trace_metadata, dict):
+        raise HTTPException(status_code=400, detail=f"{field}.trace_metadata must be an object when provided")
+
     props_metadata: dict[str, str] = {
         "props.agent_run_id": str(access.agent_run_id),
         "props.agent_type": access.agent_type,
@@ -308,7 +308,8 @@ def _merge_props_metadata(
     if access.parent_agent_run_id is not None:
         props_metadata["props.parent_agent_run_id"] = str(access.parent_agent_run_id)
 
-    body[field] = {**metadata, **props_metadata}
+    # The langfuse_otel callback maps trace_metadata to Langfuse trace attributes.
+    body[field] = {**metadata, "trace_metadata": {**trace_metadata, **props_metadata}}
 
 
 async def _read_json_object(request: Request) -> dict[str, Any]:
@@ -360,8 +361,6 @@ async def _proxy_request(
 
     # Rewrite model in request body to upstream model name
     body["model"] = upstream.model_name
-    # Tag the upstream request with props correlation keys for Langfuse (under `metadata` for
-    # OpenAI shapes, `litellm_metadata` for Anthropic — see _props_metadata_field).
     _merge_props_metadata(
         body, access=access, api_shape=api_shape, logical_model=request_model, upstream_model=upstream.model_name
     )

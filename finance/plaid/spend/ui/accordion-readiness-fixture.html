@@ -1,0 +1,26 @@
+<style>
+  @keyframes pulse {
+    to {
+      opacity: 0.5;
+    }
+  }
+  #spinner {
+    animation: pulse 1s linear infinite;
+  }
+  #panel {
+    height: 0;
+    overflow: hidden;
+    transition: height 150ms;
+  }
+</style>
+<div id="spinner">An unrelated animation never finishes</div>
+<button aria-expanded="false" aria-controls="panel">Expand</button>
+<div id="panel"><div style="height: 120px">Panel contents</div></div>
+<script>
+  document.querySelector("button").onclick = (event) => {
+    event.currentTarget.setAttribute("aria-expanded", "true");
+    requestAnimationFrame(() => {
+      document.querySelector("#panel").style.height = "120px";
+    });
+  };
+</script>

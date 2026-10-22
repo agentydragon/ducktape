@@ -1,0 +1,6 @@
+(
+  kube_node_status_condition{condition="Ready",job="kube-state-metrics",status="true"} == 0
+  and on (cluster, node)
+  kube_node_spec_unschedulable{job="kube-state-metrics"} == 0
+)
+unless on (node) (kube_node_spec_taint{job="kube-state-metrics",key="node-role.kubernetes.io/roaming"} == 1)

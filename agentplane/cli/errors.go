@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"google.golang.org/genproto/googleapis/rpc/code"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Exit statuses. Those below 11 are shared by every command group; docs/agent_cli.md owns the meanings.
@@ -44,7 +50,7 @@ var (
 	// errInterrupted means SIGINT or SIGTERM ended the command; the exit status is 128 plus the signal.
 	errInterrupted = errors.New("interrupted")
 
-	reasonPattern = regexp.MustCompile(`reason=([^;\s]+)`)
+	reasonPattern = regexp.MustCompile(`reason=([^;\s\\]+)`)
 )
 
 // outcome is a nonzero exit whose answer the command has already printed on stdout.
@@ -90,6 +96,82 @@ func (f *failure) Error() string {
 // ambiguous is whether a write that failed this way may still have been committed.
 func (f *failure) ambiguous() bool {
 	return f.sent && (f.HTTPStatus == nil || *f.HTTPStatus >= http.StatusInternalServerError)
+}
+
+func grpcFailure(ctx context.Context, err error) error {
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return errInterrupted
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return clientFailure(exitTransient, "UNAVAILABLE", "%v", err)
+	}
+	grpcCode := st.Code().String()
+	if name, ok := code.Code_name[int32(st.Code())]; ok {
+		grpcCode = name
+	}
+	f := &failure{apiError: apiError{Code: grpcCode, Message: st.Message(), Source: sourceService}}
+	if f.Message == "" {
+		f.Message = grpcCode
+	}
+	// grpc-go represents failed CONNECT handshakes and HTTP responses that are not gRPC as
+	// status errors too. Keep transport failures distinct from an Action Service status. A CONNECT
+	// refusal carries the proxy's reason header in its error text, so preserve that diagnostic.
+	message := strings.ToLower(f.Message)
+	switch {
+	case strings.Contains(message, "x-agentplane-egress-sidecar:"):
+		f.Source = sourceSidecar
+		if match := reasonPattern.FindStringSubmatch(f.Message); match != nil {
+			f.Reason = &match[1]
+		}
+	case strings.Contains(message, "x-agentplane-egress:"):
+		f.Source = sourceEgress
+		if match := reasonPattern.FindStringSubmatch(f.Message); match != nil {
+			f.Reason = &match[1]
+		}
+	case transportStatus(st.Code(), f.Message):
+		f.Source = sourceClient
+	}
+	switch st.Code() {
+	case codes.NotFound:
+		f.exit = exitNotFound
+	case codes.AlreadyExists, codes.Aborted:
+		f.exit = exitConflict
+	case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded, codes.Canceled:
+		f.exit = exitTransient
+	case codes.InvalidArgument, codes.Unauthenticated, codes.PermissionDenied, codes.FailedPrecondition, codes.OutOfRange:
+		f.exit = exitRefused
+	default:
+		f.exit = exitRefused
+	}
+	switch st.Code() {
+	case codes.Unknown, codes.Internal, codes.Unavailable, codes.DeadlineExceeded, codes.Canceled:
+		f.sent = true
+	}
+	if strings.Contains(message, "failed to do connect handshake") ||
+		strings.Contains(message, "transport: error while dialing:") ||
+		strings.Contains(message, "unexpected http status code received from server:") {
+		f.sent = false
+	}
+	for _, detail := range st.Details() {
+		if retry, ok := detail.(*errdetails.RetryInfo); ok && retry.GetRetryDelay() != nil {
+			seconds := max(0, int(math.Ceil(retry.GetRetryDelay().AsDuration().Seconds())))
+			f.RetryAfterSeconds = &seconds
+		}
+	}
+	return f
+}
+
+// transportStatus recognizes grpc-go's transport-generated messages. It keeps a service's own
+// UNAVAILABLE/DEADLINE_EXCEEDED status classified as a service response.
+func transportStatus(code codes.Code, message string) bool {
+	lower := strings.ToLower(message)
+	return strings.Contains(lower, "connection error:") ||
+		strings.Contains(lower, "failed to do connect handshake") ||
+		strings.Contains(lower, "unexpected http status code received from server:") ||
+		strings.Contains(lower, "transport: error while dialing:") ||
+		strings.Contains(lower, "context deadline exceeded") ||
+		(code == codes.Unavailable && strings.Contains(lower, "transport is closing"))
 }
 
 func clientFailure(exit int, code, format string, args ...any) *failure {

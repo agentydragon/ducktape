@@ -118,12 +118,12 @@ this non-root image pod has not) and no boot-time render script:
   `wire_api = responses`, `env_key = LITELLM_API_KEY`) and defaults to
   the hidden `gpt-6-astra` alias targeting `chatgpt/oai-responses/gpt-6-astra`,
   which lets Codex load its bundled Astra metadata. `LITELLM_API_KEY` is a dedicated virtual key minted by
-  `tf/gitops/litellm-keys` (alias `codex-pod`, scoped to the oai/chatgpt models with
+  `cluster/cdk8s/litellm/crossplane_keys.py` (alias `codex-pod`, scoped to the oai/chatgpt models with
   a budget — deleting it is the kill switch), reflected into `codex-pod` and set on
   the container via `secretKeyRef` (`optional: true`).
 - **codex-claude via LiteLLM** — the image includes Claude Code plus the shared
   `codex-claude` wrapper, which points at the main LiteLLM proxy (→ CLIProxyAPI) using a
-  scoped `codex-clients` virtual key (`tf/gitops/litellm-keys`). That key is reflected into
+  scoped `codex-clients` virtual key (`cluster/cdk8s/litellm/crossplane_keys.py`). That key is sourced from
   `codex-pod` and exposed as `CODEX_LITELLM_KEY` for both `kubectl exec` and SSH sessions.
 
 ## Follow-ups

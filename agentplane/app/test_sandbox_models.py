@@ -7,8 +7,6 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from agentplane.app.sandbox_models import SandboxPhase as ViewPhase, sandbox_is_ready, sandbox_view
 from agentplane.proto.sandboxes_pb2 import Sandbox, SandboxPhase, ServiceAccount
 
-# gazelle:include_dep @pypi//protobuf
-
 
 @pytest.mark.parametrize(
     ("phase", "view_phase"),

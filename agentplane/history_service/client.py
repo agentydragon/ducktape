@@ -17,9 +17,6 @@ from agentplane.grpc.calls import bearer, raise_status
 from agentplane.grpc.options import LARGE_EVENT_RECEIVE_OPTIONS
 from agentplane.history_service import history_service_pb2, history_service_pb2_grpc
 
-# gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep @pypi//grpcio
-
 
 @dataclass(frozen=True)
 class SessionOpened:

@@ -23,8 +23,6 @@ from agentplane.system_tests.conftest import namespace
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-# gazelle:include_dep @pypi//protobuf
-
 SERVICE = "session-dispatcher"
 WORKLOAD = "runner-gateway"
 BOUND_SECONDS = 300

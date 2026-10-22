@@ -9,9 +9,6 @@ from google.protobuf.message import Message
 from agentplane.grpc.calls import call_unary
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
 
-# gazelle:include_dep @pypi//grpcio
-# gazelle:include_dep @pypi//protobuf
-
 
 class SessionDispatcherClient:
     """Keep transport concerns beside the generated stub, not RPC business logic."""

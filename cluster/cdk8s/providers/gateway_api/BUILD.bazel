@@ -1,5 +1,4 @@
 # gazelle:ignore
-# gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
 # gazelle:resolve py gateway_api_gateway_crds //cluster/cdk8s/providers/gateway_api:gateway
 # gazelle:resolve py gateway_api_tlsroute_crds //cluster/cdk8s/providers/gateway_api:tlsroute
 

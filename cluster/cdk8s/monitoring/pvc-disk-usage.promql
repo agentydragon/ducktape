@@ -1,0 +1,9 @@
+label_replace(
+  label_join(
+    max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes)
+    * on (namespace, persistentvolumeclaim) group_left (node, device)
+      max by (namespace, persistentvolumeclaim, node, device) (disk_usage:pvc_filesystem:info),
+    "component", "/", "namespace", "persistentvolumeclaim"
+  ),
+  "component", "PVC: $1", "component", "(.+)"
+)

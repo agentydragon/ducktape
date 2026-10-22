@@ -16,6 +16,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
@@ -29,43 +30,12 @@ _SERVICE = ServiceRef(
 # kube-controller-manager publishes the apiserver's CA as this ConfigMap in every namespace.
 _CLUSTER_CA_CONFIG_MAP = "kube-root-ca.crt"
 _CLUSTER_CA_DIR = "/etc/nginx/cluster-ca"
-_NGINX_CONF = f"""\
-pid /tmp/nginx.pid;
-worker_processes 1;
-error_log /dev/stderr warn;
-events {{ worker_connections 128; }}
-http {{
-  access_log /dev/stderr;
-  # kubectl exec/attach/port-forward open an HTTP Upgrade (WebSocket/SPDY) to
-  # the apiserver. By default nginx proxies as HTTP/1.0 and strips the hop-by-hop
-  # Upgrade/Connection headers, so the apiserver receives a plain GET to /exec and
-  # returns 400 "Upgrade request required". The map + directives below fix that.
-  map $http_upgrade $connection_upgrade {{
-    default upgrade;
-    ''      close;
-  }}
-  server {{
-    listen {_SERVICE.pod_port};
-    location / {{
-      proxy_pass https://kubernetes.default.svc:443;
-      proxy_ssl_verify on;
-      proxy_ssl_trusted_certificate {_CLUSTER_CA_DIR}/ca.crt;
-      proxy_ssl_server_name on;
-      proxy_ssl_name kubernetes.default.svc;
-      proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      # Pass through all headers including Authorization
-      proxy_pass_request_headers on;
-      # WebSocket/SPDY upgrade for kubectl exec/attach/port-forward:
-      proxy_http_version 1.1;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
-      proxy_read_timeout 300s;
-      proxy_send_timeout 300s;
-    }}
-  }}
-}}
-"""
+_NGINX_CONF = (
+    get_required_path(own_repo_rlocation("cluster/cdk8s/kube-api-proxy.conf"))
+    .read_text()
+    .replace("@LISTEN_PORT@", str(_SERVICE.pod_port))
+    .replace("@CLUSTER_CA_DIR@", _CLUSTER_CA_DIR)
+)
 
 
 def _deployment(chart: Chart) -> None:

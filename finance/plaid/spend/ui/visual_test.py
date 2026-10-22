@@ -798,22 +798,9 @@ async def test_transaction_explanations_dark_theme(page: Page, view: VisualPage,
 
 
 async def test_accordion_readiness_ignores_unrelated_animations(page: Page) -> None:
-    await page.set_content("""
-        <style>
-          @keyframes pulse { to { opacity: 0.5 } }
-          #spinner { animation: pulse 1s linear infinite }
-          #panel { height: 0; overflow: hidden; transition: height 150ms }
-        </style>
-        <div id="spinner">An unrelated animation never finishes</div>
-        <button aria-expanded="false" aria-controls="panel">Expand</button>
-        <div id="panel"><div style="height: 120px">Panel contents</div></div>
-        <script>
-          document.querySelector('button').onclick = event => {
-            event.currentTarget.setAttribute('aria-expanded', 'true');
-            requestAnimationFrame(() => { document.querySelector('#panel').style.height = '120px'; });
-          };
-        </script>
-    """)
+    await page.set_content(
+        get_required_path("_main/finance/plaid/spend/ui/accordion-readiness-fixture.html").read_text()
+    )
     await _expand_accordion(page.get_by_role("button", name="Expand"))
     await expect(page.locator("#panel")).to_have_css("height", "120px")
     assert await page.locator("#spinner").evaluate("element => element.getAnimations().length") == 1

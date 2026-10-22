@@ -15,7 +15,6 @@ from agentplane.notification_service import notifications_operator_pb2 as pb, no
 from agentplane.sse import frame
 
 # Generated messages use protobuf field-presence stubs.
-# gazelle:include_dep @pypi//protobuf
 
 
 class NotificationsOperatorClient:

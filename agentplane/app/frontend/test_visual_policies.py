@@ -22,8 +22,6 @@ from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
 
-# gazelle:include_dep //util/testing:visual_fixtures
-# gazelle:include_dep //agentplane/app/frontend/testing:visual_fixtures
 pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -956,9 +954,9 @@ async def test_mcp_servers_linkage_and_health_update_while_open(view: VisualPage
     page = view.page
     docs = page.locator('[data-mcp-server="linkage:example_docs"]')
     await expect(docs.get_by_text("linked", exact=True)).to_be_visible()
-    await app.publish(Flag.MCP_LINKAGE_CHANGED, "/mcp-servers/stream")
+    await app.publish(Flag.MCP_LINKAGE_CHANGED, "/upstream/actions/v1/operator/mcp-servers:watch")
     await expect(docs.get_by_text("expired", exact=True)).to_be_visible()
-    await app.publish(Flag.MCP_HEALTH_CHANGED, "/action-groups/stream")
+    await app.publish(Flag.MCP_HEALTH_CHANGED, "/upstream/actions/v1/action-groups:watch")
     await expect(docs.get_by_text("connect_failed", exact=True)).to_be_visible()
     await view.capture(name="mcp_linkage_and_health_live")
 

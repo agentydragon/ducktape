@@ -3,8 +3,7 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { mount } from "./actions/testing";
-import { answerConnectionFacade, type Sent } from "./connection_service_test_support";
+import { answerConnectionFacade, mountConnectionService, type Sent } from "./connection_service_test_support";
 import { ConnectionConsent } from "./consent";
 import type { ConsentPreview, ConsentResult } from "./connection_service_client";
 import { sampleConnection } from "./connections_fixture";
@@ -81,7 +80,7 @@ const decisions = (sent: Sent[]): unknown[] => sent.filter(({ path }) => path ==
 
 /** Mounts the consent page for `opaque-handle` and waits for its preview to arrive or fail. */
 async function render(navigate = vi.fn()): Promise<HTMLDivElement> {
-  const container = await mount(<ConnectionConsent handle="opaque-handle" navigate={navigate} />);
+  const container = await mountConnectionService(<ConnectionConsent handle="opaque-handle" navigate={navigate} />);
   await vi.waitFor(() => expect(container.textContent).not.toContain("Loading authorization request"));
   return container;
 }
@@ -162,6 +161,13 @@ describe("ConnectionConsent", () => {
     const sent = serve(preview(), { verdict: "allow", redirect_url: "https://idp.test/held-authorization" });
     const container = await render(navigate);
     expect(sent.map(({ path }) => path)).toEqual(expect.arrayContaining([PREVIEW, CALLERS, CONNECTIONS]));
+    expect(sent).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ method: "POST", path: PREVIEW, body: {} }),
+        expect.objectContaining({ method: "GET", path: CALLERS }),
+        expect.objectContaining({ method: "GET", path: CONNECTIONS }),
+      ])
+    );
     expect(sent).toHaveLength(3);
     expect(container.textContent).toContain("registered-client-id");
     expect(container.textContent).toContain("https://client.test/oauth/callback");

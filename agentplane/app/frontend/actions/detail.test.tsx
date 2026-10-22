@@ -8,42 +8,25 @@ import { ActionRequestDetail } from "./detail";
 import type { ActionRequestView } from "./client";
 import { ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
-import { answerApi, mount, request, unmountLast, type Sent } from "./testing";
+import { answerApi, mount, request, send, unmountLast, type Sent } from "./testing";
 
 const ROW = {
   ...request("decision_pending", 21),
   action: { group: "ssh", name: "exec" },
   arguments: { host: "test-host.example", user: "test-user", command: "echo exact-command" },
 };
-const stream: { current?: EventTarget } = {};
-
-class ActionStream extends EventTarget {
-  close = vi.fn();
-
-  constructor(url: string) {
-    super();
-    if (url !== "/actions/stream?state=decision_pending") throw new Error(`unexpected Action stream URL: ${url}`);
-    stream.current = this;
-  }
-}
-
-async function send(rows: (typeof ROW)[]): Promise<void> {
-  await act(async () => {
-    stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
-  });
-}
-
 /** Answers the detail page's reads: `stored` for the request itself, `decided` for a decision. */
 function serve({ stored, decided }: { stored?: ActionRequestView; decided?: ActionRequestView | Response }): Sent[] {
   return answerApi(({ method, path }) => {
-    if (path === "/action-groups") return [];
-    if (method === "GET" && path === `/actions/${ROW.id}`) return stored;
-    if (method === "POST" && path === `/actions/${ROW.id}/decision`) return decided;
+    if (path === "/upstream/actions/v1/action-groups") return [];
+    if (method === "GET" && path === `/upstream/actions/v1/action-requests/${ROW.id}`) return stored;
+    if (method === "POST" && path === `/upstream/actions/v1/operator/action-requests/${ROW.id}/decision`)
+      return decided;
   });
 }
 
 const fetched = (sent: Sent[]): boolean =>
-  sent.some(({ method, path }) => method === "GET" && path === `/actions/${ROW.id}`);
+  sent.some(({ method, path }) => method === "GET" && path === `/upstream/actions/v1/action-requests/${ROW.id}`);
 
 function DetailRoute(): JSX.Element {
   const { requestId } = useParams();
@@ -74,8 +57,6 @@ function App({ initialPath }: { initialPath: string }): JSX.Element {
 
 beforeEach(() => {
   sessionStorage.clear();
-  stream.current = undefined;
-  vi.stubGlobal("EventSource", ActionStream);
 });
 
 it("opens cached stream details without a reload and Back returns to the original in-app route", async () => {
@@ -140,7 +121,10 @@ it.each([
     expect(sent).toContainEqual(
       expect.objectContaining({
         method: "POST",
-        body: expect.objectContaining({ verdict, expected_version: ROW.version }),
+        body: expect.objectContaining({
+          verdict: `VERDICT_${verdict.toUpperCase()}`,
+          expectedVersion: String(ROW.version),
+        }),
       })
     );
     await vi.waitFor(() =>
@@ -206,7 +190,7 @@ it("loads uncached deep links and falls back to the Actions page on Back", async
   expect(container.textContent).toContain("All actions");
 });
 
-it("refreshes the durable receipt when SSE removes an action that was pending", async () => {
+it("refreshes the durable receipt when a watch snapshot removes an action that was pending", async () => {
   const allowed = {
     ...request("allowed", 21),
     id: ROW.id,

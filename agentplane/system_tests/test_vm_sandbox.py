@@ -14,8 +14,6 @@ from agentplane.system_tests.conftest import VM_TEMPLATE, VM_WORKING_DIRECTORY, 
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
 
-# gazelle:include_dep @pypi//protobuf
-
 PING = "Say exactly the word PING and nothing else. Do not use any tool."
 
 

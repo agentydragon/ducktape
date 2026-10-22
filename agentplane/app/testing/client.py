@@ -33,7 +33,6 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandboxes.egress_views import BindingView
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
-# gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
 

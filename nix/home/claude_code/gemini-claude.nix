@@ -1,5 +1,5 @@
 # `gemini-claude`: Claude Code on Google Gemini via the cluster LiteLLM proxy, reading the
-# litellm_gemini_key sops secret — a gemini-scoped virtual key (SSOT in tf/gitops/litellm-keys).
+# litellm_gemini_key sops secret — a gemini-scoped virtual key (SSOT in cluster/k8s/litellm/crossplane-keys).
 # LiteLLM translates Claude Code's Anthropic /v1/messages calls to the `gemini/` provider;
 # the upstream reaches Google with the in-cluster GEMINI_API_KEY, so this key never carries
 # it. WebFetch/WebSearch are disabled: they are Anthropic-hosted server tools a non-Anthropic
@@ -8,7 +8,7 @@
 # outside the key's allowlist is refused during auth, before the router sees it, so both
 # names below must be ones the proxy serves and the key admits (GEMINI_ROUTES in
 # model_catalog/catalog.py, gemini_client_models in
-# tf/gitops/litellm-keys/main.tf). See ./gateway.nix for the shared wrapper pattern.
+# cluster/cdk8s/litellm/crossplane_keys.py). See ./gateway.nix for the shared wrapper pattern.
 #
 # Prompt caching (settled empirically 2026-07-18, do not relitigate): Claude Code's
 # Anthropic `cache_control` breakpoints do NOT translate through LiteLLM's Anthropic→Gemini

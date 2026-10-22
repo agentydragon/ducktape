@@ -1,0 +1,13 @@
+sum by (node, device, namespace, persistentvolumeclaim, component) (
+  label_replace(
+    label_replace(
+      max by (namespace, pod, collection) (
+        SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal"}
+      ),
+      "component", "SeaweedFS (default collection)", "collection", ""
+    ),
+    "component", "SeaweedFS: $1", "collection", "(.+)"
+  )
+  * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
+    disk_usage:pvc_filesystem:info{namespace="seaweedfs"}
+)

@@ -25,7 +25,6 @@ from agentplane.runner_gateway.testing.runner_peer import runner_peer
 from agentplane.testing.scripted_model import ScriptedModel, Text
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep @pypi//grpcio
 
 DESTINATION = SandboxDestination(
     owner=ServiceAccount(namespace="testing", name="native-runner"),

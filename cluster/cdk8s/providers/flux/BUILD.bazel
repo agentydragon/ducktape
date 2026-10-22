@@ -1,5 +1,3 @@
-# gazelle:resolve py flux_helm //cluster/cdk8s/providers/flux:helmrelease
-# gazelle:resolve py flux_source //cluster/cdk8s/providers/flux:helmrepository
 # gazelle:resolve py flux_imagerepository_crds //cluster/cdk8s/providers/flux:imagerepository
 # gazelle:resolve py flux_imagepolicy_crds //cluster/cdk8s/providers/flux:imagepolicy
 # gazelle:resolve py flux_gitrepository_crds //cluster/cdk8s/providers/flux:gitrepository

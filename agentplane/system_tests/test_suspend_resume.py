@@ -31,7 +31,6 @@ from agentplane.testing.scripted_model import Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
-# gazelle:include_dep @pypi//protobuf
 
 POD_TRANSITION_SECONDS = 300.0
 
