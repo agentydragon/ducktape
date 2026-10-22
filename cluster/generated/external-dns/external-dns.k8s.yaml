@@ -103,7 +103,7 @@ spec:
       - TXT
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
-    policy: upsert-only
+    policy: sync
     provider:
       name: aws
     registry: txt

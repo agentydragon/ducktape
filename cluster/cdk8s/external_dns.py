@@ -54,7 +54,7 @@ def chart(app: App) -> Chart:
         values={
             "sources": ["gateway-httproute", "crd"],
             "provider": {"name": "aws"},
-            "policy": "upsert-only",
+            "policy": "sync",
             "registry": "txt",
             "txtOwnerId": "ducktape-allegedly-works",
             "txtPrefix": "external-dns-%{record_type}.",
