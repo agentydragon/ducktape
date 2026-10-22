@@ -341,8 +341,10 @@ def seaweed(scope: Construct) -> Seaweed:
                 # 200 slots: -max=0 auto-derives only ~24 on the 419 GB NVMe. 200 gives
                 # 2*200 = 400 slots across any two survivors; the current 2-copy set uses 68
                 # (34 logical volumes), leaving room for the planned SSD migrations.
-                # Temporarily keep only the two surviving servers during the first-node rebuild.
-                # Restore three after the evacuated server's node has been rebuilt.
+                # Keep these two local-path servers after the first-node rebuild. Once the
+                # node and pool pass acceptance and the operator approves step 6, add the
+                # third SSD server in a separate Piraeus-backed topology group; leave this
+                # group's immutable local-path claim template unchanged.
                 "ssd": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
