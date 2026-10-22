@@ -67,6 +67,7 @@ py_test(
 py_test(
     name = "test_facade",
     srcs = ["test_facade.py"],
+    data = ["//agentplane/native/claude/testing:control_reply_peer"],
     deps = [
         ":conftest",
         ":facade",
@@ -74,6 +75,7 @@ py_test(
         "//:conftest",
         "//agentplane/native:conftest",
         "//agentplane/native/testing:async_process",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

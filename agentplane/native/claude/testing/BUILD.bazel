@@ -80,3 +80,8 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "control_reply_peer",
+    srcs = ["control_reply_peer.py"],
+)

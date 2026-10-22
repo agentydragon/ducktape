@@ -1,0 +1,30 @@
+github:
+  title: GitHub
+  description: Read access to public GitHub repositories.
+  executor:
+    kind: mcp
+    description: Connected as Rai's GitHub account via the configured MCP server.
+    config:
+      server_url: https://github-mcp.internal.example
+      account_secret_ref: github-mcp-account
+      server_id: github
+  actions:
+    get_file:
+      description: Read one file's contents from a public repository.
+      input_schema:
+        type: object
+        properties:
+          owner: { type: string }
+          repo: { type: string }
+          path: { type: string }
+        required: [owner, repo, path]
+calendar:
+  title: Calendar
+  description: Read-only Google Calendar access, offline pending OAuth.
+  available: false
+  executor:
+    kind: mcp
+    description: Not yet connected.
+  actions:
+    list_events:
+      description: List upcoming events.

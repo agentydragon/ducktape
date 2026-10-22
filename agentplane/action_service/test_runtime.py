@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-import textwrap
 from datetime import timedelta
 from pathlib import Path
 from typing import cast
@@ -140,21 +139,7 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = tmp_path / "settings.yaml"
-    path.write_text(
-        textwrap.dedent("""
-        action_groups:
-          remote:
-            title: Remote
-            description: Reviewed peer
-            executor:
-              kind: mcp
-              description: No credentials
-              config:
-                transport: streamable-http
-                url: http://test-peer.invalid/mcp
-                auth: none
-    """)
-    )
+    path.write_text(get_required_path("_main/agentplane/action_service/testdata/remote_actions.yaml").read_text())
     monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(path))
     settings = Settings(
         database_url="postgresql://unused",

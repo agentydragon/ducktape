@@ -10,47 +10,16 @@ import yaml
 from pydantic import ValidationError
 
 from agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding, UnknownActionError
-
-# A reviewed runtime-configuration fixture: exactly the value of the `action_groups:` key in the
-# YAML `main.Settings.AGENTPLANE_ACTIONS_CONFIG_FILE` names. Two groups: one available
-# fixture-executor group proving discovery end to end, one deliberately unavailable group.
-CONFIGURED_CATALOG_YAML = textwrap.dedent("""
-    github:
-      title: GitHub
-      description: Read access to public GitHub repositories.
-      executor:
-        kind: mcp
-        description: Connected as Rai's GitHub account via the configured MCP server.
-        config:
-          server_url: https://github-mcp.internal.example
-          account_secret_ref: github-mcp-account
-          server_id: github
-      actions:
-        get_file:
-          description: Read one file's contents from a public repository.
-          input_schema:
-            type: object
-            properties:
-              owner: {type: string}
-              repo: {type: string}
-              path: {type: string}
-            required: [owner, repo, path]
-    calendar:
-      title: Calendar
-      description: Read-only Google Calendar access, offline pending OAuth.
-      available: false
-      executor:
-        kind: mcp
-        description: Not yet connected.
-      actions:
-        list_events:
-          description: List upcoming events.
-""")
+from util.bazel.runfiles import get_required_path
 
 
 def _catalog() -> ActionCatalog:
     # Mirrors `ActionCatalog(groups=settings.action_groups)` in main.async_main.
-    return ActionCatalog(groups=yaml.safe_load(CONFIGURED_CATALOG_YAML))
+    return ActionCatalog(
+        groups=yaml.safe_load(
+            get_required_path("_main/agentplane/action_service/testdata/configured_action_groups.yaml").read_text()
+        )
+    )
 
 
 def test_configured_groups_and_actions_are_discoverable() -> None:

@@ -362,7 +362,9 @@ py_test(
     name = "test_mcp_executor",
     size = "medium",
     srcs = ["test_mcp_executor.py"],
-    data = ["//agentplane/action_service/testing:fake_mcp_server_bin"],
+    data = [
+        "//agentplane/action_service/testing:fake_mcp_server_bin",
+    ],
     requires_docker = True,
     deps = [
         ":catalog",
@@ -414,10 +416,12 @@ py_test(
 py_test(
     name = "test_catalog",
     srcs = ["test_catalog.py"],
+    data = ["testdata/configured_action_groups.yaml"],
     deps = [
         ":catalog",
         ":conftest",
         "//:conftest",
+        "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -477,7 +481,10 @@ py_test(
     name = "test_runtime",
     size = "medium",
     srcs = ["test_runtime.py"],
-    data = ["//agentplane/action_service/testing:fake_mcp_server_bin"],
+    data = [
+        "testdata/remote_actions.yaml",
+        "//agentplane/action_service/testing:fake_mcp_server_bin",
+    ],
     requires_docker = True,
     deps = [
         ":api",
