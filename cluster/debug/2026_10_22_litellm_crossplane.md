@@ -1,5 +1,32 @@
 # LiteLLM Crossplane migration recovery
 
+## Current recovery state at 2026-10-22 16:07 UTC
+
+All 12 Keys and all three Teams report `Synced=True` and `Ready=True` with the
+installed provider package `v2.1.0-1.ducktape.5cc2f4308916`. The LiteLLM provider,
+keys, BuildBuddy sync and both Agentplane Flux Kustomizations are Ready.
+
+The remaining Antigravity Team replacement plan came from a `tainted` instance
+in the provider Pod's temporary `/tmp/<Team CR UID>/terraform.tfstate`. A
+read-only `/team/info` call confirmed the remote Team still existed. Deleting
+that Team would also delete its linked Key, because LiteLLM's Team deletion
+cascades to associated keys.
+
+The operator permitted Team destruction, but it was unnecessary for this recovery.
+A single provider Pod replacement, guarded by its Kubernetes UID, rebuilt the
+workspace from the existing managed-resource identity. Antigravity became
+`Synced=True` at 16:06:53 UTC. Its CR UID and remote Team UUID stayed unchanged;
+all 12 Key CR UIDs and external identifiers also stayed unchanged. No Team or
+Key was deleted. The old `LastAsyncOperation=False` condition records the earlier
+failed create; the current `Synced=True` condition records successful observation.
+
+This was a one-time recovery of ephemeral provider state, not a change to the
+provider's replacement policy. Upjet generates `prevent_destroy` until the managed
+resource enters deletion; `managementPolicies: ["*"]` already permits that deletion.
+Before deleting a Team, account for LiteLLM's associated-key cascade.
+
+The sections below retain the earlier investigation and package handoff evidence.
+
 ## Intended ownership and secret flow
 
 Crossplane is the target owner for LiteLLM Teams and virtual Keys. Keys must be
