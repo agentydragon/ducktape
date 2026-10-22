@@ -255,7 +255,6 @@ function installActionFetch(): void {
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     if (url.pathname.endsWith(":watch")) {
       const watch = new TestNdjsonWatch(`${url.pathname}${url.search}`, init?.signal);
-      watch.send([]);
       return watch.response;
     }
     const requestBody =
