@@ -74,6 +74,21 @@ provider connection field `attribute.key`.
   `Unknown/Progressing` (last transition 10:51:13 UTC), while its Terraform
   resource had reported `TFExecPlanFailed` at 10:52:28 UTC.
 
+## Follow-up at 2026-10-22 10:56 UTC
+
+The `tf-runner` ImagePolicy selected the newly published
+`devel-20261022105251-4645370` image after image automation pushed pin commit
+`2f24ed4e7485860a280dd7c2bbb12a680eb81f73`. The tofu-controller then used that
+runner image. `litellm-buildbuddy-sync` Terraform reported
+`TerraformAppliedSucceed` at 10:56:23 UTC, and its Flux Kustomization became
+Ready at 10:56:24 UTC. A read-only BuildBuddy `ListSecrets` call returned HTTP
+200 and confirmed the `OPENAI_API_KEY` name is present; no secret value or
+ciphertext was read or printed. The BuildBuddy handoff is now verified.
+
+The LiteLLM Key state has not changed: 8 of 12 Keys remain `Synced=False`, 4 are
+`Synced=True`, and all still carry `organizationId: ducktape`. Provider PR #1
+remains open, so root-scope adoption is still pending its released package.
+
 After a provider package containing PR #1 is available and pinned, apply the
 root-scope change and verify a Key read/reconcile cycle. Then verify all Keys,
 exported Secrets, the BuildBuddy Tofu reconciliation, and the stored BuildBuddy
