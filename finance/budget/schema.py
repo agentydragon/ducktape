@@ -305,7 +305,7 @@ class BudgetSourceConfig(FrozenModel):
     """Where to pull transactions from, scoped to a user's accounts."""
 
     database_url_env: str = "AUGUR_PLAID_DATABASE_URL"
-    # Account IDs from `finance.plaid.db.schema.accounts.account_id`. Empty = all accounts the
+    # Account IDs from `finance.plaid.db.models.AccountRow.account_id`. Empty = all accounts the
     # connection can see (fine for single-user deployments; explicit for shared ones).
     plaid_account_ids: tuple[str, ...] = ()
     iso_currency_code: str = "USD"

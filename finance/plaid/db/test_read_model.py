@@ -8,8 +8,8 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.plaid.db.link_store import PlaidLinkStorage
+from finance.plaid.db.models import async_session_factory
 from finance.plaid.db.read_model import read_current_cash_balances, read_current_holdings
-from finance.plaid.db.schema import async_session_factory
 
 
 @pytest.fixture

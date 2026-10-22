@@ -21,11 +21,11 @@ from pydantic import BaseModel, Field, ValidationError
 from finance.plaid.db.client import InstitutionDetail, PlaidClient, PlaidClientError, PlaidCreds
 from finance.plaid.db.config import MAX_TRANSACTION_DAYS, PlaidWebSettings
 from finance.plaid.db.link_store import ItemSyncClaim, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
-from finance.plaid.db.models import ItemInventory
 from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import PlaidApiLike, sync_link, sync_transactions_only
 from finance.plaid.link.webhooks import InvalidPlaidWebhookError, PlaidWebhookVerifier
+from finance.plaid.models import ItemInventory
 from util.oidc_login import LoginConfig, install_login
 
 logger = logging.getLogger(__name__)

@@ -10,8 +10,17 @@ py_library(
 py_library(
     name = "models",
     srcs = ["models.py"],
-    visibility = ["//finance/plaid:__subpackages__"],
-    deps = ["@pypi//pydantic"],
+    visibility = [
+        "//finance/augur:__subpackages__",
+        "//finance/beancount_export:__pkg__",
+        "//finance/budget:__pkg__",
+        "//finance/plaid:__subpackages__",
+    ],
+    deps = [
+        "//util:db_url",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
 )
 
 py_library(
@@ -19,8 +28,8 @@ py_library(
     srcs = ["client.py"],
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
-        ":models",
         ":products",
+        "//finance/plaid:payloads",
         "@pypi//certifi",
         "@pypi//plaid_python",
         "@pypi//pydantic",
@@ -52,27 +61,11 @@ py_test(
 )
 
 py_library(
-    name = "schema",
-    srcs = ["schema.py"],
-    visibility = [
-        "//finance/augur:__subpackages__",
-        "//finance/beancount_export:__pkg__",
-        "//finance/budget:__pkg__",
-        "//finance/plaid:__subpackages__",
-    ],
-    deps = [
-        "//util:db_url",
-        "@pypi//asyncpg",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "read_model",
     srcs = ["read_model.py"],
     visibility = ["//finance/augur:__subpackages__"],
     deps = [
-        ":schema",
+        ":models",
         "@pypi//sqlalchemy",
     ],
 )
@@ -127,8 +120,8 @@ py_test(
     deps = [
         ":conftest",
         ":link_store",
+        ":models",
         ":read_model",
-        ":schema",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -166,7 +159,8 @@ py_library(
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
         ":models",
-        ":schema",
+        "//finance/plaid:models",
+        "//finance/plaid:payloads",
         "@pypi//alembic",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -186,9 +180,9 @@ py_library(
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
         ":link_store",
-        ":models",
         ":products",
         ":secret_store",
+        "//finance/plaid:payloads",
         "@pypi//plaid_python",
     ],
 )
@@ -226,7 +220,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":link_store",
-        ":schema",
+        ":models",
         ":testing",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",

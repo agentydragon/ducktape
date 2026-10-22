@@ -23,7 +23,9 @@ from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
-from finance.plaid.db.models import (
+from finance.plaid.db.products import Product
+from finance.plaid.db.secret_store import SecretStore
+from finance.plaid.payloads import (
     AccountsGetResponse,
     InvestmentsHoldingsGetResponse,
     InvestmentsTransactionsGetResponse,
@@ -36,8 +38,6 @@ from finance.plaid.db.models import (
     PlaidTransaction,
     TransactionsSyncResponse,
 )
-from finance.plaid.db.products import Product
-from finance.plaid.db.secret_store import SecretStore
 
 logger = logging.getLogger(__name__)
 

@@ -37,7 +37,7 @@ py_test(
         ":schema",
         ":sql_read_model",
         "//:conftest",
-        "//finance/plaid/db:schema",
+        "//finance/plaid/db:models",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

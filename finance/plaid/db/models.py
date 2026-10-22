@@ -1,228 +1,243 @@
-"""Typed contracts for Plaid payloads and the local account-inventory projection.
-
-``PlaidPayload`` REST shapes follow Plaid's official OpenAPI document:
-https://github.com/plaid/plaid-openapi/blob/master/2020-09-14.yml. Those models type the fields this
-service reads while allowing additional fields so Plaid can extend responses without breaking us.
-``AccountInventory`` and ``ItemInventory`` describe the persisted mirror view; they are local
-service contracts, not upstream Plaid schemas. The SDK client itself uses plaid-python's generated
-request and response classes directly.
-Plaid's transaction webhook envelope and verification claims follow the webhook documentation:
-https://plaid.com/docs/transactions/webhooks/ and https://plaid.com/docs/api/webhooks/webhook-verification/.
-"""
+"""Shared SQLAlchemy schema for the synced Plaid mirror database."""
 
 from __future__ import annotations
 
-import datetime
+from datetime import UTC, date, datetime
+from typing import Any
+from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-
-class PlaidPayload(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-
-class PlaidApiResponse(PlaidPayload):
-    request_id: str | None = Field(default=None, validation_alias=AliasChoices("request_id", "requestId"))
+from util.db_url import async_engine_url
 
 
-class PlaidBalance(PlaidPayload):
-    available: float | None = None
-    current: float | None = None
-    limit: float | None = None
-    iso_currency_code: str | None = None
-    unofficial_currency_code: str | None = None
+def utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
-class PlaidAccount(PlaidPayload):
-    account_id: str
-    name: str
-    official_name: str | None = None
-    mask: str | None = None
-    type: str
-    subtype: str | None = None
-    balances: PlaidBalance | None = None
+# SQLAlchemy loads the asyncpg dialect at runtime from the URL scheme.
+# gazelle:include_dep @pypi//asyncpg
 
 
-class AccountsGetResponse(PlaidApiResponse):
-    accounts: list[PlaidAccount]
+def async_session_factory(db_url: str) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
+    """Construct a fresh AsyncEngine + sessionmaker for `db_url`.
+
+    Each call returns a new engine with its own connection pool, so callers that issue
+    repeated queries against the same database (every API request, in the budget path)
+    should construct one at process startup and reuse it -- the SSL handshake + pool
+    init costs ~500ms per engine over the cluster port-forward. Callers own disposal."""
+    engine = create_async_engine(async_engine_url(db_url), pool_pre_ping=True, pool_recycle=1800)
+    return engine, async_sessionmaker(engine, expire_on_commit=False)
 
 
-class PlaidItem(PlaidPayload):
-    item_id: str | None = None
-    institution_id: str | None = None
-    institution_name: str | None = None
-    products: list[str] | None = None
-    billed_products: list[str] | None = None
-    webhook: str | None = None
-
-
-class ItemGetResponse(PlaidApiResponse):
-    item: PlaidItem = Field(default_factory=PlaidItem)
-
-
-class ItemWebhookUpdateResponse(PlaidApiResponse):
+class Base(DeclarativeBase):
     pass
 
 
-class PlaidPersonalFinanceCategory(PlaidPayload):
-    primary: str | None = None
-    detailed: str | None = None
-    confidence_level: str | None = None
+class LinkRow(Base):
+    __tablename__ = "links"
+
+    item_id: Mapped[str] = mapped_column(String, primary_key=True)
+    institution_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    institution_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    label: Mapped[str | None] = mapped_column(String, nullable=True)
+    products_requested: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    transaction_days_requested: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    products_authorized: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    products_billed: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    access_token_secret: Mapped[str] = mapped_column(String, nullable=False)
+    transactions_cursor: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accounts_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class PlaidTransaction(PlaidPayload):
-    transaction_id: str
-    account_id: str
-    date: datetime.date
-    amount: float
-    name: str
-    pending: bool
-    iso_currency_code: str | None = None
-    unofficial_currency_code: str | None = None
-    merchant_name: str | None = None
-    pending_transaction_id: str | None = None
-    personal_finance_category: PlaidPersonalFinanceCategory | None = None
+class AccountRow(Base):
+    __tablename__ = "accounts"
+
+    account_id: Mapped[str] = mapped_column(String, primary_key=True)
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    official_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    mask: Mapped[str | None] = mapped_column(String, nullable=True)
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    subtype: Mapped[str | None] = mapped_column(String, nullable=True)
+    iso_currency_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    detached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class TransactionsGetResponse(PlaidApiResponse):
-    total_transactions: int
-    transactions: list[PlaidTransaction] | None = None
+class TransactionRow(Base):
+    __tablename__ = "transactions"
+
+    transaction_id: Mapped[str] = mapped_column(String, primary_key=True)
+    account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    iso_currency_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    merchant_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    pending: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    pending_transaction_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    pfc_primary: Mapped[str | None] = mapped_column(String, nullable=True)
+    pfc_detailed: Mapped[str | None] = mapped_column(String, nullable=True)
+    removed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
-class PlaidRemovedTransaction(PlaidPayload):
-    transaction_id: str
+class BalanceSnapshotRow(Base):
+    __tablename__ = "balance_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    available: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current: Mapped[float | None] = mapped_column(Float, nullable=True)
+    limit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    iso_currency_code: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
-class TransactionsSyncResponse(PlaidApiResponse):
-    accounts: list[PlaidAccount]
-    added: list[PlaidTransaction]
-    modified: list[PlaidTransaction]
-    removed: list[PlaidRemovedTransaction]
-    next_cursor: str
-    has_more: bool
-    transactions_update_status: str
+class SecurityRow(Base):
+    __tablename__ = "securities"
+
+    security_id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+    ticker_symbol: Mapped[str | None] = mapped_column(String, nullable=True)
+    type: Mapped[str | None] = mapped_column(String, nullable=True)
+    iso_currency_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
-class PlaidSecurity(PlaidPayload):
-    security_id: str
-    name: str | None = None
-    ticker_symbol: str | None = None
-    type: str | None = None
-    iso_currency_code: str | None = None
-    unofficial_currency_code: str | None = None
+class HoldingSnapshotRow(Base):
+    __tablename__ = "holding_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
+    security_id: Mapped[str] = mapped_column(String, ForeignKey("securities.security_id"), nullable=False)
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cost_basis: Mapped[float | None] = mapped_column(Float, nullable=True)
+    institution_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    institution_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    iso_currency_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
 
-class PlaidHolding(PlaidPayload):
-    account_id: str
-    security_id: str
-    quantity: float | None = None
-    cost_basis: float | None = None
-    institution_price: float | None = None
-    institution_value: float | None = None
-    iso_currency_code: str | None = None
-    unofficial_currency_code: str | None = None
+class InvestmentTransactionRow(Base):
+    __tablename__ = "investment_transactions"
+
+    investment_transaction_id: Mapped[str] = mapped_column(String, primary_key=True)
+    account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
+    security_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fees: Mapped[float | None] = mapped_column(Float, nullable=True)
+    type: Mapped[str | None] = mapped_column(String, nullable=True)
+    subtype: Mapped[str | None] = mapped_column(String, nullable=True)
+    iso_currency_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    removed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
-class InvestmentsHoldingsGetResponse(PlaidApiResponse):
-    securities: list[PlaidSecurity] | None = None
-    holdings: list[PlaidHolding] | None = None
-    accounts: list[PlaidAccount] | None = None
+class LiabilityCreditSnapshotRow(Base):
+    __tablename__ = "liability_credit_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
 
-class PlaidInvestmentTransaction(PlaidPayload):
-    investment_transaction_id: str
-    account_id: str
-    date: datetime.date
-    security_id: str | None = None
-    amount: float | None = None
-    quantity: float | None = None
-    price: float | None = None
-    fees: float | None = None
-    type: str | None = None
-    subtype: str | None = None
-    iso_currency_code: str | None = None
-    unofficial_currency_code: str | None = None
+class LiabilityMortgageSnapshotRow(Base):
+    __tablename__ = "liability_mortgage_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
 
-class InvestmentsTransactionsGetResponse(PlaidApiResponse):
-    total_investment_transactions: int
-    investment_transactions: list[PlaidInvestmentTransaction] | None = None
-    accounts: list[PlaidAccount] | None = None
+class LiabilityStudentSnapshotRow(Base):
+    __tablename__ = "liability_student_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
 
-class PlaidLiabilityEntry(PlaidPayload):
-    account_id: str
+class SyncRunRow(Base):
+    __tablename__ = "sync_runs"
+
+    run_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True, native_uuid=True), primary_key=True)
+    trigger: Mapped[str] = mapped_column(String, nullable=False)
+    mode: Mapped[str] = mapped_column(String, nullable=False)
+    item_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    configured_windows: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class PlaidLiabilities(PlaidPayload):
-    credit: list[PlaidLiabilityEntry] | None = None
-    mortgage: list[PlaidLiabilityEntry] | None = None
-    student: list[PlaidLiabilityEntry] | None = None
+class ItemSyncQueueRow(Base):
+    __tablename__ = "item_sync_queue"
+    __table_args__ = (Index("idx_item_sync_queue_requested", "requested_at"),)
+
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), primary_key=True)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    retry_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    full_sync: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
-class LiabilitiesGetResponse(PlaidApiResponse):
-    liabilities: PlaidLiabilities | None = None
-    accounts: list[PlaidAccount] | None = None
+class PlaidWebhookDeliveryRow(Base):
+    __tablename__ = "plaid_webhook_deliveries"
+    __table_args__ = (Index("idx_plaid_webhook_deliveries_received_at", "received_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    raw_body: Mapped[str] = mapped_column(Text, nullable=False)
+    webhook_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    webhook_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    item_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    disposition: Mapped[str] = mapped_column(String, nullable=False, default="received")
 
 
-class PlaidWebhookEnvelope(PlaidPayload):
-    webhook_type: str
-    webhook_code: str
-    item_id: str | None = None
+class PlaidApiEventRow(Base):
+    __tablename__ = "plaid_api_events"
 
-
-class PlaidWebhookVerificationHeader(PlaidPayload):
-    alg: str
-    kid: str
-
-
-class PlaidWebhookVerificationClaims(PlaidPayload):
-    iat: int = Field(strict=True)
-    request_body_sha256: str = Field(strict=True)
-
-
-class PlaidError(PlaidPayload):
-    error_type: str | None = None
-    error_code: str | None = None
-    error_message: str | None = None
-    display_message: str | None = None
-    documentation_url: str | None = None
-    request_id: str | None = Field(default=None, validation_alias=AliasChoices("request_id", "requestId"))
-
-
-class AccountInventory(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    account_id: str
-    name: str
-    official_name: str | None
-    mask: str | None
-    type: str
-    subtype: str | None
-    iso_currency_code: str | None
-    last_seen_at: datetime.datetime
-    detached_at: datetime.datetime | None
-    balance_captured_at: datetime.datetime | None
-    balance_available: float | None
-    balance_current: float | None
-    balance_limit: float | None
-    balance_iso_currency_code: str | None
-    transaction_count: int
-    investment_transaction_count: int
-    earliest_transaction_date: datetime.date | None
-    latest_transaction_date: datetime.date | None
-
-
-class ItemInventory(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    item_id: str
-    label: str | None
-    institution_name: str | None
-    status: str
-    accounts_observed_at: datetime.datetime | None
-    last_successful_sync_at: datetime.datetime | None
-    latest_sync_status: str | None
-    latest_sync_started_at: datetime.datetime | None
-    latest_sync_finished_at: datetime.datetime | None
-    accounts: tuple[AccountInventory, ...]
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sync_run_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True, native_uuid=True), nullable=True)
+    endpoint: Mapped[str] = mapped_column(String, nullable=False)
+    item_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    account_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    request_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    response_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)

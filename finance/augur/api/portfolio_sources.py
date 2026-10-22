@@ -32,13 +32,13 @@ from finance.augur.api.portfolio_source_config import (
 )
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
 from finance.augur.sim.ids import AccountId, LotId, PortfolioId
+from finance.plaid.db.models import async_session_factory
 from finance.plaid.db.read_model import (
     CurrentCashBalance,
     CurrentHolding,
     read_current_cash_balances,
     read_current_holdings,
 )
-from finance.plaid.db.schema import async_session_factory
 
 logger = logging.getLogger(__name__)
 

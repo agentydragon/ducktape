@@ -18,19 +18,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from finance.plaid.db.models import (
-    AccountInventory,
-    ItemInventory,
-    PlaidAccount,
-    PlaidBalance,
-    PlaidHolding,
-    PlaidInvestmentTransaction,
-    PlaidLiabilities,
-    PlaidLiabilityEntry,
-    PlaidRemovedTransaction,
-    PlaidSecurity,
-    PlaidTransaction,
-)
-from finance.plaid.db.schema import (
     AccountRow,
     BalanceSnapshotRow,
     HoldingSnapshotRow,
@@ -47,6 +34,18 @@ from finance.plaid.db.schema import (
     TransactionRow,
     async_session_factory,
     utcnow,
+)
+from finance.plaid.models import AccountInventory, ItemInventory
+from finance.plaid.payloads import (
+    PlaidAccount,
+    PlaidBalance,
+    PlaidHolding,
+    PlaidInvestmentTransaction,
+    PlaidLiabilities,
+    PlaidLiabilityEntry,
+    PlaidRemovedTransaction,
+    PlaidSecurity,
+    PlaidTransaction,
 )
 
 logger = logging.getLogger(__name__)

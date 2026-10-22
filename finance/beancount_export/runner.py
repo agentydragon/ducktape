@@ -29,7 +29,7 @@ from beancount.parser import printer
 from finance.beancount_export.export import ClassifiedTxn, render_ledger
 from finance.budget.schema import BudgetConfig
 from finance.budget.sql_read_model import ClassifiedRow, read_all_classified
-from finance.plaid.db.schema import async_session_factory
+from finance.plaid.db.models import async_session_factory
 
 log = structlog.get_logger()
 

@@ -34,7 +34,7 @@ from finance.budget.schema import (
     Rule,
     TransferDirection,
 )
-from finance.plaid.db.schema import AccountRow, LinkRow, TransactionRow, async_session_factory
+from finance.plaid.db.models import AccountRow, LinkRow, TransactionRow, async_session_factory
 
 
 @pytest_asyncio.fixture

@@ -48,8 +48,8 @@ from plaid.model.webhook_verification_key_get_request import WebhookVerification
 from plaid.model.webhook_verification_key_get_response import WebhookVerificationKeyGetResponse
 from pydantic import ValidationError
 
-from finance.plaid.db.models import PlaidError
 from finance.plaid.db.products import Product
+from finance.plaid.payloads import PlaidError
 
 # Plaid removed the `development` environment in 2024; only sandbox/production remain.
 PLAID_HOSTS = {"sandbox": plaid.Environment.Sandbox, "production": plaid.Environment.Production}

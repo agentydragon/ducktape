@@ -16,10 +16,10 @@ py_library(
     ],
     deps = [
         ":webhooks",
+        "//finance/plaid:models",
         "//finance/plaid/db:client",
         "//finance/plaid/db:config",
         "//finance/plaid/db:link_store",
-        "//finance/plaid/db:models",
         "//finance/plaid/db:products",
         "//finance/plaid/db:secret_store",
         "//finance/plaid/db:sync",
@@ -100,8 +100,8 @@ py_library(
     name = "webhooks",
     srcs = ["webhooks.py"],
     deps = [
+        "//finance/plaid:payloads",
         "//finance/plaid/db:client",
-        "//finance/plaid/db:models",
         "@pypi//cryptography",
         "@pypi//plaid_python",
         "@pypi//pydantic",

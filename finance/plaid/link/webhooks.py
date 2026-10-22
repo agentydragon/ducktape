@@ -14,7 +14,7 @@ from plaid.model.webhook_verification_key_get_request import WebhookVerification
 from pydantic import ValidationError
 
 from finance.plaid.db.client import PlaidClient
-from finance.plaid.db.models import PlaidWebhookVerificationClaims, PlaidWebhookVerificationHeader
+from finance.plaid.payloads import PlaidWebhookVerificationClaims, PlaidWebhookVerificationHeader
 
 
 class InvalidPlaidWebhookError(ValueError):

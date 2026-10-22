@@ -107,8 +107,8 @@ py_library(
         ":portfolio_source_config",
         "//finance/augur/model:series",
         "//finance/augur/sim:ids",
+        "//finance/plaid/db:models",
         "//finance/plaid/db:read_model",
-        "//finance/plaid/db:schema",
     ],
 )
 
@@ -344,7 +344,7 @@ py_library(
         "//finance/budget:service",
         "//finance/budget:wire",
         "//finance/evidence:markets",
-        "//finance/plaid/db:schema",
+        "//finance/plaid/db:models",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pyyaml",

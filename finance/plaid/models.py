@@ -1,0 +1,45 @@
+"""Account-inventory projections from the persisted Plaid mirror."""
+
+from __future__ import annotations
+
+import datetime
+
+from pydantic import BaseModel, ConfigDict
+
+
+class AccountInventory(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    account_id: str
+    name: str
+    official_name: str | None
+    mask: str | None
+    type: str
+    subtype: str | None
+    iso_currency_code: str | None
+    last_seen_at: datetime.datetime
+    detached_at: datetime.datetime | None
+    balance_captured_at: datetime.datetime | None
+    balance_available: float | None
+    balance_current: float | None
+    balance_limit: float | None
+    balance_iso_currency_code: str | None
+    transaction_count: int
+    investment_transaction_count: int
+    earliest_transaction_date: datetime.date | None
+    latest_transaction_date: datetime.date | None
+
+
+class ItemInventory(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    item_id: str
+    label: str | None
+    institution_name: str | None
+    status: str
+    accounts_observed_at: datetime.datetime | None
+    last_successful_sync_at: datetime.datetime | None
+    latest_sync_status: str | None
+    latest_sync_started_at: datetime.datetime | None
+    latest_sync_finished_at: datetime.datetime | None
+    accounts: tuple[AccountInventory, ...]

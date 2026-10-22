@@ -59,7 +59,7 @@ from finance.budget.wire import (
     BudgetTransactionsResponse,
 )
 from finance.evidence.markets import Platform
-from finance.plaid.db.schema import async_session_factory
+from finance.plaid.db.models import async_session_factory
 
 
 @dataclass(frozen=True)

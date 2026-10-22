@@ -21,7 +21,7 @@ py_library(
         ":export",
         "//finance/budget:schema",
         "//finance/budget:sql_read_model",
-        "//finance/plaid/db:schema",
+        "//finance/plaid/db:models",
         "@pypi//beancount",
         "@pypi//pygit2",
         "@pypi//pyyaml",
