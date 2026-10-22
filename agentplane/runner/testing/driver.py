@@ -19,7 +19,6 @@ from agentplane.runner_gateway import runner_control_pb2
 
 # The `Runner` stub types its calls; mypy reads stubs only from direct deps.
 # gazelle:include_dep //agentplane/runner:runner_service_pb2_grpc
-# gazelle:include_dep @pypi//grpcio
 # gazelle:include_dep @pypi//protobuf
 
 

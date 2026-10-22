@@ -30,7 +30,6 @@ from agentplane.history_service.fold.views import EntityKind, ThreadCommandEntit
 from agentplane.proto import command_pb2, event_log_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
-# gazelle:include_dep @pypi//protobuf
 
 
 class CommandIdConflictError(ValueError):

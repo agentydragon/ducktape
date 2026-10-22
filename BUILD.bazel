@@ -2,7 +2,8 @@
 # Most .gitignore patterns are handled by .bazelignore (root-level directories)
 # or don't need exclusion (cache dirs with no .py files like __pycache__)
 # gazelle:exclude ansible
-# gazelle:exclude homeassistant  # TODO: merge @pypi_homeassistant into @pypi to enable Gazelle here
+# TODO: merge @pypi_homeassistant into @pypi to enable Gazelle here
+# gazelle:exclude homeassistant
 #
 # Deliberately unbazelized trees: one-off scripts, investigations, doc-run
 # artifacts, host configs. Pull a tree out of this list to bazelize it.
@@ -68,6 +69,7 @@
 # haku/shared is a nested Bazel module (bazelignored), so Gazelle cannot index the library
 # that provides this namespace-package import; pin it to the module's label.
 # gazelle:resolve py haku.console.tool_calls @ducktape_haku//haku/console:tool_calls
+# gazelle:resolve py skills.eval_infra.empty_skill.empty_skill_skill_spec //skills/eval_infra/empty_skill:empty_skill_skill_spec
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_js//npm:defs.bzl", "npm_link_package")

@@ -28,7 +28,6 @@ from util.settings_contract import env_name, settings_file
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep @pypi//types_protobuf
 
 
 _GATEWAY_BINARY = "agentplane/runner_gateway/runner-gateway_/runner-gateway"

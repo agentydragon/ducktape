@@ -61,7 +61,6 @@ from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
-# gazelle:include_dep @pypi//protobuf
 
 # A status write follows the informer's next watch event; the bound covers a relist after a
 # dropped watch, not a healthy round trip.

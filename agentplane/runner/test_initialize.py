@@ -16,7 +16,6 @@ from agentplane.runner.testing.driver import RunnerDriver, running
 from agentplane.runner.testing.gateway import Gateway
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
-# gazelle:include_dep @pypi//protobuf
 
 
 def bootstrapped(config: RunnerTestConfig, script: str) -> RunnerTestConfig:

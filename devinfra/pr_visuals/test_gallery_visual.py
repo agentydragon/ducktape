@@ -16,7 +16,6 @@ from util.testing.viewports import Viewport
 from util.testing.visual_capture import VisualHarness, VisualPage
 from util.visual_review import VisualReviewAsset, VisualReviewManifest
 
-# gazelle:include_dep //util/testing:visual_fixtures
 pytest_plugins = ("util.testing.visual_fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 

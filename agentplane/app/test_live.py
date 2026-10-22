@@ -84,7 +84,6 @@ from util.net import pick_free_port
 # gazelle:include_dep @pypi//protobuf
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
-# gazelle:include_dep @pypi//httpx
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 

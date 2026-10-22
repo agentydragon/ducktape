@@ -76,7 +76,6 @@ from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
-# gazelle:include_dep @pypi//protobuf
 # pytest loads this plugin by name from the test target's args.
 # gazelle:include_dep //util/testing:pytest_logfile
 

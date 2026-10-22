@@ -44,7 +44,6 @@ from devinfra.claude.session_export.models import (
 )
 from util.db_url import render_postgresql_url
 
-# gazelle:include_dep @pypi//asyncpg
 
 logger = logging.getLogger(__name__)
 

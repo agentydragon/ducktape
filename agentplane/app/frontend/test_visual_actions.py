@@ -13,8 +13,6 @@ from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
 from util.testing.page_capture import wait_for_stable
 from util.testing.visual_capture import VisualPage
 
-# gazelle:include_dep //util/testing:visual_fixtures
-# gazelle:include_dep //agentplane/app/frontend/testing:visual_fixtures
 pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 

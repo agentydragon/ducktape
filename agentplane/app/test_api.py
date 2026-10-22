@@ -50,7 +50,6 @@ from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.testing.sandbox_namespace import READY, TEMPLATE, SandboxNamespace
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
-# gazelle:include_dep @pypi//protobuf
 
 
 CODEX_ONLY = ModelCatalog(

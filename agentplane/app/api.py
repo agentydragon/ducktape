@@ -109,7 +109,6 @@ from agentplane.sse import frame, sse_response
 from agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
-# gazelle:include_dep @pypi//protobuf
 # SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
 # gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//itsdangerous

@@ -1,5 +1,4 @@
 # gazelle:ignore
-# gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py cilium_clusterwide_crds //cluster/cdk8s/providers/cilium:ciliumclusterwidenetworkpolicy
 # gazelle:resolve py cilium_envoyconfig_crds //cluster/cdk8s/providers/cilium:ciliumenvoyconfig
 
