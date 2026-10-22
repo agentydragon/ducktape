@@ -75,6 +75,20 @@ class Ingress:
         assert exit_code == 0, output
 
 
+async def _wait_for_frontend(upstream: str) -> None:
+    async with asyncio.timeout(30), httpx.AsyncClient(timeout=2) as client:
+        while True:
+            try:
+                response = await client.get(f"{upstream}/healthz")
+            # Docker can publish the port before nginx can answer: connections may be
+            # refused, reset, or closed before HTTP response headers arrive.
+            except httpx.TransportError:
+                await asyncio.sleep(0.1)
+                continue
+            response.raise_for_status()
+            return
+
+
 @asynccontextmanager
 async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIterator[Ingress]:
     await asyncio.to_thread(load_oci_image, nginx_unprivileged.IMAGE)
@@ -84,16 +98,7 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
             LoggedContainer(STATIC_IMAGE.tag, test_name="conversation-static-frontend").with_exposed_ports(8080)
         )
         static_upstream = f"http://{static_container.get_container_host_ip()}:{static_container.get_exposed_port(8080)}"
-        async with asyncio.timeout(30), httpx.AsyncClient(timeout=2) as client:
-            while True:
-                try:
-                    response = await client.get(f"{static_upstream}/healthz")
-                # Docker may publish the port before nginx can answer, including a reset on read.
-                except httpx.ConnectError, httpx.TimeoutException, httpx.ReadError:
-                    await asyncio.sleep(0.1)
-                    continue
-                response.raise_for_status()
-                break
+        await _wait_for_frontend(static_upstream)
         # A separate nginx serves the actual built frontend. The TLS ingress supplies the
         # browser's single origin while API traffic still reaches the real app process.
         port = pick_free_port()

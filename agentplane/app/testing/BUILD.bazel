@@ -311,3 +311,17 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_test(
+    name = "test_http2_proxy",
+    size = "medium",
+    srcs = ["test_http2_proxy.py"],
+    deps = [
+        ":http2_proxy",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
