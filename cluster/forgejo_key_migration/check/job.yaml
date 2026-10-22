@@ -1,9 +1,10 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: forgejo-key-${JOB_NAME}
+  name: forgejo-key-check
   namespace: forgejo
 spec:
+  suspend: true
   backoffLimit: 0
   activeDeadlineSeconds: 300
   template:
@@ -19,20 +20,25 @@ spec:
           type: RuntimeDefault
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+        kubernetes.io/hostname: ovh-ns103656
+      imagePullSecrets:
+        - name: haku-forgejo-registry-pull
       containers:
         - name: migrate
-          image: ${MIGRATION_IMAGE}
+          # Exact image exercised by the isolated rehearsal.
+          image: git.allegedly.works/ducktape-ci/forgejo-key-migration@sha256:89516e63d6fbf4161a5915e12b999379a55b213ff8325eaec36682dc82b3032f
+          imagePullPolicy: IfNotPresent
           args:
-            - ${MODE}
-            - --old-key-file=/keys/${SOURCE_KEY}
-            - --new-key-file=/keys/${TARGET_KEY}
+            - check
+            - --old-key-file=/keys/current
+            - --new-key-file=/keys/replacement
             - --database-host=forgejo-db-ssd-rw.forgejo.svc
             - --database-name=forgejo
             - --database-user-file=/database/username
             - --database-password-file=/database/password
             - --database-ca-file=/database-ca/ca.crt
-            - --expect-secrets=${EXPECTED_SECRETS}
-            - --expect-mirrors=${EXPECTED_MIRRORS}
+            - --expect-secrets=4
+            - --expect-mirrors=1
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

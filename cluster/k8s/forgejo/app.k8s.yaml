@@ -77,6 +77,7 @@ spec:
     remediation:
       retries: -1
   interval: 15m
+  suspend: true
   timeout: 15m
   upgrade:
     remediation:
@@ -122,7 +123,7 @@ spec:
       - name: secret-key
         secret:
           items:
-            - key: current
+            - key: replacement
               path: secret-key
           secretName: forgejo-secret-key
     gitea:
@@ -181,6 +182,8 @@ spec:
           TYPE: redis
         security:
           INSTALL_LOCK: true
+          SECRET_KEY: ""
+          SECRET_KEY_URI: file:/etc/forgejo-key/secret-key
         server:
           DISABLE_SSH: false
           DOMAIN: git.allegedly.works
@@ -210,6 +213,10 @@ spec:
           scopes: email profile
     global:
       imageRegistry: ""
+    initPreScript: |-
+      if [ -f "$GITEA_APP_INI" ]; then
+        sed -i '/^\[security\]/,/^\[/{s|^[[:space:]]*SECRET_KEY[[:space:]]*=.*|SECRET_KEY_URI = file:/etc/forgejo-key/secret-key|;}' "$GITEA_APP_INI"
+      fi
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
     persistence:
@@ -240,10 +247,6 @@ spec:
         maxUnavailable: 1
       type: RollingUpdate
   valuesFrom:
-    - kind: Secret
-      name: forgejo-secret-key
-      targetPath: gitea.config.security.SECRET_KEY
-      valuesKey: current
     - kind: Secret
       name: forgejo-db-ssd-creds
       targetPath: gitea.config.database.PASSWD
