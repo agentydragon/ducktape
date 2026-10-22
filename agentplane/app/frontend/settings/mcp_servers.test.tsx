@@ -2,7 +2,7 @@
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 
-import { answerApi, mount, sendUpserts } from "../actions/testing";
+import { answerApi, mount, send, sendUpserts } from "../actions/testing";
 import type { ActionGroupView } from "../actions/client";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import { McpServers } from "./mcp_servers";
@@ -13,14 +13,14 @@ const HEALTH = "/upstream/actions/v1/action-groups:watch";
 /** Mounts the page, then pushes `linkages` and `groups` down its two streams. */
 async function render(linkages: McpLinkageView[] = [], groups: ActionGroupView[] = []): Promise<HTMLDivElement> {
   const container = await mount(<McpServers />);
-  await sendUpserts(linkages, LINKAGES);
-  await sendUpserts(groups, HEALTH);
+  await send(linkages, LINKAGES);
+  await send(groups, HEALTH);
   return container;
 }
 
 // Each button's label, and the request it sends.
 it.each([
-  ["Reconnect", "/upstream/actions/v1/operator/mcp-servers/github/linkage/start", { scopes: [] }],
+  ["Reconnect", "/upstream/actions/v1/operator/mcp-servers/github/linkage/start", {}],
   ["Disconnect", "/upstream/actions/v1/operator/mcp-servers/github/linkage/disconnect", undefined],
 ] as const)("spins only the clicked %s button until the operation fails", async (label, path, body) => {
   const rows: McpLinkageView[] = ["github", "second-server"].map((server_id) => ({
@@ -56,7 +56,7 @@ it("renders independent linkage and health snapshots, then updates either withou
   const container = await mount(<McpServers />);
   expect(container.textContent).toContain("Loading MCP servers");
   expect(container.textContent).not.toContain("No MCP servers are configured");
-  await sendUpserts(
+  await send(
     [
       {
         server_id: "example",
@@ -69,7 +69,7 @@ it("renders independent linkage and health snapshots, then updates either withou
     LINKAGES
   );
   expect(container.textContent).toContain("Loading MCP servers");
-  await sendUpserts(
+  await send(
     [
       {
         key: "example",
