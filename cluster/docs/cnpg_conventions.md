@@ -32,10 +32,8 @@ Piraeus class and configured size only to a newly-created claim.
 anti-affinity is `required` on `kubernetes.io/hostname` for every OVH Cluster,
 and a Cluster tolerates the control-plane taint for local-path SSD classes
 (`SSD_STORAGE_CLASSES` in `cdk8s/local_path_provisioner.py`) and for
-`piraeus-ssd-local`, whose only pool is on an OVH control-plane. The two
-Piraeus pilot Clusters also tolerate `node.kubernetes.io/unschedulable` while
-the pilot node remains cordoned. CNPG's default PodSpec reconciliation may
-restart existing Pods when these affinity tolerations change.
+`piraeus-ssd-local`, whose only pool is on an OVH control-plane. The Piraeus
+class adds the same control-plane tolerance as the previous local SSD class.
 **Gotcha:** a local PV pins a running instance to its node; before removing a
 class-specific toleration, check where its PV lives and rebuild the instance on
 a schedulable node if needed.
