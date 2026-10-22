@@ -370,11 +370,6 @@ spec:
       name: public-coder-agent-access
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/agents/public-coder-agent/secret-prune/**"
-          to: "@artifact/cluster/generated/agents/public-coder-agent/secret-prune/"
-      name: public-coder-agent-secret-prune
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/activitywatch/**"
           to: "@artifact/cluster/k8s/activitywatch/"
       name: activitywatch

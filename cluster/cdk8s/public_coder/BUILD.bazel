@@ -108,13 +108,3 @@ py_library(
     name = "egress_proxy_url",
     srcs = ["egress_proxy_url.py"],
 )
-
-py_library(
-    name = "credential_prune",
-    srcs = ["credential_prune.py"],
-    deps = [
-        "//cluster/cdk8s:manifest_roots",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-    ],
-)

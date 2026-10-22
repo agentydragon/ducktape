@@ -4145,28 +4145,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Temporarily tracks the retired Public Coder Secret targets with Merge while Flux prunes their owners; the manifests contain no Secret values.
-  name: public-coder-agent-secret-prune
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Delete
-  dependsOn:
-    - name: public-coder-agent-access
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/agents/public-coder-agent/secret-prune
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: public-coder-agent-secret-prune
-    namespace: ducktape-flux
-  timeout: 5m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: Delegates managed RoleBinding reconciliation in activitywatch.
   name: agentplane-staging-binding-delegation-activitywatch
   namespace: ducktape-flux
