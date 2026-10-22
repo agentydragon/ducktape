@@ -22,10 +22,10 @@ import tarfile
 from typing import IO, Literal
 
 IMAGES = {
-    "action_service": ("//agentplane/action_service:image", "agentplane/action_service/image"),
+    "action_service": ("//agentplane/action_service:service_image", "agentplane/action_service/service_image"),
     "action_service_migrate": (
-        "//agentplane/action_service:migration_image",
-        "agentplane/action_service/migration_image",
+        "//agentplane/action_service/migrations:image",
+        "agentplane/action_service/migrations/image",
     ),
     "app": ("//agentplane/app:image", "agentplane/app/image"),
     "app_migrate": ("//agentplane/app:migration_image", "agentplane/app/migration_image"),
