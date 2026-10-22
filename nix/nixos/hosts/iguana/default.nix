@@ -30,18 +30,11 @@ in
   imports = [
     ../../modules/operator.nix
     ./hardware-configuration.nix
-    ../../modules/gui.nix
-    ../../modules/workstation.nix
-    ../../modules/bazel
-    ../../modules/system-inspection-sudo.nix
     ../../modules/claude-desktop.nix
     ../../modules/home-wifi.nix
-    ../../modules/k8s-worker.nix
+    ../../modules/k8s-workstation.nix
     ../../modules/attic-substituter.nix
   ];
-
-  # Passwordless sudo for system inspection commands
-  ducktape.systemInspectionSudo.enable = true;
 
   # Claude Desktop Cowork sandboxed-microVM feature (QEMU firmware + virtiofsd
   # at the Debian /usr paths the app probes).
@@ -55,7 +48,6 @@ in
   };
 
   ducktape.k8sWorker = {
-    enable = true;
     nodeLabels = {
       "topology.kubernetes.io/region" = "roaming";
       "node.kubernetes.io/role" = "roaming";

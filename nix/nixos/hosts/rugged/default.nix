@@ -26,12 +26,8 @@ in
   imports = [
     ../../modules/operator.nix
     ./hardware-configuration.nix
-    ../../modules/gui.nix
-    ../../modules/workstation.nix
-    ../../modules/bazel
     ../../modules/claude-desktop.nix
-    ../../modules/system-inspection-sudo.nix
-    ../../modules/k8s-worker.nix
+    ../../modules/k8s-workstation.nix
     ../../modules/github-api-recorder.nix
     ./ipu7-camera.nix
     ./foxconn-wwan.nix
@@ -54,11 +50,7 @@ in
     sopsFile = ../../../../secrets/hosts/rugged-attic.yaml;
   };
 
-  # Passwordless sudo for system inspection commands
-  ducktape.systemInspectionSudo.enable = true;
-
   ducktape.k8sWorker = {
-    enable = true;
     nodeLabels = {
       "topology.kubernetes.io/region" = "roaming";
       "node.kubernetes.io/role" = "roaming";

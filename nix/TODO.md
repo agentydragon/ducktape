@@ -58,10 +58,6 @@ wyrm2 is the only desktop host missing `ducktape.githubSsh`. All others
 3. `sops -e -i ssh_keys/wyrm2-github.sops.key` (binary encrypt the private key)
 4. Add `ducktape.githubSsh.sopsFile = ../../../ssh_keys/wyrm2-github.sops.key;` to `nix/home/hosts/wyrm2.nix`
 
-## Deduplicate wyrm2/rugged/iguana host configs
-
-wyrm2, rugged, and iguana import nearly identical module sets (gui, workstation, bazel, system-inspection-sudo, k8s-worker) and have similar `k8sWorker` config. Extract common setup into a shared module (e.g., `modules/k8s-workstation.nix`).
-
 ## Rugged: evaluate `systemd-homed`
 
 Consider whether `nix/nixos/hosts/rugged` should switch from the current single `cryptroot` layout to a `systemd-homed`-style design for tablet-friendly graphical login and per-user home unlock. Evaluate tradeoffs versus keeping full-disk LUKS and adding a non-keyboard pre-boot unlock path such as FIDO2.
