@@ -4,7 +4,6 @@ No model is involved. One stack serves every test in the file; each test makes a
 """
 
 import json
-import textwrap
 from collections.abc import AsyncIterator, Iterator
 from http import HTTPStatus
 
@@ -18,6 +17,7 @@ from agentplane.app.testing.client import Client
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.conftest import POD_TEMPLATE, wait_until_running
 from agentplane.x.k3s_env.stack import Stack, Timeline, running_stack
+from util.bazel.runfiles import get_required_path
 
 TRANSITION_SECONDS = 300.0
 STATE_FILE = "/state/lifecycle-marker"
@@ -96,29 +96,7 @@ async def client(stack: Stack) -> AsyncIterator[Client]:
 def test_cluster_dns_and_service_routing_reach_the_api(stack: Stack) -> None:
     """kube-proxy routes the `kubernetes` Service (443 to the apiserver's 6443) and CoreDNS answers its name."""
     service_ip = stack.k3s.kubectl("get", "service", "kubernetes", "-o", "jsonpath={.spec.clusterIP}").strip()
-    probe = textwrap.dedent(
-        """
-        import json
-        import os
-        import socket
-        import ssl
-        import urllib.request
-
-        host = "kubernetes.default.svc.cluster.local"
-        with open("/var/run/secrets/kubernetes.io/serviceaccount/token") as token_file:
-            token = token_file.read().strip()
-        ca = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-        request = urllib.request.Request(f"https://{host}/version", headers={"Authorization": f"Bearer {token}"})
-        with urllib.request.urlopen(request, context=ssl.create_default_context(cafile=ca), timeout=10) as response:
-            version = json.load(response)["gitVersion"]
-        print(json.dumps({
-            "dns_ip": socket.gethostbyname(host),
-            "service_host": os.environ["KUBERNETES_SERVICE_HOST"],
-            "service_port": os.environ["KUBERNETES_SERVICE_PORT"],
-            "api_version": version,
-        }))
-        """
-    )
+    probe = get_required_path("_main/agentplane/x/k3s_env/service_routing_probe.py").read_text()
     observed = json.loads(
         stack.k3s.kubectl("exec", "-n", stack.namespace, "deploy/app", "-c", "app", "--", "python3", "-c", probe)
     )

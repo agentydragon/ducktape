@@ -130,14 +130,17 @@ py_library(
 py_library(
     name = "http2_proxy",
     srcs = ["http2_proxy.py"],
+    data = ["http2_proxy.conf.j2"],
     deps = [
         "//third_party/containers:nginx_unprivileged",
         "//util:net",
         "//util:oci",
+        "//util/bazel:runfiles",
         "//util/testing:container_logs",
         "@pypi//cryptography",
         "@pypi//h2",
         "@pypi//httpx",
+        "@pypi//jinja2",
     ],
 )
 

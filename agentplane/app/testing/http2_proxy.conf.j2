@@ -1,0 +1,24 @@
+pid /tmp/test-nginx.pid;
+error_log /dev/stderr info;
+# A reload's old workers close what they still hold at once.
+worker_shutdown_timeout 10ms;
+events { worker_connections 1024; }
+http {
+    access_log /dev/stdout;
+    client_body_temp_path /tmp/client_temp;
+    proxy_temp_path /tmp/proxy_temp;
+    server {
+        listen 127.0.0.1:{{ port }} ssl;
+        http2 on;
+        ssl_certificate /test/certificate.pem;
+        ssl_certificate_key /test/key.pem;
+        location / {
+            proxy_pass {{ upstream }};
+            proxy_http_version 1.1;
+            proxy_set_header Host $http_host;
+            proxy_set_header Connection "";
+            proxy_buffering off;
+            proxy_read_timeout 75s;
+        }
+    }
+}

@@ -10,15 +10,16 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from textwrap import dedent
 
 import httpx
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+from jinja2 import Template
 
 from third_party.containers import nginx_unprivileged
+from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
@@ -77,34 +78,8 @@ class Ingress:
 async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIterator[Ingress]:
     await asyncio.to_thread(load_oci_image, nginx_unprivileged.IMAGE)
     port = pick_free_port()
-    (certificate.directory / "nginx.conf").write_text(
-        dedent(f"""\
-            pid /tmp/test-nginx.pid;
-            error_log /dev/stderr info;
-            # A reload's old workers close what they still hold at once.
-            worker_shutdown_timeout 10ms;
-            events {{ worker_connections 1024; }}
-            http {{
-                access_log /dev/stdout;
-                client_body_temp_path /tmp/client_temp;
-                proxy_temp_path /tmp/proxy_temp;
-                server {{
-                    listen 127.0.0.1:{port} ssl;
-                    http2 on;
-                    ssl_certificate /test/certificate.pem;
-                    ssl_certificate_key /test/key.pem;
-                    location / {{
-                        proxy_pass {upstream};
-                        proxy_http_version 1.1;
-                        proxy_set_header Host $http_host;
-                        proxy_set_header Connection "";
-                        proxy_buffering off;
-                        proxy_read_timeout 75s;
-                    }}
-                }}
-            }}
-            """)
-    )
+    template = get_required_path("_main/agentplane/app/testing/http2_proxy.conf.j2").read_text()
+    (certificate.directory / "nginx.conf").write_text(Template(template).render(port=port, upstream=upstream) + "\n")
     container = (
         LoggedContainer(nginx_unprivileged.IMAGE.tag, test_name="conversation-http2-ingress")
         .with_kwargs(network_mode="host")

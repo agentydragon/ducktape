@@ -266,6 +266,7 @@ py_test(
     size = "enormous",
     srcs = ["test_lifecycle.py"],
     data = [
+        "service_routing_probe.py",
         ":lifecycle/runner_layout",
         ":rendered/none.json",
         K3S_BINARY,
@@ -284,6 +285,7 @@ py_test(
         "//agentplane/app:sandbox_models",
         "//agentplane/app/testing:client",
         "//agentplane/system_tests:conftest",
+        "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -419,4 +421,9 @@ py_library(
         "@pypi//more_itertools",
         "@pypi//pyyaml",
     ],
+)
+
+py_library(
+    name = "service_routing_probe",
+    srcs = ["service_routing_probe.py"],
 )
