@@ -107,15 +107,20 @@ node roll or any live configuration change. Before activation:
    the system-disk layout is introduced and the node returns healthy. Confirm
    there is no automatic reset/reinstall or raw-device initialization in the
    planned action.
-3. Only after every consumer is evacuated and the data disk is confirmed empty,
-   add and review node-scoped thin-pool metrics and alert coverage for this
-   target. Verify fresh samples and alert evaluation before making the pool
-   eligible. Then review a separate target-only readiness change. Confirm
-   `drbd-canary` remains absent and the native selector still requires the
-   target hostname plus `piraeus-ready=true` before enabling that label.
-4. Verify the resulting Talos volumes, boot and etcd health, disk identities,
+3. After every consumer is evacuated and the target remains cordoned, verify
+   that the exact data disk is wiped and empty before enabling pool
+   initialization, regardless of the `talos_storage_enabled` setting. Add and
+   review node-scoped thin-pool metrics and alert coverage, including alerts for
+   absent samples, before adding `piraeus-ready=true`. Then review a separate
+   target-only readiness change that allows the native LSC to initialize the
+   pool while the target remains cordoned. Keep `drbd-canary` absent and confirm
+   the native selector still requires the target hostname plus
+   `piraeus-ready=true`.
+4. After pool creation and before uncordoning the target or restoring any
+   application, verify fresh metrics samples and alert-rule evaluation. Also
+   verify the resulting Talos volumes, boot and etcd health, disk identities,
    PV/VG/thin-pool geometry, metadata spare, pool capacity, and retained-volume
-   behavior before considering any application restore.
+   behavior.
 
 Never infer that this configuration has been activated from merge, Flux
 reconciliation, or the presence of the unmatched LSC object. The later
