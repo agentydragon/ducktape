@@ -355,9 +355,9 @@ spec:
       name: public-coder-agent-devbox
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/agents/public-coder-agent/secret-cleanup/**"
-          to: "@artifact/cluster/generated/agents/public-coder-agent/secret-cleanup/"
-      name: public-coder-agent-secret-cleanup
+        - from: "@repo/cluster/generated/agents/public-coder-agent/secret-prune/**"
+          to: "@artifact/cluster/generated/agents/public-coder-agent/secret-prune/"
+      name: public-coder-agent-secret-prune
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/activitywatch/**"

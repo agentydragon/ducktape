@@ -4052,8 +4052,8 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: One-shot deletion of retired Public Coder credential copies and private keys.
-  name: public-coder-agent-secret-cleanup
+    description: Temporarily adopts orphaned Public Coder Secrets without applying data; remove this Kustomization in a later revision to prune them.
+  name: public-coder-agent-secret-prune
   namespace: ducktape-flux
 spec:
   deletionPolicy: Delete
@@ -4075,12 +4075,12 @@ spec:
     - name: aiquota
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/generated/agents/public-coder-agent/secret-cleanup
+  path: ./cluster/generated/agents/public-coder-agent/secret-prune
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: public-coder-agent-secret-cleanup
+    name: public-coder-agent-secret-prune
     namespace: ducktape-flux
   timeout: 5m
   wait: true

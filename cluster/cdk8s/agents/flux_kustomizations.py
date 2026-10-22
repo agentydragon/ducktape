@@ -164,18 +164,22 @@ def public_coder_agent_devbox_cleanup(chart: Chart, artifact: ArtifactGeneratorS
     )
 
 
-def public_coder_agent_secret_cleanup(
+def public_coder_agent_secret_prune(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, *dependencies: Kustomization
 ) -> Kustomization:
-    """Delete orphaned credentials only after every GitOps owner has retired its copy."""
+    """Adopt remaining credential Secrets after their source owners have been pruned."""
     return flux_kustomization(
         chart,
-        "public-coder-agent-secret-cleanup",
+        "public-coder-agent-secret-prune",
         artifact,
         timeout="5m",
+        prune=True,
         deletion_policy=KustomizationSpecDeletionPolicy.DELETE,
         depends_on=flux_kustomization_depends_on_many(*dependencies),
-        description="One-shot deletion of retired Public Coder credential copies and private keys.",
+        description=(
+            "Temporarily adopts orphaned Public Coder Secrets without applying data; remove this Kustomization "
+            "in a later revision to prune them."
+        ),
     )
 
 

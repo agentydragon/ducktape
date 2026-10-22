@@ -223,7 +223,7 @@ from cluster.cdk8s.plaid_mcp import (
 from cluster.cdk8s.public_coder import (
     app as public_coder_app,
     backup as public_coder_backup,
-    credential_cleanup as public_coder_credential_cleanup,
+    credential_prune as public_coder_credential_prune,
 )
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
@@ -1643,13 +1643,13 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         agentplane_staging_kustomization,
     )
-    public_coder_agent_secret_cleanup_artifact = artifact(
-        "public-coder-agent-secret-cleanup", public_coder_credential_cleanup.OUTPUT_DIR
+    public_coder_agent_secret_prune_artifact = artifact(
+        "public-coder-agent-secret-prune", public_coder_credential_prune.OUTPUT_DIR
     )
-    write_directory(root, public_coder_agent_secret_cleanup_artifact, public_coder_credential_cleanup.chart)
-    agents_flux_kustomizations.public_coder_agent_secret_cleanup(
+    write_directory(root, public_coder_agent_secret_prune_artifact, public_coder_credential_prune.chart)
+    agents_flux_kustomizations.public_coder_agent_secret_prune(
         flux_chart,
-        public_coder_agent_secret_cleanup_artifact,
+        public_coder_agent_secret_prune_artifact,
         public_coder_agent_access_kustomization,
         public_coder_agent_app_kustomization,
         public_coder_agent_devbox_kustomization,
@@ -1774,7 +1774,7 @@ def generate_manifests(root: Path) -> None:
             plaid_mcp_artifact,
             public_coder_agent_access_artifact,
             public_coder_agent_devbox_artifact,
-            public_coder_agent_secret_cleanup_artifact,
+            public_coder_agent_secret_prune_artifact,
             activitywatch_artifact,
             airlock_artifact,
             alloy_otlp_bearer_artifact,

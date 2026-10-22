@@ -357,7 +357,9 @@ applications").
   is off with its PVCs and data kept. The app Kustomization stays active at zero replicas
   to prune retired proxy resources; the devbox Kustomization temporarily reconciles an
   empty source to prune its VM inventory; the backup Kustomization stays suspended.
-  The secret-cleanup Kustomization runs once after the credential sources reconcile.
+  The secret-prune Kustomization temporarily adopts the two orphaned ESO targets and cert-manager
+  output Secret without applying their data; removing that Kustomization in a later revision
+  deletes the Secrets through Flux inventory pruning.
   `public-coder-agent-access` stays active for the Namespace and the Roles Haku and
   Agentplane Sandboxes read.
 - **postscanmail-mcp**: `cluster/parked/postscanmail-mcp/` — decommissioned; its

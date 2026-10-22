@@ -50,8 +50,8 @@ py_library(
 )
 
 py_library(
-    name = "credential_cleanup",
-    srcs = ["credential_cleanup.py"],
+    name = "credential_prune",
+    srcs = ["credential_prune.py"],
     deps = [
         "//cluster/cdk8s:manifest_roots",
         "@pypi//cdk8s",
