@@ -129,5 +129,5 @@ test:ci --test_tag_filters=-live_openai_api,-manual
 # Opt in to credentialed, real-model tests with `--config=ci --config=live-openai`.
 test:live-openai --test_tag_filters=live_openai_api,-manual,-ollama
 test:live-openai --test_env=OPENAI_BASE_URL=https://litellm.allegedly.works/v1
-test:live-openai --test_env=OPENAI_MODEL=mistral/oai-chat/mistral-small-latest
+test:live-openai --test_env=OPENAI_MODEL=chatgpt/oai-responses/gpt-6-luna
 common:ai_agent --config=quiet
