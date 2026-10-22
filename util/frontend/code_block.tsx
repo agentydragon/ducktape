@@ -356,7 +356,7 @@ function MountedCodeBlock({
   );
 }
 
-/** Read-only code and text viewer for Agentplane payloads. Syntax tokens, hidden Unicode markers,
+/** Read-only code and text viewer for application payloads. Syntax tokens, hidden Unicode markers,
  * and copy all share the same original document. Editor views mount near the viewport because
  * transcript history can contain many code-bearing rows. */
 export function CodeBlock({

@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import { useSearchParams } from "react-router";
 
 import { bindingState } from "./binding_state";
-import { CodeBlock } from "./code_block";
+import { CodeBlock } from "../../../util/frontend/code_block";
 import type { BindingView, EgressRuleView, PolicySetView } from "./client";
 import { MarkGlyph } from "./mark_glyph";
 import { BINDING_STATE_MARKS } from "./status_mark";

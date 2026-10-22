@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { Alert, Box, Code, Stack, Table, Text, Title } from "@mantine/core";
 
-import { CodeBlock } from "../code_block";
+import { CodeBlock } from "../../../../util/frontend/code_block";
 import type { ActionPolicyUnavailable, ActionPolicyView, EffectivePolicyView } from "./client";
 
 function actionsText(policy: EffectivePolicyView["policy"]): string {

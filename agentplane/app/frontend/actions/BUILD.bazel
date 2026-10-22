@@ -264,7 +264,7 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend:test_intersection_observer",
+        "//util/frontend:test_intersection_observer",
     ],
 )
 
@@ -301,7 +301,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:code_block",
+        "//util/frontend:code_block",
     ],
 )
 

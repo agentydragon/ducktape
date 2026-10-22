@@ -1,6 +1,6 @@
 import { type JSX, useMemo } from "react";
 
-import { CodeBlock, type CodeBlockSurface } from "./code_block";
+import { CodeBlock, type CodeBlockSurface } from "../../../util/frontend/code_block";
 
 /** True when `payload` announces itself as JSON structurally (starts with `{`/`[`) -- for a caller
  * holding a string that might not be JSON (tool output, a streamed partial), so a plain-text/log

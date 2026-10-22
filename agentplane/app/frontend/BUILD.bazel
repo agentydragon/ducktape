@@ -256,10 +256,10 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":code_block",
-        ":code_block_css",
         ":operation_section_css",
         "//:node_modules/@types/react",
+        "//util/frontend:code_block",
+        "//util/frontend:code_block_css",
     ],
 )
 
@@ -269,10 +269,10 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":clamped_block",
-        ":code_block",
         ":operation_section",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:code_block",
     ],
 )
 
@@ -282,13 +282,13 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":clamped_block",
-        ":code_block",
         ":disclosure",
         ":json_view",
         ":operation_section",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:code_block",
     ],
 )
 
@@ -949,7 +949,6 @@ ts_library(
     deps = [
         ":binding_state",
         ":client",
-        ":code_block",
         ":mark_glyph",
         ":status_mark",
         ":time_ago",
@@ -957,6 +956,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//util/frontend:code_block",
     ],
 )
 
@@ -1155,109 +1155,14 @@ agentplane_vitest_test(
     ],
 )
 
-# markdown.tsx imports this stylesheet for the bundler.
-js_library(
-    name = "markdown_css",
-    srcs = ["markdown.css"],
-)
-
-ts_library(
-    name = "markdown",
-    srcs = [
-        "markdown.tsx",
-        # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
-    ],
-    tsconfig = TSCONFIG,
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//devinfra/claude/session_export/frontend:__pkg__",
-    ],
-    deps = [
-        ":code_block",
-        ":markdown_css",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/dompurify",
-        "//:node_modules/@types/react",
-        "//:node_modules/dompurify",
-        "//:node_modules/marked",
-        "//:node_modules/react",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "markdown_test",
-    srcs = ["markdown.test.tsx"],
-    deps = [
-        ":markdown",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-    ],
-)
-
-js_library(
-    name = "code_block_css",
-    srcs = ["code_block.css"],
-)
-
-# The single read-only CodeMirror widget for syntax-highlighted code and special-character markers.
-ts_library(
-    name = "code_block",
-    srcs = [
-        "code_block.tsx",
-        # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":code_block_css",
-        "//:node_modules/@codemirror/lang-json",
-        "//:node_modules/@codemirror/lang-yaml",
-        "//:node_modules/@codemirror/language",
-        "//:node_modules/@codemirror/legacy-modes",
-        "//:node_modules/@codemirror/state",
-        "//:node_modules/@codemirror/view",
-        "//:node_modules/@lezer/highlight",
-        "//:node_modules/@replit/codemirror-lang-nix",
-        "//:node_modules/@types/react",
-        "//:node_modules/@uiw/react-codemirror",
-        "//:node_modules/react",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "code_block_test",
-    srcs = ["code_block.test.ts"],
-    deps = [
-        ":code_block",
-        "//:node_modules/vitest",
-    ],
-)
-
-# The JSON and plain-text adapters reuse the shared CodeMirror payload widget.
-agentplane_vitest_test(
-    name = "inline_code_test",
-    srcs = ["inline_code.test.tsx"],
-    deps = [
-        ":code_block",
-        "//:node_modules/@types/react",
-        "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions:testing",
-    ],
-)
-
 ts_library(
     name = "json_view",
     srcs = ["json_view.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":code_block",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:code_block",
     ],
 )
 
@@ -1395,21 +1300,12 @@ agentplane_vitest_test(
     ],
 )
 
-ts_library(
-    name = "test_intersection_observer",
-    testonly = True,
-    srcs = ["test_intersection_observer.ts"],
-    tsconfig = TSCONFIG,
-)
-
 vitest_config(
     name = "vitest_config",
-    # Specs that need a DOM select one with an `// @vitest-environment` pragma: happy-dom, or
-    # jsdom for markdown.test.tsx.
+    # Specs that need a DOM select a suite-specific environment.
     data = [
-        ":test_intersection_observer",
         "//:node_modules/happy-dom",
-        "//:node_modules/jsdom",
+        "//util/frontend:test_intersection_observer",
     ],
     environment = "node",
     setup_files = ["test_setup.ts"],

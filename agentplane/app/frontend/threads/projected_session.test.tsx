@@ -25,7 +25,7 @@ import {
 import { historyRows, rowKey } from "./history_rows";
 import { SandboxesLiveProvider, ThreadsLiveProvider, useRequiredThreadsLive } from "../live";
 import { LocalCommands } from "./local_commands";
-import { STREAMING_CURSOR } from "../markdown";
+import { STREAMING_CURSOR } from "../../../../util/frontend/markdown";
 import { HistoryRowView, ProjectedSession } from "./projected_session";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";

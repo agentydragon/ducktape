@@ -36,7 +36,7 @@ import {
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 
-import { Markdown } from "../../../../agentplane/app/frontend/markdown";
+import { Markdown } from "../../../../util/frontend/markdown";
 import {
   ApiError,
   getSession,

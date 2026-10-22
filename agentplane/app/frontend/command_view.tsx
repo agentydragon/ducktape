@@ -5,7 +5,7 @@ import { Button, Stack, Text } from "@mantine/core";
 import { type JSX, type ReactNode, useState } from "react";
 
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "./clamped_block";
-import { CodeBlock, type CodeBlockSurface, InlineCode } from "./code_block";
+import { CodeBlock, type CodeBlockSurface, InlineCode } from "../../../util/frontend/code_block";
 import { Disclosure, DisclosureBody } from "./disclosure";
 import { HighlightedText } from "./json_view";
 import { OperationSection } from "./operation_section";

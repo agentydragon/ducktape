@@ -1,7 +1,7 @@
 import { type JSX, useMemo } from "react";
 
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "./clamped_block";
-import { CodeBlock, type Language } from "./code_block";
+import { CodeBlock, type Language } from "../../../util/frontend/code_block";
 import { OperationSection } from "./operation_section";
 
 /** Selectable text with optional syntax, a shared surface, and expansion for long content. */

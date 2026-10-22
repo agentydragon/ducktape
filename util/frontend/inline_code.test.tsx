@@ -1,8 +1,30 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { MantineProvider } from "@mantine/core";
+import { type ReactNode, act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { mount } from "./actions/testing";
 import { InlineCode } from "./code_block";
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
+
+async function mount(node: ReactNode): Promise<HTMLDivElement> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  mounted.push({ root, container });
+  await act(async () => root.render(<MantineProvider env="test">{node}</MantineProvider>));
+  return container;
+}
+
+afterEach(async () => {
+  await act(async () => {
+    for (const { root } of mounted) root.unmount();
+  });
+  for (const { container } of mounted) container.remove();
+  mounted.length = 0;
+});
 
 // The element's own text: the provider that mounts it adds style rules to the container.
 const codeText = (container: HTMLElement): string | undefined =>

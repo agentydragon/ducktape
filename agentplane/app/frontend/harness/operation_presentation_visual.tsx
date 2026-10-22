@@ -2,7 +2,7 @@ import { Stack } from "@mantine/core";
 import type { JSX } from "react";
 
 import { JsonBlock, TextBlock } from "../text_block";
-import { CodeBlock } from "../code_block";
+import { CodeBlock } from "../../../../util/frontend/code_block";
 import { CommandCallView, OutputBlock } from "../command_view";
 
 const manifest = [

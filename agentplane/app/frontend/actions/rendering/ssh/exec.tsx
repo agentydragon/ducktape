@@ -5,7 +5,7 @@ import type { JSX } from "react";
 import type { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
-import { CodeBlock } from "../../../code_block";
+import { CodeBlock } from "../../../../../../util/frontend/code_block";
 import { CommandCallView, CommandSummary, OutputBlock } from "../../../command_view";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "../entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";

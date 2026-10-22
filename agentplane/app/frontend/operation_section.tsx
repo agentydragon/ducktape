@@ -1,8 +1,8 @@
 import type { JSX, ReactNode } from "react";
 
-import type { CodeBlockSurface } from "./code_block";
+import type { CodeBlockSurface } from "../../../util/frontend/code_block";
 
-import "./code_block.css";
+import "../../../util/frontend/code_block.css";
 import "./operation_section.css";
 
 /** One operation payload surface, with its border and inset chosen by the code-surface policy. */

@@ -3,11 +3,11 @@ import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { type CSSProperties, type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { ClampedBlock, lineCount } from "../clamped_block";
-import { InlineCode } from "../code_block";
+import { InlineCode } from "../../../../util/frontend/code_block";
 import { DisclosureBody, DisclosureCard } from "../disclosure";
 import { COMMAND_MAX_HEIGHT_REM, CommandCallView, OutputBlock } from "../command_view";
 import { HighlightedText } from "../json_view";
-import { Markdown } from "../markdown";
+import { Markdown } from "../../../../util/frontend/markdown";
 import { RawSwitch } from "../raw_switch";
 import { oneLine, parseCommandCall, type CommandCall } from "./command_calls";
 import { CommandProgress } from "./command_progress";

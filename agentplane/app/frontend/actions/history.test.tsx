@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ActionGroupView, ActionRequestView, ActionState } from "./client";
 import type { JsonValue } from "./types";
-import { TestIntersectionObserver } from "../test_intersection_observer.js";
+import { TestIntersectionObserver } from "../../../../util/frontend/test_intersection_observer.js";
 import { ActionHistory } from "./history";
 import { stateLabel } from "./requests";
 import {
