@@ -197,7 +197,7 @@ async def _probe(client: Client, name: str, cwd: str, workspace_dir: str, marker
         session,
         overrides={
             "harness": "HARNESS_CODEX",
-            "model": "chatgpt/oai-responses/gpt-6-luna",
+            "model": "chatgpt-sub/oai-responses/gpt-6-luna",
             "cwd": cwd,
             "reasoningEffort": "low",
             "instructions": "",

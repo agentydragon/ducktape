@@ -37,7 +37,7 @@ async def test_a_loaded_model_is_left_alone() -> None:
 
 async def test_a_model_ollama_does_not_serve_is_not_asked_about() -> None:
     seen: list[httpx.Request] = []
-    await warm_ollama("chatgpt/oai-responses/gpt-6-luna", transport=ollama([], seen))
+    await warm_ollama("chatgpt-sub/oai-responses/gpt-6-luna", transport=ollama([], seen))
     assert seen == []
 
 

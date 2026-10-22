@@ -1,5 +1,8 @@
 # Fable-orchestrated worker fleet on cheap ChatGPT models — feasibility spike
 
+Historical captures retain the `chatgpt/` prefix used when recorded. Current
+subscription routes use `chatgpt-sub/`.
+
 **What this is:** an active investigation into running a fleet of cheap ChatGPT-model worker
 agents (GPT-5.6 Luna) dispatched by an expensive orchestrator (Fable), all inference through the
 in-cluster LiteLLM gateway. Driven from a Claude Code web session (Anthropic infra), 2026-08-28.
@@ -155,8 +158,8 @@ the `haku/runner` codex runtime until #5992 removed it. Full transport matrix, e
 ## Real end-to-end drive (real key via hostexec, 2026-08-28)
 
 The operator approved a `hostexec__bash` on `wyrm2` (`run_as agentydragon`) that read the
-`public-coder-agent` LiteLLM virtual key (covers both `chatgpt/ant-messages/*` and
-`chatgpt/oai-responses/*`).
+`public-coder-agent` LiteLLM virtual key (covers both `chatgpt-sub/ant-messages/*` and
+`chatgpt-sub/oai-responses/*`).
 
 **Drive A — a real multi-step agentic task, correct (the point of the whole exercise).** codex/Luna
 (`chatgpt/oai-responses/gpt-5.6-luna`, normal window) was told to write `wordfreq.py` +

@@ -690,7 +690,7 @@ data:
             }
           ],
           "shell_type": "unified_exec",
-          "slug": "chatgpt/oai-responses/gpt-6-luna",
+          "slug": "chatgpt-sub/oai-responses/gpt-6-luna",
           "support_verbosity": true,
           "supported_in_api": true,
           "supported_reasoning_levels": [
@@ -2307,7 +2307,7 @@ data:
         - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
           display_name: Qwen3.8 Flash Next IQ4_XS (128K) — cluster Ollama
           reasoning_efforts: []
-        - model: chatgpt/oai-responses/gpt-6-luna
+        - model: chatgpt-sub/oai-responses/gpt-6-luna
           display_name: GPT-6 Luna — ChatGPT
           reasoning_efforts:
             - minimal
@@ -2334,7 +2334,7 @@ data:
         HARNESS_CLAUDE:
           - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
         HARNESS_CODEX:
-          - chatgpt/oai-responses/gpt-6-luna
+          - chatgpt-sub/oai-responses/gpt-6-luna
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-120b-128k
@@ -2343,7 +2343,7 @@ data:
       public-coder-codex:
         title: Public coder / Codex
         harness: HARNESS_CODEX
-        model: chatgpt/oai-responses/gpt-6-luna
+        model: chatgpt-sub/oai-responses/gpt-6-luna
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
         instructions: |-

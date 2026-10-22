@@ -326,7 +326,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 session_id=session,
                 spec=runner_pb2.SessionSpec(
                     harness=runner_pb2.HARNESS_CODEX,
-                    model="chatgpt/oai-responses/gpt-6-luna",
+                    model="chatgpt-sub/oai-responses/gpt-6-luna",
                     cwd="/state/work",
                     reasoning_effort="low",
                 ),
@@ -535,7 +535,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                             session_id=session,
                             spec=runner_pb2.SessionSpec(
                                 harness=runner_pb2.HARNESS_CODEX,
-                                model="chatgpt/oai-responses/gpt-6-luna",
+                                model="chatgpt-sub/oai-responses/gpt-6-luna",
                                 cwd="/state/work",
                                 reasoning_effort="low",
                             ),

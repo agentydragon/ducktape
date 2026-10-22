@@ -128,7 +128,7 @@ def config() -> dict:
         "models": {
             "providers": {
                 # One provider intentionally covers both working model families. Codex
-                # uses openai-responses and chatgpt/oai-responses/* through CLIProxyAPI;
+                # uses openai-responses and chatgpt-sub/oai-responses/* through CLIProxyAPI;
                 # Gemini uses the same LiteLLM Responses surface. No Anthropic provider.
                 "litellm": {
                     "agentRuntime": {"id": "openclaw"},

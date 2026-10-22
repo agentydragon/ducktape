@@ -102,7 +102,7 @@ spec:
     routerSettings:
       fallbacks:
         - fallbackModels:
-            - chatgpt/ant-messages/gpt-6-luna
+            - chatgpt-sub/ant-messages/gpt-6-luna
           model: "*"
     teamAlias: codex-clients
   providerConfigRef:
@@ -210,8 +210,8 @@ spec:
       - rugged-local/oai-chat/gemma4-e4b
       - rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental
       - anthropic-api/ant-messages/claude-haiku-4-5-20251001
-      - chatgpt/ant-messages/gpt-6-luna
-      - chatgpt/oai-responses/gpt-6-luna
+      - chatgpt-sub/ant-messages/gpt-6-luna
+      - chatgpt-sub/oai-responses/gpt-6-luna
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -361,8 +361,8 @@ spec:
       - rugged-local/oai-chat/gemma4-e4b
       - rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental
       - anthropic-api/ant-messages/claude-haiku-4-5-20251001
-      - chatgpt/ant-messages/gpt-6-luna
-      - chatgpt/oai-responses/gpt-6-luna
+      - chatgpt-sub/ant-messages/gpt-6-luna
+      - chatgpt-sub/oai-responses/gpt-6-luna
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -568,9 +568,9 @@ spec:
     metadataSecretRef:
       name: litellm-key-metadata-agentplane-staging
     models:
-      - chatgpt/oai-responses/gpt-6-astra
-      - chatgpt/oai-responses/gpt-6-luna
-      - chatgpt/oai-responses/gpt-6-sol
+      - chatgpt-sub/oai-responses/gpt-6-astra
+      - chatgpt-sub/oai-responses/gpt-6-luna
+      - chatgpt-sub/oai-responses/gpt-6-sol
       - anthropic-max20/ant-messages/claude-opus-5-5
       - anthropic-max20/ant-messages/claude-sonnet-5-5
       - anthropic-max20/ant-messages/claude-fable-5-1
@@ -697,9 +697,9 @@ spec:
     metadataSecretRef:
       name: litellm-key-metadata-codex-pod
     models:
-      - chatgpt/oai-responses/gpt-6-astra
-      - chatgpt/oai-responses/gpt-6-luna
-      - chatgpt/oai-responses/gpt-6-sol
+      - chatgpt-sub/oai-responses/gpt-6-astra
+      - chatgpt-sub/oai-responses/gpt-6-luna
+      - chatgpt-sub/oai-responses/gpt-6-sol
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -778,7 +778,7 @@ spec:
     template:
       metadata:
         annotations:
-          description: LiteLLM virtual key for the codex-pod agent (chatgpt/oai-responses/gpt-6-* models only); reflected into codex-pod as LITELLM_API_KEY
+          description: LiteLLM virtual key for the codex-pod agent (chatgpt-sub/oai-responses/gpt-6-* models only); reflected into codex-pod as LITELLM_API_KEY
           reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
           reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: codex-pod
           reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
@@ -805,12 +805,12 @@ spec:
     metadataSecretRef:
       name: litellm-key-metadata-public-coder-agent
     models:
-      - chatgpt/ant-messages/gpt-6-astra
-      - chatgpt/ant-messages/gpt-6-luna
-      - chatgpt/ant-messages/gpt-6-sol
-      - chatgpt/oai-responses/gpt-6-astra
-      - chatgpt/oai-responses/gpt-6-luna
-      - chatgpt/oai-responses/gpt-6-sol
+      - chatgpt-sub/ant-messages/gpt-6-astra
+      - chatgpt-sub/ant-messages/gpt-6-luna
+      - chatgpt-sub/ant-messages/gpt-6-sol
+      - chatgpt-sub/oai-responses/gpt-6-astra
+      - chatgpt-sub/oai-responses/gpt-6-luna
+      - chatgpt-sub/oai-responses/gpt-6-sol
       - google/goog-generate/gemini-3.7-flash
       - google/goog-generate/gemini-3.5-flash-lite
       - antigravity/ant-messages/claude-opus-4-6-thinking
@@ -929,9 +929,9 @@ spec:
     metadataSecretRef:
       name: litellm-key-metadata-codex-pod-messages
     models:
-      - chatgpt/ant-messages/gpt-6-astra
-      - chatgpt/ant-messages/gpt-6-luna
-      - chatgpt/ant-messages/gpt-6-sol
+      - chatgpt-sub/ant-messages/gpt-6-astra
+      - chatgpt-sub/ant-messages/gpt-6-luna
+      - chatgpt-sub/ant-messages/gpt-6-sol
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -1037,9 +1037,9 @@ spec:
     metadataSecretRef:
       name: litellm-key-metadata-agent-workspaces-codex
     models:
-      - chatgpt/oai-responses/gpt-6-astra
-      - chatgpt/oai-responses/gpt-6-luna
-      - chatgpt/oai-responses/gpt-6-sol
+      - chatgpt-sub/oai-responses/gpt-6-astra
+      - chatgpt-sub/oai-responses/gpt-6-luna
+      - chatgpt-sub/oai-responses/gpt-6-sol
   providerConfigRef:
     kind: ProviderConfig
     name: default
@@ -1118,7 +1118,7 @@ spec:
     template:
       metadata:
         annotations:
-          description: LiteLLM virtual key for a future Codex workspace lane (chatgpt/oai-responses/gpt-6-* models only); reflected into agent-workspaces if restored
+          description: LiteLLM virtual key for a future Codex workspace lane (chatgpt-sub/oai-responses/gpt-6-* models only); reflected into agent-workspaces if restored
           reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
           reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: agent-workspaces
           reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
@@ -1181,9 +1181,9 @@ spec:
     metadataSecretRef:
       name: litellm-key-metadata-codex-clients
     models:
-      - chatgpt/ant-messages/gpt-6-astra
-      - chatgpt/ant-messages/gpt-6-sol
-      - chatgpt/ant-messages/gpt-6-luna
+      - chatgpt-sub/ant-messages/gpt-6-astra
+      - chatgpt-sub/ant-messages/gpt-6-sol
+      - chatgpt-sub/ant-messages/gpt-6-luna
     teamIdRef:
       name: team-codex-clients
   providerConfigRef:

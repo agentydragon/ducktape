@@ -10,7 +10,7 @@
 #   LITELLM_KEY_FILE  optional path to read the key from when LITELLM_API_KEY is unset
 #   CODEX_FLEET_HOME  CODEX_HOME for the worker (default: $HOME/.cache/codex-fleet).
 #                     Resume needs the SAME value across invocations (session history lives here).
-#   CODEX_WORKER_MODEL  model slug (default: chatgpt/oai-responses/gpt-6-luna)
+#   CODEX_WORKER_MODEL  model slug (default: chatgpt-sub/oai-responses/gpt-6-luna)
 # Output (stdout): first line  THREAD=<uuid>,  then the worker's final message text.
 set -euo pipefail
 CODEX_BIN="${CODEX_BIN:-codex}"
@@ -21,7 +21,7 @@ if [ -z "${LITELLM_API_KEY:-}" ] && [ -n "${LITELLM_KEY_FILE:-}" ]; then
 fi
 : "${LITELLM_API_KEY:?set LITELLM_API_KEY or LITELLM_KEY_FILE}"
 export LITELLM_API_KEY
-model="${CODEX_WORKER_MODEL:-chatgpt/oai-responses/gpt-6-luna}"
+model="${CODEX_WORKER_MODEL:-chatgpt-sub/oai-responses/gpt-6-luna}"
 # Ensure a LiteLLM/Responses config exists (idempotent). Points wire_api=responses at the
 # cluster LiteLLM; env_key names the var holding the virtual key.
 if [ ! -f "$CODEX_HOME/config.toml" ]; then

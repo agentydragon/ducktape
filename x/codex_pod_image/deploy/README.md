@@ -116,7 +116,7 @@ this non-root image pod has not) and no boot-time render script:
   interactive ChatGPT sign-in. The baked `~/.codex/config.toml`
   defines a `litellm` `model_provider` (`base_url = litellm.allegedly.works/v1`,
   `wire_api = responses`, `env_key = LITELLM_API_KEY`) and defaults to
-  the hidden `gpt-6-astra` alias targeting `chatgpt/oai-responses/gpt-6-astra`,
+  the hidden `gpt-6-astra` alias targeting `chatgpt-sub/oai-responses/gpt-6-astra`,
   which lets Codex load its bundled Astra metadata. `LITELLM_API_KEY` is a dedicated virtual key minted by
   `cluster/cdk8s/litellm/crossplane_keys.py` (alias `codex-pod`, scoped to the oai/chatgpt models with
   a budget — deleting it is the kill switch), reflected into `codex-pod` and set on

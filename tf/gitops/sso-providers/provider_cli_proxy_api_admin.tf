@@ -1,5 +1,5 @@
 # CLIProxyAPI's built-in management UI/API (cli-proxy-api-admin.allegedly.works) — mints
-# and recovers the Codex/Claude OAuth sessions backing OpenClaw's chatgpt/oai-responses/*
+# and recovers the Codex/Claude OAuth sessions backing OpenClaw's chatgpt-sub/oai-responses/*
 # models. cluster/k8s/cli-proxy-api/README.md "Remote recovery" has the recovery flow.
 #
 # The backend owns the OIDC code exchange and browser session. Model API keys

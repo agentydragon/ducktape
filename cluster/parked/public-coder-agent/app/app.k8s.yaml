@@ -11,7 +11,7 @@ data:
         "defaults": {
           "userTimezone": "America/Los_Angeles",
           "model": {
-            "primary": "litellm/chatgpt/oai-responses/gpt-6-luna"
+            "primary": "litellm/chatgpt-sub/oai-responses/gpt-6-luna"
           },
           "sandbox": {
             "mode": "off"
@@ -31,7 +31,7 @@ data:
           "haku_console_tpm": {
             "name": "Haku Console TPM",
             "model": {
-              "primary": "litellm/chatgpt/oai-responses/gpt-6-astra"
+              "primary": "litellm/chatgpt-sub/oai-responses/gpt-6-astra"
             }
           }
         }
@@ -147,7 +147,7 @@ data:
             "models": [
               {
                 "contextWindow": 872000,
-                "id": "chatgpt/oai-responses/gpt-6-astra",
+                "id": "chatgpt-sub/oai-responses/gpt-6-astra",
                 "input": [
                   "text",
                   "image"
@@ -158,7 +158,7 @@ data:
               },
               {
                 "contextWindow": 372000,
-                "id": "chatgpt/oai-responses/gpt-6-luna",
+                "id": "chatgpt-sub/oai-responses/gpt-6-luna",
                 "input": [
                   "text",
                   "image"
@@ -169,7 +169,7 @@ data:
               },
               {
                 "contextWindow": 372000,
-                "id": "chatgpt/oai-responses/gpt-6-sol",
+                "id": "chatgpt-sub/oai-responses/gpt-6-sol",
                 "input": [
                   "text",
                   "image"

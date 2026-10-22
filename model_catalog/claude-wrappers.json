@@ -5,10 +5,10 @@
     "model": "antigravity/ant-messages/gemini-3-flash"
   },
   "codex-claude": {
-    "haikuModel": "chatgpt/ant-messages/gpt-6-luna",
+    "haikuModel": "chatgpt-sub/ant-messages/gpt-6-luna",
     "maxContextTokens": 872000,
     "maxOutputTokens": 128000,
-    "model": "chatgpt/ant-messages/gpt-6-astra"
+    "model": "chatgpt-sub/ant-messages/gpt-6-astra"
   },
   "gemini-claude": {
     "haikuModel": "google/goog-generate/gemini-3.5-flash-lite",

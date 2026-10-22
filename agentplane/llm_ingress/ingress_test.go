@@ -242,7 +242,7 @@ func TestTwoWorkloadsShareBackendKeyAndKeepVerifiedMetadataDistinct(t *testing.T
 	client := testClient()
 	defer client.CloseIdleConnections()
 
-	body := `{"model":"chatgpt/oai-responses/gpt-5.6-luna","stream":true,"metadata":{"sandbox_name":"forged"}}`
+	body := `{"model":"chatgpt-sub/oai-responses/gpt-5.6-luna","stream":true,"metadata":{"sandbox_name":"forged"}}`
 	firstHeaders := bearer(tokenA)
 	firstHeaders.Set("Content-Type", "application/json")
 	firstHeaders.Set("x-litellm-spend-logs-metadata", `{"agentplane.sandbox_name":"forged"}`)
@@ -388,7 +388,7 @@ func TestAuthenticatedWorkloadWithoutSandboxOwnerIsServedAsItsServiceAccount(t *
 	defer client.CloseIdleConnections()
 
 	response, body := request(t, client, http.MethodPost, ingress.URL+"/v1/responses",
-		`{"model":"chatgpt/oai-responses/gpt-5.6-luna","stream":true}`, bearer(unowned))
+		`{"model":"chatgpt-sub/oai-responses/gpt-5.6-luna","stream":true}`, bearer(unowned))
 	if response.StatusCode != http.StatusOK || !bytes.Equal(body, toolStream) {
 		t.Fatalf("status=%d body=%s", response.StatusCode, body)
 	}

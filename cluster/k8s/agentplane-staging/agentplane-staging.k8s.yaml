@@ -695,7 +695,7 @@ data:
             }
           ],
           "shell_type": "unified_exec",
-          "slug": "chatgpt/oai-responses/gpt-6-astra",
+          "slug": "chatgpt-sub/oai-responses/gpt-6-astra",
           "support_verbosity": true,
           "supported_in_api": true,
           "supported_reasoning_levels": [
@@ -823,7 +823,7 @@ data:
             }
           ],
           "shell_type": "unified_exec",
-          "slug": "chatgpt/oai-responses/gpt-6-luna",
+          "slug": "chatgpt-sub/oai-responses/gpt-6-luna",
           "support_verbosity": true,
           "supported_in_api": true,
           "supported_reasoning_levels": [
@@ -947,7 +947,7 @@ data:
             }
           ],
           "shell_type": "unified_exec",
-          "slug": "chatgpt/oai-responses/gpt-6-sol",
+          "slug": "chatgpt-sub/oai-responses/gpt-6-sol",
           "support_verbosity": true,
           "supported_in_api": true,
           "supported_reasoning_levels": [
@@ -2626,7 +2626,7 @@ data:
             - low
             - medium
             - high
-        - model: chatgpt/oai-responses/gpt-6-astra
+        - model: chatgpt-sub/oai-responses/gpt-6-astra
           display_name: GPT-6 Astra — ChatGPT
           reasoning_efforts:
             - minimal
@@ -2634,7 +2634,7 @@ data:
             - medium
             - high
             - xhigh
-        - model: chatgpt/oai-responses/gpt-6-luna
+        - model: chatgpt-sub/oai-responses/gpt-6-luna
           display_name: GPT-6 Luna — ChatGPT
           reasoning_efforts:
             - minimal
@@ -2642,7 +2642,7 @@ data:
             - medium
             - high
             - xhigh
-        - model: chatgpt/oai-responses/gpt-6-sol
+        - model: chatgpt-sub/oai-responses/gpt-6-sol
           display_name: GPT-6 Sol — ChatGPT
           reasoning_efforts:
             - minimal
@@ -2673,9 +2673,9 @@ data:
           - antigravity/ant-messages/gemini-3.5-flash-lite
           - antigravity/ant-messages/gemini-3.8-flash-high
         HARNESS_CODEX:
-          - chatgpt/oai-responses/gpt-6-astra
-          - chatgpt/oai-responses/gpt-6-luna
-          - chatgpt/oai-responses/gpt-6-sol
+          - chatgpt-sub/oai-responses/gpt-6-astra
+          - chatgpt-sub/oai-responses/gpt-6-luna
+          - chatgpt-sub/oai-responses/gpt-6-sol
           - antigravity/ant-messages/claude-opus-4-6-thinking
           - antigravity/ant-messages/claude-sonnet-4-6
           - antigravity/ant-messages/gemini-3-flash
@@ -2689,7 +2689,7 @@ data:
       public-coder-codex:
         title: Public coder / Codex
         harness: HARNESS_CODEX
-        model: chatgpt/oai-responses/gpt-6-luna
+        model: chatgpt-sub/oai-responses/gpt-6-luna
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
         instructions: |-
@@ -2734,7 +2734,7 @@ data:
       finance-agent-codex:
         title: Finance agent / Codex
         harness: HARNESS_CODEX
-        model: chatgpt/oai-responses/gpt-6-luna
+        model: chatgpt-sub/oai-responses/gpt-6-luna
         cwd: /state/workspaces/{session_id}/finance-agent
         reasoning_effort: medium
         instructions: |-
@@ -2859,7 +2859,7 @@ data:
       public-coder-ducktape-codex:
         title: Public coder / ducktape / Codex
         harness: HARNESS_CODEX
-        model: chatgpt/oai-responses/gpt-6-luna
+        model: chatgpt-sub/oai-responses/gpt-6-luna
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
         instructions: |-
