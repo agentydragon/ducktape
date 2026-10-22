@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -448,6 +448,7 @@ async def test_agent_mcp_bff_decision(
         if verdict is Verdict.ALLOW
         else action_service_pb2.ACTION_STATE_DENIED
     )
+    expected_view_state = ActionState.ALLOWED if verdict is Verdict.ALLOW else ActionState.DENIED
     if verdict is Verdict.ALLOW:
         assert decided.state is ActionState.ALLOWED
         assert decided.execution is not None
@@ -469,7 +470,7 @@ async def test_agent_mcp_bff_decision(
     assert terminal.caller == pending.caller
     if terminal.decision != decided.decision:
         pytest.fail("Terminal Decision changed", pytrace=False)
-    assert terminal.state is expected_state
+    assert terminal.state is expected_view_state
     if verdict is Verdict.ALLOW:
         assert terminal.execution is not None
         assert decided.execution is not None
@@ -500,7 +501,7 @@ async def test_agent_mcp_bff_decision(
         pytest.fail("Stale decision changed the terminal request", pytrace=False)
 
 
-async def _deny_pending(operator_bff: httpx.AsyncClient, request_id: UUID) -> ActionRequestView:
+async def _deny_pending(operator_bff: httpx.AsyncClient, request_id: str) -> ActionRequestView:
     """Check a request waited for the operator, then close it so nothing lingers undecided."""
     path = f"/upstream/actions/v1/action-requests/{request_id}"
     receipt = _bff_request(await operator_bff.get(path))
