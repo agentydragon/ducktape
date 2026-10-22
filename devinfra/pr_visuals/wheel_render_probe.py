@@ -11,6 +11,7 @@ from util.visual_review import VisualReviewAsset, VisualReviewManifest
 def main() -> None:
     wheel_root = Path(sys.argv[1]).resolve()
     for module in (publisher, invocation_ids, visual_diff, visual_review):
+        assert module.__file__ is not None
         assert Path(module.__file__).resolve().is_relative_to(wheel_root)
     fixture = Path(sys.argv[2])
     fixture.mkdir()
