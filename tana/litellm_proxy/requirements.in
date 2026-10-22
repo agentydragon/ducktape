@@ -13,6 +13,9 @@ opentelemetry-api>=1.20
 opentelemetry-sdk>=1.20
 opentelemetry-exporter-otlp-proto-http>=1.20
 
+# Keep this separate pip hub's protobuf runtime aligned with the root workspace.
+protobuf>=7.36.2,<8
+
 # LiteLLM proxy startup imports these when loading server settings/metrics.
 prometheus-client
 pydantic-settings>=2.0.0

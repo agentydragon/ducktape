@@ -277,6 +277,8 @@ dependencies = [
     "grpcio-health-checking>=1.84.0",
     "grpcio-tools>=1.84.0",
     "mypy-protobuf>=3.6",
+    # @protobuf's protoc embeds its Python version in generated _pb2 modules.
+    "protobuf>=7.36.2,<8",
 
     # Type stubs for mypy
     "types-PyYAML",

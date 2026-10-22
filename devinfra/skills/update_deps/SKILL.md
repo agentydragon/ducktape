@@ -265,22 +265,27 @@ declarations.
 
 **Protobuf** is the primary example:
 
-| Ecosystem           | Declaration                                  | Current pin / role      |
-| ------------------- | -------------------------------------------- | ----------------------- |
-| Bazel               | `MODULE.bazel`: `protobuf` module            | `36.1.bcr.1`            |
-| pip                 | `requirements_bazel.txt`                     | `protobuf==7.36.1`      |
-| Nix stable          | `nixpkgs` input on `nixos-26.05`             | Python runtime `7.34.1` |
-| Nix unstable/master | `nixpkgs-unstable` / `nixpkgs-master` inputs | Python runtime `7.36.2` |
+| Ecosystem           | Declaration                                                       | Current pin / role      |
+| ------------------- | ----------------------------------------------------------------- | ----------------------- |
+| Bazel root          | `MODULE.bazel`: `protobuf` module                                 | `36.2`                  |
+| Bazel nested        | `devinfra/claude/web_env/re/environment_manager/src/MODULE.bazel` | `36.2`                  |
+| pip root            | `pyproject.toml` / `requirements_bazel.txt`                       | `protobuf==7.36.2`      |
+| pip Tana            | `tana/litellm_proxy/requirements.in` / `.txt`                     | `protobuf==7.36.2`      |
+| Nix stable          | `nixpkgs` input on `nixos-26.05`                                  | Python runtime `7.34.1` |
+| Nix unstable/master | `nixpkgs-unstable` / `nixpkgs-master` inputs                      | Python runtime `7.36.2` |
 
-**Rule**: protobuf runtime (pip/Nix) must be **>=** the protoc/gencode version
-used by the consumer. The current stable Nixpkgs Python runtime lags the Bazel
-and pip pins; a further coordinated bump needs to move or override that runtime
-as well. Protobuf `36.2` / Python `7.36.2` are available in the locked
-unstable/master inputs, but the stable `nixos-26.05` input remains at
-`7.34.1`. Verify all three ecosystems before proposing a joint update.
+**Rule**: a Python protobuf runtime must be at least as new as the generated
+Python code loaded in that same environment. Root Bazel `py_proto_library` code
+uses the root pip runtime, so bump their versions together. Tana has a separate
+pip hub; its runtime pin is aligned here but does not load root Bazel gencode.
+The nested environment-manager module has its own Bazel build and Go protobuf
+runtime; its Go module version is a different release series.
 
-When proposing ANY protobuf update, verify all three are compatible and note
-the versions in the PR description.
+Stable Nixpkgs' Python closure is separate and uses its own `7.34.1` runtime;
+the pinned stable protoc is `34.1`. It does not consume root Bazel-generated
+Python code. If a future Nix package includes that code, update the runtime
+in that package's Python closure before shipping it. Verify each consuming
+environment when proposing a protobuf update and note the versions in the PR.
 
 ### Lockfile regeneration by ecosystem
 

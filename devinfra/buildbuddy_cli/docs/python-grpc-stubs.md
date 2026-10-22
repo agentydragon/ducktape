@@ -176,13 +176,15 @@ and its transitive deps) are defined in `third_party/buildbuddy/BUILD.protos.baz
 These are used for JSON deserialization via `google.protobuf.json_format` — see
 `devinfra/precommit/test_tag.py` for an example.
 
-### Current version snapshot (2026-10-21)
+### Current version snapshot (2026-10-22)
 
-The root workspace now pins Bazel protobuf `36.1.bcr.1` and the pip runtime
-`protobuf==7.36.1`. The stable `nixpkgs` input still supplies Python protobuf
-`7.34.1`; the `nixpkgs-unstable` and `nixpkgs-master` inputs supply `7.36.2`.
-Thus the April 2026 resolution above is historical, and a future coordinated
-bump must account for the stable Nix runtime as well as the Bazel and pip pins.
+The root and nested environment-manager Bazel modules pin protobuf `36.2`.
+The root and Tana pip locks pin `protobuf==7.36.2`; the root runtime matches
+the version required by the generated `py_proto_library` modules. The stable
+`nixpkgs` input supplies Python protobuf `7.34.1` and protoc `34.1` in a
+separate closure, which does not load root Bazel-generated Python modules.
+The `nixpkgs-unstable` and `nixpkgs-master` inputs supply Python protobuf
+`7.36.2`. The April 2026 resolution above is historical.
 
 ## Recommendation
 
