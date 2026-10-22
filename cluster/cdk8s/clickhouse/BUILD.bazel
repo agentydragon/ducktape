@@ -45,6 +45,7 @@ py_library(
 py_library(
     name = "installation",
     srcs = ["installation.py"],
+    data = ["zz-system-logs.xml"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
@@ -63,6 +64,7 @@ py_library(
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
