@@ -332,10 +332,10 @@ def seaweed(scope: Construct) -> Seaweed:
                 # 112/112 (full) while volumes were ~5% full (~0.85 GB of a 16 GB cap). As of
                 # 2026-10-22, the 2-copy set uses 992 placements (496 logical volumes). During
                 # a one-server evacuation, each of the two survivors must hold 496 placements;
-                # 600 leaves 104 slots per survivor for evacuation and growth. Disk-full remains
-                # bounded by minFreeSpacePercent above, not the slot cap. 600 also exceeds the
-                # 3.6 TB node's auto-derived 232 slots, so no server is capped below its prior
-                # count.
+                # 600 leaves 104 slots per survivor for evacuation and growth. This raises the
+                # slot limit only; verify actual free space and the minFreeSpacePercent reserve
+                # before evacuation. 600 also exceeds the 3.6 TB node's auto-derived 232 slots,
+                # so no server is capped below its prior count.
                 "hdd": _volume_topology(
                     rack="hil-ovh-h109b04",
                     storage="1800Gi",
