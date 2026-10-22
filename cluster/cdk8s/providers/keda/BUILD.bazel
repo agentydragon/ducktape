@@ -1,4 +1,3 @@
-# gazelle:ignore
 # gazelle:resolve py keda_scaledjob_crds //cluster/cdk8s/providers/keda:scaledjob
 # gazelle:resolve py keda_triggerauthentication_crds //cluster/cdk8s/providers/keda:triggerauthentication
 

@@ -1,4 +1,3 @@
-# gazelle:ignore
 # gazelle:resolve py litellm_key_crds //cluster/cdk8s/providers/litellm:key
 # gazelle:resolve py litellm_team_crds //cluster/cdk8s/providers/litellm:team
 # gazelle:resolve py litellm_providerconfig_crds //cluster/cdk8s/providers/litellm:providerconfig

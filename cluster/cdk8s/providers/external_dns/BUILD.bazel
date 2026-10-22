@@ -1,4 +1,3 @@
-# gazelle:ignore
 # gazelle:resolve py external_dns_crds //cluster/cdk8s/providers/external_dns:dnsendpoint
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
