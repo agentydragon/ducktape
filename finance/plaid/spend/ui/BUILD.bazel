@@ -90,7 +90,10 @@ ts_library(
 
 ts_library(
     name = "transactions",
-    srcs = ["transactions.tsx"],
+    srcs = [
+        "tabler_icons.d.ts",
+        "transactions.tsx",
+    ],
     tsconfig = ":tsconfig",
     deps = [
         ":rule_display",
