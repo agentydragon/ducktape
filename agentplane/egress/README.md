@@ -62,6 +62,13 @@ Also here:
   It drives the real binaries against envtest API servers (<../testing/kubernetes_apiserver.py>) and
   a PostgreSQL container; the package tests beside the code cover the decision itself.
 
+Setting listener ports to `0` asks the kernel to bind available ports. If
+`AGENTPLANE_EGRESS_STARTUP_FILE` is set, the proxy atomically publishes the actual
+`proxy`, `admin` and `agent_api` addresses after all three binds succeed.
+`AGENTPLANE_EGRESS_SIDECAR_STARTUP_FILE` requests the sidecar's `listener`, `readiness`
+and `platform_routes` name-to-address object after every configured route has bound.
+Publication proves the listeners are bound; consumers must still check protocol readiness.
+
 The versioned Kubernetes types live in `api/v1alpha1/` and `../policy/api/v1alpha1/`.
 Their `+genclient` markers drive the pinned Kubernetes `client-gen`, `lister-gen` and `informer-gen`
 actions in <../../devinfra/go/kubernetes_clients.bzl>. Generated Go packages are Bazel outputs;

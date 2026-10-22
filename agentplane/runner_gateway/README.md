@@ -25,6 +25,11 @@ conversation and from Runner admission.
 - `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
   `gateway_process.py` runs the real binary for cross-language acceptance.
 
+Listener settings accept ordinary host:port addresses and `fd:N`, where `N` is an
+inherited listening socket descriptor. Both gRPC and the optional HTTP facade
+can serve on a listener held continuously by a parent process. The process
+consumes the inherited descriptor and owns the listener until shutdown.
+
 Build `//agentplane/runner_gateway:runner-gateway` or `//agentplane/runner_gateway:image`.
 The migrator image is `//agentplane/runner_gateway/migrations:image`; serving never applies
 migrations. Integration tests exercise real PostgreSQL and queue-to-runner tunnels on RBE.

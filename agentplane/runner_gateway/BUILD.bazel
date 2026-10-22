@@ -155,7 +155,10 @@ go_binary(
 
 go_test(
     name = "config_test",
-    srcs = ["config_test.go"],
+    srcs = [
+        "config_test.go",
+        "listener_test.go",
+    ],
     embed = [":main_lib"],
     deps = ["//agentplane/workload_auth/go/auth"],
 )
