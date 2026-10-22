@@ -87,8 +87,9 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
         async with asyncio.timeout(30), httpx.AsyncClient(timeout=2) as client:
             while True:
                 try:
-                    response = await client.get(static_upstream)
-                except httpx.ConnectError, httpx.TimeoutException:
+                    response = await client.get(f"{static_upstream}/healthz")
+                # Docker may publish the port before nginx can answer, including a reset on read.
+                except httpx.ConnectError, httpx.TimeoutException, httpx.ReadError:
                     await asyncio.sleep(0.1)
                     continue
                 response.raise_for_status()
