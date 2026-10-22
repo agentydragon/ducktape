@@ -51,7 +51,7 @@
 
 - [ ] Remove `pybind11_abseil_rename_pypi_hub.patch` and its `single_version_override` after a released pybind11_abseil version contains [upstream PR #73](https://github.com/pybind/pybind11_abseil/pull/73); bump the dependency and rerun the OR-Tools consumer build together.
 - [ ] Remove the two `rules_tf` provider-mirror exit-code patches after [rules_tf PR #28](https://github.com/yanndegat/rules_tf/pull/28) merges; retain `rules_tf_exclude_dotterraform.patch`, which is a separate source-packaging fix.
-- [ ] Re-test and retire the rugged Mutter patch only when the selected nixpkgs Mutter source has equivalent inhibit ownership/zero-guard logic and rugged passes fresh-login, reboot, and relevant external-monitor auto-rotate checks.
+- [ ] Retire the rugged Mutter patch after nixpkgs selects Mutter 51.0 or newer and rugged passes fresh-login, reboot, and external-monitor auto-rotate checks without the local patch. GNOME Mutter [MR !4962](https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/4962) merged to `main` on 2026-08-04 and its fix is in Mutter 51.0 (GNOME 51, released 2026-09-16). As of 2026-10-22, the lock selects 50.5 from stable and 50.4 from unstable/master; current nixpkgs branch definitions still select 50.5. Reconcile the overlapping patch hunks at the eventual bump before testing rugged.
 - [ ] On the next OpenClaw bump, re-audit the remaining local `2026.9.5` dist patch: retire it only after both images build and the corresponding Nix-mode, plugin, and startup contracts are proven against upstream.
 
 ## Skills

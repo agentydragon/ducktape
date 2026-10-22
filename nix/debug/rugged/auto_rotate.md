@@ -516,12 +516,26 @@ Patch intent:
 4. Add a defensive guard in `MetaOrientationManager` so unmatched
    `uninhibit_tracking()` calls cannot drive `inhibited_count` negative.
 
-Patch lifecycle (checked 2026-09-13): this remains a `rugged`-only mitigation on
-the `nixos-26.05` nixpkgs input. The selected Mutter source has not been verified
-to contain equivalent ownership and zero-guard logic, and no upstream release or
-issue has superseded the local patch. Retire it only after a selected nixpkgs
-Mutter release contains the equivalent fix and rugged passes fresh-login, reboot,
-and relevant external-monitor auto-rotate checks against that unpatched source.
+Patch lifecycle (checked 2026-10-22): GNOME Mutter
+[MR !4962](https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/4962) merged to
+`main` on 2026-08-04. Its `sync_orientation_unmanaged_inhibit()` ownership fix is
+in the Mutter 51.0 source released with [GNOME 51](https://release.gnome.org/51/)
+on 2026-09-16. The linked upstream
+[work item #4931](https://gitlab.gnome.org/GNOME/mutter/-/work_items/4931) is
+closed.
+
+The selected Nix sources have not caught up yet: the locked `nixos-26.05` input
+uses Mutter 50.5, and the locked `nixos-unstable` and `nixpkgs-master` inputs use
+50.4. The current nixpkgs `nixos-unstable` and `master` package definitions still
+select 50.5. The Mutter 50.5 source lacks the MR's ownership sync and the local
+patch applies to it. The released Mutter 51.0 source contains the upstream sync;
+the local patch's dry-run then has three of six hunks fail because the accounting
+logic overlaps, while its extra zero-count guard still applies.
+
+At the next nixpkgs bump, reconcile the local patch against the upstream-owned
+inhibit logic and remove redundant hunks. Then build and test an unpatched
+`rugged` through fresh login, reboot, and relevant external-monitor auto-rotate
+checks before removing the remaining local patch.
 
 Validation:
 
