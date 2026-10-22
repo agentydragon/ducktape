@@ -91,7 +91,7 @@
       "release": "debundle"
     },
     "aw-importer": {
-      "target": "@ducktape_activitywatch//importer:aw_importer_bin",
+      "target": "@@ducktape_activitywatch+//importer:aw_importer_bin",
       "filename": "aw_importer_bin",
       "release": "aw-importer"
     },
