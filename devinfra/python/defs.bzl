@@ -85,15 +85,18 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     base_env_inherit = list(env_inherit or [])
     base_args = list(args or [])
     base_deps = list(deps or [])
+    base_env = dict(env or {})
     if kwargs.get("main") == None and kwargs.get("main_module") == None:
         test_srcs = kwargs.get("srcs", [])
         if type(test_srcs) == "list":
             main_srcs = [src for src in test_srcs if _source_basename(src) == name + ".py"]
             if len(main_srcs) == 1:
-                base_args = [
+                # Application Settings models can parse sys.argv before pytest consumes it.
+                base_env["PYTEST_ADDOPTS"] = " ".join([
+                    base_env.get("PYTEST_ADDOPTS", ""),
                     "$(location {})".format(_location_label(main_srcs[0])),
                     "--import-mode=importlib",
-                ] + base_args
+                ]).strip()
                 kwargs["main_module"] = "pytest_bazel"
                 pytest_bazel_dep = Label("@pypi//pytest_bazel")
                 has_pytest_bazel_dep = False
@@ -104,7 +107,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
                     base_deps.append(pytest_bazel_dep)
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
-        env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | (env or {})
+        base_env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | base_env
     if shard_count != None:
         base_args = base_args + ["-p", "util.testing.sharding"]
         base_deps = base_deps + ["//util/testing:sharding"]
@@ -126,7 +129,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         imports = imports,
         args = base_args,
         deps = base_deps,
-        env = env,
+        env = base_env,
         env_inherit = base_env_inherit if base_env_inherit else None,
         **kwargs
     )
