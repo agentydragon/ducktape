@@ -96,7 +96,7 @@ class GoProcess[Endpoints]:
                     assert self.process.returncode is None, (
                         f"process exited with {self.process.returncode}:\n{await asyncio.to_thread(self.stderr.read_text)}"
                     )
-                    assert (await stub.Check(health_pb2.HealthCheckRequest())).status == expected
+                    assert (await stub.Check(health_pb2.HealthCheckRequest(), timeout=1)).status == expected
                     return
         raise AssertionError("health retry exhausted")
 
