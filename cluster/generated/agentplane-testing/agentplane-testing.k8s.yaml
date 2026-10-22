@@ -4199,6 +4199,8 @@ metadata:
   namespace: agentplane-testing
 data:
   settings.yaml: |
+    host: 0.0.0.0
+    port: 8080
     token_audience: agentplane-egress
     operator_oidc:
       issuer: https://agentplane-dex-testing.allegedly.works/dex
@@ -4258,10 +4260,7 @@ spec:
     spec:
       automountServiceAccountToken: true
       containers:
-        - args:
-            - --host=0.0.0.0
-            - --port=8080
-          env:
+        - env:
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               valueFrom:
                 secretKeyRef:

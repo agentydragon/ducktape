@@ -89,7 +89,19 @@ def test_cross_owner_reader_is_explicit_and_json_encoded(
     container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
     readers = one(item for item in container["env"] if item["name"] == "AGENTPLANE_ACTIONS_READER_ACCOUNTS")
     assert json.loads(readers["value"]) == [{"namespace": namespace, "name": "notifications"}]
-    assert not any(arg.startswith("--reader-accounts") for arg in container["args"])
+    assert not any(arg.startswith("--reader-accounts") for arg in container.get("args", []))
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_actions_roll_does_not_overlap_execution_protocols(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    deployment = one(
+        doc
+        for doc in agentplane_manifests[namespace]
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
+    )
+    assert deployment["spec"]["strategy"] == {"type": "Recreate"}
 
 
 if __name__ == "__main__":

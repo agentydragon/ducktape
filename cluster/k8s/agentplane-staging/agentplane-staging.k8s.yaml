@@ -4890,6 +4890,8 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
+    host: 0.0.0.0
+    port: 8080
     token_audience: agentplane-egress
     operator_oidc:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
@@ -5063,10 +5065,7 @@ spec:
     matchLabels:
       cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
   strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-    type: RollingUpdate
+    type: Recreate
   template:
     metadata:
       labels:
@@ -5075,10 +5074,7 @@ spec:
     spec:
       automountServiceAccountToken: true
       containers:
-        - args:
-            - --host=0.0.0.0
-            - --port=8080
-          env:
+        - env:
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               valueFrom:
                 secretKeyRef:

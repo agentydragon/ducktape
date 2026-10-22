@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -14,6 +15,7 @@ from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
+    DeploymentStrategy,
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
@@ -46,7 +48,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import cli_args, env_name
+from util.settings_contract import env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "actions"
@@ -120,6 +122,8 @@ class Actions(Construct):
 
         props = env.actions
         content: dict[str, Any] = {
+            "host": "0.0.0.0",
+            "port": self.service.pod_port,
             "token_audience": WORKLOAD_TOKEN_AUDIENCE,
             "operator_oidc": props.operator_oidc.model_dump(mode="json", exclude_unset=True),
             "policy_namespace": env.namespace,
@@ -284,7 +288,9 @@ class Actions(Construct):
             container="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=self.image_pull_policy,
-            args=cli_args(Settings, host="0.0.0.0", port=self.service.pod_port),
+            # Python and Go read the same listener settings file; Go has no CLI flag parser.
+            # The runtime flip must not overlap Python's and Go's worker/push lease protocols.
+            replica_profile=replace(self.env.replicas, strategy=DeploymentStrategy.recreate()),
             env_variables=self._container_env(),
             readiness=http_probe(
                 "/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10, timeout_seconds=5
