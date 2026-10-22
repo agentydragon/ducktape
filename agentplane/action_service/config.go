@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -60,6 +63,31 @@ type config struct {
 	MCPServers map[string]linkage.Server `mapstructure:"mcp_servers"`
 	// MCPClientMetadata is the client identity of the servers that use the shared Client ID Metadata Document.
 	MCPClientMetadata linkage.ClientMetadata `mapstructure:"mcp_client_metadata"`
+	// OAuth enables the external MCP edge. Its settings keep the Python deployment's keys until cutover.
+	OAuth             *oauthSettings `mapstructure:"oauth"`
+	MaxWaitSeconds    float64        `mapstructure:"max_wait_seconds"`
+	DirectWaitSeconds float64        `mapstructure:"direct_wait_seconds"`
+}
+
+// oauthSettings reads the existing Secret unchanged. The signing and encryption files and discovery
+// config URL belong to the retired FastMCP server; opaque Go tokens need none of them.
+// CLEANUP(added 2026-10-21): Remove ConfigURL, JWTSigningKeyFile and EncryptionKeyFile after
+//
+//	the staging Go cutover removes these fields from the shared OAuth Secret (port stage O).
+type oauthSettings struct {
+	ConfigURL                string `mapstructure:"config_url"`
+	UpstreamClientID         string `mapstructure:"upstream_client_id"`
+	UpstreamClientSecretFile string `mapstructure:"upstream_client_secret_file"`
+	BaseURL                  string `mapstructure:"base_url"`
+	IntegrationAppURL        string `mapstructure:"integration_app_url"`
+	JWTSigningKeyFile        string `mapstructure:"jwt_signing_key_file"`
+	EncryptionKeyFile        string `mapstructure:"encryption_key_file"`
+	UpstreamIssuer           string `mapstructure:"upstream_issuer"`
+	UpstreamSubject          string `mapstructure:"upstream_subject"`
+	ApprovingOperator        struct {
+		Issuer  string `mapstructure:"issuer"`
+		Subject string `mapstructure:"subject"`
+	} `mapstructure:"approving_operator"`
 }
 
 type gitHubVisibility struct {
@@ -74,7 +102,7 @@ func defaultConfig() config {
 		GitHubVisibility: gitHubVisibility{
 			APIBaseURL: policies.GitHubAPIBaseURL, CacheTTLSeconds: policies.VisibilityTTL.Seconds(),
 		},
-		ActionGroups: &catalog.Catalog{},
+		ActionGroups: &catalog.Catalog{}, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
 	}
 }
 
@@ -109,6 +137,30 @@ func loadConfig() (config, error) {
 		if strings.HasPrefix(key, "mcp_servers.") {
 			settings.Set(key, settings.Get(key))
 		}
+	}
+	if raw := os.Getenv(settingPrefix + "OAUTH"); raw != "" {
+		var oauth map[string]any
+		if err := json.Unmarshal([]byte(raw), &oauth); err != nil || oauth == nil {
+			return config{}, errors.New("oauth must be a JSON object")
+		}
+		// Set the individual leaves so nested environment overrides retain Viper precedence.
+		var setLeaves func(string, map[string]any)
+		setLeaves = func(prefix string, values map[string]any) {
+			for key, value := range values {
+				path := prefix + "." + key
+				if nested, ok := value.(map[string]any); ok {
+					setLeaves(path, nested)
+				} else {
+					env := settingPrefix + strings.ToUpper(strings.ReplaceAll(path, ".", "__"))
+					if override, present := os.LookupEnv(env); present && override != "" {
+						value = override
+					}
+					settings.Set(path, value)
+				}
+			}
+		}
+		settings.Set("oauth", oauth)
+		setLeaves("oauth", oauth)
 	}
 	// The errors name no value: a setting can be a Secret.
 	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
@@ -153,6 +205,29 @@ func (c *config) validate() error {
 	}
 	if err := linkage.Validate(c.MCPServers, c.MCPClientMetadata); err != nil {
 		return err
+	}
+	for _, seconds := range []float64{c.MaxWaitSeconds, c.DirectWaitSeconds} {
+		if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+			return errors.New("MCP wait seconds must be finite and nonnegative")
+		}
+	}
+	if c.OAuth != nil {
+		o := c.OAuth
+		for _, value := range []string{o.UpstreamClientID, o.UpstreamClientSecretFile, o.UpstreamSubject, o.ApprovingOperator.Issuer, o.ApprovingOperator.Subject} {
+			if strings.TrimSpace(value) == "" {
+				return errors.New("oauth requires client, secret file, upstream subject and approving operator")
+			}
+		}
+		for _, value := range []string{o.BaseURL, o.IntegrationAppURL, o.UpstreamIssuer, o.ApprovingOperator.Issuer} {
+			parsed, err := url.Parse(value)
+			if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || (parsed.Scheme != "https" && !(parsed.Scheme == "http" && (parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "::1"))) {
+				return errors.New("oauth endpoints must use https or loopback http")
+			}
+		}
+		issuer, _ := url.Parse(o.BaseURL)
+		if issuer.Path != "" || issuer.RawQuery != "" {
+			return errors.New("oauth.base_url must be an origin")
+		}
 	}
 	if c.operatorsEnabled() {
 		return c.OperatorOIDC.Validate()
