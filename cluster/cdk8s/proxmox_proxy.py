@@ -3,8 +3,6 @@ WebSocket for the noVNC/xterm.js consoles)."""
 
 from __future__ import annotations
 
-import textwrap
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
@@ -20,6 +18,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.scripts import nebula_mesh
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "proxmox-proxy"
 NAMESPACE = "proxmox-proxy"
@@ -35,39 +34,13 @@ _PROXMOX_UI_PORT = 8006
 
 
 def config_map(mesh: nebula_mesh.Mesh) -> ConfigMapArgs:
-    nginx_conf = textwrap.dedent(f"""\
-        worker_processes auto;
-        error_log /dev/stderr warn;
-
-        events {{
-            worker_connections 128;
-        }}
-
-        http {{
-            upstream proxmox {{
-                server {mesh.hosts[_PROXMOX_HOST].nebula_ip}:{_PROXMOX_UI_PORT};
-            }}
-
-            server {{
-                listen {SERVICE.pod_port};
-
-                location / {{
-                    proxy_pass https://proxmox;
-                    proxy_ssl_verify off;
-
-                    proxy_set_header Host $host;
-                    proxy_set_header X-Real-IP $remote_addr;
-                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto $scheme;
-
-                    # WebSocket support (noVNC/xterm.js console)
-                    proxy_http_version 1.1;
-                    proxy_set_header Upgrade $http_upgrade;
-                    proxy_set_header Connection "upgrade";
-                }}
-            }}
-        }}
-        """)
+    nginx_conf = (
+        get_required_path(own_repo_rlocation("cluster/cdk8s/proxmox-proxy.conf"))
+        .read_text()
+        .replace("@PROXMOX_IP@", str(mesh.hosts[_PROXMOX_HOST].nebula_ip))
+        .replace("@PROXMOX_PORT@", str(_PROXMOX_UI_PORT))
+        .replace("@LISTEN_PORT@", str(SERVICE.pod_port))
+    )
     return ConfigMapArgs(name=_CONFIG_MAP_NAME, namespace=NAMESPACE, literals=[f"nginx.conf={nginx_conf}"])
 
 

@@ -14,6 +14,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "kubectl-passthrough-mcp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/kubectl-passthrough-mcp/app"
@@ -25,17 +26,11 @@ SERVICE = ServiceRef(
 _CONFIG_MAP = "public"
 _CONFIG_FILE = "00-public.toml"
 _CONFIG_DIR = "/etc/kubectl-passthrough-mcp"
-_PUBLIC_CONFIG = f"""\
-require_oauth = true
-authorization_url = "https://auth.allegedly.works/application/o/kubectl-passthrough-mcp/"
-oauth_audience = "kubectl-passthrough-mcp"
-# Passthrough forwards the caller's JWT as-is to kube-apiserver. No STS
-# credentials needed because there's no token exchange on this server.
-cluster_auth_mode = "passthrough"
-cluster_provider_strategy = "in-cluster"
-server_url = "https://kubectl-passthrough-mcp.allegedly.works"
-port = "{SERVICE.pod_port}"
-"""
+_PUBLIC_CONFIG = (
+    get_required_path(own_repo_rlocation("cluster/cdk8s/kubectl-passthrough-mcp.toml"))
+    .read_text()
+    .replace("@LISTEN_PORT@", str(SERVICE.pod_port))
+)
 
 
 def _healthz(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
