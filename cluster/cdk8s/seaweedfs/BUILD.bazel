@@ -79,12 +79,19 @@ py_library(
 py_library(
     name = "monitoring",
     srcs = ["monitoring.py"],
+    data = [
+        "s3-gateway-latency-high.promql",
+        "s3-gateway-metrics-missing.promql",
+        "s3-gateway-target-count-low.promql",
+        "s3-request-errors-high.promql",
+    ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cluster",
         ":public_s3",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/seaweedfs:namespace",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
     ],
 )

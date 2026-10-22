@@ -1,0 +1,9 @@
+(
+  up{namespace="@NAMESPACE@",service="@SERVICE@"} == 1
+)
+unless on (namespace, service, pod)
+max by (namespace, service, pod) (
+  present_over_time(
+    SeaweedFS_s3_in_flight_requests{namespace="@NAMESPACE@",service="@SERVICE@"}[10m]
+  )
+)

@@ -1,0 +1,53 @@
+(
+  (
+    sum by (namespace, service, type) (
+      increase(
+        SeaweedFS_s3_request_total{
+          namespace="@NAMESPACE@",
+          service=~"@GATEWAY_SERVICES@",
+          code=~"5.."
+        }[5m]
+      )
+    )
+    /
+    on (namespace, service, type)
+    sum by (namespace, service, type) (
+      increase(
+        SeaweedFS_s3_request_total{
+          namespace="@NAMESPACE@",
+          service=~"@GATEWAY_SERVICES@"
+        }[5m]
+      )
+    )
+  ) >= 0.05
+  and on (namespace, service, type)
+  sum by (namespace, service, type) (
+    increase(
+      SeaweedFS_s3_request_total{
+        namespace="@NAMESPACE@",
+        service=~"@GATEWAY_SERVICES@"
+      }[5m]
+    )
+  ) >= 20
+)
+or
+(
+  sum by (namespace, service, type) (
+    increase(
+      SeaweedFS_s3_request_total{
+        namespace="@NAMESPACE@",
+        service=~"@GATEWAY_SERVICES@",
+        code=~"5.."
+      }[15m]
+    )
+  ) >= 4
+  and on (namespace, service, type)
+  sum by (namespace, service, type) (
+    increase(
+      SeaweedFS_s3_request_total{
+        namespace="@NAMESPACE@",
+        service=~"@GATEWAY_SERVICES@"
+      }[15m]
+    )
+  ) < 60
+)

@@ -1,0 +1,51 @@
+(
+  (
+    histogram_quantile(
+      0.95,
+      sum by (namespace, service, type, le) (
+        rate(
+          SeaweedFS_s3_time_to_first_byte_millisecond_bucket{
+            namespace="@NAMESPACE@",
+            service=~"@GATEWAY_SERVICES@",
+            type="GET"
+          }[5m]
+        )
+      )
+    ) / 1000 > 30
+    and on (namespace, service, type)
+    sum by (namespace, service, type) (
+      increase(
+        SeaweedFS_s3_request_total{
+          namespace="@NAMESPACE@",
+          service=~"@GATEWAY_SERVICES@",
+          type="GET"
+        }[5m]
+      )
+    ) >= 20
+  )
+  or
+  (
+    histogram_quantile(
+      0.95,
+      sum by (namespace, service, type, le) (
+        rate(
+          SeaweedFS_s3_request_seconds_bucket{
+            namespace="@NAMESPACE@",
+            service=~"@GATEWAY_SERVICES@",
+            type=~"DELETE|LIST"
+          }[5m]
+        )
+      )
+    ) > 5
+    and on (namespace, service, type)
+    sum by (namespace, service, type) (
+      increase(
+        SeaweedFS_s3_request_total{
+          namespace="@NAMESPACE@",
+          service=~"@GATEWAY_SERVICES@",
+          type=~"DELETE|LIST"
+        }[5m]
+      )
+    ) >= 20
+  )
+)

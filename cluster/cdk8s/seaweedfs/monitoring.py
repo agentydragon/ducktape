@@ -8,12 +8,11 @@ independent public S3 gateway and its ServiceMonitor belong to `public_s3.py`.
 
 from __future__ import annotations
 
-from textwrap import dedent
-
 from cdk8s import ApiObjectMetadata, App, Chart
 
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.seaweedfs import cluster, namespace, public_s3
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "seaweedfs-monitoring"
 _S3_GATEWAY_SERVICES = (f"{cluster.NAME}-s3", public_s3.NAME)
@@ -23,63 +22,10 @@ _S3_GATEWAY_SERVICE_MATCHER = "|".join(_S3_GATEWAY_SERVICES)
 _S3_GATEWAY_REQUEST_ERRORS = [
     Rule.alert(
         "SeaweedS3RequestErrorsHigh",
-        dedent(
-            f"""\
-            (
-              (
-                sum by (namespace, service, type) (
-                  increase(
-                    SeaweedFS_s3_request_total{{
-                      namespace="{namespace.NAME}",
-                      service=~"{_S3_GATEWAY_SERVICE_MATCHER}",
-                      code=~"5.."
-                    }}[5m]
-                  )
-                )
-                /
-                on (namespace, service, type)
-                sum by (namespace, service, type) (
-                  increase(
-                    SeaweedFS_s3_request_total{{
-                      namespace="{namespace.NAME}",
-                      service=~"{_S3_GATEWAY_SERVICE_MATCHER}"
-                    }}[5m]
-                  )
-                )
-              ) >= 0.05
-              and on (namespace, service, type)
-              sum by (namespace, service, type) (
-                increase(
-                  SeaweedFS_s3_request_total{{
-                    namespace="{namespace.NAME}",
-                    service=~"{_S3_GATEWAY_SERVICE_MATCHER}"
-                  }}[5m]
-                )
-              ) >= 20
-            )
-            or
-            (
-              sum by (namespace, service, type) (
-                increase(
-                  SeaweedFS_s3_request_total{{
-                    namespace="{namespace.NAME}",
-                    service=~"{_S3_GATEWAY_SERVICE_MATCHER}",
-                    code=~"5.."
-                  }}[15m]
-                )
-              ) >= 4
-              and on (namespace, service, type)
-              sum by (namespace, service, type) (
-                increase(
-                  SeaweedFS_s3_request_total{{
-                    namespace="{namespace.NAME}",
-                    service=~"{_S3_GATEWAY_SERVICE_MATCHER}"
-                  }}[15m]
-                )
-              ) < 60
-            )
-            """
-        ),
+        get_required_path(own_repo_rlocation("cluster/cdk8s/seaweedfs/s3-request-errors-high.promql"))
+        .read_text()
+        .replace("@NAMESPACE@", namespace.NAME)
+        .replace("@GATEWAY_SERVICES@", _S3_GATEWAY_SERVICE_MATCHER),
         for_="10m",
         labels={"severity": "warning"},
         summary="SeaweedFS S3 {{ $labels.service }} {{ $labels.type }} requests are returning 5xx",
@@ -103,61 +49,10 @@ _S3_GATEWAY_REQUEST_ERRORS = [
 _S3_GATEWAY_LATENCY = [
     Rule.alert(
         "SeaweedS3GatewayLatencyHigh",
-        dedent(
-            f"""\
-            (
-              (
-                histogram_quantile(
-                  0.95,
-                  sum by (namespace, service, type, le) (
-                    rate(
-                      SeaweedFS_s3_time_to_first_byte_millisecond_bucket{{
-                        namespace="{namespace.NAME}",
-                        service=~"{_S3_GATEWAY_SERVICE_MATCHER}",
-                        type="GET"
-                      }}[5m]
-                    )
-                  )
-                ) / 1000 > 30
-                and on (namespace, service, type)
-                sum by (namespace, service, type) (
-                  increase(
-                    SeaweedFS_s3_request_total{{
-                      namespace="{namespace.NAME}",
-                      service=~"{_S3_GATEWAY_SERVICE_MATCHER}",
-                      type="GET"
-                    }}[5m]
-                  )
-                ) >= 20
-              )
-              or
-              (
-                histogram_quantile(
-                  0.95,
-                  sum by (namespace, service, type, le) (
-                    rate(
-                      SeaweedFS_s3_request_seconds_bucket{{
-                        namespace="{namespace.NAME}",
-                        service=~"{_S3_GATEWAY_SERVICE_MATCHER}",
-                        type=~"DELETE|LIST"
-                      }}[5m]
-                    )
-                  )
-                ) > 5
-                and on (namespace, service, type)
-                sum by (namespace, service, type) (
-                  increase(
-                    SeaweedFS_s3_request_total{{
-                      namespace="{namespace.NAME}",
-                      service=~"{_S3_GATEWAY_SERVICE_MATCHER}",
-                      type=~"DELETE|LIST"
-                    }}[5m]
-                  )
-                ) >= 20
-              )
-            )
-            """
-        ),
+        get_required_path(own_repo_rlocation("cluster/cdk8s/seaweedfs/s3-gateway-latency-high.promql"))
+        .read_text()
+        .replace("@NAMESPACE@", namespace.NAME)
+        .replace("@GATEWAY_SERVICES@", _S3_GATEWAY_SERVICE_MATCHER),
         for_="15m",
         labels={"severity": "warning"},
         summary="SeaweedFS S3 {{ $labels.service }} {{ $labels.type }} latency is high",
@@ -189,22 +84,10 @@ _S3_GATEWAY_TARGETS_MISSING = [
 _S3_GATEWAY_TARGET_COUNT_LOW = [
     Rule.alert(
         "SeaweedS3GatewayTargetCountLow",
-        dedent(
-            f"""\
-            count by (namespace, service) (
-              max by (namespace, service, pod) (
-                up{{namespace="{namespace.NAME}",service="{service}"}}
-              )
-            )
-            < on (namespace, service)
-            label_replace(
-              max by (namespace, deployment) (
-                kube_deployment_spec_replicas{{namespace="{namespace.NAME}",deployment="{service}"}}
-              ),
-              "service", "$1", "deployment", "(.*)"
-            )
-            """
-        ),
+        get_required_path(own_repo_rlocation("cluster/cdk8s/seaweedfs/s3-gateway-target-count-low.promql"))
+        .read_text()
+        .replace("@NAMESPACE@", namespace.NAME)
+        .replace("@SERVICE@", service),
         for_="10m",
         labels={"severity": "warning"},
         summary="SeaweedFS S3 metrics targets for {{ $labels.service }} are below desired replicas",
@@ -220,19 +103,10 @@ _S3_GATEWAY_TARGET_COUNT_LOW = [
 _S3_GATEWAY_METRICS_MISSING = [
     Rule.alert(
         "SeaweedS3GatewayMetricsMissing",
-        dedent(
-            f"""\
-            (
-              up{{namespace="{namespace.NAME}",service="{service}"}} == 1
-            )
-            unless on (namespace, service, pod)
-            max by (namespace, service, pod) (
-              present_over_time(
-                SeaweedFS_s3_in_flight_requests{{namespace="{namespace.NAME}",service="{service}"}}[10m]
-              )
-            )
-            """
-        ),
+        get_required_path(own_repo_rlocation("cluster/cdk8s/seaweedfs/s3-gateway-metrics-missing.promql"))
+        .read_text()
+        .replace("@NAMESPACE@", namespace.NAME)
+        .replace("@SERVICE@", service),
         for_="5m",
         labels={"severity": "warning"},
         summary="SeaweedFS S3 gauge metrics are missing from {{ $labels.service }} pod {{ $labels.pod }}",

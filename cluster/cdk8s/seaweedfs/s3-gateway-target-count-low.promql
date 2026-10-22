@@ -1,0 +1,12 @@
+count by (namespace, service) (
+  max by (namespace, service, pod) (
+    up{namespace="@NAMESPACE@",service="@SERVICE@"}
+  )
+)
+< on (namespace, service)
+label_replace(
+  max by (namespace, deployment) (
+    kube_deployment_spec_replicas{namespace="@NAMESPACE@",deployment="@SERVICE@"}
+  ),
+  "service", "$1", "deployment", "(.*)"
+)
