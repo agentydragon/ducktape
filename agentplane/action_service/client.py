@@ -134,9 +134,6 @@ class OperatorActionServiceClient:
     def stream_requests(self, *, state: ActionState | None = None) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
         return self._stream_operator("/v1/operator/action-requests/stream", params={"state": state} if state else None)
 
-    def stream_push_subscriptions(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
-        return self._stream_operator("/v1/operator/push/subscriptions/stream")
-
     def stream_connections(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
         return self._stream_operator("/v1/operator/connections/stream")
 
@@ -145,20 +142,6 @@ class OperatorActionServiceClient:
 
     def stream_group_health(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
         return self._stream_operator("/v1/operator/action-groups/stream")
-
-    async def push_config(self) -> dict[str, str | None]:
-        return await self._call(TypeAdapter(dict[str, str | None]), "GET", "/v1/operator/push/config")
-
-    async def push_subscriptions(self) -> list[dict[str, object]]:
-        return await self._call(TypeAdapter(list[dict[str, object]]), "GET", "/v1/operator/push/subscriptions")
-
-    async def register_push(self, subscription: dict[str, str], *, user_agent: str) -> None:
-        await self._request(
-            "POST", "/v1/operator/push/subscriptions", json=subscription, headers={"User-Agent": user_agent}
-        )
-
-    async def remove_push(self, endpoint: str) -> None:
-        await self._request("DELETE", "/v1/operator/push/subscriptions", params={"endpoint": endpoint})
 
     async def get(self, request_id: UUID) -> ActionRequestView:
         return await self._call(TypeAdapter(ActionRequestView), "GET", f"/v1/operator/action-requests/{request_id}")

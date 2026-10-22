@@ -95,6 +95,7 @@ it("treats an error message of the stream as the end of the connection", async (
   await settle();
 
   expect(connection()).toMatchObject({ phase: "reconnecting", lastError: expect.stringContaining("lease lost") });
+  expect(watch(0).signal?.aborted).toBe(true);
 });
 
 it("connects again at once when the browser comes back online", async () => {

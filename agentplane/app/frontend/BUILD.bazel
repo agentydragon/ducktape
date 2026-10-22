@@ -1243,9 +1243,12 @@ ts_library(
     deps = [
         ":client",
         ":live_stream",
+        ":watch_stream",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/action_service:web_push_service_pb",
     ],
 )
 
@@ -1488,6 +1491,7 @@ agentplane_vitest_test(
     srcs = ["settings/push.test.tsx"],
     deps = [
         ":push",
+        ":watch_fixture",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

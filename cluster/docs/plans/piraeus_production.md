@@ -280,6 +280,31 @@ and LVM_THIN lifecycle on disposable Talos storage before production changes.
 Keep the existing FILE_THIN canary separate. Select any necessary stable
 controller placement independently of satellite/data-node eligibility.
 
+### Rehearsal on existing capacity
+
+Use existing compute and disposable virtual disks for the rehearsal; an additional
+OVH server is not a prerequisite or a planned purchase. First inventory available
+RAM, virtualization support and free backing storage on existing Linux/KVM or
+Proxmox hosts. Using a host for temporary VMs does not enroll that host in Piraeus
+or make the production rollout depend on its NixOS/Atlas storage conversion.
+[Talos supports a local QEMU cluster](https://docs.siderolabs.com/talos/v1.14/platform-specific-installations/local-platforms/qemu).
+
+- Rehearse partition allocation, boots, etcd member replacement and Piraeus
+  lifecycle in an isolated disposable Talos cluster with the intended versions
+  and extensions. Several VMs on one host suffice for the membership procedure;
+  they do not demonstrate independent-host availability.
+- Use sparse virtual disks matching the target system-disk geometry for partition
+  layout checks. Bound writes by actual host free space. Exercise pool exhaustion
+  on a separate small disposable pool, without filling the backing filesystem.
+- Measure production performance on the actual first OVH node after evacuation,
+  using disposable claims before restoring application data. VM results establish
+  lifecycle behavior, not OVH NVMe latency, throughput or hardware boot behavior.
+
+If existing capacity cannot support a required rehearsal or evacuation, record
+the measured RAM/storage/virtualization blocker and consider temporary allocations
+on other existing hosts first. Propose paid capacity only for a demonstrated gap
+and obtain the operator's approval before ordering it.
+
 ### 1. Evacuate onto existing storage
 
 Before the first pool exists, destinations are the other two OVH SSD nodes or

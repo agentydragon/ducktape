@@ -673,16 +673,6 @@ async def decide_action(request_id: UUID, body: DecisionInput, client: OperatorA
     return await client.decide(request_id, body)
 
 
-@push_router.get("/config")
-async def push_config(client: OperatorActions) -> dict[str, str | None]:
-    return await client.push_config()
-
-
-@push_router.get("/subscriptions")
-async def push_subscriptions(client: OperatorActions) -> list[dict[str, object]]:
-    return await client.push_subscriptions()
-
-
 def _operator_resource_stream(
     request: Request,
     shutdown: Shutdown,
@@ -712,25 +702,6 @@ def _operator_resource_stream(
         label,
         (httpx.HTTPError, httpx2.TransportError, OperatorFederationError),
     )
-
-
-@push_router.get("/subscriptions/stream")
-async def push_subscriptions_stream(
-    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
-) -> StreamingResponse:
-    return _operator_resource_stream(
-        request, shutdown, updates, sessions, client.stream_push_subscriptions, "Push settings"
-    )
-
-
-@push_router.post("/subscriptions", status_code=204)
-async def register_push_subscription(body: dict[str, str], client: OperatorActions, request: Request) -> None:
-    await client.register_push(body, user_agent=request.headers.get("user-agent", "")[:300])
-
-
-@push_router.delete("/subscriptions", status_code=204)
-async def remove_push_subscription(endpoint: str, client: OperatorActions) -> None:
-    await client.remove_push(endpoint)
 
 
 @push_router.post("/decision/{request_id}")

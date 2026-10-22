@@ -78,6 +78,8 @@ func (g *Gate) Drain() { g.drain() }
 // admission is the principal a bearer proved.
 type admission struct {
 	principal store.ReadPrincipal
+	// recheck is set only by the private in-process client; network callers always reauthenticate their bearer.
+	recheck func(context.Context) error
 }
 
 type admissionKey struct{}
@@ -135,6 +137,9 @@ func (g *Gate) Draining() <-chan struct{} { return g.draining.Done() }
 // Recheck verifies the call's bearer again, as a watch does before every frame: it fails once the bearer is no
 // longer accepted as the principal the call was admitted as.
 func (g *Gate) Recheck(ctx context.Context) error {
+	if recheck := admitted(ctx).recheck; recheck != nil {
+		return recheck(ctx)
+	}
 	current, err := g.authenticate(ctx)
 	if err != nil {
 		return err

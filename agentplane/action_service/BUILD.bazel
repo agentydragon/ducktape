@@ -1,4 +1,5 @@
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
@@ -1474,6 +1475,7 @@ go_library(
     srcs = [
         "config.go",
         "docs.go",
+        "edge.go",
         "main.go",
     ],
     embedsrcs = glob(["docs/agents/**"]) + [":action_service_openapi"],
@@ -1494,20 +1496,25 @@ go_library(
         "//agentplane/action_service/worker",
         "//agentplane/grpc/facade",
         "//agentplane/mcp_edge:connection_service_go_proto",
+        "//agentplane/mcp_edge/authserver",
         "//agentplane/mcp_edge/connections",
+        "//agentplane/mcp_edge/mcpserver",
         "//agentplane/policy/reader",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/workload_auth/go/auth",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
+        "@com_github_modelcontextprotocol_go_sdk//auth",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@com_github_spf13_viper//:viper",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//rest",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//status",
     ],
 )
 
@@ -1578,6 +1585,7 @@ go_test(
     name = "integration_test",
     size = "medium",
     srcs = [
+        "edge_test.go",
         "integration_testmain_test.go",
         "main_test.go",
         "push_test.go",
@@ -1675,4 +1683,12 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
+)
+
+ts_proto_library(
+    name = "web_push_service_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":web_push_service_proto",
+    deps = ["//google/api:annotations_pb"],
 )

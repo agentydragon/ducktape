@@ -9,6 +9,7 @@ import {
   electricShape,
   electricSubset,
   ndjsonWatch,
+  liveNdjsonWatch,
   publishNdjsonWatch,
   routes,
   UNANSWERED,
@@ -2483,8 +2484,22 @@ routes.push(
       return receiptActionGroup === undefined ? MCP_GROUPS : [...MCP_GROUPS, receiptActionGroup];
     },
   ],
-  ["GET", /^\/push\/config$/, () => ({ application_server_key: null })],
-  ["GET", /^\/push\/subscriptions$/, () => []],
+  ["GET", /^\/upstream\/actions\/v1\/operator\/push\/config$/, () => ({})],
+  ["GET", /^\/upstream\/actions\/v1\/operator\/push\/subscriptions$/, () => ({ pushSubscriptions: [] })],
+  [
+    "GET",
+    /^\/upstream\/actions\/v1\/operator\/push\/subscriptions:watch$/,
+    (_match, _query, signal) =>
+      liveNdjsonWatch(
+        "/upstream/actions/v1/operator/push/subscriptions:watch",
+        [{ snapshotComplete: {} }],
+        () =>
+          flags.has("pushBrowserAdded")
+            ? [{ upsert: { endpoint: "https://push.example/browser", userAgent: "Second browser", createdAt: ago(0) } }]
+            : [],
+        signal
+      ),
+  ],
   [
     "POST",
     /^\/connection-enrollments\/[^/]+\/preview$/,
@@ -2970,13 +2985,6 @@ class HarnessEventSource extends EventTarget {
     }
     if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
       this.dispatchEvent(new MessageEvent("output", { data: JSON.stringify(btoa("guest console output\r\n")) }));
-      return;
-    }
-    if (url.pathname === "/push/subscriptions/stream") {
-      const browsers = flags.has("pushBrowserAdded")
-        ? [{ endpoint: "https://push.example/browser", user_agent: "Second browser", created_at: ago(0) }]
-        : [];
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(browsers) }));
       return;
     }
     if (url.pathname === "/connections/stream") {
