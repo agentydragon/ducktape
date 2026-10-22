@@ -4,9 +4,8 @@
 
 - Consider making `devinfra/secrets/ci_env.sh` a fuller CI setup step for registry
   logins and release credentials after auditing their in-repo consumers.
-- Revisit `DUCKTAPE_DOCKER_CLIENT_KEY` when Docker CI runs on RBE workers. Today
-  `_common.sh` leaves it unset, and `devinfra/bbr.py` forwards
-  `--remote_run_header` in a way inner Bazel flags cannot undo.
+- Revisit an external-RBE Docker CI path only if tests need the cluster `docker-ci`
+  daemon; its current mTLS client certificate stays scoped to the in-cluster eval Job.
 - Decide whether the `bb` shim should inject the session bazelrc. Check the
   behavior for local `bb build` / `bb test`, `bb remote`, and `bbr` before
   changing the wrapper.

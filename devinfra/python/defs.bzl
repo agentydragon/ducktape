@@ -74,12 +74,6 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
         env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | (env or {})
-
-        # docker_mtls is currently a dormant no-op (external-RBE docker-ci access
-        # is not wired up); see util/testing/docker_mtls.py. Kept loaded so the
-        # hook is in place if that path is revived.
-        base_args = base_args + ["-p", "util.testing.docker_mtls"]
-        base_deps = base_deps + ["//util/testing:docker_mtls"]
     if shard_count != None:
         base_args = base_args + ["-p", "util.testing.sharding"]
         base_deps = base_deps + ["//util/testing:sharding"]

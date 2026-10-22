@@ -104,13 +104,3 @@ try_export() {
   echo "$_ok_msg" >&2
   export "$var_name=$value"
 }
-
-# --- Common helpers ---
-
-# CLEANUP(added 2026-06-11): The external-RBE docker-ci path is dormant. docker-ci's
-# PKI moved to cert-manager (cluster-internal-ca) and the SOPS client key was
-# deleted, so nothing exports DUCKTAPE_DOCKER_CLIENT_KEY and the docker_mtls
-# pytest fixture no-ops (util/testing/docker_mtls.py). Reviving `bbr test`
-# against docker-ci means issuing a clientAuth cert from cluster-internal-ca,
-# exporting cert+key to the RBE executors, and exporting DUCKTAPE_DOCKER_CLIENT_KEY
-# here (e.g. via BBR_REMOTE_ARGS secret-env-overrides). See the fixture docstring.

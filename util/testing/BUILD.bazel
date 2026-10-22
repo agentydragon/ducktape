@@ -56,14 +56,6 @@ py_library(
 )
 
 py_library(
-    name = "docker_mtls",
-    testonly = True,
-    srcs = ["docker_mtls.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pytest"],
-)
-
-py_library(
     name = "sharding",
     testonly = True,
     srcs = ["sharding.py"],

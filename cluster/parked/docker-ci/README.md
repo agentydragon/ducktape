@@ -47,9 +47,8 @@ the `reloader.stakater.com/auto: "true"` annotation on its Deployment.
 **Adding a SAN** (the original reason this PKI was hand-rolled): edit
 `dnsNames` on the `docker-ci-server` Certificate. No admin key, no re-signing.
 
-The external-RBE client path (`bbr test` over `DUCKTAPE_DOCKER_CLIENT_KEY` + the
-`util/testing/docker_mtls.py` fixture) is **dormant** — see that fixture's
-docstring and the tombstone in `devinfra/secrets/_common.sh` for how to revive it.
+RBE access to this cluster daemon is not configured. The eval Job above uses
+its in-cluster cert-manager Secret independently.
 Decision: the daemon is not exposed through the Gateway, and no public SAN is
 issued for it. Reviving the external path means adding both — a TLS-passthrough
 route that does not trip the listener conflict
