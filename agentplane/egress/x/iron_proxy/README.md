@@ -1,7 +1,7 @@
 # iron-proxy reuse experiment
 
 Executable comparisons against the current [central proxy](../../README.md).
-[Findings and remaining gaps](../../debug/iron_proxy_reuse.md) are the decision document.
+[Findings and remaining gaps](findings.md) are the decision document.
 
 ```bash
 bbr test //agentplane/egress/x/iron_proxy/... //agentplane/egress/proxy:proxy_test

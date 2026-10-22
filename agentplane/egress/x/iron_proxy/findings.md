@@ -2,7 +2,7 @@
 
 Compare Agentplane `devel` at `4fdc22d821c57f85a6e4bc11a0bf8b8d4f0e270b` with iron-proxy
 [`7c6a6e9261f09aa4f4efdb0bc20bdbbfb306603d`](https://github.com/paradigmxyz/iron-proxy/tree/7c6a6e9261f09aa4f4efdb0bc20bdbbfb306603d).
-The executable experiment is [`../x/iron_proxy/`](../x/iron_proxy/README.md).
+The executable experiment is [`README.md`](README.md).
 It changes no deployed service or production proxy code. Upstream `60ed3566` adds only a Go
 toolchain/build update over the pinned Iron revision; its transport and transform sources are unchanged.
 
@@ -89,7 +89,7 @@ production network isolation, or full protocol parity.
 
 ### Import packages into an Agentplane binary
 
-[`third_party/iron_proxy`](../../../third_party/iron_proxy/README.md) pins the source archive and
+[`third_party/iron_proxy`](../../../../third_party/iron_proxy/README.md) pins the source archive and
 isolates its dependency versions. Gazelle visibility directives expose the selected `internal/`
 packages. The tested build mode is `pure = "on"`, matching upstream's `CGO_ENABLED=0` releases;
 otherwise the PostgreSQL parser's C binding needs additional Bazel wiring.
@@ -138,7 +138,7 @@ Costs that the prototype leaves open:
 
 ### Extend the transport
 
-[`streaming.patch`](../../../third_party/iron_proxy/streaming.patch) flushes response headers and
+[`streaming.patch`](../../../../third_party/iron_proxy/streaming.patch) flushes response headers and
 each body write. The same test sources build against the original and patched dependencies in
 separate binaries. The combined CLI cases also establish the header-only bridge's interactive TLS
 gRPC path. Buffering/backpressure and high-throughput behavior have not been benchmarked.
