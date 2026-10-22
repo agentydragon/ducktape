@@ -26,6 +26,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "crossplane": {"Provider.pkg.crossplane.io"},
     "crossplane-provider-litellm": {
         "Key.litellm.m.crossplane.io",
+        "Organization.litellm.m.crossplane.io",
         "Team.litellm.m.crossplane.io",
         "ProviderConfig.litellm.m.crossplane.io",
     },

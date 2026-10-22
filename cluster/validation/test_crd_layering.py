@@ -23,6 +23,7 @@ from cluster.validation.kustomize import KustomizeBuildResult
         ("ServiceMonitor", "monitoring.coreos.com/v1", "monitoring-crds"),
         ("Provider", "pkg.crossplane.io/v1", "crossplane"),
         ("Key", "litellm.m.crossplane.io/v1alpha1", "crossplane-provider-litellm"),
+        ("Organization", "litellm.m.crossplane.io/v1alpha1", "crossplane-provider-litellm"),
     ],
 )
 def test_app_helmrelease_can_share_operator_instances(
