@@ -344,7 +344,6 @@ ENV = Environment(
     actions=ActionsProps(
         hostname=_ACTIONS_HOSTNAME,
         operator_oidc=_FEDERATION_TARGET,
-        runtime="go",
         caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, public_coder_egress.NAMESPACE}),
         mcp_servers=_MCP_SERVERS,
         action_groups=_ACTION_GROUPS,

@@ -41,7 +41,7 @@ from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.probes import grpc_probe, http_probe
+from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretRef
@@ -281,18 +281,8 @@ class Actions(Construct):
 
     def _add_workload(self, settings: SettingsFile) -> ServiceWorkload:
         reload_secrets = self._reload_secrets()
-        if self.env.actions.runtime == "go":
-            readiness = grpc_probe(port=self.service.pod_port, initial_delay_seconds=3)
-            liveness = grpc_probe(
-                port=self.service.pod_port, service="livez", initial_delay_seconds=20, period_seconds=30
-            )
-        else:
-            readiness = http_probe(
-                "/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10, timeout_seconds=5
-            )
-            liveness = http_probe(
-                "/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30, timeout_seconds=5
-            )
+        readiness = grpc_probe(port=self.service.pod_port, initial_delay_seconds=3)
+        liveness = grpc_probe(port=self.service.pod_port, service="livez", initial_delay_seconds=20, period_seconds=30)
         workload = add_service_workload(
             self,
             self.env,
@@ -300,8 +290,6 @@ class Actions(Construct):
             container="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=self.image_pull_policy,
-            # Python and Go read the same listener settings file; Go has no CLI flag parser.
-            # The runtime flip must not overlap Python's and Go's worker/push lease protocols.
             replica_profile=replace(self.env.replicas, strategy=DeploymentStrategy.recreate()),
             env_variables=self._container_env(),
             readiness=readiness,
