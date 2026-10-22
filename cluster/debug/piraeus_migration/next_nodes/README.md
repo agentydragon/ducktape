@@ -1,12 +1,20 @@
 # Next Piraeus nodes: evacuation and capacity evidence
 
-Preparation on 2026-10-22 for SSD control plane `ovh-ns104952` and a possible
-paired HDD worker. The second SSD node's selective reset, data-disk wipe and
-dedicated system-volume rebuild are complete; pool admission and restoration
-are in progress. The [second-node checkpoint](second_ssd_roll.json) records
-current gates separately from the older handoff proofs. Use the
-[node-roll runbook](../../../docs/runbooks/piraeus_node_roll.md) and refresh its
-gates before further operations.
+## Latest checkpoint — 2026-10-22
+
+`ovh-ns104952` passed system-volume, whole-disk thin-pool, filesystem/block PVC,
+reboot, native PostgreSQL, Seaweed SSD and master-1 restoration gates. Its
+[restoration proof](second_ssd_restoration.json) follows the dated
+[reset checkpoint](second_ssd_roll.json).
+
+`ovh-ns104963` has completed Seaweed SSD evacuation and nine persistent
+PostgreSQL drains to the converted nodes. Valkey's two members use Piraeus;
+`agentplane-testing/postgres` was recreated empty on a fresh 5Gi Piraeus claim
+with operator approval. The [drain checkpoint](third_ssd_drain.json) records
+identities, retained sources and remaining master/client/data-preservation
+checks. No reset of this node has started. The sections below retain the
+older preparation snapshots; use the [node-roll runbook](../../../docs/runbooks/piraeus_node_roll.md)
+and refresh all gates before further operations.
 
 ## Completed early SSD evacuation
 
@@ -30,7 +38,7 @@ both Forgejo clients before/after, and source request counters were quiet for
 64.8 seconds. PR #11586 then retired only the empty `ssd-1` Pod; its old PVC/PV
 and data remain retained. Empty storage alone was not the retirement gate.
 
-## SSD service handoffs — 2026-10-22
+## SSD service handoffs before the second-node reset — 2026-10-22
 
 Master-1 moved from `104952` to a fresh retained 4Gi HDD claim on `102453`,
 using a fresh cold archive and exact same-name claim replacement. Masters 0/2

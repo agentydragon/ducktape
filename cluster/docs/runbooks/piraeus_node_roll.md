@@ -16,11 +16,11 @@ its gates from live state before any operation.
 The 2026-10-22 inventory suggests `ovh-ns104952` next, then `ovh-ns104963`.
 Refresh all placements before choosing a window.
 
-| Node            | Reason / complication                                                                                                                                                                                               |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ovh-ns1001419` | First converted SSD control plane. Attic and Study Casino replicas returned on Piraeus; Seaweed passed a bounded native SSD move and separate S3 checks. Master-2 also returned to its 4Gi Piraeus claim.           |
-| `ovh-ns104952`  | Hosts old SSD volume server `ssd-1`, so retiring the last ordinal permits shrinking the old group from two to one. Several PostgreSQL primaries, Seaweed master-1, and Forgejo Valkey member-1 must move first.     |
-| `ovh-ns104963`  | Hosts old SSD volume server `ssd-0`, Seaweed master-0, Forgejo Valkey member-0, and the single-instance `agentplane-testing/postgres`. The singleton needs an explicit native-replication handoff or agreed outage. |
+| Node            | Reason / complication                                                                                                                                                                                                                                |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ovh-ns1001419` | First converted SSD control plane. Attic and Study Casino replicas returned on Piraeus; Seaweed passed a bounded native SSD move and separate S3 checks. Master-2 also returned to its 4Gi Piraeus claim.                                            |
+| `ovh-ns104952`  | Converted and accepted. Dedicated system volumes, whole-disk SSD pool, reboot/PVC acceptance, Seaweed SSD server and master-1 restoration are complete. PostgreSQL claims on this node now receive the final SSD control plane's evacuated replicas. |
+| `ovh-ns104963`  | Seaweed SSD evacuation, nine persistent PostgreSQL drains and Valkey migration are complete; testing Postgres was recreated empty on Piraeus by agreement. Master-0 and SSD client/retirement checks remain before reset.                            |
 
 Finish the control planes first by default. Before evacuating the last legacy
 SSD volume server on `104963`, accept a replacement server on the converted
@@ -257,7 +257,7 @@ Use CNPG's native streaming replication, one cluster at a time:
    standbys. This includes the filer DB and Terraform state DB before depending
    on their availability for other maintenance.
 4. Keep the newly seeded Piraeus member and retire only the exact old member
-   on `ovh-ns104952` using the CNPG-supported workflow. Check the operator's
+   on the target node using the CNPG-supported workflow. Check the operator's
    member selection; scaling down alone does not identify which ordinal it
    will remove. UID-guard Pod/PVC operations and retain the PV. Verify two
    healthy members remain outside the outage set.
@@ -275,8 +275,11 @@ desired count. Pause the CNPG operator only for a bounded member-removal
 transaction if necessary, not while waiting for replication. Record and remove
 every hold.
 
-The singleton on `ovh-ns104963` needs a separate reviewed CNPG clone/promotion or
-explicit outage procedure. Do not delete its only data claim.
+The operator authorized discarding `agentplane-testing/postgres` and recreating
+it with native initdb on a fresh 5Gi Piraeus claim (PR #11604). This exception
+does not authorize discarding other singleton databases. Hold the testing Flux
+owner during replacement, retain the exact old PV until the disk reset, and
+restore its owner after the new primary and service are accepted.
 
 ### Seaweed volume servers
 
@@ -420,6 +423,16 @@ reuses the replica's pre-created Piraeus claim; PVC deletion loses that override
 Record it for recovery until a separately reviewed immutable-template handoff
 changes the shared default.
 
+For a primary on the target node, use native coordinated `FAILOVER TO <replica-IP>
+6379 TIMEOUT 5000` without `FORCE`, accepting the caught-up converted primary
+and master Service before retiring the old Pod. Replacing ordinal zero requires
+orphaning/adopting the StatefulSet while preserving ordinal one, rather than
+scaling down. Seed the fresh Piraeus member with native `REPLICAOF` while the
+operator is paused. After reconciliation resumes, accept the actual primary,
+replica link/offsets, AOF state and Service; the operator may select ordinal zero
+again. A copied Flux hold on the Pod template triggers a rollout on resume or
+cleanup. Include that rollout in acceptance and remove copied holds too.
+
 #### Remaining services
 
 Inventory worker WALs, Keeper/data replicas and local application/backup
@@ -501,6 +514,13 @@ Restore applications in bounded steps:
    identities, streaming state and replay of an observed primary WAL position.
    Restore the recorded desired count, removing only explicitly temporary
    members after full redundancy returns.
+   `cnpg destroy --keep-pvc` leaves the detached PVC discoverable through its
+   CNPG labels. Scaling up can reuse that local-path PVC even when the new-claim
+   template selects Piraeus. Under bounded Flux/CNPG holds, verify the exact
+   retired PVC/PV identities, no remaining consumers, Retain policy and accepted
+   data-preservation source. Remove only that retired PVC's metadata before
+   requesting the fresh claim; preserve its PV and files/archive. Then let CNPG
+   create the new Piraeus claim and prove its class, affinity and native replay.
 2. Add a separate node-specific Seaweed Piraeus volume group on the converted
    node. Keep `disk=ssd` (or accepted HDD), DC/rack, replication 001, metrics
    and required anti-affinity across old and new volume groups consistent.

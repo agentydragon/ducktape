@@ -11,36 +11,38 @@ The first SSD node, `ovh-ns1001419`, is converted and accepted; application
 restores and the Seaweed master-2 handoff are complete. Its retained evidence is
 in [`first_node/`](first_node/README.md).
 
-The early SSD evacuation from `ovh-ns104952` is complete: 33 native moves left
-36 current logical SSD volume IDs with two copies on `ovh-ns104963` and
-`ovh-ns1001419`. The four affected SSD FUSE clients were refreshed and checked,
-then the empty old volume-server Pod was retired through PR #11586. Master-1
-moved to `102453`, and Forgejo Valkey replica-1 now uses a 2Gi Piraeus claim on
-`1001419`. All seven two-member PostgreSQL handoffs are complete. Attic and
-Study promoted their existing Piraeus members and temporarily retain two
-healthy off-node members until their thirds return. The current service proofs, remaining
-handoffs and pre-wipe data-preservation findings are in
-[`next_nodes/`](next_nodes/README.md).
+The second SSD control plane, `ovh-ns104952`, is converted and accepted. The
+whole data disk backs `piraeus_ssd/data`; filesystem and block PVC checks
+survived a controlled reboot. Attic and Study Casino returned on fresh Piraeus
+claims, the new 250Gi Seaweed SSD server passed a native move and owned S3
+checks, and master-1 returned from the temporary HDD claim. See
+[the restoration proof](next_nodes/second_ssd_restoration.json). The older
+[reset checkpoint](next_nodes/second_ssd_roll.json) records the pre-reset
+boundary, including the retained archive and explicit restore/comparison waiver.
 
-The inert `ovh-ns104952` storage configuration and its dated local-PV/disk
-inventory remain in [`ovh_ns104952/`](ovh_ns104952/README.md). The second node's
-selective system reset, data-disk wipe and dedicated system-volume rebuild are
-complete; all three etcd services are healthy. Piraeus admission and workload
-restoration are in progress. All 19 old claim directories were archived to a
-retained PVC on `102453`; the operator explicitly waived scratch restore and
-file comparison. See [the second-node checkpoint](next_nodes/second_ssd_roll.json).
+The last SSD control plane, `ovh-ns104963`, is being evacuated. Its Seaweed SSD
+server is online and empty after 35 native moves, with every current SSD
+volume retaining two copies on the converted nodes. All nine persistent
+PostgreSQL clusters now have two healthy off-node members. Attic and Study
+Casino temporarily hold their desired-three templates at two until this node
+returns. Forgejo Valkey now has two 2Gi Piraeus claims; the testing database was
+recreated with native initdb on a fresh 5Gi Piraeus claim after explicit approval
+to discard its data (PR #11604). Master-0, SSD client refresh/retirement, historical
+data ownership, and refreshed destructive-window gates remain. No reset of
+`104963` has started. See [the drain checkpoint](next_nodes/third_ssd_drain.json).
 
-The HDD slot cap is now 600 and the first copy batch from `103656` to the 4TB
-node `102453` is paused at a native-move boundary for reclamation. The manual
-compaction request encountered Seaweed's existing global vacuum lock, then
-stopped on a health-read timeout; no reclaimed bytes are claimed. The four
-approved backup snapshots were cleared while future backups remain enabled.
-The approximately 621GB wave to the smaller `103711` remains held:
-projected free space is 11.7%, below the 15% reserve. The separate proposal to
-move one native ClickHouse data replica to SSD is recorded in `next_nodes/`;
-no ClickHouse migration has started. The accepted temporary-overcommit policy
-and issue trigger remain in the
-[node-roll runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
+The HDD copy leg from `103656` to the 4TB `102453` has resumed after a fresh
+three-server identity, replication and capacity check. The smaller `103711`
+leg remains held for physical reclamation: deleting S3 objects does not itself
+free the volume files. Four initial backup scopes, three additional scopes and
+Agentplane staging's approved snapshot were cleared; future backups remain
+enabled. Survivor-only compaction targets volumes already on `hdd-0`/`hdd-1`,
+which are disjoint from the active `hdd-2` to `hdd-1` copy inputs. Volumes still
+on the source in maintenance reject compaction there; do not count their
+unreclaimed bytes. Refresh actual disk space, copy/index overhead and growth
+before releasing the smaller-destination wave. No HDD reset or ClickHouse
+migration has started. The accepted overcommit policy and issue trigger remain
+in the [runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
 
 ## Evidence map
 
