@@ -90,6 +90,7 @@ async def test_spend_changed_notifies_after_commit_and_on_link_removal(
             accounts=[{"account_id": "account-investments", "name": "Brokerage", "type": "investment"}],
             captured_at=datetime.now(UTC),
         )
+        assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
         await storage.purge_link_data("item-investments")
         assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
         assert await listener.fetchval("SELECT count(*) FROM links WHERE item_id = $1", "item-investments") == 0
