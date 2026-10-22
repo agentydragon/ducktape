@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
+from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import namespaces, piraeus_metrics
@@ -131,6 +132,14 @@ def cluster_chart(app: App) -> Chart:
         node_selector=_FIRST_NODE_SELECTOR,
         volume_group=_FIRST_NODE_VOLUME_GROUP,
         thin_pool=_FIRST_NODE_THIN_POOL,
+    )
+    piraeus_metrics.add_thin_pool_monitoring(
+        Construct(chart, "next-node-metrics"),
+        namespace=NAMESPACE,
+        node_selector=_NEXT_NODE_SELECTOR,
+        volume_group=_FIRST_NODE_VOLUME_GROUP,
+        thin_pool=_FIRST_NODE_THIN_POOL,
+        name="piraeus-lvm-metrics-ovh-ns104952",
     )
     repository = oci_helm_repository(
         chart, "piraeus-charts", "flux-system", url="oci://ghcr.io/piraeusdatastore/helm-charts"

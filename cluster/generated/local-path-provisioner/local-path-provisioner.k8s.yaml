@@ -52,8 +52,7 @@ spec:
         paths:
           - /var/mnt/local-path-ovh-hdd/local-path
       - node: ovh-ns104952
-        paths:
-          - /var/mnt/seaweedfs-data/local-path
+        paths: []
       - node: ovh-ns104963
         paths:
           - /var/mnt/seaweedfs-data/local-path
@@ -79,7 +78,6 @@ allowedTopologies:
           - ovh-ns103656
           - ovh-ns103711
           - ovh-ns102453
-          - ovh-ns104952
           - ovh-ns104963
       - key: storage.allegedly.works/tier
         values:
@@ -102,7 +100,6 @@ allowedTopologies:
           - ovh-ns103656
           - ovh-ns103711
           - ovh-ns102453
-          - ovh-ns104952
           - ovh-ns104963
       - key: storage.allegedly.works/tier
         values:
@@ -125,7 +122,6 @@ allowedTopologies:
           - ovh-ns103656
           - ovh-ns103711
           - ovh-ns102453
-          - ovh-ns104952
           - ovh-ns104963
       - key: storage.allegedly.works/tier
         values:
@@ -148,7 +144,6 @@ allowedTopologies:
           - ovh-ns103656
           - ovh-ns103711
           - ovh-ns102453
-          - ovh-ns104952
           - ovh-ns104963
       - key: storage.allegedly.works/tier
         values:

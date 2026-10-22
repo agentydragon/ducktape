@@ -293,7 +293,7 @@ spec:
           annotations:
             description: Thin-pool piraeus_ssd/data data usage has been at least 80% for 2 minutes.
             summary: Piraeus thin-pool data usage is high
-          expr: (lvm_thin_pool_data_percent{namespace="piraeus-datastore",vg="piraeus_ssd",pool="data"} >= 80) and (lvm_thin_pool_data_percent{namespace="piraeus-datastore",vg="piraeus_ssd",pool="data"} < 90)
+          expr: (lvm_thin_pool_data_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics",vg="piraeus_ssd",pool="data"} >= 80) and (lvm_thin_pool_data_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics",vg="piraeus_ssd",pool="data"} < 90)
           for: 2m
           labels:
             severity: warning
@@ -301,7 +301,7 @@ spec:
           annotations:
             description: Thin-pool piraeus_ssd/data data usage has been at least 90% for 2 minutes.
             summary: Piraeus thin-pool data usage is critical
-          expr: lvm_thin_pool_data_percent{namespace="piraeus-datastore",vg="piraeus_ssd",pool="data"} >= 90
+          expr: lvm_thin_pool_data_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics",vg="piraeus_ssd",pool="data"} >= 90
           for: 2m
           labels:
             severity: critical
@@ -309,7 +309,7 @@ spec:
           annotations:
             description: Thin-pool piraeus_ssd/data metadata usage has been at least 70% for 2 minutes.
             summary: Piraeus thin-pool metadata usage is high
-          expr: (lvm_thin_pool_metadata_percent{namespace="piraeus-datastore",vg="piraeus_ssd",pool="data"} >= 70) and (lvm_thin_pool_metadata_percent{namespace="piraeus-datastore",vg="piraeus_ssd",pool="data"} < 85)
+          expr: (lvm_thin_pool_metadata_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics",vg="piraeus_ssd",pool="data"} >= 70) and (lvm_thin_pool_metadata_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics",vg="piraeus_ssd",pool="data"} < 85)
           for: 2m
           labels:
             severity: warning
@@ -317,7 +317,7 @@ spec:
           annotations:
             description: Thin-pool piraeus_ssd/data metadata usage has been at least 85% for 2 minutes.
             summary: Piraeus thin-pool metadata usage is critical
-          expr: lvm_thin_pool_metadata_percent{namespace="piraeus-datastore",vg="piraeus_ssd",pool="data"} >= 85
+          expr: lvm_thin_pool_metadata_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics",vg="piraeus_ssd",pool="data"} >= 85
           for: 2m
           labels:
             severity: critical
@@ -325,7 +325,7 @@ spec:
           annotations:
             description: Reporting lvs has not returned both usage fields for piraeus_ssd/data for 2 minutes.
             summary: Piraeus thin-pool metrics collection is failing
-          expr: lvm_thin_pool_collector_success{namespace="piraeus-datastore",vg="piraeus_ssd",pool="data"} == 0
+          expr: lvm_thin_pool_collector_success{namespace="piraeus-datastore",service="piraeus-lvm-metrics",vg="piraeus_ssd",pool="data"} == 0
           for: 2m
           labels:
             severity: warning
@@ -333,7 +333,7 @@ spec:
           annotations:
             description: The last successful sample or textfile update for piraeus_ssd/data is missing or older than 90 seconds.
             summary: Piraeus thin-pool metrics are stale
-          expr: (time() - lvm_thin_pool_collector_last_success_timestamp_seconds{namespace="piraeus-datastore",vg="piraeus_ssd",pool="data"} > 90 or absent(lvm_thin_pool_collector_last_success_timestamp_seconds{namespace="piraeus-datastore",vg="piraeus_ssd",pool="data"}) or time() - node_textfile_mtime_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics",file="/textfiles/lvm_thin_pool.prom"} > 90) and on(namespace) (kube_daemonset_status_desired_number_scheduled{namespace="piraeus-datastore",daemonset="piraeus-lvm-metrics"} > 0)
+          expr: (time() - lvm_thin_pool_collector_last_success_timestamp_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics",vg="piraeus_ssd",pool="data"} > 90 or absent(lvm_thin_pool_collector_last_success_timestamp_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics",vg="piraeus_ssd",pool="data"}) or time() - node_textfile_mtime_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics",file="/textfiles/lvm_thin_pool.prom"} > 90) and on(namespace) (kube_daemonset_status_desired_number_scheduled{namespace="piraeus-datastore",daemonset="piraeus-lvm-metrics"} > 0)
           for: 2m
           labels:
             severity: warning
@@ -342,6 +342,336 @@ spec:
             description: Alloy has not scraped the Piraeus thin-pool exporter successfully for 2 minutes.
             summary: Piraeus thin-pool exporter is not being scraped
           expr: ((up{namespace="piraeus-datastore",service="piraeus-lvm-metrics"} == 0) or absent(up{namespace="piraeus-datastore",service="piraeus-lvm-metrics"})) and on(namespace) (kube_daemonset_status_desired_number_scheduled{namespace="piraeus-datastore",daemonset="piraeus-lvm-metrics"} > 0)
+          for: 2m
+          labels:
+            severity: warning
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  annotations:
+    description: Reporting-only lvs collector for the selected Piraeus thin pool.
+  name: piraeus-lvm-metrics-ovh-ns104952-collector
+  namespace: piraeus-datastore
+data:
+  collect.sh: |
+    #!/bin/sh
+    # Report thin-pool usage with ordinary `lvs`; do not use LVM mutation commands.
+    # `lvs --readonly` is intentionally omitted because it suppresses kernel status values.
+    set -u
+
+    vg=${LVM_VOLUME_GROUP:?LVM_VOLUME_GROUP must name the selected volume group}
+    pool=${LVM_THIN_POOL:?LVM_THIN_POOL must name the selected thin pool}
+    output=/textfiles/lvm_thin_pool.prom
+    tmp="${output}.tmp.$$"
+
+    write_failure() {
+      {
+        printf '%s\n' \
+          '# HELP lvm_thin_pool_collector_success Whether both thin-pool percentages were collected.' \
+          '# TYPE lvm_thin_pool_collector_success gauge' \
+          "lvm_thin_pool_collector_success{vg=\"${vg}\",pool=\"${pool}\"} 0"
+      } >"$tmp" || return 0
+      /bin/mv -f "$tmp" "$output" || return 0
+      return 0
+    }
+
+    collect_once() {
+      raw="$(/usr/bin/timeout --kill-after=1s 5s /usr/sbin/lvs \
+        --reportformat json --units p --nosuffix --noheadings \
+        -o vg_name,lv_name,data_percent,metadata_percent "${vg}/${pool}" 2>/dev/null)" || {
+        write_failure
+        return 0
+      }
+      values="$(printf '%s' "$raw" | /usr/bin/jq -er --arg vg "$vg" --arg pool "$pool" '
+        [ .report[]?.lv[]? | select(.vg_name == $vg and .lv_name == $pool) ] as $selected
+        | if ($selected | length) == 1
+             and $selected[0].data_percent != ""
+             and $selected[0].metadata_percent != "" then
+            [($selected[0].data_percent | tonumber), ($selected[0].metadata_percent | tonumber)] | @tsv
+          else
+            error("thin-pool percentage fields missing")
+          end
+      ' 2>/dev/null)" || {
+        write_failure
+        return 0
+      }
+      data_percent="$(printf '%s' "$values" | /usr/bin/cut -f 1)"
+      metadata_percent="$(printf '%s' "$values" | /usr/bin/cut -f 2)"
+      for percentage in "$data_percent" "$metadata_percent"; do
+        case "$percentage" in
+          '' | *[!0-9.]* | .* | *.)
+            write_failure
+            return 0
+            ;;
+        esac
+        case "$percentage" in
+          *.*.*)
+            write_failure
+            return 0
+            ;;
+        esac
+      done
+
+      now="$(/bin/date +%s 2>/dev/null)" || {
+        write_failure
+        return 0
+      }
+      case "$now" in
+        '' | *[!0-9]*)
+          write_failure
+          return 0
+          ;;
+      esac
+
+      {
+        printf '%s\n' \
+          '# HELP lvm_thin_pool_data_percent Thin-pool data usage as a percent.' \
+          '# TYPE lvm_thin_pool_data_percent gauge' \
+          '# HELP lvm_thin_pool_metadata_percent Thin-pool metadata usage as a percent.' \
+          '# TYPE lvm_thin_pool_metadata_percent gauge' \
+          '# HELP lvm_thin_pool_collector_last_success_timestamp_seconds Unix time of the last successful sample.' \
+          '# TYPE lvm_thin_pool_collector_last_success_timestamp_seconds gauge' \
+          '# HELP lvm_thin_pool_collector_success Whether both thin-pool percentages were collected.' \
+          '# TYPE lvm_thin_pool_collector_success gauge' \
+          "lvm_thin_pool_data_percent{vg=\"${vg}\",pool=\"${pool}\"} ${data_percent}" \
+          "lvm_thin_pool_metadata_percent{vg=\"${vg}\",pool=\"${pool}\"} ${metadata_percent}" \
+          "lvm_thin_pool_collector_last_success_timestamp_seconds{vg=\"${vg}\",pool=\"${pool}\"} ${now}" \
+          "lvm_thin_pool_collector_success{vg=\"${vg}\",pool=\"${pool}\"} 1"
+      } >"$tmp" || {
+        write_failure
+        return 0
+      }
+      /bin/mv -f "$tmp" "$output" || write_failure
+      return 0
+    }
+
+    trap '/bin/rm -f "$tmp"' EXIT
+    trap 'exit 0' HUP INT TERM
+    while :; do
+      collect_once
+      /bin/sleep 15
+    done
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app.kubernetes.io/name: piraeus-lvm-metrics-ovh-ns104952
+  name: piraeus-lvm-metrics-ovh-ns104952
+  namespace: piraeus-datastore
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: piraeus-lvm-metrics-ovh-ns104952
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: piraeus-lvm-metrics-ovh-ns104952
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - /bin/sh
+            - /collector/collect.sh
+          env:
+            - name: LVM_VOLUME_GROUP
+              value: piraeus_ssd
+            - name: LVM_THIN_POOL
+              value: data
+          image: quay.io/piraeusdatastore/piraeus-server:v1.35.2
+          imagePullPolicy: IfNotPresent
+          name: lvm-collector
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            privileged: true
+            runAsGroup: 0
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - mountPath: /dev
+              name: host-dev
+              readOnly: true
+            - mountPath: /textfiles
+              name: textfiles
+            - mountPath: /collector
+              name: collector-script
+              readOnly: true
+        - args:
+            - --collector.disable-defaults
+            - --collector.textfile
+            - --collector.textfile.directory=/textfiles
+            - --web.listen-address=:9100
+          image: quay.io/prometheus/node-exporter:v1.12.1
+          imagePullPolicy: IfNotPresent
+          name: node-exporter
+          ports:
+            - containerPort: 9100
+              name: metrics
+              protocol: TCP
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsGroup: 65534
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - mountPath: /textfiles
+              name: textfiles
+              readOnly: true
+      hostNetwork: false
+      nodeSelector:
+        kubernetes.io/hostname: ovh-ns104952
+        storage.allegedly.works/piraeus-ready: "true"
+      terminationGracePeriodSeconds: 5
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      volumes:
+        - hostPath:
+            path: /dev
+            type: Directory
+          name: host-dev
+        - emptyDir: {}
+          name: textfiles
+        - configMap:
+            defaultMode: 365
+            name: piraeus-lvm-metrics-ovh-ns104952-collector
+          name: collector-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: piraeus-lvm-metrics-ovh-ns104952
+  name: piraeus-lvm-metrics-ovh-ns104952
+  namespace: piraeus-datastore
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      protocol: TCP
+      targetPort: metrics
+  selector:
+    app.kubernetes.io/name: piraeus-lvm-metrics-ovh-ns104952
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Allow only node-local Alloy to scrape the LVM textfile exporter.
+  name: piraeus-lvm-metrics-ovh-ns104952
+  namespace: piraeus-datastore
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: piraeus-lvm-metrics-ovh-ns104952
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy-node
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9100"
+              protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: piraeus-lvm-metrics-ovh-ns104952
+  namespace: piraeus-datastore
+spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: piraeus-lvm-metrics-ovh-ns104952
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: piraeus-lvm-metrics-ovh-ns104952
+  namespace: piraeus-datastore
+spec:
+  groups:
+    - name: piraeus-lvm-metrics-ovh-ns104952
+      rules:
+        - alert: PiraeusThinPoolDataUsageWarning
+          annotations:
+            description: Thin-pool piraeus_ssd/data data usage has been at least 80% for 2 minutes.
+            summary: Piraeus thin-pool data usage is high
+          expr: (lvm_thin_pool_data_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952",vg="piraeus_ssd",pool="data"} >= 80) and (lvm_thin_pool_data_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952",vg="piraeus_ssd",pool="data"} < 90)
+          for: 2m
+          labels:
+            severity: warning
+        - alert: PiraeusThinPoolDataUsageCritical
+          annotations:
+            description: Thin-pool piraeus_ssd/data data usage has been at least 90% for 2 minutes.
+            summary: Piraeus thin-pool data usage is critical
+          expr: lvm_thin_pool_data_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952",vg="piraeus_ssd",pool="data"} >= 90
+          for: 2m
+          labels:
+            severity: critical
+        - alert: PiraeusThinPoolMetadataUsageWarning
+          annotations:
+            description: Thin-pool piraeus_ssd/data metadata usage has been at least 70% for 2 minutes.
+            summary: Piraeus thin-pool metadata usage is high
+          expr: (lvm_thin_pool_metadata_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952",vg="piraeus_ssd",pool="data"} >= 70) and (lvm_thin_pool_metadata_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952",vg="piraeus_ssd",pool="data"} < 85)
+          for: 2m
+          labels:
+            severity: warning
+        - alert: PiraeusThinPoolMetadataUsageCritical
+          annotations:
+            description: Thin-pool piraeus_ssd/data metadata usage has been at least 85% for 2 minutes.
+            summary: Piraeus thin-pool metadata usage is critical
+          expr: lvm_thin_pool_metadata_percent{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952",vg="piraeus_ssd",pool="data"} >= 85
+          for: 2m
+          labels:
+            severity: critical
+        - alert: PiraeusThinPoolCollectorFailed
+          annotations:
+            description: Reporting lvs has not returned both usage fields for piraeus_ssd/data for 2 minutes.
+            summary: Piraeus thin-pool metrics collection is failing
+          expr: lvm_thin_pool_collector_success{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952",vg="piraeus_ssd",pool="data"} == 0
+          for: 2m
+          labels:
+            severity: warning
+        - alert: PiraeusThinPoolCollectorStale
+          annotations:
+            description: The last successful sample or textfile update for piraeus_ssd/data is missing or older than 90 seconds.
+            summary: Piraeus thin-pool metrics are stale
+          expr: (time() - lvm_thin_pool_collector_last_success_timestamp_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952",vg="piraeus_ssd",pool="data"} > 90 or absent(lvm_thin_pool_collector_last_success_timestamp_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952",vg="piraeus_ssd",pool="data"}) or time() - node_textfile_mtime_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952",file="/textfiles/lvm_thin_pool.prom"} > 90) and on(namespace) (kube_daemonset_status_desired_number_scheduled{namespace="piraeus-datastore",daemonset="piraeus-lvm-metrics-ovh-ns104952"} > 0)
+          for: 2m
+          labels:
+            severity: warning
+        - alert: PiraeusThinPoolScrapeMissing
+          annotations:
+            description: Alloy has not scraped the Piraeus thin-pool exporter successfully for 2 minutes.
+            summary: Piraeus thin-pool exporter is not being scraped
+          expr: ((up{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952"} == 0) or absent(up{namespace="piraeus-datastore",service="piraeus-lvm-metrics-ovh-ns104952"})) and on(namespace) (kube_daemonset_status_desired_number_scheduled{namespace="piraeus-datastore",daemonset="piraeus-lvm-metrics-ovh-ns104952"} > 0)
           for: 2m
           labels:
             severity: warning

@@ -22,8 +22,13 @@ Refresh all placements before choosing a window.
 | `ovh-ns104952`  | Hosts old SSD volume server `ssd-1`, so retiring the last ordinal permits shrinking the old group from two to one. Several PostgreSQL primaries, Seaweed master-1, and Forgejo Valkey member-1 must move first.     |
 | `ovh-ns104963`  | Hosts old SSD volume server `ssd-0`, Seaweed master-0, Forgejo Valkey member-0, and the single-instance `agentplane-testing/postgres`. The singleton needs an explicit native-replication handoff or agreed outage. |
 
-Finish the control planes first by default. One HDD worker may accompany one
-control plane under the paired-roll gates below. Other workers follow; OptiPlex
+Finish the control planes first by default. Before evacuating the last legacy
+SSD volume server on `104963`, accept a replacement server on the converted
+`104952`. The current `104963` and `1001419` servers each hold all SSD volumes;
+`1001419` alone cannot preserve two copies outside `104963`. Keep the final
+legacy server available until that second Piraeus destination is ready.
+
+One HDD worker may accompany one control plane under the paired-roll gates below. Other workers follow; OptiPlex
 and wyrm2 need separate hardware, capacity, local-data and site-dependency plans.
 Do not apply this OVH disk recipe to those machines unchanged.
 

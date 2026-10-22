@@ -39,7 +39,8 @@ _OVH_NODE_PATHS = {
     "ovh-ns103656": ["/var/mnt/local-path-ovh-hdd/local-path"],
     "ovh-ns103711": ["/var/mnt/local-path-ovh-hdd/local-path"],
     "ovh-ns102453": ["/var/mnt/local-path-ovh-hdd/local-path"],
-    "ovh-ns104952": ["/var/mnt/seaweedfs-data/local-path"],
+    # Evacuated legacy claims stay readable; deny fresh allocations before cutover.
+    "ovh-ns104952": [],
     "ovh-ns104963": ["/var/mnt/seaweedfs-data/local-path"],
     # Its whole data disk belongs to Piraeus; retain the explicit fallback denial.
     "ovh-ns1001419": [],

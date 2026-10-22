@@ -16,8 +16,6 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _NAME = "piraeus-lvm-metrics"
-_POD_LABELS = {"app.kubernetes.io/name": _NAME}
-_SERVICE_LABELS = {"app.kubernetes.io/name": _NAME}
 _METRICS_PORT_NAME = "metrics"
 _METRICS_PORT = 9100
 _TEXTFILE_PATH = "/textfiles/lvm_thin_pool.prom"
@@ -31,7 +29,13 @@ def _validate_lvm_name(name: str, *, field: str) -> None:
 
 
 def add_thin_pool_monitoring(
-    scope: Construct, *, namespace: str, node_selector: dict[str, str], volume_group: str, thin_pool: str
+    scope: Construct,
+    *,
+    namespace: str,
+    node_selector: dict[str, str],
+    volume_group: str,
+    thin_pool: str,
+    name: str = _NAME,
 ) -> None:
     """Build a scoped reader/exporter pair and its Alloy scrape and alert resources.
 
@@ -46,7 +50,8 @@ def add_thin_pool_monitoring(
     if not node_selector:
         raise ValueError("node_selector must be non-empty to keep host LVM access node-scoped")
 
-    config_map_name = f"{_NAME}-collector"
+    pod_labels = {"app.kubernetes.io/name": name}
+    config_map_name = f"{name}-collector"
     k8s.KubeConfigMap(
         scope,
         "collector-script",
@@ -61,11 +66,11 @@ def add_thin_pool_monitoring(
     k8s.KubeDaemonSet(
         scope,
         "daemonset",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=namespace, labels=_POD_LABELS),
+        metadata=k8s.ObjectMeta(name=name, namespace=namespace, labels=pod_labels),
         spec=k8s.DaemonSetSpec(
-            selector=k8s.LabelSelector(match_labels=_POD_LABELS),
+            selector=k8s.LabelSelector(match_labels=pod_labels),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_POD_LABELS),
+                metadata=k8s.ObjectMeta(labels=pod_labels),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     host_network=False,
@@ -155,9 +160,9 @@ def add_thin_pool_monitoring(
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=namespace, labels=_SERVICE_LABELS),
+        metadata=k8s.ObjectMeta(name=name, namespace=namespace, labels=pod_labels),
         spec=k8s.ServiceSpec(
-            selector=_POD_LABELS,
+            selector=pod_labels,
             ports=[
                 k8s.ServicePort(
                     name=_METRICS_PORT_NAME,
@@ -174,32 +179,32 @@ def add_thin_pool_monitoring(
         scope,
         "network-policy",
         metadata=ApiObjectMetadata(
-            name=_NAME,
+            name=name,
             namespace=namespace,
             annotations={"description": "Allow only node-local Alloy to scrape the LVM textfile exporter."},
         ),
-        endpoint_selector=_POD_LABELS,
+        endpoint_selector=pod_labels,
         ingress=[IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS_PORT])],
     )
 
     ServiceMonitor(
         scope,
         "service-monitor",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
-        selector=ServiceMonitorSpecSelector(match_labels=_SERVICE_LABELS),
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
+        selector=ServiceMonitorSpecSelector(match_labels=pod_labels),
         endpoints=[Endpoint.plain(port=_METRICS_PORT_NAME)],
     )
 
-    labels = f'namespace="{namespace}",vg="{volume_group}",pool="{thin_pool}"'
-    target = f'namespace="{namespace}",service="{_NAME}"'
-    expected = f'kube_daemonset_status_desired_number_scheduled{{namespace="{namespace}",daemonset="{_NAME}"}} > 0'
+    labels = f'namespace="{namespace}",service="{name}",vg="{volume_group}",pool="{thin_pool}"'
+    target = f'namespace="{namespace}",service="{name}"'
+    expected = f'kube_daemonset_status_desired_number_scheduled{{namespace="{namespace}",daemonset="{name}"}} > 0'
     PrometheusRule(
         scope,
         "prometheus-rule",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
         groups=[
             group(
-                _NAME,
+                name,
                 [
                     Rule.alert(
                         "PiraeusThinPoolDataUsageWarning",
