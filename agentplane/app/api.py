@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Annotated, Any, Literal
@@ -20,14 +19,12 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
-from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.policy_view import ActionPolicySetView
 from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
     OperatorFederationError,
     operator_action_token,
-    operator_actions,
     upstream_failure_detail,
 )
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
@@ -490,21 +487,6 @@ async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetV
 threads = APIRouter(prefix="/threads", tags=["threads"])
 
 
-async def _operator_actions(request: Request, caller: Caller) -> AsyncIterator[OperatorActionServiceClient]:
-    try:
-        yield operator_actions(request, caller)
-    except OperatorFederationError as error:
-        raise HTTPException(error.status_code, {"code": str(error)}) from None
-    except httpx.HTTPStatusError as error:
-        raise upstream_http_error(error) from error
-    except httpx.RequestError as error:
-        raise upstream_http_error(error) from error
-    except httpx2.HTTPStatusError as error:
-        raise upstream_http_error(error) from error
-    except httpx2.TransportError as error:
-        raise upstream_http_error(error) from error
-
-
 def upstream_http_error(
     error: httpx.HTTPStatusError | httpx.RequestError | httpx2.HTTPStatusError | httpx2.TransportError,
 ) -> HTTPException:
@@ -514,9 +496,6 @@ def upstream_http_error(
         detail.upstream_status if detail.upstream_status is not None else status.HTTP_503_SERVICE_UNAVAILABLE,
         detail.model_dump(),
     )
-
-
-OperatorActions = Annotated[OperatorActionServiceClient, Depends(_operator_actions)]
 
 
 connections_router = APIRouter(tags=["connections"])
@@ -569,37 +548,6 @@ async def caller_grants(
         egress.bindings_for(subject), action_policy_frame(request, caller, action_policy, subject)
     )
     return CallerGrantView(bindings=bindings, action_policy=policy)
-
-
-def _operator_resource_stream(
-    request: Request,
-    shutdown: Shutdown,
-    updates: Updates,
-    sessions: OperatorSessions,
-    source: Callable[[], AbstractAsyncContextManager[AsyncIterator[bytes]]],
-    label: str,
-) -> StreamingResponse:
-    """Proxy an operator SSE resource, renewing upstream tokens and ending on logout."""
-
-    async def upstream() -> AsyncIterator[bytes]:
-        while True:
-            delivered = False
-            async with source() as chunks:
-                async for chunk in chunks:
-                    delivered = True
-                    yield chunk
-            if not delivered:
-                return
-
-    return _operator_relay(
-        request,
-        shutdown,
-        updates,
-        sessions,
-        upstream(),
-        label,
-        (httpx.HTTPError, httpx2.TransportError, OperatorFederationError),
-    )
 
 
 class ThreadRename(BaseModel):

@@ -335,9 +335,7 @@ async def review(
                 scope="openid profile",
             )
         )
-        operator_client = (
-            None if operator_connection == "disabled" else FederatedOperatorActions(federation, oidc, downstream_http)
-        )
+        operator_client = None if operator_connection == "disabled" else FederatedOperatorActions(federation, oidc)
         app = create_app(
             inventory,
             bridge,
@@ -380,9 +378,7 @@ async def review(
             action_policy,
             oidc,
             reviewer,
-            operator_actions=None
-            if operator_connection == "disabled"
-            else FederatedOperatorActions(federation, oidc, downstream_http),
+            operator_actions=None if operator_connection == "disabled" else FederatedOperatorActions(federation, oidc),
             event_logs=SeededEventLogStore(
                 replica_engine, history=history, history_reader=history_client, summaries=replica_summaries
             ),

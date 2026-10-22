@@ -213,7 +213,7 @@ async def async_main(settings: Settings) -> None:
             action_policy,
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
-            operator_actions=FederatedOperatorActions(settings.action_federation, oidc, actions_http),
+            operator_actions=FederatedOperatorActions(settings.action_federation, oidc),
             electric=electric,
             dispatcher_http=dispatcher_http,
             presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),

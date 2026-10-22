@@ -169,10 +169,6 @@ Each is a browser, provider or Kubernetes protocol, not an RPC.
 
 ## Gaps the facade does not close
 
-- **Resumable watches.** The Action request stream sends the whole history as its first frame,
-  megabytes (#7922), and ends every minute with the exchanged token, so the app reopens it and
-  `_without_repeated_snapshots` drops the repeat. A generic proxy cannot parse frames, so the Action
-  watch needs a resume cursor or delta frames in its proto before its operator surface migrates.
 - **Tick-only watches.** `WatchSessionSummaries` says only that something changed. Exposed as it is,
   the browser still re-reads after every tick. A browser-facing watch carries state, as
   `WatchDispatches` does.
