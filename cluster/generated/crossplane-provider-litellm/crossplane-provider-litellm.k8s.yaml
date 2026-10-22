@@ -1,7 +1,28 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: crossplane-system
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-litellm
 spec:
-  package: ghcr.io/agentydragon/provider-litellm:v2.1.0-3.g4c1d445
+  package: git.allegedly.works/ducktape-ci/provider-litellm:v2.1.0-1.ducktape.7024ecf72b0b
+  packagePullSecrets:
+    - name: forgejo-images-creds
   revisionActivationPolicy: Automatic

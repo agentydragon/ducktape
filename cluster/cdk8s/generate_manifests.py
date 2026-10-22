@@ -364,14 +364,6 @@ def generate_manifests(root: Path) -> None:
     crossplane_kustomization = crossplane.crossplane(
         flux_chart, write_directory(root, crossplane_artifact, crossplane.chart), kyverno_kustomization
     )
-    crossplane_litellm_provider_artifact = artifact(
-        crossplane.LITELLM_PROVIDER_KUSTOMIZATION_NAME, crossplane.LITELLM_PROVIDER_OUTPUT_DIR
-    )
-    crossplane_provider_kustomization = crossplane.litellm_provider(
-        flux_chart,
-        write_directory(root, crossplane_litellm_provider_artifact, crossplane.litellm_provider_chart),
-        crossplane_kustomization,
-    )
     local_path_provisioner_artifact = artifact("local-path-provisioner", local_path_provisioner.OUTPUT_DIR)
     local_path_provisioner_kustomization = local_path_provisioner.local_path_provisioner(
         flux_chart, write_directory(root, local_path_provisioner_artifact, local_path_provisioner.chart)
@@ -581,6 +573,15 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, external_secrets_operator_artifact, external_secrets_operator.chart),
         external_secrets_crds_kustomization,
         cert_manager_kustomization,
+    )
+    crossplane_litellm_provider_artifact = artifact(
+        crossplane.LITELLM_PROVIDER_KUSTOMIZATION_NAME, crossplane.LITELLM_PROVIDER_OUTPUT_DIR
+    )
+    crossplane_provider_kustomization = crossplane.litellm_provider(
+        flux_chart,
+        write_directory(root, crossplane_litellm_provider_artifact, crossplane.litellm_provider_chart),
+        crossplane_kustomization,
+        external_secrets_operator_kustomization,
     )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     clickhouse_kustomization = clickhouse_installation.clickhouse(

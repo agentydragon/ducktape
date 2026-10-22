@@ -1155,8 +1155,17 @@ http_file(
     urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_alerts.yaml"],
 )
 
-# Crossplane LiteLLM CRDs used by cluster/cdk8s/providers/litellm. Keep this package pin equal to
-# cluster/cdk8s/crossplane.py's provider package version.
+# Crossplane's Provider CRD used by cluster/cdk8s/crossplane.py. Keep this pin equal to
+# cluster/cdk8s/crossplane.py's Crossplane chart version.
+http_file(
+    name = "crossplane_pkg_provider_crd",
+    downloaded_file_path = "pkg.crossplane.io_providers.yaml",
+    sha256 = "205f660040a78a297190a1940a7d36d57a61bd27ac6e6286964734570cb4ed91",
+    urls = ["https://raw.githubusercontent.com/crossplane/crossplane/v2.4.2/cluster/crds/pkg.crossplane.io_providers.yaml"],
+)
+
+# Crossplane LiteLLM CRDs used by cluster/cdk8s/providers/litellm. The local package build applies
+# a read-cycle fix only; these schemas remain the ones from the adapter's v2.1.0 base revision.
 http_file(
     name = "crossplane_litellm_keys_crd",
     downloaded_file_path = "litellm.m.crossplane.io_keys.yaml",
