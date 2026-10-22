@@ -140,21 +140,97 @@ ts_library(
 )
 
 ts_library(
-    name = "viewer",
-    srcs = ["viewer.tsx"],
+    name = "session_info",
+    srcs = ["session-info.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":api"],
+)
+
+ts_library(
+    name = "session_fetch",
+    srcs = ["session-fetch.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":api"],
+)
+
+ts_library(
+    name = "session_list",
+    srcs = ["session-list.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":session_info",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "transcript_view",
+    srcs = ["transcript-view.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":api",
         ":event_inspector",
         ":event_timeline",
+        ":session_info",
         ":tool_groups",
         ":transcript",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//util/frontend:markdown",
+    ],
+)
+
+ts_library(
+    name = "session_directory",
+    srcs = ["use-session-directory.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":session_fetch",
+        ":session_info",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "transcript_history",
+    srcs = ["use-transcript-history.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":session_fetch",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "viewer",
+    srcs = ["viewer.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":session_directory",
+        ":session_info",
+        ":session_list",
+        ":transcript_history",
+        ":transcript_view",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/hooks",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//util/frontend:markdown",
     ],
 )
 
