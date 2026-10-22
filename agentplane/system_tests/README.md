@@ -198,8 +198,9 @@ receipt back from what the harness sent the model.
   the BFF receipt's Decision names the binding, the set and the rule; an over-long message waits for
   the operator; once the expired binding is deleted, a match waits too. Pending requests are denied
   through the BFF.
-- `test_agent_mcp_bff_decision` submits from an unbound Sandbox, decides allow or deny through the
-  app's `/actions/{id}` BFF, and has the agent `wait` for the outcome. It checks the
+- `test_agent_mcp_bff_decision` submits from an unbound Sandbox, reads through the app's generated
+  `/upstream/actions/v1/action-requests/{id}` facade and decides through its operator decision RPC,
+  then has the agent `wait` for the outcome. It checks the
   request/Decision/Execution snapshots, the operator's identity, duplicate-decision idempotency and
   stale-version rejection.
 - `test_operator_links_oauth_mcp_server` links the OAuth fixture through the BFF, following Dex's

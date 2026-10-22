@@ -1,7 +1,15 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, interruptTurn, submitInput, CommandSubmissionRefused, HttpError, threadObservations } from "./client";
+import {
+  api,
+  fetchWithLogin,
+  interruptTurn,
+  submitInput,
+  CommandSubmissionRefused,
+  HttpError,
+  threadObservations,
+} from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
 afterEach(() => {
@@ -48,7 +56,11 @@ it("on a 401 sends the browser to log in once and never hands the response back 
   vi.stubGlobal("location", { pathname: "/", hash: "#/mcp-servers", replace });
   const answer = (status: number) => async () =>
     Response.json({ detail: "no session and no accepted token" }, { status });
-  const unauthorized = [api.GET("/action-groups", { fetch: answer(401) }), api.GET("/actions", { fetch: answer(401) })];
+  vi.stubGlobal("fetch", answer(401));
+  const unauthorized = [
+    fetchWithLogin("/upstream/actions/v1/action-groups"),
+    fetchWithLogin("/upstream/actions/v1/action-requests:watch"),
+  ];
   // The same pipeline one request later, minus the redirect: had either 401 been handed back to
   // the page, it would have settled before this does.
   const control = api.GET("/models", { fetch: answer(403) });

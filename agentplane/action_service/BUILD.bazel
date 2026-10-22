@@ -8,6 +8,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -182,11 +183,7 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     deps = [
-        ":catalog",
         ":mcp_linkage",
-        ":models",
-        ":policy_view",
-        "//agentplane:subjects",
         "@pypi//anyio",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -1392,6 +1389,11 @@ proto_library(
     ],
 )
 
+py_proto_library_with_mypy_stubs(
+    name = "action_service_pb2",
+    deps = [":action_service_proto"],
+)
+
 ts_proto_library(
     name = "action_service_pb",
     copy_files = False,
@@ -1434,6 +1436,17 @@ proto_library(
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "operator_action_service_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":operator_action_service_proto",
+    deps = [
+        ":action_service_pb",
+        "//google/api:annotations_pb",
     ],
 )
 

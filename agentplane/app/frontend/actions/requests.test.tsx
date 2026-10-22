@@ -5,7 +5,19 @@ import { describe, expect, it, vi } from "vitest";
 
 import { STALE_AFTER_MS, streamRegistry } from "../stream_status";
 import { ActionRequests, stateLabel } from "./requests";
-import { TestEventSource, answerApi, button, mount, renderLive, request, send, sshExec, unmountLast } from "./testing";
+import {
+  ACTION_REQUEST_WATCH,
+  TestNdjsonWatch,
+  TestEventSource,
+  answerApi,
+  button,
+  mount,
+  renderLive,
+  request,
+  send,
+  sshExec,
+  unmountLast,
+} from "./testing";
 
 describe("ActionRequests", () => {
   it("shows a refused decision's structured error", async () => {
@@ -100,7 +112,11 @@ describe("ActionRequests", () => {
     await act(async () => button(container, label).click());
 
     expect(sent).toMatchObject([
-      { method: "POST", path: `/actions/${pending.id}/decision`, body: { verdict, expected_version: 1 } },
+      {
+        method: "POST",
+        path: `/upstream/actions/v1/operator/action-requests/${pending.id}/decision`,
+        body: { verdict: `VERDICT_${verdict.toUpperCase()}`, expectedVersion: "1" },
+      },
     ]);
     expect(container.textContent).toContain("Pending (0)");
   });
@@ -112,8 +128,6 @@ describe("ActionRequests", () => {
     expect(container.textContent).toContain("Loading actions");
     expect(container.textContent).not.toContain("No requests are waiting");
     expect(container.textContent).not.toContain("Pending (0)");
-    await send("not JSON");
-    expect(container.textContent).toContain("The live Action update was invalid");
     await send([]);
     expect(container.textContent).toContain("No requests are waiting");
     expect(container.textContent).not.toContain("Loading actions");
@@ -122,10 +136,10 @@ describe("ActionRequests", () => {
     await send([request("denied", 1)]);
     expect(container.textContent).toContain("Pending (0)");
     expect(sent).toEqual([]);
-    const stream = TestEventSource.current;
-    expect(stream?.url).toBe("/actions/stream?state=decision_pending");
+    const stream = TestNdjsonWatch.opened.get(ACTION_REQUEST_WATCH);
+    expect(stream?.url).toBe(ACTION_REQUEST_WATCH);
     await unmountLast();
-    expect(stream?.close).toHaveBeenCalledOnce();
+    expect(stream?.signal?.aborted).toBe(true);
   });
 
   it("keeps a dropped stream's requests without comment until it has been down a minute", async () => {
@@ -133,9 +147,8 @@ describe("ActionRequests", () => {
     try {
       const container = await renderLive(<ActionRequests />, [request("decision_pending", 1)]);
       await act(async () => {
-        // A drop is the network's, which the browser retries: the source stays CONNECTING.
-        TestEventSource.current!.readyState = 0;
-        TestEventSource.current?.dispatchEvent(new Event("error"));
+        // A dropped fetch stream is retried with a fresh request after backoff.
+        TestNdjsonWatch.current!.drop();
       });
       expect([...streamRegistry.getStatuses().values()].map((status) => status.standing)).toEqual(["current"]);
       expect(container.textContent).toContain("Pending (1)");

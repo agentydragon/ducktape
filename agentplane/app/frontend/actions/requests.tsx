@@ -4,10 +4,17 @@ import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
 import { createContext, type JSX, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { displayableError } from "../client";
-import { followStream, type StreamConnection } from "../live_stream";
+import type { StreamConnection } from "../live_stream";
 import { useOptionalStreamStatus } from "../stream_status";
 import { ActionCall } from "./call";
-import { decideAction, getAction, type ActionRequestView, type ActionState, type Verdict } from "./client";
+import {
+  decideAction,
+  followActionRequests,
+  getAction,
+  type ActionRequestView,
+  type ActionState,
+  type Verdict,
+} from "./client";
 
 export function stateLabel(state: ActionState): string {
   return state.replaceAll("_", " ");
@@ -56,8 +63,7 @@ export function ActionDecisionButtons({
   );
 }
 
-/** Shared fetch/decide plumbing for the pending and history views, over the live snapshots
- * `/actions/stream` pushes. */
+/** Shared fetch/decide plumbing for the pending and history views, over Action Service watches. */
 export function useActionRequests(enabled = true): {
   requests: ActionRequestView[];
   error: string | null;
@@ -194,22 +200,47 @@ export function useActionRequests(enabled = true): {
 
   useEffect(() => {
     if (!enabled) return;
-    return followStream("/actions/stream?state=decision_pending", {
-      events: {
-        snapshot: (message) => {
-          try {
-            storePendingSnapshot(JSON.parse(message.data) as ActionRequestView[]);
+    let snapshot: ActionRequestView[] = [];
+    return followActionRequests({
+      onOpen: () => {
+        snapshot = [];
+      },
+      onFrame: (frame) => {
+        switch (frame.kind) {
+          case "snapshot":
+            snapshot.push(...frame.requests);
+            break;
+          case "snapshot_complete":
+            storePendingSnapshot(snapshot);
+            snapshot = [];
             setError(null);
-          } catch {
-            setError("The live Action update was invalid.");
-          } finally {
             setLoading(false);
+            break;
+          case "upsert": {
+            const current = requestsRef.current;
+            const exists = current.some((item) => item.id === frame.request.id);
+            const next =
+              frame.request.state === "decision_pending"
+                ? exists
+                  ? current.map((item) =>
+                      item.id === frame.request.id && frame.request.version >= item.version ? frame.request : item
+                    )
+                  : [...current, frame.request].sort((left, right) => right.created_at.localeCompare(left.created_at))
+                : current.filter((item) => item.id !== frame.request.id);
+            requestsRef.current = next;
+            setRequests(next);
+            rememberRequests([frame.request]);
+            setError(null);
+            setLoading(false);
+            break;
           }
-        },
+          case "reconnect_required":
+            break;
+        }
       },
       onConnection: setConnection,
     });
-  }, [enabled, storePendingSnapshot]);
+  }, [enabled, rememberRequests, storePendingSnapshot]);
 
   async function decideRequest(request: ActionRequestView, verdict: Verdict): Promise<void> {
     setDeciding(request.id);

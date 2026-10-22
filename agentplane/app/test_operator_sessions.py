@@ -20,11 +20,9 @@ from more_itertools import one
 from sqlalchemy import select, update
 from starlette.types import Message, Scope
 
-from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import app_services, create_app
-from agentplane.app.conftest import operator_token
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
@@ -81,18 +79,18 @@ class Gate:
 
 
 class StubActions(FederatedOperatorActions):
-    def __init__(self, client: OperatorActionServiceClient) -> None:
-        self.client = client
+    def __init__(self) -> None:
+        pass
 
-    def for_request(self, request: Request) -> OperatorActionServiceClient:
-        return self.client
+    async def token_for_request(self, request: Request) -> str:
+        return "test-actions-token"
 
 
 class OpenStream(httpx.AsyncByteStream):
     """An Action stream: one frame, then nothing until its reader goes."""
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        yield b"event: snapshot\ndata: first\n\n"
+        yield b'{"result":{"snapshotComplete":{}}}\n'
         await asyncio.Event().wait()
 
 
@@ -194,14 +192,15 @@ async def app(
 
     async def answer(request: httpx.Request) -> httpx.Response:
         await gate.wait()
-        if request.url.path.endswith("/stream"):
-            return httpx.Response(200, stream=OpenStream())
-        return httpx.Response(200, json=[])
+        if request.url.path.endswith(":watch"):
+            return httpx.Response(200, stream=OpenStream(), headers={"content-type": "application/x-ndjson"})
+        return httpx.Response(200, json={"actionRequests": []})
 
     async with httpx.AsyncClient(
         base_url="https://test-actions.invalid", transport=httpx.MockTransport(answer)
     ) as http:
-        app_services(app).operator_actions = StubActions(OperatorActionServiceClient(http, operator_token))
+        app_services(app).operator_actions = StubActions()
+        app_services(app).actions_http = UpstreamProxy(http, token_file=None)
         yield app
         # Nothing a failed test left parked outlives it.
         gate.open()
@@ -264,8 +263,8 @@ class RawRequest:
 @pytest.mark.parametrize(
     "path",
     [
-        pytest.param("/actions", id="action-service-answer"),
-        pytest.param("/actions/stream", id="action-stream-open"),
+        pytest.param("/upstream/actions/v1/action-requests", id="action-service-answer"),
+        pytest.param("/upstream/actions/v1/action-requests:watch", id="action-stream-open"),
         pytest.param("/test-held", id="slow-handler"),
     ],
 )

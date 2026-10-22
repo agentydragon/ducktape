@@ -35,14 +35,9 @@ CREDENTIALS = OperatorCredentials(
 )
 
 
-def _missing_action_detail(request: httpx.Request) -> dict[str, JsonValue]:
-    request_id = UUID(request.url.path.removeprefix("/actions/"))
-    return {
-        "method": "GET",
-        "url": f"http://actions.test.invalid/v1/operator/action-requests/{request_id}",
-        "upstream_status": 404,
-        "error_type": "HTTPStatusError",
-    }
+def _missing_action_error(request: httpx.Request) -> dict[str, JsonValue]:
+    UUID(request.url.path.removeprefix("/upstream/actions/v1/action-requests/"))
+    return {"code": 5, "message": "not found", "details": []}
 
 
 async def test_federation_preflight_accepts_only_the_correlated_upstream_not_found() -> None:
@@ -52,31 +47,25 @@ async def test_federation_preflight_accepts_only_the_correlated_upstream_not_fou
         probes.append(request)
         assert request.method == "GET"
         assert request.url.host == "app.test.invalid"
-        return httpx.Response(404, json={"detail": _missing_action_detail(request)})
+        return httpx.Response(404, json=_missing_action_error(request))
 
     async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
         await verify_action_federation(http)
         await verify_action_federation(http)
     assert len(probes) == 2
     assert probes[0].url != probes[1].url
+    assert all(
+        probe.url.path.startswith("/upstream/actions/v1/action-requests/") and probe.url.path.count("/") == 5
+        for probe in probes
+    )
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("upstream_status", 403),
-        ("method", "POST"),
-        ("error_type", "ConnectError"),
-        ("url", "https://idp.test.invalid/keys"),
-        ("url", "http://actions.test.invalid/v1/operator/action-requests/00000000-0000-0000-0000-000000000000"),
-        ("url", "relative-url"),
-    ],
-)
+@pytest.mark.parametrize(("field", "value"), [("code", 14), ("code", "5")])
 async def test_federation_preflight_rejects_other_upstream_failures(field: str, value: JsonValue) -> None:
     def respond(request: httpx.Request) -> httpx.Response:
-        detail = _missing_action_detail(request)
-        detail[field] = value
-        return httpx.Response(404, json={"detail": detail})
+        error = _missing_action_error(request)
+        error[field] = value
+        return httpx.Response(404, json=error)
 
     async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
         with pytest.raises(LoginBlockedError, match="BFF Action federation preflight refused"):
@@ -86,14 +75,14 @@ async def test_federation_preflight_rejects_other_upstream_failures(field: str, 
 @pytest.mark.parametrize("status", [200, 401, 403, 503])
 async def test_federation_preflight_requires_the_bff_not_found_status(status: int) -> None:
     def respond(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(status, json={"detail": _missing_action_detail(request)})
+        return httpx.Response(status, json=_missing_action_error(request))
 
     async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
         with pytest.raises(LoginBlockedError, match="BFF Action federation preflight refused"):
             await verify_action_federation(http)
 
 
-@pytest.mark.parametrize("failure", ["html", "legacy", "malformed", "transport", "private-url"])
+@pytest.mark.parametrize("failure", ["html", "legacy", "malformed", "transport", "private-body"])
 async def test_federation_preflight_withholds_response_and_transport_details(
     failure: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -106,13 +95,11 @@ async def test_federation_preflight_withholds_response_and_transport_details(
             case "legacy":
                 return httpx.Response(404, json={"detail": "Action Service rejected the request"})
             case "malformed":
-                return httpx.Response(404, json={"detail": {"upstream_status": marker}})
+                return httpx.Response(404, json={"code": marker})
             case "transport":
                 raise httpx.ConnectError(marker, request=request)
-            case "private-url":
-                detail = _missing_action_detail(request)
-                detail["url"] = f"{detail['url']}?access_token={marker}"
-                return httpx.Response(404, json={"detail": detail})
+            case "private-body":
+                return httpx.Response(404, json={"code": 14, "message": marker, "details": []})
             case _:
                 raise AssertionError(failure)
 

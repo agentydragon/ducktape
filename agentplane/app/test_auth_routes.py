@@ -319,7 +319,7 @@ async def test_invalid_signed_login_never_creates_operator_session(serve: ServeA
         refused = await browser.get("/auth/login")
         assert refused.status_code == 401
         assert (await browser.get("/auth/me")).status_code == 401
-        assert (await browser.get("/actions")).status_code == 401
+        assert (await browser.get("/upstream/actions/v1/action-requests")).status_code == 401
 
 
 @pytest.mark.parametrize("parameter", ["state", "nonce"])

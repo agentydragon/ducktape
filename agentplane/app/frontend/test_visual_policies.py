@@ -958,7 +958,7 @@ async def test_mcp_servers_linkage_and_health_update_while_open(view: VisualPage
     await expect(docs.get_by_text("linked", exact=True)).to_be_visible()
     await app.publish(Flag.MCP_LINKAGE_CHANGED, "/mcp-servers/stream")
     await expect(docs.get_by_text("expired", exact=True)).to_be_visible()
-    await app.publish(Flag.MCP_HEALTH_CHANGED, "/action-groups/stream")
+    await app.publish(Flag.MCP_HEALTH_CHANGED, "/upstream/actions/v1/action-groups:watch")
     await expect(docs.get_by_text("connect_failed", exact=True)).to_be_visible()
     await view.capture(name="mcp_linkage_and_health_live")
 
