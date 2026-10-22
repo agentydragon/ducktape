@@ -77,9 +77,8 @@ if TYPE_CHECKING:
     import asyncpg
     from asyncpg.pool import PoolConnectionProxy
 
-# The LISTEN/NOTIFY path lazily imports asyncpg inside functions; mypy checks those
-# bodies and wants the stubs dist, which nothing imports.
-# gazelle:include_dep @pypi//asyncpg_stubs
+# Mypy needs the external asyncpg stubs for these annotations; the package is a
+# type-only dependency in props/agents/grader/BUILD.bazel.
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,35 @@
+diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
+--- a/mypy/private/mypy.bzl
++++ b/mypy/private/mypy.bzl
+@@ -115,9 +115,12 @@
+ 
+     type_mapping = dict(zip([k.label for k in ctx.attr._types_keys], ctx.attr._types_values))
+     dep_with_stubs = [_.label.workspace_root + "/site-packages" for _ in ctx.attr._types_keys]
++    # rules_python keeps pyi_deps out of runtime runfiles, but mypy still needs
++    # their stub files and imports in its own action.
++    deps = ctx.rule.attr.deps + getattr(ctx.rule.attr, "pyi_deps", [])
+     additional_types = [
+         type_mapping[dep.label]
+-        for dep in ctx.rule.attr.deps
++        for dep in deps
+         if dep.label in type_mapping
+     ]
+ 
+@@ -126,7 +129,7 @@
+ 
+     pyi_files = []
+     pyi_dirs = {}
+-    for dep in (ctx.rule.attr.deps + additional_types):
++    for dep in (deps + additional_types):
+         if RulesPythonPyInfo in dep and hasattr(dep[RulesPythonPyInfo], "direct_pyi_files"):
+             pyi_files.extend(dep[RulesPythonPyInfo].direct_pyi_files.to_list())
+             pyi_dirs |= {"%s/%s" % (ctx.bin_dir.path, imp): None for imp in _extract_imports(dep) if imp != "site-packages" and imp != "_main"}
+@@ -273,7 +276,7 @@
+ 
+     return aspect(
+         implementation = _mypy_impl,
+-        attr_aspects = ["deps"],
++        attr_aspects = ["deps", "pyi_deps"],
+         attrs = {
+             "_mypy_cli": attr.label(
+                 default = mypy_cli or "@rules_mypy//mypy/private:mypy",

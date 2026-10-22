@@ -68,6 +68,16 @@ bazel_dep(name = "ducktape_manifold_mcp_server", version = "0.1.0", dev_dependen
 bazel_dep(name = "ducktape_claude_web_env_environment_manager", version = "0.1.0", dev_dependency = True)
 
 bazel_dep(name = "rules_mypy", version = "0.41.0")
+
+# rules_mypy 0.41.0 ignores rules_python's pyi_deps when collecting stubs.
+# Keep this until a released rules_mypy traverses pyi_deps in its mypy aspect.
+single_version_override(
+    module_name = "rules_mypy",
+    patch_strip = 1,
+    patches = ["//third_party/patches:rules_mypy_pyi_deps.patch"],
+    version = "0.41.0",
+)
+
 bazel_dep(name = "rules_conda", version = "0.3.2")
 
 # aspect_rules_lint's lint actions create empty output files with `touch`, but some
