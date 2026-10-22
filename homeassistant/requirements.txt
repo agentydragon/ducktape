@@ -1462,7 +1462,7 @@ homeassistant==2026.9.2 \
     --hash=sha256:0a79cd4f13642bea4ed18733699891a0da651f6b3be1fcc2bfb5c459dc6f77e1 \
     --hash=sha256:2fbe341e624cf61510c2f32b3830828675a0de0253f173aadda78efc44c29b6b
     # via
-    #   -r homeassistant/requirements.in
+    #   -r requirements.in
     #   pytest-homeassistant-custom-component
 httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
@@ -1613,10 +1613,7 @@ lru-dict==1.4.1 \
     --hash=sha256:ff3af42922205620fdc920dcdf580c4c16b32c84a537a03b04b523e5c641a8a9 \
     --hash=sha256:ffad2758ce21d8fd6f0ae2628b31330732db8429a4b5994d2e107bed0ee11e68 \
     --hash=sha256:ffbb4eedc45eb629ca073795c53bf8de935a39cb58014b6af3487098d2f19098
-    # via
-    #   --override homeassistant/requirements.override.txt
-    #   -r homeassistant/requirements.override.txt
-    #   homeassistant
+    # via homeassistant
 markupsafe==3.0.3 \
     --hash=sha256:0303439a41979d9e74d18ff5e2dd8c43ed6c6001fd40e5bf2e43f7bd9bbc523f \
     --hash=sha256:068f375c472b3e7acbe2d5318dea141359e6900156b5b2ba06a30b169086b91a \
@@ -2551,7 +2548,7 @@ pygments==2.21.0 \
 pyhamcrest==2.1.0 \
     --hash=sha256:c6acbec0923d0cb7e72c22af1926f3e7c97b8e8d69fc7498eabacaf7c975bd9c \
     --hash=sha256:f6913d2f392e30e0375b3ecbd7aee79e5d1faa25d345c8f4ff597665dcac2587
-    # via -r homeassistant/requirements.in
+    # via -r requirements.in
 pyjwt[crypto]==2.13.0 \
     --hash=sha256:41571c89ca91598c79e8ef18a2d07367d4810fbbd6f637794879baf1b7703423 \
     --hash=sha256:66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728
@@ -2643,7 +2640,7 @@ pytest-github-actions-annotate-failures==0.4.2 \
 pytest-homeassistant-custom-component==0.13.365 \
     --hash=sha256:52d746181ca59bbc893a01ea45f40482aa6b313c617dfc481ce3dc85eec51353 \
     --hash=sha256:b551f29962ef77c4590fa66f01835b725085468e8ac3c03b05a5a1a86734b48f
-    # via -r homeassistant/requirements.in
+    # via -r requirements.in
 pytest-picked==0.5.1 \
     --hash=sha256:6634c4356a560a5dc3dba35471865e6eb06bbd356b56b69c540593e9d5620ded \
     --hash=sha256:af65c4763b51dc095ae4bc5073a962406902422ad9629c26d8b01122b677d998
