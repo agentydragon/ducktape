@@ -12,12 +12,14 @@ from uuid import UUID, uuid4
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from sqlalchemy import and_, delete, exists, func, literal, or_, select, text, union_all, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from finance.plaid.db.models import (
+    AccountInventory,
+    ItemInventory,
     PlaidAccount,
     PlaidBalance,
     PlaidHolding,
@@ -94,44 +96,6 @@ class StoredLink:
     earliest_transaction_date: date | None = None
     latest_transaction_date: date | None = None
     synced_transaction_count: int = 0
-
-
-class AccountInventory(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    account_id: str
-    name: str
-    official_name: str | None
-    mask: str | None
-    type: str
-    subtype: str | None
-    iso_currency_code: str | None
-    last_seen_at: datetime
-    detached_at: datetime | None
-    balance_captured_at: datetime | None
-    balance_available: float | None
-    balance_current: float | None
-    balance_limit: float | None
-    balance_iso_currency_code: str | None
-    transaction_count: int
-    investment_transaction_count: int
-    earliest_transaction_date: date | None
-    latest_transaction_date: date | None
-
-
-class ItemInventory(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    item_id: str
-    label: str | None
-    institution_name: str | None
-    status: str
-    accounts_observed_at: datetime | None
-    last_successful_sync_at: datetime | None
-    latest_sync_status: str | None
-    latest_sync_started_at: datetime | None
-    latest_sync_finished_at: datetime | None
-    accounts: tuple[AccountInventory, ...]
 
 
 @dataclass

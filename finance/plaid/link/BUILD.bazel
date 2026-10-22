@@ -19,6 +19,7 @@ py_library(
         "//finance/plaid/db:client",
         "//finance/plaid/db:config",
         "//finance/plaid/db:link_store",
+        "//finance/plaid/db:models",
         "//finance/plaid/db:products",
         "//finance/plaid/db:secret_store",
         "//finance/plaid/db:sync",

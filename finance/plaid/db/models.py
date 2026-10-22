@@ -1,9 +1,11 @@
-"""Pydantic views of shaped Plaid payloads consumed by sync and storage boundaries.
+"""Typed contracts for Plaid payloads and the local account-inventory projection.
 
-REST shapes follow Plaid's official OpenAPI document:
-https://github.com/plaid/plaid-openapi/blob/master/2020-09-14.yml. The models type the fields this
+``PlaidPayload`` REST shapes follow Plaid's official OpenAPI document:
+https://github.com/plaid/plaid-openapi/blob/master/2020-09-14.yml. Those models type the fields this
 service reads while allowing additional fields so Plaid can extend responses without breaking us.
-The SDK client itself uses plaid-python's generated request and response classes directly.
+``AccountInventory`` and ``ItemInventory`` describe the persisted mirror view; they are local
+service contracts, not upstream Plaid schemas. The SDK client itself uses plaid-python's generated
+request and response classes directly.
 Plaid's transaction webhook envelope and verification claims follow the webhook documentation:
 https://plaid.com/docs/transactions/webhooks/ and https://plaid.com/docs/api/webhooks/webhook-verification/.
 """
@@ -186,3 +188,41 @@ class PlaidError(PlaidPayload):
     display_message: str | None = None
     documentation_url: str | None = None
     request_id: str | None = Field(default=None, validation_alias=AliasChoices("request_id", "requestId"))
+
+
+class AccountInventory(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    account_id: str
+    name: str
+    official_name: str | None
+    mask: str | None
+    type: str
+    subtype: str | None
+    iso_currency_code: str | None
+    last_seen_at: datetime.datetime
+    detached_at: datetime.datetime | None
+    balance_captured_at: datetime.datetime | None
+    balance_available: float | None
+    balance_current: float | None
+    balance_limit: float | None
+    balance_iso_currency_code: str | None
+    transaction_count: int
+    investment_transaction_count: int
+    earliest_transaction_date: datetime.date | None
+    latest_transaction_date: datetime.date | None
+
+
+class ItemInventory(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    item_id: str
+    label: str | None
+    institution_name: str | None
+    status: str
+    accounts_observed_at: datetime.datetime | None
+    last_successful_sync_at: datetime.datetime | None
+    latest_sync_status: str | None
+    latest_sync_started_at: datetime.datetime | None
+    latest_sync_finished_at: datetime.datetime | None
+    accounts: tuple[AccountInventory, ...]
