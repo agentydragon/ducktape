@@ -4090,29 +4090,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Temporarily tracks the retired Haku Kubernetes API proxy's cert-manager TLS Secret with the Merge apply policy so its data is preserved until this Kustomization is removed.
-  name: haku-kube-api-proxy-secret-prune
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Delete
-  dependsOn:
-    - name: haku-console
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/haku-kube-api-proxy-secret-prune
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-kube-api-proxy-secret-prune
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: The public-coder-agent namespace, which holds the parked OpenClaw instance's PVCs, and the Roles and bindings that Haku and Agentplane Sandboxes still use against it.
   name: public-coder-agent-access
   namespace: ducktape-flux
