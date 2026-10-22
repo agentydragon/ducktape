@@ -20,7 +20,8 @@ locals {
   # and removes the legacy data-disk UserVolumeConfig from the generated machine
   # config. It does not run the rescue/dd installer. piraeus_ready_enabled is a
   # separate gate: it selects the node-specific raw-device pool configuration.
-  # Keep both false until evacuation, reset, and disk verification are complete.
+  # Apply a newly enabled system layout through maintenance mode after evacuation.
+  # Keep raw-device readiness false until the data disk is verified clear.
   piraeus_talos_node_layouts = {
     "ovh-ns1001419" = {
       talos_storage_enabled = true
@@ -29,7 +30,7 @@ locals {
       data_disk_serial      = "1951A3449505"
     }
     "ovh-ns104952" = {
-      talos_storage_enabled = false
+      talos_storage_enabled = true
       piraeus_ready_enabled = false
       system_disk_serial    = "BTPF8256006P450RGN"
       data_disk_serial      = "BTPF8304019P450RGN"
