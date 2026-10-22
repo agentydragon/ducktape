@@ -282,15 +282,17 @@ resource "ovh_dedicated_server_reboot_task" "kimsufi_to_rescue" {
 
 # Step 3: SSH into rescue, dd Talos image.
 # connection.timeout covers the window waiting for rescue to boot over SSH.
-# triggers on schematic_id so a kernel/extension change triggers re-provisioning.
-# To re-provision: tofu taint null_resource.install_talos_kimsufi["ovh-ns103656"]
+# Re-provision only with an explicit replacement during an approved rescue window.
+# Upgrade installed nodes with talosctl; a new schematic must not overwrite their disks.
 resource "null_resource" "install_talos_kimsufi" {
   for_each = local.active_kimsufi_servers
 
-  # Re-run when the schematic changes (which changes the install image URL).
-  # Schematic changes mean kernel-args/extensions changed — we want a fresh dd.
   triggers = {
     schematic_id = talos_image_factory_schematic.kimsufi.id
+  }
+
+  lifecycle {
+    ignore_changes = [triggers["schematic_id"]]
   }
 
   connection {
