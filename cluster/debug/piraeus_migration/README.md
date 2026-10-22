@@ -16,20 +16,26 @@ The early SSD evacuation from `ovh-ns104952` is complete: 33 native moves left
 `ovh-ns1001419`. The four affected SSD FUSE clients were refreshed and checked,
 then the empty old volume-server Pod was retired through PR #11586. Master-1
 moved to `102453`, and Forgejo Valkey replica-1 now uses a 2Gi Piraeus claim on
-`1001419`. PostgreSQL handoffs are proceeding serially; Attic and Study already
-promoted their existing Piraeus members. The current service proofs, remaining
+`1001419`. All seven two-member PostgreSQL handoffs are complete. Attic and
+Study promoted their existing Piraeus members and temporarily retain two
+healthy off-node members until their thirds return. The current service proofs, remaining
 handoffs and pre-wipe data-preservation findings are in
 [`next_nodes/`](next_nodes/README.md).
 
 The inert `ovh-ns104952` storage configuration and its dated local-PV/disk
-inventory remain in [`ovh_ns104952/`](ovh_ns104952/README.md). No subsequent node
-reset, data-disk wipe or reformat has started. The audit found seven unmatched
-old claim directories; preserve them off-node before destruction.
+inventory remain in [`ovh_ns104952/`](ovh_ns104952/README.md). The second node's
+selective system reset, data-disk wipe and dedicated system-volume rebuild are
+complete; all three etcd services are healthy. Piraeus admission and workload
+restoration are in progress. All 19 old claim directories were archived to a
+retained PVC on `102453`; the operator explicitly waived scratch restore and
+file comparison. See [the second-node checkpoint](next_nodes/second_ssd_roll.json).
 
 The HDD slot cap is now 600 and the first copy batch from `103656` to the 4TB
-node `102453` is running with per-move copy, quorum, identity and 15% free-space
-gates. It has resumed only after fresh checks following two read/transport
-failures. The approximately 621GB wave to the smaller `103711` remains held:
+node `102453` is paused at a native-move boundary for reclamation. The manual
+compaction request encountered Seaweed's existing global vacuum lock, then
+stopped on a health-read timeout; no reclaimed bytes are claimed. The four
+approved backup snapshots were cleared while future backups remain enabled.
+The approximately 621GB wave to the smaller `103711` remains held:
 projected free space is 11.7%, below the 15% reserve. The separate proposal to
 move one native ClickHouse data replica to SSD is recorded in `next_nodes/`;
 no ClickHouse migration has started. The accepted temporary-overcommit policy

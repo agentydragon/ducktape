@@ -454,8 +454,12 @@ using dedicated ETCD/CRI/KUBELET/LOG partitions needs its own explicit wipe-labe
 selection. Preserve EFI/META as required. Do not use a default reset that wipes
 all disks. Do not bootstrap a second cluster.
 
-In maintenance mode, verify the API certificate fingerprint through a trusted
-console. Re-read disk serials, sizes and partition/volume status. Require the
+Use the node's verified public IP directly with `talosctl` for maintenance.
+Record its first maintenance certificate and pin subsequent calls with
+`--cert-fingerprint`; a trusted console can independently verify that fingerprint
+when available. Recording the first certificate trusts that initial connection;
+pinning alone is not an independent identity check. Re-read disk serials, sizes
+and partition/volume status. Require the
 data disk to differ from the system disk, be writable, have no active Talos
 volume allocation and no remaining legacy UserVolumeConfig. Only then issue a
 fingerprint-pinned FAST wipe of the explicitly identified data device. Apply

@@ -1,9 +1,12 @@
 # Next Piraeus nodes: evacuation and capacity evidence
 
 Preparation on 2026-10-22 for SSD control plane `ovh-ns104952` and a possible
-paired HDD worker. No subsequent node shutdown, reset, wipe or reformat has
-started. Use the [node-roll runbook](../../../docs/runbooks/piraeus_node_roll.md)
-and refresh its gates before those operations.
+paired HDD worker. The second SSD node's selective reset, data-disk wipe and
+dedicated system-volume rebuild are complete; pool admission and restoration
+are in progress. The [second-node checkpoint](second_ssd_roll.json) records
+current gates separately from the older handoff proofs. Use the
+[node-roll runbook](../../../docs/runbooks/piraeus_node_roll.md) and refresh its
+gates before further operations.
 
 ## Completed early SSD evacuation
 
@@ -37,7 +40,9 @@ ordinal required orphaning/adopting the StatefulSet with `OnDelete`, not scaling
 the group down.
 
 Attic and Study Casino promoted their existing caught-up Piraeus members on
-`1001419`; their old `104952` standbys still need retirement. Study remains 1Gi.
+`1001419`; their old `104952` standbys are retired. Both have two healthy
+off-node members, with resource-specific Flux holds preserving the temporary
+count until their third members return. Study remains 1Gi.
 
 Forgejo Valkey replica-1 now uses a new 2Gi Piraeus claim on `1001419`, with its
 source PV retained. The initial Flux hold on RedisReplication propagated into
@@ -48,8 +53,12 @@ resumed all controllers. A later check again found master/replica Ready, link
 up and matching offsets. The shared claim template is still local-path: retain
 the per-ordinal override for recovery. The runbook records both operator caveats.
 
-The seven two-member PostgreSQL clusters use serial temporary-third-member
-handoffs. Progress is recorded in [the sanitized acceptance proof](ssd_service_handoffs.json); old source claims remain detached and retained after acceptance.
+The seven two-member PostgreSQL clusters completed serial temporary-third-member
+handoffs and retain two healthy members on `1001419` and `104963`. The older
+[sanitized handoff proof](ssd_service_handoffs.json) is an intermediate snapshot;
+the [second-node checkpoint](second_ssd_roll.json) records the final boundary.
+Staging also has an Electric logical slot: native physical-standby gates join
+`pg_stat_replication` to `pg_replication_slots` and filter `slot_type='physical'`.
 
 ## Data preservation before reformat
 
@@ -60,12 +69,16 @@ prove those old generations are disposable. The full tree reports 27.47GB,
 while XFS reports 36.25GB used; the Talos directory API does not attribute the
 roughly 8.78GB difference to individual allocated paths.
 
-Quiesce remaining consumers and preserve all 19 directories off-node before
-whole-disk destruction. Budget 50Gi on a node outside both proposed outage
-members; preserve ownership, modes, timestamps, ACLs, xattrs, links and sparse
-files, with hashes and a verified recovery copy. No such archive exists yet.
-Native replication/cold-copy acceptance remains the current-service recovery
-proof. No target data disk has been wiped.
+After all consumers stopped, the regular-file inventory measured 27,655,806,330
+bytes. All 19 directories were archived with GNU tar's sparse, ACL, xattr and
+numeric-owner options to a retained 50Gi PVC on `102453`, outside both proposed
+outages. The compressed archive is 6,029,911,761 bytes; its path, transfer
+checksum and PVC/PV identities are in the second-node checkpoint. Its source
+inventory is stored beside the archive. The operator explicitly waived scratch
+restore and file comparison; neither is claimed as verified. Native replication
+and the earlier service handoffs remain the current-service recovery evidence.
+The source data disk has now been wiped; retained old PV metadata does not
+restore those erased files.
 
 ## Database replacement capacity — 2026-10-22
 
