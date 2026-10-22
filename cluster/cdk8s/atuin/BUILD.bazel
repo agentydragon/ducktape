@@ -26,13 +26,24 @@ py_library(
 py_library(
     name = "user_provisioner",
     srcs = ["user_provisioner.py"],
+    data = ["provision.py"],
     deps = [
         ":server",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "provision",
+    srcs = ["provision.py"],
+    deps = [
+        "@pypi//argon2_cffi",
+        "@pypi//psycopg2_binary",
     ],
 )
