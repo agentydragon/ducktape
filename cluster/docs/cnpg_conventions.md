@@ -104,10 +104,10 @@ deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
 - `attic-db` (`nix-cache/`): 3 instances using the Piraeus pilot profile. Its
   two existing local-path PVCs remain unchanged; the new claim uses
   `piraeus-ssd-local`.
-- `study-casino-db` (`generated/study-casino/`): remains at 2 instances until
-  Attic's third Piraeus-backed replica is accepted. Its original 3-instance
-  profile was a deliberate deviation to tolerate one-node loss without quorum
-  or primary impact.
+- `study-casino-db` (`generated/study-casino/`): 3 instances using the Piraeus
+  pilot profile. Its two existing 1Gi PVCs retain their current classes; the
+  new claim uses `piraeus-ssd-local`. This restores its deliberate profile for
+  tolerating one-node loss without quorum or primary impact.
 - `postgres` (`generated/agentplane-testing/`): 1 instance pinned
   `zone: hil-ovh` on `local-path-ovh-ssd`, shared by testing's three disposable
   logical databases. This experimental environment deliberately accepts no

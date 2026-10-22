@@ -99,13 +99,13 @@ def _database(scope: Construct) -> None:
         "database",
         ref=POSTGRES,
         annotations={"description": "CNPG Postgres for study-casino state."},
-        # Temporary Piraeus-node maintenance reduction: keep 2 while the replica on
-        # ovh-ns1001419 is evacuated. Restore 3 only after a separate user-data handoff discussion.
-        instances=2,
+        # Preserve the existing mixed-class 1Gi PVCs; Piraeus applies to the new claim only.
+        instances=3,
         image_name=None,
         placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh-ssd",
+        storage_class="piraeus-ssd-local",
         size="1Gi",
+        resize_in_use_volumes=False,
         # CNPG creates the read-only role on first reconcile and sets its password from
         # the `passwordSecret`. Object-level GRANTs (CONNECT/USAGE/SELECT + ALTER DEFAULT
         # PRIVILEGES) are applied by the provisioner Job running as the `studycasino`

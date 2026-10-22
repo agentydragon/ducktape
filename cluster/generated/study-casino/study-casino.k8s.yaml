@@ -29,7 +29,7 @@ spec:
     initdb:
       database: studycasino
       owner: studycasino
-  instances: 2
+  instances: 3
   managed:
     roles:
       - comment: Read-only access for sandbox agents; object GRANTs come from the db-readonly-provisioner Job.
@@ -50,8 +50,9 @@ spec:
       isolationCheck:
         enabled: false
   storage:
+    resizeInUseVolumes: false
     size: 1Gi
-    storageClass: local-path-ovh-ssd
+    storageClass: piraeus-ssd-local
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
