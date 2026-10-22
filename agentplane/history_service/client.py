@@ -18,7 +18,6 @@ from agentplane.grpc.options import LARGE_EVENT_RECEIVE_OPTIONS
 from agentplane.history_service import history_service_pb2, history_service_pb2_grpc
 
 
-
 @dataclass(frozen=True)
 class SessionOpened:
     session_id: UUID

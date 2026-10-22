@@ -26,7 +26,6 @@ from agentplane.sandboxes.kubernetes_views import CREATE_INTENT
 from agentplane.sandboxes.testing.sandbox_namespace import TEMPLATE, SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
 
-
 CALLER = ServiceAccountRef(namespace="test-callers", name="test-caller")
 OTHER = ServiceAccountRef(namespace="test-callers", name="other-caller")
 

@@ -44,7 +44,6 @@ from devinfra.claude.session_export.models import (
 )
 from util.db_url import render_postgresql_url
 
-
 logger = logging.getLogger(__name__)
 
 # One statement binds at most 32767 parameters.

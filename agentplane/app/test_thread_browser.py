@@ -72,7 +72,6 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
 
-
 pytest_plugins = ("agentplane.app.testing.thread_browser",)
 
 

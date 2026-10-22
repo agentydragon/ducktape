@@ -8,7 +8,6 @@ from agentplane.app.sandbox_models import SandboxPhase as ViewPhase, sandbox_is_
 from agentplane.proto.sandboxes_pb2 import Sandbox, SandboxPhase, ServiceAccount
 
 
-
 @pytest.mark.parametrize(
     ("phase", "view_phase"),
     [

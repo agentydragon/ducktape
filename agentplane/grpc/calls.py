@@ -15,7 +15,6 @@ from agentplane.grpc.options import LARGE_EVENT_RECEIVE_OPTIONS
 logger = logging.getLogger(__name__)
 
 
-
 class RefusedError(Exception):
     """The runner or the Sandbox's state refused the operation (FAILED_PRECONDITION)."""
 
