@@ -21,8 +21,7 @@ from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretC
 from airlock.oauth.k8s_client import K8sTokenStore
 from airlock.oauth.provider import GenericOAuth2Provider, TokenData
 from airlock.settings import Settings
-from util.net import bind_free_port
-from util.testing.asgi import serve_app
+from util.testing.asgi import bind_http_server
 
 
 @pytest.fixture
@@ -63,15 +62,14 @@ def _operator_cookies(settings: Settings) -> dict[str, str]:
 
 
 async def test_oauth_api_works_after_startup(mock_k8s_store: MagicMock) -> None:
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
-    settings = _settings(port)
-    app = create_app(settings, include_static=False)
+    with bind_http_server() as endpoint:
+        settings = _settings(endpoint.port)
+        app = create_app(settings, include_static=False)
 
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
-        assert (await http.get("/healthz")).json() == {"ok": True}
-        http.cookies.update(_operator_cookies(settings))
-        response = await http.get("/api/oauth/providers")
+        async with endpoint.serve(app), httpx.AsyncClient(base_url=endpoint.origin) as http:
+            assert (await http.get("/healthz")).json() == {"ok": True}
+            http.cookies.update(_operator_cookies(settings))
+            response = await http.get("/api/oauth/providers")
 
     assert response.status_code == 200
     assert response.json() == []
@@ -121,12 +119,10 @@ async def test_oauth_providers_reports_expired_token_status(
             )
         ],
     )
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
-    with patch("airlock.app.token_refresh_loop", side_effect=fake_token_refresh_loop):
-        settings = _settings(port, oauth=oauth)
+    with bind_http_server() as endpoint, patch("airlock.app.token_refresh_loop", side_effect=fake_token_refresh_loop):
+        settings = _settings(endpoint.port, oauth=oauth)
         app = create_app(settings, include_static=False)
-        async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+        async with endpoint.serve(app), httpx.AsyncClient(base_url=endpoint.origin) as http:
             http.cookies.update(_operator_cookies(settings))
             response = await http.get("/api/oauth/providers")
 
@@ -142,31 +138,29 @@ async def test_oauth_providers_reports_expired_token_status(
 
 
 async def test_api_requires_valid_session(mock_k8s_store: MagicMock) -> None:
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
-    settings = _settings(port)
-    app = create_app(settings, include_static=False)
+    with bind_http_server() as endpoint:
+        settings = _settings(endpoint.port)
+        app = create_app(settings, include_static=False)
 
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
-        assert (await http.get("/api/oauth/providers")).status_code == 401
-        assert (
-            await http.get("/api/oauth/providers", headers={"Authorization": "Bearer not-a-jwt"})
-        ).status_code == 401
-        http.cookies.update(_operator_cookies(settings))
-        assert (await http.get("/api/oauth/providers")).status_code == 200
+        async with endpoint.serve(app), httpx.AsyncClient(base_url=endpoint.origin) as http:
+            assert (await http.get("/api/oauth/providers")).status_code == 401
+            assert (
+                await http.get("/api/oauth/providers", headers={"Authorization": "Bearer not-a-jwt"})
+            ).status_code == 401
+            http.cookies.update(_operator_cookies(settings))
+            assert (await http.get("/api/oauth/providers")).status_code == 200
 
 
 async def test_mcp_and_tool_approval_routes_are_absent(mock_k8s_store: MagicMock) -> None:
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
-    app = create_app(_settings(port), include_static=False)
+    with bind_http_server() as endpoint:
+        app = create_app(_settings(endpoint.port), include_static=False)
 
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
-        assert (await http.post("/mcp")).status_code == 404
-        assert (await http.get("/api/actions")).status_code == 404
-        assert (await http.get("/api/backends")).status_code == 404
-        assert (await http.get("/api/events")).status_code == 404
-        assert (await http.post("/api/actions/00000000-0000-0000-0000-000000000001/1/approve")).status_code == 404
+        async with endpoint.serve(app), httpx.AsyncClient(base_url=endpoint.origin) as http:
+            assert (await http.post("/mcp")).status_code == 404
+            assert (await http.get("/api/actions")).status_code == 404
+            assert (await http.get("/api/backends")).status_code == 404
+            assert (await http.get("/api/events")).status_code == 404
+            assert (await http.post("/api/actions/00000000-0000-0000-0000-000000000001/1/approve")).status_code == 404
 
 
 if __name__ == "__main__":

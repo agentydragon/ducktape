@@ -47,7 +47,7 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
-from util.net import pick_free_port
+from util.net import Listener, listen_tcp
 
 APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
@@ -210,6 +210,12 @@ def sigterm_is_survivable() -> Iterator[None]:
 
 
 @pytest.fixture
+def bound_listener() -> Iterator[Listener]:
+    with listen_tcp() as listener:
+        yield listener
+
+
+@pytest.fixture
 def database_updates(engine: AsyncEngine) -> WakeupListener:
     # Unlike the route-only fixtures, this test runs the production owner of the listener scope.
     return create_database_updates(engine.url)
@@ -258,6 +264,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
     dispatcher_http: UpstreamProxy,
     history_client: HistoryServiceClient,
     dispatcher: SessionDispatcherClient,
+    bound_listener: Listener,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
@@ -283,12 +290,8 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
         dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
-    port = pick_free_port()
     # A budget the test would never wait out: the stream has to end because of the drain, not this.
-    server = AppServer(
-        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=60),
-        drain_of(app),
-    )
+    server = AppServer(uvicorn.Config(app, log_level="warning", timeout_graceful_shutdown=60), drain_of(app))
     async with history_client.new_client() as openings_client:
         serving = asyncio.create_task(
             serve_then_close(
@@ -296,6 +299,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
                 session_openings=SessionOpenings(openings_client, event_logs, retry_interval_s=0.05),
                 database_updates=database_updates,
                 engine=engine,
+                sockets=[bound_listener.socket],
             )
         )
         while not server.started:
@@ -305,7 +309,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
             await asyncio.sleep(0.02)
         assert await _other_connections(database) > 0
 
-        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=agent_auth) as client:
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{bound_listener.port}", headers=agent_auth) as client:
             assert (await client.get("/readyz")).status_code == 204
             assert (await client.get("/threads/00000000-0000-0000-0000-000000000000/sync/scope")).status_code == 404
             async with client.stream("GET", "/live/sandboxes") as stream:

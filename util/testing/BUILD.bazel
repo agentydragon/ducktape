@@ -252,11 +252,12 @@ py_test(
     deps = [
         ":asgi",
         "//:conftest",
-        "//util:net",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+        "@pypi//uvicorn",
     ],
 )
 

@@ -63,8 +63,7 @@ from agentplane.action_service.store import ActionConflictError, ActionStore
 from agentplane.action_service.testing.lifecycle import wait_available, wait_retry
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
-from util.net import bind_free_port
-from util.testing.asgi import serve_app_sync
+from util.testing.asgi import bind_http_server, serve_app_sync
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 
@@ -190,28 +189,28 @@ def http_group(fake_server: FakeMcpServer) -> Iterator[ActionGroup]:
 @pytest.fixture
 def oauth_settings(tmp_path: Path) -> Iterator[OAuthSettings]:
     private_key, public_key = generate_rsa_keypair()
-    sock = bind_free_port()
-    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}/application/o/test-actions/"
-    secret, signing, encryption = (tmp_path / name for name in ("upstream-secret", "jwt-key", "encryption-key"))
-    secret.write_text("test-only-upstream-secret")
-    signing.write_text(secrets.token_urlsafe(48))
-    encryption.write_bytes(Fernet.generate_key())
-    idp = build_mock_oidc_app(
-        issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
-    )
-    with serve_app_sync(idp, sock=sock):
-        yield OAuthSettings(
-            config_url=f"{issuer}.well-known/openid-configuration",
-            upstream_client_id="test-actions-client",
-            upstream_client_secret_file=secret,
-            base_url="https://actions.example.test",
-            integration_app_url="https://integration.example.test",
-            jwt_signing_key_file=signing,
-            encryption_key_file=encryption,
-            upstream_issuer=issuer,
-            upstream_subject="test-user",
-            approving_operator=OperatorPrincipal(issuer="test-http", subject="operator"),
+    with bind_http_server() as endpoint:
+        issuer = f"{endpoint.origin}/application/o/test-actions/"
+        secret, signing, encryption = (tmp_path / name for name in ("upstream-secret", "jwt-key", "encryption-key"))
+        secret.write_text("test-only-upstream-secret")
+        signing.write_text(secrets.token_urlsafe(48))
+        encryption.write_bytes(Fernet.generate_key())
+        idp = build_mock_oidc_app(
+            issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
         )
+        with endpoint.serve_sync(idp):
+            yield OAuthSettings(
+                config_url=f"{issuer}.well-known/openid-configuration",
+                upstream_client_id="test-actions-client",
+                upstream_client_secret_file=secret,
+                base_url="https://actions.example.test",
+                integration_app_url="https://integration.example.test",
+                jwt_signing_key_file=signing,
+                encryption_key_file=encryption,
+                upstream_issuer=issuer,
+                upstream_subject="test-user",
+                approving_operator=OperatorPrincipal(issuer="test-http", subject="operator"),
+            )
 
 
 @pytest.fixture

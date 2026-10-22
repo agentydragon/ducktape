@@ -17,9 +17,8 @@ from fastapi import FastAPI
 from itsdangerous import TimestampSigner
 from pydantic import SecretStr
 
-from util.net import bind_free_port
 from util.oidc_login import LoginConfig, LoginSession, install_login, valid_claims
-from util.testing.asgi import serve_app
+from util.testing.asgi import bind_http_server
 from util.testing.mock_oidc import RSAKeyPair, build_mock_oidc_app, generate_rsa_keypair
 
 ISSUER = "https://idp.test/application/o/test/"
@@ -255,21 +254,23 @@ def serve(keypair: RSAKeyPair) -> Serve:
     async def serving(
         *, subject: str = OWNER, id_token_claims: dict[str, str] | None = None, **config_overrides: Any
     ) -> AsyncIterator[LoginConfig]:
-        idp_sock, app_sock = bind_free_port(), bind_free_port()
-        idp_url, app_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, app_sock))
-        private_key, public_key = keypair
-        idp = build_mock_oidc_app(
-            issuer_url=idp_url,
-            private_key=private_key,
-            public_key=public_key,
-            subject=subject,
-            extra_id_token_claims={"preferred_username": "test-user"} if id_token_claims is None else id_token_claims,
-        )
-        config = replace(BASE, issuer=idp_url, public_base_url=app_url, **config_overrides)
-        app = _app()
-        install_login(app, config)
-        async with serve_app(idp, sock=idp_sock), serve_app(app, sock=app_sock):
-            yield config
+        with bind_http_server() as idp_server, bind_http_server() as app_server:
+            idp_url = idp_server.origin
+            private_key, public_key = keypair
+            idp = build_mock_oidc_app(
+                issuer_url=idp_url,
+                private_key=private_key,
+                public_key=public_key,
+                subject=subject,
+                extra_id_token_claims={"preferred_username": "test-user"}
+                if id_token_claims is None
+                else id_token_claims,
+            )
+            config = replace(BASE, issuer=idp_url, public_base_url=app_server.origin, **config_overrides)
+            app = _app()
+            install_login(app, config)
+            async with idp_server.serve(idp), app_server.serve(app):
+                yield config
 
     return serving
 

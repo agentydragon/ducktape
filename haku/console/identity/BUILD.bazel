@@ -203,7 +203,6 @@ py_test(
         "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:database_schema",
-        "//util:net",
         "//util/testing:asgi",
         "//util/testing:mock_oidc",
         "@pypi//fastapi",

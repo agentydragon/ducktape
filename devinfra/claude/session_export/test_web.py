@@ -28,8 +28,7 @@ from devinfra.claude.session_export.settings import ServeSettings, WebSettings
 from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.supervisor import SyncSupervisor
 from devinfra.claude.session_export.web import create_app, create_control_app, create_web_app
-from util.net import bind_free_port
-from util.testing.asgi import serve_app, serve_app_in_loop
+from util.testing.asgi import bind_http_server
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 OWNER = "test-owner-subject"
@@ -63,43 +62,42 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
             "<!doctype html><title>session sync test shell</title>", encoding="utf-8"
         )
         private_key, public_key = generate_rsa_keypair()
-        idp_sock, app_sock = bind_free_port(), bind_free_port()
-        idp_url, app_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, app_sock))
-        idp = build_mock_oidc_app(
-            issuer_url=idp_url,
-            private_key=private_key,
-            public_key=public_key,
-            subject=subject,
-            extra_id_token_claims={"preferred_username": "test-owner"},
-        )
-        settings = ServeSettings(
-            database_url="postgresql://unused.invalid/unused",
-            credentials_file=tmp_path / "credential.json",
-            public_base_url=app_url,
-            oidc_issuer=idp_url,
-            oidc_client_id="test-client",
-            oidc_client_secret="test-client-secret",
-            oidc_session_secret="test-session-secret",
-            oidc_allowed_subject=OWNER,
-        )
-        supervisor = SyncSupervisor(
-            credentials=CredentialStore(settings.credentials_file),
-            store=store,
-            token_client=FakeTokenEndpoint(token_response, status=token_status).client,
-            interval=3600,
-            workers=1,
-            live_streams=0,
-            live_window=timedelta(hours=1),
-        )
-        # The app runs in this loop, not in `serve_app`'s thread: its `store` holds this loop's asyncpg connections.
-        async with (
-            serve_app(idp, sock=idp_sock),
-            serve_app_in_loop(
-                create_app(supervisor=supervisor, settings=settings, store=store, frontend_dir=frontend_dir),
-                sock=app_sock,
-            ),
-        ):
-            yield app_url
+        with bind_http_server() as idp_endpoint, bind_http_server() as app_endpoint:
+            idp_url, app_url = idp_endpoint.origin, app_endpoint.origin
+            idp = build_mock_oidc_app(
+                issuer_url=idp_url,
+                private_key=private_key,
+                public_key=public_key,
+                subject=subject,
+                extra_id_token_claims={"preferred_username": "test-owner"},
+            )
+            settings = ServeSettings(
+                database_url="postgresql://unused.invalid/unused",
+                credentials_file=tmp_path / "credential.json",
+                public_base_url=app_url,
+                oidc_issuer=idp_url,
+                oidc_client_id="test-client",
+                oidc_client_secret="test-client-secret",
+                oidc_session_secret="test-session-secret",
+                oidc_allowed_subject=OWNER,
+            )
+            supervisor = SyncSupervisor(
+                credentials=CredentialStore(settings.credentials_file),
+                store=store,
+                token_client=FakeTokenEndpoint(token_response, status=token_status).client,
+                interval=3600,
+                workers=1,
+                live_streams=0,
+                live_window=timedelta(hours=1),
+            )
+            # The app runs in this loop, not in a thread: its store holds this loop's asyncpg connections.
+            async with (
+                idp_endpoint.serve(idp),
+                app_endpoint.serve_in_loop(
+                    create_app(supervisor=supervisor, settings=settings, store=store, frontend_dir=frontend_dir)
+                ),
+            ):
+                yield app_url
 
     return serving
 
@@ -159,71 +157,72 @@ async def test_the_owner_pairs_by_pasting_the_redirect_url(owner: httpx.AsyncCli
 async def test_pairing_can_start_on_one_web_replica_and_finish_on_another(store: SessionStore, tmp_path: Path) -> None:
     """Both public pods proxy to the single control process that owns the PKCE attempt and credential."""
     private_key, public_key = generate_rsa_keypair()
-    idp_sock, app_sock = bind_free_port(), bind_free_port()
-    idp_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}"
-    app_url = f"http://127.0.0.1:{app_sock.getsockname()[1]}"
-    idp = build_mock_oidc_app(
-        issuer_url=idp_url,
-        private_key=private_key,
-        public_key=public_key,
-        subject=OWNER,
-        extra_id_token_claims={"preferred_username": "test-owner"},
-    )
-    web_settings = WebSettings(
-        database_url="postgresql://unused.invalid/unused",
-        public_base_url=app_url,
-        oidc_issuer=idp_url,
-        oidc_client_id="test-client",
-        oidc_client_secret="test-client-secret",
-        oidc_session_secret="test-session-secret",
-        oidc_allowed_subject=OWNER,
-        control_base_url="http://control",
-    )
-    control_settings = ServeSettings(
-        database_url="postgresql://unused.invalid/unused",
-        credentials_file=tmp_path / "credential.json",
-        public_base_url=app_url,
-        oidc_issuer=idp_url,
-        oidc_client_id="test-client",
-        oidc_client_secret="test-client-secret",
-        oidc_session_secret="test-session-secret",
-        oidc_allowed_subject=OWNER,
-    )
-    supervisor = SyncSupervisor(
-        credentials=CredentialStore(control_settings.credentials_file),
-        store=store,
-        token_client=FakeTokenEndpoint(PAIRED_RESPONSE).client,
-        interval=3600,
-        workers=1,
-        live_streams=0,
-        live_window=timedelta(hours=1),
-    )
-    control_app = create_control_app(supervisor=supervisor)
-    async with (
-        serve_app(idp, sock=idp_sock),
-        httpx.AsyncClient(base_url="http://control", transport=httpx.ASGITransport(app=control_app)) as control_client,
-    ):
-        web_one = create_web_app(
-            settings=web_settings, control_client=control_client, store=store, frontend_dir=tmp_path
+    with bind_http_server() as idp_endpoint, bind_http_server() as app_endpoint:
+        idp_url, app_url = idp_endpoint.origin, app_endpoint.origin
+        idp = build_mock_oidc_app(
+            issuer_url=idp_url,
+            private_key=private_key,
+            public_key=public_key,
+            subject=OWNER,
+            extra_id_token_claims={"preferred_username": "test-owner"},
         )
-        web_two = create_web_app(
-            settings=web_settings, control_client=control_client, store=store, frontend_dir=tmp_path
+        web_settings = WebSettings(
+            database_url="postgresql://unused.invalid/unused",
+            public_base_url=app_url,
+            oidc_issuer=idp_url,
+            oidc_client_id="test-client",
+            oidc_client_secret="test-client-secret",
+            oidc_session_secret="test-session-secret",
+            oidc_allowed_subject=OWNER,
+            control_base_url="http://control",
         )
-
-        async def route_to_replica(scope: Scope, receive: Receive, send: Send) -> None:
-            app = web_two if scope["path"] == "/api/pairing/complete" else web_one
-            await app(scope, receive, send)
-
+        control_settings = ServeSettings(
+            database_url="postgresql://unused.invalid/unused",
+            credentials_file=tmp_path / "credential.json",
+            public_base_url=app_url,
+            oidc_issuer=idp_url,
+            oidc_client_id="test-client",
+            oidc_client_secret="test-client-secret",
+            oidc_session_secret="test-session-secret",
+            oidc_allowed_subject=OWNER,
+        )
+        supervisor = SyncSupervisor(
+            credentials=CredentialStore(control_settings.credentials_file),
+            store=store,
+            token_client=FakeTokenEndpoint(PAIRED_RESPONSE).client,
+            interval=3600,
+            workers=1,
+            live_streams=0,
+            live_window=timedelta(hours=1),
+        )
+        control_app = create_control_app(supervisor=supervisor)
         async with (
-            serve_app_in_loop(route_to_replica, sock=app_sock),
-            httpx.AsyncClient(base_url=app_url, headers={"Origin": app_url}) as owner,
+            idp_endpoint.serve(idp),
+            httpx.AsyncClient(
+                base_url="http://control", transport=httpx.ASGITransport(app=control_app)
+            ) as control_client,
         ):
-            await owner.get("/auth/login", follow_redirects=True)
-            started = await owner.post("/api/pairing")
-            finished = await owner.post(
-                "/api/pairing/complete",
-                json={"redirect_url": redirect_url(authorization_state(started.json()["authorization_url"]))},
+            web_one = create_web_app(
+                settings=web_settings, control_client=control_client, store=store, frontend_dir=tmp_path
             )
+            web_two = create_web_app(
+                settings=web_settings, control_client=control_client, store=store, frontend_dir=tmp_path
+            )
+
+            async def route_to_replica(scope: Scope, receive: Receive, send: Send) -> None:
+                app = web_two if scope["path"] == "/api/pairing/complete" else web_one
+                await app(scope, receive, send)
+
+            async with (
+                app_endpoint.serve_in_loop(route_to_replica),
+                httpx.AsyncClient(base_url=app_url, headers={"Origin": app_url}) as owner,
+            ):
+                await owner.get("/auth/login", follow_redirects=True)
+                started = await owner.post("/api/pairing")
+                finished = await owner.post(
+                    "/api/pairing/complete",
+                    json={"redirect_url": redirect_url(authorization_state(started.json()["authorization_url"]))},
+                )
 
     assert started.status_code == 200
     assert finished.status_code == 200

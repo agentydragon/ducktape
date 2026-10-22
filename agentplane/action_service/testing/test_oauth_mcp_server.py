@@ -23,8 +23,7 @@ from agentplane.action_service.service import ExecutionLease
 from agentplane.action_service.testing.lifecycle import wait_available
 from agentplane.action_service.testing.oauth_mcp_server import CLIENT_ID, PATH, build_app, build_dex_app
 from agentplane.subjects import ServiceAccountRef
-from util.net import bind_free_port
-from util.testing.asgi import serve_app_sync
+from util.testing.asgi import bind_http_server
 
 REDIRECT_URI = "https://app.example.test/mcp-linkage/callback"
 
@@ -47,13 +46,12 @@ async def test_dex_app_exposes_remote_oauth_metadata() -> None:
 
 
 async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_lease: ExecutionLease) -> None:
-    sock = bind_free_port()
-    host, port = sock.getsockname()
-    base_url = f"http://{host}:{port}"
-    app = build_app(base_url=base_url, redirect_uri=REDIRECT_URI).http_app(path=PATH)
-    with serve_app_sync(app, sock=sock):
+    with (
+        bind_http_server() as endpoint,
+        endpoint.serve_sync(build_app(base_url=endpoint.origin, redirect_uri=REDIRECT_URI).http_app(path=PATH)),
+    ):
         server = McpOAuthServer(
-            server_id="example", server_url=f"{base_url}{PATH}", client_id=CLIENT_ID, redirect_uri=REDIRECT_URI
+            server_id="example", server_url=f"{endpoint.origin}{PATH}", client_id=CLIENT_ID, redirect_uri=REDIRECT_URI
         )
         async with httpx2.AsyncClient(follow_redirects=False) as http:
             authority = McpLinkageAuthority(make_sessionmaker(engine), {"example": server}, http=http, engine=engine)

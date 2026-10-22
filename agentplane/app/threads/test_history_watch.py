@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -21,21 +21,12 @@ from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 
 async def test_fold_commits_and_renewals_wake_thread_readers(
-    service_history_db_url: str,
-    api_server: KubernetesApiServer,
-    tmp_path: Path,
-    unused_tcp_port_factory: Callable[[], int],
+    service_history_db_url: str, api_server: KubernetesApiServer, tmp_path: Path
 ) -> None:
     changes = ChangeSignal()
     woken = asyncio.Event()
     async with (
-        go_history_service(
-            service_history_db_url,
-            api=api_server,
-            directory=tmp_path,
-            port_factory=unused_tcp_port_factory,
-            watch_lease_s=3,
-        ) as service,
+        go_history_service(service_history_db_url, api=api_server, directory=tmp_path, watch_lease_s=3) as service,
         History(service) as history,
     ):
         watch = asyncio.create_task(HistoryWatch(service.reader, changes.notify, retry_interval_s=0.05).run())

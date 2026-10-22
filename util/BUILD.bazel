@@ -323,7 +323,6 @@ py_test(
     name = "test_oidc_login",
     srcs = ["test_oidc_login.py"],
     deps = [
-        ":net",
         ":oidc_login",
         "//:conftest",
         "//util/testing:asgi",
@@ -395,7 +394,6 @@ py_test(
     name = "test_oidc_principal",
     srcs = ["test_oidc_principal.py"],
     deps = [
-        ":net",
         ":oidc_principal",
         "//:conftest",
         "//util/testing:asgi",

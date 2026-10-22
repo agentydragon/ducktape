@@ -59,8 +59,7 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
-from util.net import bind_free_port, pick_free_port
-from util.testing.asgi import serve_app, serve_app_in_loop
+from util.testing.asgi import bind_http_server, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 
 SUBJECT_A = "test-operator-subject"
@@ -107,6 +106,7 @@ async def review(
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     operator_connection: str,
+    refused_address: str,
     direct_federation: bool,
     event_logs: SeededEventLogStore,
     content: ContentStore,
@@ -123,8 +123,8 @@ async def review(
     """
     async with AsyncExitStack() as stack:
         private_key, public_key = generate_rsa_keypair()
-        idp_sock = bind_free_port()
-        idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"
+        idp_endpoint = stack.enter_context(bind_http_server())
+        idp_origin, app_url = idp_endpoint.origin, "http://test-app.invalid"
         idp_url = f"{idp_origin}/application/o/login/"
         target_issuer = idp_url if direct_federation else f"{idp_origin}/application/o/actions/"
         target = OperatorOidcSettings(
@@ -289,7 +289,7 @@ async def review(
             if direct_federation
             else ExchangeFederationSettings(
                 service_url=AnyHttpUrl("http://test-actions.invalid"),
-                token_endpoint=AnyHttpUrl(f"http://127.0.0.1:{pick_free_port()}/exchange")
+                token_endpoint=AnyHttpUrl(f"http://{refused_address}/exchange")
                 if operator_connection == "exchange-disconnected"
                 else AnyHttpUrl(f"{idp_origin}/exchange"),
                 login_jwks_uri=f"{idp_origin}/federation-keys?private=test-private-query"
@@ -322,7 +322,7 @@ async def review(
             actions_http=UpstreamProxy(facade_http, token_file=None),
             system_status=answering_system_status(),
         )
-        await stack.enter_async_context(serve_app(idp, sock=idp_sock))
+        await stack.enter_async_context(idp_endpoint.serve(idp))
         browser = await stack.enter_async_context(
             httpx.AsyncClient(base_url=app_url, follow_redirects=True, mounts={app_url: httpx.ASGITransport(app=app)})
         )
@@ -395,9 +395,8 @@ def _bind_live_sandbox(policies: PolicyIndex, sandbox_namespace: str) -> None:
 async def _served(app: FastAPI) -> AsyncIterator[str]:
     """The app on a real socket, in this loop: the in-memory transport waits for a body that never
     ends, and another thread's loop could not use the store's connections."""
-    sock = bind_free_port()
-    async with serve_app_in_loop(app, sock=sock):
-        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+    async with serve_app_in_loop(app) as origin:
+        yield origin
 
 
 async def _first_snapshot(client: httpx.AsyncClient, path: str, headers: dict[str, str]) -> SandboxSnapshot:
