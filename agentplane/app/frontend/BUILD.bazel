@@ -124,6 +124,20 @@ ts_library(
         "//:node_modules/openapi-fetch",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:runner_pb",
+        "//agentplane/proto:sandboxes_pb",
+    ],
+)
+
+ts_library(
+    name = "connection_service_client",
+    srcs = ["connection_service_client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/mcp_edge:connection_service_pb",
+        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -145,22 +159,12 @@ ts_library(
 )
 
 ts_library(
-    name = "consent_client",
-    srcs = ["consent_client.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":schema",
-    ],
-)
-
-ts_library(
     name = "consent",
     srcs = ["consent.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":consent_client",
+        ":connection_service_client",
         ":time_ago",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -172,9 +176,10 @@ agentplane_vitest_test(
     name = "consent_test",
     srcs = ["consent.test.tsx"],
     deps = [
+        ":connection_service_client",
+        ":connection_service_test_support",
         ":connections_fixture",
         ":consent",
-        ":consent_client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
@@ -359,9 +364,11 @@ ts_library(
     deps = [
         ":caller_grants",
         ":client",
+        ":connection_service_client",
         ":connections_css",
         ":inline_name",
         ":live_stream",
+        ":watch_stream",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -406,6 +413,14 @@ ts_library(
 )
 
 ts_library(
+    name = "connection_service_test_support",
+    testonly = True,
+    srcs = ["connection_service_test_support.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/vitest"],
+)
+
+ts_library(
     name = "settings",
     srcs = ["settings/dialog.tsx"],
     tsconfig = TSCONFIG,
@@ -424,6 +439,8 @@ agentplane_vitest_test(
     srcs = ["settings/connections.test.tsx"],
     deps = [
         ":client",
+        ":connection_service_client",
+        ":connection_service_test_support",
         ":connections",
         ":connections_fixture",
         "//:node_modules/@types/react",

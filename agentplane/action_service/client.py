@@ -4,21 +4,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from uuid import UUID
 
 import httpx
 from anyio import CancelScope
 from pydantic import BaseModel, TypeAdapter
 
-from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionRename, ConnectionVersion
-from agentplane.action_service.enrollments import (
-    EnrollmentDecisionInput,
-    EnrollmentDecisionResult,
-    EnrollmentPreview,
-    EnrollmentPreviewInput,
-)
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
-from agentplane.subjects import ServiceAccountRef
 
 
 class OperatorActionServiceClient:
@@ -55,35 +46,6 @@ class OperatorActionServiceClient:
         url = f"/v1/operator/mcp-servers/{server_id}/linkage/disconnect"
         return await self._call(TypeAdapter(McpLinkageView), "POST", url)
 
-    async def caller_service_accounts(self) -> list[ServiceAccountRef]:
-        return await self._call(TypeAdapter(list[ServiceAccountRef]), "GET", "/v1/operator/caller-service-accounts")
-
-    async def preview_enrollment(self, handle: str, body: EnrollmentPreviewInput) -> EnrollmentPreview:
-        url = f"/v1/operator/connection-enrollments/{handle}/preview"
-        return await self._call(TypeAdapter(EnrollmentPreview), "POST", url, body=body)
-
-    async def decide_enrollment(self, handle: str, body: EnrollmentDecisionInput) -> EnrollmentDecisionResult:
-        url = f"/v1/operator/connection-enrollments/{handle}/decision"
-        return await self._call(TypeAdapter(EnrollmentDecisionResult), "POST", url, body=body)
-
-    async def connections(self) -> list[Connection]:
-        return await self._call(TypeAdapter(list[Connection]), "GET", "/v1/operator/connections")
-
-    async def connection(self, connection_id: UUID) -> Connection:
-        return await self._call(TypeAdapter(Connection), "GET", f"/v1/operator/connections/{connection_id}")
-
-    async def rename_connection(self, connection_id: UUID, body: ConnectionRename) -> Connection:
-        url = f"/v1/operator/connections/{connection_id}"
-        return await self._call(TypeAdapter(Connection), "PATCH", url, body=body)
-
-    async def rebind_connection(self, connection_id: UUID, body: ConnectionRebind) -> Connection:
-        url = f"/v1/operator/connections/{connection_id}/rebind"
-        return await self._call(TypeAdapter(Connection), "POST", url, body=body)
-
-    async def unbind_connection(self, connection_id: UUID, body: ConnectionVersion) -> Connection:
-        url = f"/v1/operator/connections/{connection_id}/unbind"
-        return await self._call(TypeAdapter(Connection), "POST", url, body=body)
-
     @asynccontextmanager
     async def _stream_operator(
         self, path: str, *, params: dict[str, str] | None = None
@@ -98,9 +60,6 @@ class OperatorActionServiceClient:
         finally:
             with CancelScope(shield=True):
                 await response.aclose()
-
-    def stream_connections(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
-        return self._stream_operator("/v1/operator/connections/stream")
 
     def stream_mcp_linkages(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
         return self._stream_operator("/v1/operator/mcp-servers/stream")

@@ -21,8 +21,6 @@ from google.protobuf.json_format import MessageToDict
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 from agentplane.action_service.client import OperatorActionServiceClient
-from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionRename, ConnectionVersion
-from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from agentplane.action_service.policy_view import ActionPolicySetView
 from agentplane.app import auth_routes
@@ -34,13 +32,6 @@ from agentplane.app.action_federation import (
     upstream_failure_detail,
 )
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
-from agentplane.app.consent import (
-    ConsentDecision,
-    ConsentPreview,
-    EnrollmentHandle,
-    decide_enrollment,
-    preview_enrollment,
-)
 from agentplane.app.database_updates import Channel
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy, router as electric_router
@@ -500,9 +491,6 @@ async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetV
 threads = APIRouter(prefix="/threads", tags=["threads"])
 
 
-consent_router = APIRouter(prefix="/connection-enrollments", tags=["connections"])
-
-
 async def _operator_actions(request: Request, caller: Caller) -> AsyncIterator[OperatorActionServiceClient]:
     try:
         yield operator_actions(request, caller)
@@ -532,18 +520,6 @@ def upstream_http_error(
 OperatorActions = Annotated[OperatorActionServiceClient, Depends(_operator_actions)]
 
 
-@consent_router.post("/{handle}/preview")
-async def connection_preview(handle: EnrollmentHandle, client: OperatorActions) -> ConsentPreview:
-    return await preview_enrollment(handle, client)
-
-
-@consent_router.post("/{handle}/decision")
-async def connection_decision(
-    handle: EnrollmentHandle, body: ConsentDecision, client: OperatorActions
-) -> EnrollmentDecisionResult:
-    return await decide_enrollment(handle, body, client)
-
-
 connections_router = APIRouter(tags=["connections"])
 
 
@@ -570,11 +546,6 @@ async def disconnect_mcp_linkage(server_id: str, client: OperatorActions) -> Mcp
     return await client.disconnect_mcp_linkage(server_id)
 
 
-@connections_router.get("/connection-service-accounts")
-async def connection_service_accounts(client: OperatorActions) -> list[ServiceAccountRef]:
-    return await client.caller_service_accounts()
-
-
 class CallerGrantView(BaseModel):
     """Account-scoped CR projections, not a new grant authority or Kubernetes RBAC evaluator."""
 
@@ -596,38 +567,6 @@ async def caller_grants(
         egress.bindings_for(subject), action_policy_frame(request, caller, action_policy, subject)
     )
     return CallerGrantView(bindings=bindings, action_policy=policy)
-
-
-@connections_router.get("/connections")
-async def list_connections(client: OperatorActions) -> list[Connection]:
-    return await client.connections()
-
-
-@connections_router.get("/connections/stream")
-async def connections_stream(
-    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
-) -> StreamingResponse:
-    return _operator_resource_stream(request, shutdown, updates, sessions, client.stream_connections, "Connections")
-
-
-@connections_router.get("/connections/{connection_id}")
-async def get_connection(connection_id: UUID, client: OperatorActions) -> Connection:
-    return await client.connection(connection_id)
-
-
-@connections_router.patch("/connections/{connection_id}")
-async def rename_connection(connection_id: UUID, body: ConnectionRename, client: OperatorActions) -> Connection:
-    return await client.rename_connection(connection_id, body)
-
-
-@connections_router.post("/connections/{connection_id}/rebind")
-async def rebind_connection(connection_id: UUID, body: ConnectionRebind, client: OperatorActions) -> Connection:
-    return await client.rebind_connection(connection_id, body)
-
-
-@connections_router.post("/connections/{connection_id}/unbind")
-async def unbind_connection(connection_id: UUID, body: ConnectionVersion, client: OperatorActions) -> Connection:
-    return await client.unbind_connection(connection_id, body)
 
 
 def _operator_resource_stream(
@@ -1197,7 +1136,6 @@ def create_app(
         preset_router,
         runner_bridge.router,
         threads,
-        consent_router,
         connections_router,
         policy_binding_router,
         action_policy_router,

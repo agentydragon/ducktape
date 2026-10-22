@@ -183,10 +183,7 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     deps = [
-        ":connections",
-        ":enrollments",
         ":mcp_linkage",
-        "//agentplane:subjects",
         "@pypi//anyio",
         "@pypi//httpx",
         "@pypi//pydantic",

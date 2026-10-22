@@ -10,7 +10,6 @@ import {
   electricSubset,
   liveNdjsonWatch,
   ndjsonWatch,
-  liveNdjsonWatch,
   publishNdjsonWatch,
   routes,
   UNANSWERED,
@@ -32,6 +31,7 @@ import type {
   PolicySetView,
   SandboxView,
   ThreadView,
+  Connection,
 } from "../client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
@@ -2554,24 +2554,8 @@ routes.push(
   ],
   [
     "GET",
-    /^\/connections$/,
-    () => [
-      sampleConnection(),
-      {
-        ...sampleConnection(),
-        id: "10000000-0000-4000-8000-000000000002",
-        display_name: "Retired research client",
-        bound_caller: null,
-        grants: sampleConnection().grants.map((grant) => ({
-          ...grant,
-          id: "20000000-0000-4000-8000-000000000002",
-          connection_id: "10000000-0000-4000-8000-000000000002",
-          caller: { namespace: "agentplane-visual", name: "retired" },
-          status: "revoked",
-          revoked_at: "2026-09-09T12:03:00Z",
-        })),
-      },
-    ],
+    /^\/upstream\/actions\/v1\/operator\/connections$/,
+    () => ({ connections: [sampleConnection(), ...retiredConnectionRows()].map(connectionJson) }),
   ],
   [
     "GET",
@@ -2584,7 +2568,11 @@ routes.push(
       action_policy: ACTION_POLICY,
     }),
   ],
-  ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
+  [
+    "GET",
+    /^\/upstream\/actions\/v1\/operator\/caller-service-accounts$/,
+    () => ({ serviceAccounts: [{ namespace: "agentplane-visual", name: "operator-assistant" }] }),
+  ],
   // The Settings modal mounts all three tabs at once (Mantine keepMounted), so MCP servers and
   // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
   [
@@ -2619,21 +2607,33 @@ routes.push(
   ],
   [
     "POST",
-    /^\/connection-enrollments\/[^/]+\/preview$/,
+    /^\/upstream\/actions\/v1\/operator\/connection-enrollments\/[^/]+\/preview$/,
     () => ({
-      enrollment: {
-        client_id: "test-client-registration-5d46c4f2",
-        client_name: "Test external client",
-        redirect_uri: "https://test-client.example/oauth/callback",
-        expires_at: new Date(NOW + 10 * 60_000).toISOString(),
-        version: 1,
-      },
-      service_accounts: [
-        { namespace: "agentplane-visual", name: "test-coder" },
-        { namespace: "agentplane-visual", name: "operator-assistant" },
-      ],
-      connections: [sampleConnection()],
+      clientId: "test-client-registration-5d46c4f2",
+      clientName: "Test external client",
+      redirectUri: "https://test-client.example/oauth/callback",
+      expiresAt: new Date(NOW + 10 * 60_000).toISOString(),
+      version: "1",
     }),
+  ],
+  [
+    "GET",
+    /^\/upstream\/actions\/v1\/operator\/connections:watch$/,
+    (_match, _query, signal) =>
+      liveNdjsonWatch(
+        CONNECTIONS_WATCH,
+        [
+          { snapshot: { connections: [sampleConnection(), ...retiredConnectionRows()].map(connectionJson) } },
+          { snapshotComplete: {} },
+        ],
+        () => [{ upsert: connectionJson({ ...sampleConnection(), display_name: "Updated OAuth client" }) }],
+        signal
+      ),
+  ],
+  [
+    "POST",
+    /^\/upstream\/actions\/v1\/operator\/connection-enrollments\/[^/]+\/decision$/,
+    () => ({ verdict: "VERDICT_ALLOW", redirectUrl: "https://idp.test/held-authorization" }),
   ],
   [
     "POST",
@@ -2834,6 +2834,52 @@ function observationPage(threadId: string) {
     next_after_cursor: null,
     thread_id: threadId,
   };
+}
+
+const CONNECTIONS_WATCH = "/upstream/actions/v1/operator/connections:watch";
+
+function connectionJson(row: Connection): Record<string, unknown> {
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    version: row.version,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    grants: row.grants.map((grant) => ({
+      id: grant.id,
+      connectionId: grant.connection_id,
+      revision: grant.revision,
+      caller: grant.caller,
+      issuer: grant.issuer,
+      clientId: grant.client_id,
+      status: `GRANT_STATUS_${grant.status.toUpperCase()}`,
+      ...(grant.activation_deadline === null ? {} : { activationDeadline: grant.activation_deadline }),
+      createdAt: grant.created_at,
+      ...(grant.activated_at === null ? {} : { activatedAt: grant.activated_at }),
+      ...(grant.revoked_at === null ? {} : { revokedAt: grant.revoked_at }),
+    })),
+    ...(row.bound_caller === null ? {} : { boundCaller: row.bound_caller }),
+  };
+}
+
+function retiredConnectionRows(): Connection[] {
+  const sample = sampleConnection();
+  return [
+    {
+      ...sample,
+      id: "10000000-0000-4000-8000-000000000002",
+      display_name: "Retired research client",
+      bound_caller: null,
+      grants: sample.grants.map((grant) => ({
+        ...grant,
+        id: "20000000-0000-4000-8000-000000000002",
+        connection_id: "10000000-0000-4000-8000-000000000002",
+        caller: { namespace: "agentplane-visual", name: "retired" },
+        status: "revoked",
+        revoked_at: "2026-09-09T12:03:00Z",
+      })),
+    },
+  ];
 }
 
 routes.push(
@@ -3105,15 +3151,6 @@ class HarnessEventSource extends EventTarget {
     }
     if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
       this.dispatchEvent(new MessageEvent("output", { data: JSON.stringify(btoa("guest console output\r\n")) }));
-      return;
-    }
-    if (url.pathname === "/connections/stream") {
-      const route = routes.find(([method, pattern]) => method === "GET" && pattern.test("/connections"));
-      const match = "/connections".match(/^\/connections$/);
-      if (!route || !match) throw new Error("Missing connections fixture");
-      const rows = route[2](match, url.searchParams, undefined, undefined) as ReturnType<typeof sampleConnection>[];
-      if (flags.has("connectionRenamed")) rows[0].display_name = "Updated OAuth client";
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
       return;
     }
     if (url.pathname === "/mcp-servers/stream") {

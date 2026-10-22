@@ -1,3 +1,4 @@
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 
@@ -12,6 +13,18 @@ proto_library(
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "connection_service_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":connection_service_proto",
+    deps = [
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/proto:sandboxes_pb",
+        "//google/api:annotations_pb",
     ],
 )
 
