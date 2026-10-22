@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { TextDecoder, TextEncoder } from "node:util";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
@@ -113,6 +114,8 @@ function loadWorker(): TestWorker {
 
   runInNewContext(readFileSync(new URL("./bundled/sw.js", import.meta.url), "utf8"), {
     self,
+    TextDecoder,
+    TextEncoder,
     fetch: async (url: string, options?: RequestInit) => {
       requests.push({ url, options });
       const actionRequest = pending?.[0];

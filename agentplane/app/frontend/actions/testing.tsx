@@ -36,6 +36,9 @@ export function request(state: ActionState, index: number): ActionRequestView {
           provider: "human_operator",
           operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
           decision_note: DECISION_NOTE,
+          reason_code: null,
+          reason_description: null,
+          policy_evidence: null,
           idempotency_key: `decision-${index}`,
           decided_at: "2026-09-05T12:00:00Z",
         }
@@ -164,16 +167,17 @@ function actionResponse(path: string, value: unknown): unknown {
 
 /** A browser fetch stream that records the facade's NDJSON watch replay. */
 export class TestNdjsonWatch {
-  static readonly opened = new Map<string, TestNdjsonWatch>();
+  static readonly opened: Map<string, TestNdjsonWatch> = new Map();
   static current: TestNdjsonWatch | undefined;
   private controller: ReadableStreamDefaultController<Uint8Array> | undefined;
   private readonly encoder = new TextEncoder();
   readonly response: Response;
+  readonly url: string;
+  readonly signal: AbortSignal | undefined;
 
-  constructor(
-    readonly url: string,
-    readonly signal?: AbortSignal
-  ) {
+  constructor(url: string, signal: AbortSignal | null | undefined) {
+    this.url = url;
+    this.signal = signal ?? undefined;
     const stream = new ReadableStream<Uint8Array>({
       start: (controller) => {
         this.controller = controller;
@@ -185,16 +189,16 @@ export class TestNdjsonWatch {
     this.response = new Response(stream, { headers: { "content-type": "application/x-ndjson" } });
     TestNdjsonWatch.current = this;
     TestNdjsonWatch.opened.set(url, this);
-    signal?.addEventListener("abort", () => this.close(), { once: true });
+    this.signal?.addEventListener("abort", () => this.close(), { once: true });
   }
 
   send(value: unknown): void {
     if (this.controller === undefined) return;
     const groupWatch = this.url.includes("action-groups:watch");
     const snapshot = groupWatch
-      ? { actionGroups: (value as ActionGroupView[]).map(toProtoJson) }
+      ? { actionGroups: (value as ActionGroupView[]).map((item) => toProtoJson(item)) }
       : {
-          actionRequests: (value as ActionRequestView[]).map(toProtoJson),
+          actionRequests: (value as ActionRequestView[]).map((item) => toProtoJson(item)),
         };
     this.controller.enqueue(this.encoder.encode(`${JSON.stringify({ result: { snapshot } })}\n`));
     this.controller.enqueue(this.encoder.encode(`${JSON.stringify({ result: { snapshotComplete: {} } })}\n`));
