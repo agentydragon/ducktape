@@ -35,6 +35,12 @@ locals {
       system_disk_serial    = "BTPF8256006P450RGN"
       data_disk_serial      = "BTPF8304019P450RGN"
     }
+    "ovh-ns104963" = {
+      talos_storage_enabled = true
+      piraeus_ready_enabled = false
+      system_disk_serial    = "BTPF8256002V450RGN"
+      data_disk_serial      = "BTPF8256009U450RGN"
+    }
   }
 
   piraeus_talos_storage_enabled_nodes = toset([
@@ -104,7 +110,7 @@ locals {
       service_name    = var.kimsufi_service_name_ks_game_1
       apply_mode      = "staged_if_needing_reboot"
       install_disk    = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256002V450RGN"
-      data_disk_match = "disk.serial == 'BTPF8256009U450RGN'"
+      data_disk_match = "disk.serial == '${local.piraeus_talos_node_layouts["ovh-ns104963"].data_disk_serial}'"
       zone            = "hil-ovh"
       storage_tier    = "ssd"
     }
