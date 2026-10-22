@@ -1,3 +1,4 @@
+import { decideActionById, listActionRequests } from "../actions/client";
 import type { ActionRequestView } from "../actions/types";
 import { formatActionNotification } from "../actions/notifications";
 
@@ -42,8 +43,7 @@ interface PendingSummary {
 
 async function fetchPending(): Promise<ActionRequestView[] | null> {
   try {
-    const response = await fetch("/actions?state=decision_pending", { credentials: "include" });
-    if (response.ok) return (await response.json()) as ActionRequestView[];
+    return await listActionRequests("decision_pending", fetch);
   } catch {
     /* Offline delivery still opens the app without offering stale decisions. */
   }
@@ -115,19 +115,9 @@ self.addEventListener("notificationclick", (event) => {
     return;
   }
   event.waitUntil(
-    fetch(`/push/decision/${encodeURIComponent(message.action_id)}`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        verdict: event.action === "approve" ? "allow" : "deny",
-        expected_version: message.version,
-        idempotency_key: crypto.randomUUID(),
-        decision_note: null,
-      }),
-    }).then((response) => {
-      if (!response.ok) return self.clients.openWindow("/#/actions");
-    })
+    decideActionById(message.action_id, message.version, event.action === "approve" ? "allow" : "deny", fetch)
+      .then(() => undefined)
+      .catch(() => self.clients.openWindow("/#/actions"))
   );
 });
 

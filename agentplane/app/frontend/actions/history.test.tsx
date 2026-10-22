@@ -9,7 +9,8 @@ import { TestIntersectionObserver } from "../test_intersection_observer.js";
 import { ActionHistory } from "./history";
 import { stateLabel } from "./requests";
 import {
-  TestEventSource,
+  ACTION_REQUEST_WATCH,
+  TestNdjsonWatch,
   answerApi,
   button,
   DECISION_NOTE,
@@ -36,11 +37,11 @@ async function renderHistory(
   let resolve = (): void => {};
   const groupsAnswered = new Promise<void>((done) => (resolve = done));
   answerApi(async ({ path }) => {
-    if (path === "/action-groups") {
+    if (path === "/upstream/actions/v1/action-groups") {
       resolve();
       return groups instanceof Response ? groups.clone() : groups;
     }
-    if (path !== "/actions/history") return undefined;
+    if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
     await groupsAnswered;
     return rows instanceof Response ? rows.clone() : { items: rows, next_cursor: null };
   });
@@ -212,8 +213,8 @@ describe("ActionHistory", () => {
 
   it("loads a bounded history page, follows invalidations, and pages on demand", async () => {
     const sent = answerApi(({ path, query }) => {
-      if (path === "/action-groups") return [];
-      if (path !== "/actions/history") return undefined;
+      if (path === "/upstream/actions/v1/action-groups") return [];
+      if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
       return query.get("cursor") === "page2"
         ? { items: [request("succeeded", 2)], next_cursor: null }
         : { items: [request("denied", 1)], next_cursor: "page2" };
@@ -230,17 +231,17 @@ describe("ActionHistory", () => {
     await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
     expect(sent.filter(({ query }) => query.get("cursor") === "page2")).toHaveLength(1);
     expect(container.textContent).toContain("End of action history.");
-    const stream = TestEventSource.current;
-    expect(stream?.url).toBe("/actions/stream?state=decision_pending");
+    const stream = TestNdjsonWatch.opened.get(ACTION_REQUEST_WATCH);
+    expect(stream?.url).toBe(ACTION_REQUEST_WATCH);
     await unmountLast();
-    expect(stream?.close).toHaveBeenCalledOnce();
+    expect(stream?.signal?.aborted).toBe(true);
   });
 
   it("defaults to excluding auto-allows and resets pagination when the filter changes", async () => {
     const sent = answerApi(({ path, query }) => {
-      if (path === "/action-groups") return [];
-      if (path !== "/actions/history") return undefined;
-      const all = query.get("include_auto_allowed") === "true";
+      if (path === "/upstream/actions/v1/action-groups") return [];
+      if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
+      const all = query.get("includeAutoAllowed") === "true";
       return {
         items: [
           request(
@@ -259,8 +260,8 @@ describe("ActionHistory", () => {
     await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
     expect(
       sent
-        .filter(({ path }) => path === "/actions/history")
-        .every(({ query }) => query.get("include_auto_allowed") === "false")
+        .filter(({ path }) => path === "/upstream/actions/v1/action-requests:history")
+        .every(({ query }) => query.get("includeAutoAllowed") === "false")
     ).toBe(true);
     await showNextPage(container);
     await vi.waitFor(() => expect(container.textContent).toContain("cancelled"));
@@ -268,8 +269,8 @@ describe("ActionHistory", () => {
     await act(async () => all.click());
     await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
     expect(container.textContent).not.toContain("cancelled");
-    const latest = sent.filter(({ path }) => path === "/actions/history").at(-1)!;
-    expect(latest.query.get("include_auto_allowed")).toBe("true");
+    const latest = sent.filter(({ path }) => path === "/upstream/actions/v1/action-requests:history").at(-1)!;
+    expect(latest.query.get("includeAutoAllowed")).toBe("true");
     expect(latest.query.get("cursor")).toBeNull();
     const filtered = container.querySelector<HTMLInputElement>('input[value="not-auto-allowed"]')!;
     await act(async () => filtered.click());
@@ -280,9 +281,10 @@ describe("ActionHistory", () => {
   it("refreshes an unfinished receipt beyond the newest page on invalidation", async () => {
     const older = request("running", 2);
     const sent = answerApi(({ path, query }) => {
-      if (path === "/action-groups") return [];
-      if (path === `/actions/${older.id}`) return { ...older, state: "succeeded", version: 3 };
-      if (path !== "/actions/history") return undefined;
+      if (path === "/upstream/actions/v1/action-groups") return [];
+      if (path === `/upstream/actions/v1/action-requests/${older.id}`)
+        return { ...older, state: "succeeded", version: 3 };
+      if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
       if (query.has("cursor")) return { items: [older], next_cursor: null };
       return { items: [request("denied", 1)], next_cursor: "page2" };
     });
@@ -296,14 +298,14 @@ describe("ActionHistory", () => {
     await vi.waitFor(() => expect(container.textContent).toContain("running"));
     await send([]);
     await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
-    expect(sent.some(({ path }) => path === `/actions/${older.id}`)).toBe(true);
+    expect(sent.some(({ path }) => path === `/upstream/actions/v1/action-requests/${older.id}`)).toBe(true);
   });
 
   it("stops automatic pagination after a failure and retries the same cursor explicitly", async () => {
     let fail = true;
     const sent = answerApi(({ path, query }) => {
-      if (path === "/action-groups") return [];
-      if (path !== "/actions/history") return undefined;
+      if (path === "/upstream/actions/v1/action-groups") return [];
+      if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
       if (!query.has("cursor")) return { items: [request("denied", 1)], next_cursor: "page2" };
       return fail
         ? Response.json({ detail: "try again" }, { status: 503 })
@@ -326,8 +328,8 @@ describe("ActionHistory", () => {
 
   it("restores the all-actions filter from its URL", async () => {
     const sent = answerApi(({ path }) => {
-      if (path === "/action-groups") return [];
-      if (path === "/actions/history") return { items: [], next_cursor: null };
+      if (path === "/upstream/actions/v1/action-groups") return [];
+      if (path === "/upstream/actions/v1/action-requests:history") return { items: [], next_cursor: null };
       return undefined;
     });
     const container = await renderLive(
@@ -339,8 +341,8 @@ describe("ActionHistory", () => {
     expect(container.querySelector<HTMLInputElement>('input[value="all"]')?.checked).toBe(true);
     expect(
       sent
-        .filter(({ path }) => path === "/actions/history")
-        .every(({ query }) => query.get("include_auto_allowed") === "true")
+        .filter(({ path }) => path === "/upstream/actions/v1/action-requests:history")
+        .every(({ query }) => query.get("includeAutoAllowed") === "true")
     ).toBe(true);
   });
 

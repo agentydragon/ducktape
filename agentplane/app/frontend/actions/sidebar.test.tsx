@@ -6,29 +6,11 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { ActionsAttentionBar, ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
-import { mount, request, unmountLast } from "./testing";
-
-const stream: { current?: EventTarget } = {};
-
-class ActionStream extends EventTarget {
-  close = vi.fn();
-
-  constructor(url: string) {
-    super();
-    if (url !== "/actions/stream?state=decision_pending") throw new Error(`unexpected Action stream URL: ${url}`);
-    stream.current = this;
-  }
-}
+import { mount, request, send, unmountLast } from "./testing";
 
 function CurrentPath(): JSX.Element {
   const location = useLocation();
   return <div data-testid="current-path">{location.pathname}</div>;
-}
-
-async function send(rows: ReturnType<typeof request>[]): Promise<void> {
-  await act(async () => {
-    stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
-  });
 }
 
 afterEach(async () => {
@@ -40,7 +22,6 @@ afterEach(async () => {
 });
 
 it("resizes the open Actions area with the keyboard and remembers its height", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>
@@ -63,7 +44,6 @@ it("resizes the open Actions area with the keyboard and remembers its height", a
 });
 
 it("keeps the Actions section available and suppresses auto-open until the pending queue clears", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>
@@ -99,7 +79,6 @@ it("keeps the Actions section available and suppresses auto-open until the pendi
 });
 
 it("expands a compact action preview and only offers a decision on the compact card to eligible actions", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>
@@ -162,7 +141,6 @@ it("expands a compact action preview and only offers a decision on the compact c
 });
 
 it("shows approval widgets for Kubernetes resource, pod-list, and log reads", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>
@@ -213,7 +191,6 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
 });
 
 it("offers Approve and Deny on a collapsed card of an opted-in Action, including one from an external caller", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>
@@ -234,7 +211,6 @@ it("offers Approve and Deny on a collapsed card of an opted-in Action, including
 });
 
 it("shows the closed-sidebar queue as a collapsed strip only while requests are pending", async () => {
-  vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
       <ActionRequestsProvider>

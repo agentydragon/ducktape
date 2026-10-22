@@ -8,6 +8,7 @@ import {
   electricLive,
   electricShape,
   electricSubset,
+  liveNdjsonWatch,
   ndjsonWatch,
   liveNdjsonWatch,
   publishNdjsonWatch,
@@ -2357,6 +2358,71 @@ type Flag =
   | "mcpHealthChanged";
 const flags = new Set<Flag>();
 
+function actionProtoJson(value: unknown, key = "", owner = ""): unknown {
+  if (Array.isArray(value)) return value.map((item) => actionProtoJson(item, key, owner));
+  if (value === null || typeof value !== "object") {
+    if (typeof value === "string") {
+      const prefix =
+        key === "state"
+          ? owner === "execution"
+            ? "EXECUTION_STATE_"
+            : owner === "health"
+              ? "MCP_LIFECYCLE_"
+              : "ACTION_STATE_"
+          : key === "verdict"
+            ? "VERDICT_"
+            : key === "executor_kind"
+              ? "EXECUTOR_KIND_"
+              : key === "source"
+                ? "POLICY_SOURCE_"
+                : key === "type"
+                  ? "POLICY_KIND_"
+                  : key === "reason" && owner === "health"
+                    ? "MCP_UNAVAILABLE_REASON_"
+                    : undefined;
+      if (prefix !== undefined) return `${prefix}${value.toUpperCase()}`;
+    }
+    if (typeof value === "number" && (key === "version" || key === "generation")) return String(value);
+    return value;
+  }
+  const dynamic = new Set(["arguments", "result", "error", "input_schema"]);
+  return Object.fromEntries(
+    Object.entries(value).map(([childKey, child]) => [
+      childKey.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase()),
+      dynamic.has(childKey) ? child : actionProtoJson(child, childKey, key),
+    ])
+  );
+}
+
+function actionGroups(): ActionGroupView[] {
+  return MCP_GROUPS.map((row) =>
+    row.key === "example_docs" && flags.has("mcpHealthChanged")
+      ? {
+          ...row,
+          available: false,
+          health: {
+            state: "disconnected" as const,
+            reason: "connect_failed" as const,
+            detail: "Connection refused",
+            last_discovery_at: row.health?.last_discovery_at ?? null,
+            retry_at: new Date(NOW + 20_000).toISOString(),
+            failures: 1,
+          },
+        }
+      : row
+  );
+}
+
+function pendingActions(): ActionRequestView[] {
+  return previewAction !== null
+    ? [previewAction]
+    : flags.has("compactPodAction")
+      ? [COMPACT_POD_ACTION]
+      : flags.has("pendingActions")
+        ? ACTIONS.filter((request) => request.state === "decision_pending")
+        : [];
+}
+
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
 routes.push(
@@ -2414,29 +2480,76 @@ routes.push(
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
   ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...TEST_CODER_POLICY_SETS, "pypi", "github-public"] })],
-  ["GET", /^\/actions$/, () => ACTIONS],
   [
     "GET",
-    /^\/actions\/history$/,
+    /^\/upstream\/actions\/v1\/action-requests:watch$/,
+    (_match, _query, signal) => {
+      const path = "/upstream/actions/v1/action-requests:watch";
+      return liveNdjsonWatch(
+        path,
+        [
+          { snapshot: { actionRequests: pendingActions().map((request) => actionProtoJson(request)) } },
+          { snapshotComplete: {} },
+        ],
+        () => pendingActions().map((request) => ({ upsert: actionProtoJson(request) })),
+        signal
+      );
+    },
+  ],
+  [
+    "GET",
+    /^\/upstream\/actions\/v1\/action-groups:watch$/,
+    (_match, _query, signal) => {
+      const path = "/upstream/actions/v1/action-groups:watch";
+      return liveNdjsonWatch(
+        path,
+        [
+          { snapshot: { actionGroups: actionGroups().map((group) => actionProtoJson(group)) } },
+          { snapshotComplete: {} },
+        ],
+        () => actionGroups().map((group) => ({ upsert: actionProtoJson(group) })),
+        signal
+      );
+    },
+  ],
+  [
+    "GET",
+    /^\/upstream\/actions\/v1\/action-requests$/,
+    (_match, query) => ({
+      actionRequests: ACTIONS.filter(
+        (request) => !query.has("state") || `ACTION_STATE_${request.state.toUpperCase()}` === query.get("state")
+      ).map((request) => actionProtoJson(request)),
+    }),
+  ],
+  [
+    "GET",
+    /^\/upstream\/actions\/v1\/action-requests:history$/,
     (_match, query) => {
       const past = flags.has("gmailDraftHistory")
         ? [GMAIL_DRAFT_ACTION]
         : ACTIONS.filter((request) => request.state !== "decision_pending");
       const filtered =
-        query.get("include_auto_allowed") === "false"
+        query.get("includeAutoAllowed") === "false"
           ? past.filter((request) => !(request.decision?.verdict === "allow" && request.decision.operator === null))
           : past;
-      return flags.has("pagedActionHistory") && !query.has("cursor")
-        ? { items: filtered.slice(0, 2), next_cursor: "second-page" }
-        : { items: flags.has("pagedActionHistory") ? filtered.slice(2) : filtered, next_cursor: null };
+      const page =
+        flags.has("pagedActionHistory") && !query.has("cursor")
+          ? { items: filtered.slice(0, 2), next_cursor: "second-page" }
+          : { items: flags.has("pagedActionHistory") ? filtered.slice(2) : filtered, next_cursor: null };
+      return {
+        actionRequests: page.items.map((request) => actionProtoJson(request)),
+        ...(page.next_cursor === null ? {} : { nextCursor: page.next_cursor }),
+      };
     },
   ],
   [
     "GET",
-    /^\/actions\/([^/]+)$/,
+    /^\/upstream\/actions\/v1\/action-requests\/([^/]+)$/,
     (match) => {
       const request = previewAction?.id === match[1] ? previewAction : ACTIONS.find((item) => item.id === match[1]);
-      return request ?? Response.json({ detail: "Action request not found" }, { status: 404 });
+      return request
+        ? { actionRequest: actionProtoJson(request) }
+        : Response.json({ code: 5, message: "Action request not found" }, { status: 404 });
     },
   ],
   [
@@ -2476,12 +2589,16 @@ routes.push(
   // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
   [
     "GET",
-    /^\/action-groups$/,
+    /^\/upstream\/actions\/v1\/action-groups$/,
     () => {
       if (flags.has("actionGroupsUnavailable")) {
-        return Response.json({ detail: "the Action Service did not answer: connection refused" }, { status: 502 });
+        return Response.json(
+          { code: 14, message: "the Action Service did not answer: connection refused" },
+          { status: 503 }
+        );
       }
-      return receiptActionGroup === undefined ? MCP_GROUPS : [...MCP_GROUPS, receiptActionGroup];
+      const groups = receiptActionGroup === undefined ? MCP_GROUPS : [...MCP_GROUPS, receiptActionGroup];
+      return { actionGroups: groups.map((group) => actionProtoJson(group)) };
     },
   ],
   ["GET", /^\/upstream\/actions\/v1\/operator\/push\/config$/, () => ({})],
@@ -2520,8 +2637,13 @@ routes.push(
   ],
   [
     "POST",
-    /^\/actions\/([^/]+)\/decision$/,
-    (match) => ({ ...ACTIONS.find((request) => request.id === match[1]), state: "allowed", version: 2 }),
+    /^\/upstream\/actions\/v1\/operator\/action-requests\/([^/]+)\/decision$/,
+    (match) => {
+      const request = ACTIONS.find((item) => item.id === match[1]);
+      return request
+        ? { actionRequest: actionProtoJson({ ...request, state: "allowed", version: 2 }) }
+        : Response.json({ code: 5, message: "Action request not found" }, { status: 404 });
+    },
   ],
   [
     "GET",
@@ -2869,9 +2991,7 @@ function watch(): WatchHealth {
   return flags.has("watchStale") ? WEDGED : FRESH;
 }
 
-/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above.
- * A stream a fixture drops goes back to `CONNECTING`, as a browser's does when the network drops,
- * and never reconnects. */
+/** Live inventory remains EventSource; Action facade watches and projected threads use fetch streams. */
 class HarnessEventSource extends EventTarget {
   static readonly sources = new Set<HarnessEventSource>();
   static publish(pathSuffix: string): void {
@@ -3003,38 +3123,6 @@ class HarnessEventSource extends EventTarget {
           : row
       );
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
-      return;
-    }
-    if (url.pathname === "/action-groups/stream") {
-      const rows = MCP_GROUPS.map((row) =>
-        row.key === "example_docs" && flags.has("mcpHealthChanged")
-          ? {
-              ...row,
-              available: false,
-              health: {
-                state: "disconnected" as const,
-                reason: "connect_failed" as const,
-                detail: "Connection refused",
-                last_discovery_at: row.health?.last_discovery_at ?? null,
-                retry_at: new Date(NOW + 20_000).toISOString(),
-                failures: 1,
-              },
-            }
-          : row
-      );
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
-      return;
-    }
-    if (url.pathname === "/actions/stream") {
-      const pending =
-        previewAction !== null
-          ? [previewAction]
-          : flags.has("compactPodAction")
-            ? [COMPACT_POD_ACTION]
-            : flags.has("pendingActions")
-              ? ACTIONS.filter((request) => request.state === "decision_pending")
-              : [];
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
       return;
     }
     if (sandbox !== null) {

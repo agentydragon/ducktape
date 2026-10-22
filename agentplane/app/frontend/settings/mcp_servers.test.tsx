@@ -8,7 +8,7 @@ import type { McpLinkageView } from "../client";
 import { McpServers } from "./mcp_servers";
 
 const LINKAGES = "/mcp-servers/stream";
-const HEALTH = "/action-groups/stream";
+const HEALTH = "/upstream/actions/v1/action-groups:watch";
 
 /** Mounts the page, then pushes `linkages` and `groups` down its two streams. */
 async function render(linkages: McpLinkageView[] = [], groups: ActionGroupView[] = []): Promise<HTMLDivElement> {

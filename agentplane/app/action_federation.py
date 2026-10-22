@@ -91,6 +91,10 @@ class FederatedOperatorActions:
     def for_request(self, request: Request) -> OperatorActionServiceClient:
         return OperatorActionServiceClient(self._http, partial(self.exchange, operator_session_row(request)))
 
+    async def token_for_request(self, request: Request) -> str:
+        """A fresh target token for one facade request, bound to this operator session."""
+        return await self.exchange(operator_session_row(request))
+
     async def exchange(self, row: SessionRow) -> str:
         """A target token for the operator whose login `row` holds, renewing the login token first if
         it is about to expire."""
@@ -203,10 +207,8 @@ class FederatedOperatorActions:
         )
 
 
-def operator_actions(request: Request, caller: CallerIdentity) -> OperatorActionServiceClient:
-    """The request's operator-bound client, or the `OperatorFederationError` naming why it has none:
-    the caller is not an operator session, federation is not configured, or the session has to log in
-    again. The exchange itself happens at the first request the client makes."""
+def _operator_action_provider(request: Request, caller: CallerIdentity) -> FederatedOperatorActions:
+    """The configured federation provider for this live operator session."""
     if caller.kind is not CallerKind.OPERATOR:
         raise OperatorFederationError("operator_session_required")
     provider = request.app.state.services.operator_actions
@@ -216,4 +218,16 @@ def operator_actions(request: Request, caller: CallerIdentity) -> OperatorAction
         raise TypeError("operator_actions must be FederatedOperatorActions")
     if operator_session(request) is None:
         raise OperatorFederationError("operator_reauthentication_required", status_code=401)
+    return provider
+
+
+def operator_actions(request: Request, caller: CallerIdentity) -> OperatorActionServiceClient:
+    """The request's operator-bound client. The exchange happens at its first request."""
+    provider = _operator_action_provider(request, caller)
     return provider.for_request(request)
+
+
+async def operator_action_token(request: Request, caller: CallerIdentity) -> str:
+    """The federated bearer for a generated Action facade request from this operator session."""
+    provider = _operator_action_provider(request, caller)
+    return await provider.token_for_request(request)

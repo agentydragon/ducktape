@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Annotated, Any, Literal
@@ -21,17 +20,16 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
-from agentplane.action_service.catalog import ActionGroupView
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionRename, ConnectionVersion
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
-from agentplane.action_service.models import ActionHistoryPage, ActionRequestView, ActionState, DecisionInput
 from agentplane.action_service.policy_view import ActionPolicySetView
 from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
     OperatorFederationError,
+    operator_action_token,
     operator_actions,
     upstream_failure_detail,
 )
@@ -155,6 +153,7 @@ class AppServices:
     operator_actions: FederatedOperatorActions | None
     electric: ElectricProxy | None
     dispatcher_http: UpstreamProxy
+    actions_http: UpstreamProxy | None
     oauth: OAuth | None = field(init=False)
     drain: Drain = field(default_factory=Drain)
 
@@ -292,6 +291,17 @@ def _operator_relay(
 upstream_router = APIRouter(prefix="/upstream", tags=["upstream"])
 
 
+def _action_facade_route_allowed(method: str, path: str) -> bool:
+    """Keep the proxy inside this service's versioned HTTP facade namespace."""
+    segments = path.split("/")
+    return (
+        method in {"GET", "POST", "PATCH", "DELETE"}
+        and path.startswith("v1/")
+        and all(segment not in {"", ".", ".."} for segment in segments)
+        and "\\" not in path
+    )
+
+
 @upstream_router.get("/dispatcher/{path:path}", dependencies=[OperatorLogin])
 async def dispatcher_upstream(
     request: Request, services: Services, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions, path: str
@@ -305,6 +315,69 @@ async def dispatcher_upstream(
         raise upstream_http_error(error) from error
     return StreamingResponse(
         operator_relay(request, shutdown, updates, sessions, response_body(upstream), "Dispatcher", (httpx.HTTPError,)),
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type"),
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+@upstream_router.api_route(
+    "/actions/{path:path}",
+    methods=["GET", "POST", "PATCH", "DELETE"],
+    dependencies=[OperatorLogin],
+    include_in_schema=False,
+)
+async def actions_upstream(
+    request: Request,
+    services: Services,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+    caller: Caller,
+    path: str,
+) -> StreamingResponse:
+    """The Action Services' generated JSON facades, for as long as this operator session lasts.
+
+    The backend proto HTTP mappings and its operator authorization control which calls this generic
+    versioned facade can serve. The app forwards this session's freshly federated operator token; it
+    never accepts a browser supplied upstream credential.
+    """
+    if services.actions_http is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Action facade is not configured")
+    if not _action_facade_route_allowed(request.method, path):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown Action facade route")
+    try:
+        bearer = await operator_action_token(request, caller)
+        headers = {
+            key: value
+            for key in ("accept", "content-type", "user-agent")
+            if (value := request.headers.get(key)) is not None
+        }
+        upstream = await services.actions_http.open_request(
+            request.method,
+            path,
+            request.url.query,
+            bearer=bearer,
+            headers=headers,
+            content=await request.body() if request.method != "GET" else None,
+        )
+    except OperatorFederationError as error:
+        raise HTTPException(error.status_code, {"code": str(error)}) from None
+    except (httpx.HTTPStatusError, httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError) as error:
+        raise upstream_http_error(error) from error
+    if 300 <= upstream.status_code < 400:
+        await upstream.aclose()
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Action facade redirects are not accepted")
+    return StreamingResponse(
+        operator_relay(
+            request,
+            shutdown,
+            updates,
+            sessions,
+            response_body(upstream),
+            "Action facade",
+            (httpx.HTTPError, httpx2.TransportError, OperatorFederationError),
+        ),
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type"),
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
@@ -427,8 +500,6 @@ async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetV
 threads = APIRouter(prefix="/threads", tags=["threads"])
 
 
-actions_router = APIRouter(prefix="/actions", tags=["actions"])
-push_router = APIRouter(prefix="/push", tags=["push"])
 consent_router = APIRouter(prefix="/connection-enrollments", tags=["connections"])
 
 
@@ -482,23 +553,11 @@ async def complete_mcp_linkage(state: str, code: str, client: OperatorActions) -
     return RedirectResponse("/#/mcp-servers?linked=1", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@connections_router.get("/action-groups")
-async def action_groups(client: OperatorActions) -> list[ActionGroupView]:
-    return await client.action_groups()
-
-
 @connections_router.get("/mcp-servers/stream")
 async def mcp_linkages_stream(
     request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
 ) -> StreamingResponse:
     return _operator_resource_stream(request, shutdown, updates, sessions, client.stream_mcp_linkages, "MCP linkage")
-
-
-@connections_router.get("/action-groups/stream")
-async def group_health_stream(
-    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
-) -> StreamingResponse:
-    return _operator_resource_stream(request, shutdown, updates, sessions, client.stream_group_health, "MCP health")
 
 
 @connections_router.post("/mcp-servers/{server_id}/linkage/start")
@@ -571,108 +630,6 @@ async def unbind_connection(connection_id: UUID, body: ConnectionVersion, client
     return await client.unbind_connection(connection_id, body)
 
 
-@actions_router.get("/history")
-async def action_history(
-    client: OperatorActions,
-    limit: Annotated[int, Query(ge=1, le=100)] = 50,
-    cursor: str | None = None,
-    include_auto_allowed: bool = True,
-) -> ActionHistoryPage:
-    return await client.history(limit=limit, cursor=cursor, include_auto_allowed=include_auto_allowed)
-
-
-@actions_router.get("")
-async def list_actions(
-    client: OperatorActions,
-    state: Annotated[list[ActionState] | None, Query(description="Only requests in these states.")] = None,
-) -> list[ActionRequestView]:
-    return await client.list_requests(states=tuple(state or ()))
-
-
-async def _action_chunks(
-    client: OperatorActions, state: Annotated[ActionState | None, Query()] = None
-) -> AsyncIterator[AsyncIterator[bytes]]:
-    async with AsyncExitStack() as stack:
-        try:
-            async with asyncio.timeout(30):
-                upstream = client.stream_requests(state=state) if state else client.stream_requests()
-                chunks = await stack.enter_async_context(upstream)
-        except TimeoutError as error:
-            raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "Action stream startup timed out") from error
-        renewed = _renewed(client, chunks, state=state)
-        # A filtered snapshot is small and also the resync signal on reconnect. Do not suppress
-        # it when it happens to be identical: history may have changed while we were offline.
-        yield renewed if state else _without_repeated_snapshots(renewed)
-
-
-async def _renewed(
-    client: OperatorActionServiceClient, opened: AsyncIterator[bytes], *, state: ActionState | None = None
-) -> AsyncIterator[bytes]:
-    """`opened`, then the upstream opened again under a freshly exchanged token each time one ends, as
-    one does when the minute-long token it was opened with expires. One that ends before its first
-    chunk refused the token at the door; it is not opened again, so a refusal cannot loop."""
-    upstream: AbstractAsyncContextManager[AsyncIterator[bytes]] = nullcontext(opened)
-    while True:
-        delivered = False
-        async with upstream as chunks:
-            async for chunk in chunks:
-                delivered = True
-                yield chunk
-        if not delivered:
-            return
-        upstream = client.stream_requests(state=state) if state else client.stream_requests()
-
-
-async def _without_repeated_snapshots(chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
-    """`chunks` regrouped into whole SSE frames, less each `snapshot` identical to the last one
-    forwarded. A snapshot is the whole Action history, megabytes (#7922), and every upstream
-    `_renewed` opens starts with one, however little has changed."""
-    pending = bytearray()
-    last_snapshot: bytes | None = None
-    async for chunk in chunks:
-        # A boundary split between two chunks starts at the last byte already held.
-        searched = max(len(pending) - 1, 0)
-        pending += chunk
-        while (end := pending.find(b"\n\n", searched)) != -1:
-            frame = bytes(pending[: end + 2])
-            del pending[: end + 2]
-            searched = 0
-            if frame.startswith(b"event: snapshot\n"):
-                if (digest := hashlib.sha256(frame).digest()) == last_snapshot:
-                    continue
-                last_snapshot = digest
-            yield frame
-
-
-@actions_router.get("/stream")
-async def action_stream(
-    request: Request,
-    shutdown: Shutdown,
-    updates: Updates,
-    sessions: OperatorSessions,
-    chunks: Annotated[AsyncIterator[bytes], Depends(_action_chunks)],
-) -> StreamingResponse:
-    return _operator_relay(
-        request,
-        shutdown,
-        updates,
-        sessions,
-        chunks,
-        "Action",
-        (httpx.HTTPError, httpx2.HTTPStatusError, httpx2.TransportError, OperatorFederationError),
-    )
-
-
-@actions_router.get("/{request_id}")
-async def get_action(request_id: UUID, client: OperatorActions) -> ActionRequestView:
-    return await client.get(request_id)
-
-
-@actions_router.post("/{request_id}/decision")
-async def decide_action(request_id: UUID, body: DecisionInput, client: OperatorActions) -> ActionRequestView:
-    return await client.decide(request_id, body)
-
-
 def _operator_resource_stream(
     request: Request,
     shutdown: Shutdown,
@@ -702,11 +659,6 @@ def _operator_resource_stream(
         label,
         (httpx.HTTPError, httpx2.TransportError, OperatorFederationError),
     )
-
-
-@push_router.post("/decision/{request_id}")
-async def push_decision(request_id: UUID, body: DecisionInput, client: OperatorActions) -> ActionRequestView:
-    return await client.decide(request_id, body)
 
 
 class ThreadRename(BaseModel):
@@ -1162,6 +1114,7 @@ def create_app(
     *,
     electric: ElectricProxy | None,
     dispatcher_http: UpstreamProxy,
+    actions_http: UpstreamProxy | None = None,
     event_logs: EventLogStore,
     content: ContentStore,
     database_updates: WakeupListener,
@@ -1233,6 +1186,7 @@ def create_app(
         operator_actions=operator_actions,
         electric=electric,
         dispatcher_http=dispatcher_http,
+        actions_http=actions_http,
     )
     app.state.services = services
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
@@ -1243,8 +1197,6 @@ def create_app(
         preset_router,
         runner_bridge.router,
         threads,
-        actions_router,
-        push_router,
         consent_router,
         connections_router,
         policy_binding_router,
