@@ -266,6 +266,17 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
             "key": "api-key",
         }
 
+    assert all(key["spec"]["forProvider"]["organizationId"] == "" for key in keys.values())
+
+    teams = {
+        doc["metadata"]["name"]: doc
+        for doc in documents
+        if doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Team"
+    }
+    assert "routerSettings" not in teams["team-antigravity-clients"]["spec"]["forProvider"]
+    assert teams["team-codex-clients"]["spec"]["forProvider"]["routerSettings"]["fallbacks"]
+    assert teams["team-gemini-clients"]["spec"]["forProvider"]["routerSettings"]["fallbacks"]
+
 
 def test_piraeus_controller_network_policy_only_admits_api_tls(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]

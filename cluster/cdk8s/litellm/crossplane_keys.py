@@ -68,6 +68,11 @@ def _key_spec(
     for_provider = KeySpecForProvider(
         key_alias=alias,
         models=list(models),
+        # provider-litellm v2.1.0 can leave this optional field unknown after
+        # create when LiteLLM omits organization_id from key info. An explicit
+        # empty value normalizes that state; the provider omits it from API
+        # requests when empty.
+        organization_id="",
         metadata_secret_ref=KeySpecForProviderMetadataSecretRef(name=metadata_secret),
         max_budget=max_budget,
         budget_duration=budget_duration,
@@ -92,8 +97,12 @@ def _team_spec(*, name: str, fallbacks: Sequence[str]) -> TeamSpec:
     return TeamSpec(
         for_provider=TeamSpecForProvider(
             team_alias=name.removeprefix("team-"),
-            router_settings=TeamSpecForProviderRouterSettings(
-                fallbacks=[TeamSpecForProviderRouterSettingsFallbacks(model="*", fallback_models=list(fallbacks))]
+            router_settings=(
+                TeamSpecForProviderRouterSettings(
+                    fallbacks=[TeamSpecForProviderRouterSettingsFallbacks(model="*", fallback_models=list(fallbacks))]
+                )
+                if fallbacks
+                else None
             ),
         ),
         provider_config_ref=TeamSpecProviderConfigRef(kind="ProviderConfig", name="default"),
