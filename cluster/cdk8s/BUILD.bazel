@@ -1589,6 +1589,7 @@ py_library(
         "//cluster/cdk8s/haku:charts",
         "//cluster/cdk8s/haku:flux_kustomizations",
         "//cluster/cdk8s/haku:forgejo_tea",
+        "//cluster/cdk8s/haku:kube_api_proxy_secret_prune",
         "//cluster/cdk8s/haku:mailbox",
         "//cluster/cdk8s/haku:namespace",
         "//cluster/cdk8s/haku:rbac",
