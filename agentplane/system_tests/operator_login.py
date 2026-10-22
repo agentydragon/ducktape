@@ -29,9 +29,10 @@ _DEX_OAUTH_PATH = re.compile(r"/dex/(auth|auth/local|auth/local/login|approval|c
 
 
 def _transport_allowed(url: httpx.URL) -> bool:
-    """HTTPS, or http to a cluster-internal Service name: the k3s fixture serves its app and Dex so,
-    and its test process reaches them on the node."""
-    return url.scheme == "https" or (url.scheme == "http" and url.host.endswith(".svc"))
+    """HTTPS, or HTTP to loopback/cluster Service names used by the disposable k3s fixture."""
+    return url.scheme == "https" or (
+        url.scheme == "http" and (url.host in {"localhost", "127.0.0.1", "::1"} or url.host.endswith(".svc"))
+    )
 
 
 class LoginBlockedError(Exception):
