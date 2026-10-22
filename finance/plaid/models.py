@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -43,3 +44,19 @@ class ItemInventory(BaseModel):
     latest_sync_started_at: datetime.datetime | None
     latest_sync_finished_at: datetime.datetime | None
     accounts: tuple[AccountInventory, ...]
+
+
+class AccountDeletionPreview(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    item_id: str
+    accounts_observed_at: datetime.datetime | None
+    latest_sync_run_id: UUID | None
+    account: AccountInventory
+    transaction_records: int
+    investment_transaction_records: int
+    balance_snapshot_records: int
+    holding_snapshot_records: int
+    liability_snapshot_records: int
+    earliest_history_date: datetime.date | None
+    latest_history_date: datetime.date | None

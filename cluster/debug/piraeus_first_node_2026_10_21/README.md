@@ -1,10 +1,42 @@
 # First Piraeus node: execution evidence
 
 Started 2026-10-21 PDT (2026-10-22 UTC). Target: `ovh-ns1001419` only.
-The approved rebuild is complete and the node remains cordoned. Its whole
-secondary NVMe backs the Piraeus SSD pool. Application data remains on verified
-off-node copies; no application Piraeus PVC has been created. The explicit pause
-before repopulating application storage remains in force.
+The approved rebuild and the four application restorations are complete. The
+node is schedulable and its whole secondary NVMe backs the Piraeus SSD pool.
+The operator lifted the application-restoration pause before the work below.
+
+## Application restoration checkpoint (2026-10-22 11:44 UTC)
+
+[Sanitized restoration evidence](application_restoration_proof.json) records:
+
+- Attic is 3/3 healthy, with its new 8Gi replica on Piraeus at this node. Study
+  Casino is 3/3 healthy, with its new **1Gi** replica here. Native CNPG streaming
+  replication replayed an observed primary WAL position for each new member;
+  original member/PVC identities and primaries were unchanged.
+- The new `seaweedfs-volume-ssd-piraeus-0` uses a 250Gi strict-local Piraeus claim.
+  It joined the existing SSD/DC/rack topology and passed one rate-limited native
+  move of a 239 MB volume. All 34 SSD logical volumes retained two copies; old
+  server Pods/claims were unchanged. Owned S3 reads across the move and a fresh
+  write/read matched hashes. The S3 gate and SSD move verified separate paths.
+- Master-2 returned from temporary HDD storage on `ovh-ns102453` to a **4Gi**
+  `piraeus-ssd-local` claim on `ovh-ns1001419`. A fresh cold Raft copy preserved
+  all file hashes, ownership, modes and timestamps. The original topology
+  identity, three-peer template, surviving Pod UIDs and volume-ID watermark were
+  preserved. All masters agreed on the leader; retained and fresh owned S3
+  probes matched. Probe objects/helpers were removed and operator/Helm/Flux
+  reconciliation resumed successfully.
+- The temporary HDD source PV remains `Released`/`Retain`; its cold archive is
+  also preserved privately off-node. It is not another live master. The shared
+  master claim template still names local-path, so preserve master-2's existing
+  Piraeus PVC override when recovering; Pod replacement reuses the claim but
+  deleting that claim would lose the override.
+- Four retained Piraeus PVCs now request 263Gi in total: 250Gi Seaweed volume,
+  8Gi Attic, 1Gi Study Casino and 4Gi Seaweed master. Live thin-pool reporting
+  observed 64KiB chunks, 4GiB metadata, 4GiB spare and no free VG extents. Thin
+  allocation is separate from logical PVC capacity.
+
+Next-node preparation is described in the [node-roll runbook](../../docs/runbooks/piraeus_node_roll.md).
+No subsequent node reset, wipe or reformat is covered by this checkpoint.
 
 ## Physical-node checkpoint (2026-10-22)
 
@@ -72,8 +104,8 @@ Metadata exhaustion and aggregate DRBD pool exhaustion remain unqualified.
 Production capacity-threshold alert delivery and a full LINSTOR controller
 restore have not been exercised. The isolated metadata round trip and observed
 stale-alert delivery have the narrower scope described above. Application
-performance and the first-node soak remain unqualified; restoring application
-redundancy awaits step 6 approval.
+performance and the first-node soak remain unqualified. Application redundancy
+has returned through the accepted restorations above.
 
 ## Production handoff checkpoint (2026-10-22 08:20 UTC; historical)
 

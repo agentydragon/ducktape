@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -16,9 +13,8 @@ import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
 
+from finance.augur.testing.server import run_server
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -30,59 +26,16 @@ def _usd_quanta(value: float | int) -> str:
 
 @pytest.fixture(scope="module")
 def server_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
-    tmp_path = tmp_path_factory.mktemp("augur_server")
-    out = undeclared_outputs_dir()
-    server_log = (out / "augur-server.log").open("w")
-    port = pick_free_port("127.0.0.1")
-    server = subprocess.Popen(
-        [
-            str(get_required_path("_main/finance/augur/api/server_bin")),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--config",
-            str(get_required_path("_main/finance/augur/api/testdata/config.yaml")),
-            "--api-only",
-        ],
+    with run_server(
+        binary=get_required_path("_main/finance/augur/api/server_bin"),
+        tmp_path=tmp_path_factory.mktemp("augur_server"),
+        args=("--api-only",),
         env={
-            **os.environ,
             "AUGUR_API_IMAGE_TAG": "devel-20260527220657-b86700d",
-            # An (empty) evidence checkout: the price readers boot against it and
-            # would report any market as not-mirrored; these tests never read one.
-            "AUGUR_EVIDENCE_DIR": str(tmp_path / "evidence"),
-            "HOME": str(tmp_path / "home"),
             "AUGUR_FRONTEND_IMAGE_TAG": "devel-20260527194755-6ec68c0",
-            "MPLCONFIGDIR": str(tmp_path / "matplotlib"),
-            "PYTHONUNBUFFERED": "1",
-            "XDG_CACHE_HOME": str(tmp_path / "cache"),
         },
-        stdout=server_log,
-        stderr=server_log,
-    )
-    origin = f"http://127.0.0.1:{port}"
-    deadline = time.monotonic() + 30
-    try:
-        while time.monotonic() < deadline:
-            if server.poll() is not None:
-                raise RuntimeError(f"Augur server exited early with code {server.returncode}; see {server_log.name}")
-            try:
-                with urllib.request.urlopen(f"{origin}/healthz", timeout=1) as response:
-                    if response.status == 200:
-                        break
-            except OSError, urllib.error.URLError:
-                time.sleep(0.25)
-        else:
-            raise RuntimeError(f"Augur server did not start within 30s; see {server_log.name}")
+    ) as origin:
         yield origin
-    finally:
-        server.terminate()
-        try:
-            server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=10)
-        server_log.close()
 
 
 def _post_json(origin: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:

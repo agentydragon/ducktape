@@ -43,6 +43,10 @@ reads them.
   repair/renew; a widen button (shown only when the institution offers unauthorized products,
   and naming them); manual sync.
 - Account inventory by Item from the persisted mirror.
+- Detached accounts can have their account row, mirrored transaction/history rows, and
+  balance/holding/liability snapshots deleted without removing the Item or its access-token Secret.
+  The preview identifies the exact account and shows record counts and history dates; deletion is
+  rejected if membership, mirrored data, or Item sync state changed before confirmation.
 - `/item/remove` deletes the access-token Secret and purges mirrored link/account/transaction
   rows; append-only `sync_runs`, `plaid_api_events` and webhook audit rows are kept.
 
@@ -59,8 +63,12 @@ Plaid account ID.
 
 Balances are cached `/accounts/get` snapshots, not live balances. The UI separates the latest sync
 result from the last successful sync. Detached accounts leave current cash and holdings projections,
-but transaction and investment history remains stored and queryable. Plaid Spend and Budget retain
-their existing history semantics; Item removal keeps its existing whole-Item behavior.
+but transaction and investment history remains stored and queryable until explicitly deleted from the
+local mirror. Account deletion preserves the Item, its access-token Secret, Item sync cursor and queue,
+shared security rows, and append-only sync/API/webhook audit records. API audit payloads may contain
+multiple accounts, so the operation does not erase an account from those retained payloads.
+Spend/Budget configuration is not rewritten, and a later sync can recreate the account if Plaid returns
+its ID. Item removal keeps its existing whole-Item behavior.
 
 ### Products vs accounts
 
