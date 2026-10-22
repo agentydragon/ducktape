@@ -34,6 +34,7 @@ const reactProjects = [
   "finance/augur/frontend/**",
   "haku/console/frontend/**",
   "props/frontend/**",
+  "util/frontend/**",
 ];
 const projectGlobs = reactProjects;
 
