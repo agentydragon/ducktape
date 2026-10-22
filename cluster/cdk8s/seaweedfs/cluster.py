@@ -141,7 +141,6 @@ def _volume_topology(
     replicas: int,
     max_volume_counts: int,
     additional_node_selector: dict[str, str] | None = None,
-    additional_tolerations: list[SeaweedSpecVolumeTopologyTolerations] | None = None,
     anti_affinity_labels: dict[str, str] | None = None,
 ) -> SeaweedSpecVolumeTopology:
     return SeaweedSpecVolumeTopology(
@@ -188,8 +187,7 @@ def _volume_topology(
         tolerations=[
             SeaweedSpecVolumeTopologyTolerations(
                 key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
-            ),
-            *(additional_tolerations or []),
+            )
         ],
         affinity=SeaweedSpecVolumeTopologyAffinity(
             pod_anti_affinity=SeaweedSpecVolumeTopologyAffinityPodAntiAffinity(
@@ -375,12 +373,6 @@ def seaweed(scope: Construct) -> Seaweed:
                     replicas=1,
                     max_volume_counts=200,
                     additional_node_selector={_HOSTNAME: "ovh-ns1001419"},
-                    # Admit only this server while the pilot remains cordoned.
-                    additional_tolerations=[
-                        SeaweedSpecVolumeTopologyTolerations(
-                            key="node.kubernetes.io/unschedulable", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
                     # Match both SSD groups without rolling the existing ssd template.
                     # Required anti-affinity also protects this pod when peers are scheduled.
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
