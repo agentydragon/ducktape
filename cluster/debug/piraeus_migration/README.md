@@ -13,29 +13,27 @@ in [`first_node/`](first_node/README.md).
 
 The early SSD evacuation from `ovh-ns104952` is complete: 33 native moves left
 36 current logical SSD volume IDs with two copies on `ovh-ns104963` and
-`ovh-ns1001419`. No OS node roll or data-disk conversion is part of that
-evacuation. The dated proof and worker comparison are in
+`ovh-ns1001419`. The four affected SSD FUSE clients were refreshed and checked,
+then the empty old volume-server Pod was retired through PR #11586. Master-1
+moved to `102453`, and Forgejo Valkey replica-1 now uses a 2Gi Piraeus claim on
+`1001419`. PostgreSQL handoffs are proceeding serially; Attic and Study already
+promoted their existing Piraeus members. The current service proofs, remaining
+handoffs and pre-wipe data-preservation findings are in
 [`next_nodes/`](next_nodes/README.md).
 
-The inert `ovh-ns104952` storage configuration and its 11:46 UTC local-PV and
-disk inventory are documented in [`ovh_ns104952/`](ovh_ns104952/README.md).
-Its readiness gates remain separate from the completed SSD evacuation.
+The inert `ovh-ns104952` storage configuration and its dated local-PV/disk
+inventory remain in [`ovh_ns104952/`](ovh_ns104952/README.md). No subsequent node
+reset, data-disk wipe or reformat has started. The audit found seven unmatched
+old claim directories; preserve them off-node before destruction.
 
-After the 600-slot HDD configuration merged at 12:21:34 UTC, all three HDD
-volume-server pods reached Ready at 600 with stable Pod UIDs. The first batch
-from `ovh-ns103656` to `ovh-ns102453` stopped safely after nine of about 150
-copies (about 428 GB) when a read-only master-0 quorum check timed out after
-180 seconds, before copy 10 started. A fresh preflight at 12:35 UTC then
-verified the original pod UIDs, two-copy placement for all current logical
-volume IDs, agreement across all three masters, the nine completed placements,
-and destination free space above the 15% reserve. Move 10 (volume 934) started
-after those checks, with 141 copies remaining in this batch. The earlier timeout
-was not treated as quorum evidence. The larger batch of about 151 copies (about
-621 GB) to `ovh-ns103711` remains held pending headroom review. No OS node roll,
-reset, or disk wipe was underway. The dated 400-slot worker audit remains
-unchanged in `next_nodes/worker_pair_audit.md`; the current slot cap is 600 in
-[`cluster/cdk8s/seaweedfs/cluster.py`](../../cdk8s/seaweedfs/cluster.py). The
-accepted thin-pool overcommit policy and sizing proposal are in the
+The HDD slot cap is now 600 and the first copy batch from `103656` to the 4TB
+node `102453` is running with per-move copy, quorum, identity and 15% free-space
+gates. It has resumed only after fresh checks following two read/transport
+failures. The approximately 621GB wave to the smaller `103711` remains held:
+projected free space is 11.7%, below the 15% reserve. The separate proposal to
+move one native ClickHouse data replica to SSD is recorded in `next_nodes/`;
+no ClickHouse migration has started. The accepted temporary-overcommit policy
+and issue trigger remain in the
 [node-roll runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
 
 ## Evidence map

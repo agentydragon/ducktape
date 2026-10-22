@@ -1,0 +1,191 @@
+{
+  "captured_at": "2026-10-22T13:48:04.014968+00:00",
+  "master1": {
+    "time": "2026-10-22T13:04:22.431322+00:00",
+    "master1_node": "ovh-ns102453",
+    "master1_pod_uid": "2a3878eb-3f7f-4c3e-b107-21331acbbdbc",
+    "new_claim_uid": "6315db75-b489-4463-813d-7009ead0c1b3",
+    "new_pv": "pvc-6315db75-b489-4463-813d-7009ead0c1b3",
+    "new_pv_uid": "1b668465-f6fd-4d48-b7e8-29f260338349",
+    "storage_class": "local-path-ovh-hdd",
+    "size": "4Gi",
+    "local_hdd_affinity": true,
+    "retained_ssd_source_pv": "pvc-1f2ee994-ef1c-47e2-a28c-363db724be20",
+    "retained_ssd_source_pv_uid": "7c778ce9-f4e5-44f7-84ae-a56e636626a1",
+    "topology_id": "44018856-e2c1-48e4-bbda-b26b90bd801e",
+    "cold_archive_sha256": "25ce6d14111f68a1c51ce249cb614ec41679493cc85c185ded5c68fa48a0ed0f",
+    "survivor_pod_uids_unchanged": true,
+    "master_template_unchanged": true,
+    "statuses": [
+      {
+        "Leader": "seaweedfs-master-1.seaweedfs-master-peer.seaweedfs:9333.19333",
+        "Peers": [
+          "seaweedfs-master-2.seaweedfs-master-peer.seaweedfs:9333.19333",
+          "seaweedfs-master-1.seaweedfs-master-peer.seaweedfs:9333.19333"
+        ],
+        "MaxVolumeId": 1126
+      },
+      {
+        "IsLeader": true,
+        "Leader": "seaweedfs-master-1.seaweedfs-master-peer.seaweedfs:9333.19333",
+        "Peers": [
+          "seaweedfs-master-0.seaweedfs-master-peer.seaweedfs:9333.19333",
+          "seaweedfs-master-2.seaweedfs-master-peer.seaweedfs:9333.19333"
+        ],
+        "MaxVolumeId": 1126
+      },
+      {
+        "Leader": "seaweedfs-master-1.seaweedfs-master-peer.seaweedfs:9333.19333",
+        "Peers": [
+          "seaweedfs-master-1.seaweedfs-master-peer.seaweedfs:9333.19333",
+          "seaweedfs-master-0.seaweedfs-master-peer.seaweedfs:9333.19333"
+        ],
+        "MaxVolumeId": 1126
+      }
+    ],
+    "s3_retained_and_fresh_hashes_match": true,
+    "holds_removed": true
+  },
+  "client_refresh": {
+    "started": "2026-10-22T13:10:25.829053+00:00",
+    "refreshed": [
+      {
+        "namespace": "forgejo",
+        "old_name": "forgejo-56ccb7dff6-hblrz",
+        "old_uid": "7e3832e0-7e3f-420d-b534-a7b0f3585515",
+        "new_name": "forgejo-56ccb7dff6-vmkzl",
+        "new_uid": "ae1a768e-7f2c-4336-883e-aaca09f6fdc1",
+        "node": "ovh-ns103711",
+        "both_members_ready": true
+      },
+      {
+        "namespace": "forgejo",
+        "old_name": "forgejo-56ccb7dff6-xgzd7",
+        "old_uid": "95e6b327-7995-4568-b956-f19fc34aead4",
+        "new_name": "forgejo-56ccb7dff6-qdttm",
+        "new_uid": "c40b31ee-6108-4309-8ba3-57929e96e3e8",
+        "node": "ovh-ns103656",
+        "both_members_ready": true
+      },
+      {
+        "namespace": "haku-sandbox",
+        "old_name": "haku-ui-0",
+        "old_uid": "4830ce70-745e-42bd-ac1f-9a19654e73ec",
+        "new_name": "haku-ui-0",
+        "new_uid": "90161f09-7692-48ab-8f70-191f7e378f6a",
+        "node": "ovh-ns103711",
+        "both_members_ready": true
+      },
+      {
+        "namespace": "haku-sandbox",
+        "old_name": "haku-ui-1",
+        "old_uid": "3068abde-3872-4722-aa77-e03c1adf9983",
+        "new_name": "haku-ui-1",
+        "new_uid": "c5db90e1-c4c6-4b8b-8754-24deb1bde0d8",
+        "node": "ovh-ns103656",
+        "both_members_ready": true
+      }
+    ],
+    "probe_path": "/data/.piraeus-client-refresh-636b9c73b9504ca4adc6e14c5ca6f846",
+    "probe_sha256": "09c230e6e28c0cd28aea36c72f9eb5be8e2490c9400104ef939958e878059ad0",
+    "placement": {
+      "logical_ssd_volumes": 36,
+      "source_empty": true,
+      "two_surviving_copies": true
+    },
+    "accepted": "2026-10-22T13:13:56.893577+00:00",
+    "source_request_counters": {
+      "SeaweedFS_volumeServer_handler_total{type=\"readProxyRequest\"}": 50.0,
+      "SeaweedFS_volumeServer_in_flight_requests{type=\"GET\"}": 0.0,
+      "SeaweedFS_volumeServer_in_flight_requests{type=\"POST\"}": 0.0,
+      "SeaweedFS_volumeServer_in_flight_requests{type=\"writeToLocalDisk\"}": 0.0,
+      "SeaweedFS_volumeServer_in_flight_requests{type=\"writeToReplicas\"}": 0.0,
+      "SeaweedFS_volumeServer_request_seconds_count{type=\"GET\"}": 7983714.0,
+      "SeaweedFS_volumeServer_request_seconds_count{type=\"POST\"}": 661187.0,
+      "SeaweedFS_volumeServer_request_seconds_count{type=\"writeToLocalDisk\"}": 661187.0,
+      "SeaweedFS_volumeServer_request_seconds_count{type=\"writeToReplicas\"}": 357541.0
+    },
+    "quiet_seconds": 64.84895223402418,
+    "all_four_clients_refreshed": true,
+    "shared_filesystem_hash_before_after_matches": true
+  },
+  "valkey": {
+    "started": "2026-10-22T13:30:05.215862+00:00",
+    "cluster_uid": "0b4adb6b-1db2-4501-ab20-5ec055190f93",
+    "original_sts_uid": "178ade8f-4c78-471b-91d3-98c229b98d89",
+    "master_pod_uid": "87ffd9bb-884f-41b6-9f8d-c4ea582daf4d",
+    "old_replica_pod_uid": "773eb3fd-649a-46ee-bbe5-27c52441ba69",
+    "old_claim_uid": "4f0d6c18-dc14-44e9-a6a5-0f5e1c5e41c3",
+    "retained_source_pv": "pvc-4f0d6c18-dc14-44e9-a6a5-0f5e1c5e41c3",
+    "observed_source_offset": 813,
+    "master_aof_healthy": true,
+    "accepted": "2026-10-22T13:30:49.771834+00:00",
+    "new_pod_uid": "db119fe8-fd68-46d9-aa45-e90642ee9394",
+    "new_claim_uid": "734b8c5c-8629-4376-a61f-475032bb2633",
+    "new_pv": "pvc-734b8c5c-8629-4376-a61f-475032bb2633",
+    "node": "ovh-ns1001419",
+    "size": "2Gi",
+    "storage_class": "piraeus-ssd-local",
+    "source_offset_replayed": 827,
+    "native_link_up": true,
+    "master_identity_unchanged_during_revised_handoff": true,
+    "template_unchanged": true,
+    "desired_count_restored": 2,
+    "holds_removed": true,
+    "shared_storage_template_still_local_path": true
+  },
+  "postgres": [
+    {
+      "namespace": "atuin",
+      "cluster": "atuin-db",
+      "phase": "complete",
+      "cluster_uid": "586fd60f-8fb5-48e9-9ef9-9c4abb01cc55",
+      "piraeus_size": "2Gi",
+      "completed_at": "2026-10-22T13:43:38.369297+00:00",
+      "observed_primary_lsn": "E/11000060",
+      "final_primary": "atuin-db-1",
+      "new_member": {
+        "pod": "atuin-db-1",
+        "pod_uid": "86793976-dda1-462d-bc60-24b8c2b20107",
+        "claim": "atuin-db-1",
+        "claim_uid": "0199dd07-d492-4e83-a707-931db412aa39",
+        "pv": "pvc-0199dd07-d492-4e83-a707-931db412aa39",
+        "pv_uid": "0a85b7a2-9ac5-49df-9091-bef2a6bc7003"
+      },
+      "retired_source": {
+        "pod": "atuin-db-4",
+        "pod_uid": "5d632dc5-ff1a-4a13-87a7-be47a1fe321e",
+        "claim_uid": "0442a585-0ead-430a-9191-b724e0eab07f",
+        "pv_uid": "bde64ac3-8b9f-4dc5-82d5-aa91b1039b30",
+        "retained": true,
+        "detached": true
+      }
+    },
+    {
+      "namespace": "authentik",
+      "cluster": "authentik-db-ovh",
+      "phase": "complete",
+      "cluster_uid": "394994e0-7b60-448f-bb73-f8b1f5c43280",
+      "piraeus_size": "8Gi",
+      "completed_at": "2026-10-22T13:48:01.621652+00:00",
+      "observed_primary_lsn": "103/BB0015A8",
+      "final_primary": "authentik-db-ovh-2",
+      "new_member": {
+        "pod": "authentik-db-ovh-2",
+        "pod_uid": "942ca26f-dc91-4246-81d0-97a6ca175e2b",
+        "claim": "authentik-db-ovh-2",
+        "claim_uid": "83d667fd-4cc4-4319-9f64-9e53ff8cc575",
+        "pv": "pvc-83d667fd-4cc4-4319-9f64-9e53ff8cc575",
+        "pv_uid": "7df35146-330b-4ded-80d4-52a6f3cbff39"
+      },
+      "retired_source": {
+        "pod": "authentik-db-ovh-4",
+        "pod_uid": "34ccdd1f-aae2-428c-bc71-5669051a1b9a",
+        "claim_uid": "8467d9ff-7c0b-4fcb-bb8a-c67206649ee1",
+        "pv_uid": "bebdf292-ffe2-4d58-b6ce-1d15141e4c68",
+        "retained": true,
+        "detached": true
+      }
+    }
+  ]
+}

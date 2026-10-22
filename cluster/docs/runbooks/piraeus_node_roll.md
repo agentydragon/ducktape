@@ -214,9 +214,12 @@ For the preferred `103656` candidate, the observed missing-copy sizes were
 621350169600 bytes to `103711` and 427655280192 bytes to `102453`. Subtracting
 these from reported free space predicts about 236 GB and 1957 GB free afterward.
 The smaller survivor would be only about **36 GB above its 10% free-space
-threshold**, before copy overhead and new writes. Refresh actual copy sizes,
-other local usage, growth and headroom before declaring the space gate passed.
-Do not infer adequate headroom from the enlarged slot limit.
+threshold**, before copy overhead and new writes. A later refresh projected
+233.62GB free (11.7%), 66.29GB below the 15% reserve; that copy wave remained
+held. The native ClickHouse-to-SSD proposal and current copy progress are in
+[the evacuation evidence](../../debug/piraeus_migration/next_nodes/README.md#hdd-headroom-proposal).
+Refresh actual copy sizes, other local usage, growth and headroom before declaring
+the space gate passed. Do not infer adequate headroom from the enlarged slot limit.
 
 ## 2. Evacuate application state while sources remain available
 
@@ -331,6 +334,32 @@ For later master handoffs, use the same cold-copy/identity checks with explicit
 member control. The last-ordinal scale trick applies to master-2 only. Do not
 shrink the StatefulSet to remove master-0 or master-1.
 
+#### Master-1: preserve the other ordinals
+
+The second SSD evacuation exercised this procedure with master-1 moving from
+`104952` to a fresh retained 4Gi HDD claim on `102453`:
+
+1. Use the controller holds, native health gates and fresh cold-copy checks
+   above. Keep the Seaweed CR and master StatefulSet at three members; scaling
+   to two would remove master-2.
+2. Record the StatefulSet UID, Pod UIDs, original update strategy and controller
+   revision. Set `OnDelete` without changing the Pod template. Delete only the
+   StatefulSet with UID/resourceVersion preconditions, using the `Orphan`
+   propagation policy. Wait for all three Pods to lose their owner reference,
+   preserving all Pod UIDs.
+3. Delete only master-1 with a UID precondition. Keep masters 0 and 2 serving
+   while making the fresh cold copy and replacing the exact claim name. Mount
+   the source read-only; retain the original PV and verify the destination's
+   file contents and metadata before starting its member.
+4. Recreate the original StatefulSet metadata/spec with three replicas and
+   `OnDelete`, omitting server-assigned identity/status fields. Preserve the
+   Pod template and peer identities. Require adoption of the two existing Pods,
+   the new master-1 Ready, and the original controller revision matching both
+   current/update revisions before restoring the original update strategy.
+5. Require three-member agreement, unchanged survivor Pod UIDs, preserved Raft
+   identity, volume-ID watermark and owned S3 read/write acceptance. Resume the
+   operator, Helm and Flux; verify no helper or hold remains.
+
 ### Other local consumers
 
 #### ClickHouse data and Keeper
@@ -349,12 +378,44 @@ for state that has no replicated source. Keeper needs its own identity/log and
 membership handoff; a generic PVC deletion or empty replacement does not migrate
 it. Verify both data and Keeper health before moving another affected member.
 
+#### Forgejo Valkey replica
+
+Forgejo Valkey combines cache and queue state. The pinned Redis operator copies
+annotations from its RedisReplication resource into the StatefulSet Pod template;
+adding a resource-level Flux hold there rolled the serving master during the
+first attempt. Do not use that hold for this operator.
+
+The revised replica-1 handoff preserved the serving master's Pod UID:
+
+1. Hold the owning Flux Kustomization against its parent, then suspend it. Use
+   the operator's native per-resource annotation
+   `redisreplication.opstreelabs.in/skip-reconcile: "true"` to pause this
+   RedisReplication. Leave its desired `clusterSize` at two and verify that
+   neither the StatefulSet template nor the serving master's UID changed.
+2. Scale the StatefulSet directly from two to one. Verify only replica-1 stopped,
+   master-0 is writable with healthy AOF, and its service remains available.
+   Retain the old PV and delete only the pinned replica PVC with UID guards.
+3. Pre-create the same replica claim name with the reviewed Piraeus size and
+   class; scale the StatefulSet back to two. Verify the new Pod/PVC/PV identities,
+   intended node, Retain policy and strict-local affinity.
+4. While the operator is paused, configure the new empty member to replicate
+   from the serving master's current IP with native `REPLICAOF`. Require link-up,
+   full-sync completion, replay of an observed master offset, one connected
+   replica, healthy AOF and the shared master service's response. Never expose
+   the unconfigured empty member as the serving master.
+5. Remove the native pause and resume the owning Flux Kustomization, removing
+   its temporary hold. Recheck native roles, link, offsets, master Pod UID and
+   unchanged Pod template after reconciliation resumes.
+
+The shared StatefulSet claim template still selects local-path. Pod recreation
+reuses the replica's pre-created Piraeus claim; PVC deletion loses that override.
+Record it for recovery until a separately reviewed immutable-template handoff
+changes the shared default.
+
 #### Remaining services
 
-Forgejo Valkey combines cache and queue state: verify role, healthy replication,
-offset catch-up and service cutover, or perform a consistent copy. Do not assume
-its files are disposable because the component is called a cache. Inventory
-worker WALs, Keeper/data replicas and local application/backup claims similarly.
+Inventory worker WALs, Keeper/data replicas and local application/backup
+claims similarly.
 For a worker with a Piraeus FILE_THIN canary, enumerate all live resources and
 snapshots before removing its backing directory. Move LINSTOR/CSI control
 services off the outage set and verify metadata persistence and recovery access.
