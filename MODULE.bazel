@@ -8,6 +8,16 @@ bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "rules_python", version = "2.3.3")
 bazel_dep(name = "rules_python_gazelle_plugin", version = "2.3.3")
 
+# rules_python 2.3.3 documents pyi_deps as build-time-only, but its PyInfo merge
+# also propagates runtime source/bytecode and venv fields. Keep only transitive
+# stub files until an upstream release gives pyi_deps type-only provider semantics.
+single_version_override(
+    module_name = "rules_python",
+    patch_strip = 1,
+    patches = ["//third_party/patches:rules_python_pyi_deps.patch"],
+    version = "2.3.3",
+)
+
 # Gazelle python plugin fixes. In 2.3.3, per-file mode still splits files containing
 # `if __name__ == "__main__"` into py_binary targets, stealing the module's library;
 # the first hunk disables that split in per-file mode. The closest upstream tracker
@@ -68,6 +78,16 @@ bazel_dep(name = "ducktape_manifold_mcp_server", version = "0.1.0", dev_dependen
 bazel_dep(name = "ducktape_claude_web_env_environment_manager", version = "0.1.0", dev_dependency = True)
 
 bazel_dep(name = "rules_mypy", version = "0.41.0")
+
+# rules_mypy 0.41.0 ignores rules_python's pyi_deps when collecting stubs.
+# Keep this until a released rules_mypy traverses pyi_deps in its mypy aspect.
+single_version_override(
+    module_name = "rules_mypy",
+    patch_strip = 1,
+    patches = ["//third_party/patches:rules_mypy_pyi_deps.patch"],
+    version = "0.41.0",
+)
+
 bazel_dep(name = "rules_conda", version = "0.3.2")
 
 # aspect_rules_lint's lint actions create empty output files with `touch`, but some

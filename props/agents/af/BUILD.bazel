@@ -1,3 +1,4 @@
+# gazelle:python_generate_pyi_deps true
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -10,16 +11,18 @@ py_library(
 py_test(
     name = "test_client",
     srcs = ["test_client.py"],
+    pyi_deps = [
+        "@pypi//agent_framework_anthropic",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_claude",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_openai",  # keep: the core stub reexports provider types; mypy needs this package
+    ],
     deps = [
         ":client",
         ":conftest",
         "//:conftest",
         "//openai_utils:api_shape",
         "//props:conftest",
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -30,6 +33,9 @@ py_test(
 py_library(
     name = "client",
     srcs = ["client.py"],
+    pyi_deps = [
+        "@pypi//agent_framework_claude",  # keep: the core stub reexports provider types; mypy needs this package
+    ],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//openai_utils:api_shape",
@@ -37,7 +43,6 @@ py_library(
         "//props/db:database",
         "//props/db:models",
         "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
         "@pypi//agent_framework_openai",
         "@pypi//anthropic",
@@ -47,12 +52,14 @@ py_library(
 py_library(
     name = "tools",
     srcs = ["tools.py"],
+    pyi_deps = [
+        "@pypi//agent_framework_anthropic",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_claude",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_openai",  # keep: the core stub reexports provider types; mypy needs this package
+    ],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//pydantic",
     ],
 )
@@ -60,39 +67,45 @@ py_library(
 py_library(
     name = "exec_tool",
     srcs = ["exec_tool.py"],
+    pyi_deps = [
+        "@pypi//agent_framework_anthropic",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_claude",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_openai",  # keep: the core stub reexports provider types; mypy needs this package
+    ],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//util/exec:models",
         "//util/exec:subprocess",
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
     ],
 )
 
 py_library(
     name = "middleware",
     srcs = ["middleware.py"],
+    pyi_deps = [
+        "@pypi//agent_framework_anthropic",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_claude",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_openai",  # keep: the core stub reexports provider types; mypy needs this package
+    ],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
     ],
 )
 
 py_library(
     name = "loop",
     srcs = ["loop.py"],
+    pyi_deps = [
+        "@pypi//agent_framework_anthropic",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_claude",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_openai",  # keep: the core stub reexports provider types; mypy needs this package
+    ],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":client",
         "//props/db:database",
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
     ],
 )

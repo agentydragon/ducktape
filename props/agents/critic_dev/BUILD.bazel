@@ -1,3 +1,4 @@
+# gazelle:python_generate_pyi_deps true
 """Critic development CLI and shared types.
 
 Shared infrastructure for critic developer agents (optimize and improve modes).
@@ -60,6 +61,11 @@ py_library(
         "//props/agents/docs:source_inspection.md.mako",
         "//props/agents/docs:system_access.md",
     ],
+    pyi_deps = [
+        "@pypi//agent_framework_anthropic",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_claude",  # keep: the core stub reexports provider types; mypy needs this package
+        "@pypi//agent_framework_openai",  # keep: the core stub reexports provider types; mypy needs this package
+    ],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":loop",
@@ -77,10 +83,7 @@ py_library(
         "//props/db:database",
         "//props/db:models",
         "//util:oci",
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
