@@ -6,7 +6,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, piraeus_metrics
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -27,6 +27,9 @@ _CLUSTER_NODE_AFFINITY = {
     ]
 }
 _POOL_DIRECTORY = "/var/mnt/local-path-ovh-hdd/linstor-canary"
+_FIRST_NODE_VOLUME_GROUP = "piraeus_ssd"
+_FIRST_NODE_THIN_POOL = "data"
+_FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns1001419"}
 _FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_1951A3449505"
 _CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
 _REACTOR_CONFIG_PATCH = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-reactor-patch.yaml")).read_text()
@@ -120,6 +123,13 @@ def cluster_chart(app: App) -> Chart:
             ],
         ),
     )
+    piraeus_metrics.add_thin_pool_monitoring(
+        chart,
+        namespace=NAMESPACE,
+        node_selector=_FIRST_NODE_SELECTOR,
+        volume_group=_FIRST_NODE_VOLUME_GROUP,
+        thin_pool=_FIRST_NODE_THIN_POOL,
+    )
     repository = oci_helm_repository(
         chart, "piraeus-charts", "flux-system", url="oci://ghcr.io/piraeusdatastore/helm-charts"
     )
@@ -179,7 +189,7 @@ def cluster_chart(app: App) -> Chart:
                 },
                 {
                     "name": "ssd-first-node",
-                    "nodeSelector": {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns1001419"},
+                    "nodeSelector": _FIRST_NODE_SELECTOR,
                     "patches": _TALOS_SATELLITE_PATCHES,
                     "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
                     # This selector becomes eligible only after the target rebuild config
@@ -190,8 +200,8 @@ def cluster_chart(app: App) -> Chart:
                         {
                             "name": "ssd",
                             "lvmThinPool": {
-                                "volumeGroup": "piraeus_ssd",
-                                "thinPool": "data",
+                                "volumeGroup": _FIRST_NODE_VOLUME_GROUP,
+                                "thinPool": _FIRST_NODE_THIN_POOL,
                                 "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
                             },
                             "source": {"hostDevices": [_FIRST_NODE_DATA_DEVICE]},
@@ -241,7 +251,11 @@ def operator_kustomization(chart: Chart, directory: RenderedDirectory) -> Kustom
 
 
 def cluster_kustomization(
-    chart: Chart, directory: RenderedDirectory, operator: Kustomization, cert_manager: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    operator: Kustomization,
+    cert_manager: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     """Apply LINSTOR only after its CRDs and cert-manager are Ready."""
     return flux_kustomization(
@@ -251,5 +265,5 @@ def cluster_kustomization(
         timeout="15m",
         prune=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(operator, cert_manager),
+        depends_on=flux_kustomization_depends_on_many(operator, cert_manager, monitoring_crds),
     )

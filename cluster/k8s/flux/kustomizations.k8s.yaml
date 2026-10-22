@@ -865,6 +865,8 @@ spec:
       namespace: ducktape-flux
     - name: cert-manager
       namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/piraeus/cluster
   prune: false

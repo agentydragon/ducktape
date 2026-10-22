@@ -533,6 +533,7 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, piraeus_cluster_artifact, piraeus.cluster_chart),
         piraeus_operator_kustomization,
         cert_manager_kustomization,
+        monitoring_crds_kustomization,
     )
     seaweedfs_operator_artifact = artifact("seaweedfs-operator", seaweedfs_operator_release.OUTPUT_DIR)
     seaweedfs_operator_kustomization = seaweedfs_operator_release.seaweedfs_operator(

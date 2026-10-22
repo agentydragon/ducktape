@@ -179,6 +179,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert cluster_flux["spec"]["dependsOn"] == [
         {"name": "piraeus-operator", "namespace": "ducktape-flux"},
         {"name": "cert-manager", "namespace": "ducktape-flux"},
+        {"name": "monitoring-crds", "namespace": "ducktape-flux"},
     ]
 
 

@@ -77,8 +77,8 @@ joined the disposable control plane. Approximately 89 GiB remains unallocated.
 ## Runtime observations
 
 These are bounded functional checks on disposable virtual disks, not an OVH
-performance or production-readiness result. Aggregate pool exhaustion and recovery
-remain outstanding.
+performance or production-readiness result. Aggregate data-pool exhaustion/recovery was exercised on the STORAGE-only stack;
+metadata exhaustion and DRBD behavior at aggregate pool exhaustion remain unqualified.
 
 | Check                        | Observed result                                                                                                                                      |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -109,8 +109,8 @@ unlimited local-path directory; they are not byte-exact filesystem quotas.
 The empty pool's metadata usage was approximately 1.6%; formatting two ext4
 volumes and seeding all four claims used under 2% of the 30 GiB physical data
 pool. Thin allocation does not make pool exhaustion safe. Snapshots also retain
-blocks after the source deletes or discards them. Alerting, bounded exhaustion
-and recovery acceptance are still required.
+blocks after the source deletes or discards them. Protected production alerts and first-node acceptance are still required. The
+STORAGE-only aggregate data-pool exhaustion/recovery result is recorded below.
 
 The four initial snapshots exceeded the 120-second wait, then became ready
 without a controller restart. During that interval the Kubernetes API logged
@@ -157,8 +157,9 @@ Filesystem restores and the later Block restores.
 No production Talos/provider configuration has been applied. Direct authenticated `talosctl -e 51.81.245.180 -n 51.81.245.180 version`
 passed from Wyrm2 after earlier timeouts. The temporary relay Pod, ConfigMap and
 NetworkPolicy have been removed; no relay is needed. No cordon, drain, promotion, PVC reclaim change or disk write has occurred.
-Capacity alert delivery, aggregate thin-pool exhaustion/recovery, same-member Seaweed
-master restoration and the application handoff are not yet qualified.
+Capacity alert delivery, same-member Seaweed master restoration and the application
+handoff are not yet qualified. Aggregate DATA exhaustion/recovery passed on the lab
+STORAGE-only stack, with the limits recorded below.
 
 ### Rehearsal friction
 
@@ -210,6 +211,27 @@ LINSTOR reconnection. A later check found all satellites Available/Configured,
 all pools online and the three etcd members caught up without issuing a reconnect
 command. The earlier OFFLINE observation was during convergence, not a demonstrated
 persistent rejoin failure.
+
+### Aggregate data-pool exhaustion and recovery
+
+Two 20 GiB STORAGE-only Block claims were provisioned on the empty 30 GiB cp3 pool.
+Paced 64 MiB writes filled B, then A after its retained 16 MiB seed. At data 100%,
+metadata was 2.37%, device-mapper reported `out_of_data_space` and `queue_if_no_space`,
+and LINSTOR reported zero free bytes while pool state remained `Ok`. The writer was
+stopped at that boundary; no application-visible error or timeout duration was measured.
+Interrupting the local kubectl exec left one remote dd child; the exact child was
+terminated and absence of writers verified before recovery.
+
+Discarding only B returned the pool to 20 GiB free, data about 33.34% and metadata
+1.85%. A's original seed hash matched, and a new bounded 4 MiB write/readback matched.
+All three etcd members and satellites were healthy afterward. The two test claims
+remain bound and idle. [Recorded results](thin_pool_exhaustion.json) include the exact
+resource identities and hashes. This did not exercise metadata exhaustion or the
+DRBD layer's behavior at aggregate pool exhaustion.
+
+CSIStorageCapacity lagged actual physical usage: at exhaustion it still advertised
+about 9.79 GiB; immediately after recovery it temporarily advertised zero before
+converging. Use direct thin data/metadata gauges for physical headroom alerts.
 
 ### Thin-pool metrics prototype
 
