@@ -119,7 +119,7 @@ spec:
         - -disk=hdd
       limits:
         memory: 1536Mi
-      maxVolumeCounts: 400
+      maxVolumeCounts: 600
       metricsPort: 9325
       minFreeSpacePercent: 10
       nodeSelector:
