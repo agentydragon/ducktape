@@ -72,6 +72,9 @@ export function followWatch(url: string, { onOpen, onFrame, onConnection }: Watc
       await read(attempt.signal);
     } catch (reason) {
       lastError = displayableError(reason);
+    } finally {
+      // A malformed frame or a consumer error must close the old body before reconnecting.
+      attempt.abort();
     }
     if (closed) return;
     current = null;
