@@ -16,10 +16,10 @@ class ModelMetadataInfo(BaseModel):
     model_id: str
     api_shape: LLMApiShape
     input_usd_per_1m_tokens: float
-    cached_input_usd_per_1m_tokens: float
+    cached_input_usd_per_1m_tokens: float | None
     output_usd_per_1m_tokens: float
     context_window_tokens: int
-    max_output_tokens: int
+    max_output_tokens: int | None
 
 
 class ModelMetadataResponse(BaseModel):

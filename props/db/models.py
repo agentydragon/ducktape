@@ -42,6 +42,9 @@ from props.core.splits import Split
 from props.db.snapshots import LocationAnchor
 from util.sqlalchemy_types import StrEnumColumn, StringBackedStrEnumColumn
 
+# Kept in sync with LLMApiShape so constraints accept each supported API shape.
+_LLM_API_SHAPES_SQL = ", ".join(f"'{shape.value}'" for shape in LLMApiShape)
+
 # Reusable SQLAlchemy Enum type for ExampleKind
 # Use this instead of mapped_column(String) for proper Python enum conversion
 EXAMPLE_KIND_ENUM_TYPE = Enum(
@@ -944,10 +947,10 @@ class ModelMetadata(Base):
 
     model_id: Mapped[str] = mapped_column(String, primary_key=True)
     input_usd_per_1m_tokens: Mapped[float] = mapped_column(nullable=False)
-    cached_input_usd_per_1m_tokens: Mapped[float] = mapped_column(nullable=False)
+    cached_input_usd_per_1m_tokens: Mapped[float | None] = mapped_column(nullable=True)
     output_usd_per_1m_tokens: Mapped[float] = mapped_column(nullable=False)
     context_window_tokens: Mapped[int] = mapped_column(nullable=False)
-    max_output_tokens: Mapped[int] = mapped_column(nullable=False)
+    max_output_tokens: Mapped[int | None] = mapped_column(nullable=True)
     upstream_name: Mapped[str] = mapped_column(String, nullable=False)
     upstream_model: Mapped[str | None] = mapped_column(String, nullable=True)
     api_shape: Mapped[LLMApiShape] = mapped_column(
@@ -957,9 +960,7 @@ class ModelMetadata(Base):
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    __table_args__ = (
-        CheckConstraint("api_shape IN ('responses', 'chat_completions')", name="model_metadata_api_shape_check"),
-    )
+    __table_args__ = (CheckConstraint(f"api_shape IN ({_LLM_API_SHAPES_SQL})", name="model_metadata_api_shape_check"),)
 
 
 class LLMRunCost(Base):
@@ -1376,9 +1377,7 @@ class LLMRequest(Base):
     # Relationships
     agent_run: Mapped[AgentRun] = relationship(back_populates="llm_requests")
 
-    __table_args__ = (
-        CheckConstraint("api_shape IN ('responses', 'chat_completions')", name="llm_requests_api_shape_check"),
-    )
+    __table_args__ = (CheckConstraint(f"api_shape IN ({_LLM_API_SHAPES_SQL})", name="llm_requests_api_shape_check"),)
 
 
 class AgentRun(Base):
