@@ -23,6 +23,8 @@ async def _hover_notification_drawer(page: Page) -> None:
 
 
 async def test_settings_push_registration_follows_other_browser(view: VisualPage, app: AgentplaneFixture) -> None:
+    # The visual harness has a file:// origin; model a browser with no local registration.
+    await view.page.evaluate("navigator.serviceWorker.getRegistration = async () => undefined")
     await app.mount_app("/")
     page = view.page
     await _open_settings(page)
@@ -30,6 +32,10 @@ async def test_settings_push_registration_follows_other_browser(view: VisualPage
     await expect(page.get_by_text("Second browser")).to_have_count(0)
     await app.publish(Flag.PUSH_BROWSER_ADDED, "/upstream/actions/v1/operator/push/subscriptions:watch")
     await expect(page.get_by_text("Second browser")).to_be_visible()
+    await expect(
+        page.get_by_text("Browser notifications are not configured on this server", exact=False)
+    ).to_be_visible()
+    await expect(page.get_by_text("Could not load notification settings.", exact=False)).to_have_count(0)
     await view.capture(name="settings_push_live_registration")
 
 
