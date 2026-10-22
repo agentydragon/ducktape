@@ -1,3 +1,4 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = [
@@ -46,9 +47,27 @@ ts_library(
     srcs = ["ExpandableItem.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
+        ":JsonCode",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "json_code_css",
+    srcs = ["json_code.css"],
+)
+
+ts_library(
+    name = "JsonCode",
+    srcs = ["JsonCode.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        ":json_code_css",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:llmRequestUtils",
+        "//util/frontend:code_block",
     ],
 )
 
@@ -57,10 +76,10 @@ ts_library(
     srcs = ["CollapsibleSection.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
+        ":JsonCode",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:icons",
-        "//props/frontend/src/lib:llmRequestUtils",
     ],
 )
 
@@ -72,6 +91,7 @@ ts_library(
         ":CollapsibleSection",
         ":CopyButton",
         ":ExpandableItem",
+        ":JsonCode",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:llmRequestUtils",
@@ -86,6 +106,7 @@ ts_library(
         ":CollapsibleSection",
         ":CopyButton",
         ":ExpandableItem",
+        ":JsonCode",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:llmRequestUtils",
@@ -98,6 +119,7 @@ ts_library(
     tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":CopyButton",
+        ":JsonCode",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:llmRequestUtils",
@@ -111,6 +133,7 @@ ts_library(
     deps = [
         ":LLMRequestSection",
         ":LLMResponseSection",
+        ":JsonCode",
         ":RawJsonSection",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",

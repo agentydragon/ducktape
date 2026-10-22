@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { formatJson } from "../lib/llmRequestUtils";
+import JsonCode from "./JsonCode";
 
 interface Props {
   item: Record<string, unknown>;
@@ -16,9 +16,10 @@ export default function ExpandableItem({ item, alignItems, children }: Props) {
         <summary className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer list-none">
           Raw
         </summary>
-        <pre className="mt-1 bg-gray-900 text-gray-100 p-2 rounded text-xs overflow-auto max-h-40">
-          {formatJson(item)}
-        </pre>
+        <JsonCode
+          value={item}
+          className="mt-1 bg-gray-50 text-gray-900 p-2 rounded text-xs overflow-auto max-h-40 dark:bg-gray-900 dark:text-gray-100"
+        />
       </details>
     </div>
   );

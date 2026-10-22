@@ -13,7 +13,10 @@ ts_config(
 js_library(
     name = "code_block_css",
     srcs = ["code_block.css"],
-    visibility = ["//agentplane:__subpackages__"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//props/frontend:__subpackages__",
+    ],
 )
 
 ts_library(
@@ -23,7 +26,10 @@ ts_library(
         "css.d.ts",
     ],
     tsconfig = ":tsconfig",
-    visibility = ["//agentplane:__subpackages__"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//props/frontend:__subpackages__",
+    ],
     deps = [
         ":code_block_css",
         "//:node_modules/@codemirror/lang-json",

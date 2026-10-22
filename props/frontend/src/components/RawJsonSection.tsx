@@ -1,4 +1,5 @@
 import CopyButton from "./CopyButton";
+import JsonCode from "./JsonCode";
 import { formatJson } from "../lib/llmRequestUtils";
 
 interface Props {
@@ -15,7 +16,7 @@ export default function RawJsonSection({ title, value }: Props) {
         <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{title}</h4>
         <CopyButton text={json} label="Copy JSON" />
       </div>
-      <pre className="bg-gray-50 dark:bg-gray-900 p-3 rounded text-xs overflow-auto">{json}</pre>
+      <JsonCode value={value} className="bg-gray-50 dark:bg-gray-900 p-3 rounded text-xs overflow-auto" />
     </div>
   );
 }

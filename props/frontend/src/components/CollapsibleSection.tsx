@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from "../lib/icons";
-import { formatJson } from "../lib/llmRequestUtils";
+import JsonCode from "./JsonCode";
 
 interface Props {
   label: string;
@@ -14,9 +14,10 @@ export default function CollapsibleSection({ label, jsonData }: Props) {
         <ChevronRight size={12} className="block group-open:hidden" />
         {label}
       </summary>
-      <pre className="mt-1 bg-gray-900 text-gray-100 p-2 rounded text-xs overflow-auto max-h-48">
-        {formatJson(jsonData)}
-      </pre>
+      <JsonCode
+        value={jsonData}
+        className="mt-1 bg-gray-50 text-gray-900 p-2 rounded text-xs overflow-auto max-h-48 dark:bg-gray-900 dark:text-gray-100"
+      />
     </details>
   );
 }

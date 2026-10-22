@@ -1,6 +1,7 @@
 import CopyButton from "./CopyButton";
 import ExpandableItem from "./ExpandableItem";
 import CollapsibleSection from "./CollapsibleSection";
+import JsonCode from "./JsonCode";
 import { formatJson, tryParseJson, getContentText, roleBadgeClass } from "../lib/llmRequestUtils";
 
 interface Props {
@@ -55,9 +56,10 @@ export default function LLMRequestSection({ requestBody }: Props) {
                 <span className="shrink-0 px-2 py-0.5 text-xs font-medium rounded bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300">
                   ⚙ {String(item.name ?? "")}
                 </span>
-                <pre className="flex-1 min-w-0 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap overflow-auto max-h-32">
-                  {formatJson(tryParseJson(item.arguments))}
-                </pre>
+                <JsonCode
+                  value={tryParseJson(item.arguments)}
+                  className="flex-1 min-w-0 text-xs text-gray-700 dark:text-gray-300 overflow-auto max-h-32"
+                />
               </ExpandableItem>
             );
           }
@@ -68,9 +70,10 @@ export default function LLMRequestSection({ requestBody }: Props) {
                 <span className="shrink-0 px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300">
                   ↩ result
                 </span>
-                <pre className="flex-1 min-w-0 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap overflow-auto max-h-32">
-                  {formatJson(tryParseJson(item.output))}
-                </pre>
+                <JsonCode
+                  value={tryParseJson(item.output)}
+                  className="flex-1 min-w-0 text-xs text-gray-700 dark:text-gray-300 overflow-auto max-h-32"
+                />
               </ExpandableItem>
             );
           }

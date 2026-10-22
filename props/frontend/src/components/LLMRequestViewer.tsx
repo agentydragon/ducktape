@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight } from "../lib/icons";
 import type { LLMRequestInfo } from "../lib/api/client";
 import LLMRequestSection from "./LLMRequestSection";
 import LLMResponseSection from "./LLMResponseSection";
+import JsonCode from "./JsonCode";
 import RawJsonSection from "./RawJsonSection";
 
 interface Props {
@@ -51,9 +52,10 @@ export default function LLMRequestViewer({ requests, initialExpanded = [] }: Pro
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-red-600 dark:text-red-400 mb-2">
                   Error Response
                 </h4>
-                <pre className="bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300 p-3 rounded text-xs overflow-auto">
-                  {JSON.stringify(req.response_error_body, null, 2)}
-                </pre>
+                <JsonCode
+                  value={req.response_error_body}
+                  className="bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300 p-3 rounded text-xs overflow-auto"
+                />
               </div>
             ) : null}
             {req.error ? (
