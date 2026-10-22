@@ -128,7 +128,7 @@ cluster/
 ├── k8s/           # Flux dirs with a hand-written file; config only
 │   ├── <service>/   # flat (one Flux Kustomization) or grouped (subdir per Kustomization)
 │   └── flux/flux-system/  # Flux controllers (auto-generated)
-├── parked/        # suspended/decommissioned third-party apps, nothing applies them
+├── parked/        # retained third-party app manifests; usually suspended, with explicit cleanup exceptions
 ├── rotators/      # credential-rotation CronJob image source
 ├── provisioners/  # reconciler CronJob/Job image source
 ├── proxies/       # long-running proxy image source (loki-read-proxy)

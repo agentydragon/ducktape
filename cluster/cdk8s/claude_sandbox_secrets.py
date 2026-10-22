@@ -7,11 +7,15 @@ hand-written.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
+    ExternalSecretSpecTargetTemplate,
+    ExternalSecretSpecTargetTemplateMetadata,
 )
 
 from cluster.cdk8s import external_creds
@@ -19,6 +23,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.reflector import mirror_annotations
 
 NAME = "claude-sandbox-secrets"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/claude-sandbox-secrets"
@@ -29,7 +34,12 @@ _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
 
 
 def _external_creds_secret(
-    chart: Chart, name: str, *, key: str, deletion_policy: ExternalSecretSpecTargetDeletionPolicy | None
+    chart: Chart,
+    name: str,
+    *,
+    key: str,
+    deletion_policy: ExternalSecretSpecTargetDeletionPolicy | None,
+    mirror_namespaces: Sequence[str] = (),
 ) -> None:
     ExternalSecret(
         chart,
@@ -43,6 +53,13 @@ def _external_creds_secret(
         # Secret behind, which then needs explicit cleanup.
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
         deletion_policy=deletion_policy,
+        template=(
+            ExternalSecretSpecTargetTemplate(
+                metadata=ExternalSecretSpecTargetTemplateMetadata(annotations=mirror_annotations(mirror_namespaces))
+            )
+            if mirror_namespaces
+            else None
+        ),
     )
 
 
@@ -54,7 +71,11 @@ def chart(app: App) -> Chart:
     )
     _external_creds_secret(chart, _TELEGRAM_BOT_TOKEN, key="token", deletion_policy=None)
     _external_creds_secret(
-        chart, _BUILDBUDDY_API_KEY, key="api-key", deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN
+        chart,
+        _BUILDBUDDY_API_KEY,
+        key="api-key",
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        mirror_namespaces=("codex-pod",),
     )
     # tf/gitops/forgejo-claude's account, which agent sessions fetch on demand
     # (devinfra/claude/claude_hook/creds_banner.sh).

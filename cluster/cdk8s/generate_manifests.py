@@ -184,7 +184,7 @@ from cluster.cdk8s.litellm import (
     proxy as litellm_proxy,
     secrets as litellm_secrets,
 )
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT, PARKED_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
 from cluster.cdk8s.matrix import matrix, user_provisioner as matrix_user_provisioner
 from cluster.cdk8s.monitoring import (
     alloy,
@@ -220,7 +220,11 @@ from cluster.cdk8s.plaid_mcp import (
     pgweb as plaid_mcp_pgweb,
     spend as plaid_mcp_spend,
 )
-from cluster.cdk8s.public_coder import app as public_coder_app, backup as public_coder_backup
+from cluster.cdk8s.public_coder import (
+    app as public_coder_app,
+    backup as public_coder_backup,
+    credential_cleanup as public_coder_credential_cleanup,
+)
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
@@ -907,7 +911,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     claude_sandbox_secrets_artifact = artifact("claude-sandbox-secrets", claude_sandbox_secrets.OUTPUT_DIR)
-    claude_sandbox_secrets.claude_sandbox_secrets(
+    claude_sandbox_secrets_kustomization = claude_sandbox_secrets.claude_sandbox_secrets(
         flux_chart,
         write_directory(
             root,
@@ -1469,7 +1473,7 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
     )
     aiquota_artifact = artifact("aiquota", aiquota.OUTPUT_DIR)
-    aiquota.aiquota(
+    aiquota_kustomization = aiquota.aiquota(
         flux_chart,
         write_directory(
             root,
@@ -1624,12 +1628,36 @@ def generate_manifests(root: Path) -> None:
             root, public_coder_agent_access_artifact, public_coder_app.namespace_chart, public_coder_app.rbac_chart
         ),
     )
+    # The old devbox Kustomization is Orphan today. Keep its identity but point it at an empty
+    # source so Flux prunes the VM, its disposable cache PVC, and its SSH key resources.
+    public_coder_agent_devbox_artifact = artifact(
+        "public-coder-agent-devbox", f"{GENERATED_ROOT}/agents/public-coder-agent/devbox-retirement"
+    )
+    public_coder_agent_devbox_kustomization = agents_flux_kustomizations.public_coder_agent_devbox_cleanup(
+        flux_chart, write_directory(root, public_coder_agent_devbox_artifact)
+    )
     public_coder_agent_app_artifact = artifact("public-coder-agent-app", public_coder_app.APP_DIR)
-    agents_flux_kustomizations.public_coder_agent_app(
+    public_coder_agent_app_kustomization = agents_flux_kustomizations.public_coder_agent_app(
         flux_chart,
         public_coder_agent_app_artifact,
         external_secrets_operator_kustomization,
         agentplane_staging_kustomization,
+    )
+    public_coder_agent_secret_cleanup_artifact = artifact(
+        "public-coder-agent-secret-cleanup", public_coder_credential_cleanup.OUTPUT_DIR
+    )
+    write_directory(root, public_coder_agent_secret_cleanup_artifact, public_coder_credential_cleanup.chart)
+    agents_flux_kustomizations.public_coder_agent_secret_cleanup(
+        flux_chart,
+        public_coder_agent_secret_cleanup_artifact,
+        public_coder_agent_access_kustomization,
+        public_coder_agent_app_kustomization,
+        public_coder_agent_devbox_kustomization,
+        claude_sandbox_secrets_kustomization,
+        authentik_kustomization,
+        clickhouse_kustomization,
+        matrix_kustomization,
+        aiquota_kustomization,
     )
     namespace_dependencies = {
         "activitywatch": activitywatch_kustomization,
@@ -1677,7 +1705,7 @@ def generate_manifests(root: Path) -> None:
     )
     agent_namespace_rbac.write_manifests(root)
     agent_namespace_rbac.add_flux_kustomizations(flux_chart, claude_rbac_kustomization)
-    # Every artifact built above except the parked nodes': those Kustomizations are suspended.
+    # The retired devbox artifact is intentionally empty so its existing inventory can be pruned.
     write_artifact_generators(
         root,
         ducktape=[
@@ -1745,6 +1773,8 @@ def generate_manifests(root: Path) -> None:
             loki_read_proxy_artifact,
             plaid_mcp_artifact,
             public_coder_agent_access_artifact,
+            public_coder_agent_devbox_artifact,
+            public_coder_agent_secret_cleanup_artifact,
             activitywatch_artifact,
             airlock_artifact,
             alloy_otlp_bearer_artifact,

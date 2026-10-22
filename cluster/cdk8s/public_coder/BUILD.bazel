@@ -42,9 +42,20 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:restic_backup",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/volsync:replicationsource",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "credential_cleanup",
+    srcs = ["credential_cleanup.py"],
+    deps = [
+        "//cluster/cdk8s:manifest_roots",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )
 

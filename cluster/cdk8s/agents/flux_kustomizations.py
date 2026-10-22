@@ -130,9 +130,9 @@ def public_coder_agent_app(
         artifact,
         wait=None,
         annotations={"ducktape.org/parked": "true"},
-        # The OpenClaw instance is parked; its PVCs and their data stay in the namespace that
-        # public-coder-agent-access owns. Unsuspend to revive it.
-        suspend=True,
+        # Keep this reconciler active so it prunes the retired proxy and app credentials. The
+        # OpenClaw Deployment remains at zero replicas and its PVCs stay in the desired state.
+        suspend=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         decryption=SOPS_DECRYPTION,
         timeout="5m",
@@ -147,6 +147,35 @@ def public_coder_agent_app(
             "OpenClaw coder agent application; its state and retained SSH audit recordings stay "
             "in the parked namespace. Backups reconcile separately."
         ),
+    )
+
+
+def public_coder_agent_devbox_cleanup(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+    """Keep the retired devbox Kustomization long enough to prune its old inventory."""
+    return flux_kustomization(
+        chart,
+        "public-coder-agent-devbox",
+        artifact,
+        wait=None,
+        suspend=False,
+        deletion_policy=KustomizationSpecDeletionPolicy.DELETE,
+        timeout="5m",
+        description="Prunes the retired public-coder KubeVirt devbox and its disposable cache and SSH keys.",
+    )
+
+
+def public_coder_agent_secret_cleanup(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, *dependencies: Kustomization
+) -> Kustomization:
+    """Delete orphaned credentials only after every GitOps owner has retired its copy."""
+    return flux_kustomization(
+        chart,
+        "public-coder-agent-secret-cleanup",
+        artifact,
+        timeout="5m",
+        deletion_policy=KustomizationSpecDeletionPolicy.DELETE,
+        depends_on=flux_kustomization_depends_on_many(*dependencies),
+        description="One-shot deletion of retired Public Coder credential copies and private keys.",
     )
 
 

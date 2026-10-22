@@ -11,16 +11,21 @@ The UI is unavailable while paused.
 Keep the namespace and the existing Flux owners. OpenClaw state, diagnostics, and
 the old SSH session recordings PVC remain declared with unchanged names/specs. The
 VolSync backup's ReplicationSource is paused (`spec.paused`); its Restic repository
-and controller-owned cache PVC are kept. The `public-coder-agent-{app,backup}` Flux
-owners are suspended and annotated `ducktape.org/parked`, and their manifests live
-in this directory. The `public-coder-agent-access` owner
-(`cluster/generated/agents/public-coder-agent/access/`) stays active: it owns the
-Namespace and Roles that Haku and Agentplane Sandboxes still read. The devbox cache
-PVC was explicitly disposed of during retirement; do not recreate it.
+and controller-owned cache PVC are kept. The `public-coder-agent-app` Flux owner
+remains active and annotated `ducktape.org/parked`: it keeps the Deployment at zero
+replicas and prunes retired proxy resources while preserving the declared PVCs. The
+backup owner stays suspended. The `public-coder-agent-devbox` owner temporarily points
+to an empty cleanup artifact so Flux prunes its old inventory. The
+`public-coder-agent-access` owner (`cluster/generated/agents/public-coder-agent/access/`)
+stays active: it owns the Namespace and Roles that Haku and Agentplane Sandboxes still
+read. A separate cleanup Kustomization waits for the credential sources to reconcile,
+then deletes the retired, unowned Secret copies and private keys using a Role restricted
+to their exact names. The devbox cache PVC was explicitly disposed of during retirement;
+do not recreate it.
 
-To resume, unsuspend the app and backup Flux owners (move the directory back under
-`cluster/k8s` and drop the parked annotation, per `cluster/AGENTS.md`), restore the
-OpenClaw replica count, and unpause the backup. The OpenClaw image workflow and smoke
+To resume, move the app directory back under `cluster/k8s` and drop the parked
+annotation, per `cluster/AGENTS.md`; restore the OpenClaw replica count and
+unsuspend the backup. The OpenClaw image workflow and smoke
 script are parked in `cluster/parked/public-coder-agent/ci/`; move them back and publish
 a fresh image before resuming. Verify model budgets and credentials first; do not
 reset retained PVCs or change the embedding identity.

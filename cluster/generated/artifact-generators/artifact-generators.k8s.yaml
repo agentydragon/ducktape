@@ -350,6 +350,16 @@ spec:
       name: public-coder-agent-access
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/agents/public-coder-agent/devbox-retirement/**"
+          to: "@artifact/cluster/generated/agents/public-coder-agent/devbox-retirement/"
+      name: public-coder-agent-devbox
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/agents/public-coder-agent/secret-cleanup/**"
+          to: "@artifact/cluster/generated/agents/public-coder-agent/secret-cleanup/"
+      name: public-coder-agent-secret-cleanup
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/activitywatch/**"
           to: "@artifact/cluster/k8s/activitywatch/"
       name: activitywatch

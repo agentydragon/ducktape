@@ -5,6 +5,7 @@ SOPS-encrypted Restic password beside the output stays hand-written.
 from __future__ import annotations
 
 from cdk8s import App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecResticMoverAffinity,
     ReplicationSourceSpecResticMoverAffinityNodeAffinity,
@@ -86,6 +87,7 @@ def public_coder_agent_backup(
         annotations={"ducktape.org/parked": "true"},
         # Parked: OpenClaw is off; PVCs and data stay (cluster/parked/public-coder-agent/README.md).
         suspend=True,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(seaweedfs_operator, external_secrets_operator, volsync),
         description=(
