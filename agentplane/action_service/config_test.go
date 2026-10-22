@@ -329,3 +329,19 @@ func TestInvalidMCPWaitsAreRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestTheDeployedReaderAccountsJSONEnvironmentIsRead(t *testing.T) {
+	c, err := loadTestConfig(t, requiredFile, settingPrefix+`READER_ACCOUNTS=[{"namespace":"test-agentplane","name":"test-notifications"}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.ReaderAccounts, []auth.Account{{Namespace: "test-agentplane", Name: "test-notifications"}}) {
+		t.Fatalf("readers: %v", c.ReaderAccounts)
+	}
+	for _, raw := range []string{`[{"namespace":"test"}]`, `[{"namespace":"test","name":"reader","unexpected":"never-print-this"}]`, `[] []`, `null`} {
+		_, err := loadTestConfig(t, requiredFile, settingPrefix+"READER_ACCOUNTS="+raw)
+		if err == nil || strings.Contains(err.Error(), "never-print-this") {
+			t.Fatalf("invalid readers: %v", err)
+		}
+	}
+}

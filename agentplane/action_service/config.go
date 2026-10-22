@@ -162,6 +162,19 @@ func loadConfig() (config, error) {
 		settings.Set("oauth", oauth)
 		setLeaves("oauth", oauth)
 	}
+	// The deployed reader allowlist is a JSON environment value, as Pydantic reads it.
+	if raw := os.Getenv(settingPrefix + "READER_ACCOUNTS"); raw != "" {
+		var accounts []auth.Account
+		decoder := json.NewDecoder(strings.NewReader(raw))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&accounts); err != nil || accounts == nil {
+			return config{}, errors.New("reader_accounts must be a JSON array of ServiceAccounts")
+		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			return config{}, errors.New("reader_accounts must contain one JSON array")
+		}
+		settings.Set("reader_accounts", accounts)
+	}
 	// The errors name no value: a setting can be a Secret.
 	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
 		return config{}, errors.New("invalid Action Service settings")
@@ -184,6 +197,11 @@ func (c *config) validate() error {
 	} {
 		if required.value == "" {
 			return errors.New(required.name + " is required")
+		}
+	}
+	for _, account := range c.ReaderAccounts {
+		if err := new(auth.Account).UnmarshalText([]byte(account.Namespace + "/" + account.Name)); err != nil {
+			return errors.New("reader_accounts requires namespace and name")
 		}
 	}
 	if c.Port < 1 || c.Port > 65535 {
