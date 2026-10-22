@@ -87,7 +87,7 @@ py_library(
         "//x/wt/shared:protocol",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//typer_slim",
+        "@pypi//typer",
     ],
 )
 

@@ -1,5 +1,3 @@
-# This tree deliberately uses the slim dist; the manifest maps `typer` to the fat one.
-# gazelle:resolve py typer @pypi//typer_slim
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
@@ -17,7 +15,7 @@ py_library(
         "//x/wt/shared:constants",
         "@pypi//click",
         "@pypi//colorama",
-        "@pypi//typer_slim",
+        "@pypi//typer",
     ],
 )
 

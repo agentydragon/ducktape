@@ -91,7 +91,7 @@ py_test(
         "//x/wt/testing:asserts",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//typer_slim",
+        "@pypi//typer",
     ],
 )
 

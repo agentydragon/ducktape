@@ -6,7 +6,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//gmail_archiver:gmail_client",
-        "@pypi//typer_slim",
+        "@pypi//typer",
     ],
 )
 
@@ -27,7 +27,7 @@ py_library(
         "//gmail_archiver:plan_display",
         "@pypi//pyyaml",
         "@pypi//rich",
-        "@pypi//typer_slim",
+        "@pypi//typer",
     ],
 )
 
@@ -38,6 +38,6 @@ py_library(
     deps = [
         ":common",
         "@pypi//rich",
-        "@pypi//typer_slim",
+        "@pypi//typer",
     ],
 )

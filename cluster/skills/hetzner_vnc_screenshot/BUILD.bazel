@@ -1,5 +1,3 @@
-# This tree deliberately uses the slim dist; the manifest maps `typer` to the fat one.
-# gazelle:resolve py typer @pypi//typer_slim
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load("//skills:defs.bzl", "skill_package")
 
@@ -11,7 +9,7 @@ py_library(
         "@pypi//asyncvnc",
         "@pypi//hcloud",
         "@pypi//pillow",
-        "@pypi//typer_slim",
+        "@pypi//typer",
         "@pypi//websockets",
     ],
 )

@@ -1,5 +1,3 @@
-# This tree deliberately uses the slim dist; the manifest maps `typer` to the fat one.
-# gazelle:resolve py typer @pypi//typer_slim
 """Shared utility libraries."""
 
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
@@ -82,7 +80,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//structlog",
-        "@pypi//typer_slim",
+        "@pypi//typer",
     ],
 )
 
