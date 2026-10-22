@@ -3,7 +3,9 @@
 { pkgs, packages }:
 let
   registry = builtins.fromJSON (builtins.readFile ../../devinfra/ci/artifact_targets.json);
-  releases = pkgs.lib.filterAttrs (_: release: release.nixPackage) registry.releases;
+  releases = pkgs.lib.filterAttrs (
+    name: release: release.nixPackage && builtins.hasAttr name packages
+  ) registry.releases;
 in
 pkgs.lib.mapAttrs' (
   name: _:

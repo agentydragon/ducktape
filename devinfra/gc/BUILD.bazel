@@ -1,3 +1,4 @@
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
@@ -96,6 +97,31 @@ py_binary(
     main_module = "devinfra.gc.workspace_gc",
     visibility = ["//visibility:public"],
     deps = [":workspace_gc"],
+)
+
+py_package(
+    name = "workspace_gc_pkg",
+    packages = ["devinfra.gc"],
+    deps = [":workspace_gc"],
+)
+
+py_wheel(
+    name = "workspace_gc_wheel",
+    distribution = "workspace_gc",
+    entry_points = {"console_scripts": ["workspace-gc = devinfra.gc.workspace_gc:main"]},
+    python_requires = ">=3.14",
+    # SYNC: propagatedBuildInputs in nix/packages/default.nix (workspace-gc).
+    requires = [
+        "httpx",
+        "humanize>=4.0.0",
+        "pygit2>=1.14",
+        "rich",
+        "tabulate>=0.9",
+        "typer",
+    ],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":workspace_gc_pkg"],
 )
 
 py_test(

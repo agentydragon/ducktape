@@ -34,7 +34,9 @@ pins:
     release:  release group this pin ships in
 ```
 
-Every pin corresponds 1:1 to a same-named entry in `nix/artifact-pins.json`.
+Every published pin corresponds 1:1 to a same-named entry in `nix/artifact-pins.json`. A new
+release can be listed here before its first publish; PR-time source overrides build and check the
+new package, then `sync-pins.yml` adds its pin after the release is reachable from `devel`.
 
 ```text
 releases:

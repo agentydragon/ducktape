@@ -5,6 +5,31 @@
       "output": "bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl",
       "release": "ducktape"
     },
+    "workspace-gc": {
+      "target": "//devinfra/gc:workspace_gc_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/gc/workspace_gc-0.1.0-py3-none-any.whl",
+      "release": "workspace-gc"
+    },
+    "difftree": {
+      "target": "//difftree:difftree_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/difftree/difftree-0.1.0-py3-none-any.whl",
+      "release": "difftree"
+    },
+    "gmail-archiver": {
+      "target": "//gmail_archiver:gmail_archiver_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/gmail_archiver/gmail_archiver-0.1.0-py3-none-any.whl",
+      "release": "gmail-archiver"
+    },
+    "vm-interact": {
+      "target": "//cluster/skills/proxmox_vm:vm_interact_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/cluster/skills/proxmox_vm/vm_interact-0.1.0-py3-none-any.whl",
+      "release": "vm-interact"
+    },
+    "ws": {
+      "target": "//devinfra/ws:ws_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/ws/ducktape_ws-0.1.0-py3-none-any.whl",
+      "release": "ws"
+    },
     "bbr": {
       "target": "//:bbr_wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl",
@@ -99,6 +124,25 @@
   "releases": {
     "ducktape": {
       "tests": "//agent_core/... //difftree/... //gmail_api/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/... //devinfra/gc/...",
+      "nixPackage": true
+    },
+    "workspace-gc": {
+      "tests": "//devinfra/gc/...",
+      "nixPackage": true
+    },
+    "difftree": {
+      "tests": "//difftree/...",
+      "nixPackage": true
+    },
+    "gmail-archiver": {
+      "tests": "//gmail_api/... //gmail_archiver/...",
+      "nixPackage": true
+    },
+    "vm-interact": {
+      "nixPackage": true
+    },
+    "ws": {
+      "tests": "//devinfra/ws/...",
       "nixPackage": true
     },
     "bbr": {

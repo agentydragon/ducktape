@@ -1,5 +1,6 @@
 # This tree deliberately uses the slim dist; the manifest maps `typer` to the fat one.
 # gazelle:resolve py typer @pypi//typer_slim
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load("//skills:defs.bzl", "skill_package")
 
@@ -18,6 +19,28 @@ py_binary(
     name = "vm_interact_bin",
     main_module = "cluster.skills.proxmox_vm.vm_interact",
     deps = [":vm_interact"],
+)
+
+py_package(
+    name = "vm_interact_pkg",
+    packages = ["cluster.skills.proxmox_vm"],
+    deps = [":vm_interact"],
+)
+
+py_wheel(
+    name = "vm_interact_wheel",
+    distribution = "vm_interact",
+    entry_points = {"console_scripts": ["vm-interact = cluster.skills.proxmox_vm.vm_interact:app"]},
+    python_requires = ">=3.14",
+    # SYNC: propagatedBuildInputs in nix/packages/default.nix (vm-interact).
+    requires = [
+        "pillow>=10.0.0",
+        "platformdirs",
+        "typer",
+    ],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":vm_interact_pkg"],
 )
 
 skill_package(

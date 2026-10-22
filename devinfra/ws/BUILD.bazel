@@ -1,3 +1,4 @@
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
@@ -14,6 +15,27 @@ py_binary(
     name = "ws",
     main_module = "devinfra.ws.cli",
     deps = [":cli"],
+)
+
+py_package(
+    name = "ws_pkg",
+    packages = ["devinfra.ws"],
+    deps = [":cli"],
+)
+
+py_wheel(
+    name = "ws_wheel",
+    distribution = "ducktape_ws",
+    entry_points = {"console_scripts": ["ws = devinfra.ws.cli:main"]},
+    python_requires = ">=3.14",
+    # SYNC: propagatedBuildInputs in nix/packages/default.nix (ws).
+    requires = [
+        "ducktape-util",
+        "typer",
+    ],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":ws_pkg"],
 )
 
 py_test(
