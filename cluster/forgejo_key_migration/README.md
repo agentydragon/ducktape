@@ -1,5 +1,9 @@
 # Forgejo encryption-key cutover
 
+The [2026-10-22 rehearsal](../debug/2026_10_22_forgejo_key_rehearsal.md) passed
+forward/reverse migration and native Forgejo reads on both replicas. Production
+activation remains pending.
+
 One-off migration for Forgejo **15.0.8**, database schema **305**. `check` uses a
 read-only, repeatable-read transaction. `apply` locks the relevant tables,
 authenticates every old ciphertext, re-encrypts it, verifies the stored result,
