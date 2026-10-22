@@ -863,76 +863,78 @@ export function TranscriptView({
   const transcript = useMemo(() => foldSessionEvents(events), [events]);
   const rows = useMemo(() => buildEventTimeline(groupToolActivity(transcript), events), [transcript, events]);
 
-  <Stack gap="md" aria-busy={loadingEvents} style={{ height: "100%", minHeight: 0 }}>
-    <Group justify="space-between" align="flex-start" gap="xs">
-      <Stack gap={4}>
-        <Title order={4}>{selectedSession.title || "Untitled session"}</Title>
-        <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
-          {sessionSubtitle(selectedSession)}
-        </Text>
-      </Stack>
-      <Group gap={4}>
-        <Badge variant="light" color={statusColor(selectedSession.status)}>
-          {selectedSession.status}
-        </Badge>
-        {isRoutineSession(selectedSession) && (
-          <Badge variant="light" color="violet">
-            Routine run
-          </Badge>
-        )}
-        <Button
-          variant={showRawEvents ? "light" : "subtle"}
-          size="compact-xs"
-          aria-label={showRawEvents ? "Show folded transcript" : "Show raw event stream"}
-          aria-pressed={showRawEvents}
-          onClick={onToggleRawEvents}
-        >
-          {showRawEvents ? "Transcript" : "Events"}
-        </Button>
-      </Group>
-    </Group>
-
-    {eventError !== null && (
-      <Alert color="red" title="Could not load transcript">
-        {eventError}
-      </Alert>
-    )}
-
-    {loadingEvents ? (
-      <Center h={180}>
-        <Loader size="sm" aria-label="Loading transcript" />
-      </Center>
-    ) : events.length === 0 ? (
-      <Center h={180}>
-        <Text c="dimmed" ta="center">
-          No events are stored for this session yet.
-        </Text>
-      </Center>
-    ) : (
-      <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" viewportRef={setEventViewport}>
-        <Stack gap={4} pr="sm">
-          {hasMoreEvents && (
-            <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
-              Load older events
-            </Button>
-          )}
-          {showRawEvents ? (
-            <EventInspector key={selectedId} events={events} />
-          ) : (
-            <ToolDisclosureProvider key={selectedId}>
-              {rows.map((row) =>
-                row.kind === "event-strip" ? (
-                  <EventTimelineStrip key={row.id} events={row.events} />
-                ) : row.kind === "tool-group" ? (
-                  <ToolActivityGroup key={row.id} item={row} session={selectedSession} />
-                ) : (
-                  <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />
-                )
-              )}
-            </ToolDisclosureProvider>
-          )}
+  return (
+    <Stack gap="md" aria-busy={loadingEvents} style={{ height: "100%", minHeight: 0 }}>
+      <Group justify="space-between" align="flex-start" gap="xs">
+        <Stack gap={4}>
+          <Title order={4}>{selectedSession.title || "Untitled session"}</Title>
+          <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
+            {sessionSubtitle(selectedSession)}
+          </Text>
         </Stack>
-      </ScrollArea>
-    )}
-  </Stack>;
+        <Group gap={4}>
+          <Badge variant="light" color={statusColor(selectedSession.status)}>
+            {selectedSession.status}
+          </Badge>
+          {isRoutineSession(selectedSession) && (
+            <Badge variant="light" color="violet">
+              Routine run
+            </Badge>
+          )}
+          <Button
+            variant={showRawEvents ? "light" : "subtle"}
+            size="compact-xs"
+            aria-label={showRawEvents ? "Show folded transcript" : "Show raw event stream"}
+            aria-pressed={showRawEvents}
+            onClick={onToggleRawEvents}
+          >
+            {showRawEvents ? "Transcript" : "Events"}
+          </Button>
+        </Group>
+      </Group>
+
+      {eventError !== null && (
+        <Alert color="red" title="Could not load transcript">
+          {eventError}
+        </Alert>
+      )}
+
+      {loadingEvents ? (
+        <Center h={180}>
+          <Loader size="sm" aria-label="Loading transcript" />
+        </Center>
+      ) : events.length === 0 ? (
+        <Center h={180}>
+          <Text c="dimmed" ta="center">
+            No events are stored for this session yet.
+          </Text>
+        </Center>
+      ) : (
+        <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" viewportRef={setEventViewport}>
+          <Stack gap={4} pr="sm">
+            {hasMoreEvents && (
+              <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
+                Load older events
+              </Button>
+            )}
+            {showRawEvents ? (
+              <EventInspector key={selectedId} events={events} />
+            ) : (
+              <ToolDisclosureProvider key={selectedId}>
+                {rows.map((row) =>
+                  row.kind === "event-strip" ? (
+                    <EventTimelineStrip key={row.id} events={row.events} />
+                  ) : row.kind === "tool-group" ? (
+                    <ToolActivityGroup key={row.id} item={row} session={selectedSession} />
+                  ) : (
+                    <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />
+                  )
+                )}
+              </ToolDisclosureProvider>
+            )}
+          </Stack>
+        </ScrollArea>
+      )}
+    </Stack>
+  );
 }

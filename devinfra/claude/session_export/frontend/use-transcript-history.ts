@@ -15,6 +15,18 @@ type TranscriptScrollIntent =
       scrollHeight: number;
     };
 
+type TranscriptHistory = {
+  events: SessionEvent[];
+  eventError: string | null;
+  loadingEvents: boolean;
+  nextEventCursor: string | null;
+  hasMoreEvents: boolean;
+  loadingMoreEvents: boolean;
+  setEventViewport: (viewport: HTMLDivElement | null) => void;
+  loadMoreEvents: () => Promise<void>;
+  refreshSelectedEvents: (sessionId: string | null) => void;
+};
+
 function sequenceOrder(left: SessionEvent, right: SessionEvent): number {
   const leftSequence = BigInt(left.sequence_num);
   const rightSequence = BigInt(right.sequence_num);
@@ -35,7 +47,7 @@ function mergeSessionEvents(previous: SessionEvent[], incoming: SessionEvent[]):
   return changed ? [...bySequence.values()].sort(sequenceOrder) : previous;
 }
 
-export function useTranscriptHistory(selectedId: string | null) {
+export function useTranscriptHistory(selectedId: string | null): TranscriptHistory {
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const loadedSession = useRef<string | null>(null);
   const loadedEventsSession = useRef<string | null>(null);

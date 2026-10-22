@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { Alert, Badge, Button, Center, Drawer, Group, Paper, Stack, Text } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 
-import type { SessionSummary } from "./api";
 import { SessionList } from "./session-list";
 import { sessionMatchesFilter, type StatusFilter } from "./session-info";
 import { TranscriptView } from "./transcript-view";

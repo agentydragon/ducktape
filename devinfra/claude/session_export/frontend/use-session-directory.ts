@@ -7,6 +7,17 @@ import { mergeSessionPage, sessionMatchesFilter, sortSessions, type StatusFilter
 const ALL_STATUSES = ["active", "paused", "archived"];
 type WatchStatus = "connecting" | "connected" | "reconnecting";
 
+type SessionDirectory = {
+  sessions: SessionSummary[];
+  loadingSessions: boolean;
+  nextSessionCursor: string | null;
+  loadingMoreSessions: boolean;
+  sessionError: string | null;
+  resumeToken: string | null;
+  watchStatus: WatchStatus;
+  loadMoreSessions: () => Promise<void>;
+};
+
 export function useSessionDirectory({
   filter,
   selectedId,
@@ -17,7 +28,7 @@ export function useSessionDirectory({
   selectedId: string | null;
   setSelectedId: Dispatch<SetStateAction<string | null>>;
   refreshSelectedEvents: (sessionId: string | null) => void;
-}) {
+}): SessionDirectory {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
