@@ -101,7 +101,6 @@ py_library(
         "//util:kubernetes",
         "//util/testing:undeclared_outputs",
         "@pypi//asyncpg",
-        "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
@@ -131,6 +130,7 @@ py_library(
     name = "http2_proxy",
     srcs = ["http2_proxy.py"],
     deps = [
+        "//agentplane/app/frontend/serving:image",
         "//third_party/containers:nginx_unprivileged",
         "//util:net",
         "//util:oci",

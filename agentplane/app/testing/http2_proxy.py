@@ -6,7 +6,7 @@ import hashlib
 import ipaddress
 import ssl
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+from agentplane.app.frontend.serving.image import IMAGE as STATIC_IMAGE
 from third_party.containers import nginx_unprivileged
 from util.net import pick_free_port
 from util.oci import load_oci_image
@@ -76,53 +77,76 @@ class Ingress:
 @asynccontextmanager
 async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIterator[Ingress]:
     await asyncio.to_thread(load_oci_image, nginx_unprivileged.IMAGE)
-    port = pick_free_port()
-    (certificate.directory / "nginx.conf").write_text(
-        dedent(f"""\
-            pid /tmp/test-nginx.pid;
-            error_log /dev/stderr info;
-            # A reload's old workers close what they still hold at once.
-            worker_shutdown_timeout 10ms;
-            events {{ worker_connections 1024; }}
-            http {{
-                access_log /dev/stdout;
-                client_body_temp_path /tmp/client_temp;
-                proxy_temp_path /tmp/proxy_temp;
-                server {{
-                    listen 127.0.0.1:{port} ssl;
-                    http2 on;
-                    ssl_certificate /test/certificate.pem;
-                    ssl_certificate_key /test/key.pem;
-                    location / {{
-                        proxy_pass {upstream};
-                        proxy_http_version 1.1;
-                        proxy_set_header Host $http_host;
-                        proxy_set_header Connection "";
-                        proxy_buffering off;
-                        proxy_read_timeout 75s;
-                    }}
-                }}
-            }}
-            """)
-    )
-    container = (
-        LoggedContainer(nginx_unprivileged.IMAGE.tag, test_name="conversation-http2-ingress")
-        .with_kwargs(network_mode="host")
-        .with_volume_mapping(str(certificate.directory), "/test", mode="ro")
-        .with_command("nginx -c /test/nginx.conf -g 'daemon off;'")
-    )
-    url = f"https://127.0.0.1:{port}"
-    context = ssl.create_default_context(cafile=str(certificate.directory / "certificate.pem"))
-    with container:
-        async with asyncio.timeout(30), httpx.AsyncClient(verify=context, http2=True, timeout=2) as client:
+    await asyncio.to_thread(load_oci_image, STATIC_IMAGE)
+    with ExitStack() as stack:
+        static_container = stack.enter_context(
+            LoggedContainer(STATIC_IMAGE.tag, test_name="conversation-static-frontend").with_exposed_ports(8080)
+        )
+        static_upstream = f"http://{static_container.get_container_host_ip()}:{static_container.get_exposed_port(8080)}"
+        async with asyncio.timeout(30), httpx.AsyncClient(timeout=2) as client:
             while True:
                 try:
-                    response = await client.get(f"{url}/models")
-                # A slow first answer is not a failed start: the 30 s budget decides that.
+                    response = await client.get(static_upstream)
                 except httpx.ConnectError, httpx.TimeoutException:
                     await asyncio.sleep(0.1)
                     continue
                 response.raise_for_status()
-                assert response.http_version == "HTTP/2"
                 break
-        yield Ingress(url, container)
+        # A separate nginx serves the actual built frontend. The TLS ingress supplies the
+        # browser's single origin while API traffic still reaches the real app process.
+        port = pick_free_port()
+        (certificate.directory / "nginx.conf").write_text(
+            dedent(f"""\
+                pid /tmp/test-nginx.pid;
+                error_log /dev/stderr info;
+                # A reload's old workers close what they still hold at once.
+                worker_shutdown_timeout 10ms;
+                events {{ worker_connections 1024; }}
+                http {{
+                    access_log /dev/stdout;
+                    client_body_temp_path /tmp/client_temp;
+                    proxy_temp_path /tmp/proxy_temp;
+                    server {{
+                        listen 127.0.0.1:{port} ssl;
+                        http2 on;
+                        ssl_certificate /test/certificate.pem;
+                        ssl_certificate_key /test/key.pem;
+                        location = / {{ proxy_pass {static_upstream}; }}
+                        location = /index.html {{ proxy_pass {static_upstream}; }}
+                        location = /main.js {{ proxy_pass {static_upstream}; }}
+                        location = /main.css {{ proxy_pass {static_upstream}; }}
+                        location = /sw.js {{ proxy_pass {static_upstream}; }}
+                        location = /favicon.svg {{ proxy_pass {static_upstream}; }}
+                        location / {{
+                            proxy_pass {upstream};
+                            proxy_http_version 1.1;
+                            proxy_set_header Host $http_host;
+                            proxy_set_header Connection "";
+                            proxy_buffering off;
+                            proxy_read_timeout 75s;
+                        }}
+                    }}
+                }}
+                """)
+        )
+        container = (
+            LoggedContainer(nginx_unprivileged.IMAGE.tag, test_name="conversation-http2-ingress")
+            .with_kwargs(network_mode="host")
+            .with_volume_mapping(str(certificate.directory), "/test", mode="ro")
+            .with_command("nginx -c /test/nginx.conf -g 'daemon off;'")
+        )
+        url = f"https://127.0.0.1:{port}"
+        context = ssl.create_default_context(cafile=str(certificate.directory / "certificate.pem"))
+        with container:
+            async with asyncio.timeout(30), httpx.AsyncClient(verify=context, http2=True, timeout=2) as client:
+                while True:
+                    try:
+                        response = await client.get(f"{url}/models")
+                    # A slow first answer is not a failed start: the 30 s budget decides that.
+                    except httpx.ConnectError, httpx.TimeoutException:
+                        await asyncio.sleep(0.1)
+                        continue
+                    response.raise_for_status()
+                    assert response.http_version == "HTTP/2"
+                    break
+            yield Ingress(url, container)

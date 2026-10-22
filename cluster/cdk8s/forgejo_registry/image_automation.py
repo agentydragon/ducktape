@@ -43,6 +43,7 @@ IMAGES = (
     "agentplane-egress-history-migrate",
     "agentplane-egress-proxy",
     "agentplane-egress-sidecar",
+    "agentplane-frontend",
     "agentplane-history-migrate",
     "agentplane-history-service",
     "agentplane-index",

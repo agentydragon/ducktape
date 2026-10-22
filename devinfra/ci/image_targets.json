@@ -199,6 +199,11 @@
       "test": "//agentplane/app/...",
       "registry": "forgejo"
     },
+    "agentplane-frontend": {
+      "target": "//agentplane/app/frontend/serving:static_image",
+      "test": "//agentplane/app/frontend/serving/...",
+      "registry": "forgejo"
+    },
     "agentplane-app-migrate": {
       "target": "//agentplane/app:migration_image",
       "test": "//agentplane/app/...",

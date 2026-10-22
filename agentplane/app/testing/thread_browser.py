@@ -218,7 +218,6 @@ async def thread_browser(
     source = thread_source
     thread_id = await event_logs.seed(SANDBOX, SESSION)
     await store.rename(thread_id, "Browser thread")
-    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         scripted_runner(source, sandbox, gateway_service, sandbox_control),
         source.ingesting(history),
@@ -227,7 +226,7 @@ async def thread_browser(
             history_client,
             sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
             gateway=gateway_access,
-            frontend_directory=directory,
+            browser_login=True,
             replay_after=replay_after,
             electric_url=electric.url,
         ) as app,
