@@ -109,9 +109,33 @@ let
               $'    @unittest.skip("racy timing assertion under nix build load")\n    def test_crafted_xml_performance(self):'
           '';
         });
-        py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
-          python314Packages = pyfinal;
-        };
+        # nixpkgs unstable has the newer aiofile release required by
+        # py-key-value-aio 0.4.5; build both upstream recipes against our stable
+        # interpreter so FastMCP's runtime closure remains consistent.
+        caio = pyfinal.callPackage (pkgsUnstable.path + "/pkgs/development/python-modules/caio") { };
+        aiofile = pyfinal.callPackage (pkgsUnstable.path + "/pkgs/development/python-modules/aiofile") { };
+        # Reuse nixpkgs' 0.4.5 recipe and source. Stable uv-build is 0.10.0 while
+        # the package metadata requires >=0.11.4; this build and its checks pass
+        # with 0.10.0, so relax only that metadata bound.
+        py-key-value-aio =
+          (pyfinal.callPackage (pkgsUnstable.path + "/pkgs/development/python-modules/py-key-value-aio") {
+            inherit (pyfinal) uv-build;
+          }).overridePythonAttrs
+            (old: {
+              dependencies = with pyfinal; [
+                beartype
+                typing-extensions
+                aiofile
+                anyio
+                keyring
+                cachetools
+                pathvalidate
+              ];
+              postPatch = (old.postPatch or "") + ''
+                substituteInPlace pyproject.toml \
+                  --replace-fail '"uv_build>=0.11.4,<0.12"' '"uv_build>=0.10.0"'
+              '';
+            });
         uncalled-for = pkgs.callPackage ./uncalled-for.nix {
           python314Packages = pyfinal;
         };
