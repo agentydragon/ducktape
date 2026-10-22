@@ -36,6 +36,8 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecSourceRefKind,
     TerraformV1Alpha2SpecStoreReadablePlan,
     TerraformV1Alpha2SpecVars,
+    TerraformV1Alpha2SpecVarsValueFrom,
+    TerraformV1Alpha2SpecVarsValueFromSecretKeyRef,
 )
 
 from cluster.cdk8s import ducktape_flux, flux
@@ -74,6 +76,16 @@ def secret_env(name: str, key: SecretKey) -> TerraformV1Alpha2SpecRunnerPodTempl
             secret_key_ref=TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFromSecretKeyRef(
                 name=key.secret.name, key=key.key
             )
+        ),
+    )
+
+
+def secret_var(name: str, key: SecretKey) -> TerraformV1Alpha2SpecVars:
+    """A Terraform input whose value comes from a Secret in the runner's namespace."""
+    return TerraformV1Alpha2SpecVars(
+        name=name,
+        value_from=TerraformV1Alpha2SpecVarsValueFrom(
+            secret_key_ref=TerraformV1Alpha2SpecVarsValueFromSecretKeyRef(name=key.secret.name, key=key.key)
         ),
     )
 
@@ -149,6 +161,7 @@ def gitops_terraform(
     *,
     module: ArtifactGeneratorSpecArtifacts,
     variables: BaseModel | None,
+    additional_vars: Sequence[TerraformV1Alpha2SpecVars] = (),
     interval: str = "15m",
     depends_on: Sequence[Terraform] = (),
     env: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv] = (),
@@ -169,6 +182,9 @@ def gitops_terraform(
     `variables` models the module's variables.tf (None: set none); each field is written
     structurally into the runner's tfvars, so a nested map arrives as a Terraform
     map/object, not a string.
+
+    `additional_vars` appends typed tofu-controller vars, for values sourced from a Kubernetes
+    Secret without placing the credential in plaintext `spec.vars`.
 
     `interval` controls periodic drift checks; the default is 15 minutes.
 
@@ -195,11 +211,14 @@ def gitops_terraform(
         interval=interval,
         approve_plan="auto" if auto_apply else None,
         store_readable_plan=store_readable_plan,
-        vars=None
-        if variables is None
-        else [
-            TerraformV1Alpha2SpecVars(name=key, value=value) for key, value in variables.model_dump(mode="json").items()
-        ],
+        vars=[
+            *(
+                TerraformV1Alpha2SpecVars(name=key, value=value)
+                for key, value in (variables.model_dump(mode="json").items() if variables is not None else ())
+            ),
+            *additional_vars,
+        ]
+        or None,
         depends_on=[TerraformV1Alpha2SpecDependsOn(name=dependency.name) for dependency in depends_on] or None,
         env=env,
         env_from=env_from,

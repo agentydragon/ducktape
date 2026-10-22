@@ -22,9 +22,9 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         "terraform",
         module=module,
         variables=None,
-        env=[
-            terraform.secret_env(
-                "TF_VAR_buildbuddy_api_key",
+        additional_vars=[
+            terraform.secret_var(
+                "buildbuddy_api_key",
                 SecretRef(namespace=terraform.NAMESPACE, name="buildbuddy-org-admin-api-key").key("api-key"),
             )
         ],
