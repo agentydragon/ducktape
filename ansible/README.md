@@ -1,12 +1,14 @@
-## To update requirements
+## To install roles and collections
 
 ```bash
 cd ansible
+ansible-galaxy role install -r requirements.yaml
 ansible-galaxy collection install -r requirements.yaml
 ```
 
-Collections install into the default `~/.ansible/collections` path so third-party
-content never lands in `ansible/collections`.
+Roles and collections install into the default `~/.ansible/roles` and
+`~/.ansible/collections` paths so third-party content never lands in
+`ansible/`.
 
 ## To deploy Atlas
 
