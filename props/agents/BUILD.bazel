@@ -93,6 +93,5 @@ py_test(
         "//props/db:database",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )

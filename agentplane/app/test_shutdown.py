@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
-import pytest_bazel
-
 from agentplane.app.shutdown import Drain
 
 
@@ -36,7 +34,3 @@ async def test_the_drain_ends_a_stream_at_its_wait_and_closes_its_source() -> No
     await consumer
 
     assert (items, closed.is_set()) == ([1], True)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

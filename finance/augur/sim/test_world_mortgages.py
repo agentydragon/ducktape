@@ -5,7 +5,6 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import LocationId
 from finance.augur.sim.actions import ClaimId, PayClaim
@@ -275,7 +274,3 @@ def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
     properties = world.properties
     assert properties is not None
     assert properties.properties[PropertyId("test-home")].state.building_basis == 8001
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

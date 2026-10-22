@@ -38,7 +38,6 @@ py_test(
         "//:conftest",
         "//devinfra/claude/claude_api/hooks:common",
         "//devinfra/claude/claude_api/hooks:session_start",
-        "@pypi//pytest_bazel",
     ],
 )
 

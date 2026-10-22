@@ -12,7 +12,6 @@ from typing import Any
 
 import httpx
 import pytest
-import pytest_bazel
 from fastapi import FastAPI
 from itsdangerous import TimestampSigner
 from pydantic import SecretStr
@@ -364,7 +363,3 @@ async def test_logout_needs_the_apps_own_origin_and_ends_the_session(owner: http
 
     assert (refused.status_code, still_in.status_code) == (403, 200)
     assert (out.status_code, out.headers["location"], signed_out.status_code) == (303, "/auth/signed-out", 401)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

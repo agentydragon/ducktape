@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-import pytest_bazel
 
 from agentplane.action_service.github_policy.visibility import (
     RepositoryVisibilityService,
@@ -120,7 +119,3 @@ async def test_failure_is_not_cached() -> None:
         with pytest.raises(RepositoryVisibilityUnavailableError):
             await service.is_public(owner="test-owner", repository="test-public")
     assert handler.calls == 2
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

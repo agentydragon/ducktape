@@ -2,8 +2,6 @@
 
 from datetime import timedelta
 
-import pytest_bazel
-
 from x.wt.testing.git_helpers import worktree_exists
 
 
@@ -48,7 +46,3 @@ def test_real_program_workflow(pygit2_repo, real_temp_repo, wt_cli):
     # Final status
     result = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

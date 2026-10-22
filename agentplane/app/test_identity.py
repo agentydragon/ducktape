@@ -7,7 +7,6 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
-import pytest_bazel
 from fastapi import HTTPException
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api
@@ -59,7 +58,3 @@ async def test_rejection_logs_reviewed_identity_and_fixed_reason_without_credent
     assert TOKEN not in caplog.text
     assert "credential-bearing-error" not in caplog.text
     assert all(record.exc_info is None for record in caplog.records)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

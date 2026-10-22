@@ -9,7 +9,6 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -327,7 +326,3 @@ async def test_rollback_and_duplicate_invalidations_keep_durable_state_authorita
         assert not task.done()
         await decide(waiting, Verdict.DENY)
         assert (await task).state is ActionState.DENIED
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

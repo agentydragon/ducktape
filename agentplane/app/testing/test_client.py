@@ -10,7 +10,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing import client as client_module
@@ -224,7 +223,3 @@ async def test_sandbox_subscription_does_not_retry_any_authorization_refusal(sta
         with pytest.raises(httpx.HTTPStatusError):
             await anext(client.sandbox_snapshots())
     assert requests == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

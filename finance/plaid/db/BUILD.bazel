@@ -36,7 +36,6 @@ py_test(
         "//:conftest",
         "@pypi//certifi",
         "@pypi//plaid_python",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -47,7 +46,6 @@ py_test(
         ":conftest",
         ":products",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -114,7 +112,6 @@ py_test(
         "//util:db_url",
         "@pypi//asyncpg",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -131,7 +128,6 @@ py_test(
         ":schema",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -146,7 +142,6 @@ py_test(
         "//:conftest",
         "@pypi//plaid_python",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

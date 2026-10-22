@@ -7,7 +7,6 @@ and test fixture data (critic runs + grading edges).
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -125,7 +124,3 @@ def test_coverage_with_runs(
     assert all(0.0 <= v <= 1.0 for v in body["max_recall_values"])
     assert len(body["tp_count_values"]) > 0
     assert all(v > 0 for v in body["tp_count_values"])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

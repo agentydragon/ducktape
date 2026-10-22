@@ -12,7 +12,6 @@ from uuid import UUID, uuid4
 import grpc
 import httpx
 import pytest
-import pytest_bazel
 from fastapi import FastAPI
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -1137,7 +1136,3 @@ async def test_unreachable_runner_status_reports_unavailable(
     monkeypatch.setattr(bridge, "runner_status", unavailable)
     response = await client.get("/sandboxes/live/runner-status")
     assert response.status_code == 503
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,4 +1,3 @@
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecClusterRef
 
@@ -18,7 +17,3 @@ def test_bucket_is_physically_named_after_its_metadata_and_leaves_empty_fields_u
     )
     (bucket,) = Cdk8sTesting.synth(chart)
     assert bucket["spec"] == {"name": "test-bucket", "clusterRef": {"name": "test-seaweed"}}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

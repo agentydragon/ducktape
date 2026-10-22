@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import get_args
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel, TypeAdapter
 
 from study_casino.actions import (
@@ -102,7 +101,3 @@ def test_examples_cover_every_variant() -> None:
 @pytest.mark.parametrize("example", _EXAMPLES, ids=lambda e: type(e).__name__)
 def test_round_trips_to_own_variant(example: BaseModel) -> None:
     assert type(_ADAPTER.validate_json(example.model_dump_json())) is type(example)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

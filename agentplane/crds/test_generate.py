@@ -4,7 +4,6 @@ regenerate with `bb run //agentplane/crds:generate_bin` and commit the result wh
 
 from pathlib import Path
 
-import pytest_bazel
 import yaml
 from jsonschema import Draft4Validator
 from referencing import Registry
@@ -92,7 +91,3 @@ def test_credential_schema_preserves_source_and_target_constraints() -> None:
         ]
         assert target["properties"]["field"]["maxLength"] == 256
         assert target["x-kubernetes-validations"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

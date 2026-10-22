@@ -26,7 +26,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
@@ -125,7 +124,3 @@ def test_rejects_wrong_version(binary: Path) -> None:
     with _running(binary) as client:
         resp = client.post("/v1/register", json={"v": "wrong/0", "op": "register", "body": {}})
         assert resp.status_code == 400
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

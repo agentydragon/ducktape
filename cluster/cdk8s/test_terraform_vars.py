@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import pygohcl
 import pytest
-import pytest_bazel
 from pydantic import BaseModel
 
 from cluster.cdk8s.dns_automation import DnsRecordsVars
@@ -27,7 +26,3 @@ def test_vars_model_matches_module(model: type[BaseModel], module: str) -> None:
     assert (
         {name for name, spec in declared.items() if "default" not in spec} <= set(model.model_fields) <= set(declared)
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

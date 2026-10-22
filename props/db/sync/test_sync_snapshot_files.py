@@ -7,7 +7,6 @@ import tarfile
 from collections.abc import Generator
 
 import pytest
-import pytest_bazel
 from sqlalchemy.orm import Session
 
 from props.core.ids import SnapshotSlug
@@ -56,7 +55,3 @@ def test_utf8_line_count(session: Session):
 
     row = session.query(SnapshotFile).filter_by(snapshot_slug=SLUG, file_path="lines.py").one()
     assert row.line_count == 3
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

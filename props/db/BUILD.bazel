@@ -185,7 +185,6 @@ py_test(
         "//props/core:splits",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -206,7 +205,6 @@ py_test(
         "//props/core/models:examples",
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -226,7 +224,6 @@ py_test(
         "//props:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -255,7 +252,6 @@ py_test(
         "//props/testing/fixtures:credentials",
         "//props/testing/fixtures:runs",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

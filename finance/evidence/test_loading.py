@@ -9,7 +9,6 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from finance.evidence.loading import (
     fred_series_frame,
@@ -285,7 +284,3 @@ def test_international_file_without_its_monthly_dollar_section_is_rejected() -> 
         archive.writestr("Ind_all.Dat", text)
     with pytest.raises(ValueError, match="0 monthly"):
         french_international_market_frame(buffer.getvalue(), FRENCH_INTERNATIONAL_INDICES)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

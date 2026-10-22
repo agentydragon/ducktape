@@ -12,7 +12,6 @@ not supported"``. These tests pin both halves of that contract.
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel, ValidationError
 
 from mcp_infra.exec.docker.server import _make_exec_input_model
@@ -49,7 +48,3 @@ def test_timeout_ms_runtime_rejects_above_max(exec_input_cls: type[BaseModel]) -
 def test_timeout_ms_runtime_accepts_in_range(exec_input_cls: type[BaseModel]) -> None:
     instance = exec_input_cls(cmd=["true"], timeout_ms=1000)
     assert instance.model_dump()["timeout_ms"] == 1000
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

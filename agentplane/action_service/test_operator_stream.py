@@ -9,8 +9,6 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import Mock
 
-import pytest_bazel
-
 from agentplane.action_service.operator_stream import snapshot_stream
 from agentplane.action_service.updates import ActionSubscription
 
@@ -43,7 +41,3 @@ async def test_snapshot_stream_rechecks_at_computed_expiry() -> None:
             assert await anext(body) == b"event: snapshot\ndata: 2\n\n"
     finally:
         await body.aclose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

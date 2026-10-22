@@ -3,7 +3,6 @@ from http import HTTPStatus
 
 import httpx2
 import pytest
-import pytest_bazel
 import respx
 from httpx2.websockets import ASGIWebSocketTransport
 from pydantic import ValidationError
@@ -76,7 +75,3 @@ async def test_pending_onboarding_steps_validates_response(
     with pytest.raises(ValidationError):
         await home_assistant_client.pending_onboarding_steps()
     assert route.called
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

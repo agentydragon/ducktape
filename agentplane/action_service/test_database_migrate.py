@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from uuid import UUID
 
-import pytest_bazel
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
@@ -255,7 +254,3 @@ def _round_trip(connection: Connection) -> None:
 async def test_migration_round_trip_preserves_carried_data_and_matches_metadata(engine: AsyncEngine) -> None:
     async with engine.begin() as connection:
         await connection.run_sync(_round_trip)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import date
 
-import pytest_bazel
-
 from finance.budget.csv_export import build_summary_csv, build_transactions_csv
 from finance.budget.schema import BucketKind
 from finance.budget.wire import (
@@ -149,7 +147,3 @@ def test_build_summary_csv_adds_planning_columns_when_adjustments_are_present() 
     assert lines[1] == "Rent,expense,,3200.00,3200.00,1,0.00,yes"
     assert lines[2] == "Insurance,expense,,312.00,312.00,1,450.00,"
     assert lines[3] == "Groceries,expense,,600.00,600.00,1,600.00,"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

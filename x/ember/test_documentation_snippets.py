@@ -8,7 +8,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
 from x import ember  # gazelle:ignore x.ember
@@ -80,7 +79,3 @@ def test_python_session_demo_scripts_are_embedded_and_work(
     assert "hello world" in out
     assert fake_session_state["sent"] == ["!room:example.org"]
     assert fake_session_state["closed"] == ["yes"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

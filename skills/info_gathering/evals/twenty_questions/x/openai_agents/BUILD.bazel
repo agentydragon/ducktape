@@ -37,7 +37,6 @@ py_test(
         "//:conftest",
         "//skills/info_gathering/evals/twenty_questions:conftest",
         "@pypi//openai_agents",
-        "@pypi//pytest_bazel",
     ],
 )
 

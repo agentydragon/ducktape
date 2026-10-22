@@ -5,8 +5,6 @@ import io
 from datetime import date
 from pathlib import Path
 
-import pytest_bazel
-
 from loom.gym.dossier import materialize_dossier, series_dossier
 from loom.gym.monthly_series import MonthlySeries, add_months
 
@@ -38,7 +36,3 @@ def test_materialize_writes_files(tmp_path: Path) -> None:
     materialize_dossier(dossier, tmp_path / "inputs")
     assert sorted(p.name for p in (tmp_path / "inputs").iterdir()) == sorted(dossier)
     assert (tmp_path / "inputs" / "README.txt").read_text() == dossier["README.txt"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

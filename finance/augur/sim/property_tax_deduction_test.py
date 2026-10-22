@@ -13,7 +13,6 @@ from typing import Any
 
 import polars as pl
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import LocationId
@@ -195,7 +194,3 @@ def test_every_bill_moves_the_owner_s_cash_to_the_county(under_cap: Rollout) -> 
     for cause, amount in paid.select("cause_id", "amount_paid_quanta").rows():
         assert entries[cause] == [Posting(account=alice, amount=-amount), Posting(account=county, amount=amount)]
     assert one(row.balance for row in under_cap.trace.books[-1].balances if row.account == county) == dollars(10_680)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

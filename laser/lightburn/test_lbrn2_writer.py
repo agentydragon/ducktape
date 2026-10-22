@@ -2,7 +2,6 @@ import math
 from xml.etree import ElementTree as ET
 
 import pytest
-import pytest_bazel
 
 from laser.lightburn.lbrn2_writer import (
     MAX_LAYERS,
@@ -198,7 +197,3 @@ def test_project_xml_valid():
     assert root.find("CutSetting") is not None
     assert root.find("Shape") is not None
     assert root.find("Notes") is not None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

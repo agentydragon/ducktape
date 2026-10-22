@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import SecretStr, ValidationError
 
 from haku.console.identity.config import ConsoleConfigFile
@@ -95,7 +94,3 @@ def test_static_agent_must_reference_a_configured_profile() -> None:
                 },
             }
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

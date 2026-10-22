@@ -92,7 +92,6 @@ py_test(
         ":twenty_questions",
         "//:conftest",
         "//openai_utils:model",
-        "@pypi//pytest_bazel",
     ],
 )
 

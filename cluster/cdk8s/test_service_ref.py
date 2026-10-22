@@ -3,7 +3,6 @@ Cilium rules on both ends name the Pods' port, which Cilium matches after socket
 and a `Port` renders one agreeing container port and Service port in both builder tiers."""
 
 import pytest
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from cdk8s_plus_34 import Deployment, Service, k8s
 
@@ -84,7 +83,3 @@ def test_port_renders_one_container_and_service_port_in_both_tiers(chart: Chart)
     assert raw_pod["spec"]["containers"][0]["ports"] == [container_port]
     assert service["spec"]["ports"] == [service_port]
     assert raw_service["spec"]["ports"] == [service_port]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

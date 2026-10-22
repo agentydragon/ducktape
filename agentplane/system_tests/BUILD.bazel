@@ -276,7 +276,6 @@ py_test(
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -315,7 +314,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pydantic",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -384,7 +382,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -433,7 +430,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -456,7 +452,6 @@ py_test(
         "//model_catalog:catalog",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -484,7 +479,6 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )

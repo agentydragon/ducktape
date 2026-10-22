@@ -1,5 +1,3 @@
-import pytest_bazel
-
 from devinfra.ci.invocation_ids import invocation_id
 
 
@@ -26,7 +24,3 @@ def test_bazel_accepts_the_shape() -> None:
     result = invocation_id(run_id="33060467222", attempt="1", role="test")
     assert result.version == 5
     assert len(str(result)) == 36
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

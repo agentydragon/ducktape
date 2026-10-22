@@ -15,7 +15,6 @@ import logging
 from collections.abc import Generator
 from typing import Any
 
-import pytest_bazel
 from hamcrest import assert_that
 
 from agent_core.testing.responses import PlayGen
@@ -100,7 +99,3 @@ async def test_recipes_in_container(
     with synced_db.session() as session:
         optimizer_run = session.get(AgentRun, run_id)
         assert optimizer_run is not None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

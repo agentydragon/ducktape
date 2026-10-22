@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from agentplane.native.codex.testing import model_catalog
 from agentplane.native.codex.testing.model import MODEL
@@ -91,7 +90,3 @@ async def test_failing_catalog_refetch_does_not_fail_turns(
     await _turn(session, model, 2)
     await _turn(session, model, 3)
     assert len(codex_endpoint.catalog_authorizations) > fetches
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

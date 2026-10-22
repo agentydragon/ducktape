@@ -7,7 +7,6 @@ import json
 import os
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import event_pb2, runner_pb2
@@ -97,7 +96,3 @@ async def test_ollama_tool_call(client: Client, sandbox: Sandboxes, harness: run
         hold_seconds = min(max(int(os.environ.get("OLLAMA_SMOKE_HOLD_SECONDS", "0")), 0), 30)
         if hold_seconds:
             await asyncio.sleep(hold_seconds)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

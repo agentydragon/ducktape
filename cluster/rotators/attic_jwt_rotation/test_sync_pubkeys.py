@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest_bazel
-
 from cluster.rotators.attic_jwt_rotation import sync_pubkeys
 
 
@@ -33,7 +31,3 @@ def test_sync_derives_pubkeys_in_secret_key_order(monkeypatch, tmp_path: Path):
 
     assert json.loads(pubkeys_file.read_text()) == ["main:pubA=", "gaffer:pubB="]
     assert pubkeys_file.read_text().endswith("\n")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

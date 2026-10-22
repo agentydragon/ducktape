@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 
 from agentplane.proto import runner_pb2
@@ -58,7 +57,3 @@ def test_committed_app_config_supplies_smoke_cases() -> None:
     path = get_required_path("ducktape/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml")
     cases = ollama_cases(path)
     assert len(cases) == len(set(cases))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

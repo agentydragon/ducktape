@@ -1,4 +1,3 @@
-import pytest_bazel
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
@@ -54,7 +53,3 @@ def test_source_projected_workload_token() -> None:
     )
     (manifest,) = Cdk8sTesting.synth(chart)
     assert manifest["spec"]["source"] == {"projectedWorkloadToken": {"audience": "https://example.com"}}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

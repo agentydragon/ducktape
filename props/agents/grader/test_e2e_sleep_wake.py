@@ -20,7 +20,6 @@ import logging
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 
 from agent_core.testing.responses import PlayGen
 from props.agents.grader.drift_handler import get_drift
@@ -201,7 +200,3 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
 
         # Assert no drift remains (grading + clustering)
         assert_no_pending(test_snapshot, db)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

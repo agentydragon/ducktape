@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-import pytest_bazel
-
 from util.enum_vocab import UnknownValue, member_or_unknown
 
 
@@ -26,7 +24,3 @@ def test_a_payload_value_a_reader_could_not_name_survives_revalidation() -> None
 
 def test_a_non_string_payload_value_is_left_for_the_callers_own_validation() -> None:
     assert member_or_unknown(Fruit, 7) == 7
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

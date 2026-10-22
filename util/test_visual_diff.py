@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import pytest_bazel
 from PIL import Image
 
 from util.visual_diff import compare_pngs
@@ -24,7 +23,3 @@ def test_compare_pngs_classifies_exact_diffs(tmp_path: Path) -> None:
     resized = compare_pngs(_png(tmp_path / "a.png"), _png(tmp_path / "c.png", size=(8, 10)))
     assert resized.classification == "modified"
     assert resized.dimension_changed is True
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

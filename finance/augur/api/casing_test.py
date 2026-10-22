@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-import pytest_bazel
-
 from finance.augur.api.casing import plain_json
 from finance.augur.api.schemas import ApiModel
 
@@ -34,7 +32,3 @@ def test_plain_json_recursively_serializes_pydantic_values_and_null_policy() -> 
         "missing": None,
         "nested": [{"label": "kept", "missing": None}],
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

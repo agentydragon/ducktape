@@ -5,7 +5,6 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import SecretStr
@@ -218,7 +217,3 @@ def test_push_identity_signs_only_for_reviewed_push_hosts() -> None:
     for endpoint in ("https://unreviewed.example/push", "http://push.example/push", "https://push.example:8443/push"):
         with pytest.raises(ValueError, match="configured HTTPS push service"):
             identity.validate_endpoint(endpoint)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

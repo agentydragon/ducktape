@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-import pytest_bazel
 from itsdangerous import TimestampSigner
 
 from airlock.app import create_app
@@ -167,7 +166,3 @@ async def test_mcp_and_tool_approval_routes_are_absent(mock_k8s_store: MagicMock
         assert (await http.get("/api/backends")).status_code == 404
         assert (await http.get("/api/events")).status_code == 404
         assert (await http.post("/api/actions/00000000-0000-0000-0000-000000000001/1/approve")).status_code == 404
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

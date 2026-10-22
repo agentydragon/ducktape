@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest_bazel
-
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.testing.runner_peer import runner_peer
 
@@ -27,7 +25,3 @@ async def test_runner_client_sends_bearer_and_complete_sandbox_identity(tmp_path
     assert metadata["x-agentplane-sandbox-uid"] == ("native-runner-uid",)
     assert metadata["x-agentplane-sandbox-owner-namespace"] == ("testing",)
     assert metadata["x-agentplane-sandbox-owner-name"] == ("native-runner",)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

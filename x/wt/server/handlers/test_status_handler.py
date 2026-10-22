@@ -6,7 +6,6 @@ from unittest.mock import Mock
 
 import pygit2
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from x.wt.server.handlers.status_handler import get_status
@@ -74,7 +73,3 @@ async def test_get_status_returns_ok_on_success(status_deps: ServiceDependencies
 
     assert isinstance(item.result, StatusResultOk)
     assert item.result.status.branch_name == "feature-branch"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

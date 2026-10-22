@@ -4,7 +4,6 @@ import struct
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.js.bun_standalone_extract import (
     MODULE_ENTRY_SIZE,
@@ -128,7 +127,3 @@ def test_debundle_list_excludes_non_utf8_and_non_js_files(tmp_path: Path) -> Non
         == 0
     )
     assert (output / "js-files.txt").read_text().splitlines() == ["$bunfs/root/b.js", "factory.js\t$bunfs/root/a.js"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

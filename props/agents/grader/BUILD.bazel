@@ -155,7 +155,6 @@ py_test(
         "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
         "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -173,7 +172,6 @@ py_test(
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -191,7 +189,6 @@ py_test(
         "//:conftest",
         "//props:conftest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -219,7 +216,6 @@ py_test(
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -247,7 +243,6 @@ py_test(
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -274,7 +269,6 @@ py_test(
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -298,7 +292,6 @@ py_test(
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 

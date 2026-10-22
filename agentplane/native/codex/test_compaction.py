@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest_bazel
-
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
@@ -67,7 +65,3 @@ async def test_compaction_preserves_instructions_in_next_request_and_resume(
                 *responses_sse.response_stream([responses_sse.Message("RESUMED_OK")], model=MODEL).events
             )
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

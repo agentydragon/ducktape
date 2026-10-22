@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-import pytest_bazel
 
 from agentplane.action_service.github_policy.repository import (
     RepositoryMatch,
@@ -132,7 +131,3 @@ async def test_public_repository_rejects_a_smuggled_qualifier_before_looking_up_
     )
     assert isinstance(decision, RepositoryMismatch)
     assert "repository qualifier" in decision.reason
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

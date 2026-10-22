@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from typing import cast
 from uuid import UUID
 
-import pytest_bazel
 from agent_framework import ChatContext, Message
 
 from props.agents.grader.notification_middleware import _format_notifications, notification_chat_middleware
@@ -66,7 +65,3 @@ def test_notifications_appended_and_drained() -> None:
     assert [message.text for message in ctx.messages] == [expected_text]
     assert len(queue) == 0
     assert called
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

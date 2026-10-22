@@ -14,7 +14,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 
 from cluster.cdk8s.manifest_roots import manifest_files
@@ -106,7 +105,3 @@ def test_declared_policies_set_controlled_values(repo_root: Path) -> None:
     assert not offenders, "\n".join(
         ["Auto-mode namespaces declaring their own VPA policy must set controlledValues:", *offenders]
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

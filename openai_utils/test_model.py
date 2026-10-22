@@ -3,7 +3,6 @@
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
@@ -156,7 +155,3 @@ def test_from_sdk_keeps_standard_reasoning_text() -> None:
     reasoning = ResponsesResult.from_sdk(resp).output[0]
     assert isinstance(reasoning, ReasoningItem)
     assert reasoning.content == [ReasoningContentItem(text="standard cot")]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -12,7 +12,6 @@ from typing import Any
 import httpx
 import litellm
 import openai
-import pytest_bazel
 from litellm.proxy.proxy_server import ProxyConfig
 from litellm.types.utils import GenericStreamingChunk
 
@@ -138,7 +137,3 @@ async def test_litellm_router_forwards_local_reasoning_default_in_http_payload(
 
     assert response.choices[0].message.content == "pong"
     assert request_bodies[0]["reasoning_effort"] == "none"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

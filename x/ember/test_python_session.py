@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest_bazel
-
 from x.ember.python_session import ensure_kernel, restart_kernel, run_code
 
 
@@ -18,7 +16,3 @@ def test_persistent_python_session_preserves_state():
     restart_kernel()
     post_restart = run_code("print(globals().get('x'))")
     assert "None" in post_restart
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

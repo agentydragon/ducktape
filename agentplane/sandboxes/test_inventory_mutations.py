@@ -6,7 +6,6 @@ import asyncio
 from typing import Any
 
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 
@@ -463,7 +462,3 @@ async def test_deleted_name_is_reusable_but_not_the_old_uid(
     assert following.uid != previous.uid
     with pytest.raises(SandboxNotFoundError):
         await inventory.suspend(previous.name, uid=previous.uid)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

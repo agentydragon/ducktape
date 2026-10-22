@@ -9,7 +9,6 @@ from time import time
 from urllib.parse import parse_qs
 
 import pytest
-import pytest_bazel
 from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import select, text
 from starlette.applications import Starlette
@@ -257,7 +256,3 @@ async def test_a_refused_renewal_ends_the_session(
     with pytest.raises(OperatorFederationError, match="operator_reauthentication_required"):
         await login_provider.federation.exchange(row)
     assert login_provider.presented == [SPENT]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

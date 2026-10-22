@@ -9,7 +9,6 @@ from unittest.mock import patch
 from uuid import UUID
 
 import pytest
-import pytest_bazel
 from fastapi import HTTPException
 
 from openai_utils.api_shape import LLMApiShape
@@ -255,7 +254,3 @@ def test_props_metadata_is_merged_for_langfuse_correlation(api_shape: LLMApiShap
         "props.logical_model": "glm-4.6",
         "props.upstream_model": "glm-4.6",
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

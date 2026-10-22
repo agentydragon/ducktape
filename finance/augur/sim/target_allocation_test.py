@@ -9,7 +9,6 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 
 import numpy as np
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
@@ -386,7 +385,3 @@ def test_a_tolerance_wider_than_the_drift_changes_nothing() -> None:
 
     assert units(with_tolerance, month=HORIZON) == units(without, month=HORIZON)
     assert alice_cash(with_tolerance) == alice_cash(without)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

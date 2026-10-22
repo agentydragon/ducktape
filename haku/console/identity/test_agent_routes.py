@@ -7,7 +7,6 @@ from dataclasses import asdict, dataclass, field
 from types import SimpleNamespace
 from uuid import UUID
 
-import pytest_bazel
 from fastapi import Depends, FastAPI
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -121,7 +120,3 @@ def test_settings_access_profile_update_requires_an_explicit_assignment() -> Non
 
     assert response.status_code == 422
     assert service.access_profile_updates == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

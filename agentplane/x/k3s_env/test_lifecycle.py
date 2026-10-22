@@ -9,7 +9,6 @@ from http import HTTPStatus
 
 import httpx
 import pytest
-import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.sandbox_models import NewSandbox, SandboxView
@@ -136,7 +135,3 @@ async def test_delete_removes_the_sandbox(stack: Stack, client: Client) -> None:
     await wait_until_suspended(client, name)
     await client.delete_sandbox(name)
     await wait_until_gone(client, name)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

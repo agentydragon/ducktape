@@ -7,7 +7,6 @@ from subprocess import CalledProcessError, CompletedProcess
 from unittest.mock import patch
 
 import pytest
-import pytest_bazel
 
 from util.bazel.workspace import BazelBackend, BazelLabel, BazelWorkspace
 
@@ -152,7 +151,3 @@ def test_query_raises_on_failure_with_stderr_in_the_traceback(tmp_path: Path) ->
     ):
         workspace.query("//...")
     assert excinfo.value.__notes__ == ["ERROR: no such package 'missing'"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

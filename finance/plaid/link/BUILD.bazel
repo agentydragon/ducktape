@@ -80,7 +80,6 @@ py_test(
         "@pypi//itsdangerous",
         "@pypi//plaid_python",
         "@pypi//pyjwt",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -91,7 +90,6 @@ py_test(
     deps = [
         "//:conftest",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )
 

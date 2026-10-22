@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
 
@@ -83,7 +82,3 @@ def test_pr_target_selection(tmp_path: Path, changed_file: str, graph_wide: bool
     # The pre-assigned ID has to reach Bazel: it is the only handle a consumer has on
     # this invocation when the run is cancelled before `bb remote` returns.
     assert "--invocation_id=11111111-1111-1111-1111-111111111111" in test_args
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

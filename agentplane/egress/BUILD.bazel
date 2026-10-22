@@ -82,7 +82,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//psycopg",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
@@ -133,7 +132,6 @@ py_test(
         "//agentplane/egress/testing:sidecar_process",
         "@pypi//aiohttp",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -171,7 +169,6 @@ py_test(
         "//agentplane/egress/testing:sidecar_process",
         "@pypi//grpcio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

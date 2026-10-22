@@ -39,7 +39,6 @@ py_test(
         ":nix",
         "//:conftest",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -51,7 +50,6 @@ py_test(
         ":policies",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

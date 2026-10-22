@@ -3,7 +3,6 @@ and `env.add_variable`; the rendered pod spec still resolves the env var to the 
 
 from pathlib import PurePosixPath
 
-import pytest_bazel
 import yaml
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from cdk8s_plus_34 import Deployment
@@ -40,7 +39,3 @@ def test_the_env_var_names_the_mounted_file() -> None:
     config_map = one(o for o in objects if o["kind"] == "ConfigMap")
     assert one(v for v in pod["volumes"] if v["name"] == mount["name"])["configMap"]["name"] == "app-settings"
     assert yaml.safe_load(config_map["data"][path.name]) == content
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

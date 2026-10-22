@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from third_party.containers import debian_slim
 from util.oci import load_oci_image
@@ -29,7 +28,3 @@ def test_logs_collected_on_success(image_tag: str) -> None:
     log = _logs_dir("logs-success") / "container.log"
     assert log.exists(), "container.log not written on success"
     assert b"SUCCESS_LOG_LINE" in log.read_bytes()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

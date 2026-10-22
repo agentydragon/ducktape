@@ -10,7 +10,6 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
-import pytest_bazel
 from sqlalchemy.orm import Session
 
 from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
@@ -70,7 +69,3 @@ def test_sync_updates_upstream_model_when_changed(session: Session) -> None:
     assert updated_row.upstream_model == "gpt-oss:20b", (
         "Sync must update upstream_model even when model count hasn't changed"
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

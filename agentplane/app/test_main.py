@@ -11,7 +11,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 import uvicorn
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -330,7 +329,3 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
     ):
         with attempt:
             assert await _other_connections(database) == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

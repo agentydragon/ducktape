@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from agent_core.events import AssistantText, ToolCall
@@ -79,7 +78,3 @@ def test_redirect_flags_reset_between_turns(redirect_handler) -> None:
 
     redirect_handler.on_tool_call_event(_tool_call())
     assert isinstance(redirect_handler.on_before_sample(), NoAction)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

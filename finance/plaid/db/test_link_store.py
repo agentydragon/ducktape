@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 
 import asyncpg
 import pytest
-import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
@@ -432,7 +431,3 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
             ).scalar_one() == 1
     finally:
         await engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

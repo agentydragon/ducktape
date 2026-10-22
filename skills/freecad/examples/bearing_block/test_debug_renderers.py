@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from PIL import Image
 
 from skills.freecad.conftest import assert_run_ok, copy_outputs
@@ -87,7 +86,3 @@ def test_debug_faces_produces_png(debug_outputs: Path) -> None:
     # A properly colored face render should have many colors (>50 distinct RGB values)
     assert len(colors) > 50, f"Only {len(colors)} distinct colors — faces may not be colored"
     assert_png_equal(actual, get_required_path(_GOLDEN_FACES), max_diff_fraction=_DEBUG_MAX_DIFF)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

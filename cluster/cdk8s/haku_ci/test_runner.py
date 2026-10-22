@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
 import yaml
 
 from cluster.cdk8s.haku_ci import runner
@@ -20,7 +19,3 @@ def test_keda_auth_reads_the_forgejo_token_secret() -> None:
     annotations = token["metadata"]["annotations"]
     assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == runner.NAMESPACE
     assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == runner.NAMESPACE
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

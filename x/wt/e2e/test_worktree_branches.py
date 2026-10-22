@@ -1,7 +1,6 @@
 import os
 
 import pygit2
-import pytest_bazel
 
 from x.wt.testing.git_helpers import add_worktree
 
@@ -40,7 +39,3 @@ def test_ls_lists_externally_created_worktrees(repo_factory, daemon_config_facto
     out = res.stdout
     assert "aaaaa:" in out
     assert "bbbbb:" in out
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -12,7 +12,6 @@ from datetime import date
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.x.models.macro_var import MacroVarFit, fit_macro_var, macro_state_path
 from finance.augur.x.models.structural_macro import PERCENT_TO_DECIMAL
@@ -158,7 +157,3 @@ def test_slicing_a_state_path_keeps_the_year_re_deriving_would_drop() -> None:
     # Where they do overlap the states agree: the transform is the same, only the reachable
     # span differs. That is what makes slicing a pure gain rather than a different estimate.
     assert sliced.states[INFLATION_LOOKBACK_MONTHS:] == pytest.approx(rebuilt.states)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

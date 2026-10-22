@@ -5,7 +5,6 @@ from enum import StrEnum
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.gc import git_repo, worktree_gc as wg
 from devinfra.gc.conftest import GitRepo
@@ -261,7 +260,3 @@ def test_every_reason_is_described(reason: StrEnum) -> None:
 )
 def test_the_description_names_what_the_reason_cites(reason: StrEnum, evidence: str) -> None:
     assert evidence in wg.describe_reason(_populated(reason))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

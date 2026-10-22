@@ -19,7 +19,6 @@ from collections.abc import AsyncIterator, Iterator
 from urllib.parse import urlencode
 
 import pytest
-import pytest_bazel
 from playwright.async_api import Page, Playwright, ViewportSize
 
 from finance.augur.api.config import Config
@@ -491,7 +490,3 @@ async def test_calibration_page(view: VisualPage, augur_server: str) -> None:
     await view.page.goto(f"{augur_server}/product?tab=calibration", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_calibration_page(view.page)
     await _capture_page(view)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

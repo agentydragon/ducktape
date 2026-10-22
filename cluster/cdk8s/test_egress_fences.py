@@ -16,8 +16,6 @@ traffic is admitted by a `toEntities: cluster` rule, and a `*.allegedly.works` e
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from cluster.cdk8s import egress_fences
 
 # GitHub's source and release-artifact hosts. Split out of the build bucket because "reads
@@ -123,7 +121,3 @@ def test_github_api_reaches_only_declared_holders() -> None:
     """`api.github.com` is a write surface, so every grant is named explicitly."""
     holders = {fence for fence, allowed in ALLOWLISTS.items() if allowed & GITHUB_API}
     assert holders == set()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

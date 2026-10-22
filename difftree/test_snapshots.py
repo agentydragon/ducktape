@@ -1,7 +1,6 @@
 """Snapshot tests for ANSI-rendered output."""
 
 import pytest
-import pytest_bazel
 
 from difftree.config import DEFAULT_CONFIG, Column, RenderConfig, SortMode
 from difftree.conftest import make_diff_tree, render_to_string as render_renderable
@@ -101,7 +100,3 @@ def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, c
 def test_snapshot_scenarios(snapshot, test_id, changes):
     output = render_to_string(changes)
     assert output == snapshot(name=test_id)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

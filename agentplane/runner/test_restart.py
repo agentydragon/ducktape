@@ -11,7 +11,6 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events
@@ -647,7 +646,3 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
     assert request.reasoning_texts == []
     await model.reply(request, Text("RESUMED_OK"))
     await second.until(events.turn_completed)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

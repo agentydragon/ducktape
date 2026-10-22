@@ -21,7 +21,6 @@ from typing import Any
 
 import polars as pl
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import HomeValueKey, LocationId, RentKey
@@ -1599,7 +1598,3 @@ class TestRentalIncomeTaxation:
         assert sale["depreciation_recapture_quanta"] == BUILDING_BASIS_QUANTA, (
             "recapture is capped by the basis the building had, not by the months it was held"
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,7 +4,6 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client.exceptions import ApiException
 
@@ -218,7 +217,3 @@ async def test_egress_credential_source_and_target_validation() -> None:
             await create(f"source-{index}", source, {"method": "wholeValue", "header": "Authorization"}, valid)
         for index, (target, valid) in enumerate(target_cases):
             await create(f"target-{index}", secret, target, valid)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

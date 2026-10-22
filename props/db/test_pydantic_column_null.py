@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -81,7 +80,3 @@ def test_sql_null_vs_json_null(test_pydantic_column_db):
             .all()
         )
         assert [(r.id, r.data) for r in results] == [(3, SimpleData(value=42))]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

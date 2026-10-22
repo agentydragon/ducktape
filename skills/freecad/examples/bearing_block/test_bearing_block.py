@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from skills.freecad.conftest import assert_run_ok, copy_outputs
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_png_equal, assert_svg_equal
@@ -93,7 +92,3 @@ def test_fcstd_round_trip(bearing_block_outputs: Path, freecad_run) -> None:
 
     result = freecad_run(get_required_path(_VERIFY_SCRIPT), outdir=reload_dir, env={"INPUT": str(fcstd)})
     assert_run_ok(result, "verify_fcstd_load.py", uo, "reload")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

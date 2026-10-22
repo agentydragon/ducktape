@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import pytest
-import pytest_bazel
 from botocore.exceptions import ClientError
 from PIL import Image
 
@@ -1448,7 +1447,3 @@ def test_success_comment_body_uses_more_of_the_comment_budget_for_previews() -> 
     assert "baseline/b.png" in body
     assert "diff/b.png" in body
     assert len(body) <= COMMENT_BUDGET
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

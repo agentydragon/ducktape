@@ -107,7 +107,6 @@ py_test(
         "//:conftest",
         "@pypi//click",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -119,7 +118,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -134,7 +132,6 @@ py_test(
         ":progress_bar",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//rich",
     ],
 )
@@ -146,7 +143,6 @@ py_test(
         ":conftest",
         ":parser",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -158,7 +154,6 @@ py_test(
         ":progress_bar",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -173,7 +168,6 @@ py_test(
         ":parser",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -185,6 +179,5 @@ py_test(
         ":parser",
         ":tree",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )

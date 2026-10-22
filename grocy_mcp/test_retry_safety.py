@@ -13,7 +13,6 @@ from collections.abc import AsyncGenerator
 import httpx
 import httpx2
 import pytest
-import pytest_bazel
 import respx
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
@@ -179,7 +178,3 @@ async def test_http_errors_are_compact_and_include_status_url_and_body(mcp_clien
         "HTTP 400 Bad Request for POST https://grocy.example.com/api/stock/products/1/consume\n"
         f"Grocy response body: {expected_body}"
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

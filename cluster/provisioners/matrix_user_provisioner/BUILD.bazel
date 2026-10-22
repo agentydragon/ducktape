@@ -21,7 +21,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

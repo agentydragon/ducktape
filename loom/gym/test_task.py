@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from loom.gym.seed_tasks import SEED_TASKS
@@ -99,7 +98,3 @@ def test_seed_tasks_round_trip_with_unique_ids() -> None:
     assert len({task.task_id for task in tasks}) == len(tasks)
     for task in tasks:
         assert Task.model_validate_json(task.model_dump_json()) == task
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

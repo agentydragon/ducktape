@@ -1,6 +1,5 @@
 """Wire compatibility and typed reads through actual SQLAlchemy bind/result processing."""
 
-import pytest_bazel
 from google.protobuf.struct_pb2 import Value
 from sqlalchemy import Column, Integer, MetaData, Table, create_engine, select
 
@@ -52,7 +51,3 @@ def test_null_and_fresh_message_instances() -> None:
             assert second.string_value == "saved"
     finally:
         engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

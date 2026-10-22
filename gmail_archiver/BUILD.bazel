@@ -220,6 +220,5 @@ py_test(
         "//:conftest",
         "//gmail_api:labels",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -14,7 +14,6 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import pytest
-import pytest_bazel
 from playwright.async_api import Browser, Page
 
 from util.bazel.runfiles import get_required_path
@@ -205,7 +204,3 @@ async def test_distribution_click_away_clears_selection(page: Page, augur_server
     # A click in the empty top-left (far above the rising net-worth curve) clears the selection.
     await plot.click(position={"x": box["width"] * 0.05, "y": box["height"] * 0.06})
     await page.locator("[data-product-distribution-selected]").wait_for(state="detached", timeout=30_000)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

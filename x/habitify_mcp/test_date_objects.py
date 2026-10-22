@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import httpx
-import pytest_bazel
 
 from x.habitify_mcp.types import Status
 
@@ -75,7 +74,3 @@ async def test_set_habit_status_returns_datetime_object(client):
         assert status.date.year == 2025
         assert status.date.month == 6
         assert status.date.day == 10
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

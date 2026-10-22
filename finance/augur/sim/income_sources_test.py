@@ -15,8 +15,6 @@ per-taxpayer index that is wrong. Four distinct amounts separate them.
 from dataclasses import dataclass
 from decimal import Decimal
 
-import pytest_bazel
-
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
@@ -286,7 +284,3 @@ def test_interest_a_jurisdiction_exempts_is_still_income_earned() -> None:
 
     assert earned[("alice", TREASURY_SOURCE)] == _quanta(ALICE_INTEREST)
     assert earned[("bob", TREASURY_SOURCE)] == _quanta(BOB_INTEREST)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

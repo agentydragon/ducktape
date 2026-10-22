@@ -27,7 +27,6 @@ py_test(
         ":plugin_layer",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

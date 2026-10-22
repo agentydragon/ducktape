@@ -3,7 +3,6 @@
 import json
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.sandboxes.guest_config import GuestConfig
@@ -66,7 +65,3 @@ def test_harness_env_reaches_the_guest_seed_only_when_set() -> None:
 def test_invalid_guest_seed_is_rejected(updates: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         _config(**updates)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

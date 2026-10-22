@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import httpx
-import pytest_bazel
 from google.protobuf.json_format import MessageToJson
 
 from agentplane.action_service import action_service_pb2 as action_pb
@@ -51,7 +50,3 @@ async def test_for_subject_asks_the_service_about_the_account_and_passes_on_its_
             policy=ExactActionsView(type=PolicyKind.EXACT_ACTIONS, actions={"github": ["search_code"]}),
         )
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

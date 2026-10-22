@@ -33,7 +33,6 @@ from collections.abc import AsyncGenerator
 from uuid import uuid4
 
 import pytest_asyncio
-import pytest_bazel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -431,7 +430,3 @@ async def test_grader_cannot_see_other_snapshot_occurrence_ranges(synced_db: Dat
     rows = grader_train_session.query(OccurrenceRangeORM).filter(OccurrenceRangeORM.snapshot_slug == VALID1_SLUG).all()
 
     assert len(rows) == 0, "Grader should NOT see occurrence_ranges for other snapshots"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

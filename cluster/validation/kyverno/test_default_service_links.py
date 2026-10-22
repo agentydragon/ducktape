@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.kyverno.apply import apply_policy
 from cluster.validation.kyverno.paths import manifest, policy
@@ -22,7 +21,3 @@ class TestDefaultDisableServiceLinks:
         assert result.ok, result.stdout
         assert result.passed == 1, result.stdout
         assert result.mutated_resources[0]["spec"]["enableServiceLinks"] is False
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-import pytest_bazel
 from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
@@ -45,7 +44,3 @@ async def test_plain_json_schema_semantics(
 ) -> None:
     decision = await evaluate(POLICY, ECHO, arguments, github_visibility())
     assert isinstance(decision, Matched if matched else NotMatched)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

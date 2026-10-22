@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
-import pytest_bazel
 import yaml
 from pydantic import TypeAdapter
 
@@ -138,7 +137,3 @@ def _write_private_equity_fixture(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return config_path
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

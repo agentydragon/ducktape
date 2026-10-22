@@ -1,6 +1,5 @@
 """Validates the hand-written ingress proxy config against the mailbox SMTP Service it fronts."""
 
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -22,7 +21,3 @@ def test_ingress_proxy_forwards_to_the_smtp_service_with_proxy_protocol() -> Non
         f"{smtp_service['metadata']['name']}.{smtp_service['metadata']['namespace']}.svc.cluster.local:"
         f"{smtp_service_port['port']}"
     ) in ingress_config
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

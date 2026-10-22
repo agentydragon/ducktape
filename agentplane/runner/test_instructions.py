@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 import grpc
-import pytest_bazel
 
 from agentplane.proto import runner_pb2
 from agentplane.runner.testing import events, launches
@@ -99,7 +98,3 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     assert INSTRUCTIONS in request.system_text
     await model.reply(request, Text("RESUMED_OK"))
     await second.until(events.turn_completed)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

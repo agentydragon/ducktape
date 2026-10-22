@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.agent_rbac import Permission, Rbac, uncovered
 from cluster.validation.k8s import RbacRoleRef, parse_k8s_resources
@@ -109,7 +108,3 @@ def test_aggregation_is_not_silently_ignored() -> None:
     )
     with pytest.raises(AssertionError, match="aggregated"):
         rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name="aggregate"), None)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

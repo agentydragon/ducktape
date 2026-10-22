@@ -9,7 +9,6 @@ two places they are supposed to work, which reads as flaky policy rather than a 
 
 from typing import Any
 
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -72,7 +71,3 @@ def test_haku_preset_binds_what_its_account_binding_names(
     # The app refuses the launch outright.
     created = {doc["metadata"]["name"] for doc in docs if doc["kind"] == "PolicySet"}
     assert set(preset) <= created, sorted(set(preset) - created)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from click.testing import CliRunner
 
 from difftree.cli import main
@@ -160,7 +159,3 @@ def test_cli_integration_with_pathspec(runner, temp_git_repo, run_git, monkeypat
 
     # Verify it shows actual changes (not just file names)
     assert "+1" in result.output  # Added lines in src files
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

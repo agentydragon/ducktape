@@ -11,7 +11,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-import pytest_bazel
 
 from finance.augur.calibration.catalog import CatalogMetadata, ExactMarket, IpoByDateMapping, ManifoldRef, MarketCatalog
 from finance.augur.calibration.ipo_prior import derive_public_market_anchors
@@ -78,7 +77,3 @@ async def test_probabilities_clamped_below_one() -> None:
     )
     anchors = await derive_public_market_anchors(catalog, price_client=_manifold_prices({"CERT": 1.0}))
     assert anchors[0].cumulative_probability < 1.0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

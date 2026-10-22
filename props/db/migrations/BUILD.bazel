@@ -25,7 +25,6 @@ py_test(
         "//props:conftest",
         "//props/db:conftest",
         "@pypi//alembic",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -41,7 +40,6 @@ py_test(
         "//props/db:conftest",
         "//util/testing:postgres",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -59,7 +57,6 @@ py_test(
         "//props/db:setup",
         "//util/testing:postgres",
         "//util/testing:undeclared_outputs",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],

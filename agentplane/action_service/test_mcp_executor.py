@@ -20,7 +20,6 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import ToolResult
@@ -688,7 +687,3 @@ async def test_supervisor_death_revokes_availability_and_joins_wakeup_tasks() ->
         assert group.health is not None
         assert group.health.reason == "supervisor_stopped"
     assert not any(task.get_name().startswith("mcp-wakeup-") for task in asyncio.all_tasks())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

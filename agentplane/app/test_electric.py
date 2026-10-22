@@ -17,7 +17,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from fastapi import FastAPI, Request
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.requests import ClientDisconnect
@@ -557,7 +556,3 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
         await electric.aclose()
     assert chunks.closed
     assert chunks.reads == 2
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

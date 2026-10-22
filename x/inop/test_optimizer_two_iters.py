@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from mcp_infra.testing.naming import build_mcp_function
 from openai_utils.model import FunctionToolParam, OpenAIModelProto, ResponsesRequest
@@ -197,7 +196,3 @@ async def test_optimize_prompts_two_iterations_async(
     assert prompts[0].strip()
     assert isinstance(prompts[1], str)
     assert prompts[1].strip()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

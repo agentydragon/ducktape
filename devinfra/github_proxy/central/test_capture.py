@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from mitmproxy import connection, flow, http, io
 
 from devinfra.github_proxy.central.capture import PrivateSave, SessionMetadata
@@ -84,7 +83,3 @@ def test_session_write_failure_is_visible_without_failing_readiness(
         == 1
     )
     assert "capture is degraded" in caplog.text
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

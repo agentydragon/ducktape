@@ -6,8 +6,6 @@ every due claim in full, in order.
 
 from decimal import Decimal
 
-import pytest_bazel
-
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
@@ -85,7 +83,3 @@ def test_unfundable_bill_stops_the_path_keeping_both_parties_balances() -> None:
     assert cash(books, ALICE, 2) == 40_000
     assert cash(books, AgentId("landlord"), 2) == 60_000
     assert len(books) == 3  # the stopped month is the last one booked
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

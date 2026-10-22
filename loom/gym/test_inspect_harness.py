@@ -12,7 +12,6 @@ from textwrap import dedent
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 
 # Aliased to avoid shadowing the builtin.
@@ -341,7 +340,3 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     assert served["url"] == fake_ia.EXAMPLE_ORIGINAL
     assert served["capture_ts"] == fake_ia.GOOD_TS
     assert served["sha256"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

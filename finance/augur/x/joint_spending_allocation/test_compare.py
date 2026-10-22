@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.results import Paid
 from finance.augur.x.bounded_spending.python_policy import Parameters
@@ -115,7 +114,3 @@ def test_exhaustion_distinguishes_rejected_consumption_from_unattempted_intentio
         assert report.ending_assets == 11_000_000
     assert sum(row.proceeds for row in replay.dispositions) == 10_000_000
     assert sum(row.basis for row in replay.dispositions) == 8_000_000
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

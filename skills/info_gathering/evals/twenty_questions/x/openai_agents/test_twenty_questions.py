@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock
 
-import pytest_bazel
 from agents import ToolCallOutputItem
 
 from skills.info_gathering.evals.twenty_questions.x.openai_agents.twenty_questions import _run_sim_and_extract
@@ -36,7 +35,3 @@ def test_extract_invalid() -> None:
     assert is_invalid
     assert reason == "not a question"
     assert not is_correct
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

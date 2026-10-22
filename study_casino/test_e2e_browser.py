@@ -16,7 +16,6 @@ from collections.abc import Iterator
 from typing import cast
 
 import pytest
-import pytest_bazel
 from playwright.async_api import Page, Route
 
 from study_casino.app import create_app
@@ -202,7 +201,3 @@ async def test_slots_spin_does_not_throw_on_server_action_response(page: Page, c
     await page.wait_for_timeout(500)
 
     assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during slots spin\n{logs}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

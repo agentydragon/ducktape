@@ -8,7 +8,6 @@ from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import WholeSnapshotExample
@@ -282,7 +281,3 @@ async def test_background_critic_start_cancellation_finalizes_run(
         assert run is not None
         assert run.status == AgentRunStatus.CANCELLED
         assert run.container_exit_code is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

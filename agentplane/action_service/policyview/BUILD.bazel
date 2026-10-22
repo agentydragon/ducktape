@@ -69,6 +69,5 @@ py_test(
         "//:conftest",
         "//agentplane/action_service:conftest",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )

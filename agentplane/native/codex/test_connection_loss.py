@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from agentplane.native.codex import wire
 from agentplane.native.codex.scenarios import MAX_RETRIES
 from agentplane.native.codex.testing import frames, responses_sse
@@ -132,7 +130,3 @@ async def test_http_502_exhaustion_is_terminal_but_next_input_succeeds(
         wire.TurnStatus.FAILED,
         wire.TurnStatus.COMPLETED,
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

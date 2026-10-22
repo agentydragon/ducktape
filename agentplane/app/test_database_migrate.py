@@ -5,7 +5,6 @@ import subprocess
 import sys
 from typing import Any, cast
 
-import pytest_bazel
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
@@ -112,7 +111,3 @@ def test_the_runner_registers_every_migrated_table(db_url: str) -> None:
     finally:
         engine.dispose()
     assert set(registered) == migrated
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

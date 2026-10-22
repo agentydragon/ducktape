@@ -1,7 +1,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 from cdk8s import (  # pytest auto-collects classes named Test*
     ApiObject,
     ApiObjectMetadata,
@@ -130,7 +129,3 @@ def test_place_refuses_a_placed_pod_and_both_refuse_an_unknown_kind(chart: Chart
     service = k8s.KubeService(chart, "service", metadata=k8s.ObjectMeta(name="app"))
     with pytest.raises(KeyError):
         pod_policy.harden(service)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

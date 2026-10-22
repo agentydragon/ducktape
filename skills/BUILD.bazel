@@ -37,6 +37,5 @@ py_test(
         ":frontmatter_validation",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

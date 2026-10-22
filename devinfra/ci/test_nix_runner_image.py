@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.ci import nix_runner_image
 
@@ -137,7 +136,3 @@ def test_reproducibility_check_rejects_a_different_rebuilt_manifest(
 
     with pytest.raises(ValueError, match="image assembly is not reproducible"):
         nix_runner_image.build(tmp_path, tmp_path / "work", check_reproducible=True)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

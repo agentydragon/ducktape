@@ -41,7 +41,6 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

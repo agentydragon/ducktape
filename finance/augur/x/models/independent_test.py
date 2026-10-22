@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.series import SP500_SYMBOL, HomeValueKey, InflationKey, LocationId, RentKey, SecurityKey
@@ -104,7 +103,3 @@ def test_realized_model_keeps_role_structure(example_config: IndependentProvider
         "home_value:san_francisco_ca",
         "rent:san_francisco_ca",
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

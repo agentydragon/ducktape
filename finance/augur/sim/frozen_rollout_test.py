@@ -6,8 +6,6 @@ Later supplied exogenous marks are not observations of the stopped rollout.
 
 from decimal import Decimal
 
-import pytest_bazel
-
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
 from finance.augur.policy.funding import ClaimPayer
@@ -210,7 +208,3 @@ def test_a_tax_year_the_rollout_did_not_survive_is_not_assessed() -> None:
 
     assert rollout.trace is not None
     assert not [row for book in rollout.trace.books for row in book.tax_liabilities]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

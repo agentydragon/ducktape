@@ -5,7 +5,6 @@ This only uses the isolated pgvector testcontainer; it never reads a deployed DB
 
 import re
 
-import pytest_bazel
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from testcontainers.postgres import PostgresContainer
@@ -46,7 +45,3 @@ def test_reapply_at_head_preserves_schema(postgres_container: PostgresContainer,
             )
     finally:
         engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

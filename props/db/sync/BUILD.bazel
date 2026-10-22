@@ -92,7 +92,6 @@ py_test(
         "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -112,7 +111,6 @@ py_test(
         "//props/db:models",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -132,7 +130,6 @@ py_test(
         "//props/db:database",
         "//props/db:models",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -155,7 +152,6 @@ py_test(
         "//props/db:database",
         "//props/db:models",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

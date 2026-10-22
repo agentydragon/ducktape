@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from devinfra.pr_visuals.retention import StoredObject, build_retention_report, collect_github_roots
 
@@ -318,7 +317,3 @@ def test_absent_provenance_only_merge_base_does_not_block_a_plan() -> None:
     assert report["plan_status"] == "candidate_plan"
     assert report["unpublished_metadata_dependencies"] == [SHA_B, SHA_C]
     assert [row["prefix"] for row in report["bundles"]["candidates"]] == [f"reviews/{SHA_D}/"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
 import yaml
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
@@ -42,7 +41,3 @@ def test_gateway_probe_rules(tmp_path: Path) -> None:
         cwd=tmp_path,
         check=True,
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

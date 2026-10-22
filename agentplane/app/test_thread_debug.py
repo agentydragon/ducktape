@@ -1,7 +1,6 @@
 """Evidence and raw expansion use scoped, keyset reads over actual projected PostgreSQL rows."""
 
 import httpx
-import pytest_bazel
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
@@ -227,7 +226,3 @@ async def test_lazy_scoped_evidence_and_native_expansion(
             linked = await client.get(f"{path}/{outcome_cursor}/frames", params=command_scope, headers=agent_auth)
             assert linked.status_code == 200, linked.text
             assert linked.json()["frames"][0]["availability"] == "present"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -12,7 +12,6 @@ import asyncio
 from contextlib import AsyncExitStack
 
 import pytest
-import pytest_bazel
 
 from agentplane.native.claude.scenarios import MAX_RETRIES
 from agentplane.native.claude.testing import anthropic_sse, frames
@@ -732,7 +731,3 @@ async def test_nested_child_tool_frames_identify_the_immediate_parent_call(
                     await grandchild.wait_client_closed()
                 for parent in parents:
                     await parent.wait_client_closed()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

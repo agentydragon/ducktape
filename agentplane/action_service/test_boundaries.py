@@ -8,7 +8,6 @@ from uuid import UUID
 
 import httpx
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api
 
@@ -253,7 +252,3 @@ async def test_an_unlabelled_account_authenticates_and_reaches_no_route(caplog: 
     rendered = "\n".join(record.getMessage() for record in caplog.records)
     assert PRINCIPAL_A.service_account_name in rendered
     assert CALLER_LABEL in rendered
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

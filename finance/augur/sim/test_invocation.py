@@ -3,7 +3,6 @@
 from collections.abc import Callable
 
 import numpy as np
-import pytest_bazel
 
 from finance.augur.model.series import InflationKey
 from finance.augur.sim.actions import Action, Consume, DecisionActions
@@ -80,7 +79,3 @@ def test_each_path_keeps_its_own_cpi_and_selected_replay_matches_the_population(
     replay = _run(compose, [2, 0], "forensic")
     assert [row.rollout_id for row in replay.rollouts] == [2, 0]
     assert [row.summary for row in replay.rollouts] == [baseline.rollouts[id_].summary for id_ in [2, 0]]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

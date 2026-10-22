@@ -4,7 +4,6 @@ import shutil
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from skills.freecad.conftest import assert_run_ok, copy_outputs
 from skills.freecad.testing.compare import assert_png_equal
@@ -44,7 +43,3 @@ def render_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_run, freeca
 
 def test_render_3d_golden(render_outputs: Path) -> None:
     assert_png_equal(render_outputs / "cube_with_hole.png", get_required_path(_GOLDEN))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

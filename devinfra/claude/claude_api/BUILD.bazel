@@ -58,7 +58,6 @@ py_test(
         ":usage",
         "//:conftest",
         "//devinfra/claude:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -76,7 +75,6 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -94,6 +92,5 @@ py_test(
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

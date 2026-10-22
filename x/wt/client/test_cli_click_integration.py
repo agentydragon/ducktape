@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import pytest_bazel
 from typer.testing import CliRunner
 
 from x.wt.cli import app
@@ -61,7 +60,3 @@ class TestNewCLIIntegration:
 
         assert result.exit_code == 0
         assert ["wt", name, *description.split()] in [line.split() for line in result.output.splitlines()]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

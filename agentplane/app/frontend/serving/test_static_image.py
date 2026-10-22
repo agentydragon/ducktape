@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 
 import httpx
-import pytest_bazel
 from testcontainers.core.container import DockerContainer
 
 from agentplane.app.frontend.serving.image import IMAGE
@@ -77,7 +76,3 @@ def test_static_image_serves_assets_without_revalidation() -> None:
         assert "listen 8080;" in nginx_config
         assert "worker_processes 1;" in nginx_config
         assert "proxy_pass" not in nginx_config
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

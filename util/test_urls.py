@@ -1,7 +1,6 @@
 from typing import Annotated
 
 import pytest
-import pytest_bazel
 from pydantic import AfterValidator, AnyHttpUrl, TypeAdapter, ValidationError
 
 from util.urls import (
@@ -99,7 +98,3 @@ def test_public_url_validators_compose_with_annotated_types() -> None:
         TypeAdapter(without_fragment).validate_python("https://example.test/path#fragment")
     with pytest.raises(ValidationError):
         TypeAdapter(without_credentials).validate_python("https://user:secret@example.test/path")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

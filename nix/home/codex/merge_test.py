@@ -1,8 +1,6 @@
 import textwrap
 import tomllib
 
-import pytest_bazel
-
 from nix.home.codex import merge
 from util.bazel.runfiles import get_required_path
 
@@ -52,7 +50,3 @@ def test_deep_merge_adds_base_only_table_beside_live_entries() -> None:
         "live_scalar": "live-value",
         "shared": {"live_only": {"key": "live-value"}, "base_only": {"nested": {"key": "base-value"}}},
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

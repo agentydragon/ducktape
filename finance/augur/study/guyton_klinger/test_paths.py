@@ -3,7 +3,6 @@
 from collections.abc import Sequence
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.study.guyton_klinger.panel import AnnualPanel, Sleeve
@@ -66,7 +65,3 @@ def test_rejects_windows_the_panel_does_not_complete(
 def test_cpi_indexed_taxes_need_the_panel_to_cover_the_tables_law_year(panel: AnnualPanel) -> None:
     with pytest.raises(ValueError, match="does not cover 2024"):
         annual_windows(panel, start_years=[1990], years=2, tax_law=TaxLaw.CPI_INDEXED)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

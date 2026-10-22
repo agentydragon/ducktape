@@ -22,7 +22,6 @@ from uuid import UUID, uuid4
 import grpc
 import httpx
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import select
@@ -1015,7 +1014,3 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
         await model.reply(await model.request(), Text("CONTINUED"))
         # History never saw any of it.
         assert await event_logs.last_cursor(thread_id) == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

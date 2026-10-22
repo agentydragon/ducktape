@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings
@@ -28,7 +27,3 @@ def test_canonical_metadata_url_is_accepted() -> None:
 def test_metadata_url_rejects_noncanonical_or_disallowed_urls(url: str) -> None:
     with pytest.raises(ValidationError, match=r"URL|url"):
         McpClientMetadataSettings.model_validate({"url": url, "client_name": "Test"})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

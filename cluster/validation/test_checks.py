@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
@@ -199,7 +198,3 @@ def _namespace(labels: dict[str, str]) -> dict:
 )
 def test_update_mode_contradicts_only_an_opt_out(labels: dict[str, str], flagged: bool) -> None:
     assert bool(check_goldilocks_namespace_labels(_cluster_with(_namespace(labels)))) is flagged
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -12,7 +12,6 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 
 from devinfra.claude.testing import container_e2e
@@ -217,7 +216,3 @@ def test_container_e2e(container: container_e2e.E2EContainer) -> None:
 
     # Bazel build over the staged workspace.
     _exec_under_env(container, "bazelisk build //:hello", workdir="/project")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

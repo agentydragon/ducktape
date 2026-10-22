@@ -10,7 +10,6 @@ Verifies that database constraints correctly enforce:
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
@@ -165,7 +164,3 @@ def test_foreign_key_cascade_delete(test_critic_run, db: Database):
         # Verify occurrence was deleted
         occ_count = session.query(ReportedIssueOccurrence).filter_by(id=occ_id).count()
         assert occ_count == 0, "Occurrence should be deleted via cascade"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

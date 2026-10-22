@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from finance.augur.fit import evidence_data
 from finance.augur.fit.data import load_evidence, load_fred_only_evidence
@@ -68,7 +67,3 @@ def test_full_evidence_anchors_preserve_actual_source_units(synthetic_evidence_d
     assert evidence.metadata.auxiliary_observations["sp500_price"].units == ObservationUnits.INDEX_POINTS
     assert evidence.metadata.auxiliary_observations["mortgage30"].units == ObservationUnits.PERCENT
     assert evidence.metadata.return_sources
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,7 +4,6 @@ import re
 import time
 
 import httpx
-import pytest_bazel
 from testcontainers.core.container import DockerContainer
 
 from util.oci import OciImage, load_oci_image
@@ -85,7 +84,3 @@ def test_static_image_cache_contract() -> None:
         # pinned in the rendered config rather than over the wire.
         assert "gzip_proxied any;" in nginx_config
         assert "application/json" in nginx_config
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

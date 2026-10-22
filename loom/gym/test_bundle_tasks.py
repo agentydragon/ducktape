@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 
-import pytest_bazel
-
 from loom.gym.bundle_tasks import BundleSpec, tasks_for_bundle, tasks_for_bundle_spec
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.task import BinaryOutcome, CategoricalOutcome, CategoricalQuestion
@@ -48,7 +46,3 @@ def test_bundle_tasks_iterates_anchor_grid() -> None:
     tasks = tasks_for_bundle_spec(SPEC, anchor_start=date(2020, 1, 1), anchor_step_months=3)
     assert {task.bundle_id for task in tasks} == {"ramp-bundle-2020-01", "ramp-bundle-2020-04"}
     assert len({task.task_id for task in tasks}) == len(tasks)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

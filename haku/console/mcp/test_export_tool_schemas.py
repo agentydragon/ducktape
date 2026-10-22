@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from jsonschema import Draft202012Validator
 
 from haku.console.mcp.export_tool_schemas import (
@@ -110,7 +109,3 @@ async def test_result_schemas_validate_and_terminate_recursion() -> None:
 def test_rejects_schemas_the_frontend_adapter_was_not_reviewed_against(schema: dict[str, object], message: str) -> None:
     with pytest.raises(ValueError, match=message):
         _validate_frontend_schema(schema, "$.tool")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

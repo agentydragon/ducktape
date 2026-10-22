@@ -5,7 +5,6 @@ from __future__ import annotations
 import textwrap
 
 import pytest
-import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
@@ -94,7 +93,3 @@ def test_unknown_group_or_action_fails_clearly(group_key: str, action_key: str) 
 def test_group_and_action_keys_must_be_stable_identifiers(bad_yaml: str) -> None:
     with pytest.raises(ValidationError):
         ActionCatalog(groups=yaml.safe_load(bad_yaml))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

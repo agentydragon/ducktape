@@ -1,6 +1,5 @@
 import httpx
 import pytest
-import pytest_bazel
 from fastapi.testclient import TestClient
 
 from cluster.exporters.github_graphql_rate_limit.main import RateLimit, Settings, create_app, query_rate_limit
@@ -60,7 +59,3 @@ def test_metrics_endpoint_fails_when_headers_are_missing() -> None:
         response = client.get("/metrics")
 
     assert response.status_code == 502
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

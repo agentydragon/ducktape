@@ -3,7 +3,6 @@ from pathlib import Path
 import pathspec
 import pygit2
 import pytest
-import pytest_bazel
 
 from agentplane.indexing.conftest import Upstream
 from agentplane.indexing.settings import SnapshotLimits
@@ -105,7 +104,3 @@ async def test_relocated_remote_refetches_from_the_new_url(upstream: Upstream, t
     assert second is not None
     assert second.repository_url == moved.url
     assert second.files == {"doc.txt": b"new home\n"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

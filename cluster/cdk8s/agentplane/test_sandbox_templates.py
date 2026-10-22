@@ -7,7 +7,6 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -137,7 +136,3 @@ def test_runner_tool_config_role_is_scoped_to_the_canonical_map(
     config_maps = {volume["name"]: volume["configMap"]["name"] for volume in volumes if "configMap" in volume}
     assert config_maps["platform-instructions"] == "runner-platform-instructions"
     assert config_maps["tool-config"] == "sandbox-tool-config"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

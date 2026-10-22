@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from x.rl_finetune.wordle_env import (
     MAX_GUESSES,
@@ -186,7 +185,3 @@ class TestWordleEnv:
             if not env.done:
                 env.guess(wrong)
         assert env.reward > 0.0  # should get partial credit from shared letters
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

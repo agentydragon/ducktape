@@ -1,7 +1,5 @@
 """Unit tests for secret function implementations."""
 
-import pytest_bazel
-
 from skills.info_gathering.evals.function_learning.functions import (
     AES_FIELD_AFFINE,
     BENT_INNER_PRODUCT,
@@ -152,7 +150,3 @@ def test_all_functions_have_correct_dimensions() -> None:
     assert REED_MULLER_3.n == 7
     assert REED_MULLER_3.m == 4
     assert len(REED_MULLER_3.all_inputs()) == 128
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

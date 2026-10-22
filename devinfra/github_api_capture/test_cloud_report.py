@@ -3,7 +3,6 @@ import json
 from dataclasses import asdict
 
 import pytest
-import pytest_bazel
 from mitmproxy import connection, http
 
 from devinfra.github_api_capture.cloud_report import summarize
@@ -73,7 +72,3 @@ def test_incomplete_cloud_response_is_not_a_success(flow: http.HTTPFlow) -> None
     assert record is not None
     assert record.status is None
     assert record.completed_at is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

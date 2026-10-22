@@ -58,7 +58,6 @@ py_test(
         ":tmux_lib",
         "//:conftest",
         "//aiquota:models",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -78,7 +77,6 @@ py_test(
         "//aiquota/testing:quota_fixtures",
         "//util/bazel:runfiles",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//syrupy",
     ],
 )
@@ -90,6 +88,5 @@ py_test(
         ":view_model_lib",
         "//:conftest",
         "//aiquota:models",
-        "@pypi//pytest_bazel",
     ],
 )

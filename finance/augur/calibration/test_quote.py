@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from finance.augur.calibration.quote import BookQuote, PoolQuote, implied_probability, quote_confidence
 
@@ -53,7 +52,3 @@ def test_confidence_ranks_tight_over_wide_over_one_sided_over_none() -> None:
     assert quote_confidence(tight, volume=1000.0) > quote_confidence(wide, volume=1000.0)
     assert quote_confidence(wide, volume=1000.0) > quote_confidence(one_sided, volume=60000.0)
     assert quote_confidence(None, volume=1000.0) == 0.0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

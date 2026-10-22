@@ -4,7 +4,6 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import UTC, datetime
 
 import pytest
-import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.plaid.db.link_store import PlaidLinkStorage
@@ -139,7 +138,3 @@ async def test_read_current_holdings_returns_latest_selected_usd_holdings(
     assert holdings[0].quantity == 3.0
     assert holdings[0].institution_value == 1350.0
     assert holdings[0].cost_basis == 900.0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

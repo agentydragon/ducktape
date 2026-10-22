@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest_bazel
-
 from devinfra.orphans.find_orphans import PatternStats, run_report
 from util.bazel.workspace import BazelBackend, BazelWorkspace
 
@@ -77,7 +75,3 @@ def test_dead_pattern_with_bazel_covered(tmp_path: Path) -> None:
     assert _unused(stats) == ["*.py"]
     assert stats[0].bazel_covered == 1
     assert stats[0].orphaned == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

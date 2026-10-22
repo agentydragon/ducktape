@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from devinfra.github_proxy.central.config import ClientCredential, Settings
@@ -37,7 +36,3 @@ def test_separate_secret_files_reject_duplicate_clients(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="Duplicate client IDs"):
         settings.credentials()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

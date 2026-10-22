@@ -25,7 +25,6 @@ py_test(
         "//finance/augur/x/bounded_spending:python_policy",
         "//util/bazel:runfiles",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

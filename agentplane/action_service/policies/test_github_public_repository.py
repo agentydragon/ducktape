@@ -6,7 +6,6 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-import pytest_bazel
 from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
@@ -67,7 +66,3 @@ async def test_unconfirmed_targets_do_not_match(
     decision = await evaluate(POLICY, GET_FILE, arguments, github_visibility(*public, unavailable=unavailable))
     assert isinstance(decision, NotMatched)
     assert reason in decision.reason
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

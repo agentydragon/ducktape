@@ -2,8 +2,6 @@
 
 import json
 
-import pytest_bazel
-
 from agentplane.action_service.policies.generate_golden import build, serialize
 from util.bazel.runfiles import get_required_path
 
@@ -19,7 +17,3 @@ async def test_golden_vectors_are_what_the_python_service_decides() -> None:
         for name, vector in vectors.items():
             assert checked_in.get(section, {}).get(name) == vector, f"{section}: {name}; {hint}"
     assert checked_in == produced, hint
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

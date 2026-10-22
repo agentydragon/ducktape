@@ -114,19 +114,14 @@ py_test(
     name = "test_my_recipe",
     srcs = ["test_my_recipe.py"],
     data = ["golden.png", "//skills/myskill/conda:tool_binary"],
-    deps = [":my_recipe", "//skills/myskill:conftest", "@pypi//pytest_bazel", ...],
+    deps = [":my_recipe", "//skills/myskill:conftest", ...],
 )
 ```
 
-Every `py_test` must include a `pytest_bazel.main()` entry point — without it Bazel
-exits 0 without running any tests (see AGENTS.md):
-
-```python
-import pytest_bazel
-# ... tests ...
-if __name__ == "__main__":
-    pytest_bazel.main()
-```
+The repo `//devinfra/python:defs.bzl` wrapper runs `pytest_bazel` for default-entrypoint
+tests, so their source files do not need a runner import or `__main__` guard. Raw/native
+`py_test` targets with an implicit main still need the guard; explicit `main` and
+`main_module` targets keep their declared entrypoint behavior (see AGENTS.md).
 
 **Packaging recipes from a subpackage**: `skill_package`'s simple `srcs=` form uses
 `strip_prefix.from_pkg()`, which drops subdirectory structure for cross-package

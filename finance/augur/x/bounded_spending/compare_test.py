@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
@@ -246,7 +245,3 @@ def test_actual_study_cli_runs_on_generated_placeholder_paths(tmp_path: Path) ->
     replay = Rollout.model_validate_json((output / "bounded.trace-2.json").read_text())
     assert replay.summary == population.rollouts[2].summary
     assert consumption(population)[1][2][12] == 4_992_000
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

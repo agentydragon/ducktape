@@ -1,11 +1,12 @@
-"""Check entry points of Python test sources during Bazel builds."""
+"""Check entry points of native/default Python test sources during Bazel builds."""
 
 def _pytest_main_impl(target, ctx):
-    if ctx.rule.kind != "py_test" or ctx.rule.attr.main:
+    if ctx.rule.kind != "py_test" or ctx.rule.attr.main or ctx.rule.attr.main_module == "pytest_bazel":
         return []
 
-    # Match the former pre-commit check: conftest.py is pytest support code,
-    # not a standalone test entry point. Check source files, not transitive deps.
+    # The repo wrapper owns this entry point when it selects pytest_bazel.
+    # Match the former pre-commit check for native defaults: conftest.py is pytest
+    # support code, not a standalone test entry point. Check direct sources only.
     srcs = [f for f in ctx.rule.files.srcs if f.extension == "py" and f.basename != "conftest.py"]
     if not srcs:
         return []

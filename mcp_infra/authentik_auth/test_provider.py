@@ -7,7 +7,6 @@ from unittest.mock import Mock, patch
 
 import httpx
 import pytest
-import pytest_bazel
 from fastmcp.server.auth.auth import TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration
 
@@ -173,7 +172,3 @@ def test_compose_authentik_auth_uses_caller_owned_proxy_without_reconfiguring_it
     auth_build_harness.downstream_proxy_cls.assert_not_called()
     proxy.update_default_scopes.assert_not_called()
     assert auth_build_harness.multi_auth_cls.call_args.kwargs == {"server": proxy, "verifiers": [sentinel]}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

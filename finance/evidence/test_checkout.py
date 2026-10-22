@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pygit2
 import pytest
-import pytest_bazel
 
 from finance.evidence.checkout import _EgressTrust, ensure_checkout
 
@@ -66,7 +65,3 @@ def test_clone_uses_egress_trust_callbacks(monkeypatch: pytest.MonkeyPatch, tmp_
     monkeypatch.setattr(pygit2, "clone_repository", fake_clone)
     ensure_checkout()
     assert isinstance(captured["callbacks"], _EgressTrust)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

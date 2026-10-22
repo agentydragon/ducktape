@@ -27,7 +27,6 @@ py_test(
     deps = [
         ":probe_models",
         "//:conftest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )

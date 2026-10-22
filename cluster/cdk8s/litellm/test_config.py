@@ -1,7 +1,5 @@
 """Invariants over the generated main-proxy config."""
 
-import pytest_bazel
-
 from cluster.cdk8s.litellm.config import main_proxy_config, model_entry
 from cluster.cdk8s.litellm.proxy import proxy_specs
 from cluster.cdk8s.litellm.upstreams import RUGGED_LOCAL_LLM_API_BASE, RUGGED_LOCAL_LLM_KEY_ENV
@@ -47,7 +45,3 @@ def test_long_context_route_has_explicit_litellm_timeouts() -> None:
     assert long_context["stream_timeout"] == 2_400
     assert "timeout" not in standard
     assert "stream_timeout" not in standard
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

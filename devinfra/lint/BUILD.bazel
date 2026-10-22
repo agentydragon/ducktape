@@ -79,7 +79,7 @@ go_library(
     deps = ["@co_honnef_go_tools//unused:go_default_library"],
 )
 
-# The pytest-main aspect runs this checker on each py_test's non-conftest srcs.
+# The pytest-main aspect checks non-conftest sources on native/default py_test targets.
 py_library(
     name = "pytest_main_check",
     srcs = ["pytest_main_check.py"],
@@ -97,6 +97,5 @@ py_test(
     deps = [
         ":pytest_main_check",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )

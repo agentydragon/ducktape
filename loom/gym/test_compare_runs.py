@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-import pytest_bazel
 
 from loom.gym.compare_runs import metric_deltas_by_cluster
 
@@ -17,7 +16,3 @@ def test_deltas_pair_only_shared_tasks_and_metrics() -> None:
     # "only-a" is unpaired; t2's brier exists only in run A; t3 only in run B.
     assert set(deltas) == {"log_loss"}
     assert sorted(deltas["log_loss"][date(2024, 7, 1)]) == pytest.approx([-0.2, -0.1])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

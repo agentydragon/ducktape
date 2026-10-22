@@ -8,7 +8,6 @@ The filtering is based on match_file_restriction:
 
 from __future__ import annotations
 
-import pytest_bazel
 from sqlalchemy import text
 
 
@@ -81,7 +80,3 @@ class TestMatchableOccurrences:
                 assert is_unrestricted, (
                     f"TP {row.tp_id}/{row.tp_occurrence_id} matched from empty array but isn't unrestricted"
                 )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

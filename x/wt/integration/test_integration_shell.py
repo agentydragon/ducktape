@@ -16,7 +16,6 @@ exit code semantics, and process boundary interactions.
 # - DON'T mock across process boundaries - create real error conditions instead
 
 import pytest
-import pytest_bazel
 
 # The test drives `python -m x.wt.shell.install` in a subprocess; the module
 # is referenced only as a string, so gazelle cannot see the dependency.
@@ -66,7 +65,3 @@ echo "$create_exit:$to_wt_exit:$to_main_exit:$pwd_before:$pwd_after"
         expected_before = str(real_temp_repo / "worktrees" / "to-main")
         assert before == expected_before
         assert after == str(real_temp_repo)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

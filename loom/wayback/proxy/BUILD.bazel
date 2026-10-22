@@ -60,7 +60,6 @@ py_test(
         "@pypi//aiohttp",
         "@pypi//mitmproxy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//yarl",
     ],
 )
@@ -79,7 +78,6 @@ py_test(
         "//:conftest",
         "@pypi//aiohttp",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//yarl",
     ],
 )
@@ -144,6 +142,5 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

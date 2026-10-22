@@ -87,7 +87,6 @@ py_test(
         "//:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -121,7 +120,6 @@ py_test(
         "//mcp_infra/authentik_auth:config",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -138,7 +136,6 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -152,7 +149,6 @@ py_test(
         "//mcp_infra:static_bearer",
         "@pypi//httpx",
         "@pypi//pydantic",
-        "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
 )
@@ -168,6 +164,5 @@ py_test(
         "//mcp_infra/testing:remote_server",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
-        "@pypi//pytest_bazel",
     ],
 )

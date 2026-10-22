@@ -117,7 +117,6 @@ py_test(
         "//props:conftest",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -133,7 +132,6 @@ py_test(
         "//props:conftest",
         "//props/core:ids",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -156,7 +154,6 @@ py_test(
         "//props/db:models",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -18,7 +18,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 import yaml
 from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from pydantic import SecretStr, ValidationError
@@ -441,7 +440,3 @@ def test_operator_oidc_requires_canonical_public_origin(migrated_db_url: str) ->
         console_settings(migrated_db_url, operator_oidc=oidc, public_base_url=None)
     with pytest.raises(ValidationError):
         console_settings(migrated_db_url, operator_oidc=oidc, public_base_url="https://haku.test/a/path")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

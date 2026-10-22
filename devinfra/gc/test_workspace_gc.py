@@ -6,7 +6,6 @@ from collections.abc import Callable
 
 import httpx
 import pytest
-import pytest_bazel
 import respx
 
 from devinfra.gc import workspace_gc, workspace_scan
@@ -148,7 +147,3 @@ def test_render_branches_prints_numeric_looking_branch_names_verbatim(
 
     # STATUS, BRANCH: the second cell of a row. The default branch is kept, so it is not a row.
     assert _cells(report, 1) == sorted(_NUMERIC_LOOKING_BRANCHES)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

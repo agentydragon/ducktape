@@ -1,13 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
-import pytest_bazel
-
 from aiquota.models import FetchError, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow, SuccessfulProviderFetch
 from aiquota.render.tmux import _AI_GLYPH, render, render_provider
-
-if __name__ == "__main__":
-    pytest_bazel.main()
-
 
 _NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 

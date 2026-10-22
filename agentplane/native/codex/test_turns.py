@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 
-import pytest_bazel
 from more_itertools import one
 
 from agentplane.native.codex import scenarios, wire
@@ -275,7 +274,3 @@ async def test_resumed_redispatch_of_an_accepted_input_duplicates_native_history
                 ).events
             )
         assert (await redispatched.completed()).params.turn.status is wire.TurnStatus.COMPLETED
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

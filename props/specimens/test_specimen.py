@@ -10,8 +10,6 @@ from __future__ import annotations
 import os
 import tarfile
 
-import pytest_bazel
-
 from props.db.database import Database
 from props.db.models import Snapshot
 from props.db.sync.sync import SpecimenBundle, sync_specimen
@@ -46,7 +44,3 @@ def test_specimen(db: Database) -> None:
 
         tp_count = len(snapshot.true_positives)
         assert tp_count > 0, f"Specimen {bundle.slug} has no true positives"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

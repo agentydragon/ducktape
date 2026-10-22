@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -95,7 +94,3 @@ async def test_listener_reconnect_wakes_every_channel_for_writes_during_the_gap(
             assert not changed.is_set()
     finally:
         await engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

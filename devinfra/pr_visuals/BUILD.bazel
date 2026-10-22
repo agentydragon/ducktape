@@ -63,7 +63,6 @@ py_test(
         "//:conftest",
         "//util:visual_review",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -145,7 +144,6 @@ py_test(
         ":retention",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -156,7 +154,6 @@ py_test(
         ":check_run",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -178,7 +175,6 @@ py_test(
         "@pypi//botocore",
         "@pypi//pillow",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -224,7 +220,6 @@ py_test(
         ":pull_request",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -279,7 +274,6 @@ py_test(
         "//:conftest",
         "//devinfra/pr_visuals:publisher",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )
 

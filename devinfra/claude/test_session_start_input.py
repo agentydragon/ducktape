@@ -1,7 +1,5 @@
 """Unit tests for SessionStartHookInput parsing."""
 
-import pytest_bazel
-
 from devinfra.claude.claude_api.hooks.common import PermissionMode
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 
@@ -50,7 +48,3 @@ def test_missing_model_defaults_to_none() -> None:
         }
     )
     assert result.model is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

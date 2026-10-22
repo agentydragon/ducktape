@@ -3,8 +3,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date
 
-import pytest_bazel
-
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.path_tasks import path_tasks, tasks_for_path
 from loom.gym.task import CategoricalOutcome, CategoricalQuestion
@@ -93,7 +91,3 @@ def test_path_tasks_iterates_anchor_grid() -> None:
     # Only the 2020-01 anchor has a full 12-month window within DIP's 14 months.
     tasks = path_tasks([DIP], anchor_start=ANCHOR, anchor_step_months=3)
     assert {task.task_id for task in tasks} == {"sp500-bundle-2020-01-drawdown", "sp500-bundle-2020-01-first-cross"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from devinfra.ci.pr_mergeability import (
     Conflicted,
@@ -143,7 +142,3 @@ def test_merge_of_another_head_is_rejected() -> None:
         verify_source_revision(
             "merge", expected_sha="merge", expected_head_sha="current-head", second_parent_sha="old-head"
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

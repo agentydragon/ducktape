@@ -3,7 +3,6 @@
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client.exceptions import ApiException
 
@@ -96,7 +95,3 @@ async def test_policyset_admission() -> None:
             with pytest.raises(ApiException) as rejected:
                 await create(rule)
             assert rejected.value.status == 422, rejected.value.body
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

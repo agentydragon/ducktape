@@ -22,7 +22,6 @@ py_test(
         "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
 )

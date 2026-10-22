@@ -4,7 +4,6 @@ import math
 from datetime import date
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from loom.gym.scoring import BinaryAnswer, CategoricalAnswer, QuantileAnswer, cluster_bootstrap_ci, pinball_loss, score
@@ -161,7 +160,3 @@ def test_cluster_bootstrap_ci() -> None:
 def test_answer_outcome_kind_mismatch_raises() -> None:
     with pytest.raises(ValueError, match="does not match"):
         score(BINARY_TASK_YES, QuantileAnswer(quantiles={0.5: 1.0}))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

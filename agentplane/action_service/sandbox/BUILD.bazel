@@ -21,7 +21,6 @@ py_test(
         "//:conftest",
         "//agentplane/action_service:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -75,7 +74,6 @@ py_test(
         "//util/exec:models",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -114,7 +112,6 @@ py_test(
         "//util/exec:models",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -147,7 +144,6 @@ py_test(
         "//agentplane/action_service:conftest",
         "@pypi//jsonschema",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//referencing",
     ],
 )
@@ -239,6 +235,5 @@ py_test(
         "//agentplane/action_service:conftest",
         "//agentplane/action_service:generate_golden",
         "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )

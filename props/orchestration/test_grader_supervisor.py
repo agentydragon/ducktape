@@ -18,7 +18,6 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 
 from props.core.ids import SnapshotSlug
 from props.orchestration.agent_registry import GraderPodInfo, ImageResolutionError, ResolvedImage
@@ -354,7 +353,3 @@ async def test_reconcile_logs_trigger(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.INFO, logger="props.orchestration.grader_supervisor"):
         await gs.reconcile(trigger="startup")
     assert "Reconcile triggered by startup" in "\n".join(r.getMessage() for r in caplog.records)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

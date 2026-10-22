@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 
 @pytest.mark.parametrize("status", [0, 7, 124])
@@ -39,7 +38,3 @@ def test_postprocessing_preserves_status_and_partial_output(tmp_path: Path, stat
         assert report.with_suffix(".txt.stderr").read_text() == "diagnostic\n"
         assert not failure.exists()
     assert not list(output.glob("*.tmp"))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,7 +4,6 @@ import json
 
 import httpx
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.ollama_warmup import warm_ollama
 from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_128K
@@ -47,7 +46,3 @@ async def test_an_unreachable_ollama_does_not_fail_the_test(caplog: pytest.LogCa
 
     await warm_ollama(QWEN.id, transport=httpx.MockTransport(refuse))
     assert any(record.levelname == "WARNING" for record in caplog.records)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

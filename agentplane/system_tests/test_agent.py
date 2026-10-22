@@ -8,7 +8,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 
 from agentplane.app.live import SandboxesSnapshot
 from agentplane.app.testing.client import Client
@@ -263,7 +262,3 @@ async def test_run_rejects_unsuccessful_terminal_after_partial_output(status: ev
     assert client.submit_input.call_args.args[1] != first_command_id
     assert client.submit_input.call_args.args[2] == "test explicit next prompt"
     assert client.events.call_args.kwargs["after"] == 11
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

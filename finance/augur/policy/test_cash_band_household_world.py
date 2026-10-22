@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.policy.cash_band_household import (
@@ -375,7 +374,3 @@ def test_exact_integer_indices_and_a_sales_only_scope_are_valid() -> None:
         source_account_ids=(AccountId("unused-holdings"),),
         ceiling=INDEX,
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

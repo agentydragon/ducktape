@@ -21,7 +21,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 import uvicorn
 from cryptography.fernet import Fernet
 from fastapi import FastAPI
@@ -787,7 +786,3 @@ async def test_established_http_failure_reconnects_fresh_session(
     assert sum(post["method"] == "initialize" for post in fake_server.posts) >= 2
     assert (await executor.execute(execution_request, execution_lease)).state is ExecutionState.SUCCEEDED
     assert len(fake_server.calls) == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

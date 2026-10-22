@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Annotated
 
-import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.context import Context
@@ -77,7 +76,3 @@ def test_native_function_signature_models_for_display() -> None:
     input_model = input_schemas[(prefix, "add")]
     assert input_model.model_validate({"left": 3}).model_dump() == {"left": 3, "right": 0}
     assert output_schemas[(prefix, "add")] is SumOutput
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

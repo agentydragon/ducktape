@@ -23,7 +23,6 @@ py_test(
         "//agentplane/native:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -43,6 +42,5 @@ py_test(
         "//agentplane/native/claude/testing:messages",
         "@pypi//aiohttp",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -1,7 +1,6 @@
 from typing import Annotated, Literal
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel, Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -144,7 +143,3 @@ def test_supplied_leaves_complete_the_file_so_its_cross_field_rules_run() -> Non
     assert settings_file(_Catalog, content, supplied=supplied) is content
     with pytest.raises(ValidationError, match="not a backend"):
         settings_file(_Catalog, {**content, "default": "grocy"}, supplied=supplied)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

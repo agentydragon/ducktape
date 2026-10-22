@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import numpy as np
-import pytest_bazel
 
 from finance.augur.api.config import DistributionTaxShareConfig, SecurityDistributionConfig
 from finance.augur.api.portfolio import (
@@ -227,7 +226,3 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
     assert sum(row.amount_paid for row in result.summary.tax_payments) == 3600
     assert sales.select("month_index", "proceeds_quanta").row(-1) == (12, 8600)
     assert result.stop is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

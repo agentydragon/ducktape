@@ -5,7 +5,6 @@ from decimal import Decimal
 
 import polars as pl
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import LocationId
@@ -217,7 +216,3 @@ def test_a_transfer_tax_the_owner_owes_needs_an_authority_to_charge_it() -> None
         compose(
             Housing(purchases=(purchase(Parcel(situs=SAN_FRANCISCO, prior_assessed_value=None)),), sales=(SALE,)), ()
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -2,8 +2,6 @@ import threading
 from enum import StrEnum
 from pathlib import Path
 
-import pytest_bazel
-
 from devinfra.gc import output_base_gc, workspace_scan
 from devinfra.gc.branch_gc import PrunableBranch, RetainedBranch, RetainedBranchReason
 from devinfra.gc.conftest import GitRepo, make_base
@@ -183,7 +181,3 @@ def test_base_workspace_branches_covers_only_base_workspaces(
     bases = list(output_base_gc.scan_output_user_root(root, proc_root=proc, mountinfo_path=mountinfo))
 
     assert workspace_scan.base_workspace_branches(repo.path, bases) == {"has_base"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

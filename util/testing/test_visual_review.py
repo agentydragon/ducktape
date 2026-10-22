@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pydantic
 import pytest
-import pytest_bazel
 
 from util.testing.visual_review import upsert_review_asset, write_visual_review_manifest
 from util.visual_review import VisualReviewAsset
@@ -54,7 +53,3 @@ def test_upsert_review_asset_accumulates_and_keeps_the_first_label_of_a_path(tmp
         "title": "Example UI",
         "assets": [{"path": "a.png", "label": "A"}, {"path": "b.png", "label": "B"}],
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

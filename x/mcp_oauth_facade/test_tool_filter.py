@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
@@ -75,7 +74,3 @@ async def test_call_disallowed_tool_is_rejected() -> None:
     async with Client(_server(_READ_ONLY)) as client:
         with pytest.raises(ToolError):
             await client.call_tool("trash_node", {})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

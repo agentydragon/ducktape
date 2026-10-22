@@ -166,7 +166,6 @@ py_test(
         "//cluster/cdk8s/providers/flux:imagepolicy",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -205,6 +204,5 @@ py_test(
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

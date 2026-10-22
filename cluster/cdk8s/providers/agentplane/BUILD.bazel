@@ -27,7 +27,6 @@ py_test(
         "//:conftest",
         "//agentplane/crds:egresscredential",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import SessionDefaults
@@ -57,7 +56,3 @@ def test_opening_defaults_resolve_from_the_authoritative_sandbox_preset_label(pr
     assert presets.defaults_for_sandbox(None).model is None
     with pytest.raises(KeyError, match="not in the app's preset catalog"):
         presets.defaults_for_sandbox("deleted-config")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

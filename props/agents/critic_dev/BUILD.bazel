@@ -189,7 +189,6 @@ py_test(
         "//util/exec:models",
         "@pypi//more_itertools",
         "@pypi//pyhamcrest",
-        "@pypi//pytest_bazel",
     ],
 )
 

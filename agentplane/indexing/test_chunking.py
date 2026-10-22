@@ -5,7 +5,6 @@ from __future__ import annotations
 import itertools
 
 import pytest
-import pytest_bazel
 
 from agentplane.indexing.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_text, git_chunker_key
 
@@ -94,7 +93,3 @@ def test_the_key_is_canonical() -> None:
 def test_a_budget_that_cannot_be_satisfied_is_refused(kwargs: dict[str, int], match: str) -> None:
     with pytest.raises(ValueError, match=match):
         ChunkBudget(**kwargs)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

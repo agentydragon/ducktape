@@ -12,8 +12,6 @@ This runs the actual binary and asserts it gets past module import.
 import os
 import subprocess
 
-import pytest_bazel
-
 from util.bazel.runfiles import get_required_path
 
 SERVER_BIN = "_main/finance/plaid/link/server_bin"
@@ -39,7 +37,3 @@ def test_container_entrypoint_imports_and_reaches_settings() -> None:
     assert "PlaidWebSettings" in result.stderr, (
         f"binary did not reach settings validation, so module import failed:\n{result.stderr}"
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

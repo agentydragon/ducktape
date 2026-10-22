@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 
 import pytest
-import pytest_bazel
 
 from devinfra.pr_visuals import pull_request
 from devinfra.pr_visuals.pull_request import PullRequestRef, find_reviewable_pull_request
@@ -81,7 +80,3 @@ def test_a_closed_unmerged_pr_is_not_reviewable(monkeypatch: pytest.MonkeyPatch)
 def test_two_prs_at_the_same_commit_are_ambiguous(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValueError, match="Expected exactly one"):
         _find(monkeypatch, [_pull(1), _pull(2)])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

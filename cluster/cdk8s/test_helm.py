@@ -4,7 +4,6 @@ repository's, whose ref pins it."""
 from collections.abc import Callable
 
 import pytest
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from constructs import Construct
 
@@ -63,7 +62,3 @@ def test_git_repository_chart_references_its_source() -> None:
         "chart": "charts/test-chart",
         "sourceRef": {"kind": "GitRepository", "name": "test-source", "namespace": "test-namespace"},
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

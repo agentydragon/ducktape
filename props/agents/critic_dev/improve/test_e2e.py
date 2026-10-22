@@ -20,7 +20,6 @@ condition checks would require real grading infrastructure.
 
 from __future__ import annotations
 
-import pytest_bazel
 from hamcrest import assert_that
 
 from agent_core.testing.responses import PlayGen
@@ -107,7 +106,3 @@ async def test_prompt_improve_e2e_creates_package(
     with db.session() as session:
         agent_run = session.query(AgentRun).filter_by(agent_run_id=result).one()
         assert agent_run.critic_dev_improve_config().allowed_examples == [subtract_file_example]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

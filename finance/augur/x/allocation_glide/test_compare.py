@@ -4,7 +4,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.results import Finished, Paid
 from finance.augur.x.allocation_glide.compare import execute, situation
@@ -59,7 +58,3 @@ def test_selected_replay_matches_compact_population_and_keeps_balanced_books(out
             assert sum(posting.amount for posting in entry.postings) == 0
     [replay] = execute(situation(), annual_step=0 if name == "constant" else 5, rollout_ids=[2], capture="forensic")
     assert replay == traces[0]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

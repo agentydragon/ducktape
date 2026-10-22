@@ -1,4 +1,3 @@
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
@@ -17,7 +16,3 @@ def test_plain_endpoint_wire_shape() -> None:
     (manifest,) = Cdk8sTesting.synth(chart)
     (endpoint,) = manifest["spec"]["podMetricsEndpoints"]
     assert endpoint == {"port": "metrics", "path": "/metrics", "scrapeTimeout": "10s"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

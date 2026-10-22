@@ -36,7 +36,6 @@ from datetime import date, timedelta
 
 import httpx
 import pytest
-import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 from opentelemetry import trace
@@ -704,7 +703,3 @@ async def test_list_entities_accepts_view_only_type(mcp_client: Client) -> None:
         )
     )
     assert {"stock", "products_last_purchased", "permission_hierarchy"} <= set(rows)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

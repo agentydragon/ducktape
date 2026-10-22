@@ -6,8 +6,6 @@ an in-flight model request aborts it and drops joined inputs before the next mod
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
@@ -132,7 +130,3 @@ async def test_interrupt_drops_joined_inputs_before_the_next_model_request(
             )
             await recovery_exchange.send(*stream.events)
             assert (await recovery.completed()).params.turn.status is wire.TurnStatus.COMPLETED
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

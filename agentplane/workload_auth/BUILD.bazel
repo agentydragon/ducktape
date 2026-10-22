@@ -30,7 +30,6 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//multidict",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -44,7 +43,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

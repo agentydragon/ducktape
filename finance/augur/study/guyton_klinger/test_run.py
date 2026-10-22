@@ -14,7 +14,6 @@ from fractions import Fraction
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.ids import AssetId
 from finance.augur.sim.results import Finished, Rollout
@@ -428,7 +427,3 @@ def test_initial_wealth_in_one_years_dollars_deflates_to_each_windows_start(tmp_
         ["1000.00", "1000.00"],
     )
     assert (headline["median_real_terminal_wealth"], headline["min_real_annual_spendable"]) == ("720.00", "100.00")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -152,7 +152,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -164,6 +163,5 @@ py_test(
         "//:conftest",
         "//airlock/oauth:config",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -7,7 +7,6 @@ price into a month's arithmetic or into the terminal snapshot.
 import numpy as np
 import polars as pl
 import pytest
-import pytest_bazel
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import (
@@ -184,7 +183,3 @@ def test_an_admitted_sleeve_is_priced_at_the_quote_the_pool_carried() -> None:
     world = alice_holding(*vti_series(100.0, 110.0, 120.0))
     world.declare_pool(agent_id=ALICE, account_id=CHECKING, asset_id=AssetId(VTI.symbol), quantity_scale=SCALE)
     assert world.public_price(ALICE, AssetId(VTI.symbol), 1) == USD.quanta(110)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

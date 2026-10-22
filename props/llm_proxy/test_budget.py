@@ -9,7 +9,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from fastapi import HTTPException
 
 from props.core.agent_types import CriticTypeConfig
@@ -155,7 +154,3 @@ def test_budget_allows_zero_cost_with_zero_budget(synced_db: Database) -> None:
     # No costs incurred — zero spent against zero budget should pass
     with synced_db.session() as session:
         _check_budget(session, run_id, budget_usd=0.0)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

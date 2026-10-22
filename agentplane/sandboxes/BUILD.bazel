@@ -116,7 +116,6 @@ py_test(
         "@pypi//aiohttp",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -147,7 +146,6 @@ py_test(
         "//agentplane/sandboxes/testing:sandbox_namespace",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//types_protobuf",
     ],
 )
@@ -167,7 +165,6 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -187,7 +184,6 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -216,6 +212,5 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

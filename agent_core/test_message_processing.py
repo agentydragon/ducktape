@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from hamcrest import all_of, assert_that, has_item, has_properties, instance_of, not_
 
 from agent_core.agent import Agent
@@ -164,7 +163,3 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_tool_pr
 
     res = await agent.run()
     assert res.text.strip() == "done"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

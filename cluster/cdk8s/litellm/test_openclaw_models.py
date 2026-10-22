@@ -1,7 +1,6 @@
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 
 from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.public_coder import config as public_coder_config
@@ -40,7 +39,3 @@ def test_public_coder_memory_model_is_a_served_embedding_route() -> None:
 
     assert model in served
     assert served[model]["model_info"]["mode"] == "embedding"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

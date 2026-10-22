@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-import pytest_bazel
 
 from devinfra.js.debundle.live_proxy import server
 from devinfra.js.debundle.live_proxy.core import LiveProxyOptions
@@ -60,7 +59,3 @@ class StartProxyInProcessTest(unittest.IsolatedAsyncioTestCase):
                 async with server.start_proxy_in_process(LiveProxyOptions()):
                     pass
         assert "listen port bind failed" in str(excinfo.value)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

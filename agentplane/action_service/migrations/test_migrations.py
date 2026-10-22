@@ -5,7 +5,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from uuid import uuid4
 
-import pytest_bazel
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 
@@ -142,7 +141,3 @@ def test_concurrent_runners_serialize(postgres_admin_url: str, database_names: D
             assert runner.returncode == 0, (stdout, stderr)
         with engine.connect() as conn:
             assert conn.scalar(text(f"SELECT count(*) FROM {_GOOSE_VERSION} WHERE version_id = 1 AND is_applied")) == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

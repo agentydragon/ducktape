@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-import pytest_bazel
 
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
@@ -30,7 +29,3 @@ async def test_matches_by_name_alone(
 ) -> None:
     decision = await evaluate(POLICY, action, {"anything": [1, 2]}, github_visibility())
     assert isinstance(decision, Matched if matched else NotMatched)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

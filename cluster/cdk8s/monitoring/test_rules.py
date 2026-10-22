@@ -3,7 +3,6 @@
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
 import yaml
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
@@ -38,7 +37,3 @@ def test_github_quota_rules(tmp_path: Path) -> None:
 
 def test_disk_usage_rules(tmp_path: Path) -> None:
     _promtool_test_rules(tmp_path, {"disk-usage-rules": "disk-usage.yaml"}, "disk_usage_rules.yaml")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

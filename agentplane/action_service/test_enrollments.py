@@ -11,7 +11,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -365,7 +364,3 @@ async def test_reconnect_rechecks_version_after_consent_and_serializes_competing
     )
     assert sum(isinstance(result, ConnectionConflictError) for result in results) == 1
     assert len((await consent.connections.get(connection.id)).grants) == 2
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

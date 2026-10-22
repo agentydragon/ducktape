@@ -6,7 +6,6 @@ from pathlib import Path
 import jax.numpy as jnp
 import numpy as np
 import pytest
-import pytest_bazel
 from numpyro import distributions as dist
 
 from finance.augur.model.path_models.scenarios import HistoricalSeries
@@ -73,7 +72,3 @@ def test_cli_preserves_origins_and_explicit_uncertainty_in_strict_json(
         assert row["n_origins"] == len(row["origin_scores"])
     assert rolling["joint_log_density_per_month"] == expected
     assert multi_step["joint_log_density_per_origin"] == expected
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

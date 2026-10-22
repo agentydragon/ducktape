@@ -4,7 +4,6 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.live import LiveIndex
@@ -262,7 +261,3 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
     assert len(status.processes) == 1
     summaries = await client.list_sessions()
     assert [summary.session_id for summary in summaries] == [str(session_id)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

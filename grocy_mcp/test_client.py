@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import pytest
-import pytest_bazel
 import respx
 
 from grocy_mcp.client import GrocyClient, Resolved, ResolvedQU
@@ -202,7 +201,3 @@ async def test_entity_operations_fetch_fresh_per_call(httpx2_mock: respx.Router)
         await client.resolve_entity(EntityType.PRODUCT, 1)
 
     assert products_route.calls.call_count == 3
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

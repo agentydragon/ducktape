@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 import yaml
 
 from cluster.cdk8s.clickhouse import client
@@ -33,7 +32,3 @@ def test_public_coder_clickhouse_reader_contract(source_secret: dict[str, Any]) 
     annotations = metadata.get("annotations", {})
     assert "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" not in annotations
     assert "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces" not in annotations
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

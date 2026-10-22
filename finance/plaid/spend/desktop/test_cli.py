@@ -3,7 +3,6 @@
 from datetime import UTC, date, datetime
 
 import pytest
-import pytest_bazel
 
 from finance.plaid.spend.allowance import (
     AllowanceSpendPeriod,
@@ -137,7 +136,3 @@ def test_without_allowance_keeps_existing_card_output() -> None:
 )
 def test_compact_money_preserves_nonzero_sign(minor_units: int, expected: str) -> None:
     assert _format_money(minor_units, "USD") == expected
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

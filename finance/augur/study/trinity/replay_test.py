@@ -19,7 +19,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 from finance.augur.study.trinity.replay import (
@@ -159,7 +158,3 @@ def test_raising_the_withdrawal_never_raises_the_success_rate(replay: Replay) ->
     for equity_share in (1.00, 0.50, 0.00):
         rates = [replay.success_rate(equity_share=equity_share, withdrawal_rate=rate) for rate in CHECKED_RATES]
         assert rates == sorted(rates, reverse=True), f"{equity_share:.0%} equity: {rates}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

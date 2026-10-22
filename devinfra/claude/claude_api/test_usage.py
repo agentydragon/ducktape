@@ -1,9 +1,4 @@
-import pytest_bazel
-
 from devinfra.claude.claude_api.usage import UsageResponse
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_usage_response_spend() -> None:

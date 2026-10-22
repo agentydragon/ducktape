@@ -4,7 +4,6 @@ import json
 from typing import cast
 
 import httpx2
-import pytest_bazel
 from openai import AsyncOpenAI
 from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 
@@ -143,7 +142,3 @@ def test_chat_adapter_does_not_add_kickoff_when_user_input_exists() -> None:
         {"role": "system", "content": "static system"},
         {"role": "user", "content": "hello"},
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -230,7 +230,6 @@ py_test(
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -246,7 +245,6 @@ py_test(
         "//:conftest",
         "@pypi//psutil",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -258,6 +256,5 @@ py_test(
         ":gitstatusd_listener",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

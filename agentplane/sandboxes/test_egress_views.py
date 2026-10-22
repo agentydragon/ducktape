@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-import pytest_bazel
 
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod
 from agentplane.policy_sets import ConditionStatus
@@ -264,7 +263,3 @@ def test_operator_schema_preserves_the_target_discriminator() -> None:
     assert items["discriminator"]["propertyName"] == "method"
     assert set(items["discriminator"]["mapping"]) == {method.value for method in TargetMethod}
     assert len(items["oneOf"]) == len(TargetMethod)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

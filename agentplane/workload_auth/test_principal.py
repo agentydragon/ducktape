@@ -9,7 +9,6 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api
 from multidict import CIMultiDict, CIMultiDictProxy
@@ -195,7 +194,3 @@ async def test_tokenreview_api_failure_logs_only_operation_and_status(
     assert caplog.records[0].exc_info is None
     assert TOKEN not in caplog.text
     assert "credential-bearing" not in caplog.text
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

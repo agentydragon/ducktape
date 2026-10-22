@@ -2,7 +2,6 @@ import asyncio
 import logging
 
 import pytest
-import pytest_bazel
 
 from agentplane.background_task import background
 
@@ -39,7 +38,3 @@ async def test_background_is_cancelled_when_the_block_exits() -> None:
     async with background(run(), name="watch"):
         await started.wait()
     assert cancelled.is_set()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

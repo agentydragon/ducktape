@@ -4,7 +4,6 @@ import re
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 from rich.console import Console
 from rich.segment import Segment
 from rich.text import Text
@@ -345,7 +344,3 @@ def test_deletion_bar_alignment():
 
     # All positions should be the same (deletion bars are left-aligned, start at same column)
     assert len(set(positions)) == 1, f"Deletion bars not aligned: positions={positions}, lines={file_lines}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

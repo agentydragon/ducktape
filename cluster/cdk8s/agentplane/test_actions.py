@@ -6,7 +6,6 @@ import json
 from typing import Any
 
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
@@ -102,7 +101,3 @@ def test_actions_roll_does_not_overlap_execution_protocols(
         if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
     )
     assert deployment["spec"]["strategy"] == {"type": "Recreate"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

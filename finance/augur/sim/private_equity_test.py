@@ -15,7 +15,6 @@ from decimal import Decimal
 
 import polars as pl
 import pytest
-import pytest_bazel
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
@@ -609,7 +608,3 @@ def test_a_pe_lot_with_no_protocol_for_its_issuer_is_refused() -> None:
 
     with pytest.raises(ValueError, match=r"missing private-equity mark series for issuer 'acme'"):
         compose(unreachable_floor(horizon_months=12), ())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

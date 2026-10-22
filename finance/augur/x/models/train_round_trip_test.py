@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from pydantic import TypeAdapter
 
@@ -104,7 +103,3 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
     assert str(sampled.provenance["model_version_id"]).startswith("model_version:")
     assert sampled.provenance["source_manifest"]
     assert sampled.levels.series_keys() >= set(required_level_series)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

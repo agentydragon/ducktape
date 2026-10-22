@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest_bazel
-
 from loom.gym.agent_eval import _default_eval_session_id, _litellm_metadata, _parse_csv
 
 
@@ -37,7 +35,3 @@ def test_litellm_metadata_carries_langfuse_and_eval_fields() -> None:
         "loom.eval.archive": True,
         "loom.eval.wayback_upstream": "http://wayback-cache",
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

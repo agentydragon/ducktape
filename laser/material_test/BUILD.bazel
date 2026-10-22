@@ -29,6 +29,5 @@ py_test(
         "//laser/lightburn:lbrn2_writer",
         "//util/bazel:runfiles",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

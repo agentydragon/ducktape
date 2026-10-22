@@ -11,7 +11,6 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
-import pytest_bazel
 from fastapi import FastAPI, Request
 from sqlalchemy.engine import make_url
 
@@ -396,7 +395,3 @@ async def test_a_clean_upstream_eof_is_relayed_for_the_browser_to_reconnect(app:
         await browser.ended()
     assert len(service.authorizations) == 1
     assert service.upstreams[0].closed
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

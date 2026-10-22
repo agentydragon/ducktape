@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.http2_proxy import _wait_for_frontend
 
@@ -49,7 +48,3 @@ async def test_health_http_error_is_not_retried() -> None:
             await _wait_for_frontend(upstream)
     assert error.value.response.status_code == 503
     assert len(requests) == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

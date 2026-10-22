@@ -7,8 +7,6 @@ through the existing `real_env` fixture and helpers.
 from datetime import timedelta
 from pathlib import Path
 
-import pytest_bazel
-
 from x.wt.testing.asserts import assert_output_contains, extract_status_rows, status_row_ok
 from x.wt.testing.utils import wait_until
 
@@ -57,7 +55,3 @@ def test_status_lists_multiple_worktrees(real_temp_repo, wt_cli):
         )
     main_name = Path(real_temp_repo).name
     assert main_name in extract_status_rows(last["out"]), f"No row for {main_name=}.\nLast output:\n{last['out']}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

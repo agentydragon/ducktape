@@ -90,7 +90,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -114,7 +113,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -169,6 +167,5 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

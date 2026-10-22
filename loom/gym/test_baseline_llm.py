@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from loom.gym.baseline_llm import parse_answer, question_schema
@@ -64,7 +63,3 @@ def test_parse_answer_rejects_malformed_input() -> None:
         parse_answer(SCALAR_TASK, {"quantiles": {"0.9": 1.0, "0.1": 5.0}})
     with pytest.raises(ValidationError):
         parse_answer(CATEGORICAL_TASK, {"probabilities": {"low": 0.2, "high": 0.2}})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

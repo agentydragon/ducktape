@@ -12,7 +12,6 @@ from collections.abc import AsyncGenerator
 from uuid import UUID, uuid4
 
 import pytest_asyncio
-import pytest_bazel
 
 from props.backend.auth import AdminRole, AgentRole, AuthenticatedIdentity, get_caller_db
 from props.core.agent_types import CriticTypeConfig
@@ -118,7 +117,3 @@ async def test_admin_auth_returns_admin_db(synced_db: Database, exhaust_generato
     db = exhaust_generator(gen)
 
     assert db is synced_db, "Admin should get the same admin Database instance"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

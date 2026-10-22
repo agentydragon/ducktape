@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 SCRIPT = Path(__file__).with_name("bb_remote_log.sh")
 # Match the composite's errexit handling and status capture after sourcing.
@@ -75,7 +74,3 @@ signal.pause()
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
             process.communicate()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -41,8 +41,9 @@ to Bazel client lock serialization.
 - terraform-centralization (direct import)
 - kustomize/flux/gitops/helm (subprocess)
 
-The pytest-main check now runs as a Bazel aspect on `py_test` targets during normal
-Bazel builds (including Bazel CI); it no longer runs in pre-commit.
+The pytest-main check runs as a Bazel aspect on native/default-main `py_test` targets
+during normal Bazel builds (including Bazel CI); repo-wrapper defaults use the
+centralized `pytest_bazel` entry point. The check no longer runs in pre-commit.
 
 ### 2. Fast File Listing
 

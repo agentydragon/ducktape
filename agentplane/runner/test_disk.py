@@ -8,8 +8,6 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
-
 from util.bazel.runfiles import get_required_path
 
 
@@ -29,7 +27,3 @@ def test_runner_disk_holds_the_executables(tmp_path: Path) -> None:
     for name in ("agentplane", "agentplane-runner"):
         assert os.access(tmp_path / "bin" / name, os.X_OK)
     assert (tmp_path / "bin/agentplane-runner-vm").readlink() == Path("agentplane-runner")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

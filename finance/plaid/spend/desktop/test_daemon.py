@@ -11,7 +11,6 @@ from unittest.mock import Mock, call
 
 import httpx
 import pytest
-import pytest_bazel
 
 from finance.plaid.spend.desktop import daemon as daemon_module
 from finance.plaid.spend.desktop.daemon import PlaidSpendBusInterface, PlaidSpendDaemon
@@ -275,7 +274,3 @@ async def test_network_recovery_during_login_does_not_restart_stream(monkeypatch
 
     assert attempts == 2
     assert maximum_active == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

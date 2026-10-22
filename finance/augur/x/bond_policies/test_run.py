@@ -7,7 +7,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.x.bond_policies.construction import ProxyConstruction, compare_constructions, stipulated_curves
@@ -214,7 +213,3 @@ def test_cli_exports_inputs_compact_results_and_selected_original_timelines(tmp_
     with np.load(output / "constant_maturity_proxy" / "construction.npz") as proxy:
         assert "sale_proceeds" not in proxy.files
         assert "redemption" not in proxy.files
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

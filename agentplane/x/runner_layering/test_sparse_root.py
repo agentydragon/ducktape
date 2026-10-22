@@ -11,7 +11,6 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events, launches
@@ -155,7 +154,3 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     await model.reply(resumed_tool_result, Text("WORKLOAD_IMAGE_TOOL_AFTER_RESUME_DONE"))
     resumed_tool_done = await second.until(events.turn_completed)
     assert resumed_tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

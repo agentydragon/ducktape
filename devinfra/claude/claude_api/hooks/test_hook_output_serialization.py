@@ -9,7 +9,6 @@ import json
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from devinfra.claude.claude_api.hooks.output import HookOutput, HookResponse
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseHookSpecificOutput
@@ -63,7 +62,3 @@ def test_stop_reason_with_continue_false() -> None:
     out = HookOutput(stop_reason="done", continue_=False)
     assert out.stop_reason == "done"
     assert out.continue_ is False
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

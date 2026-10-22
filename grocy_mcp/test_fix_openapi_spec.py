@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest_bazel
-
 from grocy_mcp.fix_openapi_spec import (
     _MISSING_PRODUCT_PROPERTIES,
     fix_entity_refs,
@@ -105,7 +103,3 @@ def test_patch_product_schema_does_not_clobber_existing_upstream_property() -> N
     }
     patch_product_schema(spec)
     assert spec["components"]["schemas"]["Product"]["properties"][sample_field] == upstream_definition
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

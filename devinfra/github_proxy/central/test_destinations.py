@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 
 from devinfra.github_proxy.central.destinations import public_address
 
@@ -35,7 +34,3 @@ def test_special_addresses_are_not_public_origins(address: str) -> None:
 @pytest.mark.parametrize("address", ["8.8.8.8", "2606:4700:4700::1111"])
 def test_normal_global_addresses_are_permitted(address: str) -> None:
     assert public_address(address)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

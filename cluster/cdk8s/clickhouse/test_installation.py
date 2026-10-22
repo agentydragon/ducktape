@@ -1,6 +1,5 @@
 """The AIQuota history reader's generated credential and database grants stay separate."""
 
-import pytest_bazel
 from cdk8s import Testing as CdkTesting
 
 from cluster.cdk8s.clickhouse import client, installation
@@ -27,7 +26,3 @@ def test_aiquota_history_reader_is_minted_and_scoped_to_typed_quota_history() ->
     assert secret["metadata"]["name"] == client.AIQUOTA_HISTORY_CREDENTIALS
     assert secret["spec"]["refreshPolicy"] == "CreatedOnce"
     assert "password" in secret["spec"]["target"]["template"]["data"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-import pytest_bazel
 
 from finance.augur.calibration.catalog import (
     CatalogMetadata,
@@ -129,7 +128,3 @@ def test_shipped_example_catalog_parses() -> None:
     assert {type(m) for m in catalog.markets} == {ExactMarket, CorrelateMarket, UnmappableMarket}
     assert catalog.exact_markets()  # at least one scored market
     assert catalog.surfaced_markets()  # and at least one surfaced market
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

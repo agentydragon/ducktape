@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import logging
 
-import pytest_bazel
 from hamcrest import all_of, assert_that
 from more_itertools import one
 
@@ -192,7 +191,3 @@ async def test_critic_cannot_push_images(e2e_stack, all_files_scope):
             stdout_contains(json.dumps({"api_check": 200, "blob_upload": 403, "manifest_put": 403}, sort_keys=True)),
         ),
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -90,7 +90,6 @@ py_test(
         "//x/wt/shared:protocol",
         "//x/wt/testing:asserts",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
 )
@@ -104,6 +103,5 @@ py_test(
         "//:conftest",
         "//x/wt/shared:protocol",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

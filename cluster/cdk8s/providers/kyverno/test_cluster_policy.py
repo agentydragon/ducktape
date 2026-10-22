@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
 from kyverno_clusterpolicy_crds.io.kyverno import ClusterPolicySpecValidationFailureAction
 
@@ -26,7 +25,3 @@ def test_validation_failure_action_passes_through(
     )
     (manifest,) = Cdk8sTesting.synth(chart)
     assert manifest["spec"]["validationFailureAction"] == expected
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

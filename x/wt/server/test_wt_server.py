@@ -2,7 +2,6 @@ import asyncio
 
 import psutil
 import pytest
-import pytest_bazel
 
 from x.wt.server import wt_server
 from x.wt.server.types import DiscoveredWorktree
@@ -87,7 +86,3 @@ async def test_failed_initial_discovery_fails_the_startup_handshake(real_config,
     assert not any(handshake.get("ready") for handshake in handshakes)
     assert handshakes[-1]["success"] is False
     assert "scan refused" in handshakes[-1]["error_message"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

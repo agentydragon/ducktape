@@ -9,7 +9,6 @@ from uuid import uuid4
 
 import httpx
 import httpx2
-import pytest_bazel
 from mcp.types import CallToolResult
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -93,7 +92,3 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
                     execution_lease,
                 )
                 assert CallToolResult.model_validate(result.result).structured_content == {"result": "Echo: hi"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

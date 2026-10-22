@@ -234,7 +234,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -248,7 +247,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -260,7 +258,6 @@ py_test(
         ":credit_award",
         ":models",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -272,7 +269,6 @@ py_test(
         ":events",
         ":games",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -284,7 +280,6 @@ py_test(
         ":games",
         ":rng",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -301,7 +296,6 @@ py_test(
         "//:conftest",
         "@pypi//alembic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -325,7 +319,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -349,7 +342,6 @@ py_test(
         "//util/testing:asgi",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -379,7 +371,6 @@ py_test(
         "//util/testing:visual_fixtures",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

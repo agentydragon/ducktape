@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest_bazel
 import yaml
 
 from cluster.debug.litellm_probe.probe_models import ModelProbe, _load_model_probes
@@ -32,7 +31,3 @@ def test_explicit_config_is_still_raw_litellm_yaml(tmp_path: Path) -> None:
         )
     )
     assert _load_model_probes(path) == [ModelProbe(name="example/chat", mode="responses", backend="openai")]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

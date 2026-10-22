@@ -12,6 +12,5 @@ py_test(
     deps = [
         ":rd_writer",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )

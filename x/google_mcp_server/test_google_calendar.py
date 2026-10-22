@@ -2,7 +2,6 @@
 
 from unittest.mock import Mock
 
-import pytest_bazel
 from fastmcp import Client
 
 from x.google_mcp_server.google_calendar import build_mcp
@@ -123,7 +122,3 @@ async def test_read_tools_dispatch_to_calendar_client():
     instance_args = calendar.list_event_instances.call_args.args[0]
     assert instance_args.recurring_event_id == "series1"
     assert instance_args.page_token == "page-2"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

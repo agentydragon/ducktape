@@ -6,8 +6,6 @@ and whole-snapshot entries. These tests verify the VIEW produces correct example
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind
 from props.db.database import Database
@@ -97,7 +95,3 @@ def test_recall_denominator_counts_at_occurrence_level(synced_db: Database):
         assert whole_example.recall_denominator == 7, (
             f"Whole-snapshot should count all 7 occurrences, got {whole_example.recall_denominator}"
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

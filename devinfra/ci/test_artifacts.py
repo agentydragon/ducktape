@@ -1,7 +1,5 @@
 import json
 
-import pytest_bazel
-
 from devinfra.ci.artifacts import ARTIFACTS, ArtifactTargets, artifact_targets_path, skills_registry_path
 
 
@@ -18,7 +16,3 @@ def test_artifacts_are_derived_from_release_metadata() -> None:
         assert artifacts[pkg].release_tag_prefix == target.release
     for skill in nix_skills:
         assert artifacts[skill["pkg"]].filename == skill["filename"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -31,9 +31,3 @@ def test_sse_packet_matches_a_messages_delta_type() -> None:
     frame = b'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta"}}\n\n'
 
     assert _sse_packet_matches(frame, "text_delta")
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

@@ -7,7 +7,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import pytest_bazel
 from mitmproxy import connection, ctx, exceptions, http
 from mitmproxy.websocket import WebSocketData, WebSocketMessage
 
@@ -270,7 +269,3 @@ async def test_write_failure_preserves_traffic_and_is_counted(
     recorder.output = output
     recorder.record("heartbeat")
     assert rows(recorder)[-1]["totals"]["write_failures"] == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,7 +1,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 from cdk8s import (
     ApiObject,
     ApiObjectMetadata,
@@ -323,7 +322,3 @@ def test_rules_fail_synth_naming_the_object() -> None:
         Exception, match=r"(?s)Validation failed.*Deployment/bare container main: seccomp profile is None"
     ):
         Cdk8sTesting.synth(chart)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

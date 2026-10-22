@@ -29,7 +29,6 @@ py_test(
         "//:conftest",
         "@pypi//asyncpg",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -53,7 +52,6 @@ py_test(
         "//:conftest",
         "//util/testing:sqlalchemy_engines",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

@@ -45,7 +45,6 @@ py_test(
         "//agentplane/native:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -80,7 +79,6 @@ py_test(
         "//agentplane/native/codex/testing:model",
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -102,7 +100,6 @@ py_test(
         "//agentplane/native/codex/testing:model",
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -127,7 +124,6 @@ py_test(
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
         "//agentplane/native/testing:model_endpoint",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -151,7 +147,6 @@ py_test(
         "//agentplane/native/codex/testing:model",
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -176,7 +171,6 @@ py_test(
         "//agentplane/native/codex/testing:model",
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -198,7 +192,6 @@ py_test(
         "//agentplane/native/codex/testing:model",
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -220,7 +213,6 @@ py_test(
         "//agentplane/native/codex/testing:model",
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -244,7 +236,6 @@ py_test(
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -269,7 +260,6 @@ py_test(
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
         "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -295,7 +285,6 @@ py_test(
         "//agentplane/native/testing:async_process",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -321,7 +310,6 @@ py_test(
         "//util:net",
         "@pypi//aiohttp",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -343,6 +331,5 @@ py_test(
         "//agentplane/native/codex/testing:model",
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
-        "@pypi//pytest_bazel",
     ],
 )

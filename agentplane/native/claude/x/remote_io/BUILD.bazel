@@ -35,7 +35,6 @@ py_test(
         "//util/testing:undeclared_outputs",
         "@pypi//aiohttp",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -60,7 +59,6 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -74,6 +72,5 @@ py_test(
         "//agentplane/native/claude:conftest",
         "@pypi//aiohttp",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -7,7 +7,6 @@ from typing import cast
 from uuid import UUID
 
 import jwt
-import pytest_bazel
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 from itsdangerous import TimestampSigner
@@ -673,7 +672,3 @@ def test_remove_link_purges_mirrored_link_data_after_plaid_removal() -> None:
     assert api.removed_access_tokens == ["access-sandbox-existing"]
     assert secrets.deleted_secret_names == ["plaid-item-123-access-token"]
     assert storage.purged_item_ids == ["item_123"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

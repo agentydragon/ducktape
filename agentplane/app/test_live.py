@@ -11,7 +11,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from pydantic import AnyHttpUrl, SecretStr
@@ -561,7 +560,3 @@ async def test_egress_decision_stream_says_a_sandbox_is_missing(seeded: LiveInde
         drain.begin()
         async for _ in stream:
             pass
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
