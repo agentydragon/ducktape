@@ -17,9 +17,9 @@ PositiveSeconds = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
 class ActionsSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    url: HttpEndpointUrl = Field(description="Base URL of the Actions Service's canonical request/event read API.")
+    target: str = Field(description="Action Service gRPC host:port for reading request ownership and events.")
     token_file: Path = Field(
-        description="Path to the projected ServiceAccount token for Actions; reread for each request to follow rotation."
+        description="Path to the projected ServiceAccount token for Actions; reread for each call to follow rotation."
     )
     request_timeout_s: PositiveSeconds = 5
 

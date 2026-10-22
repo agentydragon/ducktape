@@ -26,14 +26,20 @@ type serverSeen struct{ authorization chan []string }
 func start(t *testing.T, tokenPath string, timeout time.Duration) (healthpb.HealthClient, *serverSeen) {
 	t.Helper()
 	seen := &serverSeen{authorization: make(chan []string, 8)}
-	server := grpc.NewServer(grpc.UnaryInterceptor(func(ctx context.Context, request any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		seen.authorization <- metadata.ValueFromIncomingContext(ctx, "authorization")
-		if request.(*healthpb.HealthCheckRequest).GetService() == blockedService {
-			<-ctx.Done()
-			return nil, ctx.Err()
-		}
-		return handler(ctx, request)
-	}))
+	server := grpc.NewServer(
+		grpc.UnaryInterceptor(func(ctx context.Context, request any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+			seen.authorization <- metadata.ValueFromIncomingContext(ctx, "authorization")
+			if request.(*healthpb.HealthCheckRequest).GetService() == blockedService {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}
+			return handler(ctx, request)
+		}),
+		grpc.StreamInterceptor(func(srv any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			seen.authorization <- metadata.ValueFromIncomingContext(stream.Context(), "authorization")
+			return handler(srv, stream)
+		}),
+	)
 	healthpb.RegisterHealthServer(server, health.NewServer())
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -71,6 +77,20 @@ func TestEachCallCarriesTheTokenFileAsItIsThen(t *testing.T) {
 	}
 }
 
+func TestStreamCarriesTheProjectedToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	writeToken(t, path, "test-stream-token\n")
+	client, seen := start(t, path, time.Minute)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if _, err := client.Watch(ctx, &healthpb.HealthCheckRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-seen.authorization; len(got) != 1 || got[0] != "Bearer test-stream-token" {
+		t.Errorf("authorization %q, want the projected token", got)
+	}
+}
+
 func TestAnUnreadableTokenFailsTheCallAsUnavailableBeforeItIsSent(t *testing.T) {
 	for name, prepare := range map[string]func(t *testing.T, path string){
 		"missing": func(*testing.T, string) {},
@@ -84,12 +104,22 @@ func TestAnUnreadableTokenFailsTheCallAsUnavailableBeforeItIsSent(t *testing.T) 
 			if status.Code(err) != codes.Unavailable {
 				t.Fatalf("code %v, want Unavailable: %v", status.Code(err), err)
 			}
+			if !IsTokenFileError(err) {
+				t.Errorf("error %v is not identified as a token-file failure", err)
+			}
 			select {
 			case <-seen.authorization:
 				t.Error("a call without a token reached the server")
 			default:
 			}
 		})
+	}
+}
+
+func TestRemoteUnavailableCannotBeMistakenForATokenFileError(t *testing.T) {
+	err := status.Error(codes.Unavailable, tokenFileEmptyError)
+	if IsTokenFileError(err) {
+		t.Errorf("remote error %v was identified as a local token-file error", err)
 	}
 }
 

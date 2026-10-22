@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/actions"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
@@ -24,8 +23,8 @@ const tokenAudience = "agentplane-notifications"
 // config is the Notification Service's deployment contract: each setting is a YAML key of the file named by
 // AGENTPLANE_NOTIFICATIONS_CONFIG_FILE, and each key, a nested one with its dots written as `__`, also names an
 // AGENTPLANE_NOTIFICATIONS_* environment variable that overrides it (`github.private_key` is
-// AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY). Unknown keys in the file are refused. The package settings
-// (worker, actions, github) are the structs those packages own, at the keys their mapstructure tags name.
+// AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY). Unknown keys in the file are refused. Worker and GitHub settings
+// are the structs those packages own, at the keys their mapstructure tags name.
 //
 // The database URL, the GitHub private key and the webhook secret are Secrets, so a deployment supplies them as
 // environment variables.
@@ -39,10 +38,10 @@ type config struct {
 	OperatorReaderAccount string       `mapstructure:"operator_reader_account"`
 	Quotas                store.Quotas `mapstructure:"quotas"`
 	worker.Settings       `mapstructure:",squash"`
-	Actions               actions.Settings `mapstructure:"actions"`
-	RunnerGateway         runnerGateway    `mapstructure:"runner_gateway"`
-	HistoryService        peer             `mapstructure:"history_service"`
-	SessionDispatcher     peer             `mapstructure:"session_dispatcher"`
+	Actions               peer          `mapstructure:"actions"`
+	RunnerGateway         runnerGateway `mapstructure:"runner_gateway"`
+	HistoryService        peer          `mapstructure:"history_service"`
+	SessionDispatcher     peer          `mapstructure:"session_dispatcher"`
 	// GitHub is on when any of its settings is set.
 	GitHub github.Settings `mapstructure:"github"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
@@ -83,7 +82,7 @@ func defaultConfig() config {
 			InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000, UnacknowledgedMessagesPerSender: 128,
 		},
 		Settings:      worker.DefaultSettings(),
-		Actions:       actions.DefaultSettings(),
+		Actions:       peer{RequestTimeoutSeconds: 5},
 		RunnerGateway: runnerGateway{RequestTimeoutSeconds: 5},
 		// A delivery reads a page of a Session's entries, which can be large.
 		HistoryService:        peer{RequestTimeoutSeconds: 20},
@@ -131,6 +130,8 @@ func (c *config) validate() error {
 		{"namespace", c.Namespace},
 		{"token_audience", c.TokenAudience},
 		{"host", c.Host},
+		{"actions.target", c.Actions.Target},
+		{"actions.token_file", c.Actions.TokenFile},
 		{"runner_gateway.control_target", c.RunnerGateway.ControlTarget},
 		{"runner_gateway.token_file", c.RunnerGateway.TokenFile},
 		{"history_service.target", c.HistoryService.Target},
@@ -163,6 +164,7 @@ func (c *config) validate() error {
 		value float64
 	}{
 		{"runner_gateway.request_timeout_s", c.RunnerGateway.RequestTimeoutSeconds},
+		{"actions.request_timeout_s", c.Actions.RequestTimeoutSeconds},
 		{"history_service.request_timeout_s", c.HistoryService.RequestTimeoutSeconds},
 		{"session_dispatcher.request_timeout_s", c.SessionDispatcher.RequestTimeoutSeconds},
 		{"request_timeout_s", c.RequestTimeoutSeconds},
@@ -179,9 +181,6 @@ func (c *config) validate() error {
 		return fmt.Errorf("policy_watch_period_s must be at least %v", reader.MinWatchPeriod.Seconds())
 	}
 	if err := c.Settings.Validate(); err != nil {
-		return err
-	}
-	if err := c.Actions.Validate(); err != nil {
 		return err
 	}
 	if c.githubEnabled() {

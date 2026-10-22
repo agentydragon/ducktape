@@ -10,12 +10,10 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,11 +21,12 @@ import (
 	"testing"
 	"time"
 
+	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/actions"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -79,14 +78,18 @@ func (listingRunner) ListSessions(context.Context, *runnerpb.ListSessionsRequest
 	return &runnerpb.ListSessionsResponse{Sessions: []*runnerpb.SessionSummary{{SessionId: testSession}}}, nil
 }
 
-// serveActionService answers the two reads of the Action Service: every request was submitted by the test
-// Sandbox, and none has events.
-func serveActionService(w http.ResponseWriter, r *http.Request) {
-	if strings.HasSuffix(r.URL.Path, "/events") {
-		_, _ = w.Write([]byte(`[]`))
-		return
-	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"caller": map[string]string{"namespace": testNamespace, "name": sandboxName}})
+type testActionService struct {
+	actionpb.UnimplementedActionServiceServer
+}
+
+func (testActionService) GetActionRequest(context.Context, *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
+	return &actionpb.GetActionRequestResponse{ActionRequest: &actionpb.ActionRequest{
+		Caller: &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: sandboxName},
+	}}, nil
+}
+
+func (testActionService) ListActionRequestEvents(context.Context, *actionpb.ListActionRequestEventsRequest) (*actionpb.ListActionRequestEventsResponse, error) {
+	return &actionpb.ListActionRequestEventsResponse{}, nil
 }
 
 // running is a served Notification Service over the shared database, emptied of earlier tests' inboxes.
@@ -126,8 +129,6 @@ func start(t *testing.T, tune func(*config)) running {
 func restart(t *testing.T, tune func(*config)) running {
 	t.Helper()
 	db := testDatabase(t)
-	actionsServer := httptest.NewServer(http.HandlerFunc(serveActionService))
-	t.Cleanup(actionsServer.Close)
 	tokens := t.TempDir()
 	tokenFile := func(name string) string {
 		path := filepath.Join(tokens, name)
@@ -136,6 +137,7 @@ func restart(t *testing.T, tune func(*config)) running {
 		}
 		return path
 	}
+	actionAddress := serveGRPC(t, func(s *grpc.Server) { actionpb.RegisterActionServiceServer(s, testActionService{}) })
 	runnerAddress := serveGRPC(t, func(s *grpc.Server) { runnerservicepb.RegisterRunnerServer(s, listingRunner{}) })
 	historyAddress := serveGRPC(t, func(s *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(s, historypb.UnimplementedHistoryServiceServer{})
@@ -147,7 +149,7 @@ func restart(t *testing.T, tune func(*config)) running {
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
 	c.Namespace, c.TokenAudience = testNamespace, testAudience
-	c.Actions = actions.Settings{URL: actionsServer.URL, TokenFile: tokenFile("actions"), RequestTimeoutSeconds: 5}
+	c.Actions = peer{Target: actionAddress, TokenFile: tokenFile("actions"), RequestTimeoutSeconds: 5}
 	c.RunnerGateway = runnerGateway{ControlTarget: runnerAddress, TokenFile: tokenFile("gateway"), RequestTimeoutSeconds: 5}
 	c.HistoryService = peer{Target: historyAddress, TokenFile: tokenFile("history"), RequestTimeoutSeconds: 5}
 	c.SessionDispatcher = peer{Target: dispatcherAddress, TokenFile: tokenFile("dispatcher"), RequestTimeoutSeconds: 5}

@@ -7,7 +7,14 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import notifications, runner_gateway, session_dispatcher, staging
+from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from cluster.cdk8s.agentplane import (
+    actions as action_service,
+    notifications,
+    runner_gateway,
+    session_dispatcher,
+    staging,
+)
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -99,6 +106,11 @@ def test_notifications_use_the_configured_dispatcher(
         if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{notifications.NAME}-settings"
     )
     settings = yaml.safe_load(config["data"]["settings.yaml"])
+    actions = action_service.service(namespace)
+    assert settings["actions"] == {
+        "target": f"{actions.fqdn}:{actions.port.number}",
+        "token_file": "/var/run/secrets/notifications/actions",
+    }
     dispatcher = session_dispatcher.service(namespace)
     assert settings["session_dispatcher"] == {
         "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
@@ -114,6 +126,7 @@ def test_notifications_use_the_configured_dispatcher(
         source["serviceAccountToken"]["path"]: source["serviceAccountToken"]
         for source in token_volume["projected"]["sources"]
     }
+    assert tokens["actions"]["audience"] == WORKLOAD_TOKEN_AUDIENCE
     assert tokens["dispatcher"]["audience"] == session_dispatcher.TOKEN_AUDIENCE
 
     policy = one(

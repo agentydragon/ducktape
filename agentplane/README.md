@@ -87,6 +87,7 @@ flowchart LR
     app --> hs
     app -->|gRPC operator watches + health| notif
     app --> actions
+    notif -->|Action history: gRPC| actions
     app -->|gRPC| egress
     app --> electric
     app --> k8s

@@ -107,7 +107,7 @@ flowchart LR
     app -->|gRPC operator watches + health| notifications
     github --> notifications
     notifications --> github
-    notifications -->|Action history| actions
+    notifications -->|Action history: gRPC| actions
     notifications -->|Sandbox identity, watched send grants| k8s
     notifications -->|Session validation| gateway
     notifications -->|SubmitInput| dispatcher

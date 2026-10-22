@@ -1,20 +1,34 @@
-// Package actions is the Notification service's Actions source: an Action request's events, read from the
-// Action Service into the inboxes of the Sessions that follow them.
+// Package actions is the Notification service's Actions source: an Action request's events, read from the Action
+// Service into the inboxes of the Sessions that follow them.
 package actions
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+)
+
+const (
+	// eventsPageSize is the most events one read asks for, which is the most the Action Service returns.
+	eventsPageSize   = 128
+	maxEventSequence = int64(math.MaxInt32)
 )
 
 // Source is the worker's Provider for Actions subscriptions.
 type Source struct {
-	Service ActionService
+	Service action_servicepb.ActionServiceClient
 	Store   *store.Store
 }
 
@@ -27,14 +41,40 @@ var _ worker.Provider = (*Source)(nil)
 // The subscription servicer calls it when a subscription is created and shows an access denied failure as
 // PERMISSION_DENIED: authorization precedes persistence even when replay starts after the last event.
 func (s *Source) Events(ctx context.Context, owner store.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
-	caller, err := s.Service.Caller(ctx, requestID)
+	request, err := s.Service.GetActionRequest(ctx, &action_servicepb.GetActionRequestRequest{RequestId: requestID.String()})
+	if err != nil {
+		return nil, rpcFailure(ctx, err)
+	}
+	if request == nil || request.GetActionRequest() == nil {
+		return nil, validationFailure()
+	}
+	caller, err := serviceAccount(request.GetActionRequest().GetCaller())
 	if err != nil {
 		return nil, err
 	}
 	if caller != owner {
 		return nil, &worker.ProviderError{Kind: store.FailureAccessDenied, Message: "SourceNotOwnedError"}
 	}
-	return s.Service.Events(ctx, requestID, afterSequence)
+	if afterSequence < 0 || afterSequence > maxEventSequence {
+		return nil, validationFailure()
+	}
+	limit := int32(eventsPageSize)
+	page, err := s.Service.ListActionRequestEvents(ctx, &action_servicepb.ListActionRequestEventsRequest{
+		RequestId: requestID.String(), AfterSequence: int32(afterSequence), Limit: proto.Int32(limit),
+	})
+	if err != nil {
+		return nil, rpcFailure(ctx, err)
+	}
+	if page == nil {
+		return nil, validationFailure()
+	}
+	events := make([]store.ActionEvent, len(page.GetEvents()))
+	for i, event := range page.GetEvents() {
+		if events[i], err = actionEvent(event); err != nil {
+			return nil, err
+		}
+	}
+	return events, nil
 }
 
 // Reconcile reads the next page of events of the subscription's Action request, and records the ones it has not
@@ -53,4 +93,95 @@ func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.Due
 		return &worker.ProviderError{Kind: store.FailureProcessingError, Message: "ConflictError"}
 	}
 	return err
+}
+
+func serviceAccount(account *sandboxespb.ServiceAccount) (store.ServiceAccount, error) {
+	if account == nil || account.GetNamespace() == "" || account.GetName() == "" {
+		return store.ServiceAccount{}, validationFailure()
+	}
+	return store.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}, nil
+}
+
+func actionEvent(event *action_servicepb.ActionEvent) (store.ActionEvent, error) {
+	if event == nil || event.GetSequence() < 1 || event.GetAt() == nil || event.GetAt().CheckValid() != nil {
+		return store.ActionEvent{}, validationFailure()
+	}
+	state, ok := actionState(event.GetState())
+	if !ok {
+		return store.ActionEvent{}, validationFailure()
+	}
+	actor, err := actionActor(event.GetActor())
+	if err != nil {
+		return store.ActionEvent{}, err
+	}
+	return store.ActionEvent{
+		Sequence: int64(event.GetSequence()), State: state, At: event.GetAt().AsTime().UTC().Truncate(time.Microsecond), Actor: actor,
+	}, nil
+}
+
+func actionState(state action_servicepb.ActionState) (store.ActionState, bool) {
+	switch state {
+	case action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING:
+		return store.ActionDecisionPending, true
+	case action_servicepb.ActionState_ACTION_STATE_ALLOWED:
+		return store.ActionAllowed, true
+	case action_servicepb.ActionState_ACTION_STATE_DENIED:
+		return store.ActionDenied, true
+	case action_servicepb.ActionState_ACTION_STATE_DISPATCHING:
+		return store.ActionDispatching, true
+	case action_servicepb.ActionState_ACTION_STATE_RUNNING:
+		return store.ActionRunning, true
+	case action_servicepb.ActionState_ACTION_STATE_SUCCEEDED:
+		return store.ActionSucceeded, true
+	case action_servicepb.ActionState_ACTION_STATE_FAILED:
+		return store.ActionFailed, true
+	case action_servicepb.ActionState_ACTION_STATE_CANCELLED:
+		return store.ActionCancelled, true
+	case action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
+		return store.ActionExecutionUnknown, true
+	default:
+		return "", false
+	}
+}
+
+func actionActor(principal *action_servicepb.Principal) (store.ActionActor, error) {
+	if principal == nil {
+		return nil, nil
+	}
+	if caller := principal.GetCaller(); caller != nil {
+		account, err := serviceAccount(caller)
+		if err != nil {
+			return nil, err
+		}
+		return store.CallerActor{Account: account}, nil
+	}
+	if operator := principal.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" {
+		return store.OperatorActor{Issuer: operator.GetIssuer(), Subject: operator.GetSubject()}, nil
+	}
+	return nil, validationFailure()
+}
+
+func rpcFailure(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if bearer.IsTokenFileError(err) {
+		return err
+	}
+	code := status.Code(err)
+	kind := store.FailureProcessingError
+	message := code.String()
+	switch code {
+	case codes.ResourceExhausted:
+		kind = store.FailureRateLimited
+	case codes.Unauthenticated, codes.PermissionDenied, codes.NotFound:
+		kind = store.FailureAccessDenied
+	case codes.Canceled, codes.DeadlineExceeded, codes.Internal, codes.Unknown, codes.Unavailable:
+		kind, message = store.FailureUnavailable, "TransportError"
+	}
+	return &worker.ProviderError{Kind: kind, Message: message}
+}
+
+func validationFailure() error {
+	return &worker.ProviderError{Kind: store.FailureProcessingError, Message: "ValidationError"}
 }

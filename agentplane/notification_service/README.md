@@ -1,7 +1,7 @@
 # Notification Service
 
 Standalone Actions and GitHub App subscriptions, messages between workloads, and durable session inboxes. The
-service reads Actions history, reads destination Sandboxes from their Sandbox resources, validates Sessions through
+service reads Action history over the generated ActionService gRPC API, reads destination Sandboxes from their Sandbox resources, validates Sessions through
 the read-only Runner Gateway, sends every runner notice through the Session Dispatcher, and reads command receipts
 from the Session's runner entries in the History Service. It authorizes messages by the `session_inbox_access`
 rules of the PolicySets bound to the sender, which it watches. It does not depend on the integration app or
@@ -68,11 +68,13 @@ Environment variables override YAML using `__` for nested fields. [settings.py](
 manifests render and their descriptions, and `config.go` with the settings of its packages reads them.
 Configuration changes require a service restart.
 
-`actions` contains `url` and `token_file`; `runner_gateway` uses `control_target` and `token_file`
-for per-Sandbox runner live-state checks. `history_service` and `session_dispatcher` each contain a `target` and
-`token_file` (`request_timeout_s` is optional for both). The Dispatcher setting is required. Each service checks its own token audience,
-so each token file holds a token projected for that service. Token paths refer to rotating projected ServiceAccount tokens, not static secrets. Actions rereads its
-token file for each request. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
+`actions` contains a gRPC `target`, `token_file`, and optional `request_timeout_s` (default 5);
+`runner_gateway` uses `control_target` and `token_file` for per-Sandbox runner live-state checks.
+`history_service` and `session_dispatcher` each contain a `target` and `token_file`
+(`request_timeout_s` is optional for both). The Dispatcher setting is required. Each service checks
+its own token audience, so each token file holds a token projected for that service. Token paths refer
+to rotating projected ServiceAccount tokens, not static secrets. Actions rereads its token file for
+each RPC. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
 environment variable rather than putting the DSN in the ConfigMap.
 
 The service persists a notice's stable command ID before calling `SubmitInput`. A queued response means

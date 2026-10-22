@@ -7,24 +7,25 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,31 +33,38 @@ import (
 
 // ownedActions is an Action Service whose requests were each submitted by the ServiceAccount that owners names,
 // and whose log holds a pending decision and then a denial.
-type ownedActions struct{ owners map[string]string }
+type ownedActions struct {
+	actionpb.UnimplementedActionServiceServer
+	owners map[string]string
+}
 
-func (a ownedActions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// /v1/action-requests/{id} and /v1/action-requests/{id}/events
-	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	owner, known := "", false
-	if len(parts) >= 3 {
-		owner, known = a.owners[parts[2]]
-	}
+func (a ownedActions) GetActionRequest(_ context.Context, request *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
+	owner, known := a.owners[request.GetRequestId()]
 	if !known {
-		http.NotFound(w, r)
-		return
+		return nil, status.Error(codes.NotFound, "test-action-not-found")
 	}
-	if len(parts) == 3 {
-		_ = json.NewEncoder(w).Encode(map[string]any{"caller": map[string]string{"namespace": testNamespace, "name": owner}})
-		return
+	return &actionpb.GetActionRequestResponse{ActionRequest: &actionpb.ActionRequest{
+		Caller: &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: owner},
+	}}, nil
+}
+
+func (a ownedActions) ListActionRequestEvents(_ context.Context, request *actionpb.ListActionRequestEventsRequest) (*actionpb.ListActionRequestEventsResponse, error) {
+	if _, known := a.owners[request.GetRequestId()]; !known {
+		return nil, status.Error(codes.NotFound, "test-action-not-found")
 	}
-	after, _ := strconv.Atoi(r.URL.Query().Get("after_sequence"))
-	var events []map[string]any
-	for sequence, state := range []string{"decision_pending", "denied"} {
-		if sequence+1 > after {
-			events = append(events, map[string]any{"sequence": sequence + 1, "state": state, "at": "2026-01-01T00:00:00Z", "actor": nil})
+	response := &actionpb.ListActionRequestEventsResponse{}
+	for sequence, state := range []actionpb.ActionState{
+		actionpb.ActionState_ACTION_STATE_DECISION_PENDING,
+		actionpb.ActionState_ACTION_STATE_DENIED,
+	} {
+		sequence++
+		if int32(sequence) > request.GetAfterSequence() && int32(len(response.Events)) < request.GetLimit() {
+			response.Events = append(response.Events, &actionpb.ActionEvent{
+				Sequence: int32(sequence), State: state, At: timestamppb.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
+			})
 		}
 	}
-	_ = json.NewEncoder(w).Encode(events)
+	return response, nil
 }
 
 // command is what a Dispatcher was asked to deliver.
@@ -237,13 +245,14 @@ func runnerEntry(cursor uint64, observation *eventpb.Event) *eventlogpb.EventEnt
 // the entries.
 func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseAndARestart(t *testing.T) {
 	mine, theirs := uuid.NewString(), uuid.NewString()
-	actionService := httptest.NewServer(ownedActions{owners: map[string]string{mine: sandboxName, theirs: otherName}})
-	t.Cleanup(actionService.Close)
+	actionService := serveGRPC(t, func(server *grpc.Server) {
+		actionpb.RegisterActionServiceServer(server, ownedActions{owners: map[string]string{mine: sandboxName, theirs: otherName}})
+	})
 	dispatcher, history := &losingDispatcher{}, &journal{}
 	historyAddress := serveGRPC(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })
 	dispatcherAddress := serveGRPC(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })
 	peers := func(c *config) {
-		c.Actions.URL = actionService.URL
+		c.Actions.Target = actionService
 		c.HistoryService.Target, c.SessionDispatcher.Target = historyAddress, dispatcherAddress
 		c.NoticeDebounce.QuietSeconds = 0
 	}

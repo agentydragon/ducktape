@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -169,10 +170,11 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 		return err
 	}
 	defer dispatcherConnection.Close()
-	actionsClient, err := actions.NewClient(c.Actions)
+	actionsConnection, err := bearer.Dial(c.Actions.Target, c.Actions.TokenFile, seconds(c.Actions.RequestTimeoutSeconds))
 	if err != nil {
 		return err
 	}
+	defer actionsConnection.Close()
 	watchPeriod := time.Duration(c.PolicyWatchPeriodSeconds) * time.Second
 	sendPolicy := inboxaccess.NewPolicy(reader.StaleAfterCycles * watchPeriod)
 	policyWatches, err := sendPolicy.Watch(deps.Policies, c.Namespace, watchPeriod)
@@ -193,7 +195,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	history := historypb.NewHistoryServiceClient(historyConnection)
 
 	inboxes := store.New(db, c.Quotas)
-	actionsSource := &actions.Source{Service: actionsClient, Store: inboxes}
+	actionsSource := &actions.Source{Service: actionpb.NewActionServiceClient(actionsConnection), Store: inboxes}
 	// The providers are interfaces, so a disabled GitHub is a nil interface, not a nil *github.Provider.
 	var githubAPI api.GitHub
 	var githubSource worker.Provider

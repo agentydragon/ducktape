@@ -6,20 +6,25 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strconv"
-	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -34,49 +39,76 @@ var testOwner = store.ServiceAccount{Namespace: testNamespace, Name: testSandbox
 // testIncarnation is testOwner as the Sandbox the destinations name.
 var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}
 
-const testOwnerJSON = `{"namespace": "test-namespace", "name": "test-sandbox"}`
-
-// wireEvent is event sequence as the Action Service's events endpoint sends it.
+// wireEvent is the payload the Notification Service retains for an Action event.
 func wireEvent(sequence int64) string {
-	return fmt.Sprintf(`{"sequence": %d, "state": "decision_pending", "at": "2026-10-20T03:56:03.123456Z", "actor": null}`, sequence)
+	return fmt.Sprintf(`{"sequence":%d,"state":"decision_pending","at":"2026-10-20T03:56:03.123456Z","actor":null}`, sequence)
 }
 
-type recordedRequest struct {
-	Path          string
-	Query         url.Values
+type recordedCall struct {
+	Method        string
+	RequestID     string
+	AfterSequence int32
+	Limit         int32
 	Authorization string
 }
 
-// fakeActionService serves the two reads of the Action Service for one Action request, whose log has events
-// with sequences 1 through its count, unless a test takes a request over.
 type fakeActionService struct {
-	mu       sync.Mutex
-	caller   string
-	events   int64
-	takeover func(w http.ResponseWriter, r *http.Request) bool
-	requests []recordedRequest
+	actionpb.UnimplementedActionServiceServer
+	mu               sync.Mutex
+	request          *actionpb.ActionRequest
+	eventCount       int32
+	events           []*actionpb.ActionEvent
+	useEventOverride bool
+	getError         error
+	eventsError      error
+	blockGet         bool
+	calls            []recordedCall
 }
 
-func (s *fakeActionService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *fakeActionService) GetActionRequest(ctx context.Context, request *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
 	s.mu.Lock()
-	s.requests = append(s.requests, recordedRequest{r.URL.Path, r.URL.Query(), r.Header.Get("Authorization")})
-	caller, events, takeover := s.caller, s.events, s.takeover
+	s.calls = append(s.calls, recordedCall{
+		Method: "GetActionRequest", RequestID: request.GetRequestId(), Authorization: authorization(ctx),
+	})
+	response, err, block := s.request, s.getError, s.blockGet
 	s.mu.Unlock()
-	if takeover != nil && takeover(w, r) {
-		return
+	if block {
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}
-	if strings.HasSuffix(r.URL.Path, "/events") {
-		after, _ := strconv.ParseInt(r.URL.Query().Get("after_sequence"), 10, 64)
-		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-		var page []string
-		for sequence := after + 1; sequence <= events && len(page) < limit; sequence++ {
-			page = append(page, wireEvent(sequence))
-		}
-		fmt.Fprintf(w, "[%s]", strings.Join(page, ","))
-		return
+	if err != nil {
+		return nil, err
 	}
-	fmt.Fprintf(w, `{"id": %q, "title": "Test Action", "state": "decision_pending", "caller": %s}`,
-		strings.TrimPrefix(r.URL.Path, "/v1/action-requests/"), caller)
+	return &actionpb.GetActionRequestResponse{ActionRequest: response}, nil
+}
+
+func (s *fakeActionService) ListActionRequestEvents(ctx context.Context, request *actionpb.ListActionRequestEventsRequest) (*actionpb.ListActionRequestEventsResponse, error) {
+	s.mu.Lock()
+	s.calls = append(s.calls, recordedCall{
+		Method: "ListActionRequestEvents", RequestID: request.GetRequestId(),
+		AfterSequence: request.GetAfterSequence(), Limit: request.GetLimit(), Authorization: authorization(ctx),
+	})
+	eventCount, events, override, err := s.eventCount, s.events, s.useEventOverride, s.eventsError
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	if override {
+		return &actionpb.ListActionRequestEventsResponse{Events: events}, nil
+	}
+	page := make([]*actionpb.ActionEvent, 0, request.GetLimit())
+	for sequence := request.GetAfterSequence() + 1; sequence <= eventCount && int32(len(page)) < request.GetLimit(); sequence++ {
+		page = append(page, wireActionEvent(sequence))
+	}
+	return &actionpb.ListActionRequestEventsResponse{Events: page}, nil
+}
+
+func authorization(ctx context.Context) string {
+	values := metadata.ValueFromIncomingContext(ctx, "authorization")
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }
 
 func (s *fakeActionService) set(f func(*fakeActionService)) {
@@ -85,27 +117,29 @@ func (s *fakeActionService) set(f func(*fakeActionService)) {
 	f(s)
 }
 
-func (s *fakeActionService) log() []recordedRequest {
+func (s *fakeActionService) log() []recordedCall {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]recordedRequest(nil), s.requests...)
+	return append([]recordedCall(nil), s.calls...)
 }
 
-func (s *fakeActionService) paths() []string {
-	var paths []string
-	for _, request := range s.log() {
-		paths = append(paths, request.Path)
+func wireActionEvent(sequence int32) *actionpb.ActionEvent {
+	return &actionpb.ActionEvent{
+		Sequence: sequence,
+		State:    actionpb.ActionState_ACTION_STATE_DECISION_PENDING,
+		At:       timestamppb.New(time.Date(2026, 10, 20, 3, 56, 3, 123456000, time.UTC)),
 	}
-	return paths
 }
 
 type fixture struct {
-	db        *sql.DB
-	store     *store.Store
-	service   *fakeActionService
-	server    *httptest.Server
-	tokenFile string
-	source    *Source
+	db         *sql.DB
+	store      *store.Store
+	service    *fakeActionService
+	server     *grpc.Server
+	connection *grpc.ClientConn
+	tokenFile  string
+	listener   net.Listener
+	source     *Source
 }
 
 // newFixture starts from a database without the other tests' inboxes: Claim takes whichever inbox is due.
@@ -119,28 +153,37 @@ func newFixture(t *testing.T) fixture {
 	if _, err := db.ExecContext(t.Context(), `TRUNCATE inbox CASCADE`); err != nil {
 		t.Fatal(err)
 	}
-	service := &fakeActionService{caller: testOwnerJSON}
-	server := httptest.NewServer(service)
-	t.Cleanup(server.Close)
+	service := &fakeActionService{
+		request: &actionpb.ActionRequest{Caller: &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}},
+	}
+	server := grpc.NewServer()
+	actionpb.RegisterActionServiceServer(server, service)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
 	tokenFile := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(tokenFile, []byte("test-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	f := fixture{
-		db: db, service: service, server: server, tokenFile: tokenFile,
+		db: db, service: service, server: server, listener: listener, tokenFile: tokenFile,
 		store: store.New(db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}),
 	}
 	f.source = &Source{Service: f.client(t, 5), Store: f.store}
 	return f
 }
 
-func (f fixture) client(t *testing.T, timeoutSeconds float64) *Client {
+func (f fixture) client(t *testing.T, timeoutSeconds float64) actionpb.ActionServiceClient {
 	t.Helper()
-	client, err := NewClient(Settings{URL: f.server.URL, TokenFile: f.tokenFile, RequestTimeoutSeconds: timeoutSeconds})
+	connection, err := bearer.Dial(f.listener.Addr().String(), f.tokenFile, time.Duration(timeoutSeconds*float64(time.Second)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return client
+	t.Cleanup(func() { connection.Close() })
+	return actionpb.NewActionServiceClient(connection)
 }
 
 func (f fixture) subscribe(t *testing.T) store.Subscription {
@@ -218,8 +261,8 @@ func requireFailure(t *testing.T, err error, kind store.SourceFailureKind, messa
 func TestReconcileRecordsTheEventsOfTheCallersRequest(t *testing.T) {
 	f := newFixture(t)
 	subscription := f.subscribe(t)
-	request := subscription.Source.(store.ActionsSource).RequestID
-	f.service.set(func(s *fakeActionService) { s.events = 3 })
+	requestID := subscription.Source.(store.ActionsSource).RequestID
+	f.service.set(func(s *fakeActionService) { s.eventCount = 3 })
 	claim := f.claim(t)
 
 	if err := f.reconcile(t, claim); err != nil {
@@ -232,43 +275,41 @@ func TestReconcileRecordsTheEventsOfTheCallersRequest(t *testing.T) {
 	}
 	for i, entry := range entries {
 		sequence := int64(i + 1)
-		if !reflect.DeepEqual(entry.Event, store.ActionsEvent{RequestID: request, Sequence: sequence}) {
+		if !reflect.DeepEqual(entry.Event, store.ActionsEvent{RequestID: requestID, Sequence: sequence}) {
 			t.Errorf("entry %d is %+v", sequence, entry.Event)
 		}
 		if got, want := string(entry.Payload), wireEvent(sequence); !sameJSON(t, got, want) {
 			t.Errorf("payload %s, want %s", got, want)
 		}
 	}
-	requests := f.service.log()
-	if len(requests) != 2 {
-		t.Fatalf("requests = %+v, want the request and its events", requests)
+	calls := f.service.log()
+	if len(calls) != 2 || calls[0].Method != "GetActionRequest" || calls[1].Method != "ListActionRequestEvents" {
+		t.Fatalf("calls = %+v, want request and event reads", calls)
 	}
-	if requests[0].Path != "/v1/action-requests/"+request.String() || requests[1].Path != requests[0].Path+"/events" {
-		t.Errorf("paths = %q and %q", requests[0].Path, requests[1].Path)
+	for _, call := range calls {
+		if call.RequestID != requestID.String() || call.Authorization != "Bearer test-token" {
+			t.Errorf("call = %+v", call)
+		}
 	}
-	if got := requests[1].Query; got.Get("after_sequence") != "0" || got.Get("limit") != "128" {
-		t.Errorf("events query = %v", got)
+	if calls[1].AfterSequence != 0 || calls[1].Limit != eventsPageSize {
+		t.Errorf("events request = %+v", calls[1])
 	}
 
-	// The token is read again for every request, so its rotation is followed; reading again resumes after the
-	// last sequence recorded.
+	// The token is read again for every RPC, and the next read resumes after the last sequence recorded.
 	if err := os.WriteFile(f.tokenFile, []byte("rotated"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	f.service.set(func(s *fakeActionService) { s.events = 5 })
+	f.service.set(func(s *fakeActionService) { s.eventCount = 5 })
 	if err := f.reconcile(t, claim); err != nil {
 		t.Fatal(err)
 	}
-	requests = f.service.log()[2:]
-	if len(requests) != 2 || requests[1].Query.Get("after_sequence") != "3" {
-		t.Errorf("second read = %+v", requests)
+	calls = f.service.log()[2:]
+	if len(calls) != 2 || calls[1].AfterSequence != 3 {
+		t.Errorf("second read = %+v", calls)
 	}
-	if first := f.service.log()[0].Authorization; first != "Bearer test-token" {
-		t.Errorf("Authorization = %q", first)
-	}
-	for _, request := range requests {
-		if request.Authorization != "Bearer rotated" {
-			t.Errorf("Authorization after rotation = %q", request.Authorization)
+	for _, call := range calls {
+		if call.Authorization != "Bearer rotated" {
+			t.Errorf("Authorization after rotation = %q", call.Authorization)
 		}
 	}
 	if got := len(f.entries(t, subscription.InboxID)); got != 5 {
@@ -279,7 +320,7 @@ func TestReconcileRecordsTheEventsOfTheCallersRequest(t *testing.T) {
 func TestReconcileReadsALongLogAPageAtATime(t *testing.T) {
 	f := newFixture(t)
 	subscription := f.subscribe(t)
-	f.service.set(func(s *fakeActionService) { s.events = 130 })
+	f.service.set(func(s *fakeActionService) { s.eventCount = 130 })
 	claim := f.claim(t)
 
 	if err := f.reconcile(t, claim); err != nil {
@@ -297,22 +338,21 @@ func TestReconcileReadsALongLogAPageAtATime(t *testing.T) {
 }
 
 func TestReconcileDoesNotFollowARequestOfAnotherAccount(t *testing.T) {
-	for name, caller := range map[string]string{
-		"another account":                    `{"namespace": "test-namespace", "name": "another-sandbox"}`,
-		"the same name in another namespace": `{"namespace": "another-namespace", "name": "test-sandbox"}`,
+	for name, caller := range map[string]*sandboxespb.ServiceAccount{
+		"another account":                    {Namespace: testNamespace, Name: "another-sandbox"},
+		"the same name in another namespace": {Namespace: "another-namespace", Name: testSandbox},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
 			subscription := f.subscribe(t)
-			f.service.set(func(s *fakeActionService) { s.caller, s.events = caller, 3 })
+			f.service.set(func(s *fakeActionService) { s.request.Caller = caller; s.eventCount = 3 })
 
 			err := f.reconcile(t, f.claim(t))
 
 			requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
-			// The service's broad read access is not authority to follow what it reads: the events are not read.
-			for _, path := range f.service.paths() {
-				if strings.HasSuffix(path, "/events") {
-					t.Errorf("events were requested: %q", path)
+			for _, call := range f.service.log() {
+				if call.Method == "ListActionRequestEvents" {
+					t.Errorf("events were requested: %+v", call)
 				}
 			}
 			if got := len(f.entries(t, subscription.InboxID)); got != 0 {
@@ -324,7 +364,10 @@ func TestReconcileDoesNotFollowARequestOfAnotherAccount(t *testing.T) {
 
 func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 	f := newFixture(t)
-	f.service.set(func(s *fakeActionService) { s.events = 2 })
+	f.service.set(func(s *fakeActionService) {
+		s.useEventOverride = true
+		s.events = []*actionpb.ActionEvent{wireActionEvent(2)}
+	})
 	request := uuid.New()
 
 	events, err := f.source.Events(t.Context(), testOwner, request, 1)
@@ -334,82 +377,143 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 	if len(events) != 1 || events[0].Sequence != 2 || events[0].State != store.ActionDecisionPending {
 		t.Errorf("events = %+v, want the second", events)
 	}
+	call := f.service.log()[1]
+	if call.AfterSequence != 1 || call.Limit != eventsPageSize || call.RequestID != request.String() {
+		t.Errorf("events call = %+v", call)
+	}
 
 	_, err = f.source.Events(t.Context(), store.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0)
 	requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
 }
 
-func TestReconcileClassifiesWhatTheActionServiceAnswers(t *testing.T) {
-	const (
-		request = "the request"
-		events  = "its events"
-	)
-	for name, c := range map[string]struct {
+func TestEventsMapsTheActionEventActors(t *testing.T) {
+	f := newFixture(t)
+	f.service.set(func(s *fakeActionService) {
+		s.useEventOverride = true
+		s.events = []*actionpb.ActionEvent{
+			{
+				Sequence: 1, State: actionpb.ActionState_ACTION_STATE_ALLOWED,
+				At: timestamppb.New(time.Date(2026, 10, 20, 3, 56, 3, 123456000, time.UTC)),
+				Actor: &actionpb.Principal{Principal: &actionpb.Principal_Caller{Caller: &sandboxespb.ServiceAccount{
+					Namespace: testNamespace, Name: testSandbox,
+				}}},
+			},
+			{
+				Sequence: 2, State: actionpb.ActionState_ACTION_STATE_DENIED,
+				At: timestamppb.New(time.Date(2026, 10, 20, 3, 56, 4, 0, time.UTC)),
+				Actor: &actionpb.Principal{Principal: &actionpb.Principal_Operator{Operator: &actionpb.Operator{
+					Issuer: "test-issuer", Subject: "test-subject",
+				}}},
+			},
+		}
+	})
+
+	events, err := f.source.Events(t.Context(), testOwner, uuid.New(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].State != store.ActionAllowed || events[1].State != store.ActionDenied {
+		t.Fatalf("events = %+v", events)
+	}
+	if actor, ok := events[0].Actor.(store.CallerActor); !ok || actor.Account != testOwner {
+		t.Errorf("caller actor = %#v", events[0].Actor)
+	}
+	if actor, ok := events[1].Actor.(store.OperatorActor); !ok || actor.Issuer != "test-issuer" || actor.Subject != "test-subject" {
+		t.Errorf("operator actor = %#v", events[1].Actor)
+	}
+}
+
+func TestReconcileClassifiesActionServiceResponses(t *testing.T) {
+	for name, tc := range map[string]struct {
 		read    string
-		status  int
-		body    string
+		setup   func(*fakeActionService)
 		kind    store.SourceFailureKind
 		message string
 	}{
-		"rate limited":             {request, 429, "", store.FailureRateLimited, "HTTP 429"},
-		"unauthenticated":          {request, 401, "", store.FailureAccessDenied, "HTTP 401"},
-		"forbidden":                {request, 403, "", store.FailureAccessDenied, "HTTP 403"},
-		"request not found":        {request, 404, "", store.FailureAccessDenied, "HTTP 404"},
-		"server error":             {request, 500, "", store.FailureUnavailable, "HTTP 500"},
-		"bad gateway":              {request, 502, "", store.FailureUnavailable, "HTTP 502"},
-		"unavailable":              {request, 503, "", store.FailureUnavailable, "HTTP 503"},
-		"bad request":              {request, 400, "", store.FailureProcessingError, "HTTP 400"},
-		"conflict":                 {request, 409, "", store.FailureProcessingError, "HTTP 409"},
-		"unprocessable":            {request, 422, "", store.FailureProcessingError, "HTTP 422"},
-		"request that is no JSON":  {request, 200, "not json", store.FailureProcessingError, "ValidationError"},
-		"request that is a list":   {request, 200, "[]", store.FailureProcessingError, "ValidationError"},
-		"request without caller":   {request, 200, `{"id": "x"}`, store.FailureProcessingError, "ValidationError"},
-		"request with null caller": {request, 200, `{"caller": null}`, store.FailureProcessingError, "ValidationError"},
-		"caller without a name":    {request, 200, `{"caller": {"namespace": "test-namespace"}}`, store.FailureProcessingError, "ValidationError"},
-		"events rate limited":      {events, 429, "", store.FailureRateLimited, "HTTP 429"},
-		"events forbidden":         {events, 403, "", store.FailureAccessDenied, "HTTP 403"},
-		"events not found":         {events, 404, "", store.FailureAccessDenied, "HTTP 404"},
-		"events server error":      {events, 500, "", store.FailureUnavailable, "HTTP 500"},
-		"events unprocessable":     {events, 422, "", store.FailureProcessingError, "HTTP 422"},
-		"events that are no JSON":  {events, 200, "not json", store.FailureProcessingError, "ValidationError"},
-		"events that are an object": {
-			events, 200, `{}`, store.FailureProcessingError, "ValidationError",
+		"request not found": {
+			read: "request", setup: func(s *fakeActionService) { s.getError = status.Error(codes.NotFound, "test detail") },
+			kind: store.FailureAccessDenied, message: "NotFound",
 		},
-		"event with a field the model lacks": {
-			events, 200, `[{"sequence": 1, "state": "allowed", "at": "2026-10-20T03:56:03Z", "extra": 1}]`,
-			store.FailureProcessingError, "ValidationError",
+		"request unauthenticated": {
+			read: "request", setup: func(s *fakeActionService) { s.getError = status.Error(codes.Unauthenticated, "test detail") },
+			kind: store.FailureAccessDenied, message: "Unauthenticated",
 		},
-		"event in a state the model lacks": {
-			events, 200, `[{"sequence": 1, "state": "paused", "at": "2026-10-20T03:56:03Z"}]`,
-			store.FailureProcessingError, "ValidationError",
+		"request unavailable": {
+			read: "request", setup: func(s *fakeActionService) {
+				s.getError = status.Error(codes.Unavailable, "the bearer token file is empty")
+			},
+			kind: store.FailureUnavailable, message: "TransportError",
 		},
-		"redirected request": {request, 302, "", store.FailureProcessingError, "HTTP 302"},
-		"redirected events":  {events, 307, "", store.FailureProcessingError, "HTTP 307"},
+		"request invalid": {
+			read: "request", setup: func(s *fakeActionService) { s.getError = status.Error(codes.InvalidArgument, "test detail") },
+			kind: store.FailureProcessingError, message: "InvalidArgument",
+		},
+		"events permission denied": {
+			read: "events", setup: func(s *fakeActionService) { s.eventsError = status.Error(codes.PermissionDenied, "test detail") },
+			kind: store.FailureAccessDenied, message: "PermissionDenied",
+		},
+		"events rate limited": {
+			read: "events", setup: func(s *fakeActionService) { s.eventsError = status.Error(codes.ResourceExhausted, "test detail") },
+			kind: store.FailureRateLimited, message: "ResourceExhausted",
+		},
+		"events server failure": {
+			read: "events", setup: func(s *fakeActionService) { s.eventsError = status.Error(codes.Internal, "test detail") },
+			kind: store.FailureUnavailable, message: "TransportError",
+		},
+		"request without receipt": {
+			read: "request", setup: func(s *fakeActionService) { s.request = nil },
+			kind: store.FailureProcessingError, message: "ValidationError",
+		},
+		"request without caller": {
+			read: "request", setup: func(s *fakeActionService) { s.request.Caller = nil },
+			kind: store.FailureProcessingError, message: "ValidationError",
+		},
+		"caller without a name": {
+			read: "request", setup: func(s *fakeActionService) { s.request.Caller.Name = "" },
+			kind: store.FailureProcessingError, message: "ValidationError",
+		},
+		"event without a sequence": {
+			read: "events", setup: func(s *fakeActionService) {
+				s.useEventOverride, s.events = true, []*actionpb.ActionEvent{{At: wireActionEvent(1).GetAt(), State: actionpb.ActionState_ACTION_STATE_ALLOWED}}
+			},
+			kind: store.FailureProcessingError, message: "ValidationError",
+		},
+		"event with an unknown state": {
+			read: "events", setup: func(s *fakeActionService) {
+				event := wireActionEvent(1)
+				event.State = actionpb.ActionState(99)
+				s.useEventOverride, s.events = true, []*actionpb.ActionEvent{event}
+			},
+			kind: store.FailureProcessingError, message: "ValidationError",
+		},
+		"event without a time": {
+			read: "events", setup: func(s *fakeActionService) {
+				event := wireActionEvent(1)
+				event.At = nil
+				s.useEventOverride, s.events = true, []*actionpb.ActionEvent{event}
+			},
+			kind: store.FailureProcessingError, message: "ValidationError",
+		},
+		"event with an invalid actor": {
+			read: "events", setup: func(s *fakeActionService) {
+				event := wireActionEvent(1)
+				event.Actor = &actionpb.Principal{Principal: &actionpb.Principal_Operator{Operator: &actionpb.Operator{Issuer: ""}}}
+				s.useEventOverride, s.events = true, []*actionpb.ActionEvent{event}
+			},
+			kind: store.FailureProcessingError, message: "ValidationError",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
 			subscription := f.subscribe(t)
-			f.service.set(func(s *fakeActionService) {
-				s.events = 3
-				s.takeover = func(w http.ResponseWriter, r *http.Request) bool {
-					if strings.HasSuffix(r.URL.Path, "/events") != (c.read == events) {
-						return false
-					}
-					if c.status >= 300 && c.status < 400 {
-						w.Header().Set("Location", "/elsewhere")
-					}
-					w.WriteHeader(c.status)
-					fmt.Fprint(w, c.body)
-					return true
-				}
-			})
-
+			f.service.set(tc.setup)
 			err := f.reconcile(t, f.claim(t))
 
-			requireFailure(t, err, c.kind, c.message)
-			for _, path := range f.service.paths() {
-				if path == "/elsewhere" {
-					t.Error("a redirect was followed")
+			requireFailure(t, err, tc.kind, tc.message)
+			calls := f.service.log()
+			for _, call := range calls {
+				if tc.read == "request" && call.Method == "ListActionRequestEvents" {
+					t.Error("events were read after the request failed validation")
 				}
 			}
 			if got := len(f.entries(t, subscription.InboxID)); got != 0 {
@@ -420,28 +524,22 @@ func TestReconcileClassifiesWhatTheActionServiceAnswers(t *testing.T) {
 }
 
 func TestReconcileShowsAnUnreachableActionServiceAsUnavailable(t *testing.T) {
-	t.Run("connection refused", func(t *testing.T) {
-		f := newFixture(t)
-		f.subscribe(t)
-		claim := f.claim(t)
-		f.server.Close()
+	f := newFixture(t)
+	f.subscribe(t)
+	claim := f.claim(t)
+	f.server.Stop()
 
-		requireFailure(t, f.reconcile(t, claim), store.FailureUnavailable, "TransportError")
-	})
-	t.Run("no answer within the timeout", func(t *testing.T) {
-		f := newFixture(t)
-		f.subscribe(t)
-		claim := f.claim(t)
-		f.service.set(func(s *fakeActionService) {
-			s.takeover = func(_ http.ResponseWriter, r *http.Request) bool {
-				<-r.Context().Done()
-				return true
-			}
-		})
-		impatient := &Source{Service: f.client(t, 0.05), Store: f.store}
+	requireFailure(t, f.reconcile(t, claim), store.FailureUnavailable, "TransportError")
+}
 
-		requireFailure(t, f.reconcileWith(t, impatient, claim), store.FailureUnavailable, "TransportError")
-	})
+func TestReconcileShowsAnActionServiceCallThatExceedsItsTimeoutAsUnavailable(t *testing.T) {
+	f := newFixture(t)
+	f.subscribe(t)
+	claim := f.claim(t)
+	f.service.set(func(s *fakeActionService) { s.blockGet = true })
+	impatient := &Source{Service: f.client(t, 0.05), Store: f.store}
+
+	requireFailure(t, f.reconcileWith(t, impatient, claim), store.FailureUnavailable, "TransportError")
 }
 
 // A cancelled read is the worker stopping, not a source to show as failing.
@@ -471,13 +569,8 @@ func TestReconcileRefusesAGapInTheLogAndRecordsNothing(t *testing.T) {
 	f := newFixture(t)
 	subscription := f.subscribe(t)
 	f.service.set(func(s *fakeActionService) {
-		s.takeover = func(w http.ResponseWriter, r *http.Request) bool {
-			if !strings.HasSuffix(r.URL.Path, "/events") {
-				return false
-			}
-			fmt.Fprintf(w, "[%s,%s]", wireEvent(2), wireEvent(3))
-			return true
-		}
+		s.useEventOverride = true
+		s.events = []*actionpb.ActionEvent{wireActionEvent(2), wireActionEvent(3)}
 	})
 
 	err := f.reconcile(t, f.claim(t))
@@ -488,7 +581,7 @@ func TestReconcileRefusesAGapInTheLogAndRecordsNothing(t *testing.T) {
 	}
 }
 
-// Python stops the worker when the token file cannot be read; the failure is not one to show and retry.
+// Python stops the worker when its projected token cannot be read; the failure is not shown and retried.
 func TestAnUnreadableTokenIsNotAFailureOfTheSubscription(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe(t)
@@ -500,11 +593,11 @@ func TestAnUnreadableTokenIsNotAFailureOfTheSubscription(t *testing.T) {
 	err := f.reconcile(t, claim)
 
 	var failure *worker.ProviderError
-	if err == nil || errors.As(err, &failure) {
-		t.Errorf("error = %v, want one that is not a *worker.ProviderError", err)
+	if err == nil || errors.As(err, &failure) || status.Code(err) != codes.Unavailable {
+		t.Errorf("error = %v, want an unclassified token-file Unavailable error", err)
 	}
-	if got := f.service.paths(); len(got) != 0 {
-		t.Errorf("requests were made without a token: %q", got)
+	if got := f.service.log(); len(got) != 0 {
+		t.Errorf("calls were made without a token: %+v", got)
 	}
 }
 

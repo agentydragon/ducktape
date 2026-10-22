@@ -189,8 +189,8 @@ key returns the retained subscription without reactivating it, even at the limit
 ## Authorization
 
 Actions allows the notification ServiceAccount to read all requests using the ordinary
-`GET /v1/action-requests`, `GET /v1/action-requests/{id}`, and
-`GET /v1/action-requests/{id}/events` endpoints. The `reader_accounts` allowlist defaults to empty;
+`ActionService.GetActionRequest` and `ActionService.ListActionRequestEvents` gRPC methods. The
+`reader_accounts` allowlist defaults to empty;
 ordinary callers remain restricted to their own requests. A service reader is not an operator or
 Action submitter and cannot cancel, decide, or execute Actions. There is no delegated-owner parameter
 or separate service endpoint. Notifications checks the request view's `caller` against the authenticated
