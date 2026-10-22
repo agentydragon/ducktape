@@ -51,7 +51,7 @@ jobs:
             curl -fsSL https://cli.crossplane.io/install.sh | XP_VERSION=v2.5.0 sh
           )
           sudo install -m 0755 "$tmp_dir/crossplane" /usr/local/bin/crossplane
-          crossplane version
+          crossplane xpkg --help >/dev/null
 
       - uses: ./.github/actions/setup-ci-secrets
         if: env.PUBLISH == 'true'
