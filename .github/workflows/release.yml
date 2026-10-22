@@ -2,11 +2,11 @@
 #
 # Two phases:
 #
-#   matrix  — builds nothing. bazel-ci already built every default-config release
-#             on this commit, so this reads that invocation's build event stream,
-#             derives each release's content hash from the digests it reports, and
-#             diffs those against the published tags. Emits a `matrix.include` of
-#             just the releases that changed. See devinfra/ci/plan_releases.py.
+#   matrix  — builds nothing. For release targets reported by bazel-ci, this reads
+#             the build event stream, derives each release's content hash from its
+#             output digests, and compares those against published tags. Missing or
+#             custom-configuration targets stay in the matrix for their own job.
+#             See devinfra/ci/plan_releases.py.
 #
 #   release — per changed release: run its tests, rebuild stamped, `gh release
 #             create`. Unchanged; the planner is purely a filter in front of it, and

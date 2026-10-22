@@ -2,11 +2,11 @@
 
 The planner avoids a per-artifact runner job when the content is unchanged.
 
-This runs once in the matrix job instead, and builds nothing at all. `bazel-ci`
-already built every default-config release on this commit, and BuildBuddy still
-holds that invocation's build event stream — including each output's content
-digest. So the planner reads the digests, turns them into the tags they would be
-published under, and asks which of those tags already exist.
+This runs once in the matrix job instead, and builds nothing at all. For targets
+reported by `bazel-ci`, BuildBuddy still holds that invocation's build event
+stream — including each output's content digest. The planner reads those digests,
+turns them into the tags they would be published under, and asks which of those
+tags already exist. A target not covered by the sweep stays in the matrix.
 
 Two properties this deliberately keeps:
 

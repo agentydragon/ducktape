@@ -4,12 +4,11 @@
 #
 # Two phases:
 #
-#   plan  — builds nothing. bazel-ci already built every image's `.digest` sibling
-#           on this commit, so this asks that invocation's build event stream where
-#           each `<name>.json.sha256` is and fetches it (~70 bytes apiece), then
-#           compares against what `latest` holds — the content of the most recent
-#           publish. Emits a `matrix.include` of just the images that differ.
-#           See devinfra/ci/plan_image_pushes.py.
+#   plan  — builds nothing. For image `.digest` targets reported by bazel-ci, this
+#           asks the invocation stream where each `<name>.json.sha256` is and
+#           fetches it, then compares it against the latest published content. An
+#           absent or ambiguous digest stays in the matrix. See
+#           devinfra/ci/plan_image_pushes.py.
 #
 #   push  — per changed image: run its tests, `bb remote build` the OCI layout, and
 #           push a new pinned tag unless the digest it just built is already the

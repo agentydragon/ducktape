@@ -1,22 +1,8 @@
-"""Resolve where a `bb remote build` landed each release asset, from its own stream.
+"""Resolve release asset paths from the invocation that built them.
 
-artifact_targets.json and skills/skills_registry.json name each asset's Bazel
-target and released `filename`, but not where Bazel writes the file: the output
-path encodes configuration (`k8-fastbuild` vs debundle's `k8-opt`) and bzlmod's
-mangled external-repo directories, so a path column in the SSOT went stale on
-every toolchain or flag move. The build itself already says where everything
-went — this reads the build event stream of the invocation that just ran and
-prints each asset's path as `bb remote build` materialized it on the GitHub
-runner, under `bb-out/`.
-
-Everything here fails loud, unlike plan_releases.py, the fail-open half: this
-runs *after* the build, in the job about to publish (release-paths) or to feed
-the nix imports gate (nix-overrides), where a target whose artifact the stream
-does not name, an ambiguous artifact, or a built basename contradicting the
-SSOT's `filename` is a configuration error to fix, never a row to skip.
-
-Runs as bare `python3 -m` on a GitHub Actions runner, so it stays on the
-standard library.
+The registries keep each target and released filename. BES supplies the output
+path; its basename must match that filename, which is part of the pin URL
+contract. Only the target's default, non-aspect output is an asset.
 """
 
 from __future__ import annotations
@@ -35,12 +21,7 @@ BB_OUT_PREFIX = "bb-out/"
 
 
 def resolve_asset(by_label: Mapping[str, list[Output]], target: str, filename: str) -> str:
-    """The `bb-out/` path of `target`'s one artifact, checked against `filename`.
-
-    The filename check is what keeps the SSOT honest: the released asset's name
-    (and so every pin's download URL) is the built file's basename, so a
-    mismatch means the registry no longer describes what the build produces.
-    """
+    """Return the invocation-reported default output under `bb-out/`, checking its basename."""
     artifact = artifact_output(by_label, target)
     if isinstance(artifact, str):
         raise SystemExit(artifact)
