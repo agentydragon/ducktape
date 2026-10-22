@@ -2,7 +2,7 @@
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 
-import { answerApi, mount, sendUpserts } from "../actions/testing";
+import { answerApi, mount, send, sendUpserts } from "../actions/testing";
 import type { ActionGroupView } from "../actions/client";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import { McpServers } from "./mcp_servers";
@@ -20,7 +20,7 @@ async function render(linkages: McpLinkageView[] = [], groups: ActionGroupView[]
 
 // Each button's label, and the request it sends.
 it.each([
-  ["Reconnect", "/upstream/actions/v1/operator/mcp-servers/github/linkage/start", { scopes: [] }],
+  ["Reconnect", "/upstream/actions/v1/operator/mcp-servers/github/linkage/start", {}],
   ["Disconnect", "/upstream/actions/v1/operator/mcp-servers/github/linkage/disconnect", undefined],
 ] as const)("spins only the clicked %s button until the operation fails", async (label, path, body) => {
   const rows: McpLinkageView[] = ["github", "second-server"].map((server_id) => ({
