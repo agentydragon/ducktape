@@ -334,12 +334,64 @@ async def operator_bff(base_url: str, operator_credentials: OperatorCredentials)
 
 
 def _bff_request(response: httpx.Response) -> ActionRequestView:
-    """Validation errors must not render the response's operator identity into test artifacts."""
+    """Decode the generated facade's ProtoJSON; validation errors never render identity details."""
     __tracebackhide__ = True
     try:
-        return ActionRequestView.model_validate(response.json())
-    except ValueError:
+        envelope = action_service_pb2.GetActionRequestResponse()
+        json_format.Parse(response.text, envelope)
+        if not envelope.HasField("action_request"):
+            raise ValueError("Action Service response omitted its request")
+        message = envelope.action_request
+        row = json_format.MessageToDict(message, preserving_proto_field_name=True)
+        row.setdefault("arguments", {})
+        row.setdefault("description", None)
+        row.setdefault("decision", None)
+        row.setdefault("execution", None)
+        row["state"] = action_service_pb2.ActionState.Name(message.state).removeprefix("ACTION_STATE_").lower()
+        if row["decision"] is not None:
+            decision_message = message.decision
+            decision = row["decision"]
+            decision["verdict"] = (
+                action_service_pb2.Verdict.Name(decision_message.verdict).removeprefix("VERDICT_").lower()
+            )
+            for key in ("operator", "decision_note", "reason_code", "reason_description", "policy_evidence"):
+                decision.setdefault(key, None)
+            if decision["policy_evidence"] is not None:
+                evidence = decision["policy_evidence"]
+                evidence.setdefault("bindings", [])
+                evidence.setdefault("policy_sets", [])
+                matched = evidence["matched"]
+                matched["source"] = (
+                    action_service_pb2.PolicySource.Name(decision_message.policy_evidence.matched.source)
+                    .removeprefix("POLICY_SOURCE_")
+                    .lower()
+                )
+                matched["type"] = (
+                    action_service_pb2.PolicyKind.Name(decision_message.policy_evidence.matched.type)
+                    .removeprefix("POLICY_KIND_")
+                    .lower()
+                )
+                matched.setdefault("repository", None)
+        if row["execution"] is not None:
+            execution_message = message.execution
+            execution = row["execution"]
+            execution["state"] = (
+                action_service_pb2.ExecutionState.Name(execution_message.state).removeprefix("EXECUTION_STATE_").lower()
+            )
+            for key in ("result", "error", "started_at", "completed_at", "reconciled_at"):
+                execution.setdefault(key, None)
+        return ActionRequestView.model_validate(row)
+    except KeyError, TypeError, ValueError:
         pytest.fail("BFF returned an invalid ActionRequestView; response body withheld", pytrace=False)
+
+
+def _decision_proto_json(decision: DecisionInput) -> dict[str, Any]:
+    return {
+        "verdict": f"VERDICT_{decision.verdict.value.upper()}",
+        "expectedVersion": str(decision.expected_version),
+        "idempotencyKey": decision.idempotency_key,
+        **({"decisionNote": decision.decision_note} if decision.decision_note is not None else {}),
+    }
 
 
 @pytest.mark.scripted_model
@@ -361,7 +413,8 @@ async def test_agent_mcp_bff_decision(
     submitted = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=False)
     assert submitted.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
     request_id = UUID(submitted.id)
-    path = f"/actions/{request_id}"
+    path = f"/upstream/actions/v1/action-requests/{request_id}"
+    decision_path = f"/upstream/actions/v1/operator/action-requests/{request_id}/decision"
     pending_response = await operator_bff.get(path)
     assert pending_response.status_code == HTTPStatus.OK
     pending = _bff_request(pending_response)
@@ -376,7 +429,7 @@ async def test_agent_mcp_bff_decision(
     assert pending.execution is None
 
     decision = DecisionInput(verdict=verdict, expected_version=pending.version, idempotency_key=str(uuid4()))
-    decided_response = await operator_bff.post(f"{path}/decision", json=decision.model_dump(mode="json"))
+    decided_response = await operator_bff.post(decision_path, json=_decision_proto_json(decision))
     assert decided_response.status_code == HTTPStatus.OK
     decided = _bff_request(decided_response)
     assert decided.id == request_id
@@ -434,12 +487,12 @@ async def test_agent_mcp_bff_decision(
         assert not completed.HasField("execution")
 
     # Replay the original version/key after completion: same Decision and Execution, no new dispatch.
-    duplicate = await operator_bff.post(f"{path}/decision", json=decision.model_dump(mode="json"))
+    duplicate = await operator_bff.post(decision_path, json=_decision_proto_json(decision))
     assert duplicate.status_code == HTTPStatus.OK
     if _bff_request(duplicate) != terminal:
         pytest.fail("Duplicate decision changed the terminal request", pytrace=False)
     stale = decision.model_copy(update={"idempotency_key": str(uuid4())})
-    refused = await operator_bff.post(f"{path}/decision", json=stale.model_dump(mode="json"))
+    refused = await operator_bff.post(decision_path, json=_decision_proto_json(stale))
     assert refused.status_code == HTTPStatus.CONFLICT
     unchanged = await operator_bff.get(path)
     assert unchanged.status_code == HTTPStatus.OK
@@ -447,14 +500,17 @@ async def test_agent_mcp_bff_decision(
         pytest.fail("Stale decision changed the terminal request", pytrace=False)
 
 
-async def _deny_pending(operator_bff: httpx.AsyncClient, request_id: UUID) -> ActionRequestView:
+async def _deny_pending(operator_bff: httpx.AsyncClient, request_id: str) -> ActionRequestView:
     """Check a request waited for the operator, then close it so nothing lingers undecided."""
-    receipt = _bff_request(await operator_bff.get(f"/actions/{request_id}"))
+    path = f"/upstream/actions/v1/action-requests/{request_id}"
+    receipt = _bff_request(await operator_bff.get(path))
     assert receipt.state is ActionState.DECISION_PENDING
     if receipt.decision is not None:
         pytest.fail("Request expected on the human path already has a Decision", pytrace=False)
     denial = DecisionInput(verdict=Verdict.DENY, expected_version=receipt.version, idempotency_key=str(uuid4()))
-    denied = await operator_bff.post(f"/actions/{request_id}/decision", json=denial.model_dump(mode="json"))
+    denied = await operator_bff.post(
+        f"/upstream/actions/v1/operator/action-requests/{request_id}/decision", json=_decision_proto_json(denial)
+    )
     assert denied.status_code == HTTPStatus.OK
     return receipt
 
@@ -497,7 +553,7 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     assert approved.state == action_service_pb2.ACTION_STATE_SUCCEEDED
     assert approved.HasField("execution")
     _assert_echoed(json_format.MessageToDict(approved.execution.result), marker)
-    receipt = _bff_request(await operator_bff.get(f"/actions/{approved.id}"))
+    receipt = _bff_request(await operator_bff.get(f"/upstream/actions/v1/action-requests/{approved.id}"))
     assert receipt.state is ActionState.SUCCEEDED
     assert receipt.decision is not None
     assert receipt.decision.provider == PROVIDER_NAME

@@ -1,9 +1,9 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
-import { type JSX, type ReactNode, useState } from "react";
-import { useSnapshotStream } from "../live_stream";
+import { type JSX, type ReactNode, useEffect, useState } from "react";
+import { useSnapshotStream, type StreamConnection } from "../live_stream";
 
 import { disconnectMcpLinkage, displayableError, startMcpLinkage, type McpLinkageView } from "../client";
-import type { ActionGroupView } from "../actions/client";
+import { followActionGroups, type ActionGroupView, type ActionGroupWatchFrame } from "../actions/client";
 import { TimeAgo } from "../time_ago";
 
 type McpHealth = ActionGroupView["health"];
@@ -11,6 +11,46 @@ type McpHealth = ActionGroupView["health"];
 type Row =
   | { kind: "oauth"; linkage: McpLinkageView; group: ActionGroupView | null }
   | { kind: "health-only"; group: ActionGroupView };
+
+function useActionGroupHealth(): {
+  snapshot: ActionGroupView[] | null;
+  connection: StreamConnection;
+} {
+  const [snapshot, setSnapshot] = useState<ActionGroupView[] | null>(null);
+  const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
+  useEffect(() => {
+    let replay: ActionGroupView[] = [];
+    return followActionGroups({
+      onOpen: () => {
+        replay = [];
+      },
+      onFrame: (frame: ActionGroupWatchFrame) => {
+        switch (frame.kind) {
+          case "snapshot":
+            replay.push(...frame.groups);
+            break;
+          case "snapshot_complete":
+            setSnapshot(replay);
+            replay = [];
+            break;
+          case "upsert":
+            setSnapshot((current) => {
+              if (current === null) return [frame.group];
+              const exists = current.some(({ key }) => key === frame.group.key);
+              return exists
+                ? current.map((group) => (group.key === frame.group.key ? frame.group : group))
+                : [...current, frame.group].sort((left, right) => left.key.localeCompare(right.key));
+            });
+            break;
+          case "reconnect_required":
+            break;
+        }
+      },
+      onConnection: setConnection,
+    });
+  }, []);
+  return { snapshot, connection };
+}
 
 // /action-groups returns every configured group, sandbox-kind included; this page only cares
 // about mcp-kind ones. Every mcp-kind group whose config carries a server_id is guaranteed (by a
@@ -113,7 +153,7 @@ function HealthDetail({ health }: { health: McpHealth }): JSX.Element | null {
 
 export function McpServers(): JSX.Element {
   const linkages = useSnapshotStream<McpLinkageView[]>("/mcp-servers/stream");
-  const health = useSnapshotStream<ActionGroupView[]>("/action-groups/stream");
+  const health = useActionGroupHealth();
   const [busy, setBusy] = useState<{ serverId: string; operation: "link" | "disconnect" } | null>(null);
   const [error, setError] = useState<string | null>(null);
 

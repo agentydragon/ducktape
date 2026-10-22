@@ -226,6 +226,7 @@ async def async_main(settings: Settings) -> None:
                 token_file=settings.notifications_token_file,
                 request_timeout_s=settings.notifications_request_timeout_s,
             ),
+            actions_http=UpstreamProxy(actions_http, token_file=None),
             system_status=SystemStatusChecker(system_probes, timeout_s=SYSTEM_STATUS_TIMEOUT_S),
         )
         if electric is not None:

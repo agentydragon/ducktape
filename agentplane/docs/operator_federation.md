@@ -63,8 +63,9 @@ except where a route states its own `Cache-Control`: Electric shapes are `privat
 but served only after a request the app authorizes. The app disables Uvicorn access logs to keep OAuth callback codes out of
 request URLs in logs; callback failures use fixed messages without provider/query text.
 Already-admitted requests are not retrospectively cancelled by logout; revocation gates the next
-request. The Actions stream (`/actions/stream`) is the exception: deleting a session row notifies
-every replica, and a stream ends at its own row's deletion or expiry. Upstream account disablement
+request. An Action facade watch under `/upstream/actions/v1/` is bound to the operator session row:
+deleting the row notifies every replica, and the stream ends at its own row's deletion or expiry.
+Upstream account disablement
 is not polled: the browser identity lasts until its idle or absolute deadline. In Authentik 2026.8.2's
 source the refresh grant checks the client and the refresh token (unexpired, unrevoked), not the
 application's policy bindings, and a refresh token outlives the Authentik session it came from; the

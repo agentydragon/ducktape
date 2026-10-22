@@ -6,13 +6,27 @@ the bindings that feed it are the app's own PolicyBinding view, which every read
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Literal
+from urllib.parse import urlencode
 
+import anyio
+from google.protobuf.json_format import Parse
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.action_service.client import OperatorActionServiceClient
-from agentplane.action_service.policy_view import EffectivePolicyView
+from agentplane.action_service import action_service_pb2 as action_pb
+from agentplane.action_service.models import PolicyKind, PolicySource
+from agentplane.action_service.policy_view import (
+    ArgumentSchemaView,
+    EffectivePolicyView,
+    ExactActionsView,
+    GitHubPublicRepositoryView,
+    GitHubRepositoryView,
+    HomeAssistantEntityControlView,
+    PolicyView,
+)
 from agentplane.app.action_federation import UpstreamFailure
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.sandboxes.action_policy_views import ActionPolicyReader
@@ -59,7 +73,69 @@ class ActionPolicyInventory(ActionPolicyReader):
         )
         return sorted(item["metadata"]["name"] for item in listed["items"])
 
-    async def for_subject(self, client: OperatorActionServiceClient, subject: ServiceAccountRef) -> ActionPolicyView:
-        """The subject's policy as the Action Service resolves it now."""
-        view = await client.service_account_action_policy(subject)
-        return ActionPolicyView(synced=view.synced, auto_approve_if=view.auto_approve_if)
+    async def for_subject(self, proxy: UpstreamProxy, bearer: str, subject: ServiceAccountRef) -> ActionPolicyView:
+        """The subject's policy from the generated Action Service facade."""
+        query = urlencode({"subject.namespace": subject.namespace, "subject.name": subject.name})
+        upstream = await proxy.open_request(
+            "GET", "v1/action-policy", query, bearer=bearer, headers={"Accept": "application/json"}
+        )
+        try:
+            upstream.raise_for_status()
+            response = Parse((await upstream.aread()).decode(), action_pb.GetActionPolicyResponse())
+        finally:
+            with anyio.CancelScope(shield=True):
+                await upstream.aclose()
+        if not response.HasField("action_policy"):
+            raise ValueError("Action Service returned no action policy")
+        policy = response.action_policy
+        return ActionPolicyView(
+            synced=policy.synced, auto_approve_if=[_effective_policy(item) for item in policy.auto_approve_if]
+        )
+
+
+def _effective_policy(effective: action_pb.EffectivePolicy) -> EffectivePolicyView:
+    source = action_pb.PolicySource.Name(effective.source).removeprefix("POLICY_SOURCE_")
+    return EffectivePolicyView(
+        binding=effective.binding,
+        policy_set=effective.policy_set,
+        source=PolicySource[source],
+        index=effective.index,
+        policy=_policy_view(effective.policy),
+    )
+
+
+def _policy_view(message: action_pb.Policy) -> PolicyView:
+    def actions(named: Mapping[str, action_pb.StringList]) -> dict[str, list[str]]:
+        return {group: list(names.values) for group, names in named.items()}
+
+    match message.WhichOneof("kind"):
+        case "exact_actions":
+            policy = message.exact_actions
+            return ExactActionsView(type=PolicyKind.EXACT_ACTIONS, actions=actions(policy.actions))
+        case "argument_schema":
+            policy = message.argument_schema
+            return ArgumentSchemaView(
+                type=PolicyKind.ARGUMENT_SCHEMA,
+                actions=actions(policy.actions),
+                argument_schema=policy.argument_schema.AsDict(),
+            )
+        case "github_repository":
+            policy = message.github_repository
+            return GitHubRepositoryView(
+                type=PolicyKind.GITHUB_REPOSITORY,
+                actions=actions(policy.actions),
+                owner=policy.owner,
+                repository=policy.repository,
+            )
+        case "github_public_repository":
+            policy = message.github_public_repository
+            return GitHubPublicRepositoryView(type=PolicyKind.GITHUB_PUBLIC_REPOSITORY, actions=actions(policy.actions))
+        case "home_assistant_entity_control":
+            policy = message.home_assistant_entity_control
+            return HomeAssistantEntityControlView(
+                type=PolicyKind.HOME_ASSISTANT_ENTITY_CONTROL,
+                actions=actions(policy.actions),
+                entities={entity: list(names.values) for entity, names in policy.entities.items()},
+            )
+        case _:
+            raise ValueError("Action Service returned a policy without a recognized kind")

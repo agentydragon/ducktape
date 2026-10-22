@@ -183,12 +183,9 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     deps = [
-        ":catalog",
         ":connections",
         ":enrollments",
         ":mcp_linkage",
-        ":models",
-        ":policy_view",
         "//agentplane:subjects",
         "@pypi//anyio",
         "@pypi//httpx",
@@ -1415,6 +1412,17 @@ go_proto_library(
     ],
 )
 
+ts_proto_library(
+    name = "action_service_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":action_service_proto",
+    deps = [
+        "//agentplane/proto:sandboxes_pb",
+        "//google/api:annotations_pb",
+    ],
+)
+
 # The agent-facing reference. Operator-only RPCs are a second proto so that this document describes only what an
 # agent may call.
 proto_openapi(
@@ -1445,6 +1453,17 @@ go_proto_library(
     deps = [
         ":action_service_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
+
+ts_proto_library(
+    name = "operator_action_service_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":operator_action_service_proto",
+    deps = [
+        ":action_service_pb",
+        "//google/api:annotations_pb",
     ],
 )
 
