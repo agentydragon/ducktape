@@ -108,9 +108,11 @@ node roll or any live configuration change. Before activation:
    there is no automatic reset/reinstall or raw-device initialization in the
    planned action.
 3. Only after every consumer is evacuated and the data disk is confirmed empty,
-   review a separate target-only readiness change. Confirm `drbd-canary` remains
-   absent and the native selector still requires the target hostname plus
-   `piraeus-ready=true` before enabling that label.
+   add and review node-scoped thin-pool metrics and alert coverage for this
+   target. Verify fresh samples and alert evaluation before making the pool
+   eligible. Then review a separate target-only readiness change. Confirm
+   `drbd-canary` remains absent and the native selector still requires the
+   target hostname plus `piraeus-ready=true` before enabling that label.
 4. Verify the resulting Talos volumes, boot and etcd health, disk identities,
    PV/VG/thin-pool geometry, metadata spare, pool capacity, and retained-volume
    behavior before considering any application restore.

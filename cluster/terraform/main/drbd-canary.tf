@@ -2,7 +2,7 @@
 # activated only after the target's rebuild. Keep the rescue/dd schematic unchanged.
 locals {
   drbd_canary_nodes          = toset(["ovh-ns102453", "ovh-ns103656"])
-  drbd_lvm_thin_nodes        = toset([local.piraeus_first_node])
+  drbd_lvm_thin_nodes        = local.piraeus_talos_storage_enabled_nodes
   drbd_prepared_nodes        = setunion(local.drbd_canary_nodes, local.drbd_lvm_thin_nodes)
   drbd_canary_talos_version  = "v1.14.0"
   drbd_canary_base_schematic = yamldecode(talos_image_factory_schematic.kimsufi.schematic)
