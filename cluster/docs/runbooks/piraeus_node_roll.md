@@ -7,6 +7,10 @@ later node has been drained or converted. Each destructive window needs its own
 accepted inventory and disk identities. Future PRs require the operator's
 go-ahead before merge.
 
+The [Piraeus migration evidence index](../../debug/piraeus_migration/README.md)
+tracks the latest status separately from dated inventories and proofs. Refresh
+its gates from live state before any operation.
+
 ## Next candidates and ordering
 
 The 2026-10-22 inventory suggests `ovh-ns104952` next, then `ovh-ns104963`.

@@ -2,7 +2,7 @@
 
 Preparation on 2026-10-22 for SSD control plane `ovh-ns104952` and a possible
 paired HDD worker. No subsequent node shutdown, reset, wipe or reformat has
-started. Use the [node-roll runbook](../../docs/runbooks/piraeus_node_roll.md)
+started. Use the [node-roll runbook](../../../docs/runbooks/piraeus_node_roll.md)
 and refresh its gates before those operations.
 
 ## Completed early SSD evacuation

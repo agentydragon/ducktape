@@ -35,7 +35,7 @@ The operator lifted the application-restoration pause before the work below.
   observed 64KiB chunks, 4GiB metadata, 4GiB spare and no free VG extents. Thin
   allocation is separate from logical PVC capacity.
 
-Next-node preparation is described in the [node-roll runbook](../../docs/runbooks/piraeus_node_roll.md).
+Next-node preparation is described in the [node-roll runbook](../../../docs/runbooks/piraeus_node_roll.md).
 No subsequent node reset, wipe or reformat is covered by this checkpoint.
 
 ## Physical-node checkpoint (2026-10-22)

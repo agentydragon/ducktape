@@ -25,9 +25,9 @@ From the repository root, after confirming the namespace is absent and the
 storage provider is healthy:
 
 ```sh
-direnv exec . sh cluster/debug/piraeus_storage_bench/seaweedfs_retry/prepare.sh
-direnv exec . sh cluster/debug/piraeus_storage_bench/seaweedfs_retry/run.sh
-direnv exec . sh cluster/debug/piraeus_storage_bench/seaweedfs_retry/cleanup.sh
+direnv exec . sh cluster/debug/piraeus_migration/benchmarks/seaweedfs_retry/prepare.sh
+direnv exec . sh cluster/debug/piraeus_migration/benchmarks/seaweedfs_retry/run.sh
+direnv exec . sh cluster/debug/piraeus_migration/benchmarks/seaweedfs_retry/cleanup.sh
 ```
 
 `PIRAEUS_BENCH_ATTEMPT` defaults to 1 and accepts only 1 or 2. Setting it to

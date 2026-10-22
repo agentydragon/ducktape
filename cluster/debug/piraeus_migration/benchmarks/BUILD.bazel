@@ -2,7 +2,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_binary(
     name = "plot_results_bin",
-    main_module = "cluster.debug.piraeus_storage_bench.plot_results",
+    main_module = "cluster.debug.piraeus_migration.benchmarks.plot_results",
     deps = [":plot_results"],
 )
 

@@ -15,9 +15,9 @@ placements and configuration matched attempt 1.
 From the repository root, the stages were run as:
 
 ```sh
-direnv exec . env PIRAEUS_BENCH_ATTEMPT=2 sh cluster/debug/piraeus_storage_bench/seaweedfs_retry/prepare.sh
-direnv exec . env PIRAEUS_BENCH_ATTEMPT=2 sh cluster/debug/piraeus_storage_bench/seaweedfs_retry/run.sh
-direnv exec . env PIRAEUS_BENCH_ATTEMPT=2 sh cluster/debug/piraeus_storage_bench/seaweedfs_retry/cleanup.sh
+direnv exec . env PIRAEUS_BENCH_ATTEMPT=2 sh cluster/debug/piraeus_migration/benchmarks/seaweedfs_retry/prepare.sh
+direnv exec . env PIRAEUS_BENCH_ATTEMPT=2 sh cluster/debug/piraeus_migration/benchmarks/seaweedfs_retry/run.sh
+direnv exec . env PIRAEUS_BENCH_ATTEMPT=2 sh cluster/debug/piraeus_migration/benchmarks/seaweedfs_retry/cleanup.sh
 ```
 
 The fresh 1 GiB SeaweedFS claim mounted Forgejo's `/data`; a single Forgejo app

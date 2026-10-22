@@ -22,12 +22,12 @@ fresh-PVC retries later that morning, pooled into one row; the original
 initialization failure is retained below. The direct filesystem cells were not rerun.
 
 The historical row reads the preserved
-[`direct-storage-ssd-control.csv`](../results/rook_ceph_forgejo_2026_07_11/direct-storage-ssd-control.csv)
-and [`forgejo-e2e-ssd-control.csv`](../results/rook_ceph_forgejo_2026_07_11/forgejo-e2e-ssd-control.csv),
+[`direct-storage-ssd-control.csv`](../../results/rook_ceph_forgejo_2026_07_11/direct-storage-ssd-control.csv)
+and [`forgejo-e2e-ssd-control.csv`](../../results/rook_ceph_forgejo_2026_07_11/forgejo-e2e-ssd-control.csv),
 selecting only `seaweedfs-ssd`. It has five samples per filesystem operation and 20
 per Forgejo operation. July used **two Forgejo replicas sharing RWX**, while October
 used **one active replica**. Media, dates, and run conditions differ; the July row
-provides historical context. See the [original investigation](../git_storage_latency_and_ha.md).
+provides historical context. See the [original investigation](../../git_storage_latency_and_ha.md).
 
 The tables below contain the October measurements.
 
@@ -120,7 +120,7 @@ about 10 ms resolution, limiting interpretation of near-zero clone times.
   same actual app image `15.0.8-rootless` / image ID in every cell. The chart's
   `appVersion` metadata says 15.0.3; the running container image is the recorded 15.0.8.
   The historical reference in the figure comes from the separate July deployment
-  described in [`../git_storage_latency_and_ha.md`](../git_storage_latency_and_ha.md).
+  described in [`../../git_storage_latency_and_ha.md`](../../git_storage_latency_and_ha.md).
 - PostgreSQL 18.1 ran as one disposable CNPG instance on `ovh-ns104952`, with a fixed
   5 GiB `local-path-ovh-ssd` volume; each Forgejo cell had a separate database. Valkey
   9.1.2 also stayed on that node with no PVC; `--save ""` and `--appendonly no`
@@ -190,10 +190,10 @@ The run-specific evidence and per-run medians above retain their provenance.
 The plot reads only the committed CSVs. From the repository root in the Nix devshell:
 
 ```sh
-bb run //cluster/debug/piraeus_storage_bench:plot_results_bin -- \
-  --results-dir "$PWD/cluster/debug/piraeus_storage_bench/results" \
+bb run //cluster/debug/piraeus_migration/benchmarks:plot_results_bin -- \
+  --results-dir "$PWD/cluster/debug/piraeus_migration/benchmarks/results" \
   --historical-dir "$PWD/cluster/debug/results/rook_ceph_forgejo_2026_07_11" \
-  --output "$PWD/cluster/debug/piraeus_storage_bench/results/overview.svg"
+  --output "$PWD/cluster/debug/piraeus_migration/benchmarks/results/overview.svg"
 ```
 
 Add `--preview /tmp/piraeus-storage.png` to also render a PNG for inspection.
@@ -211,19 +211,19 @@ objects. The manual physical-allocation budget for the existing FILE_THIN direct
 From the repository Nix devshell:
 
 ```sh
-direnv exec . cluster/debug/piraeus_storage_bench/apply-fixtures.sh
+direnv exec . cluster/debug/piraeus_migration/benchmarks/apply-fixtures.sh
 kubectl -n piraeus-storage-bench-20261019 wait \
   --for=condition=Ready cluster/piraeus-storage-bench-db --timeout=15m
 kubectl -n piraeus-storage-bench-20261019 rollout status \
   deployment/piraeus-storage-bench-valkey --timeout=10m
-direnv exec . cluster/debug/piraeus_storage_bench/run-direct.sh
-direnv exec . cluster/debug/piraeus_storage_bench/run-forgejo-arm.sh \
+direnv exec . cluster/debug/piraeus_migration/benchmarks/run-direct.sh
+direnv exec . cluster/debug/piraeus_migration/benchmarks/run-forgejo-arm.sh \
   local-path-ovh-hdd bench_local_path repo-local-path
-direnv exec . cluster/debug/piraeus_storage_bench/run-forgejo-arm.sh \
+direnv exec . cluster/debug/piraeus_migration/benchmarks/run-forgejo-arm.sh \
   seaweedfs-ovh bench_seaweedfs repo-seaweedfs
-direnv exec . cluster/debug/piraeus_storage_bench/run-forgejo-arm.sh \
+direnv exec . cluster/debug/piraeus_migration/benchmarks/run-forgejo-arm.sh \
   piraeus-file-thin-one bench_file_thin_one repo-piraeus-one
-direnv exec . cluster/debug/piraeus_storage_bench/run-forgejo-arm.sh \
+direnv exec . cluster/debug/piraeus_migration/benchmarks/run-forgejo-arm.sh \
   piraeus-file-thin-two-protocol-c bench_file_thin_two repo-piraeus-two
 ```
 

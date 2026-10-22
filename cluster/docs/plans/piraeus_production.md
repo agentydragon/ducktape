@@ -5,6 +5,10 @@ Work for [storage issue #4717](https://github.com/agentydragon/ducktape/issues/4
 and [safe OVH node lifecycle #7431](https://github.com/agentydragon/ducktape/issues/7431).
 Remove completed work from this plan as it lands.
 
+The [migration evidence index](../../debug/piraeus_migration/README.md) links to
+dated reports and carries the latest operational snapshot; refresh live gates
+before acting on a captured report.
+
 ## Agreed direction, 2026-10-21
 
 Use **the whole physical data disk for Piraeus**. Combine each node's conversion
@@ -29,7 +33,7 @@ The [node-roll runbook](../runbooks/piraeus_node_roll.md) records that handoff,
 the next control-plane candidates, per-node readiness gates and conditional
 HDD-worker/control-plane pairing. No later node roll has started.
 
-The [disposable QEMU rehearsal](../../debug/piraeus_first_node_2026_10_21/README.md)
+The [disposable QEMU rehearsal](../../debug/piraeus_migration/first_node/README.md)
 and physical first-node checks cover LVM_THIN lifecycle and control-plane
 repartition/rejoin. Do not infer production DRBD-pool or metadata exhaustion
 recovery from those checks. The previous shared-VG design with an ordinary
@@ -39,10 +43,10 @@ Keep the Talos rollout independent of NixOS, Atlas capacity and laptops. Begin
 with single-copy, strict-local storage. Replication, remote access and automatic
 movement are later opt-in capabilities with their own acceptance gates.
 
-The [2026-10-19 inventory](../../debug/piraeus_inventory_2026_10_19/README.md),
+The [2026-10-19 inventory](../../debug/piraeus_migration/inventory/README.md),
 [FILE_THIN canary](../../debug/drbd_canary/results.md),
 [automatic-movement results](../../debug/drbd_canary/auto_diskful/results.md), and
-[benchmarks](../../debug/piraeus_storage_bench/README.md) are dated evidence.
+[benchmarks](../../debug/piraeus_migration/benchmarks/README.md) are dated evidence.
 The first-node consumers and sizing observations were refreshed read-only on
 2026-10-21 PDT; refresh placement, usage and health again before execution.
 FILE_THIN results and offline YAML validation do not establish LVM_THIN runtime,
@@ -412,7 +416,7 @@ step 6 replacements have been accepted.
 Complete the checks in [First SSD node, strict-local mode](#first-ssd-node-strict-local-mode),
 including observed thin-pool data and metadata alerts, while application data
 remains on its off-node copies. The [first-node execution
-record](../../debug/piraeus_first_node_2026_10_21/README.md) stops before step 6.
+record](../../debug/piraeus_migration/first_node/README.md) stops before step 6.
 Stop here, present the acceptance evidence, and wait for the user's explicit
 approval before creating any production Piraeus PVC or restoring application
 data onto Piraeus.
@@ -522,7 +526,7 @@ a second Piraeus copy by default. Schedule and rate-limit deliberate relocations
 | PostgreSQL/CNPG replicas | Multiple per-instance claims across local-path SSD/HDD classes.                                                                 | Treat each database separately because backup configuration and recovery paths vary. A plausible target is one strict-local Piraeus volume per CNPG member, with controlled switchover/rebuild and each cluster's configured backup/WAL recovery gate verified first.                                                                              |
 | Valkey replicas          | Multiple small per-member claims; the inventory includes Forgejo, Langfuse, and OCI-cache instances.                            | Decide per instance whether its contents are rebuildable cache or meaningful persisted state. For replicated instances, use one strict-local Piraeus volume per member and validate application replication or restore; do not assume that two Valkey pods are a backup.                                                                           |
 
-These classifications come from the [dated PVC inventory](../../debug/piraeus_inventory_2026_10_19/pv-consumers.tsv)
+These classifications come from the [dated PVC inventory](../../debug/piraeus_migration/inventory/pv-consumers.tsv)
 and current checked-in workload definitions, including [Mimir](../../cdk8s/monitoring/mimir.py),
 [Loki](../../cdk8s/monitoring/loki.py), [ActivityWatch](../../cdk8s/activitywatch/app.py),
 [Grocy](../../cdk8s/grocy/app.py), [Home Assistant](../../cdk8s/home_assistant/app.py),
@@ -647,7 +651,7 @@ The Talos integration follows the [upstream Piraeus Talos guide](https://piraeus
 The repository's [canary preparation](../drbd_canary.md),
 [canary observations](../../debug/drbd_canary/results.md),
 [auto-diskful observations](../../debug/drbd_canary/auto_diskful/results.md), and
-[benchmark report](../../debug/piraeus_storage_bench/README.md) are supporting evidence.
+[benchmark report](../../debug/piraeus_migration/benchmarks/README.md) are supporting evidence.
 
 ## Acceptance before admitting production data
 
