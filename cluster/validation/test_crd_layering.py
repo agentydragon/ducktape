@@ -21,6 +21,7 @@ from cluster.validation.kustomize import KustomizeBuildResult
         ("ExternalSecret", "external-secrets.io/v1", "external-secrets-operator"),
         ("Cluster", "postgresql.cnpg.io/v1", "cnpg"),
         ("ServiceMonitor", "monitoring.coreos.com/v1", "monitoring-crds"),
+        ("Provider", "pkg.crossplane.io/v1", "crossplane"),
     ],
 )
 def test_app_helmrelease_can_share_operator_instances(

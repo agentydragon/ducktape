@@ -82,6 +82,11 @@ spec:
       name: crossplane
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/crossplane-provider-litellm/**"
+          to: "@artifact/cluster/generated/crossplane-provider-litellm/"
+      name: crossplane-provider-litellm
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/external-secrets/config/**"
           to: "@artifact/cluster/generated/external-secrets/config/"
       name: external-secrets-config

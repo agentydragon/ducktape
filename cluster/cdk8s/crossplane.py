@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
@@ -14,6 +15,15 @@ NAME = "crossplane"
 NAMESPACE = "crossplane-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 VERSION = "2.4.2"
+LITELLM_PROVIDER_KUSTOMIZATION_NAME = "crossplane-provider-litellm"
+LITELLM_PROVIDER_OUTPUT_DIR = f"{GENERATED_ROOT}/{LITELLM_PROVIDER_KUSTOMIZATION_NAME}"
+LITELLM_PROVIDER_PACKAGE = "xpkg.upbound.io/thecodingsheikh/provider-litellm:v2.1.0"
+_LITELLM_PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
+    api_version="pkg.crossplane.io/v1",
+    kind="Provider",
+    current="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
+    failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
+)
 
 
 def chart(app: App) -> Chart:
@@ -45,4 +55,34 @@ def crossplane(chart: Chart, directory: RenderedDirectory, kyverno: Kustomizatio
         prune=False,
         depends_on=[flux_kustomization_depends_on(kyverno)],
         description="Crossplane core controller; provider packages and managed resources reconcile separately.",
+    )
+
+
+def litellm_provider_chart(app: App) -> Chart:
+    """Install the Upjet-generated provider for LiteLLM's management API."""
+    chart = Chart(app, LITELLM_PROVIDER_KUSTOMIZATION_NAME, disable_resource_name_hashes=True)
+    ApiObject(
+        chart,
+        "provider",
+        api_version="pkg.crossplane.io/v1",
+        kind="Provider",
+        metadata=ApiObjectMetadata(name="provider-litellm"),
+    ).add_json_patch(
+        JsonPatch.add("/spec", {"package": LITELLM_PROVIDER_PACKAGE, "revisionActivationPolicy": "Automatic"})
+    )
+    return chart
+
+
+def litellm_provider(chart: Chart, directory: RenderedDirectory, crossplane: Kustomization) -> Kustomization:
+    """Wait for the LiteLLM provider CRDs and controller before applying managed resources."""
+    return flux_kustomization(
+        chart,
+        LITELLM_PROVIDER_KUSTOMIZATION_NAME,
+        directory,
+        timeout="15m",
+        prune=False,
+        wait=True,
+        health_check_exprs=[_LITELLM_PROVIDER_HEALTH],
+        depends_on=[flux_kustomization_depends_on(crossplane)],
+        description="Install the LiteLLM Upjet provider after Crossplane core; LiteLLM resources reconcile separately.",
     )

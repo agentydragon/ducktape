@@ -1,0 +1,7 @@
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-litellm
+spec:
+  package: xpkg.upbound.io/thecodingsheikh/provider-litellm:v2.1.0
+  revisionActivationPolicy: Automatic

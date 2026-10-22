@@ -172,7 +172,9 @@ def test_crossplane_core_waits_for_its_controller_and_retains_its_inventory(
         doc for doc in documents if doc.get("kind") == "HelmRelease" and doc["metadata"].get("name") == "crossplane"
     )
     kustomization = next(
-        doc for doc in documents if doc.get("kind") == "Kustomization" and doc["metadata"].get("name") == "crossplane"
+        doc
+        for doc in documents
+        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "crossplane"
     )
 
     assert release["metadata"]["namespace"] == "crossplane-system"
@@ -180,6 +182,35 @@ def test_crossplane_core_waits_for_its_controller_and_retains_its_inventory(
     assert kustomization["spec"]["dependsOn"] == [{"name": "kyverno", "namespace": "ducktape-flux"}]
     assert kustomization["spec"]["wait"] is True
     assert kustomization["spec"]["prune"] is False
+
+
+def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resources(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    provider = next(
+        doc for doc in documents if doc.get("kind") == "Provider" and doc["metadata"].get("name") == "provider-litellm"
+    )
+    kustomization = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "crossplane-provider-litellm"
+    )
+
+    assert provider["apiVersion"] == "pkg.crossplane.io/v1"
+    assert provider["spec"]["package"] == "xpkg.upbound.io/thecodingsheikh/provider-litellm:v2.1.0"
+    assert provider["spec"]["revisionActivationPolicy"] == "Automatic"
+    assert kustomization["spec"]["dependsOn"] == [{"name": "crossplane", "namespace": "ducktape-flux"}]
+    assert kustomization["spec"]["wait"] is True
+    assert kustomization["spec"]["prune"] is False
+    assert kustomization["spec"]["healthCheckExprs"] == [
+        {
+            "apiVersion": "pkg.crossplane.io/v1",
+            "kind": "Provider",
+            "current": "has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
+            "failed": "has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
+        }
+    ]
 
 
 def test_piraeus_controller_network_policy_only_admits_api_tls(

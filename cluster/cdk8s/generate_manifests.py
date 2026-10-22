@@ -372,8 +372,16 @@ def generate_manifests(root: Path) -> None:
     kyverno_artifact = artifact("kyverno", kyverno_app.OUTPUT_DIR)
     kyverno_kustomization = kyverno_app.kyverno(flux_chart, write_directory(root, kyverno_artifact, kyverno_app.chart))
     crossplane_artifact = artifact("crossplane", crossplane.OUTPUT_DIR)
-    crossplane.crossplane(
+    crossplane_kustomization = crossplane.crossplane(
         flux_chart, write_directory(root, crossplane_artifact, crossplane.chart), kyverno_kustomization
+    )
+    crossplane_litellm_provider_artifact = artifact(
+        crossplane.LITELLM_PROVIDER_KUSTOMIZATION_NAME, crossplane.LITELLM_PROVIDER_OUTPUT_DIR
+    )
+    crossplane.litellm_provider(
+        flux_chart,
+        write_directory(root, crossplane_litellm_provider_artifact, crossplane.litellm_provider_chart),
+        crossplane_kustomization,
     )
     local_path_provisioner_artifact = artifact("local-path-provisioner", local_path_provisioner.OUTPUT_DIR)
     local_path_provisioner_kustomization = local_path_provisioner.local_path_provisioner(
@@ -1734,6 +1742,7 @@ def generate_manifests(root: Path) -> None:
             cert_manager_environment_artifact,
             cnpg_artifact,
             crossplane_artifact,
+            crossplane_litellm_provider_artifact,
             external_secrets_config_artifact,
             external_secrets_operator_artifact,
             forgejo_artifact,

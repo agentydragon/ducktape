@@ -1221,6 +1221,7 @@ py_library(
         ":helm",
         ":manifest_roots",
         ":namespaces",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
     ],
 )
