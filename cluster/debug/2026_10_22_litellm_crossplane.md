@@ -38,8 +38,13 @@ unknown. Provider PR
 [#1](https://github.com/TheCodingSheikh/provider-litellm/pull/1) resolves only
 an unknown omitted value to null and adds a focused regression test. Its body
 reports `make test` passing, but the PR is still open with no GitHub checks and
-no released package containing the fix. The Crossplane Provider package is
-currently Healthy at v2.1.0.
+no released package containing the fix. A patched xpkg was built locally from
+commit `4c1d445` and its focused regression test passes. Draft ducktape PR #11553
+now pins that artifact under `ghcr.io/agentydragon/provider-litellm`, but the
+artifact has not been published or pulled by the cluster; do not apply that pin
+until publication and pullability are verified. The Crossplane package running
+in the cluster remains v2.1.0. The removal of the local package pin is tracked
+in [`cluster/k8s/TODO.md`](../k8s/TODO.md).
 
 PR #11511 fixed two earlier cutover problems and is merged: it omits
 `routerSettings` for Teams without fallbacks, and the ESO export reads the

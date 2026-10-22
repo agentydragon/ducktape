@@ -2,6 +2,14 @@
 
 Audit findings deferred for later.
 
+## LiteLLM Crossplane provider fork
+
+- [ ] Replace the `ghcr.io/agentydragon/provider-litellm` pin in
+      `cluster/cdk8s/crossplane.py` with an upstream xpkg release after
+      [provider-litellm PR #1](https://github.com/TheCodingSheikh/provider-litellm/pull/1)
+      is merged and released. Verify root-scoped Keys reconcile through a read
+      cycle before removing the fork package.
+
 ## Study Casino database backups
 
 - [ ] Choose and deploy the backup/restore path for the CNPG

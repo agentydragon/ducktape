@@ -3,5 +3,5 @@ kind: Provider
 metadata:
   name: provider-litellm
 spec:
-  package: xpkg.upbound.io/thecodingsheikh/provider-litellm:v2.1.0
+  package: ghcr.io/agentydragon/provider-litellm:v2.1.0-3.g4c1d445
   revisionActivationPolicy: Automatic
