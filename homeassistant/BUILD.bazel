@@ -1,4 +1,3 @@
-# gazelle:ignore
 # Home Assistant deps use separate @pypi_homeassistant hub, not @pypi
 
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")

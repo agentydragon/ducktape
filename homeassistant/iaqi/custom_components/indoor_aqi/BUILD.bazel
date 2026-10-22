@@ -1,4 +1,3 @@
-# gazelle:ignore
 # Uses @pypi_homeassistant hub, not the main @pypi
 
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
