@@ -10,6 +10,7 @@ py_library(
     srcs = ["sidecar_process.py"],
     deps = [
         "//agentplane/egress:sidecar_config",
+        "//agentplane/testing:go_process",
         "//util:settings_contract",
         "//util/bazel:runfiles",
         "@pypi//aiohttp",

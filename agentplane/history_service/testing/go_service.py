@@ -25,7 +25,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.go_process import GoProcess, go_process
+from agentplane.testing.go_process import GoProcess, TcpEndpoint, go_process, startup_object
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.postgres import PostgresDatabaseTemplate
@@ -38,6 +38,7 @@ _MIGRATOR = get_required_path(
 )
 _DATABASE_URL_ENV = "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL"
 _CONFIG_FILE_ENV = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
+_STARTUP_FILE_ENV = "AGENTPLANE_HISTORY_SERVICE_STARTUP_FILE"
 _GRACE_SECONDS = 10
 # Bounds only a push or fold that stopped making progress.
 _PROGRESS_BOUND_SECONDS = 30
@@ -49,6 +50,19 @@ READER_AUDIENCE = "test-app-history-service"
 READER = ServiceAccountRef(namespace="test-history-namespace", name="test-history-reader")
 WRITER_AUDIENCE = "test-runner-ingress"
 WRITER = ServiceAccountRef(namespace="test-sandbox-namespace", name="test-sandbox-runner")
+
+
+@dataclass(frozen=True)
+class HistoryEndpoints:
+    reader: TcpEndpoint
+    ingress: TcpEndpoint
+
+    @classmethod
+    def parse(cls, contents: bytes) -> HistoryEndpoints:
+        value = startup_object(contents)
+        if value.keys() != {"reader", "ingress"}:
+            raise ValueError("History Service startup endpoints must contain reader and ingress")
+        return cls(reader=TcpEndpoint.parse(value["reader"]), ingress=TcpEndpoint.parse(value["ingress"]))
 
 
 def _go_database_url(database_url: str) -> str:
@@ -90,7 +104,7 @@ class GoHistoryService:
     # Entered for the life of the service; `reader.new_client()` is an independent one.
     reader: HistoryServiceClient
     api: KubernetesApiServer
-    process: GoProcess
+    process: GoProcess[HistoryEndpoints]
     _writer_tokens: dict[ServiceAccountRef, str] = field(default_factory=dict, init=False)
 
     async def writer_token(self, writer: ServiceAccountRef) -> str:
@@ -192,12 +206,10 @@ async def go_history_service(
     *,
     api: KubernetesApiServer,
     directory: Path,
-    port_factory: Callable[[], int],
     writer_namespaces: Sequence[str] = (WRITER.namespace,),
     watch_lease_s: float = 300,
 ) -> AsyncIterator[GoHistoryService]:
     """The Go History Service on `database_url`, which the Go migrator has built, authenticating through `api`."""
-    read_port, ingress_port = port_factory(), port_factory()
     token_file = directory / "history-reader-token"
     token_file.write_text(await api.workload_token(READER, [READER_AUDIENCE]))
     config = directory / "history-service.yaml"
@@ -208,12 +220,12 @@ async def go_history_service(
                 "token_audience": READER_AUDIENCE,
                 "request_timeout_s": 10,
                 "host": "127.0.0.1",
-                "port": read_port,
+                "port": 0,
                 "kubeconfig": str(api.kubeconfig),
                 "ingress": {
                     "token_audience": WRITER_AUDIENCE,
                     "writer_namespaces": list(writer_namespaces),
-                    "port": ingress_port,
+                    "port": 0,
                     # Tests compare the archive with the runner's journal entry by entry.
                     "settle_deltas": False,
                 },
@@ -225,16 +237,22 @@ async def go_history_service(
     )
     async with go_process(
         _SERVICE,
-        env={_DATABASE_URL_ENV: _go_database_url(database_url), _CONFIG_FILE_ENV: str(config)},
+        env={
+            _DATABASE_URL_ENV: _go_database_url(database_url),
+            _CONFIG_FILE_ENV: str(config),
+            _STARTUP_FILE_ENV: str(directory / "history-service-startup.json"),
+        },
         stderr=directory / "history-service.stderr",
-        health_port=read_port,
+        startup_file=directory / "history-service-startup.json",
+        parse_endpoints=HistoryEndpoints.parse,
+        health_target=lambda endpoints: endpoints.reader.probe_target,
         grace_s=_GRACE_SECONDS,
     ) as process:
-        read_target = f"127.0.0.1:{read_port}"
+        read_target = process.endpoints.reader.target
         service = GoHistoryService(
             database_url=database_url,
             read_target=read_target,
-            ingress_target=f"127.0.0.1:{ingress_port}",
+            ingress_target=process.endpoints.ingress.target,
             reader_token_file=token_file,
             reader=HistoryServiceClient(read_target, token_file=token_file, request_timeout_s=20),
             api=api,

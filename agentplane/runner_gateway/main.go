@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -89,6 +90,31 @@ func reportUnexpected(ctx context.Context, failed chan<- error, role string, err
 	failed <- fmt.Errorf("%s: %w", role, err)
 }
 
+func openListener(address string) (net.Listener, error) {
+	fdText, inherited := strings.CutPrefix(address, "fd:")
+	if !inherited {
+		return net.Listen("tcp", address)
+	}
+	fd, err := strconv.Atoi(fdText)
+	if err != nil || fd < 0 {
+		return nil, fmt.Errorf("invalid inherited listener address %q", address)
+	}
+	file := os.NewFile(uintptr(fd), address)
+	if file == nil {
+		return nil, fmt.Errorf("invalid inherited listener file descriptor %d", fd)
+	}
+	listener, err := net.FileListener(file)
+	closeErr := file.Close()
+	if err != nil {
+		return nil, fmt.Errorf("open inherited listener %q: %w", address, err)
+	}
+	if closeErr != nil {
+		listener.Close()
+		return nil, fmt.Errorf("close inherited listener file %q: %w", address, closeErr)
+	}
+	return listener, nil
+}
+
 // serveFacade answers the Dispatcher's HTTP/JSON form on address, forwarding each request over
 // loopback to the gRPC server so the servicer authenticates it.
 func serveFacade(ctx context.Context, address string, grpcListener net.Listener, failed chan<- error) (*http.Server, error) {
@@ -97,7 +123,7 @@ func serveFacade(ctx context.Context, address string, grpcListener net.Listener,
 	if err != nil {
 		return nil, err
 	}
-	listener, err := net.Listen("tcp", address)
+	listener, err := openListener(address)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +240,7 @@ func serve(ctx context.Context, c config) error {
 	g.RegisterRunnerControl(server)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	listener, err := net.Listen("tcp", c.ListenAddress)
+	listener, err := openListener(c.ListenAddress)
 	if err != nil {
 		return err
 	}

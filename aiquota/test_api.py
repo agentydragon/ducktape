@@ -27,7 +27,6 @@ from aiquota.config import Config
 from aiquota.models import AllQuotas, FetchError, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
 from aiquota.render.view_model import AllQuotasView
 from aiquota.settings import Settings
-from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 
 if __name__ == "__main__":
@@ -346,9 +345,8 @@ def _make_snapshot(used_percent: float, fetched_at: datetime) -> QuotaSnapshot:
 
 @asynccontextmanager
 async def _serve_api(app: FastAPI) -> AsyncIterator[str]:
-    sock = bind_free_port()
-    async with serve_app_in_loop(app, sock=sock):
-        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+    async with serve_app_in_loop(app) as origin:
+        yield origin
 
 
 async def _read_view(lines: AsyncIterator[str]) -> AllQuotasView:

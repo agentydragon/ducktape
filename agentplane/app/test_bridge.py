@@ -72,7 +72,6 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
-from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -330,9 +329,8 @@ async def app_url(
         dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
-    sock = bind_free_port()
-    async with serve_app_in_loop(app, sock=sock):
-        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+    async with serve_app_in_loop(app) as origin:
+        yield origin
 
 
 async def _stored_events(

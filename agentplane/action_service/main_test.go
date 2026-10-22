@@ -31,6 +31,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/util/testing/nettest"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc"
@@ -216,12 +217,8 @@ func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testi
 // refusingAPIServer reaches an API server that refuses every connection, so a policy index of it never lists.
 func refusingAPIServer(t *testing.T) *rest.Config {
 	t.Helper()
-	refusing, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	refusing.Close()
-	return &rest.Config{Host: "http://" + refusing.Addr().String()}
+	refusing := nettest.RefusingAddress(t)
+	return &rest.Config{Host: "http://" + refusing}
 }
 
 func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {

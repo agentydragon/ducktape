@@ -69,13 +69,11 @@ py_library(
         "//props/registry_proxy:app",
         "//props/testing:constants",
         "//props/testing:fake_openai_server",
-        "//util:net",
         "//util:oci",
+        "//util/testing:asgi",
         "@pypi//aiodocker",
-        "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//uvicorn",
     ],
 )
 

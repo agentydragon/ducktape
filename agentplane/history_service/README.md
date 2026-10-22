@@ -123,3 +123,7 @@ the `ThreadEntityView` JSON browsers sync. A caller holding rows of a replaced e
 Bazel targets: `:history-service` and `:service_image`. Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
 variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`config.go`, `settings.py`).
 gRPC listens on `port`, where `grpc.health.v1.Health` reports process liveness only.
+
+The Go settings accept port `0` for tests, letting the child bind both listeners and keep them open. When
+`AGENTPLANE_HISTORY_SERVICE_STARTUP_FILE` is set, startup atomically writes one JSON object with the actual `reader`
+and `ingress` addresses after both binds succeed. The test adapter validates that schema, then waits for reader health.

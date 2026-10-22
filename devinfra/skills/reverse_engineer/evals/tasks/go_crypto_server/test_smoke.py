@@ -19,8 +19,8 @@ from __future__ import annotations
 import contextlib
 import os
 import re
+import select
 import subprocess
-import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -29,7 +29,6 @@ import pytest
 import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
 
 PROTOCOL_VERSION = "ncs/1"
 ALPHABET = "3456789ABCDEFGHJKLMNPQRSTUVWXYZ$"
@@ -38,25 +37,25 @@ PAD = "~"
 
 @contextlib.contextmanager
 def _running(binary: Path) -> Iterator[httpx.Client]:
-    port = pick_free_port()
-    proc = subprocess.Popen([str(binary), "-addr", f"127.0.0.1:{port}"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    base = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen([str(binary), "-addr", "127.0.0.1:0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
-        with httpx.Client(base_url=base, timeout=2.0) as client:
-            deadline = time.monotonic() + 5.0
-            while time.monotonic() < deadline:
-                try:
-                    client.post("/v1/register", json={"v": PROTOCOL_VERSION, "op": "register", "body": {}})
-                    break
-                except httpx.HTTPError:
-                    time.sleep(0.05)
-            else:
-                raise RuntimeError(f"server at {binary} never came up")
+        assert proc.stderr is not None
+        ready, _, _ = select.select([proc.stderr], [], [], 5)
+        if not ready:
+            raise RuntimeError(f"server at {binary} did not announce a listener; exit={proc.poll()}")
+        announced = proc.stderr.readline().decode().strip()
+        if not (listening := re.search(r"ncs \S+ listening on (127\.0\.0\.1:\d+)$", announced)):
+            raise RuntimeError(f"server at {binary} did not start: {announced!r}")
+        with httpx.Client(base_url=f"http://{listening[1]}", timeout=2.0) as client:
+            response = client.post("/v1/register", json={"v": PROTOCOL_VERSION, "op": "register", "body": {}})
+            response.raise_for_status()
+            assert re.fullmatch(r"[0-9a-f]{32}", response.json()["body"]["token"])
             yield client
     finally:
-        proc.terminate()
+        if proc.poll() is None:
+            proc.terminate()
         try:
-            proc.wait(timeout=2)
+            proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()

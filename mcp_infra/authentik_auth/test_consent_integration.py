@@ -17,8 +17,7 @@ from starlette.routing import Mount
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.authentik_auth.provider import build_authentik_auth
-from util.net import bind_free_port
-from util.testing.asgi import serve_app
+from util.testing.asgi import bind_http_server
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 _CLIENT_CALLBACK = "http://127.0.0.1:19876/callback"
@@ -95,12 +94,11 @@ async def _complete_authorization(
 async def test_build_authentik_auth_requires_consent_for_every_authorization() -> None:
     """The same browser and DCR client must not silently reuse an earlier approval."""
     private_key, public_key = generate_rsa_keypair()
-    oidc_sock, mcp_sock = bind_free_port(), bind_free_port()
-    oidc_url = f"http://127.0.0.1:{oidc_sock.getsockname()[1]}"
-    mcp_url = f"http://127.0.0.1:{mcp_sock.getsockname()[1]}/mcp"
-    idp = build_mock_oidc_app(issuer_url=oidc_url, private_key=private_key, public_key=public_key)
+    with bind_http_server() as oidc_endpoint, bind_http_server() as mcp_endpoint:
+        oidc_url = oidc_endpoint.origin
+        mcp_url = f"{mcp_endpoint.origin}/mcp"
+        idp = build_mock_oidc_app(issuer_url=oidc_url, private_key=private_key, public_key=public_key)
 
-    async with serve_app(idp, sock=oidc_sock):
         auth = build_authentik_auth(
             AuthentikAuthConfig(
                 oidc_issuer=oidc_url,
@@ -112,7 +110,11 @@ async def test_build_authentik_auth_requires_consent_for_every_authorization() -
         )
         mcp_app = FastMCP("Consent Test", auth=auth).http_app(path="/")
         app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
-        async with serve_app(app, sock=mcp_sock), httpx.AsyncClient(follow_redirects=False) as browser:
+        async with (
+            oidc_endpoint.serve(idp),
+            mcp_endpoint.serve(app),
+            httpx.AsyncClient(follow_redirects=False) as browser,
+        ):
             metadata_response = await browser.get(f"{mcp_url}/.well-known/oauth-authorization-server")
             assert metadata_response.status_code == 200, metadata_response.text
             metadata = metadata_response.json()

@@ -34,8 +34,7 @@ from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.testing.lifecycle import wait_available
 from mcp_infra.testing.remote_server import as_remote_server
-from util.net import bind_free_port
-from util.testing.asgi import serve_app_sync
+from util.testing.asgi import bind_http_server
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from util.testing.postgres_fixtures import migrated_database_fixtures
 from util.testing.sqlalchemy_engines import managed_async_engine
@@ -64,12 +63,12 @@ def store(engine: AsyncEngine) -> ActionStore:
 @pytest.fixture(scope="session")
 def operator_idp() -> Iterator[OperatorIdp]:
     private_key, public_key = generate_rsa_keypair()
-    sock = bind_free_port()
-    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
-    with serve_app_sync(
-        build_mock_oidc_app(issuer_url=issuer, private_key=private_key, public_key=public_key), sock=sock
-    ):
-        yield OperatorIdp(issuer=issuer, signing_key=private_key)
+    with bind_http_server() as endpoint:
+        issuer = endpoint.origin
+        with endpoint.serve_sync(
+            build_mock_oidc_app(issuer_url=issuer, private_key=private_key, public_key=public_key)
+        ):
+            yield OperatorIdp(issuer=issuer, signing_key=private_key)
 
 
 @pytest.fixture

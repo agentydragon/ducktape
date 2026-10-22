@@ -44,8 +44,7 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandboxes.testing.sandbox_namespace import TEMPLATE
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from util.net import bind_free_port
-from util.testing.asgi import serve_app, serve_app_in_loop
+from util.testing.asgi import bind_http_server
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 OPERATOR = "test-operator"
@@ -85,67 +84,67 @@ def serve(
     async def serving(
         subjects: Collection[str], *, reject_token_exchange: bool = False, id_failure: str | None = None
     ) -> AsyncIterator[str]:
-        private_key, public_key = generate_rsa_keypair()
-        idp_sock, app_sock = bind_free_port(), bind_free_port()
-        idp_url, app_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, app_sock))
-        extra_claims: dict[str, Any] = {"preferred_username": OPERATOR}
-        if id_failure == "issuer":
-            extra_claims["iss"] = "https://wrong-issuer.invalid"
-        elif id_failure == "audience":
-            extra_claims["aud"] = "wrong-client"
-        elif id_failure == "azp":
-            extra_claims["azp"] = "wrong-client"
-        elif id_failure == "expired":
-            extra_claims["exp"] = 1
-        elif id_failure == "subject":
-            extra_claims["sub"] = ""
-        elif id_failure == "signature":
-            _, public_key = generate_rsa_keypair()
-        idp = build_mock_oidc_app(
-            issuer_url=idp_url,
-            private_key=private_key,
-            public_key=public_key,
-            subject=SUBJECT,
-            extra_id_token_claims=extra_claims,
-        )
-        if reject_token_exchange:
+        with bind_http_server() as idp_endpoint, bind_http_server() as app_endpoint:
+            private_key, public_key = generate_rsa_keypair()
+            idp_url, app_url = idp_endpoint.origin, app_endpoint.origin
+            extra_claims: dict[str, Any] = {"preferred_username": OPERATOR}
+            if id_failure == "issuer":
+                extra_claims["iss"] = "https://wrong-issuer.invalid"
+            elif id_failure == "audience":
+                extra_claims["aud"] = "wrong-client"
+            elif id_failure == "azp":
+                extra_claims["azp"] = "wrong-client"
+            elif id_failure == "expired":
+                extra_claims["exp"] = 1
+            elif id_failure == "subject":
+                extra_claims["sub"] = ""
+            elif id_failure == "signature":
+                _, public_key = generate_rsa_keypair()
+            idp = build_mock_oidc_app(
+                issuer_url=idp_url,
+                private_key=private_key,
+                public_key=public_key,
+                subject=SUBJECT,
+                extra_id_token_claims=extra_claims,
+            )
+            if reject_token_exchange:
 
-            async def reject_token(_request: Any) -> Response:
-                return Response(status_code=403)
+                async def reject_token(_request: Any) -> Response:
+                    return Response(status_code=403)
 
-            idp.routes.insert(0, Route("/token", reject_token, methods=["POST"]))
-        oidc = OIDCSettings(
-            issuer=idp_url,
-            client_id="agentplane",
-            client_secret="agentplane-secret",  # a test literal, not a real credential
-            session_secret=SESSION_SECRET,
-            public_base_url=app_url,
-            session_activity_step_seconds=int(ACTIVITY_STEP.total_seconds()),
-        )
-        reviewer = TokenReviewer(AuthenticationV1Api(api_server.api), audience=AUDIENCE, subjects=subjects)
-        app = create_app(
-            inventory,
-            bridge,
-            store,
-            TEST_MODELS,
-            egress,
-            decisions,
-            live_index,
-            action_policy,
-            oidc,
-            reviewer,
-            event_logs=event_logs,
-            content=content,
-            database_updates=database_updates,
-            operator_sessions=operator_sessions,
-            electric=electric_proxy,
-            notifications=notifications,
-            dispatcher_http=dispatcher_http,
-            system_status=answering_system_status(),
-        )
-        # The database pool belongs to this event loop, not serve_app's dedicated thread.
-        async with serve_app(idp, sock=idp_sock), serve_app_in_loop(app, sock=app_sock):
-            yield app_url
+                idp.routes.insert(0, Route("/token", reject_token, methods=["POST"]))
+            oidc = OIDCSettings(
+                issuer=idp_url,
+                client_id="agentplane",
+                client_secret="agentplane-secret",  # a test literal, not a real credential
+                session_secret=SESSION_SECRET,
+                public_base_url=app_url,
+                session_activity_step_seconds=int(ACTIVITY_STEP.total_seconds()),
+            )
+            reviewer = TokenReviewer(AuthenticationV1Api(api_server.api), audience=AUDIENCE, subjects=subjects)
+            app = create_app(
+                inventory,
+                bridge,
+                store,
+                TEST_MODELS,
+                egress,
+                decisions,
+                live_index,
+                action_policy,
+                oidc,
+                reviewer,
+                event_logs=event_logs,
+                content=content,
+                database_updates=database_updates,
+                operator_sessions=operator_sessions,
+                electric=electric_proxy,
+                notifications=notifications,
+                dispatcher_http=dispatcher_http,
+                system_status=answering_system_status(),
+            )
+            # The database pool belongs to this event loop, not a serving thread.
+            async with idp_endpoint.serve(idp), app_endpoint.serve_in_loop(app):
+                yield app_url
 
     return serving
 

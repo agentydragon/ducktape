@@ -8,7 +8,7 @@ http {
     client_body_temp_path /tmp/client_temp;
     proxy_temp_path /tmp/proxy_temp;
     server {
-        listen 127.0.0.1:{{ port }} ssl;
+        listen unix:/sockets/nginx.sock ssl;
         http2 on;
         ssl_certificate /test/certificate.pem;
         ssl_certificate_key /test/key.pem;

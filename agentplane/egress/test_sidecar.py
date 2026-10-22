@@ -11,7 +11,23 @@ import pytest
 import pytest_bazel
 
 from agentplane.egress.sidecar_config import READINESS_PATH
-from agentplane.egress.testing.sidecar_process import SidecarProcess
+from agentplane.egress.testing.sidecar_process import SidecarEndpoints, SidecarProcess
+
+
+def test_sidecar_startup_endpoints_require_every_configured_route() -> None:
+    endpoints = SidecarEndpoints.parse(
+        b'{"listener":"127.0.0.1:12001","readiness":"127.0.0.1:12002","platform_routes":{"control":"127.0.0.1:12003"}}',
+        expected_routes={"control"},
+    )
+    assert endpoints.platform_routes["control"].port == 12003
+    for contents in (
+        b'{"listener":"127.0.0.1:12001","listener":"127.0.0.1:12004","readiness":"127.0.0.1:12002","platform_routes":{"control":"127.0.0.1:12003"}}',
+        b'{"listener":"127.0.0.1:12001","readiness":"127.0.0.1:12002","platform_routes":{"control":"127.0.0.1:12003","extra":"127.0.0.1:12004"}}',
+        b'{"listener":"127.0.0.1:12001","readiness":"127.0.0.1:12002","platform_routes":{}}',
+        b'{"listener":"127.0.0.1:12001","readiness":"127.0.0.1:12002","platform_routes":{"control":"127.0.0.1:0"}}',
+    ):
+        with pytest.raises((TypeError, ValueError)):
+            SidecarEndpoints.parse(contents, expected_routes={"control"})
 
 
 @pytest.fixture
@@ -67,6 +83,7 @@ async def test_failed_listener_start_never_reports_ready(central: int, token_fil
     try:
         with pytest.raises(RuntimeError, match="address already in use"):
             await relay.__aenter__()
+        assert relay.process is None
     finally:
         occupied.close()
         await occupied.wait_closed()

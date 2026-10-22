@@ -62,6 +62,12 @@ Also here:
   It drives the real binaries against envtest API servers (<../testing/kubernetes_apiserver.py>) and
   a PostgreSQL container; the package tests beside the code cover the decision itself.
 
+The process adapters set the proxy, admin and agent API ports to `0`. `AGENTPLANE_EGRESS_STARTUP_FILE` makes the
+child atomically publish their bound addresses as `proxy`, `admin` and `agent_api` after all three binds succeed.
+The sidecar test adapter uses `AGENTPLANE_EGRESS_SIDECAR_STARTUP_FILE` for `listener`, `readiness` and a
+`platform_routes` name-to-address object after every configured route has bound. Each adapter validates the full
+named result, then waits for gRPC health or HTTP readiness.
+
 The versioned Kubernetes types live in `api/v1alpha1/` and `../policy/api/v1alpha1/`.
 Their `+genclient` markers drive the pinned Kubernetes `client-gen`, `lister-gen` and `informer-gen`
 actions in <../../devinfra/go/kubernetes_clients.bzl>. Generated Go packages are Bazel outputs;

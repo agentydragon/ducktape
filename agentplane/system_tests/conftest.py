@@ -169,12 +169,11 @@ async def model(offered_model: str) -> str:
 
 
 @pytest.fixture
-async def scripted() -> AsyncIterator[scripted_upstream.ScriptedUpstream]:
+async def scripted(pytestconfig: pytest.Config) -> AsyncIterator[scripted_upstream.ScriptedUpstream]:
     """The model behind this target's LLM ingress, played by the scenario. One per test, so a request
     a scenario leaves unanswered fails that scenario."""
-    host, port = os.environ[scripted_upstream.ADDRESS].rsplit(":", 1)
     upstream = scripted_upstream.ScriptedUpstream()
-    async with upstream.serving(host=host, port=int(port)):
+    async with upstream.serving(listener=pytestconfig.stash[scripted_upstream.LISTENER]):
         yield upstream
 
 

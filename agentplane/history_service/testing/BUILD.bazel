@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
@@ -83,5 +83,16 @@ py_library(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_go_service",
+    srcs = ["test_go_service.py"],
+    deps = [
+        ":go_service",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

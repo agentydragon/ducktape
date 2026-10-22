@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_testonly = True)
+
+go_library(
+    name = "nettest",
+    srcs = ["refusing.go"],
+    importpath = "github.com/agentydragon/ducktape/util/testing/nettest",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "nettest_test",
+    srcs = ["refusing_test.go"],
+    embed = [":nettest"],
+)

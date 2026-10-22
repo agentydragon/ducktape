@@ -9,7 +9,7 @@ assertion is on what the client and the upstream actually saw.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from ipaddress import ip_network
@@ -31,7 +31,7 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
-from agentplane.egress.testing.go_replica import GoReplica, go_replica
+from agentplane.egress.testing.go_replica import EgressEndpoints, GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.subjects import ServiceAccountRef
@@ -55,6 +55,21 @@ UPSTREAM_HOST = "localhost"
 SANDBOX_A = "sb-a"
 # Every sandbox runs as a ServiceAccount of its own, named after it: that account is the subject.
 SUBJECT_A = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_A)
+
+
+def test_egress_startup_endpoints_require_the_named_bound_listeners() -> None:
+    endpoints = EgressEndpoints.parse(
+        b'{"proxy":"127.0.0.1:12001","admin":"127.0.0.1:12002","agent_api":"127.0.0.1:12003"}'
+    )
+    assert (endpoints.proxy.port, endpoints.admin.port, endpoints.agent_api.port) == (12001, 12002, 12003)
+    for contents in (
+        b'{"proxy":"127.0.0.1:12001","proxy":"127.0.0.1:12002","admin":"127.0.0.1:12003","agent_api":"127.0.0.1:12004"}',
+        b'{"proxy":"127.0.0.1:12001","admin":"127.0.0.1:12002","agent_api":"127.0.0.1:12003","extra":"127.0.0.1:12004"}',
+        b'{"proxy":"127.0.0.1:12001","admin":"127.0.0.1:12002"}',
+        b'{"proxy":"127.0.0.1:0","admin":"127.0.0.1:12002","agent_api":"127.0.0.1:12003"}',
+    ):
+        with pytest.raises((TypeError, ValueError)):
+            EgressEndpoints.parse(contents)
 
 
 @dataclass
@@ -98,12 +113,7 @@ async def recording_upstream(cert_path: Path, key_path: Path) -> AsyncIterator[R
 
 
 def replica_settings(
-    *,
-    api_config: Path,
-    ca: tuple[Path, Path],
-    database_url: str,
-    port_factory: Callable[[], int],
-    upstream_ca_file: Path | None = None,
+    *, api_config: Path, ca: tuple[Path, Path], database_url: str, upstream_ca_file: Path | None = None
 ) -> Settings:
     cert, key = ca
     return Settings(
@@ -115,11 +125,11 @@ def replica_settings(
         ca_cert=cert,
         ca_key=key,
         listen_host="127.0.0.1",
-        listen_port=port_factory(),
+        listen_port=0,
         admin_host="127.0.0.1",
-        admin_port=port_factory(),
+        admin_port=0,
         agent_api_host="127.0.0.1",
-        agent_api_port=port_factory(),
+        agent_api_port=0,
         token_audience=AUDIENCE,
         upstream_ca_file=upstream_ca_file,
         # The Go informer's watch period is whole seconds, two at the least.
@@ -227,9 +237,7 @@ class Egress:
 
 
 @pytest.fixture
-async def egress(
-    tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
-) -> AsyncIterator[Egress]:
+async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
     interception_ca = make_ca("agentplane-egress-test-interception")
     upstream_ca = make_ca("agentplane-egress-test-upstream")
     async with (
@@ -241,7 +249,6 @@ async def egress(
             api_config=api.kubeconfig,
             ca=write_ca(interception_ca, tmp_path, "interception"),
             database_url=history_db_url,
-            port_factory=unused_tcp_port_factory,
             upstream_ca_file=write_ca(upstream_ca, tmp_path, "upstream")[0],
         )
         async with go_replica(settings, directory=tmp_path) as running:
@@ -382,7 +389,7 @@ async def revocable_kubeconfig(server: KubernetesApiServer, path: Path) -> Path:
 
 
 async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
-    tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
+    tmp_path: Path, history_db_url: str
 ) -> None:
     ca = make_ca("test-replica-ca")
     cert, key = write_ca(ca, tmp_path, "replica")
@@ -395,9 +402,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         first_token = await seed(first_api)
         second_token = await seed(second_api)
         settings = [
-            replica_settings(
-                api_config=api_config, ca=(cert, key), database_url=history_db_url, port_factory=unused_tcp_port_factory
-            )
+            replica_settings(api_config=api_config, ca=(cert, key), database_url=history_db_url)
             for api_config in (
                 first_api.kubeconfig,
                 await revocable_kubeconfig(second_api, tmp_path / "second-replica-kubeconfig.yaml"),
@@ -408,6 +413,12 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             go_replica(settings[1], directory=tmp_path) as second,
             aiohttp.ClientSession() as client,
         ):
+            ports = {
+                endpoint.port
+                for replica in (first, second)
+                for endpoint in (replica.endpoints.proxy, replica.endpoints.admin, replica.endpoints.agent_api)
+            }
+            assert len(ports) == 6
 
             async def get(replica: GoReplica, token: str, path: str, expected: int) -> None:
                 async with client.get(

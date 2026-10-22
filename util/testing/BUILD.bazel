@@ -252,11 +252,12 @@ py_test(
     deps = [
         ":asgi",
         "//:conftest",
-        "//util:net",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+        "@pypi//uvicorn",
     ],
 )
 
@@ -382,4 +383,22 @@ py_library(
     srcs = ["postgres_schema.py"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//sqlalchemy"],
+)
+
+py_library(
+    name = "tcp_relay",
+    srcs = ["tcp_relay.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_tcp_relay",
+    srcs = ["test_tcp_relay.py"],
+    deps = [
+        ":tcp_relay",
+        "//:conftest",
+        "//util:net",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

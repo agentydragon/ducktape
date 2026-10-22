@@ -321,7 +321,6 @@ py_test(
         ":settings",
         "//:conftest",
         "//aiquota/render:view_model_lib",
-        "//util:net",
         "//util/testing:asgi",
         "@pypi//fastapi",
         "@pypi//httpx",

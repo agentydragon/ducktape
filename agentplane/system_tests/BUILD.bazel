@@ -504,7 +504,6 @@ system_test(
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
-        "//util:net",
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
@@ -560,6 +559,7 @@ py_library(
         "//util/testing:undeclared_outputs",
         "@pypi//aiohttp",
         "@pypi//protobuf",
+        "@pypi//pytest",
     ],
 )
 
@@ -580,4 +580,18 @@ py_library(
 py_library(
     name = "send_grant",
     srcs = ["send_grant.py"],
+)
+
+py_test(
+    name = "test_scripted_upstream",
+    srcs = ["test_scripted_upstream.py"],
+    deps = [
+        ":conftest",
+        ":scripted_upstream",
+        "//:conftest",
+        "//util:net",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
