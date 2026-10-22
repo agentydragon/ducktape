@@ -20,14 +20,21 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/cli",
     visibility = ["//visibility:private"],
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/notification_service:notifications_go_proto",
         "@com_github_google_uuid//:uuid",
         "@com_github_sethvargo_go_retry//:go-retry",
         "@com_github_spf13_cobra//:cobra",
         "@org_golang_google_genproto_googleapis_rpc//code",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/structpb",
     ],
 )
 
@@ -59,6 +66,7 @@ go_test(
     ],
     embed = [":cli"],
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/grpc/facade",
         "//agentplane/notification_service:notifications_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
@@ -68,6 +76,7 @@ go_test(
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/structpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

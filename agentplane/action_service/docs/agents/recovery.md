@@ -1,6 +1,6 @@
 # Action recovery and cancellation
 
-Commands are `agentplane actions …`; the routes behind them are in the [HTTP reference](http_api.md).
+Commands are `agentplane actions …`; use the generated [OpenAPI reference](/openapi.json) for HTTP routes and schemas.
 Keep the request ID and original idempotency key until the task is settled.
 
 ## Lost submission response
