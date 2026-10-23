@@ -196,7 +196,6 @@ manifest:
     hass_client: hass_client
     hcloud: hcloud
     hpack: hpack
-    http_ece: http_ece
     httpcore: httpcore
     httpcore2: httpcore2
     httplib2: httplib2
@@ -353,7 +352,6 @@ manifest:
     punq: punq
     pure_eval: pure_eval
     py: pytest
-    py_vapid: py_vapid
     pyasn1: pyasn1
     pyasn1_modules: pyasn1_modules
     pycparser: pycparser
@@ -380,7 +378,6 @@ manifest:
     python_multipart: python_multipart
     python_socks: python_socks
     pytz: pytz
-    pywebpush: pywebpush
     qrcode: qrcode
     qtpy: QtPy
     reaktiv: reaktiv
@@ -463,4 +460,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 7f508816f4b1e869eaaa653fc0035741f402753532f4f54652d29f2bb9209db9
+integrity: c207cfe0d7b6ded69227ba8df5088a0fb44f46d9c447b7126a6ea9cb44ac25da

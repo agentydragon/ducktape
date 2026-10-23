@@ -1846,8 +1846,8 @@ just so happens that right now agentplane only sends web push notifications abou
 can foresee wanting to send other web pushes").** Web Push delivery (operator subscriptions, VAPID settings, the sender)
 lives in the Action Service because an Action awaiting approval is the only message today. It does not belong to the
 Notification Service, which serves agent Session inboxes, a different system. If other messages come, a Web Push
-sender of its own would own the subscriptions and take messages from their producers. The Python `push.py` touches
-only its own tables and the request event stream, so the move is clean. Not immediate: `ACTION_SERVICE_GO_PORT` keeps
+sender of its own would own the subscriptions and take messages from their producers. The sender touches only its
+own tables and the request event stream, so the move is clean. Not immediate: `ACTION_SERVICE_GO_PORT` keeps
 Web Push in the Action Service.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping

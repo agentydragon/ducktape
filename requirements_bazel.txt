@@ -191,7 +191,6 @@ aiohttp==3.14.3 \
     #   kubernetes-asyncio
     #   matrix-nio
     #   mautrix
-    #   pywebpush
     #   s3fs
 aiohttp-socks==0.12.0 \
     --hash=sha256:3caf9f5a4164611122d412bc11b2f9114fd29c85e1ba27bb38060d3c236bdc8d \
@@ -1255,14 +1254,11 @@ cryptography==48.0.1 \
     #   asyncvnc
     #   authlib
     #   google-auth
-    #   http-ece
     #   joserfc
     #   mitmproxy
     #   paramiko
-    #   py-vapid
     #   pyjwt
     #   pyopenssl
-    #   pywebpush
     #   secretstorage
     #   service-identity
 cycler==0.12.1 \
@@ -1982,9 +1978,6 @@ hpack==4.2.0 \
     --hash=sha256:0895cfa3b5531fc65fe439c05eb65144f123bf7a394fcaa56aa423548d8e45c0 \
     --hash=sha256:858ac0b02280fa582b5080d68db0899c62a80375e0e5413a74970c5e518b6986
     # via h2
-http-ece==1.2.1 \
-    --hash=sha256:8c6ab23116bbf6affda894acfd5f2ca0fb8facbcbb72121c11c75c33e7ce8cff
-    # via pywebpush
 httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
     --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
@@ -4384,10 +4377,6 @@ py-key-value-aio[filetree, keyring, memory, valkey]==0.4.5 \
     # via
     #   ducktape (pyproject.toml)
     #   fastmcp-slim
-py-vapid==1.9.4 \
-    --hash=sha256:a004023560cbc54e34fc06380a0580f04ffcc788e84fb6d19e9339eeb6551a28 \
-    --hash=sha256:f165a5bf90dcf966b226114f01f178f137579a09784c7f0628fa2f0a299741b6
-    # via pywebpush
 pyasn1==0.6.4 \
     --hash=sha256:9c447d8431c947fe4c8febc4ed9e760bc29011a5b01e5c74b67025bd9fb8ce81 \
     --hash=sha256:deda9277cfd454080ec40b207fb6df82206a3a2688735233cdcd8d3d565f088b
@@ -4895,10 +4884,6 @@ pytz==2026.3.post1 \
     --hash=sha256:2211d3fcf9a797d3405cac96ac7f61d80e6a644f72a3309607282fe8a2010c5d \
     --hash=sha256:dd95840dd199baea12d9cc096a1d452caa6596a1c1e4b5f3dbd1541855d5e815
     # via ducktape (pyproject.toml)
-pywebpush==2.5.0 \
-    --hash=sha256:8260f8e42d70ed95a3bd00527ffcb43b5b3df8983a4a48b059fe29b06dc3d92c \
-    --hash=sha256:b5f5d45024223a04e73fe17f7a8e62540f35bbcc62b49e64d0a1080ff2dc26f2
-    # via ducktape (pyproject.toml)
 pyyaml==6.0.3 \
     --hash=sha256:00c4bdeba853cc34e7dd471f16b4114f4162dc03e6b7afcc2128711f0eca823c \
     --hash=sha256:0150219816b6a1fa26fb4699fb7daa9caf09eb1999f3b70fb6e786805e80375a \
@@ -5249,7 +5234,6 @@ requests==2.34.2 \
     #   kubernetes
     #   openai-agents
     #   pygithub
-    #   pywebpush
     #   requests-oauthlib
     #   splitwise
     #   tiktoken
