@@ -3,8 +3,9 @@
 import asyncio
 import logging
 import socket
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -67,3 +68,28 @@ async def relay_tcp(listener: socket.socket, upstream: tuple[str, int] | Path) -
                 for task in connections:
                     task.cancel()
                 await server.wait_closed()
+
+
+@contextmanager
+def relay_tcp_sync(listener: socket.socket, upstream: tuple[str, int] | Path) -> Iterator[None]:
+    ready: Future[tuple[asyncio.AbstractEventLoop, asyncio.Event]] = Future()
+
+    async def run() -> None:
+        try:
+            async with relay_tcp(listener, upstream):
+                stop = asyncio.Event()
+                ready.set_result((asyncio.get_running_loop(), stop))
+                await stop.wait()
+        except BaseException as error:
+            if not ready.done():
+                ready.set_exception(error)
+            raise
+
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="test-tcp-relay") as executor:
+        running = executor.submit(asyncio.run, run())
+        loop, stop = ready.result(timeout=10)
+        try:
+            yield
+        finally:
+            loop.call_soon_threadsafe(stop.set)
+            running.result(timeout=10)

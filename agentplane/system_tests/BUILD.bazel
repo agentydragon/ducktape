@@ -504,7 +504,6 @@ system_test(
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
-        "//util:net",
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
