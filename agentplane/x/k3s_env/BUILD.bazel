@@ -340,6 +340,7 @@ py_library(
         "@pypi//constructs",
         "@pypi//cryptography",
         "@pypi//more_itertools",
+        "@pypi//pydantic",
     ],
 )
 

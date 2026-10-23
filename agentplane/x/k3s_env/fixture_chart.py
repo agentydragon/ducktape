@@ -39,6 +39,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from cryptography.fernet import Fernet
 from more_itertools import one
+from pydantic import AnyHttpUrl
 
 from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.oauth_settings import OAuthSettings
@@ -151,6 +152,7 @@ def objects(
         # The scenarios' own preset in place of the deployment's, which an operator uses.
         app_config=testing.ENV.app_config.model_copy(
             update={
+                "connection_service_url": AnyHttpUrl(ACTIONS_SERVICE.url),
                 "thread_presets": {
                     launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)
                 },
