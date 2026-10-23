@@ -5,6 +5,7 @@ EgressCredential resources and egress PolicySets it reads.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
@@ -14,7 +15,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
 )
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerResources,
@@ -23,12 +24,16 @@ from cdk8s_plus_34 import (
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
+    Node,
+    NodeLabelQuery,
+    NodeTaintQuery,
     Role,
     RoleBinding,
     RolePolicyRule,
     Secret,
     Service,
     ServiceAccount,
+    TaintEffect,
     Volume,
 )
 from constructs import Construct
@@ -799,6 +804,12 @@ class Egress(Construct):
             for field, value in values.items()
         }
 
+        zones = self.env.egress.zones
+        replica_profile = (
+            replace(self.env.replicas, count=len(zones), pdb_min_available=len(zones) - 1)
+            if zones is not None
+            else None
+        )
         workload = add_service_workload(
             self,
             self.env,
@@ -824,9 +835,26 @@ class Egress(Construct):
                 memory_limit=self.migrate_memory_limit,
             ),
             tolerate_control_plane=True,
-            placement=self.placement,
+            placement=self.placement if zones is None else None,
+            replica_profile=replica_profile,
+            traffic_distribution="PreferClose" if zones is not None else None,
             registry_secret_name=self.registry_secret_name,
         )
+        if zones is not None:
+            workload.deployment.scheduling.attract(
+                Node.labeled(NodeLabelQuery.in_(node_scheduling.ZONE_LABEL, list(zones)))
+            )
+            workload.deployment.scheduling.tolerate(
+                Node.tainted(
+                    NodeTaintQuery.exists(node_scheduling.CONTROL_PLANE_TAINT_KEY, effect=TaintEffect.NO_SCHEDULE)
+                )
+            )
+            # The fluent scheduling API has no topologySpreadConstraints equivalent.
+            ApiObject.of(workload.deployment).add_json_patch(
+                JsonPatch.add(
+                    "/spec/template/spec/topologySpreadConstraints", [node_scheduling.zone_spread(zones, _LABELS)]
+                )
+            )
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)

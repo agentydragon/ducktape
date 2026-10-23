@@ -63,6 +63,9 @@ class EgressProps:
     # mounts the ConfigMap by the same name.
     ca_secret_name: str
     credentials_namespace: str
+    # None retains the environment's replica profile and the caller's placement.
+    # Otherwise run one proxy per listed zone and prefer same-zone Service endpoints.
+    zones: tuple[str, ...] | None = None
     # Static relay clients outside the runner namespace; admission is not an egress grant.
     external_workload_namespaces: tuple[str, ...] = ()
 

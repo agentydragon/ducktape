@@ -332,6 +332,7 @@ ENV = Environment(
     egress=EgressProps(
         ca_secret_name=public_coder_egress.CA_BUNDLE_NAME,
         credentials_namespace=STAGING_CREDENTIALS_NAMESPACE,
+        zones=node_scheduling.HOME_AND_OVH_ZONES,
         external_workload_namespaces=(public_coder_egress.NAMESPACE,),
     ),
     app=AppProps(

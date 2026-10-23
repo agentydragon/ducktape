@@ -131,6 +131,7 @@ py_library(
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",

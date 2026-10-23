@@ -7,7 +7,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s import cilium, egress_fences
+from cluster.cdk8s import cilium, egress_fences, node_scheduling
 from cluster.cdk8s.agents import namespaces
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
@@ -59,20 +59,21 @@ def _mitmproxy(chart: Chart) -> None:
         "deployment",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
-            # Two, so one container's restart never empties the Service. mitmproxy OOM-kills
-            # under haku-ci traffic (#5846), and with one replica every kill was a CI outage:
-            # dependency fetches mid-flight got "connection refused" for the restart's duration.
-            replicas=2,
+            # One endpoint in OVH and each home zone; Service routing prefers the client's zone.
+            replicas=len(node_scheduling.HOME_AND_OVH_ZONES),
             selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
+                    topology_spread_constraints=[
+                        node_scheduling.zone_spread(node_scheduling.HOME_AND_OVH_ZONES, SERVICE.pods.selector)
+                    ],
                     affinity=k8s.Affinity(
+                        node_affinity=node_scheduling.zone_affinity(node_scheduling.HOME_AND_OVH_ZONES),
                         pod_anti_affinity=k8s.PodAntiAffinity(
-                            # Preferred, not required: this proxy is haku-ci's only egress path, so a
-                            # replica left Pending by a hard rule costs more than two on one node.
+                            # Allow old and new revisions to overlap on a home node during rollout.
                             preferred_during_scheduling_ignored_during_execution=[
                                 k8s.WeightedPodAffinityTerm(
                                     weight=100,
@@ -82,7 +83,7 @@ def _mitmproxy(chart: Chart) -> None:
                                     ),
                                 )
                             ]
-                        )
+                        ),
                     ),
                     init_containers=[
                         k8s.Container(
@@ -150,8 +151,7 @@ def _mitmproxy(chart: Chart) -> None:
                                 r"api\.anthropic\.com",
                             ],
                             ports=[SERVICE.port.k8s_container_port()],
-                            # An endpoint only once the listener is up: with two replicas a rolling
-                            # update otherwise routes to a pod that is not listening yet.
+                            # Publish an endpoint only once the listener is up.
                             readiness_probe=k8s.Probe(
                                 tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_string(SERVICE.port.name)),
                                 period_seconds=5,
@@ -182,17 +182,18 @@ def _mitmproxy(chart: Chart) -> None:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAME),
-        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(
+            selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()], traffic_distribution="PreferClose"
+        ),
     )
-    # With two replicas, a voluntary disruption (node drain, descheduler eviction, rolling
-    # update) may take one proxy pod at a time but never both, so haku-ci's only egress path
-    # keeps a ready endpoint throughout. The descheduler honors PDBs unconditionally.
+    # Permit one voluntary eviction at a time. Deployment rollouts use their own budget.
     k8s.KubePodDisruptionBudget(
         chart,
         "poddisruptionbudget",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAME),
         spec=k8s.PodDisruptionBudgetSpec(
-            min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector)
+            min_available=k8s.IntOrString.from_number(len(node_scheduling.HOME_AND_OVH_ZONES) - 1),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
         ),
     )
     # Allow proxy clients (haku-sandbox + haku-ci) to reach the egress proxy (port 8080) and

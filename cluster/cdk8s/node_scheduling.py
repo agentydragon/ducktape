@@ -9,7 +9,7 @@ are the Kubernetes field names.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from cdk8s_plus_34 import k8s
@@ -17,6 +17,8 @@ from cdk8s_plus_34 import k8s
 ZONE_LABEL = "topology.kubernetes.io/zone"
 # The OVH nodes. Pinning to it keeps a workload off the home nodes (wyrm2, optiplex).
 HIL_OVH_ZONE = "hil-ovh"
+# Consolidate the two home zones and update replica counts with #11643.
+HOME_AND_OVH_ZONES = (HIL_OVH_ZONE, "home-lan", "atlas")
 REGION_LABEL = "topology.kubernetes.io/region"
 # The laptops (iguana, rugged): they join and leave the cluster, so nothing that must keep running
 # belongs there.
@@ -52,3 +54,28 @@ class Placement:
 
 HIL_OVH = Placement(node_selector=HIL_OVH_NODE_SELECTOR)
 OPTIPLEX = Placement(node_selector={"kubernetes.io/hostname": "optiplex"})
+
+
+def zone_affinity(zones: Sequence[str]) -> k8s.NodeAffinity:
+    """Require a node in one of the explicitly supported zones."""
+    return k8s.NodeAffinity(
+        required_during_scheduling_ignored_during_execution=k8s.NodeSelector(
+            node_selector_terms=[
+                k8s.NodeSelectorTerm(
+                    match_expressions=[k8s.NodeSelectorRequirement(key=ZONE_LABEL, operator="In", values=list(zones))]
+                )
+            ]
+        )
+    )
+
+
+def zone_spread(zones: Sequence[str], labels: Mapping[str, str]) -> k8s.TopologySpreadConstraint:
+    """Spread each Deployment revision evenly; a missing zone leaves its replica Pending."""
+    return k8s.TopologySpreadConstraint(
+        max_skew=1,
+        min_domains=len(zones),
+        topology_key=ZONE_LABEL,
+        when_unsatisfiable="DoNotSchedule",
+        label_selector=k8s.LabelSelector(match_labels=dict(labels)),
+        match_label_keys=["pod-template-hash"],
+    )

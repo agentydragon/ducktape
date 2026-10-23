@@ -97,6 +97,7 @@ def add_service_workload(
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.IF_NOT_PRESENT,
     tolerate_control_plane: bool = False,
     create_service: bool = True,
+    traffic_distribution: str | None = None,
     placement: node_scheduling.Placement | None = None,
     registry_secret_name: str | None = None,
 ) -> ServiceWorkload:
@@ -153,13 +154,16 @@ def add_service_workload(
         pod_policy.place(deployment, placement, tolerate_control_plane=tolerate_control_plane)
     pod_policy.harden(deployment)
     if create_service:
-        Service(
+        service = Service(
             scope,
             "service",
             metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels),
             selector=deployment,
             ports=[ref.service_port() for ref in serves],
         )
+        if traffic_distribution is not None:
+            # cdk8s-plus-34's Service props do not expose this core Service field.
+            ApiObject.of(service).add_json_patch(JsonPatch.add("/spec/trafficDistribution", traffic_distribution))
     if replicas.pdb_min_available is not None:
         k8s.KubePodDisruptionBudget(
             scope,

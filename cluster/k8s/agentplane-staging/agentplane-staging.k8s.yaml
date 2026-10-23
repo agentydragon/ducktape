@@ -1245,7 +1245,7 @@ metadata:
 spec:
   minReadySeconds: 5
   progressDeadlineSeconds: 600
-  replicas: 2
+  replicas: 3
   revisionHistoryLimit: 10
   selector:
     matchLabels:
@@ -1261,6 +1261,17 @@ spec:
         app.kubernetes.io/name: egress
         cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+                      - home-lan
+                      - atlas
       automountServiceAccountToken: true
       containers:
         - env:
@@ -1367,8 +1378,6 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -1386,6 +1395,16 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: egress
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 3
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
       volumes:
         - name: ca
           secret:
@@ -1417,6 +1436,7 @@ spec:
       targetPort: 8888
   selector:
     cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
+  trafficDistribution: PreferClose
   type: ClusterIP
 ---
 apiVersion: policy/v1
@@ -1425,7 +1445,7 @@ metadata:
   name: egress
   namespace: agentplane-staging
 spec:
-  minAvailable: 1
+  minAvailable: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: egress

@@ -768,6 +768,7 @@ py_library(
         ":egress_fences",
         ":generation",
         ":manifest_roots",
+        ":node_scheduling",
         ":secret_ref",
         ":service_ref",
         "//cluster/cdk8s/agents:namespaces",

@@ -85,7 +85,7 @@ metadata:
   name: haku-egress-proxy
   namespace: haku-egress-proxy
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: haku-egress-proxy
@@ -95,6 +95,16 @@ spec:
         app.kubernetes.io/name: haku-egress-proxy
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+                      - home-lan
+                      - atlas
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
             - podAffinityTerm:
@@ -161,6 +171,16 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: haku-egress-proxy
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 3
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
       volumes:
         - name: mitmproxy-ca
           secret:
@@ -181,6 +201,7 @@ spec:
       targetPort: 8080
   selector:
     app.kubernetes.io/name: haku-egress-proxy
+  trafficDistribution: PreferClose
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -188,7 +209,7 @@ metadata:
   name: haku-egress-proxy
   namespace: haku-egress-proxy
 spec:
-  minAvailable: 1
+  minAvailable: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: haku-egress-proxy

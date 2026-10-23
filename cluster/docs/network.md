@@ -119,6 +119,14 @@ then opt the Service in. Replicas on every node alone do not select a local
 backend. This setting preserves the existing VXLAN/Nebula encapsulation and MTU.
 Keep DNS and public website dependencies functional with only OVH nodes available.
 
+Haku egress and Agentplane staging egress opt into `PreferClose` and run one
+replica in each zone listed by `node_scheduling.HOME_AND_OVH_ZONES`. Required zone
+spread counts each Deployment revision separately so rolling updates retain the
+intended distribution. A missing zone leaves its replacement Pending; clients can
+fall back to the remaining Ready endpoints. A broken upstream Internet connection
+does not itself make a proxy endpoint unready. Consolidating the two home zones
+and adjusting this roster and replica counts is tracked in #11643.
+
 ### Apply and roll agents
 
 Merging the Helm values does not deploy them: Cilium is installed by
