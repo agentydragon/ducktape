@@ -122,8 +122,11 @@ Keep DNS and public website dependencies functional with only OVH nodes availabl
 ### Apply and roll agents
 
 Merging the Helm values does not deploy them: Cilium is installed by
-`null_resource.cilium_bootstrap`, not Flux. `rollOutCiliumPods: false` keeps a
-ConfigMap change from automatically replacing all agent Pods.
+`null_resource.cilium_bootstrap`, not Flux. `rollOutCiliumPods: false` disables
+Helm's ConfigMap checksum rollout, while `annotations.reloader.stakater.com/auto:
+"false"` on the agent DaemonSet opts out of Reloader's global `autoReloadAll`.
+Both are needed to keep configuration-driven agent restarts under manual control.
+The Reloader annotation belongs on the DaemonSet metadata, not its Pod template.
 
 1. Inspect the saved OpenTofu plan using the Cilium update precautions above.
    Apply only the intended Cilium provisioner update; do not apply unrelated

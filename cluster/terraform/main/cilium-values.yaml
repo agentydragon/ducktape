@@ -21,6 +21,10 @@ loadBalancer:
 # Apply config changes with a deliberate, sequential agent rollout; see
 # cluster/docs/network.md. Disconnected roaming nodes must not block the rollout.
 rollOutCiliumPods: false
+# Reloader's autoReloadAll also watches this DaemonSet. Keep one owner for
+# Cilium restarts: roll agents explicitly after a Helm configuration update.
+annotations:
+  reloader.stakater.com/auto: "false"
 
 # Host-networked Cilium pods need cluster DNS for Kubernetes service names.
 dnsPolicy: ClusterFirstWithHostNet
