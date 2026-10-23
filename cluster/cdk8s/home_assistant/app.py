@@ -68,12 +68,12 @@ SERVICE = HostNetworkServiceRef(
     port=Port(name="http", number=8123),
     pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
-_CONFIG_CLAIM = "home-assistant-config"
+_CONFIG_CLAIM = "home-assistant-config-piraeus"
 # `password` is the ESO Password generator's own field, which `_metrics_token` copies verbatim.
 _METRICS_TOKEN = SecretRef(namespace=_NAMESPACE, name="home-assistant-metrics-token").key("password")
 _BACKUP = "home-assistant-config-restic"
 _BACKUP_LABELS = {"app.kubernetes.io/name": _BACKUP}
-_STORAGE_CLASS = "local-path-home-ssd"
+_STORAGE_CLASS = "piraeus-ssd-local"
 _ONBOARDING = "home-assistant-onboarding"
 _ONBOARDING_JOB = "onboarding"
 _TOKEN_PROVISIONER = "token-provisioner"
@@ -651,6 +651,22 @@ def _backup(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
+    # Keep the old claim managed until its live prune protection and recovery copies
+    # are verified. Removing its declaration is a separate cleanup decision.
+    k8s.KubePersistentVolumeClaim(
+        chart,
+        "legacy-config",
+        metadata=k8s.ObjectMeta(
+            name="home-assistant-config",
+            namespace=_NAMESPACE,
+            annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
+        ),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="local-path-home-ssd",
+            resources=k8s.VolumeResourceRequirements(requests=_quantities(storage="32Gi")),
+        ),
+    )
     k8s.KubePersistentVolumeClaim(
         chart,
         "config",
@@ -661,6 +677,21 @@ def chart(app: App) -> Chart:
             resources=k8s.VolumeResourceRequirements(requests=_quantities(storage="32Gi")),
         ),
     )
+    # Retain storage class plus prune protection preserve these historical copies.
+    # Pinned restore helpers bind them on OptiPlex before application startup.
+    for name, capacity in (("recovered-config-608a0bc6", "32Gi"), ("recovered-cache-7e9d03f8", "1Gi")):
+        k8s.KubePersistentVolumeClaim(
+            chart,
+            name,
+            metadata=k8s.ObjectMeta(
+                name=name, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+            ),
+            spec=k8s.PersistentVolumeClaimSpec(
+                access_modes=["ReadWriteOnce"],
+                storage_class_name=_STORAGE_CLASS,
+                resources=k8s.VolumeResourceRequirements(requests=_quantities(storage=capacity)),
+            ),
+        )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     _metrics_token(chart)
     _deployment(chart)
