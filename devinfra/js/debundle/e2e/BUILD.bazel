@@ -137,6 +137,8 @@ debundle_e2e_test(
     deps = ["@crates//:serde_json"],
 )
 
+debundle_e2e_test(name = "initializer_purity_test")
+
 debundle_e2e_test(name = "object_literal_return_shorthand_drops_import_test")
 
 debundle_e2e_test(name = "return_object_residual_alias_import_test")

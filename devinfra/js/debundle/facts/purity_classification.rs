@@ -41,6 +41,7 @@ pub(crate) fn item_purity(
             },
             _ => Purity::Pure,
         },
+        StatementKind::VarDecl if has_trusted_initializer_purity(item, hints) => Purity::Pure,
         StatementKind::VarDecl if has_local_effect => Purity::Pure,
         // Top-level (non-function-body) scope: a chunk-top read of a
         // PlainData const is legitimately pure, so no PlainData name is
@@ -83,4 +84,24 @@ pub(crate) fn item_purity(
             _ => Purity::from_reason(PurityRule::BareControlFlow, item.span()),
         },
     }
+}
+
+/// Whether this exact top-level item is the simple initialized declarator
+/// carrying the initializer-only trust assertion. It deliberately does not
+/// feed any call or constructor purity rule.
+pub(crate) fn has_trusted_initializer_purity(item: &ModuleItem, hints: &AnalysisHints) -> bool {
+    let Some(var) = var_decl_of_item(item) else {
+        return false;
+    };
+    if var.decls.len() != 1 {
+        return false;
+    }
+    let declarator = &var.decls[0];
+    let Pat::Ident(binding) = &declarator.name else {
+        return false;
+    };
+    declarator.init.is_some()
+        && hints
+            .declared_pure_initializers
+            .contains(binding.id.sym.as_ref())
 }

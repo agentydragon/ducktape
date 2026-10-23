@@ -352,22 +352,21 @@ fn assemble_statement_facts(
     let trusted_summary = hints.trusted_dataflow_summaries && cell_writes_summarizable;
     let dataflow_summarizable = trusted_summary
         || dataflow_summarizable && !has_opaque_at_init_call(item, shadowed, hints, graph);
-    // A pure top-level statement may still eagerly read ordinary
-    // argument bindings (`pureWrap(B)`), and those reads stay in
-    // `reads.eager`. What purity rules out is the unresolved-call
-    // fallback's stronger assumption that opaque member calls or
-    // wrapper calls may synchronously invoke function-valued
-    // arguments / object-held functions at module init. Dropping only
-    // the at-init fallback roots preserves direct R edges while
-    // avoiding promoted callback-body reads for audited pure factories
-    // such as React `forwardRef`.
+    // Ordinary eager reads (including `pureWrap(B)`) always remain in
+    // `reads.eager`. For classifier/callee-pure statements, clearing the
+    // unresolved-call fallback also asserts that opaque calls cannot
+    // synchronously invoke callback bodies at module init. An
+    // initializer-only trust annotation certifies the initializer's
+    // evaluation effects but deliberately does not make that callback
+    // assertion: retain its fallback roots so callback-body binding reads
+    // still constrain module order.
     let no_sync_arg_sources = no_sync_member_argument_fallback_sources(item, hints);
     let mut first_order_unresolved_sources = first_order_unresolved_sources;
     for id in &no_sync_arg_sources.first_order_lazy {
         first_order_unresolved_sources.remove(id);
     }
     let (at_init_unresolved_sources, at_init_unresolved_inline_fn, first_order_unresolved_sources) =
-        if purity.is_pure() {
+        if purity.is_pure() && !has_trusted_initializer_purity(item, hints) {
             (BTreeSet::new(), false, first_order_unresolved_sources)
         } else {
             let safe_array_sources =

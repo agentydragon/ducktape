@@ -34,6 +34,9 @@ pub enum LocalEffectPolicy {
 pub struct AnalysisHints {
     pub declared_pure: BTreeSet<String>,
     pub declared_pure_new: BTreeSet<String>,
+    /// Author-trusted purity of one selected top-level variable initializer.
+    /// This never participates in call or constructor classification.
+    pub declared_pure_initializers: BTreeSet<String>,
     /// Author-declared pure member properties — keyed by binding name,
     /// value is the set of property names whose `<binding>.<prop>(args)`
     /// calls the spec author asserts are pure. The classifier consults

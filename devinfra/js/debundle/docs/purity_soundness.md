@@ -152,6 +152,17 @@ covers the function value, not its arguments. `pure_new` is separate from
 `pure`: it covers only `new X(...)`, does not make `X(...)` pure, and still
 evaluates constructor arguments normally.
 
+`initializer_purity: "pure"` is a separate, narrower trust contract for one
+selected, simple top-level variable initializer. It admits only the evaluation
+of that initializer expression; it does not certify calls or construction of
+the value it produces. The author must audit the complete expression, including
+any synchronous callback execution, and establish that it has no observable
+effects and cannot throw. Direct eager reads and unresolved callback-body reads
+remain graph dependencies, so this annotation does not assert that callbacks
+are deferred or skip their ordering constraints. The materializer rejects this
+annotation for imports, functions, classes, destructuring declarations,
+declarations without an initializer, and ambiguous multiple initialized sites.
+
 When the annotated binding is selected in an analyzed defining chunk and
 exported, the same author-trusted `pure_new` contract applies to each
 importer's local binding. The export mapping is resolved after structural

@@ -1132,6 +1132,16 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   surrounding `new` expression side-effecting. The annotation does
   not make plain `BoundClass(...)` calls pure.
 
+  `initializer_purity: "pure"` applies only to one selected, simple,
+  top-level variable initializer. It asserts that evaluating the full
+  initializer has no observable effects and cannot throw, but it does not
+  make calls or construction of the resulting value pure. The author must
+  audit any synchronous callback behavior. Direct eager reads and
+  callback-body read dependencies remain in the owner graph, so this
+  annotation does not suppress their initialization-order constraints.
+  Imports, functions, classes, destructuring, uninitialized declarations,
+  and ambiguous repeated initialized declarations are rejected.
+
   An incorrect annotation can produce a buggy debundle the same way
   an incorrect spec selector can — soundness shifts to the spec
   author. See <purity_soundness.md> "Declared purity".

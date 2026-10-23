@@ -446,6 +446,10 @@ fn is_default_member_purity(purity: &MemberPurity) -> bool {
     matches!(purity, MemberPurity::Default)
 }
 
+fn is_default_initializer_purity(purity: &InitializerPurity) -> bool {
+    matches!(purity, InitializerPurity::Default)
+}
+
 fn is_default_member_effect(effect: &MemberEffect) -> bool {
     matches!(effect, MemberEffect::Default)
 }
@@ -803,6 +807,10 @@ pub struct BindingAnnotation {
     /// Spec-level purity annotation for the annotated binding.
     #[serde(default, skip_serializing_if = "is_default_member_purity")]
     pub purity: MemberPurity,
+    /// Trust assertion for evaluation of one selected simple top-level
+    /// variable initializer; it says nothing about later calls or construction.
+    #[serde(default, skip_serializing_if = "is_default_initializer_purity")]
+    pub initializer_purity: InitializerPurity,
     /// Spec-level local-effect annotation for the annotated binding.
     #[serde(default, skip_serializing_if = "is_default_member_effect")]
     pub effect: MemberEffect,
@@ -1614,6 +1622,16 @@ pub enum MemberPurity {
     /// still requires every argument expression to classify pure; this
     /// annotation does not affect ordinary `<binding>(...)` calls.
     PureNew,
+}
+
+/// Trust contract scoped to evaluation of one selected variable initializer.
+/// Unlike [`MemberPurity`], this says nothing about later uses of its value.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum InitializerPurity {
+    #[default]
+    Default,
+    Pure,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]

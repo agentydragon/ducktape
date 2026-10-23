@@ -4,6 +4,7 @@ use super::PreparedFixture;
 use super::ast_assertions::declared_bindings_in_source_match;
 use serde::Deserialize;
 use serde::de::value::{Error as DeserializeError, SeqDeserializer};
+use spec::InitializerPurity;
 use spec::{
     AnonymousStatement, BindingAnnotation, BindingSelector, BindingSourceKind, ChunkRenameMember,
     ChunkRenameSelector, ChunkRenames, CrossRefSelector, IntrinsicAliasSelector, LoadJsChunksArgs,
@@ -26,6 +27,7 @@ pub struct Member {
     selector: MemberSelector,
     source_match: Option<SourceMatch>,
     purity: Option<MemberPurity>,
+    initializer_purity: Option<InitializerPurity>,
     effect: Option<MemberEffect>,
     pub comment: Option<String>,
 }
@@ -330,6 +332,13 @@ impl Member {
         self
     }
 
+    /// Assert purity of this binding's one variable initializer only. This
+    /// does not affect calls or construction of the resulting value.
+    pub fn with_initializer_purity(mut self) -> Self {
+        self.initializer_purity = Some(InitializerPurity::Pure);
+        self
+    }
+
     /// Attach a spec-level local-effect annotation to the binding. See
     /// `spec::BindingAnnotation::effect`.
     pub fn with_effect(mut self, effect: MemberEffect) -> Self {
@@ -487,11 +496,16 @@ fn fixture_annotations(
 ) -> BTreeMap<String, BindingAnnotation> {
     let mut annotations = BTreeMap::new();
     for member in members {
-        if member.comment.is_some() || member.purity.is_some() || member.effect.is_some() {
+        if member.comment.is_some()
+            || member.purity.is_some()
+            || member.initializer_purity.is_some()
+            || member.effect.is_some()
+        {
             annotations.insert(
                 member.name.to_string(),
                 BindingAnnotation {
                     purity: member.purity.unwrap_or_default(),
+                    initializer_purity: member.initializer_purity.unwrap_or_default(),
                     effect: member.effect.unwrap_or_default(),
                     comment: member.comment.clone(),
                     ..Default::default()

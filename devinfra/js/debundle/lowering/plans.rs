@@ -6,7 +6,7 @@ use crate::exports::{reject_duplicate_export_names, reject_duplicate_member_bind
 use analysis::{AnalysisHints, KnownEffect};
 use anyhow::{Result, bail};
 use selector_resolve::MemberSelector;
-use spec::{LogicalModule, MemberEffect, MemberPurity, UnassignedMode};
+use spec::{InitializerPurity, LogicalModule, MemberEffect, MemberPurity, UnassignedMode};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 #[derive(Debug, Clone)]
@@ -52,6 +52,9 @@ pub(super) struct MemberRequest {
     /// inferred classification". An author-trust contract; see
     /// <docs/purity_soundness.md> "Declared purity" and docs/design.md A9.
     pub(super) purity: MemberPurity,
+    /// Trust annotation for this binding's variable initializer only; it does
+    /// not affect later uses of the resulting value.
+    pub(super) initializer_purity: InitializerPurity,
     /// Spec-level local-effect annotation. `TypescriptDecorateHelper`
     /// asserts that recognized calls to the bound helper mutate only
     /// their target class/prototype, so the analyzer can model a local
@@ -99,12 +102,16 @@ impl MemberRequest {
     /// chunk_renames still do not force proposer grouping.
     pub(super) fn has_analysis_hints(&self) -> bool {
         self.purity != MemberPurity::Default
+            || self.initializer_purity != InitializerPurity::Default
             || self.effect != MemberEffect::Default
             || !self.pure_members.is_empty()
             || !self.no_sync_callback_members.is_empty()
     }
 
     pub(super) fn collect_hints_for_binding(&self, hints: &mut AnalysisHints, binding: &str) {
+        if self.initializer_purity == InitializerPurity::Pure {
+            hints.declared_pure_initializers.insert(binding.to_string());
+        }
         if self.purity == MemberPurity::Pure {
             hints.declared_pure.insert(binding.to_string());
         }
@@ -301,6 +308,7 @@ pub(super) fn build_members(
                 explicit_export_name: m.name.is_some(),
                 selector: MemberSelector::from_spec(selected),
                 purity: MemberPurity::Default,
+                initializer_purity: InitializerPurity::Default,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
                 no_sync_callback_members: Vec::new(),
@@ -327,6 +335,7 @@ pub(super) fn build_members(
                 explicit_export_name: true,
                 selector: MemberSelector::SourceMatch(parsed_selector),
                 purity: MemberPurity::Default,
+                initializer_purity: InitializerPurity::Default,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
                 no_sync_callback_members: Vec::new(),
@@ -389,6 +398,15 @@ fn merge_binding_annotation(
             bail_annotation_conflict(request_id, export_name, "purity")?;
         }
         request.purity = annotation.purity;
+    }
+
+    if annotation.initializer_purity != InitializerPurity::Default {
+        if request.initializer_purity != InitializerPurity::Default
+            && request.initializer_purity != annotation.initializer_purity
+        {
+            bail_annotation_conflict(request_id, export_name, "initializer_purity")?;
+        }
+        request.initializer_purity = annotation.initializer_purity;
     }
 
     if annotation.effect != MemberEffect::Default {

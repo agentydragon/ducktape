@@ -49,7 +49,7 @@ use js_ast::{ParsedJsModule, statement_ordinal_for_body_index};
 use output_layout::{
     ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, OWNER_GRAPH_REPORT, SELECTOR_DIAGNOSTICS_REPORT,
 };
-use spec::{ChunkRenames, LogicalModule, MemberPurity, UnassignedMode};
+use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -342,6 +342,7 @@ pub(super) fn claim_prepared_chunk(
         &prepared.explicit_requests,
         &prepared.builder,
         prepared.spec.chunk_renames.get(prepared.context.chunk_id),
+        &prepared.runtime_ast.module,
     )?;
     Ok(prepared)
 }
@@ -721,26 +722,27 @@ fn project_factorization_modules_with_sentinel(
     Ok((logical_modules, ModuleId(LogicalModuleIndex(sentinel_idx))))
 }
 
-/// Collect `AnalysisHints` from binding annotations (`purity`,
-/// `pure_members`, `effect`). These are semantic trust assertions, not
-/// ownership claims.
+/// Collect `AnalysisHints` from binding annotations. These are semantic
+/// trust assertions, not ownership claims.
 fn collect_analysis_hints(
     explicit_requests: &[LogicalRequest],
     builder: &ChunkPlanBuilder,
     chunk_renames: Option<&ChunkRenames>,
+    module: &Module,
 ) -> Result<AnalysisHints> {
     let mut hints = AnalysisHints::default();
     for (request_index, req) in explicit_requests.iter().enumerate() {
         for m in &req.members {
-            collect_member_analysis_hints(request_index, req, m, builder, &mut hints)?;
+            collect_member_analysis_hints(request_index, req, m, builder, module, &mut hints)?;
         }
     }
-    collect_chunk_rename_analysis_hints(chunk_renames, &mut hints)?;
+    collect_chunk_rename_analysis_hints(chunk_renames, module, &mut hints)?;
     Ok(hints)
 }
 
 fn collect_chunk_rename_analysis_hints(
     chunk_renames: Option<&ChunkRenames>,
+    module: &Module,
     hints: &mut AnalysisHints,
 ) -> Result<()> {
     let Some(chunk_renames) = chunk_renames else {
@@ -770,7 +772,7 @@ fn collect_chunk_rename_analysis_hints(
                 bindings.len()
             );
         }
-        collect_binding_annotation_hints(hints, &bindings[0], annotation);
+        collect_binding_annotation_hints(hints, &bindings[0], annotation, module)?;
     }
     Ok(())
 }
@@ -779,7 +781,12 @@ fn collect_binding_annotation_hints(
     hints: &mut AnalysisHints,
     binding: &str,
     annotation: &spec::BindingAnnotation,
-) {
+    module: &Module,
+) -> Result<()> {
+    if annotation.initializer_purity == InitializerPurity::Pure {
+        validate_initializer_purity_target(module, binding)?;
+        hints.declared_pure_initializers.insert(binding.to_string());
+    }
     if annotation.purity == MemberPurity::Pure {
         hints.declared_pure.insert(binding.to_string());
     }
@@ -803,6 +810,7 @@ fn collect_binding_annotation_hints(
     if let Some(effect) = known_effect_from_member_effect(annotation.effect) {
         hints.known_effects.insert(binding.to_string(), effect);
     }
+    Ok(())
 }
 
 fn collect_member_analysis_hints(
@@ -810,12 +818,16 @@ fn collect_member_analysis_hints(
     request: &LogicalRequest,
     member: &MemberRequest,
     builder: &ChunkPlanBuilder,
+    module: &Module,
     hints: &mut AnalysisHints,
 ) -> Result<()> {
     if !member.has_analysis_hints() {
         return Ok(());
     }
     if let Some(binding) = builder.resolved_binding_for_member(request_index, member) {
+        if member.initializer_purity == InitializerPurity::Pure {
+            validate_initializer_purity_target(module, &binding)?;
+        }
         member.collect_hints_for_binding(hints, &binding);
         return Ok(());
     }
@@ -828,6 +840,113 @@ fn collect_member_analysis_hints(
         request.id,
         member.export_name,
     )
+}
+
+fn validate_initializer_purity_target(module: &Module, binding: &str) -> Result<()> {
+    let mut initialized_sites = 0usize;
+    let mut unsupported_sites = 0usize;
+    let mut bare_var_sites = 0usize;
+
+    for item in &module.body {
+        let var = match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var.as_ref()),
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
+                Decl::Var(var) => Some(var.as_ref()),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(var) = var {
+            for declarator in &var.decls {
+                if !pattern_binds_name(&declarator.name, binding) {
+                    continue;
+                }
+                match &declarator.name {
+                    Pat::Ident(ident) if ident.id.sym.as_ref() == binding => {
+                        if declarator.init.is_some() {
+                            initialized_sites += 1;
+                        } else if var.kind == VarDeclKind::Var {
+                            bare_var_sites += 1;
+                        } else {
+                            unsupported_sites += 1;
+                        }
+                    }
+                    _ => unsupported_sites += 1,
+                }
+            }
+            continue;
+        }
+
+        let is_import_of_binding = match item {
+            ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
+                .specifiers
+                .iter()
+                .any(|specifier| specifier.local().sym.as_ref() == binding),
+            _ => false,
+        };
+        if is_import_of_binding || item_declares_nonvariable_name(item, binding) {
+            unsupported_sites += 1;
+        }
+    }
+
+    if initialized_sites == 1 && unsupported_sites == 0 {
+        return Ok(());
+    }
+    let detail = if initialized_sites > 1 {
+        "multiple initialized declarations"
+    } else if unsupported_sites > 0 {
+        "a non-simple, imported, or non-variable declaration"
+    } else if bare_var_sites > 0 && initialized_sites == 0 {
+        "no initialized declaration"
+    } else {
+        "no simple initialized variable declaration"
+    };
+    bail!(
+        "initializer_purity for binding `{binding}` requires exactly one direct top-level simple variable initializer; found {detail}"
+    )
+}
+
+fn item_declares_nonvariable_name(item: &ModuleItem, binding: &str) -> bool {
+    let declaration_matches = |declaration: &Decl| match declaration {
+        Decl::Fn(function) => function.ident.sym.as_ref() == binding,
+        Decl::Class(class) => class.ident.sym.as_ref() == binding,
+        _ => false,
+    };
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(declaration)) => declaration_matches(declaration),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => declaration_matches(&export.decl),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export)) => match &export.decl {
+            DefaultDecl::Fn(function) => function
+                .ident
+                .as_ref()
+                .is_some_and(|ident| ident.sym.as_ref() == binding),
+            DefaultDecl::Class(class) => class
+                .ident
+                .as_ref()
+                .is_some_and(|ident| ident.sym.as_ref() == binding),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
+    match pattern {
+        Pat::Ident(ident) => ident.id.sym.as_ref() == binding,
+        Pat::Array(array) => array
+            .elems
+            .iter()
+            .flatten()
+            .any(|element| pattern_binds_name(element, binding)),
+        Pat::Rest(rest) => pattern_binds_name(&rest.arg, binding),
+        Pat::Object(object) => object.props.iter().any(|property| match property {
+            ObjectPatProp::KeyValue(property) => pattern_binds_name(&property.value, binding),
+            ObjectPatProp::Assign(property) => property.key.id.sym.as_ref() == binding,
+            ObjectPatProp::Rest(property) => pattern_binds_name(&property.arg, binding),
+        }),
+        Pat::Assign(assign) => pattern_binds_name(&assign.left, binding),
+        Pat::Expr(_) | Pat::Invalid(_) => false,
+    }
 }
 
 /// Write per-chunk validation reports (owner graph, atomic-unit
