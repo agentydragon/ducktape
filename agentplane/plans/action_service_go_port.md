@@ -32,12 +32,16 @@ Connection/OAuth authority and `/mcp` move to `mcp-edge`.
 ## Remaining work
 
 The edge Deployment, Service, migrator and scoped RBAC are staged with **zero replicas in both
-environments**. No edge migration runs or route changes while scaled down: public MCP/OAuth paths
+environments**. Testing initializes its empty edge schema through the Flux-managed
+`mcp-edge-schema-migrate` Job before data transfer; staging still has no edge migration Job.
+No serving Pod starts or route changes while scaled down: public MCP/OAuth paths
 and the app's Connection calls still target Actions. Actions-owned CIMD metadata and the app's
 upstream OAuth callbacks remain on their current routes. Activation is a separate change after the edge
 images are published, its database is populated from the preserved Action Service records, and the
 deployed Actions image accepts the edge's account-only tokens. Verify Connection and grant identities,
 request records and external MCP authorization before moving the public route and app target.
+Flux checks the schema Job for completion and recreates it when the automated migrator image
+changes. It only has the edge database credential; it cannot copy source records.
 That route change must add the edge's Gateway ingress policy; the staged policy admits only the app
 and metrics scrapers.
 

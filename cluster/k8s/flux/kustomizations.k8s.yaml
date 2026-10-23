@@ -3933,6 +3933,10 @@ spec:
       kind: Job
       name: runner-gateway-queue-migrate
       namespace: agentplane-testing
+    - apiVersion: batch/v1
+      kind: Job
+      name: mcp-edge-schema-migrate
+      namespace: agentplane-testing
     - apiVersion: v1
       kind: ConfigMap
       name: agentplane-testing-egress-ca

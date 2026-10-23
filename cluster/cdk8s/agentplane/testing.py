@@ -44,6 +44,7 @@ from cluster.cdk8s.agentplane import (
     command_sandbox,
     dex,
     egress,
+    mcp_edge,
     notifications,
     policy_controller,
     policy_controller_rbac,
@@ -72,6 +73,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_selections import TESTING_APP_MODELS, model_configs
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.secret_ref import SecretRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
 _HOSTNAME = "agentplane-testing.allegedly.works"
@@ -375,6 +377,14 @@ class AcceptanceToken(Construct):
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    mcp_edge.SchemaMigration(
+        chart,
+        "mcp-edge-schema-migration",
+        ENV,
+        database_url=SecretRef(namespace=ENV.namespace, name="postgres-mcp-edge")
+        .key("uri")
+        .env_value(chart, "mcp-edge-migration-database-url"),
+    )
     TestingNamespaceResourceLimits(chart, "namespace-resource-limits", ENV.namespace)
     # Only this environment's chart gets the agent-operator Role/RoleBinding -- see
     # `AgentRbac`'s own docstring for why it must not be in staging's.
