@@ -39,6 +39,16 @@ def test_operator_mapping_uses_generated_dashboard_resource_and_datasource_name(
     assert VERIFY_DASHBOARD["datasource_for"](fixed_uid_panel, {}, by_name, by_uid) is by_name["Loki"]
 
 
+def test_operator_mapping_substitutes_arbitrary_input_names_and_preserves_dashboard_variables() -> None:
+    dashboard = VERIFY_DASHBOARD["apply_operator_datasources"](
+        {"datasource": "${datasource}", "templating": {"query": "${dashboard_var}"}}, {"datasource": "Loki"}
+    )
+    assert dashboard == {"datasource": "Loki", "templating": {"query": "${dashboard_var}"}}
+
+    with pytest.raises(VERIFY_DASHBOARD["VerificationError"], match="no generated GrafanaDashboard mapping"):
+        VERIFY_DASHBOARD["apply_operator_datasources"]({"datasource": "${DS_UNKNOWN}"}, {"datasource": "Loki"})
+
+
 def test_query_target_datasource_overrides_panel_datasource() -> None:
     dashboard = VERIFY_DASHBOARD["apply_operator_datasources"](
         {
