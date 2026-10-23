@@ -9,6 +9,10 @@ are needed only for that first clone — not when the cache already exists. In a
 Claude agent session they come from the `claude` Forgejo service account (which
 has read-only collaboration on the repo) — k8s Secret
 `claude-sandbox/claude-forgejo-credentials`.
+
+HTTPS clones keep libgit2's certificate verification. When `SSL_CERT_FILE` is
+set, its CA bundle is configured through libgit2's supported trust API; otherwise
+libgit2 uses its default trust store. Proxy configuration never bypasses TLS checks.
 """
 
 from __future__ import annotations
@@ -22,23 +26,6 @@ import pygit2
 logger = logging.getLogger(__name__)
 
 EVIDENCE_REPO_URL = "https://git.allegedly.works/augur-evidence/augur-evidence.git"
-
-
-class _EgressTrust(pygit2.RemoteCallbacks):
-    """Clone callbacks that accept the cluster mitmproxy's MITM certificate.
-
-    In the claude-sandbox the only egress is the cluster mitmproxy, which
-    presents its own CA. libgit2 ignores the OpenSSL ``SSL_CERT_FILE`` the
-    Kyverno ``inject-mitmproxy`` policy sets (pointing ``pygit2.settings``
-    at the mounted CA does not make libgit2 trust it), so its own validation
-    reports the cert invalid and the clone fails with ``user rejected
-    certificate``. The connection still goes through the trusted in-cluster
-    proxy, so accept an otherwise-invalid cert — but only when an egress proxy
-    is actually configured, so normal cert validation still applies elsewhere.
-    """
-
-    def certificate_check(self, certificate: object, valid: bool, host: bytes) -> bool:
-        return valid or bool(os.environ.get("HTTPS_PROXY"))
 
 
 def ensure_checkout() -> Path:
@@ -61,7 +48,11 @@ def ensure_checkout() -> Path:
             "  export AUGUR_EVIDENCE_GIT_USERNAME=$U AUGUR_EVIDENCE_GIT_PASSWORD=$P"
         )
     logger.info("cloning evidence repo to %s", checkout)
+    # libgit2 does not read SSL_CERT_FILE itself. Its CA setting is process-wide;
+    # use the same explicit bundle supplied to the other TLS clients in this process.
+    if (ca_bundle := os.environ.get("SSL_CERT_FILE")) is not None:
+        pygit2.settings.set_ssl_cert_locations(ca_bundle, None)
     checkout.parent.mkdir(parents=True, exist_ok=True)
-    callbacks = _EgressTrust(credentials=pygit2.UserPass(username, password))
+    callbacks = pygit2.RemoteCallbacks(credentials=pygit2.UserPass(username, password))
     pygit2.clone_repository(EVIDENCE_REPO_URL, str(checkout), depth=1, callbacks=callbacks)
     return checkout

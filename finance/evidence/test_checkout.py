@@ -6,7 +6,7 @@ import pygit2
 import pytest
 import pytest_bazel
 
-from finance.evidence.checkout import _EgressTrust, ensure_checkout
+from finance.evidence.checkout import ensure_checkout
 
 
 def test_env_dir_wins(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -19,6 +19,7 @@ def _clear_evidence_env(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
     monkeypatch.delenv("AUGUR_EVIDENCE_DIR", raising=False)
     monkeypatch.delenv("AUGUR_EVIDENCE_GIT_USERNAME", raising=False)
     monkeypatch.delenv("AUGUR_EVIDENCE_GIT_PASSWORD", raising=False)
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
 
 
 def test_missing_credentials_explain_where_to_get_them(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -35,37 +36,50 @@ def test_cached_checkout_used_without_credentials(monkeypatch: pytest.MonkeyPatc
     assert ensure_checkout() == checkout
 
 
-def test_certificate_check_accepts_libgit2_valid_cert() -> None:
-    # Never reject what libgit2 itself trusts.
-    assert _EgressTrust().certificate_check(None, True, b"git.allegedly.works") is True
+def test_certificate_check_defers_valid_cert_to_libgit2(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    callbacks = _checkout_callbacks(monkeypatch, tmp_path)
+    with pytest.raises(pygit2.Passthrough):
+        callbacks.certificate_check(None, True, b"git.allegedly.works")
 
 
-def test_certificate_check_accepts_mitm_cert_behind_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
-    # libgit2 marks the cluster mitmproxy's MITM cert invalid; accept it because
-    # the only egress is that trusted in-cluster proxy.
+def test_certificate_check_defers_invalid_cert_with_proxy_to_libgit2(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("HTTPS_PROXY", "http://test-mitmproxy.invalid:8080")
-    assert _EgressTrust().certificate_check(None, False, b"git.allegedly.works") is True
+    callbacks = _checkout_callbacks(monkeypatch, tmp_path)
+    with pytest.raises(pygit2.Passthrough):
+        callbacks.certificate_check(None, False, b"git.allegedly.works")
 
 
-def test_certificate_check_rejects_invalid_cert_without_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Outside a proxied egress, an invalid cert is a real failure — don't mask it.
+def test_certificate_check_defers_invalid_cert_without_proxy_to_libgit2(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.delenv("HTTPS_PROXY", raising=False)
-    assert _EgressTrust().certificate_check(None, False, b"git.allegedly.works") is False
+    callbacks = _checkout_callbacks(monkeypatch, tmp_path)
+    with pytest.raises(pygit2.Passthrough):
+        callbacks.certificate_check(None, False, b"git.allegedly.works")
 
 
-def test_clone_uses_egress_trust_callbacks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def _checkout_callbacks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> pygit2.RemoteCallbacks:
     _clear_evidence_env(monkeypatch, tmp_path)
     monkeypatch.setenv("AUGUR_EVIDENCE_GIT_USERNAME", "u")
     monkeypatch.setenv("AUGUR_EVIDENCE_GIT_PASSWORD", "p")
     captured: dict[str, object] = {}
 
-    def fake_clone(url: str, path: str, *, callbacks: object, **_: object) -> None:
+    def fake_clone(url: str, path: str, *, callbacks: pygit2.RemoteCallbacks, **_: object) -> None:
         captured["callbacks"] = callbacks
         (Path(path) / ".git").mkdir(parents=True)
 
     monkeypatch.setattr(pygit2, "clone_repository", fake_clone)
     ensure_checkout()
-    assert isinstance(captured["callbacks"], _EgressTrust)
+    callbacks = captured["callbacks"]
+    assert isinstance(callbacks, pygit2.RemoteCallbacks)
+    return callbacks
+
+
+def test_clone_uses_verified_tls_callbacks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    callbacks = _checkout_callbacks(monkeypatch, tmp_path)
+    assert type(callbacks) is pygit2.RemoteCallbacks
 
 
 if __name__ == "__main__":
