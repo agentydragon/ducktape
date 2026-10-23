@@ -55,6 +55,8 @@ mod purity_classification;
 mod statement_facts;
 mod sync_effects;
 mod value_flow;
+#[cfg(test)]
+mod value_flow_tests;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.

@@ -78,6 +78,7 @@ fn union_bits(into: &mut [u64], from: &[u64]) -> bool {
 }
 
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub(crate) struct ChunkValueFlow {
     declared_ids: BTreeSet<Id>,
     bindings: BTreeMap<Id, Values>,
@@ -157,15 +158,24 @@ impl ChunkValueFlow {
     }
 
     pub(crate) fn analyze(body: &[TopLevelItemView<'_>]) -> Self {
+        FlowProgram::collect(body).solve()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn analyze_with_stats(body: &[TopLevelItemView<'_>]) -> (Self, FlowWorkStats) {
+        let mut solver = FlowProgram::collect(body).into_solver();
+        solver.run();
+        (solver.flow, solver.stats)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn analyze_reference(body: &[TopLevelItemView<'_>]) -> Self {
         let mut flow = Self::default();
         let mut declarations = DeclaredBindingCollector::default();
         for item in body {
             item.as_module_item().visit_with(&mut declarations);
         }
         flow.declared_ids = declarations.ids;
-        // Every iteration only adds finite value identities. A full pass is
-        // required because returns and parameter values can travel backward
-        // across source order and through recursive functions.
         loop {
             let mut changed = false;
             for (ordinal, item) in body.iter().enumerate() {
@@ -305,6 +315,75 @@ impl ChunkValueFlow {
         }
     }
 
+    fn values_of_binding_tracking(
+        &self,
+        id: &Id,
+        dependencies: &mut BTreeSet<FlowDependency>,
+    ) -> Values {
+        dependencies.insert(FlowDependency::Binding(id.clone()));
+        self.values_of_binding(id)
+    }
+
+    fn values_of_value_expr_tracking(
+        &self,
+        expr: &FlowValueExpr,
+        dependencies: &mut BTreeSet<FlowDependency>,
+    ) -> Values {
+        match expr {
+            FlowValueExpr::Binding(id) => self.values_of_binding_tracking(id, dependencies),
+            FlowValueExpr::Value(value) => BTreeSet::from([*value]),
+            FlowValueExpr::Member { object, property } => {
+                let mut values = Values::new();
+                for origin in self.values_of_value_expr_tracking(object, dependencies) {
+                    if let ValueOrigin::Object(object) = origin {
+                        if let Some(property) = property {
+                            // Keep watching absent properties. Their Unknown is durable, while a later
+                            // write can add concrete values.
+                            dependencies.insert(FlowDependency::Property(object, property.clone()));
+                            values.extend(
+                                self.properties
+                                    .get(&(object, property.clone()))
+                                    .cloned()
+                                    .unwrap_or_else(unknown),
+                            );
+                        } else {
+                            dependencies.insert(FlowDependency::Properties(object));
+                            values.extend(
+                                self.properties
+                                    .range((object, String::new())..)
+                                    .take_while(|((owner, _), _)| *owner == object)
+                                    .flat_map(|(_, values)| values.iter().copied()),
+                            );
+                            values.insert(ValueOrigin::Unknown);
+                        }
+                    } else {
+                        values.insert(ValueOrigin::Unknown);
+                    }
+                }
+                values
+            }
+            FlowValueExpr::Call(callee) => {
+                let mut values = Values::new();
+                for origin in self.values_of_value_expr_tracking(callee, dependencies) {
+                    if let ValueOrigin::Function(function) = origin {
+                        dependencies.insert(FlowDependency::Return(function));
+                        values.extend(self.returns.get(&function).cloned().unwrap_or_default());
+                    } else {
+                        values.insert(ValueOrigin::Unknown);
+                    }
+                }
+                values
+            }
+            FlowValueExpr::Union(left, right) => self
+                .values_of_value_expr_tracking(left, dependencies)
+                .union(&self.values_of_value_expr_tracking(right, dependencies))
+                .copied()
+                .collect(),
+            FlowValueExpr::Empty => Values::new(),
+            FlowValueExpr::Unknown => unknown(),
+        }
+    }
+
     pub(crate) fn canonical_callable(&self, origin: ValueOrigin) -> Option<&Id> {
         self.canonical.get(&origin)
     }
@@ -402,10 +481,12 @@ impl ChunkValueFlow {
 }
 
 #[derive(Default)]
+#[cfg(test)]
 struct DeclaredBindingCollector {
     ids: BTreeSet<Id>,
 }
 
+#[cfg(test)]
 impl Visit for DeclaredBindingCollector {
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
         self.ids.insert(node.id.to_id());
@@ -419,6 +500,658 @@ impl Visit for DeclaredBindingCollector {
     fn visit_class_decl(&mut self, node: &ClassDecl) {
         self.ids.insert(node.ident.to_id());
         node.class.visit_with(self);
+    }
+}
+
+#[derive(Debug, Clone)]
+enum FlowValueExpr {
+    Binding(Id),
+    Value(ValueOrigin),
+    Member {
+        object: Box<FlowValueExpr>,
+        property: Option<String>,
+    },
+    Call(Box<FlowValueExpr>),
+    Union(Box<FlowValueExpr>, Box<FlowValueExpr>),
+    Empty,
+    Unknown,
+}
+
+impl FlowValueExpr {
+    fn from_ast(expr: &Expr) -> Self {
+        match expr.unwrap_parens() {
+            Expr::Ident(ident) => Self::Binding(ident.to_id()),
+            Expr::Fn(function) => Self::Value(ValueOrigin::Function(function.function.span.lo.0)),
+            Expr::Arrow(arrow) => Self::Value(ValueOrigin::Function(arrow.span.lo.0)),
+            Expr::Class(class) => Self::Value(ValueOrigin::Class(class.class.span.lo.0)),
+            Expr::Object(object) => Self::Value(ValueOrigin::Object(object.span.lo.0)),
+            Expr::Array(array) => Self::Value(ValueOrigin::Object(array.span.lo.0)),
+            Expr::Member(member) => Self::Member {
+                object: Box::new(Self::from_ast(&member.obj)),
+                property: static_prop(&member.prop),
+            },
+            Expr::Call(call) => match &call.callee {
+                Callee::Expr(callee) => Self::Call(Box::new(Self::from_ast(callee))),
+                _ => Self::Unknown,
+            },
+            Expr::Cond(cond) => Self::Union(
+                Box::new(Self::from_ast(&cond.cons)),
+                Box::new(Self::from_ast(&cond.alt)),
+            ),
+            Expr::Bin(bin)
+                if matches!(
+                    bin.op,
+                    BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
+                ) =>
+            {
+                Self::Union(
+                    Box::new(Self::from_ast(&bin.left)),
+                    Box::new(Self::from_ast(&bin.right)),
+                )
+            }
+            Expr::Seq(seq) => seq
+                .exprs
+                .last()
+                .map_or(Self::Unknown, |last| Self::from_ast(last)),
+            Expr::Assign(assign) => Self::from_ast(&assign.right),
+            Expr::Lit(_) | Expr::This(_) | Expr::Tpl(_) => Self::Empty,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum FlowEvent {
+    FunctionDeclaration {
+        id: Id,
+        origin: ValueOrigin,
+    },
+    ClassDeclaration {
+        id: Id,
+        origin: ValueOrigin,
+        owner: StatementOrdinal,
+    },
+    Variable {
+        id: Id,
+        init: FlowValueExpr,
+        canonical: Option<ValueOrigin>,
+    },
+    AssignBinding {
+        id: Id,
+        right: FlowValueExpr,
+    },
+    AssignProperty {
+        object: FlowValueExpr,
+        property: String,
+        right: FlowValueExpr,
+    },
+    WritePropertyExpr {
+        object: u32,
+        property: String,
+        value: FlowValueExpr,
+    },
+    WritePropertyBinding {
+        object: u32,
+        property: String,
+        binding: Id,
+    },
+    WritePropertyValue {
+        object: u32,
+        property: String,
+        value: ValueOrigin,
+    },
+    FunctionMetadata {
+        function: u32,
+        params: Vec<Option<Id>>,
+        owner: StatementOrdinal,
+    },
+    Return {
+        function: u32,
+        value: FlowValueExpr,
+    },
+    Invoke {
+        callee: FlowValueExpr,
+        args: Vec<FlowValueExpr>,
+    },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+enum FlowDependency {
+    Binding(Id),
+    Property(u32, String),
+    Properties(u32),
+    Return(u32),
+    Parameters(u32),
+}
+
+struct FlowProgram {
+    declared_ids: BTreeSet<Id>,
+    events: Vec<FlowEvent>,
+}
+
+impl FlowProgram {
+    fn collect(body: &[TopLevelItemView<'_>]) -> Self {
+        let mut collector = FlowProgramCollector {
+            declared_ids: BTreeSet::new(),
+            events: Vec::new(),
+            owner: StatementOrdinal(0),
+            current_function: None,
+        };
+        for (ordinal, item) in body.iter().enumerate() {
+            collector.owner = StatementOrdinal(ordinal);
+            item.as_module_item().visit_with(&mut collector);
+        }
+        Self {
+            declared_ids: collector.declared_ids,
+            events: collector.events,
+        }
+    }
+
+    fn into_solver(self) -> FlowSolver {
+        FlowSolver {
+            flow: ChunkValueFlow {
+                declared_ids: self.declared_ids,
+                ..ChunkValueFlow::default()
+            },
+            events: self.events,
+            dependencies: Vec::new(),
+            watchers: BTreeMap::new(),
+            pending: BTreeSet::new(),
+            scheduled_round: Vec::new(),
+            round_zero_new_parameters: BTreeSet::new(),
+            round_zero_had_fact_change: false,
+            #[cfg(test)]
+            stats: FlowWorkStats::default(),
+        }
+        .with_event_slots()
+    }
+
+    fn solve(self) -> ChunkValueFlow {
+        let mut solver = self.into_solver();
+        solver.run();
+        solver.flow
+    }
+}
+
+struct FlowProgramCollector {
+    declared_ids: BTreeSet<Id>,
+    events: Vec<FlowEvent>,
+    owner: StatementOrdinal,
+    current_function: Option<u32>,
+}
+
+impl Visit for FlowProgramCollector {
+    fn visit_binding_ident(&mut self, node: &BindingIdent) {
+        self.declared_ids.insert(node.id.to_id());
+    }
+
+    fn visit_fn_decl(&mut self, node: &FnDecl) {
+        let id = node.ident.to_id();
+        self.declared_ids.insert(id.clone());
+        self.events.push(FlowEvent::FunctionDeclaration {
+            id,
+            origin: ValueOrigin::Function(node.function.span.lo.0),
+        });
+        node.function.visit_with(self);
+    }
+
+    fn visit_class_decl(&mut self, node: &ClassDecl) {
+        let id = node.ident.to_id();
+        self.declared_ids.insert(id.clone());
+        self.events.push(FlowEvent::ClassDeclaration {
+            id,
+            origin: ValueOrigin::Class(node.class.span.lo.0),
+            owner: self.owner,
+        });
+        node.class.visit_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, node: &VarDeclarator) {
+        if let (Pat::Ident(binding), Some(init)) = (&node.name, node.init.as_deref()) {
+            let canonical = self
+                .current_function
+                .is_none()
+                .then(|| direct_callable_origin(init))
+                .flatten();
+            self.events.push(FlowEvent::Variable {
+                id: binding.id.to_id(),
+                init: FlowValueExpr::from_ast(init),
+                canonical,
+            });
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        match &node.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
+                self.events.push(FlowEvent::AssignBinding {
+                    id: binding.id.to_id(),
+                    right: FlowValueExpr::from_ast(&node.right),
+                });
+            }
+            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+                if let Some(property) = static_prop(&member.prop) {
+                    self.events.push(FlowEvent::AssignProperty {
+                        object: FlowValueExpr::from_ast(&member.obj),
+                        property,
+                        right: FlowValueExpr::from_ast(&node.right),
+                    });
+                }
+            }
+            _ => {}
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_object_lit(&mut self, node: &ObjectLit) {
+        let object = node.span.lo.0;
+        for prop in &node.props {
+            if let PropOrSpread::Prop(prop) = prop {
+                match prop.as_ref() {
+                    Prop::KeyValue(kv) => {
+                        if let Some(property) = object_prop(&kv.key) {
+                            self.events.push(FlowEvent::WritePropertyExpr {
+                                object,
+                                property,
+                                value: FlowValueExpr::from_ast(&kv.value),
+                            });
+                        }
+                    }
+                    Prop::Shorthand(ident) => {
+                        self.events.push(FlowEvent::WritePropertyBinding {
+                            object,
+                            property: ident.sym.to_string(),
+                            binding: ident.to_id(),
+                        });
+                    }
+                    Prop::Method(method) => {
+                        if let Some(property) = object_prop(&method.key) {
+                            self.events.push(FlowEvent::WritePropertyValue {
+                                object,
+                                property,
+                                value: ValueOrigin::Function(method.function.span.lo.0),
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_array_lit(&mut self, node: &ArrayLit) {
+        let object = node.span.lo.0;
+        for (index, element) in node.elems.iter().enumerate() {
+            if let Some(element) = element {
+                self.events.push(FlowEvent::WritePropertyExpr {
+                    object,
+                    property: index.to_string(),
+                    value: FlowValueExpr::from_ast(&element.expr),
+                });
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_function(&mut self, node: &Function) {
+        let function = node.span.lo.0;
+        self.events.push(FlowEvent::FunctionMetadata {
+            function,
+            params: node
+                .params
+                .iter()
+                .map(|param| match &param.pat {
+                    Pat::Ident(binding) => Some(binding.id.to_id()),
+                    _ => None,
+                })
+                .collect(),
+            owner: self.owner,
+        });
+        let previous = self.current_function.replace(function);
+        node.visit_children_with(self);
+        self.current_function = previous;
+    }
+
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        let function = node.span.lo.0;
+        self.events.push(FlowEvent::FunctionMetadata {
+            function,
+            params: node
+                .params
+                .iter()
+                .map(|param| match param {
+                    Pat::Ident(binding) => Some(binding.id.to_id()),
+                    _ => None,
+                })
+                .collect(),
+            owner: self.owner,
+        });
+        let previous = self.current_function.replace(function);
+        if let ArrowFunctionBody::Expr(expr) = node.body.as_ref() {
+            self.events.push(FlowEvent::Return {
+                function,
+                value: FlowValueExpr::from_ast(expr),
+            });
+        }
+        node.visit_children_with(self);
+        self.current_function = previous;
+    }
+
+    fn visit_return_stmt(&mut self, node: &ReturnStmt) {
+        if let (Some(function), Some(value)) = (self.current_function, node.arg.as_deref()) {
+            self.events.push(FlowEvent::Return {
+                function,
+                value: FlowValueExpr::from_ast(value),
+            });
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee {
+            self.events.push(FlowEvent::Invoke {
+                callee: FlowValueExpr::from_ast(callee),
+                args: node
+                    .args
+                    .iter()
+                    .map(|arg| FlowValueExpr::from_ast(&arg.expr))
+                    .collect(),
+            });
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_new_expr(&mut self, node: &NewExpr) {
+        if let Some(args) = &node.args {
+            self.events.push(FlowEvent::Invoke {
+                callee: FlowValueExpr::from_ast(&node.callee),
+                args: args
+                    .iter()
+                    .map(|arg| FlowValueExpr::from_ast(&arg.expr))
+                    .collect(),
+            });
+        }
+        node.visit_children_with(self);
+    }
+}
+
+fn direct_callable_origin(expr: &Expr) -> Option<ValueOrigin> {
+    match expr.unwrap_parens() {
+        Expr::Fn(function) => Some(ValueOrigin::Function(function.function.span.lo.0)),
+        Expr::Arrow(arrow) => Some(ValueOrigin::Function(arrow.span.lo.0)),
+        Expr::Class(class) => Some(ValueOrigin::Class(class.class.span.lo.0)),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
+pub(crate) struct FlowWorkStats {
+    pub(crate) event_executions: usize,
+}
+
+struct FlowSolver {
+    flow: ChunkValueFlow,
+    events: Vec<FlowEvent>,
+    dependencies: Vec<BTreeSet<FlowDependency>>,
+    watchers: BTreeMap<FlowDependency, BTreeSet<usize>>,
+    pending: BTreeSet<(usize, usize)>,
+    scheduled_round: Vec<Option<usize>>,
+    round_zero_new_parameters: BTreeSet<u32>,
+    round_zero_had_fact_change: bool,
+    #[cfg(test)]
+    stats: FlowWorkStats,
+}
+
+impl FlowSolver {
+    fn with_event_slots(mut self) -> Self {
+        self.dependencies = vec![BTreeSet::new(); self.events.len()];
+        self.scheduled_round = vec![None; self.events.len()];
+        self
+    }
+
+    fn run(&mut self) {
+        for index in 0..self.events.len() {
+            self.run_event(index, 0, true);
+        }
+        // Legacy convergence only counted value-map merges, not params metadata.
+        if self.round_zero_had_fact_change {
+            let functions = std::mem::take(&mut self.round_zero_new_parameters);
+            for function in functions {
+                if let Some(watchers) = self.watchers.get(&FlowDependency::Parameters(function)) {
+                    let watchers: Vec<_> = watchers.iter().copied().collect();
+                    for watcher in watchers {
+                        self.schedule(watcher, 1);
+                    }
+                }
+            }
+        }
+        while let Some((round, index)) = self.pending.pop_first() {
+            self.scheduled_round[index] = None;
+            self.run_event(index, round, false);
+        }
+    }
+
+    fn run_event(&mut self, index: usize, round: usize, initial_sweep: bool) {
+        #[cfg(test)]
+        {
+            self.stats.event_executions += 1;
+        }
+
+        let event = self.events[index].clone();
+        let mut dependencies = BTreeSet::new();
+        let mut changed = BTreeSet::new();
+        match event {
+            FlowEvent::FunctionDeclaration { id, origin } => {
+                self.flow
+                    .canonical
+                    .entry(origin)
+                    .or_insert_with(|| id.clone());
+                self.merge_binding(id, BTreeSet::from([origin]), &mut changed);
+            }
+            FlowEvent::ClassDeclaration { id, origin, owner } => {
+                self.flow
+                    .canonical
+                    .entry(origin)
+                    .or_insert_with(|| id.clone());
+                self.flow.callable_owner.entry(origin).or_insert(owner);
+                self.merge_binding(id, BTreeSet::from([origin]), &mut changed);
+            }
+            FlowEvent::Variable {
+                id,
+                init,
+                canonical,
+            } => {
+                let values = self
+                    .flow
+                    .values_of_value_expr_tracking(&init, &mut dependencies);
+                if let Some(origin) = canonical
+                    && values.contains(&origin)
+                {
+                    self.flow
+                        .canonical
+                        .entry(origin)
+                        .or_insert_with(|| id.clone());
+                }
+                self.merge_binding(id, values, &mut changed);
+            }
+            FlowEvent::AssignBinding { id, right } => {
+                let values = self
+                    .flow
+                    .values_of_value_expr_tracking(&right, &mut dependencies);
+                self.merge_binding(id, values, &mut changed);
+            }
+            FlowEvent::AssignProperty {
+                object,
+                property,
+                right,
+            } => {
+                let values = self
+                    .flow
+                    .values_of_value_expr_tracking(&right, &mut dependencies);
+                let objects = self
+                    .flow
+                    .values_of_value_expr_tracking(&object, &mut dependencies);
+                for origin in objects {
+                    if let ValueOrigin::Object(object) = origin {
+                        self.merge_property(object, property.clone(), values.clone(), &mut changed);
+                    }
+                }
+            }
+            FlowEvent::WritePropertyExpr {
+                object,
+                property,
+                value,
+            } => {
+                let values = self
+                    .flow
+                    .values_of_value_expr_tracking(&value, &mut dependencies);
+                self.merge_property(object, property, values, &mut changed);
+            }
+            FlowEvent::WritePropertyBinding {
+                object,
+                property,
+                binding,
+            } => {
+                let values = self
+                    .flow
+                    .values_of_binding_tracking(&binding, &mut dependencies);
+                self.merge_property(object, property, values, &mut changed);
+            }
+            FlowEvent::WritePropertyValue {
+                object,
+                property,
+                value,
+            } => {
+                self.merge_property(object, property, BTreeSet::from([value]), &mut changed);
+            }
+            FlowEvent::FunctionMetadata {
+                function,
+                params,
+                owner,
+            } => {
+                if let std::collections::btree_map::Entry::Vacant(entry) =
+                    self.flow.params.entry(function)
+                {
+                    entry.insert(params);
+                    self.round_zero_new_parameters.insert(function);
+                }
+                self.flow
+                    .callable_owner
+                    .entry(ValueOrigin::Function(function))
+                    .or_insert(owner);
+            }
+            FlowEvent::Return { function, value } => {
+                let values = self
+                    .flow
+                    .values_of_value_expr_tracking(&value, &mut dependencies);
+                self.merge_return(function, values, &mut changed);
+            }
+            FlowEvent::Invoke { callee, args } => {
+                let targets = self
+                    .flow
+                    .values_of_value_expr_tracking(&callee, &mut dependencies);
+                for target in targets {
+                    let ValueOrigin::Function(function) = target else {
+                        continue;
+                    };
+                    let Some(params) = self.flow.params.get(&function).cloned() else {
+                        dependencies.insert(FlowDependency::Parameters(function));
+                        continue;
+                    };
+                    for (param, arg) in params.into_iter().zip(&args) {
+                        if let Some(param) = param {
+                            let values = self
+                                .flow
+                                .values_of_value_expr_tracking(arg, &mut dependencies);
+                            self.merge_binding(param, values, &mut changed);
+                        }
+                    }
+                }
+            }
+        }
+        if initial_sweep && !changed.is_empty() {
+            self.round_zero_had_fact_change = true;
+        }
+        self.record_event_dependencies(index, dependencies);
+        self.schedule_changed_events(index, round, initial_sweep, changed);
+    }
+
+    fn merge_binding(&mut self, id: Id, values: Values, changed: &mut BTreeSet<FlowDependency>) {
+        if self.flow.merge_binding(id.clone(), values) {
+            changed.insert(FlowDependency::Binding(id));
+        }
+    }
+
+    fn merge_property(
+        &mut self,
+        object: u32,
+        property: String,
+        values: Values,
+        changed: &mut BTreeSet<FlowDependency>,
+    ) {
+        if self.flow.merge_property(object, property.clone(), values) {
+            changed.insert(FlowDependency::Property(object, property));
+            changed.insert(FlowDependency::Properties(object));
+        }
+    }
+
+    fn merge_return(
+        &mut self,
+        function: u32,
+        values: Values,
+        changed: &mut BTreeSet<FlowDependency>,
+    ) {
+        if self.flow.merge_return(function, values) {
+            changed.insert(FlowDependency::Return(function));
+        }
+    }
+
+    fn record_event_dependencies(&mut self, index: usize, dependencies: BTreeSet<FlowDependency>) {
+        for dependency in dependencies {
+            if self.dependencies[index].insert(dependency.clone()) {
+                self.watchers.entry(dependency).or_default().insert(index);
+            }
+        }
+    }
+
+    fn schedule_changed_events(
+        &mut self,
+        index: usize,
+        round: usize,
+        initial_sweep: bool,
+        changed: BTreeSet<FlowDependency>,
+    ) {
+        // Preserve sweep timing: only later source-order events can run this round.
+        for dependency in changed {
+            let Some(watchers) = self.watchers.get(&dependency) else {
+                continue;
+            };
+            let watchers: Vec<_> = watchers.iter().copied().collect();
+            for watcher in watchers {
+                if initial_sweep && watcher > index {
+                    continue;
+                }
+                let next_round = if watcher > index {
+                    round
+                } else {
+                    round.checked_add(1).expect("value-flow round overflow")
+                };
+                self.schedule(watcher, next_round);
+            }
+        }
+    }
+
+    fn schedule(&mut self, index: usize, round: usize) {
+        if self.scheduled_round[index].is_some_and(|scheduled| scheduled <= round) {
+            return;
+        }
+        if let Some(scheduled) = self.scheduled_round[index].replace(round) {
+            self.pending.remove(&(scheduled, index));
+        }
+        self.pending.insert((round, index));
     }
 }
 
@@ -446,6 +1179,7 @@ fn object_prop(prop: &PropName) -> Option<String> {
     }
 }
 
+#[cfg(test)]
 struct FlowPass<'a> {
     flow: &'a mut ChunkValueFlow,
     changed: &'a mut bool,
@@ -453,6 +1187,7 @@ struct FlowPass<'a> {
     current_function: Option<u32>,
 }
 
+#[cfg(test)]
 impl FlowPass<'_> {
     fn merge_binding(&mut self, id: Id, values: Values) {
         *self.changed |= self.flow.merge_binding(id, values);
@@ -487,6 +1222,7 @@ impl FlowPass<'_> {
     }
 }
 
+#[cfg(test)]
 impl Visit for FlowPass<'_> {
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         let key = node.function.span.lo.0;

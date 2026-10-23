@@ -3,6 +3,7 @@
 //! preserve that result, even when a call crosses a parameter or `new`.
 
 use debundle_e2e_support::*;
+use std::fmt::Write as _;
 
 #[test]
 fn returned_closure_is_not_invoked_by_factory() {
@@ -744,4 +745,38 @@ export { a, b, foo, box, result };
         ),
         &["mod_a", "mod_b"],
     );
+}
+
+#[test]
+fn return_call_chain_through_parameters_recursion_and_property_fanout_preserves_output() {
+    const RETURN_DEPTH: usize = 64;
+    const PROPERTY_FANOUT: usize = 24;
+
+    let mut source = String::from("function base() { return 7; }\n");
+    for index in 0..RETURN_DEPTH {
+        writeln!(source, "function f{index}() {{ return f{}(); }}", index + 1).unwrap();
+    }
+    writeln!(source, "function f{RETURN_DEPTH}() {{ return base; }}").unwrap();
+    source.push_str(
+        "function apply(callback, depth) {\n\
+           if (depth > 0) return apply(callback, depth - 1);\n\
+           return callback();\n\
+         }\n\
+         const source = { run: f0 };\n",
+    );
+    for index in 0..PROPERTY_FANOUT {
+        writeln!(source, "const branch{index} = {{ run: source.run }};").unwrap();
+    }
+    writeln!(
+        source,
+        "const result = apply(branch{}.run, 2)();",
+        PROPERTY_FANOUT - 1
+    )
+    .unwrap();
+    source.push_str("console.log(result);\nexport { result };\n");
+
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
 }

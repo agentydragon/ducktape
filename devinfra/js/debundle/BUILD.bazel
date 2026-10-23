@@ -429,6 +429,7 @@ rust_library(
         "facts/statement_facts.rs",
         "facts/sync_effects.rs",
         "facts/value_flow.rs",
+        "facts/value_flow_tests.rs",
         "graph/build.rs",
         "graph/edge.rs",
         "graph/linker_order.rs",
