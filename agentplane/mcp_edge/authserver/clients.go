@@ -136,9 +136,11 @@ type registrationError struct {
 	Description string `json:"error_description"`
 }
 
-// normalize checks client metadata, registered or published, and fills in RFC 7591's defaults. A client may only
-// take the code flow and refresh, and only to redirect URIs a code can safely be sent to: https, http on a loopback
-// host, or a private-use scheme of a native app.
+// normalize checks client metadata, registered or published, and fills in RFC 7591's defaults. A client must take the
+// code flow, and only to redirect URIs a code can safely be sent to: https, http on a loopback host, or a private-use
+// scheme of a native app. Of its grant types it keeps the code flow and refresh: Claude's metadata document also lists
+// jwt-bearer, which this server does not serve, and a registration is answered with the grant types kept (RFC 7591
+// section 3.2.1).
 func normalize(metadata *oauthex.ClientRegistrationMetadata) *registrationError {
 	if len(metadata.RedirectURIs) == 0 {
 		return &registrationError{Code: "invalid_redirect_uri", Description: "redirect_uris is required"}
@@ -151,14 +153,15 @@ func normalize(metadata *oauthex.ClientRegistrationMetadata) *registrationError 
 	if len(metadata.GrantTypes) == 0 {
 		metadata.GrantTypes = []string{string(oidc.GrantTypeCode)}
 	}
+	metadata.GrantTypes = slices.DeleteFunc(metadata.GrantTypes, func(grant string) bool {
+		return grant != string(oidc.GrantTypeCode) && grant != string(oidc.GrantTypeRefreshToken)
+	})
 	if len(metadata.ResponseTypes) == 0 {
 		metadata.ResponseTypes = []string{string(oidc.ResponseTypeCode)}
 	}
 	switch {
-	case slices.ContainsFunc(metadata.GrantTypes, func(grant string) bool {
-		return grant != string(oidc.GrantTypeCode) && grant != string(oidc.GrantTypeRefreshToken)
-	}):
-		return &registrationError{Code: "invalid_client_metadata", Description: "grant_types may be authorization_code and refresh_token only"}
+	case !slices.Contains(metadata.GrantTypes, string(oidc.GrantTypeCode)):
+		return &registrationError{Code: "invalid_client_metadata", Description: "grant_types must include authorization_code"}
 	case slices.ContainsFunc(metadata.ResponseTypes, func(response string) bool { return response != string(oidc.ResponseTypeCode) }):
 		return &registrationError{Code: "invalid_client_metadata", Description: "response_types may be code only"}
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -65,13 +66,24 @@ func TestAMetadataDocumentClientIsRefusedUnlessItsDocumentDescribesIt(t *testing
 		"a script redirect URI beside the requested one": h.documentClient(t, "/test-script.json", func(d map[string]any) {
 			d["redirect_uris"] = []string{testRedirectURI, "javascript:alert(1)"}
 		}),
+		"a client without the code flow": h.documentClient(t, "/test-refresh-only.json", func(d map[string]any) {
+			d["grant_types"] = []string{"refresh_token"}
+		}),
 	} {
 		response, body := must2(h.load(h.authorizeURL(newRequest(clientID), nil)))(t)
 		wantRendered(t, what, response, body, "invalid_client")
 	}
-	location := must(h.follow(h.authorizeURL(newRequest(h.documentClient(t, "/test-client.json", nil)), nil)))(t)
-	if !strings.HasPrefix(location, consentPrefix) {
-		t.Errorf("a client its document describes was sent to %s, want consent", location)
+	for what, clientID := range map[string]string{
+		"a client its document describes": h.documentClient(t, "/test-client.json", nil),
+		// Claude's document lists jwt-bearer too.
+		"a client also listing a grant this server does not serve": h.documentClient(t, "/test-jwt-bearer.json",
+			func(d map[string]any) {
+				d["grant_types"] = []string{"authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"}
+			}),
+	} {
+		if location := must(h.follow(h.authorizeURL(newRequest(clientID), nil)))(t); !strings.HasPrefix(location, consentPrefix) {
+			t.Errorf("%s was sent to %s, want consent", what, location)
+		}
 	}
 }
 
@@ -108,7 +120,7 @@ func TestARegistrationIsRefusedMetadataTheServerCannotServe(t *testing.T) {
 		{"an https redirect URI with no host", map[string]any{"redirect_uris": []string{"https:///callback"}}, "invalid_redirect_uri"},
 		{"a redirect URI with a fragment", map[string]any{"redirect_uris": []string{"https://test-client.example/callback#test"}}, "invalid_redirect_uri"},
 		{"a relative redirect URI", map[string]any{"redirect_uris": []string{"/callback"}}, "invalid_redirect_uri"},
-		{"the client credentials grant", withRedirect(map[string]any{"grant_types": []string{"client_credentials"}}), "invalid_client_metadata"},
+		{"only the client credentials grant", withRedirect(map[string]any{"grant_types": []string{"client_credentials"}}), "invalid_client_metadata"},
 		{"the token response type", withRedirect(map[string]any{"response_types": []string{"token"}}), "invalid_client_metadata"},
 		{"metadata that is no object", "test-not-metadata", "invalid_client_metadata"},
 		{"metadata over the size limit", withRedirect(map[string]any{"client_name": strings.Repeat("x", maxDocumentBytes)}), "invalid_client_metadata"},
@@ -134,10 +146,12 @@ func TestARegistrationRegistersAPublicClientOfTheCodeFlow(t *testing.T) {
 			"https://test-client.example/callback", "http://localhost:8080/callback", "test.client:/callback",
 		},
 		"token_endpoint_auth_method": "client_secret_post",
+		"grant_types":                []string{"authorization_code", "client_credentials", "refresh_token"},
 	})
 	clientID, _ := answer["client_id"].(string)
 	if status != http.StatusCreated || clientID == "" || answer["client_secret"] != nil ||
-		answer["token_endpoint_auth_method"] != "none" {
+		answer["token_endpoint_auth_method"] != "none" ||
+		!reflect.DeepEqual(answer["grant_types"], []any{"authorization_code", "refresh_token"}) {
 		t.Fatalf("registration: %d %v", status, answer)
 	}
 	r := newRequest(clientID)
