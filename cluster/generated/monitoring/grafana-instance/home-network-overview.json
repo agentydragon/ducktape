@@ -783,7 +783,12 @@
           },
           "min": 0
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "gateway" },
+            "properties": [{ "id": "displayName", "value": "AT&T gateway (192.168.1.254)" }]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -837,7 +842,12 @@
           },
           "min": 0
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "gateway" },
+            "properties": [{ "id": "displayName", "value": "AT&T gateway (192.168.1.254)" }]
+          }
+        ]
       },
       "options": {
         "legend": {
