@@ -1316,7 +1316,7 @@
     {
       "id": 4,
       "title": "Node filesystem used now",
-      "description": "Ext4/XFS size minus filesystem free bytes on the selected machine. Free bytes include root-reserved blocks, so the reported used bytes exclude that reserve.",
+      "description": "Per-mount ext4/XFS data used from deduplicated per-device filesystem recordings. Repeated mounts, including bind mounts, are shown as detail rows; dashboard totals count each device once.",
       "type": "table",
       "gridPos": {
         "h": 9,
@@ -1340,7 +1340,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\",device!~\"/dev/drbd.*\"} - node_filesystem_free_bytes{fstype=~\"ext4|xfs\",device!=\"\",device!~\"/dev/drbd.*\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "expr": "sort_desc((disk_usage:filesystem_size_bytes{node=~\"$node\"} - on (node, device) disk_usage:filesystem_free_bytes{node=~\"$node\"}) * on (node, device) group_right disk_usage:mount:info{node=~\"$node\"})",
           "format": "table",
           "instant": true,
           "legendFormat": "{{node}} {{device}} {{mountpoint}}",
@@ -1362,8 +1362,8 @@
     },
     {
       "id": 5,
-      "title": "Largest node filesystems over time",
-      "description": "Ext4/XFS size minus filesystem free bytes on the selected machine. Free bytes include root-reserved blocks, so the reported used bytes exclude that reserve.",
+      "title": "Largest filesystem mounts over time",
+      "description": "Top ten ext4/XFS mounts by data used, joined from deduplicated per-device filesystem recordings. Repeated mounts can show the same underlying device; they are detail series, not additive capacity.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -1392,7 +1392,7 @@
       },
       "targets": [
         {
-          "expr": "topk(10, max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\",device!~\"/dev/drbd.*\"} - node_filesystem_free_bytes{fstype=~\"ext4|xfs\",device!=\"\",device!~\"/dev/drbd.*\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "expr": "topk(10, (disk_usage:filesystem_size_bytes{node=~\"$node\"} - on (node, device) disk_usage:filesystem_free_bytes{node=~\"$node\"}) * on (node, device) group_right disk_usage:mount:info{node=~\"$node\"})",
           "legendFormat": "{{node}} {{mountpoint}}",
           "refId": "A"
         }
