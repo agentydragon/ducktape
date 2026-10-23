@@ -29,6 +29,10 @@ _REGION = "topology.kubernetes.io/region"
 _TIER = "storage.allegedly.works/tier"
 _OVH_SSD = "local-path-ovh-ssd"
 _HOME_SSD = "local-path-home-ssd"
+# Flip only during the OptiPlex cutover, after writers are stopped and the old
+# PV directories have verified off-node copies. An empty nodePathMap entry then
+# denies new allocations from every local-path class, including legacy aliases.
+_OPTIPLEX_LOCAL_PATH_ENABLED = True
 # OVH's tier=ssd nodes are exactly its control planes. CNPG callers that use the OVH SSD
 # profile explicitly select its control-plane tolerance along with this class.
 
@@ -158,7 +162,7 @@ def chart(app: App) -> Chart:
                 *[_node_path(node, *paths) for node, paths in _OVH_NODE_PATHS.items()],
                 # Home Assistant is deliberately tied to the physical home LAN and the
                 # OptiPlex's radios. Keep its local state on this machine's SSD.
-                _node_path("optiplex", "/var/local-path-provisioner"),
+                _node_path("optiplex", *(["/var/local-path-provisioner"] if _OPTIPLEX_LOCAL_PATH_ENABLED else [])),
             ],
         },
     )

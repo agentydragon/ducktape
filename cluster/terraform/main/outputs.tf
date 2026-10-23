@@ -21,6 +21,11 @@ output "home_bare_metal_iso_url" {
   value       = data.talos_image_factory_urls.kimsufi.urls.iso
 }
 
+output "optiplex_drbd_installer_image" {
+  description = "Talos 1.14 DRBD installer for the OptiPlex maintenance upgrade; does not enable the storage layout"
+  value       = local.drbd_canary_installer_image
+}
+
 output "optiplex_worker_machine_configuration" {
   description = "Generated Talos worker configuration for the home OptiPlex"
   value       = data.talos_machine_configuration.home_worker["optiplex"].machine_configuration

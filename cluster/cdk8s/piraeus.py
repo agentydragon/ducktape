@@ -43,6 +43,8 @@ _NEXT_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "
 _NEXT_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"
 _THIRD_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns104963"}
 _THIRD_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"
+_OPTIPLEX_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "optiplex"}
+_OPTIPLEX_DATA_DEVICE = "/dev/disk/by-partlabel/r-piraeus"
 _CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
 _REACTOR_CONFIG_PATCH = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-reactor-patch.yaml")).read_text()
 _DRBD_ALLOY_CONFIG = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-drbd-metrics.alloy")).read_text()
@@ -299,6 +301,15 @@ def cluster_chart(app: App) -> Chart:
         storage_pool="ssd",
         name="piraeus-lvm-metrics-ovh-ns104963",
     )
+    piraeus_metrics.add_thin_pool_monitoring(
+        Construct(chart, "optiplex-metrics"),
+        namespace=NAMESPACE,
+        node_selector=_OPTIPLEX_SELECTOR,
+        volume_group=_FIRST_NODE_VOLUME_GROUP,
+        thin_pool=_FIRST_NODE_THIN_POOL,
+        storage_pool="ssd",
+        name="piraeus-lvm-metrics-optiplex",
+    )
     repository = oci_helm_repository(
         chart, "piraeus-charts", "flux-system", url="oci://ghcr.io/piraeusdatastore/helm-charts"
     )
@@ -415,6 +426,26 @@ def cluster_chart(app: App) -> Chart:
                                 "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
                             },
                             "source": {"hostDevices": [_THIRD_NODE_DATA_DEVICE]},
+                        }
+                    ],
+                },
+                {
+                    "name": "ssd-optiplex",
+                    # The raw partition is Talos-owned. This selector remains inert
+                    # until its parent disk and 112GiB size are verified after reimage.
+                    "nodeSelector": _OPTIPLEX_SELECTOR,
+                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
+                    "deletionPolicy": "Retain",
+                    "storagePools": [
+                        {
+                            "name": "ssd",
+                            "lvmThinPool": {
+                                "volumeGroup": _FIRST_NODE_VOLUME_GROUP,
+                                "thinPool": _FIRST_NODE_THIN_POOL,
+                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+                            },
+                            "source": {"hostDevices": [_OPTIPLEX_DATA_DEVICE]},
                         }
                     ],
                 },
