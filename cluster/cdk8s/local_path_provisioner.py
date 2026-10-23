@@ -39,7 +39,8 @@ _OPTIPLEX_LOCAL_PATH_ENABLED = False
 # OVH classes opt into these dedicated paths; unlisted nodes must not use the
 # provisioner's default system-disk path. Empty paths also deny provisioning.
 _OVH_NODE_PATHS = {
-    "ovh-ns103656": ["/var/mnt/local-path-ovh-hdd/local-path"],
+    # The HDD is reserved for the inert Piraeus pool configuration and later conversion.
+    "ovh-ns103656": [],
     "ovh-ns103711": ["/var/mnt/local-path-ovh-hdd/local-path"],
     "ovh-ns102453": ["/var/mnt/local-path-ovh-hdd/local-path"],
     # Evacuated legacy claims stay readable; deny fresh allocations before cutover.

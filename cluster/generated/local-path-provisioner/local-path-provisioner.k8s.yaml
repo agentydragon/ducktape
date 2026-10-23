@@ -43,8 +43,7 @@ spec:
         paths:
           - /var/local-path-provisioner
       - node: ovh-ns103656
-        paths:
-          - /var/mnt/local-path-ovh-hdd/local-path
+        paths: []
       - node: ovh-ns103711
         paths:
           - /var/mnt/local-path-ovh-hdd/local-path
@@ -73,7 +72,6 @@ allowedTopologies:
           - hil-ovh
       - key: kubernetes.io/hostname
         values:
-          - ovh-ns103656
           - ovh-ns103711
           - ovh-ns102453
       - key: storage.allegedly.works/tier
@@ -94,7 +92,6 @@ allowedTopologies:
           - hil-ovh
       - key: kubernetes.io/hostname
         values:
-          - ovh-ns103656
           - ovh-ns103711
           - ovh-ns102453
       - key: storage.allegedly.works/tier
@@ -115,7 +112,6 @@ allowedTopologies:
           - hil-ovh
       - key: kubernetes.io/hostname
         values:
-          - ovh-ns103656
           - ovh-ns103711
           - ovh-ns102453
       - key: storage.allegedly.works/tier
@@ -136,7 +132,6 @@ allowedTopologies:
           - hil-ovh
       - key: kubernetes.io/hostname
         values:
-          - ovh-ns103656
           - ovh-ns103711
           - ovh-ns102453
       - key: storage.allegedly.works/tier

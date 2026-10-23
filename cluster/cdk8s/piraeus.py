@@ -1,4 +1,4 @@
-"""Piraeus Operator with file-backed canaries and a local SSD pool."""
+"""Piraeus Operator with file-backed canaries and local SSD and HDD pools."""
 
 from __future__ import annotations
 
@@ -39,6 +39,9 @@ _FIRST_NODE_VOLUME_GROUP = "piraeus_ssd"
 _FIRST_NODE_THIN_POOL = "data"
 _FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns1001419"}
 _FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_1951A3449505"
+_HDD_VOLUME_GROUP = "piraeus_hdd"
+_HDD_FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns103656"}
+_HDD_FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"
 _NEXT_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns104952"}
 _NEXT_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"
 _THIRD_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns104963"}
@@ -302,6 +305,15 @@ def cluster_chart(app: App) -> Chart:
         name="piraeus-lvm-metrics-ovh-ns104963",
     )
     piraeus_metrics.add_thin_pool_monitoring(
+        Construct(chart, "hdd-first-node-metrics"),
+        namespace=NAMESPACE,
+        node_selector=_HDD_FIRST_NODE_SELECTOR,
+        volume_group=_HDD_VOLUME_GROUP,
+        thin_pool=_FIRST_NODE_THIN_POOL,
+        storage_pool="hdd",
+        name="piraeus-lvm-metrics-ovh-ns103656",
+    )
+    piraeus_metrics.add_thin_pool_monitoring(
         Construct(chart, "optiplex-metrics"),
         namespace=NAMESPACE,
         node_selector=_OPTIPLEX_SELECTOR,
@@ -449,6 +461,26 @@ def cluster_chart(app: App) -> Chart:
                         }
                     ],
                 },
+                {
+                    "name": "hdd-ovh-ns103656",
+                    # This remains inert until the operator enables piraeus-ready after
+                    # the worker's HDD has been wiped and its physical acceptance is complete.
+                    "nodeSelector": _HDD_FIRST_NODE_SELECTOR,
+                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
+                    "deletionPolicy": "Retain",
+                    "storagePools": [
+                        {
+                            "name": "hdd",
+                            "lvmThinPool": {
+                                "volumeGroup": _HDD_VOLUME_GROUP,
+                                "thinPool": _FIRST_NODE_THIN_POOL,
+                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+                            },
+                            "source": {"hostDevices": [_HDD_FIRST_NODE_DATA_DEVICE]},
+                        }
+                    ],
+                },
             ],
             "storageClasses": [
                 {
@@ -469,6 +501,17 @@ def cluster_chart(app: App) -> Chart:
                     "allowVolumeExpansion": True,
                     "parameters": {
                         "linstor.csi.linbit.com/storagePool": "ssd",
+                        "linstor.csi.linbit.com/placementCount": "1",
+                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
+                    },
+                },
+                {
+                    "name": "piraeus-hdd-local",
+                    "reclaimPolicy": "Retain",
+                    "volumeBindingMode": "WaitForFirstConsumer",
+                    "allowVolumeExpansion": True,
+                    "parameters": {
+                        "linstor.csi.linbit.com/storagePool": "hdd",
                         "linstor.csi.linbit.com/placementCount": "1",
                         "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
                     },

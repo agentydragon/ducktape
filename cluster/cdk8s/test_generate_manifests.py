@@ -125,7 +125,9 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert cluster["highAvailabilityController"] == {"enabled": False}
     assert cluster["nfsServer"] == {"enabled": False}
 
-    satellite, ssd_satellite, next_ssd_satellite, third_ssd_satellite, _ = values["linstorSatelliteConfigurations"]
+    satellite, ssd_satellite, next_ssd_satellite, third_ssd_satellite, optiplex_satellite, hdd_satellite = values[
+        "linstorSatelliteConfigurations"
+    ]
     assert satellite["nodeSelector"] == canary_selector
     assert satellite["deletionPolicy"] == "Retain"
     [pool] = satellite["storagePools"]
@@ -183,7 +185,26 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         "source": {"hostDevices": ["/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"]},
     }
 
-    storage_class, ssd_class = values["storageClasses"]
+    assert hdd_satellite["name"] == "hdd-ovh-ns103656"
+    assert hdd_satellite["nodeSelector"] == {
+        "storage.allegedly.works/piraeus-ready": "true",
+        "kubernetes.io/hostname": "ovh-ns103656",
+    }
+    assert hdd_satellite["deletionPolicy"] == "Retain"
+    assert hdd_satellite["podTemplate"] == optiplex_satellite["podTemplate"] == ssd_satellite["podTemplate"]
+    assert hdd_satellite["patches"] == ssd_satellite["patches"]
+    [hdd_pool] = hdd_satellite["storagePools"]
+    assert hdd_pool == {
+        "name": "hdd",
+        "lvmThinPool": {
+            "volumeGroup": "piraeus_hdd",
+            "thinPool": "data",
+            "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+        },
+        "source": {"hostDevices": ["/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"]},
+    }
+
+    storage_class, ssd_class, hdd_class = values["storageClasses"]
     assert storage_class["name"] == "local-canary"
     assert storage_class["reclaimPolicy"] == "Retain"
     assert storage_class["volumeBindingMode"] == "WaitForFirstConsumer"
@@ -198,6 +219,11 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         **storage_class,
         "name": "piraeus-ssd-local",
         "parameters": {**storage_class["parameters"], "linstor.csi.linbit.com/storagePool": "ssd"},
+    }
+    assert hdd_class == {
+        **storage_class,
+        "name": "piraeus-hdd-local",
+        "parameters": {**storage_class["parameters"], "linstor.csi.linbit.com/storagePool": "hdd"},
     }
 
     operator_flux = next(
