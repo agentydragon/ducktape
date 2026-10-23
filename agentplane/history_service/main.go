@@ -213,6 +213,9 @@ func serve(ctx context.Context, c config, reviews auth.TokenReviews, listener, i
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	// Open watches end with reconnect_required rather than holding the shutdown until their leases.
 	service.Drain()
+	// Let the fold hand back its leases while in-flight RPCs finish draining. Committed ingress history
+	// remains available for the next fold even when it has not yet been projected.
+	stopFold()
 	stopped := make(chan struct{})
 	go func() {
 		defer close(stopped)
@@ -227,7 +230,6 @@ func serve(ctx context.Context, c config, reviews auth.TokenReviews, listener, i
 		server.Stop()
 		ingressServer.Stop()
 	}
-	stopFold()
 	<-folded
 	return result
 }

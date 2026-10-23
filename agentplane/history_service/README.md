@@ -17,6 +17,11 @@ Runners keep their harnesses running and every journal entry on their state volu
 backlog once the ingress answers again; nothing is lost while the History Service is away, only
 late. Sender-facing commands remain in the Session Dispatcher and reach runners through the Gateway's
 runner proxy; the Runner Gateway does not call this service.
+
+During shutdown the fold stops and hands back its leases while existing ingress calls drain. Entries
+already acknowledged remain committed in raw history, and a restarted fold projects any remaining
+history from its checkpoint.
+
 What waits: the app's Thread reads and command retries, Notification Service deliveries, and
 Sandbox teardown, which deletes nothing until the ingress has acknowledged every seal. Each of those
 services' README says how. The Action Service, egress proxy, Policy Controller and LLM ingress do
