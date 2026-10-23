@@ -2,7 +2,7 @@
 //! deliberately separate: returning a closure never executes that closure.
 
 use super::statement_facts::SynchronousCalls;
-use super::value_flow::static_prop;
+use super::value_flow::{Values as FlowValues, static_prop};
 use super::*;
 
 type Values = BTreeSet<AbstractValue>;
@@ -719,7 +719,7 @@ impl Visit for ExecutionIndex {
     }
 }
 
-fn from_flow(values: BTreeSet<ValueOrigin>) -> Values {
+fn from_flow(values: FlowValues) -> Values {
     values
         .into_iter()
         .map(|value| match value {

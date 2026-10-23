@@ -276,3 +276,80 @@ fn later_alias_values_grow_recursive_callee_sets() {
             >= 2
     );
 }
+
+#[test]
+fn borrowed_value_merges_match_reference_for_overlapping_call_and_property_sets() {
+    let flow = assert_matches_reference(
+        r#"
+function relay(callback) { return callback || callback || globalThis; }
+function leaf0() {}
+function leaf1() {}
+function leaf2() {}
+function leaf3() {}
+function leaf4() {}
+function leaf5() {}
+function leaf6() {}
+function leaf7() {}
+
+const wide = leaf0 || leaf1 || leaf2 || leaf3 || leaf4 || leaf5 || leaf6 || leaf7;
+const overlap = wide || leaf0 || leaf3 || globalThis;
+const box = { primary: wide, secondary: overlap };
+const before_write = box.later;
+box.later = overlap;
+const first = relay(before_write || box.primary || globalThis);
+const alias = first || box.secondary || box.later;
+const second = relay(alias || box.primary || globalThis);
+"#,
+    );
+
+    let wide_values = flow.values_of_binding(&id("wide"));
+    assert_eq!(
+        wide_values
+            .iter()
+            .filter(|value| matches!(value, ValueOrigin::Function(_)))
+            .count(),
+        8,
+    );
+    assert!(
+        flow.values_of_binding(&id("overlap"))
+            .contains(&ValueOrigin::Unknown)
+    );
+
+    for name in ["first", "alias", "second"] {
+        let values = flow.values_of_binding(&id(name));
+        assert!(
+            values.contains(&ValueOrigin::Unknown),
+            "{name} lost Unknown"
+        );
+        assert!(
+            values
+                .iter()
+                .filter(|value| matches!(value, ValueOrigin::Function(_)))
+                .count()
+                >= 8,
+            "{name} lost part of the wide function set",
+        );
+    }
+
+    let [ValueOrigin::Object(box_origin)] = flow
+        .values_of_binding(&id("box"))
+        .iter()
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("box should have exactly one object identity");
+    };
+    for property in ["primary", "secondary", "later"] {
+        let values = flow
+            .values_of_property(box_origin, property)
+            .unwrap_or_else(|| panic!("missing static property {property}"));
+        assert!(values.contains(&ValueOrigin::Unknown) || property == "primary");
+        assert!(
+            values
+                .iter()
+                .filter(|value| matches!(value, ValueOrigin::Function(_)))
+                .count()
+                >= 8,
+            "property {property} lost part of the wide function set",
+        );
+    }
+}
