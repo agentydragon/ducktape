@@ -103,6 +103,7 @@ py_library(
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:container_logs",
+        "//util/testing:tcp_relay",
         "@pypi//cryptography",
         "@pypi//h2",
         "@pypi//httpx",
@@ -295,5 +296,21 @@ py_library(
         "//agentplane/egress:resources",
         "//agentplane/runner:harness",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_http2_ingress",
+    srcs = ["test_http2_ingress.py"],
+    requires_docker = True,
+    deps = [
+        ":http2_proxy",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//util/testing:asgi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )
