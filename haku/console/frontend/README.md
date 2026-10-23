@@ -1,7 +1,8 @@
 # haku/console/frontend — dashboard SPA
 
-React 18 + Mantine v7 + Tailwind v4 SPA, esbuild-bundled, one `ts_library` per file, modeled on
-`finance/augur/frontend` (root `//:node_modules/*`; no per-package `package.json`). Production
+React + Mantine + Tailwind SPA, esbuild-bundled, one `ts_library` per file, modeled on
+`finance/augur/frontend` (dependencies in the root [`package.json`](../../../package.json),
+`//:node_modules/*`; no per-package `package.json`). Production
 serves the fingerprinted bundle from the baked `haku-console-static` nginx image with
 route-specific cache headers.
 
