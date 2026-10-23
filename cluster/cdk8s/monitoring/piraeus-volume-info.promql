@@ -1,0 +1,28 @@
+(
+  max by (resource, persistentvolume) (
+    label_replace(
+      kube_persistentvolume_info{csi_driver="linstor.csi.linbit.com",csi_volume_handle!=""},
+      "resource", "$1", "csi_volume_handle", "(.+)"
+    )
+  )
+  * on (persistentvolume) group_left (namespace, persistentvolumeclaim, phase)
+    (
+      max by (persistentvolume, namespace, persistentvolumeclaim) (
+        label_replace(label_replace(
+          kube_persistentvolume_claim_ref,
+          "namespace", "$1", "claim_namespace", "(.+)"),
+          "persistentvolumeclaim", "$1", "name", "(.+)")
+      )
+      * on (persistentvolume) group_left (phase)
+        max by (persistentvolume, phase) (kube_persistentvolume_status_phase == 1)
+    )
+)
+or on (resource)
+max by (resource, persistentvolume) (
+  label_replace(
+    kube_persistentvolume_info{csi_driver="linstor.csi.linbit.com",csi_volume_handle!=""},
+    "resource", "$1", "csi_volume_handle", "(.+)"
+  )
+)
+* on (persistentvolume) group_left (phase)
+  max by (persistentvolume, phase) (kube_persistentvolume_status_phase == 1)

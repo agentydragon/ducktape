@@ -243,6 +243,8 @@ py_library(
         "kube-node-unreachable-warning.promql",
         "kube-pod-not-ready-warning.promql",
         "kubelet-instance-unreachable-warning.promql",
+        "piraeus-volume-capacity.promql",
+        "piraeus-volume-info.promql",
         "postgres-disk-usage.promql",
         "pvc-disk-usage.promql",
         "seaweedfs-deleted-disk-usage.promql",
