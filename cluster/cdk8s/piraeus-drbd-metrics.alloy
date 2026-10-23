@@ -7,7 +7,9 @@ prometheus.remote_write "mimir" {
   }
 
   wal {
-    max_keepalive_time = "720h"
+    // This collector has one 60s target per Piraeus node. A short WAL retention is
+    // enough for brief gateway outages. The pod bounds WAL storage at 512Mi.
+    max_keepalive_time = "2h"
   }
 }
 

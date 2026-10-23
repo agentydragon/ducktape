@@ -177,7 +177,7 @@ def cluster_chart(app: App) -> Chart:
                         ),
                         k8s.Volume(
                             name="storage",
-                            empty_dir=k8s.EmptyDirVolumeSource(size_limit=k8s.Quantity.from_string("128Mi")),
+                            empty_dir=k8s.EmptyDirVolumeSource(size_limit=k8s.Quantity.from_string("512Mi")),
                         ),
                         k8s.Volume(
                             name="tmp", empty_dir=k8s.EmptyDirVolumeSource(size_limit=k8s.Quantity.from_string("16Mi"))
@@ -218,10 +218,12 @@ def cluster_chart(app: App) -> Chart:
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),
                                     "memory": k8s.Quantity.from_string("64Mi"),
+                                    "ephemeral-storage": k8s.Quantity.from_string("64Mi"),
                                 },
                                 limits={
                                     "cpu": k8s.Quantity.from_string("250m"),
                                     "memory": k8s.Quantity.from_string("128Mi"),
+                                    "ephemeral-storage": k8s.Quantity.from_string("640Mi"),
                                 },
                             ),
                             volume_mounts=[
