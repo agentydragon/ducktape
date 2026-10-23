@@ -82,10 +82,15 @@ have not started.
 The accepted overcommit policy and issue trigger remain in the
 [runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
 
-The next planned storage move is ClickHouse Keeper replicas 1 and 2 to retained
-`piraeus-ssd-local` claims. Hold the ClickHouse Flux owner during serial cold
-copies, preserve replica names and IDs, and verify quorum after each member.
-Replica 0 stays untouched; the copies have not started.
+ClickHouse Keeper replicas 1 and 2 were cold-copied serially to retained
+`piraeus-ssd-local` claims on `ovh-ns1001419` and `ovh-ns104952`. Full data and
+metadata matched, Raft identities and DNS stayed unchanged, and quorum remained
+healthy with the two survivor Pod UIDs and restart counts preserved. Member 2
+resynced followers after each copy; all 17 ClickHouse tables were healthy and
+both queue counts were zero. The old HDD claims remain bound with `Retain`,
+replica 0 remains on `ovh-ns104963`, and temporary helpers are removed. Keep the
+ClickHouse Flux owner held until [PR #11733](https://github.com/agentydragon/ducktape/pull/11733)
+is merged.
 
 ## Evidence map
 
