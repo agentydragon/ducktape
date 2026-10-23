@@ -104,6 +104,14 @@ primary Pod and stored `cnpg.io/podSpec`. The old secondary files remain on
 metadata remains. This work did not authorize a wipe; all temporary Cluster
 holds were removed after acceptance.
 
+`ovh-ns103711` remains cordoned for reimage. The user waived preservation of
+SeaweedFS source copies on its old HDD volume after verifying healthy survivors,
+and the Anki claim. Grocy must be preserved via VolSync, and ClickHouse may
+temporarily run with its healthy off-node data
+replica. The new Piraeus HDD selector requires `piraeus-ready=true`; keep that
+label absent and leave the disk uninitialized until the wipe and physical
+layout are accepted.
+
 ## Evidence map
 
 | Folder                                    | Contents                                                                                 |

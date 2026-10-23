@@ -125,9 +125,15 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert cluster["highAvailabilityController"] == {"enabled": False}
     assert cluster["nfsServer"] == {"enabled": False}
 
-    satellite, ssd_satellite, next_ssd_satellite, third_ssd_satellite, optiplex_satellite, hdd_satellite = values[
-        "linstorSatelliteConfigurations"
-    ]
+    (
+        satellite,
+        ssd_satellite,
+        next_ssd_satellite,
+        third_ssd_satellite,
+        optiplex_satellite,
+        hdd_satellite,
+        _next_hdd_satellite,
+    ) = values["linstorSatelliteConfigurations"]
     assert satellite["nodeSelector"] == canary_selector
     assert satellite["deletionPolicy"] == "Retain"
     [pool] = satellite["storagePools"]

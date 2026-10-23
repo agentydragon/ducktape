@@ -41,7 +41,8 @@ _OPTIPLEX_LOCAL_PATH_ENABLED = False
 _OVH_NODE_PATHS = {
     # The HDD is reserved for the inert Piraeus pool configuration and later conversion.
     "ovh-ns103656": [],
-    "ovh-ns103711": ["/var/mnt/local-path-ovh-hdd/local-path"],
+    # Keep old local PVs readable during evacuation; deny new HDD claims before reimage.
+    "ovh-ns103711": [],
     "ovh-ns102453": ["/var/mnt/local-path-ovh-hdd/local-path"],
     # Evacuated legacy claims stay readable; deny fresh allocations before cutover.
     "ovh-ns104952": [],
