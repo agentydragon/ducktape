@@ -56,7 +56,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
         },
         "overrides": []
       },
@@ -91,7 +95,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
         },
         "overrides": []
       },
@@ -139,7 +147,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
         },
         "overrides": []
       },
@@ -174,7 +186,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
         },
         "overrides": []
       },
@@ -209,7 +225,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
         },
         "overrides": []
       },
@@ -244,7 +264,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
         },
         "overrides": []
       },
@@ -279,7 +303,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
         },
         "overrides": []
       },
@@ -314,7 +342,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit"
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
         },
         "overrides": []
       },
@@ -343,20 +375,85 @@
       "targets": [
         {
           "expr": "disk_usage:pool_used_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} used",
+          "legendFormat": "{{node}} \u00b7 {{storage_pool}} used",
           "refId": "A"
         },
         {
           "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} capacity",
+          "legendFormat": "{{node}} \u00b7 {{storage_pool}} capacity",
           "refId": "B"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ovh-ns1001419 \u00b7 .* used$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ovh-ns104952 \u00b7 .* used$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#B877D9"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ovh-ns104963 \u00b7 .* used$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#6ED0E0"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^.* capacity$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8e8e8e"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -386,20 +483,85 @@
       "targets": [
         {
           "expr": "disk_usage:pool_committed_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} copy limits",
+          "legendFormat": "{{node}} \u00b7 {{storage_pool}} copy limits",
           "refId": "A"
         },
         {
           "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} capacity",
+          "legendFormat": "{{node}} \u00b7 {{storage_pool}} capacity",
           "refId": "B"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ovh-ns1001419 \u00b7 .* copy limits$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ovh-ns104952 \u00b7 .* copy limits$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#B877D9"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ovh-ns104963 \u00b7 .* copy limits$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#6ED0E0"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^.* capacity$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8e8e8e"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -465,6 +627,138 @@
         }
       ],
       "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {},
+          "filter": {
+            "id": "byRefId",
+            "options": "/^A$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": ["Time", "node", "storage_pool", "Value #A"]
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "/^A$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "labelsToFields",
+          "options": {},
+          "filter": {
+            "id": "byRefId",
+            "options": "/^B$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": ["Time", "node", "storage_pool", "Value #B"]
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "/^B$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "labelsToFields",
+          "options": {},
+          "filter": {
+            "id": "byRefId",
+            "options": "/^C$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": ["Time", "node", "storage_pool", "Value #C"]
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "/^C$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "labelsToFields",
+          "options": {},
+          "filter": {
+            "id": "byRefId",
+            "options": "/^D$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": ["Time", "node", "storage_pool", "Value #D"]
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "/^D$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "labelsToFields",
+          "options": {},
+          "filter": {
+            "id": "byRefId",
+            "options": "/^E$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": ["Time", "node", "storage_pool", "Value #E"]
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "/^E$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "labelsToFields",
+          "options": {},
+          "filter": {
+            "id": "byRefId",
+            "options": "/^F$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": ["Time", "node", "storage_pool", "Value #F"]
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "/^F$/"
+          },
+          "topic": "series"
+        },
         {
           "id": "merge",
           "options": {}
@@ -556,22 +850,23 @@
     },
     {
       "id": 36,
-      "title": "Estimated allocation per diskful copy",
-      "description": "Per-copy allocation estimates on each Piraeus storage node. Resource and PV phase labels keep retained or unidentified copies visible. These estimates are not a decomposition of pool physical use.",
+      "title": "15 largest estimated diskful copy allocations",
+      "description": "Top 15 per-copy allocation estimates on selected Piraeus storage nodes. Labels show namespace/PVC, node/pool, and PV phase; copies without a PVC use the LINSTOR resource name. These estimates are not a decomposition of pool physical use.",
       "type": "barchart",
       "gridPos": {
         "h": 12,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 36
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\"}), \"copy\", \" · \", \"node\", \"storage_pool\", \"phase\", \"resource\", \"persistentvolume\", \"namespace\", \"persistentvolumeclaim\")",
+          "expr": "topk(15, (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", persistentvolumeclaim!=\"\"}), \"copy\", \"/\", \"namespace\", \"persistentvolumeclaim\"), \"location\", \"/\", \"node\", \"storage_pool\"), \"copy\", \" \u00b7 \", \"copy\", \"location\", \"phase\")) or (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", persistentvolumeclaim=\"\"}), \"copy\", \"/\", \"namespace\", \"resource\"), \"location\", \"/\", \"node\", \"storage_pool\"), \"copy\", \" \u00b7 \", \"copy\", \"location\", \"phase\")))",
           "format": "table",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{copy}}"
         }
       ],
       "fieldConfig": {
@@ -579,7 +874,8 @@
           "unit": "bytes",
           "min": 0,
           "color": {
-            "mode": "palette-classic"
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
           },
           "custom": {
             "fillOpacity": 85,
@@ -614,13 +910,13 @@
     {
       "id": 37,
       "title": "Diskful copy allocation estimates and PV limits",
-      "description": "One row per storage-node copy, including resources without a current PVC identity. Estimated allocation and PV capacity limit are separate values; phase distinguishes Bound, Released, and Available PVs.",
+      "description": "One row per storage-node copy, including retained or unmounted resources without a current PVC identity. Estimated allocation and PV capacity limit are separate values; PV phase distinguishes Bound, Released, and Available copies.",
       "type": "table",
       "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 12,
-        "y": 36
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 48
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -639,6 +935,70 @@
       ],
       "transformations": [
         {
+          "id": "labelsToFields",
+          "options": {},
+          "filter": {
+            "id": "byRefId",
+            "options": "/^A$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "Time",
+                "node",
+                "storage_pool",
+                "phase",
+                "resource",
+                "persistentvolume",
+                "namespace",
+                "persistentvolumeclaim",
+                "Value #A"
+              ]
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "/^A$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "labelsToFields",
+          "options": {},
+          "filter": {
+            "id": "byRefId",
+            "options": "/^B$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "Time",
+                "node",
+                "storage_pool",
+                "phase",
+                "resource",
+                "persistentvolume",
+                "namespace",
+                "persistentvolumeclaim",
+                "Value #B"
+              ]
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "/^B$/"
+          },
+          "topic": "series"
+        },
+        {
           "id": "merge",
           "options": {}
         },
@@ -651,24 +1011,24 @@
             "indexByName": {
               "node": 0,
               "storage_pool": 1,
-              "phase": 2,
-              "resource": 3,
-              "persistentvolume": 4,
-              "namespace": 5,
-              "persistentvolumeclaim": 6,
-              "Value #A": 7,
-              "Value #B": 8
+              "namespace": 2,
+              "persistentvolumeclaim": 3,
+              "Value #A": 4,
+              "Value #B": 5,
+              "phase": 6,
+              "resource": 7,
+              "persistentvolume": 8
             },
             "renameByName": {
               "node": "Storage node",
               "storage_pool": "Pool",
-              "phase": "PV phase",
-              "resource": "LINSTOR resource",
-              "persistentvolume": "PV",
               "namespace": "Namespace",
               "persistentvolumeclaim": "PVC",
               "Value #A": "Estimated allocated bytes",
-              "Value #B": "PV capacity limit"
+              "Value #B": "PV capacity limit",
+              "phase": "PV phase",
+              "resource": "LINSTOR resource",
+              "persistentvolume": "PV"
             }
           }
         },
@@ -708,7 +1068,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 62
       },
       "panels": []
     },
@@ -721,7 +1081,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 63
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -745,6 +1105,72 @@
         }
       ],
       "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {},
+          "filter": {
+            "id": "byRefId",
+            "options": "/^A$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": ["Time", "namespace", "persistentvolumeclaim", "node", "Value #A"]
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "/^A$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "labelsToFields",
+          "options": {},
+          "filter": {
+            "id": "byRefId",
+            "options": "/^B$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": ["Time", "namespace", "persistentvolumeclaim", "node", "Value #B"]
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "/^B$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "labelsToFields",
+          "options": {},
+          "filter": {
+            "id": "byRefId",
+            "options": "/^C$/"
+          },
+          "topic": "series"
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": ["Time", "namespace", "persistentvolumeclaim", "node", "Value #C"]
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "/^C$/"
+          },
+          "topic": "series"
+        },
         {
           "id": "merge",
           "options": {}
@@ -925,7 +1351,7 @@
     {
       "id": 23,
       "type": "row",
-      "title": "Selected machines · ext4/XFS filesystem attribution",
+      "title": "Selected machines \u00b7 ext4/XFS filesystem attribution",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -949,7 +1375,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "label_join((sum by (node, device, component) (disk_usage:component_used_bytes{node=~\"$node\"}) or label_replace(disk_usage:unattributed_bytes{node=~\"$node\"}, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes{node=~\"$node\"} - disk_usage:filesystem_avail_bytes{node=~\"$node\"}, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes{node=~\"$node\"}, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~\"$node\"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~\"$node\"}), \"disk\", \" · \", \"node\", \"device\", \"mountpoint\", \"media\")",
+          "expr": "label_join((sum by (node, device, component) (disk_usage:component_used_bytes{node=~\"$node\"}) or label_replace(disk_usage:unattributed_bytes{node=~\"$node\"}, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes{node=~\"$node\"} - disk_usage:filesystem_avail_bytes{node=~\"$node\"}, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes{node=~\"$node\"}, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~\"$node\"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~\"$node\"}), \"disk\", \" \u00b7 \", \"node\", \"device\", \"mountpoint\", \"media\")",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -1225,7 +1651,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sort_desc(label_join(disk_usage:unattributed_bytes{node=~\"$node\"} * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~\"$node\"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~\"$node\"}), \"disk\", \" · \", \"node\", \"device\", \"mountpoint\", \"media\"))",
+          "expr": "sort_desc(label_join(disk_usage:unattributed_bytes{node=~\"$node\"} * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~\"$node\"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~\"$node\"}), \"disk\", \" \u00b7 \", \"node\", \"device\", \"mountpoint\", \"media\"))",
           "instant": true,
           "legendFormat": "{{disk}}",
           "refId": "A"
