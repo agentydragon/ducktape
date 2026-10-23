@@ -48,17 +48,38 @@ type Options struct {
 // context, which carries the verified auth.TokenInfo, and attach no credential of their own. Cross-origin browser
 // requests are refused, and go-sdk's DNS-rebinding protection guards a loopback listener.
 func NewHandler(core pb.ActionServiceClient, verifier auth.TokenVerifier, options Options) http.Handler {
-	server := newServer(&tools{
+	if options.Logger == nil {
+		options.Logger = slog.Default()
+	}
+	t := &tools{
 		core:              core,
 		maxWaitSeconds:    options.MaxWaitSeconds,
 		directWaitSeconds: min(options.DirectWaitSeconds, options.MaxWaitSeconds),
-	}, options)
-	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
-		Stateless: true,
-		Logger:    options.Logger,
+	}
+	schemaCache := mcp.NewSchemaCache()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Stateless HTTP creates a fresh SDK server for each request. Snapshot the catalog with this authenticated
+		// request's context; the SDK's name-based cursor can continue on a later request without a server-side session.
+		catalog, err := core.ListActionGroups(r.Context(), &pb.ListActionGroupsRequest{})
+		if err != nil {
+			options.Logger.WarnContext(r.Context(), "listing direct MCP tools failed; serving generic tools only", "error", err)
+			catalog = nil
+		}
+		server, err := newServer(t, options, schemaCache, catalog)
+		if err != nil {
+			options.Logger.ErrorContext(r.Context(), "registering direct MCP tools failed", "error", err)
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, "MCP tool metadata is temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
+			Stateless: true,
+			Logger:    options.Logger,
+		})
+		transport.ServeHTTP(w, r)
 	})
 	return http.NewCrossOriginProtection().Handler(
-		requireCaller(verifier, options.ResourceMetadataURL, options.Logger, withTransportContext(transport)),
+		requireCaller(verifier, options.ResourceMetadataURL, options.Logger, withTransportContext(handler)),
 	)
 }
 
@@ -69,10 +90,11 @@ func instructions(maxWaitSeconds float64) string {
 		"wait.wait_seconds up to " + seconds(maxWaitSeconds) + " seconds."
 }
 
-func newServer(t *tools, options Options) *mcp.Server {
+func newServer(t *tools, options Options, schemaCache *mcp.SchemaCache, catalog *pb.ListActionGroupsResponse) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "Agentplane Actions"}, &mcp.ServerOptions{
 		Instructions: instructions(options.MaxWaitSeconds),
 		Logger:       options.Logger,
+		SchemaCache:  schemaCache,
 	})
 	var definitions []toolDefinition
 	if err := json.Unmarshal(toolsJSON, &definitions); err != nil {
@@ -91,8 +113,12 @@ func newServer(t *tools, options Options) *mcp.Server {
 	addTool(server, known["get_action_result"], logger, t.getActionResult)
 	addTool(server, known["cancel_action_request"], logger, t.cancelActionRequest)
 	addTool(server, known["list_action_request_events"], logger, t.listActionRequestEvents)
-	server.AddReceivingMiddleware(t.directTools(logger))
-	return server
+	direct, err := t.registerDirectTools(server, catalog, logger)
+	if err != nil {
+		return nil, err
+	}
+	server.AddReceivingMiddleware(t.directTools(logger, direct))
+	return server, nil
 }
 
 // addTool registers one tool. The tool runs on a context a disconnect does not cancel, so a call that changes state

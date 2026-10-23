@@ -157,7 +157,9 @@ func newHarness(t *testing.T, core *fakeCore, options Options) *harness {
 	}
 	t.Cleanup(func() { _ = connection.Close() })
 	options.ResourceMetadataURL = "https://test-actions.example/.well-known/oauth-protected-resource/mcp"
-	options.Logger = slog.New(slog.NewTextHandler(t.Output(), nil))
+	if options.Logger == nil {
+		options.Logger = slog.New(slog.NewTextHandler(t.Output(), nil))
+	}
 	handler := NewHandler(pb.NewActionServiceClient(connection), verifyTestBearer, options)
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", handler)

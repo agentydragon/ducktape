@@ -69,6 +69,18 @@ func (r *recordingCore) recorded() ([]string, []string) {
 	return slices.Clone(r.rpcs), slices.Clone(r.callers)
 }
 
+// withoutCatalogRPC removes the request-scoped direct-tool catalog snapshot from assertions about tool operations.
+func withoutCatalogRPC(rpcs, callers []string) ([]string, []string) {
+	var filteredRPCs, filteredCallers []string
+	for i, rpc := range rpcs {
+		if rpc != "ListActionGroups" {
+			filteredRPCs = append(filteredRPCs, rpc)
+			filteredCallers = append(filteredCallers, callers[i])
+		}
+	}
+	return filteredRPCs, filteredCallers
+}
+
 func (r *recordingCore) core(
 	answers map[string]proto.Message,
 	watch func(*pb.WatchActionRequestRequest, grpc.ServerStreamingServer[pb.WatchActionRequestResponse]) error,
@@ -178,6 +190,10 @@ func TestToolsCallTheCoreAsTheVerifiedCaller(t *testing.T) {
 		callTool(t, session, "get_action_request", `{"request_id": "`+testRequestID+`", "wait": {"wait_seconds": 10}}`)
 	}
 	rpcs, callers := recorder.recorded()
+	if slices.ContainsFunc(callers, func(caller string) bool { return caller != "test-caller" && caller != "test-other-caller" }) {
+		t.Errorf("core saw an unexpected caller in catalog or tool RPCs: %v as %v", rpcs, callers)
+	}
+	rpcs, callers = withoutCatalogRPC(rpcs, callers)
 	wantRPCs := []string{"GetActionPolicy", "WatchActionRequest", "GetActionPolicy", "WatchActionRequest"}
 	wantCallers := []string{"test-caller", "test-caller", "test-other-caller", "test-other-caller"}
 	if !slices.Equal(rpcs, wantRPCs) || !slices.Equal(callers, wantCallers) {
@@ -205,8 +221,9 @@ func TestInvalidArgumentsAreRefusedBeforeTheCore(t *testing.T) {
 			}
 		})
 	}
-	if rpcs, _ := recorder.recorded(); len(rpcs) != 0 {
-		t.Errorf("core saw %v, want nothing", rpcs)
+	rpcs, callers := recorder.recorded()
+	if filtered, _ := withoutCatalogRPC(rpcs, callers); len(filtered) != 0 {
+		t.Errorf("core saw non-catalog RPCs in %v", rpcs)
 	}
 }
 
@@ -359,8 +376,9 @@ func TestADisconnectEndsTheWaitWithoutCancellingTheRequest(t *testing.T) {
 	disconnect()
 	<-ended
 	<-answered
-	if rpcs, _ := recorder.recorded(); !slices.Equal(rpcs, []string{"SubmitActionRequest", "WatchActionRequest"}) {
-		t.Errorf("core saw %v, want the submission and its watch alone", rpcs)
+	rpcs, callers := recorder.recorded()
+	if operations, _ := withoutCatalogRPC(rpcs, callers); !slices.Equal(operations, []string{"SubmitActionRequest", "WatchActionRequest"}) {
+		t.Errorf("core saw %v, want the submission and its watch apart from catalog snapshots", rpcs)
 	}
 }
 

@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -25,96 +26,121 @@ const directSeparator = "__"
 // directCallTitle is what an operator reading the history sees for a direct call, which no caller titled.
 const directCallTitle = "Direct tool call"
 
+var errSDKRejectedDirectToolMetadata = errors.New("SDK rejected direct tool metadata")
+
 // directTools serves each group's reviewed direct tools as MCP tools of their own, named <group>__<action>.
-// tools/list adds the ones some policy of the caller's could auto-approve. tools/call runs any configured one as an
-// Action submitted decided-only, so a call no policy approves is refused before anything is stored. The listing is
-// presentation only: the core decides every call again. Other requests pass through.
-func (t *tools) directTools(logger *slog.Logger) mcp.Middleware {
+// Every currently offered direct tool is registered with the SDK so its normal dispatch and HTTP header validation
+// apply. tools/list hides the ones no policy of the caller's could auto-approve. The listing is presentation only: the
+// core decides every call again, and a call no policy approves is refused before anything is stored.
+func (t *tools) registerDirectTools(server *mcp.Server, catalog *pb.ListActionGroupsResponse,
+	logger *slog.Logger,
+) (map[string]actionIdentity, error) {
+	direct := map[string]actionIdentity{}
+	groups := slices.SortedFunc(slices.Values(catalog.GetActionGroups()), func(a, b *pb.ActionGroup) int {
+		return strings.Compare(a.GetKey(), b.GetKey())
+	})
+	for _, group := range groups {
+		for _, name := range slices.Sorted(slices.Values(group.GetDirectTools())) {
+			action := offered(group, name)
+			if action == nil {
+				continue
+			}
+			identity := actionIdentity{Group: group.GetKey(), Name: name}
+			tool := t.directTool(group, action)
+			if err := addDirectTool(server, tool, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleDirectTool(ctx, logger, identity, request)
+			}); err != nil {
+				return nil, fmt.Errorf("register direct tool %q: %w", tool.Name, err)
+			}
+			direct[tool.Name] = identity
+		}
+	}
+	return direct, nil
+}
+
+// addDirectTool converts the SDK's metadata validation panic into a registration error at the boundary where catalog
+// metadata enters its registry. Keep the recover scoped to AddTool so unrelated panics still fail normally, and let the
+// SDK remain the sole schema validator.
+func addDirectTool(server *mcp.Server, tool *mcp.Tool, handler mcp.ToolHandler) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = errSDKRejectedDirectToolMetadata
+		}
+	}()
+	server.AddTool(tool, handler)
+	return nil
+}
+
+// directTools filters the SDK's paginated tool listing to the caller's policy. Every configured tool remains registered
+// so a call the policy does not auto-approve still reaches the core's decided-only admission check.
+func (t *tools) directTools(logger *slog.Logger, direct map[string]actionIdentity) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
-			switch request := request.(type) {
-			case *mcp.ListToolsRequest:
-				result, err := next(ctx, method, request)
-				if err != nil {
-					return nil, err
-				}
-				listed := result.(*mcp.ListToolsResult)
-				if listed.NextCursor != "" {
-					return listed, nil
-				}
-				direct, err := t.listDirect(ctx)
-				if err != nil {
-					// As a failing FastMCP provider did: the caller still gets the generic tools.
-					logger.WarnContext(ctx, "listing direct tools failed", "error", err)
-					return listed, nil
-				}
-				listed.Tools = append(listed.Tools, direct...)
-				return listed, nil
-			case *mcp.CallToolRequest:
-				groupKey, actionKey, found := strings.Cut(request.Params.Name, directSeparator)
-				if !found {
-					break
-				}
-				// Detached like addTool's tools: a submission finishes after its caller left.
-				ctx := context.WithoutCancel(ctx)
-				groups, err := t.core.ListActionGroups(ctx, &pb.ListActionGroupsRequest{})
-				if err != nil {
-					return failedResult(ctx, logger, request.Params.Name, err), nil
-				}
-				var group *pb.ActionGroup
-				var action *pb.Action
-				for _, candidate := range groups.GetActionGroups() {
-					if candidate.GetKey() == groupKey {
-						group, action = candidate, offered(candidate, actionKey)
-					}
-				}
-				if action == nil {
-					break
-				}
-				var arguments map[string]any
-				if len(request.Params.Arguments) > 0 {
-					if err := json.Unmarshal(request.Params.Arguments, &arguments); err != nil {
-						return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "arguments must be an object"}
-					}
-				}
-				result, err := t.callDirect(ctx, group, actionIdentity{Group: groupKey, Name: actionKey}, arguments)
-				if err != nil {
-					return failedResult(ctx, logger, request.Params.Name, err), nil
-				}
-				return result, nil
+			listRequest, ok := request.(*mcp.ListToolsRequest)
+			if !ok || len(direct) == 0 {
+				return next(ctx, method, request)
 			}
-			return next(ctx, method, request)
+			result, err := next(ctx, method, listRequest)
+			if err != nil {
+				return nil, err
+			}
+			listed, ok := result.(*mcp.ListToolsResult)
+			if !ok || listed == nil {
+				return nil, fmt.Errorf("SDK list-tools handler returned %T, want *mcp.ListToolsResult", result)
+			}
+			policy, err := t.core.GetActionPolicy(ctx, &pb.GetActionPolicyRequest{})
+			if err != nil {
+				logger.WarnContext(ctx, "listing auto-approved direct tools failed", "error", err)
+				listed.Tools = filterDirectTools(listed.Tools, direct, nil)
+				return listed, nil
+			}
+			approvable := map[actionIdentity]bool{}
+			for _, identity := range policy.GetActionPolicy().GetAutoApprovable() {
+				approvable[actionIdentity{Group: identity.GetGroup(), Name: identity.GetName()}] = true
+			}
+			listed.Tools = filterDirectTools(listed.Tools, direct, approvable)
+			return listed, nil
 		}
 	}
 }
 
-// listDirect is the caller's direct tools: each group's, in key order, whose Action the caller's policy lists as
-// auto-approvable.
-func (t *tools) listDirect(ctx context.Context) ([]*mcp.Tool, error) {
+func filterDirectTools(tools []*mcp.Tool, direct map[string]actionIdentity, approvable map[actionIdentity]bool) []*mcp.Tool {
+	return slices.DeleteFunc(tools, func(tool *mcp.Tool) bool {
+		identity, isDirect := direct[tool.Name]
+		return isDirect && !approvable[identity]
+	})
+}
+
+func (t *tools) handleDirectTool(ctx context.Context, logger *slog.Logger, identity actionIdentity, request *mcp.CallToolRequest,
+) (*mcp.CallToolResult, error) {
+	// A submission finishes after its caller leaves; the wait still observes the transport context.
+	ctx = context.WithoutCancel(ctx)
+	name := request.Params.Name
 	groups, err := t.core.ListActionGroups(ctx, &pb.ListActionGroupsRequest{})
 	if err != nil {
-		return nil, err
+		return failedResult(ctx, logger, name, err), nil
 	}
-	policy, err := t.core.GetActionPolicy(ctx, &pb.GetActionPolicyRequest{})
-	if err != nil {
-		return nil, err
-	}
-	approvable := map[actionIdentity]bool{}
-	for _, identity := range policy.GetActionPolicy().GetAutoApprovable() {
-		approvable[actionIdentity{Group: identity.GetGroup(), Name: identity.GetName()}] = true
-	}
-	sorted := slices.SortedFunc(slices.Values(groups.GetActionGroups()), func(a, b *pb.ActionGroup) int {
-		return strings.Compare(a.GetKey(), b.GetKey())
-	})
-	listed := []*mcp.Tool{}
-	for _, group := range sorted {
-		for _, name := range slices.Sorted(slices.Values(group.GetDirectTools())) {
-			if action := offered(group, name); action != nil && approvable[actionIdentity{Group: group.GetKey(), Name: name}] {
-				listed = append(listed, t.directTool(group, action))
-			}
+	var group *pb.ActionGroup
+	for _, candidate := range groups.GetActionGroups() {
+		if candidate.GetKey() == identity.Group {
+			group = candidate
+			break
 		}
 	}
-	return listed, nil
+	if offered(group, identity.Name) == nil {
+		return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: fmt.Sprintf("unknown tool %q", name)}
+	}
+	var arguments map[string]any
+	if len(request.Params.Arguments) > 0 {
+		if err := json.Unmarshal(request.Params.Arguments, &arguments); err != nil {
+			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "arguments must be an object"}
+		}
+	}
+	result, err := t.callDirect(ctx, group, identity, arguments)
+	if err != nil {
+		return failedResult(ctx, logger, name, err), nil
+	}
+	return result, nil
 }
 
 // offered is the Action a group's direct tool name runs: one of its reviewed direct tools that the group offers now.
