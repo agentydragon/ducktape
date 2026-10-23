@@ -48,6 +48,8 @@ IMAGES = (
     "agentplane-history-service",
     "agentplane-index",
     "agentplane-llm-ingress",
+    "agentplane-mcp-edge",
+    "agentplane-mcp-edge-migrate",
     "agentplane-notification-service",
     "agentplane-notification-service-migrate",
     "agentplane-policy-controller",

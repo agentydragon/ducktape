@@ -301,6 +301,56 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
+  name: agentplane-mcp-edge
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/agentplane-mcp-edge
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: agentplane-mcp-edge
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: agentplane-mcp-edge
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: agentplane-mcp-edge-migrate
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/agentplane-mcp-edge-migrate
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: agentplane-mcp-edge-migrate
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: agentplane-mcp-edge-migrate
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
   name: agentplane-notification-service
   namespace: flux-system
 spec:
