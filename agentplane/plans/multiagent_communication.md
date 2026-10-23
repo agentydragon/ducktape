@@ -147,7 +147,7 @@ already calls for comparing reusable authorization systems rather than inventing
 ### Current identity and policy wiring
 
 - External Action Service OAuth Connections act as an existing labeled SA selected by the operator
-  at enrollment ([Connection authority](../action_service/connections.py)). This is an explicit
+  at enrollment ([Connection authority](../mcp_edge/connections/store.go)). This is an explicit
   Connection-to-SA mapping, not an automatic one-SA-per-OAuth-client rule. GitOps defines static
   accounts such as `claude-ai` and their `PolicyBinding`s. Human/operator authentication remains
   separate from the caller SA.
