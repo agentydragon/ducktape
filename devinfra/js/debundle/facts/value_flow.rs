@@ -12,7 +12,6 @@ use std::sync::Arc;
 #[cfg(test)]
 use std::{cell::Cell, rc::Rc};
 
-use roaring::RoaringBitmap;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -122,10 +121,11 @@ impl Default for OriginTable {
 }
 
 /// A dense, ordered set of semantic origins. All sets in one flow analysis
-/// share its immutable origin table, so roaring operations combine ranks.
+/// share its immutable origin table, so word positions have identical meaning.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Values {
-    bits: RoaringBitmap,
+    bits: Vec<u64>,
+    unknown: bool,
     origins: Arc<OriginTable>,
 }
 
@@ -138,7 +138,8 @@ impl std::fmt::Debug for Values {
 impl Values {
     pub(super) fn empty(origins: Arc<OriginTable>) -> Self {
         Self {
-            bits: RoaringBitmap::new(),
+            bits: Vec::new(),
+            unknown: false,
             origins,
         }
     }
@@ -150,35 +151,87 @@ impl Values {
     }
 
     fn is_empty(&self) -> bool {
-        self.bits.is_empty()
+        // Insertions and unions only grow the vector through a set bit, so
+        // trailing zero words are never introduced.
+        self.bits.is_empty() && !self.unknown
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.bits.len() as usize
+        self.bits
+            .iter()
+            .map(|word| word.count_ones() as usize)
+            .sum::<usize>()
+            + usize::from(self.unknown)
     }
 
     pub(super) fn contains(&self, value: &ValueOrigin) -> bool {
-        self.origins
-            .ids
-            .get(value)
-            .is_some_and(|id| self.bits.contains(id.0))
+        if *value == ValueOrigin::Unknown {
+            return self.unknown;
+        }
+        let Some(id) = self.origins.ids.get(value) else {
+            return false;
+        };
+        let word = id.0 as usize / u64::BITS as usize;
+        let bit = id.0 % u64::BITS;
+        self.bits
+            .get(word)
+            .is_some_and(|word| word & (1_u64 << bit) != 0)
     }
 
     pub(super) fn insert(&mut self, value: ValueOrigin) -> bool {
-        self.bits.insert(self.origins.id(value).0)
+        if value == ValueOrigin::Unknown {
+            return !std::mem::replace(&mut self.unknown, true);
+        }
+        let id = self.origins.id(value).0;
+        let word_index = id as usize / u64::BITS as usize;
+        if self.bits.len() <= word_index {
+            self.bits.resize(word_index + 1, 0);
+        }
+        let mask = 1_u64 << (id % u64::BITS);
+        let word = &mut self.bits[word_index];
+        let changed = *word & mask == 0;
+        *word |= mask;
+        changed
     }
 
-    pub(super) fn iter(&self) -> impl Iterator<Item = ValueOrigin> + '_ {
-        self.bits.iter().map(|id| self.origins.origin(OriginId(id)))
+    pub(super) fn iter(&self) -> ValuesIter<'_> {
+        ValuesIter {
+            bits: BitIndices::new(self.bits.iter().copied()),
+            origins: &self.origins,
+            unknown: self.unknown,
+            yielded_unknown: false,
+        }
     }
 
     /// Merge another value set, returning whether it contributed new origins.
     pub(super) fn union_with(&mut self, other: &Self) -> bool {
         assert!(Arc::ptr_eq(&self.origins, &other.origins));
-        let old_len = self.bits.len();
-        self.bits |= &other.bits;
-        self.bits.len() != old_len
+        let mut changed = false;
+        if self.bits.len() < other.bits.len() {
+            self.bits.resize(other.bits.len(), 0);
+        }
+        for (into, from) in self.bits.iter_mut().zip(&other.bits) {
+            let merged = *into | *from;
+            changed |= merged != *into;
+            *into = merged;
+        }
+        if other.unknown && !self.unknown {
+            self.unknown = true;
+            changed = true;
+        }
+        changed
+    }
+
+    fn union_without_change_tracking(&mut self, other: &Self) {
+        assert!(Arc::ptr_eq(&self.origins, &other.origins));
+        if self.bits.len() < other.bits.len() {
+            self.bits.resize(other.bits.len(), 0);
+        }
+        for (into, from) in self.bits.iter_mut().zip(&other.bits) {
+            *into |= *from;
+        }
+        self.unknown |= other.unknown;
     }
 
     fn union(mut self, other: Self) -> Self {
@@ -195,29 +248,79 @@ impl Extend<ValueOrigin> for Values {
     }
 }
 
+struct BitIndices<I> {
+    words: I,
+    word_index: usize,
+    remaining: u64,
+}
+
+impl<I: Iterator<Item = u64>> BitIndices<I> {
+    fn new(words: I) -> Self {
+        Self {
+            words,
+            word_index: 0,
+            remaining: 0,
+        }
+    }
+}
+
+impl<I: Iterator<Item = u64>> Iterator for BitIndices<I> {
+    type Item = u32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.remaining != 0 {
+                let bit = self.remaining.trailing_zeros();
+                self.remaining &= self.remaining - 1;
+                return Some(((self.word_index - 1) * u64::BITS as usize + bit as usize) as u32);
+            }
+            self.remaining = self.words.next()?;
+            self.word_index += 1;
+        }
+    }
+}
+
 pub(crate) struct ValuesIter<'a> {
-    bits: roaring::bitmap::Iter<'a>,
+    bits: BitIndices<std::iter::Copied<std::slice::Iter<'a, u64>>>,
     origins: &'a OriginTable,
+    unknown: bool,
+    yielded_unknown: bool,
 }
 
 impl Iterator for ValuesIter<'_> {
     type Item = ValueOrigin;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.bits.next().map(|id| self.origins.origin(OriginId(id)))
+        if let Some(id) = self.bits.next() {
+            return Some(self.origins.origin(OriginId(id)));
+        }
+        if self.unknown && !self.yielded_unknown {
+            self.yielded_unknown = true;
+            return Some(ValueOrigin::Unknown);
+        }
+        None
     }
 }
 
 pub(crate) struct ValuesIntoIter {
-    bits: roaring::bitmap::IntoIter,
+    bits: BitIndices<std::vec::IntoIter<u64>>,
     origins: Arc<OriginTable>,
+    unknown: bool,
+    yielded_unknown: bool,
 }
 
 impl Iterator for ValuesIntoIter {
     type Item = ValueOrigin;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.bits.next().map(|id| self.origins.origin(OriginId(id)))
+        if let Some(id) = self.bits.next() {
+            return Some(self.origins.origin(OriginId(id)));
+        }
+        if self.unknown && !self.yielded_unknown {
+            self.yielded_unknown = true;
+            return Some(ValueOrigin::Unknown);
+        }
+        None
     }
 }
 
@@ -227,8 +330,10 @@ impl IntoIterator for Values {
 
     fn into_iter(self) -> Self::IntoIter {
         ValuesIntoIter {
-            bits: self.bits.into_iter(),
+            bits: BitIndices::new(self.bits.into_iter()),
             origins: self.origins,
+            unknown: self.unknown,
+            yielded_unknown: false,
         }
     }
 }
@@ -239,8 +344,10 @@ impl<'a> IntoIterator for &'a Values {
 
     fn into_iter(self) -> Self::IntoIter {
         ValuesIter {
-            bits: self.bits.iter(),
+            bits: BitIndices::new(self.bits.iter().copied()),
             origins: &self.origins,
+            unknown: self.unknown,
+            yielded_unknown: false,
         }
     }
 }
@@ -297,7 +404,7 @@ impl ValuesBuilder {
             return;
         }
         assert!(Arc::ptr_eq(&self.values.origins, &values.origins));
-        self.values.bits |= &values.bits;
+        self.values.union_without_change_tracking(values);
         #[cfg(test)]
         {
             self.work.set(self.work.get() + values.len());

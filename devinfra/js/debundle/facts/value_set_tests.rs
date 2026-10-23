@@ -212,6 +212,121 @@ fn generated_value_sequences_match_btree_set_after_each_operation() {
     }
 }
 
+fn boundary_domain() -> Vec<ValueOrigin> {
+    let mut domain: Vec<_> = (0..=1_024).map(ValueOrigin::Function).collect();
+    domain.extend([
+        ValueOrigin::Function(u32::MAX),
+        ValueOrigin::Class(0),
+        ValueOrigin::Class(u32::MAX),
+        ValueOrigin::Object(0),
+        ValueOrigin::Object(u32::MAX),
+        ValueOrigin::Unknown,
+    ]);
+    domain.sort_unstable();
+    domain.dedup();
+    domain
+}
+
+fn assert_matches_domain(
+    values: &Values,
+    expected: &BTreeSet<ValueOrigin>,
+    domain: &[ValueOrigin],
+) {
+    let expected_order: Vec<_> = expected.iter().copied().collect();
+    assert_eq!(values.iter().collect::<Vec<_>>(), expected_order);
+    assert_eq!(
+        values.clone().into_iter().collect::<Vec<_>>(),
+        expected_order
+    );
+
+    for value in domain {
+        assert_eq!(
+            values.contains(value),
+            expected.contains(value),
+            "{value:?}"
+        );
+    }
+}
+
+#[test]
+fn dense_rank_boundaries_round_trip_in_owned_and_borrowed_iteration() {
+    let domain = boundary_domain();
+    let origins = Arc::new(OriginTable::from_origins(domain.iter().copied()));
+    let selected = [
+        ValueOrigin::Function(0),
+        ValueOrigin::Function(63),
+        ValueOrigin::Function(64),
+        ValueOrigin::Function(65),
+        ValueOrigin::Function(127),
+        ValueOrigin::Function(128),
+        ValueOrigin::Function(129),
+        ValueOrigin::Function(1_023),
+        ValueOrigin::Function(1_024),
+        ValueOrigin::Function(u32::MAX),
+        ValueOrigin::Class(u32::MAX),
+        ValueOrigin::Object(u32::MAX),
+        ValueOrigin::Unknown,
+    ];
+
+    let expected: BTreeSet<_> = selected.into_iter().collect();
+    let mut actual = Values::empty(origins.clone());
+    for value in selected.into_iter().rev() {
+        actual.insert(value);
+    }
+
+    assert_matches_domain(&actual, &expected, &domain);
+    for absent in [
+        ValueOrigin::Function(1_025),
+        ValueOrigin::Class(1),
+        ValueOrigin::Object(1),
+    ] {
+        assert!(!actual.contains(&absent), "unexpected {absent:?}");
+    }
+
+    let unknown_only_table = Arc::new(OriginTable::from_origins([]));
+    let unknown_only = Values::singleton(unknown_only_table, ValueOrigin::Unknown);
+    assert_eq!(
+        unknown_only.iter().collect::<Vec<_>>(),
+        [ValueOrigin::Unknown]
+    );
+    assert_eq!(
+        unknown_only.into_iter().collect::<Vec<_>>(),
+        [ValueOrigin::Unknown]
+    );
+}
+
+#[test]
+fn union_handles_different_rank_lengths_and_reports_new_values() {
+    let domain = boundary_domain();
+    let origins = Arc::new(OriginTable::from_origins(domain.iter().copied()));
+    let low = [ValueOrigin::Function(0), ValueOrigin::Function(63)];
+    let high = [
+        ValueOrigin::Function(64),
+        ValueOrigin::Function(1_023),
+        ValueOrigin::Function(1_024),
+        ValueOrigin::Function(u32::MAX),
+        ValueOrigin::Class(u32::MAX),
+        ValueOrigin::Object(u32::MAX),
+        ValueOrigin::Unknown,
+    ];
+
+    let mut actual = values_from(&origins, low);
+    let high_values = values_from(&origins, high);
+    let mut expected: BTreeSet<_> = low.into_iter().collect();
+    let high_expected: BTreeSet<_> = high.into_iter().collect();
+
+    expected.extend(high_expected.iter().copied());
+    assert!(actual.union_with(&high_values));
+    assert_matches_domain(&actual, &expected, &domain);
+    assert!(!actual.union_with(&high_values));
+    assert_matches_domain(&actual, &expected, &domain);
+
+    let mut empty = Values::empty(origins);
+    assert!(empty.union_with(&high_values));
+    assert_matches_domain(&empty, &high_expected, &domain);
+    assert!(!empty.union_with(&high_values));
+}
+
 #[derive(Default)]
 struct ArrowOrigins(BTreeSet<ValueOrigin>);
 
