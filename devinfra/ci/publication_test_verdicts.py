@@ -54,6 +54,13 @@ def _explicit_ci_options(invocation_id_value: str, rbe_image: str) -> tuple[Coun
 
 def _normalized_explicit_args(args: tuple[str, ...]) -> Counter[str] | None:
     values = list(args)
+    # BuildBuddy raw_json for the pinned Bazel 9.2.0 CI command includes one
+    # trailing empty element in OptionsParsed.explicitCmdLine. The requested
+    # target pattern is checked separately from PatternExpanded events.
+    if values and values[-1] == "":
+        values.pop()
+    if any(not value for value in values):
+        return None
     if values and values[0] in {"bazel", "bazelisk"}:
         values.pop(0)
     if values and values[0] == "test":

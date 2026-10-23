@@ -242,9 +242,11 @@ def parse(raw: bytes) -> Invocation:
                 )
             )
             continue
-        if "buildFinished" in event:
+        # BuildBuddy's raw_json spells the BuildFinished payload `finished`;
+        # the event id remains `buildFinished`.
+        if "finished" in event:
             finished_count += 1
-            exit_code = event["buildFinished"].get("exitCode") or {}
+            exit_code = event["finished"].get("exitCode") or {}
             if exit_code.get("name") == "SUCCESS":
                 successful_count += 1
         if started := event.get("started"):
