@@ -31557,10 +31557,9 @@
       }
     ]
   },
-  "report_sha256": "4a028023681d5d1a1a119fb941098f55b0dc9af871420e2cedd1870ee5bac36f",
+  "report_sha256": "ae820337899ab9de48e171cbfd58482fc647181e999bf65db50c15e076f2eedf",
   "validation": {
-    "browser_invocation": "5ff29793-e54f-4c49-b5b1-e51ac687a18c",
-    "browser_cases_passed": 2,
+    "browser": "Local Playwright 1.63.0 with pinned Chromium (/opt/pw-browsers), not the RBE deterministic_browser_context harness",
     "viewports": [
       {
         "width": 1280,
@@ -31571,17 +31570,16 @@
         "height": 844
       }
     ],
-    "captures": 14,
-    "reviewed_captures": ["desktop-overview", "mobile-overview", "desktop-ranking"],
     "checks": [
-      "no document horizontal overflow",
-      "expand/collapse all previous-work details",
-      "real pinned Chromium through deterministic_browser_context and VisualPage.capture"
+      "no document horizontal overflow before and after expanding previous-work details",
+      "expand control opens both previous-work details",
+      "no page or console errors"
     ],
-    "first_browser_attempt": "b65fbd0e-c7e1-43c2-975f-d45895b236d0 stopped at Ruff lint; fixed temporary review test and retried",
-    "limits": "Removal merged after the measurement window; no matched post-removal speedup measured. Browser tests cover report behavior/layout.",
-    "previous_browser_invocation": "dac57053-69ed-4ff3-9e4e-d78b1c3136da",
-    "revision": "Record merged #11737 and remove it from remaining intervention ranking."
+    "reviewed_captures": ["desktop-overview", "desktop-callout", "mobile-callout", "mobile-ranking", "desktop-spike"],
+    "post_render_formatting": "Repository Prettier config; normalized visible text equality verified against the unformatted edit.",
+    "limits": "All post-publication changes merged after the measurement window; no matched post-change speedup measured. Browser checks cover report layout only.",
+    "previous_browser_invocation": "5ff29793-e54f-4c49-b5b1-e51ac687a18c",
+    "revision": "Record merged #11506, #11744, #11747 and #11746; remove former interventions 1 and 2 from the ranking."
   },
   "recommendation_revision": {
     "reviewed_at_utc": "2026-10-23T14:31:05.920408+00:00",
@@ -31637,5 +31635,89 @@
     },
     "merge_commit": "816acea8885b779226fd0d574166f5012c198920",
     "merged_at_utc": "2026-10-23T14:31:05Z"
+  },
+  "post_publication_landings": {
+    "reviewed_at_utc": "2026-10-23T22:27:45.409889+00:00",
+    "coverage_source_devel_commit": "07aae2529278f0faf2b39764e2be76e9a1978b3c",
+    "interventions": [
+      {
+        "former_rank": 1,
+        "intervention": "API image without SPA assets",
+        "prs": [
+          {
+            "url": "https://github.com/agentydragon/ducktape/pull/11506",
+            "merge_commit": "dd979346d1032cc6b7cf22f28040ce5174c43e05",
+            "merged_at_utc": "2026-10-23T15:14:53Z"
+          }
+        ],
+        "change": "Frontend served by its own nginx image and Deployment; bundle and service worker removed from the API binary and image rather than adding a separate fixture-only API image.",
+        "verification": [
+          {
+            "query": "kind(\"py_test\", rdeps(//agentplane/system_tests/..., //agentplane/app/frontend:bundle))",
+            "invocation": "https://app.buildbuddy.io/invocation/c8e6d4f4-2ae9-4de0-b933-ce00febe60ee",
+            "targets": 0
+          },
+          {
+            "query": "kind(\"py_test\", rdeps(//agentplane/system_tests/..., //agentplane/app/frontend/service_worker:service_worker_js))",
+            "invocation": "https://app.buildbuddy.io/invocation/48cc2404-e683-4711-9a37-5d4af28dea30",
+            "targets": 0
+          },
+          {
+            "query": "rdeps(//agentplane/app:image + //agentplane/app:app_bytecode, //agentplane/app/frontend:bundle + //agentplane/app/frontend/service_worker:service_worker_js)",
+            "invocation": "https://app.buildbuddy.io/invocation/eec62ea9-6394-4b98-9cda-9f43a51d700a",
+            "targets": 0
+          },
+          {
+            "query": "kind(\"py_test\", rdeps(//agentplane/system_tests/..., //agentplane/app:image))",
+            "invocation": "https://app.buildbuddy.io/invocation/9424be69-fc5b-4e20-beb3-f16ebb85da1e",
+            "targets": 13,
+            "purpose": "Non-vacuity anchor: system tests still consume the API image."
+          }
+        ],
+        "baseline": "In-window query 38db1293-9e96-4472-82a9-cd4d32b2b039 found 14 bundle reverse-dependent tests (11 automatic)."
+      },
+      {
+        "former_rank": 2,
+        "intervention": "Deterministic, feature-scoped fixture rendering",
+        "prs": [
+          {
+            "url": "https://github.com/agentydragon/ducktape/pull/11744",
+            "merge_commit": "ba449770261e41c5f872165c735da65a03369318",
+            "merged_at_utc": "2026-10-23T15:56:52Z"
+          },
+          {
+            "url": "https://github.com/agentydragon/ducktape/pull/11747",
+            "merge_commit": "ebc4e9ec52b6cb9af7fcedb8fc29013e3aa202e9",
+            "merged_at_utc": "2026-10-23T16:22:04Z"
+          },
+          {
+            "url": "https://github.com/agentydragon/ducktape/pull/11746",
+            "merge_commit": "df1b1005dec46d7c87319e995dca26ce74529ac0",
+            "merged_at_utc": "2026-10-23T21:31:30Z"
+          }
+        ],
+        "change": "Fixed test-only fixture credentials replace per-build random values (#11744 then #11747); each of the five variants renders in its own Bazel action, with MCP fixture servers and Dex additions only in the MCP renderer (#11746).",
+        "verification": [
+          {
+            "test": "//agentplane/x/k3s_env:test_render_determinism",
+            "invocation": "https://app.buildbuddy.io/invocation/1569b9c5-29c1-4422-b549-e0b7616cf030",
+            "result": "PASSED (cached)"
+          },
+          {
+            "query": "kind(\"py_test\", rdeps(//agentplane/system_tests/..., //agentplane/x/k3s_env:mcp_fixture_chart))",
+            "invocation": "https://app.buildbuddy.io/invocation/345da094-ea9a-40cc-8f6d-6f5bf044fa32",
+            "targets": 1,
+            "result": "//agentplane/system_tests:test_mcp"
+          },
+          {
+            "query": "kind(\"py_test\", rdeps(//agentplane/system_tests/..., //agentplane/x/k3s_env:fixture_chart))",
+            "invocation": "https://app.buildbuddy.io/invocation/9b0ae4ae-5f8c-4f9d-b65a-708531f01da9",
+            "targets": 13,
+            "purpose": "Shared base chart still reaches every k3s system test."
+          }
+        ]
+      }
+    ],
+    "limits": "Source and dependency graph verified at the coverage commit; live frontend routing was not audited and no post-change PR feedback population is measured."
   }
 }

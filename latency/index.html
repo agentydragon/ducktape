@@ -241,16 +241,18 @@
     <main>
       <header>
         <div class="eyebrow">Ducktape · CI latency refresh · 22–23 October 2026</div>
-        <h1>The costly workstation check<br />has been removed.</h1>
+        <h1>The workstation check is gone;<br />the top two fixture cuts landed.</h1>
         <p class="lede">
           The added Wyrm2 Home Manager activation evaluation explains the common-case regression in this sample. PR
           #11737 removed it at 14:31 UTC on October 23. Existing PR package/policy checks and post-merge host builds
-          remain. Cold k3s tests are the next large opportunity.
+          remain. The two highest-ranked remaining interventions landed later that day: the API image no longer carries
+          the SPA bundle (#11506), and k3s fixture renders are deterministic and split per variant (#11744, #11747,
+          #11746). Cold k3s execution remains the next large opportunity.
         </p>
         <p class="small">
           New window: 22 October 05:30 → 23 October 13:40 UTC (32h 10m), contiguous with the previous report’s
-          population window. Measurement ends 13:40 UTC; removal merged at 14:31 UTC. No post-removal population speedup
-          is measured.
+          population window. Measurement ends 13:40 UTC; these five PRs merged between 14:31 and 21:31 UTC. No
+          post-change population speedup is measured.
         </p>
       </header>
       <div class="cards">
@@ -276,6 +278,38 @@
           post-merge lane. Forecast <strong>40–90s less feedback on eligible artifact-last PRs</strong>; zero when
           another gate wins. All three required checks passed on its exact PR head. The 14:31 merge is outside this
           measurement window, so its hosted effect is not measured here.
+        </p>
+      </div>
+      <div class="callout">
+        <strong>Landed after publication: the former interventions 1 and 2.</strong>
+        <p>
+          <a href="https://github.com/agentydragon/ducktape/pull/11506">#11506</a> (15:14 UTC) serves the frontend from
+          its own nginx Deployment and removes the bundle and service worker from the API binary itself, rather than
+          adding a separate fixture-only image. At devel <code>07aae2529278</code>, no system test reverse-depends on
+          the bundle (<a href="https://app.buildbuddy.io/invocation/c8e6d4f4-2ae9-4de0-b933-ce00febe60ee">c8e6d4f4</a>)
+          or the service worker (<a href="https://app.buildbuddy.io/invocation/48cc2404-e683-4711-9a37-5d4af28dea30"
+            >48cc2404</a
+          >), and neither reaches <code>//agentplane/app:image</code> or <code>app_bytecode</code> (<a
+            href="https://app.buildbuddy.io/invocation/eec62ea9-6394-4b98-9cda-9f43a51d700a"
+            >eec62ea9</a
+          >); 13 system tests still depend on the API image (<a
+            href="https://app.buildbuddy.io/invocation/9424be69-fc5b-4e20-beb3-f16ebb85da1e"
+            >9424be69</a
+          >), so the query is not vacuous. The baseline was 14 tests (11 automatic).
+        </p>
+        <p>
+          <a href="https://github.com/agentydragon/ducktape/pull/11744">#11744</a> and
+          <a href="https://github.com/agentydragon/ducktape/pull/11747">#11747</a> replace per-build random fixture
+          credentials with fixed test-only values;
+          <a href="https://github.com/agentydragon/ducktape/pull/11746">#11746</a> (21:31 UTC) gives each of the five
+          variants its own render action. <code>test_render_determinism</code> passes at the same devel commit (<a
+            href="https://app.buildbuddy.io/invocation/1569b9c5-29c1-4422-b549-e0b7616cf030"
+            >1569b9c5</a
+          >, cached), and the MCP-only chart module now reaches only <code>test_mcp</code> (<a
+            href="https://app.buildbuddy.io/invocation/345da094-ea9a-40cc-8f6d-6f5bf044fa32"
+            >345da094</a
+          >). Source and graph verified only: live frontend routing was not audited, and no post-change feedback is
+          measured.
         </p>
       </div>
       <nav aria-label="Report navigation">
@@ -323,7 +357,8 @@
                 </td>
                 <td>
                   Independent publication does not yet cut the fixture dependency; the current query still finds 11
-                  automatic + 3 manual tests.
+                  automatic + 3 manual tests. After this window,
+                  <a href="https://github.com/agentydragon/ducktape/pull/11506">#11506</a> makes the cut (see top).
                 </td>
               </tr>
               <tr>
@@ -997,7 +1032,13 @@
           </li>
         </ul>
         <details id="spike" open>
-          <summary>API-image dependency cut: graph and runtime spike passed</summary>
+          <summary>API-image dependency cut: spike passed, then landed in #11506</summary>
+          <p>
+            <strong>Landed after this window.</strong>
+            <a href="https://github.com/agentydragon/ducktape/pull/11506">#11506</a> removes the bundle and service
+            worker from the API binary and image outright; the frontend ships as its own nginx image and Deployment. The
+            current-devel queries at the top return zero reverse edges. The text below is the pre-landing spike.
+          </p>
           <p>
             Current query
             <a href="https://app.buildbuddy.io/invocation/38db1293-9e96-4472-82a9-cd4d32b2b039">38db1293</a> finds 14
@@ -1228,8 +1269,9 @@
         <h2>Next interventions, ranked for the current evidence</h2>
         <p>
           Conditional engineering forecasts, not treatment effects. Savings overlap, depend on cache/selection and can
-          be erased by the next required gate. The host-evaluation removal is landed separately and is not ranked as
-          remaining work.
+          be erased by the next required gate. The host-evaluation removal and the former interventions 1 (API image
+          without SPA assets, #11506) and 2 (deterministic, per-variant fixture renders, #11744/#11747/#11746) landed
+          after the window and are not ranked as remaining work.
         </p>
         <div class="scroll">
           <table class="">
@@ -1242,23 +1284,7 @@
             </thead>
             <tbody>
               <tr>
-                <td>1. Add a fixture-only API image without SPA assets</td>
-                <td>Historical planning range 2–6min on cold production-UI edits; 0 cached/overlap</td>
-                <td>
-                  Small–medium; current graph cut and two runtime tests pass. Preserve production image and full
-                  browser/static coverage; validate all 11 input digests and affected selection.
-                </td>
-              </tr>
-              <tr>
-                <td>2. Make fixture renders deterministic and feature-scoped</td>
-                <td>Historical forecast 1–5min on semantically unchanged variants; 0 real config changes</td>
-                <td>
-                  Small–medium; prior controlled experiment confirmed randomness; mechanism unchanged. Generate
-                  per-stack runtime secrets, split variant outputs; test repeated renders and MCP-only edits.
-                </td>
-              </tr>
-              <tr>
-                <td>3. Select the 17 source artifact checks by verified dependencies</td>
+                <td>1. Select the 17 source artifact checks by verified dependencies</td>
                 <td>Prior forecast 30–70s when artifact remainder gates; 0 if Bazel wins</td>
                 <td>
                   Medium; expanded roster is current, savings unmeasured. Preserve all selected consumers/assets and
@@ -1266,15 +1292,16 @@
                 </td>
               </tr>
               <tr>
-                <td>4. Split stable Python bytecode / consumed image layers</td>
+                <td>2. Split stable Python bytecode / consumed image layers</td>
                 <td>Historical 30–90s on rebuilding chains; current mixed-UI bytecode component 23s</td>
                 <td>
-                  Medium; high dependency evidence, variable worker timing. Compare UI-only and Python-only edits;
-                  preserve interpreter/hash/ownership and public-image coverage.
+                  Medium; high dependency evidence, variable worker timing. UI-only edits no longer reach
+                  <code>app_bytecode</code> after #11506, so compare Python-only edits; preserve
+                  interpreter/hash/ownership and public-image coverage.
                 </td>
               </tr>
               <tr>
-                <td>5. Prove remote-origin stop and quiescence on supersession</td>
+                <td>3. Prove remote-origin stop and quiescence on supersession</td>
                 <td>No guaranteed PR seconds; avoid obsolete worker work if exclusive</td>
                 <td>
                   Medium–large; prior three continuations unresolved, wrapper unchanged. Stop origin plus bounded child
@@ -1283,7 +1310,7 @@
                 </td>
               </tr>
               <tr>
-                <td>6. Isolate nonrequired publication capacity if capacity separates</td>
+                <td>4. Isolate nonrequired publication capacity if capacity separates</td>
                 <td>0–160s plausible burst queue opportunity; near 0 when quiet</td>
                 <td>
                   Medium–large; current burst observed, pool economics/capacity unproved. Re-measure after verdict
@@ -1291,7 +1318,7 @@
                 </td>
               </tr>
               <tr>
-                <td>7. Prototype immutable image seeds / suitable VM workers</td>
+                <td>5. Prototype immutable image seeds / suitable VM workers</td>
                 <td>Historical cold-stack forecasts 30–100s / 40–140s; unmeasured</td>
                 <td>
                   Large; do not combine ranges. Fresh MCP/VM imports and recurring pause retry justify bounded trials.
@@ -1340,21 +1367,22 @@
               <tbody>
                 <tr>
                   <td>1 · API-only fixture image</td>
-                  <td>Advanced</td>
+                  <td>Landed after window</td>
                   <td>
-                    Static nginx image landed in #11504 but app_image_bin still includes SPA assets. Current real query
-                    still finds 14 tests, 11 automatic. Isolated cut removes all 14 reverse edges and passes
-                    thread-stream plus static-image tests; all-scenario/matched CI validation remains for
-                    implementation.
+                    Static nginx image landed in #11504 but app_image_bin still included SPA assets in this window (14
+                    tests, 11 automatic). Isolated cut removed all 14 reverse edges and passed thread-stream plus
+                    static-image tests. #11506 then removed the assets from the API binary itself; current-devel queries
+                    return zero reverse edges. Post-change feedback unmeasured.
                   </td>
                 </tr>
                 <tr>
                   <td>2 · Deterministic feature-scoped rendering</td>
-                  <td>Retained</td>
+                  <td>Landed after window</td>
                   <td>
-                    Same random database/OIDC credentials, bcrypt salt and Fernet generation remain. Retain October
-                    20-22 control experiment (17/22/17 differing paths -&gt; zero); no repeat without a source change to
-                    the mechanism. Split variants and fill runtime secrets.
+                    Random database/OIDC credentials, bcrypt salt and Fernet generation remained in this window (October
+                    20-22 control experiment: 17/22/17 differing paths -&gt; zero). #11744/#11747 switch to fixed
+                    test-only credentials and #11746 renders each variant separately; test_render_determinism passes and
+                    the MCP-only chart reaches only test_mcp. Post-change feedback unmeasured.
                   </td>
                 </tr>
                 <tr>
