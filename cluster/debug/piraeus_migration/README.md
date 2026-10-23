@@ -70,17 +70,15 @@ three etcd services remained healthy, and the worker's 32/512/1024/32GiB system
 volumes and both disk identities remained intact. The node was admitted and
 uncordoned at 12:56 UTC after shared gates passed, local-path aliases were
 confirmed to deny new allocations, metrics were fresh, and canaries were removed.
-Seaweed replacement PR #11720 is merged and accepted: the 1700Gi
-`piraeus-hdd-local` Retain strict-local volume server is Ready, and the native,
-uncapped one-replica move of volume 777 was accepted. All 504 HDD logical IDs
-retain two copies, and old Pods and claims are unchanged. Owned S3 object hashes
-matched before/after the move and in fresh verification; both probe objects were
-deleted. The target service is up and pool metrics are fresh. Piraeus timeout PR
-#11722 is merged and Flux-ready. Terraform readiness PR #11723 is merged and
-applied; desired and live configuration match, the
-refresh-disabled targeted residual plan had zero changes, and the apply required
-no reboot with all three etcd services healthy. Only one canary move was run;
-bulk HDD rebalance and later HDD-node conversions have not started.
+The 1700Gi `piraeus-hdd-local` Retain strict-local Seaweed volume server is
+Ready. One uncapped native canary move and the owned S3 probes passed; both
+temporary probe objects were deleted. All 504 HDD logical volumes retain two
+copies, and existing Pods and claims are unchanged. Pool metrics are fresh and
+the target service is up. The Terraform readiness source is merged and its
+target apply completed: desired and live configuration match, the
+`refresh=false` targeted residual plan has zero changes, and no reboot was
+needed. Only the canary moved; bulk rebalance and later HDD-node conversions
+have not started.
 The accepted overcommit policy and issue trigger remain in the
 [runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
 
