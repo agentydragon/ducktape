@@ -748,11 +748,72 @@
         "type": "prometheus",
         "uid": "mimir"
       },
+      "description": "Actual negotiated Ethernet speed between CRS310 ether1 and the AT&T BGW320 gateway, sampled every 30 seconds. Compare its transitions with the independent host ping-loss panels beside it.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 22
+      },
+      "id": 50,
+      "title": "AT&T gateway uplink negotiated speed",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "max(mktxp_interface_rate{routerboard_name=\"CRS310\",name=\"ether1\"}) * 1000000",
+          "legendFormat": "CRS310 ether1 to AT&T gateway",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps",
+          "decimals": 1,
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisLabel": "Negotiated speed"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "description": "Share of pings from optiplex (5/s per target) that got no reply. Loss to the gateway with none to the switch is the uplink fault in debug/home_network_connectivity/2026_10_gateway_uplink_loss.md.",
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 0,
+        "w": 8,
+        "x": 8,
         "y": 22
       },
       "id": 43,
@@ -815,12 +876,12 @@
         "type": "prometheus",
         "uid": "mimir"
       },
-      "description": "ICMP probes from wyrm2 to the AT&T gateway, MikroTik switch, optiplex LAN address (192.168.1.10), and ovh-ns104952 over Nebula. Loss is the unanswered fraction of 5 pings/s, averaged over 5 minutes. Compare with optiplex above; a gap means missing observations.",
+      "description": "ICMP probes from wyrm2 to the AT&T gateway, MikroTik switch, optiplex LAN address (192.168.1.10), and ovh-ns104952 over Nebula. Loss is the unanswered fraction of 5 pings/s, averaged over 5 minutes. Compare with optiplex beside it; a gap means missing observations.",
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 30
+        "w": 8,
+        "x": 16,
+        "y": 22
       },
       "id": 45,
       "title": "Ping loss from wyrm2",
@@ -898,8 +959,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 22
+        "x": 0,
+        "y": 30
       },
       "id": 44,
       "title": "Ping RTT from optiplex",
