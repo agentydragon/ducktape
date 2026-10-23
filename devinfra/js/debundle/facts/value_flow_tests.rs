@@ -14,6 +14,22 @@ fn assert_matches_reference(source: &str) -> ChunkValueFlow {
         actual, reference,
         "value-flow mismatch for source:\n{source}"
     );
+
+    // The raw parse above preserves empty SyntaxContexts for the individual
+    // binding assertions below. Also compare after the production resolver:
+    // its fresh Marks distinguish same-named bindings in separate scopes,
+    // which the value-flow worklist and argument cache must handle too.
+    let resolved_module = js_ast::with_swc_globals(|| {
+        js_ast::parse_js_module_ast("<value-flow-test>", source)
+            .expect("value-flow test source should parse and resolve")
+    });
+    let resolved_body = top_level_item_views(&resolved_module.body);
+    let resolved_actual = ChunkValueFlow::analyze(&resolved_body);
+    let resolved_reference = ChunkValueFlow::analyze_reference(&resolved_body);
+    assert_eq!(
+        resolved_actual, resolved_reference,
+        "resolved value-flow mismatch for source:\n{source}"
+    );
     actual
 }
 
