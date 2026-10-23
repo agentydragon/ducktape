@@ -1,0 +1,203 @@
+{
+  "verifiedAt": "2026-10-23T10:14:25.818286+00:00",
+  "archiveCount": 4,
+  "sourceFiles": {
+    "archives": [
+      {
+        "pv": "pvc-608a0bc6-7cfd-4eb5-a800-707364e53470",
+        "pvUid": "8a1a1834-e5e1-4992-9a33-ca410fcdb96c",
+        "archive": "pvc-608a0bc6-7cfd-4eb5-a800-707364e53470.tar",
+        "archiveBytes": 8335360,
+        "archiveSha256": "742ffb62f9c9abfb0f8fff16f736d4a9095ad4aeb0b7a595b8f36f92a41bbeae",
+        "regularFiles": 246,
+        "logicalBytes": 7649120,
+        "regularFileTreeSha256": "7d7194bff33fc73e56531ecccc9cf5d434cc53ffcf7e740bfee72f8b7b7e6875",
+        "entries": 402,
+        "metadataPreservation": [
+          "numeric ownership",
+          "modes",
+          "symlinks",
+          "hardlinks",
+          "ACLs",
+          "xattrs",
+          "sparse files"
+        ]
+      },
+      {
+        "pv": "pvc-7e9d03f8-ca29-4802-8f58-5ddfe6d20c26",
+        "pvUid": "6d6cd252-05fd-4506-a075-518827a7ce7b",
+        "archive": "pvc-7e9d03f8-ca29-4802-8f58-5ddfe6d20c26.tar",
+        "archiveBytes": 512000,
+        "archiveSha256": "7f161a65400520a6baa777e50712f608acc4d213829923497e07bdd92df290bf",
+        "regularFiles": 57,
+        "logicalBytes": 223445,
+        "regularFileTreeSha256": "ad3ff7f63f6bac60287971ff41131bc1bdcb51957952b27e731569c812d53254",
+        "entries": 175,
+        "metadataPreservation": [
+          "numeric ownership",
+          "modes",
+          "symlinks",
+          "hardlinks",
+          "ACLs",
+          "xattrs",
+          "sparse files"
+        ]
+      },
+      {
+        "pv": "pvc-b72aa944-5094-4b25-ad66-0649b85a64ee",
+        "pvUid": "2c657e67-807f-43aa-b5d2-a0200935af4c",
+        "archive": "pvc-b72aa944-5094-4b25-ad66-0649b85a64ee.tar",
+        "archiveBytes": 1310720,
+        "archiveSha256": "c2444a0f781868110bc102767883f9c56a00c4e1e6f2e4eecb751a6da0ea22e0",
+        "regularFiles": 92,
+        "logicalBytes": 466134,
+        "regularFileTreeSha256": "f51eb7bea547aa119ce2139ef8b9b9702754316da79d4ebf1c32ebc1c8dc7376",
+        "entries": 535,
+        "metadataPreservation": [
+          "numeric ownership",
+          "modes",
+          "symlinks",
+          "hardlinks",
+          "ACLs",
+          "xattrs",
+          "sparse files"
+        ]
+      },
+      {
+        "pv": "pvc-f39d25d7-ea43-485d-8c22-b459c81cc596",
+        "pvUid": "620093cb-c052-4046-a47e-6e1d144dbf75",
+        "archive": "pvc-f39d25d7-ea43-485d-8c22-b459c81cc596.tar",
+        "archiveBytes": 11243520,
+        "archiveSha256": "adab681fa1666942005cf6a7ea4d1f5098952b5d236a0e86d8dad6cf7fb7a24a",
+        "regularFiles": 462,
+        "logicalBytes": 9977860,
+        "regularFileTreeSha256": "e804173bc5bd0c38d68bd6d034a1b661951c605399e66168f8b6dfb2de7f5a14",
+        "entries": 747,
+        "metadataPreservation": [
+          "numeric ownership",
+          "modes",
+          "symlinks",
+          "hardlinks",
+          "ACLs",
+          "xattrs",
+          "sparse files"
+        ]
+      }
+    ],
+    "tarVersion": "tar (GNU tar) 1.35"
+  },
+  "stagingPVC": {
+    "namespace": "piraeus-datastore",
+    "name": "optiplex-migration-archives-ssd",
+    "uid": "36f97ae0-6571-4691-abe1-dc5d8e119d0a",
+    "pv": "pvc-36f97ae0-6571-4691-abe1-dc5d8e119d0a",
+    "reclaimPolicy": "Retain",
+    "csi": {
+      "driver": "seaweedfs-csi-driver",
+      "volumeAttributes": {
+        "diskType": "ssd",
+        "parentDir": "/buckets",
+        "replication": "001",
+        "storage.kubernetes.io/csiProvisionerIdentity": "1792691030731-510-seaweedfs-csi-driver",
+        "volumeCapacity": "1073741824",
+        "volumeName": "pvc-36f97ae0-6571-4691-abe1-dc5d8e119d0a"
+      },
+      "volumeHandle": "/buckets/pvc-36f97ae0-6571-4691-abe1-dc5d8e119d0a"
+    }
+  },
+  "privateMaintenanceDirectory": "/home/agentydragon/.local/share/ducktape-migrations/optiplex-20261023",
+  "uploadedFiles": [
+    {
+      "name": "archive-manifest.json",
+      "bytes": 2807,
+      "sha256": "d16fe70003e39cab1df1eb231881d7f002c27d639b1886ad3016656d4616bafd"
+    },
+    {
+      "name": "pvc-608a0bc6-7cfd-4eb5-a800-707364e53470-archive-members.json",
+      "bytes": 156816,
+      "sha256": "9b6b370cf1aaaafa35ae24fd0cb05072507dc00ac8bf49030030eba0d9e797a2"
+    },
+    {
+      "name": "pvc-608a0bc6-7cfd-4eb5-a800-707364e53470-host-listing.txt",
+      "bytes": 210,
+      "sha256": "a73872390c2167ca7441b82719e6d83275110826c0bed0dcc37793930f0f9251"
+    },
+    {
+      "name": "pvc-608a0bc6-7cfd-4eb5-a800-707364e53470-tar-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "pvc-608a0bc6-7cfd-4eb5-a800-707364e53470.tar",
+      "bytes": 8335360,
+      "sha256": "742ffb62f9c9abfb0f8fff16f736d4a9095ad4aeb0b7a595b8f36f92a41bbeae"
+    },
+    {
+      "name": "pvc-7e9d03f8-ca29-4802-8f58-5ddfe6d20c26-archive-members.json",
+      "bytes": 85848,
+      "sha256": "25508e8bdcdfbacea1b69f2225fb241e8bf7e771c040678cbd894c6a90a88cfa"
+    },
+    {
+      "name": "pvc-7e9d03f8-ca29-4802-8f58-5ddfe6d20c26-host-listing.txt",
+      "bytes": 80,
+      "sha256": "baa1915b4d90d0ae5cfafef97175aa34740a9644d4a6c959e34237068a6c4779"
+    },
+    {
+      "name": "pvc-7e9d03f8-ca29-4802-8f58-5ddfe6d20c26-tar-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "pvc-7e9d03f8-ca29-4802-8f58-5ddfe6d20c26.tar",
+      "bytes": 512000,
+      "sha256": "7f161a65400520a6baa777e50712f608acc4d213829923497e07bdd92df290bf"
+    },
+    {
+      "name": "pvc-b72aa944-5094-4b25-ad66-0649b85a64ee-archive-members.json",
+      "bytes": 244944,
+      "sha256": "7b67303b0683d57cfdbbc63fa1c14d692c90b071acdf3febf708b523a7e2ae68"
+    },
+    {
+      "name": "pvc-b72aa944-5094-4b25-ad66-0649b85a64ee-host-listing.txt",
+      "bytes": 145,
+      "sha256": "8d62e56b4a0315e438ca1d012c231fc1a065865c49b3815066f91a5453ec2f9d"
+    },
+    {
+      "name": "pvc-b72aa944-5094-4b25-ad66-0649b85a64ee-tar-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "pvc-b72aa944-5094-4b25-ad66-0649b85a64ee.tar",
+      "bytes": 1310720,
+      "sha256": "c2444a0f781868110bc102767883f9c56a00c4e1e6f2e4eecb751a6da0ea22e0"
+    },
+    {
+      "name": "pvc-f39d25d7-ea43-485d-8c22-b459c81cc596-archive-members.json",
+      "bytes": 291634,
+      "sha256": "e0e533ea56d82376d63fb1194a736561a04c08755bd1c115f55811141b328b0f"
+    },
+    {
+      "name": "pvc-f39d25d7-ea43-485d-8c22-b459c81cc596-host-listing.txt",
+      "bytes": 210,
+      "sha256": "a73872390c2167ca7441b82719e6d83275110826c0bed0dcc37793930f0f9251"
+    },
+    {
+      "name": "pvc-f39d25d7-ea43-485d-8c22-b459c81cc596-tar-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "pvc-f39d25d7-ea43-485d-8c22-b459c81cc596.tar",
+      "bytes": 11243520,
+      "sha256": "adab681fa1666942005cf6a7ea4d1f5098952b5d236a0e86d8dad6cf7fb7a24a"
+    },
+    {
+      "name": "source-identities.json",
+      "bytes": 7674,
+      "sha256": "2c719183a279ba211a247dda3495f6958ae85fb0a066db3cc04c6c85bd06779f"
+    }
+  ],
+  "captureImageID": "docker.io/library/python@sha256:0514bc76712d64f8bb48adcb95b1ab0d88c69fee95d62fe4c18ee948bee9b1e1",
+  "activeArchiveMatchesFrozenVolSyncRestore": true
+}
