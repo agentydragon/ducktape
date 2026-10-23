@@ -348,8 +348,8 @@ def seaweed(scope: Construct) -> Seaweed:
                 # seaweedfs-ovh-ssd StorageClass (diskType=ssd -> -disk=ssd).
                 #
                 # Keep the evacuated legacy StatefulSet and retained claim template for
-                # rollback, with no running local-path volume servers. The two Piraeus
-                # groups below now hold every logical SSD volume on different nodes.
+                # rollback, with no running local-path volume servers. The Piraeus groups
+                # below provide independent SSD volume servers.
                 "ssd": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
@@ -368,7 +368,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     replicas=1,
                     max_volume_counts=200,
                     additional_node_selector={_HOSTNAME: "ovh-ns1001419"},
-                    # Match both SSD groups without rolling the existing ssd template.
+                    # Match every Seaweed volume group without rolling the legacy ssd template.
                     # Required anti-affinity also protects this pod when peers are scheduled.
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
@@ -381,6 +381,19 @@ def seaweed(scope: Construct) -> Seaweed:
                     max_volume_counts=200,
                     additional_node_selector={
                         _HOSTNAME: "ovh-ns104952",
+                        "storage.allegedly.works/piraeus-ready": "true",
+                    },
+                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
+                ),
+                "ssd-piraeus-104963": _volume_topology(
+                    rack="hil-ovh-h108b01",
+                    storage="250Gi",
+                    storage_class="piraeus-ssd-local",
+                    disk="ssd",
+                    replicas=1,
+                    max_volume_counts=200,
+                    additional_node_selector={
+                        _HOSTNAME: "ovh-ns104963",
                         "storage.allegedly.works/piraeus-ready": "true",
                     },
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
