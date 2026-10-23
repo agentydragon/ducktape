@@ -5,7 +5,6 @@ import socket
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Literal, overload
 
 from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
@@ -104,74 +103,3 @@ async def async_wait_for_port(host: str, port: int, *, timeout_secs: float = 10.
                 await _try_connect()
     except OSError, TimeoutError:
         raise TimeoutError(f"port did not become ready: {host}:{port}")
-
-
-@overload
-def _try_bind(host: str, port: Literal[0]) -> int: ...
-
-
-@overload
-def _try_bind(host: str, port: int) -> int | None: ...
-
-
-def _try_bind(host: str, port: int) -> int | None:
-    """Try to bind to host:port. Returns bound port on success, None on failure.
-
-    Port 0 always succeeds (OS assigns an available port).
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            s.bind((host, port))
-        except OSError:
-            return None
-        _, bound_port = s.getsockname()
-        return int(bound_port)
-
-
-def pick_free_port(host: str = "127.0.0.1", *, preferred: int | None = None, max_tries: int = 100) -> int:
-    """Return an available TCP port on host by briefly binding a socket.
-
-    If preferred is given, tries that port first, then scans upward.
-    Otherwise binds to port 0 to get any available port.
-    Best-effort and race-tolerant.
-    """
-    if preferred is None:
-        return _try_bind(host, 0)
-
-    for p in range(preferred, preferred + max_tries):
-        if (bound := _try_bind(host, p)) is not None:
-            return bound
-    return preferred
-
-
-def bind_free_port(host: str = "127.0.0.1") -> socket.socket:
-    """A listening socket on an OS-assigned port, to hand to the server that will accept on it.
-
-    Unlike ``pick_free_port`` the port is held from the moment it's chosen, so nothing else on a busy
-    host can take it before the server binds; read it back with ``sock.getsockname()[1]``.
-    """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind((host, 0))
-    sock.listen()
-    return sock
-
-
-def reserve_free_port(host: str = "127.0.0.1") -> int:
-    """An OS-assigned port held for a server in another process, which can't take a socket from ``bind_free_port``.
-
-    The port is left in TIME_WAIT (about a minute): until then the kernel gives it to no other bind to
-    port 0 or outgoing connection, as it would after ``pick_free_port``, while a server binding it with
-    SO_REUSEADDR (Go's ``net.Listen``, asyncio, uvicorn) can.
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
-        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        listener.bind((host, 0))
-        listener.listen()
-        address = listener.getsockname()
-        with socket.create_connection(address):
-            accepted, _ = listener.accept()
-            # The end that closes first keeps the TIME_WAIT, so it stays on the server's address.
-            accepted.close()
-    return int(address[1])
