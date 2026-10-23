@@ -20,7 +20,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
-CASES = ollama_cases(get_required_path("ducktape/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml"))
+CASES = ollama_cases(get_required_path("ducktape/cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml"))
 
 
 def _id(case: tuple[runner_pb2.Harness, str]) -> str:

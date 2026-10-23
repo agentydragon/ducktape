@@ -16,7 +16,7 @@ def ollama_cases(manifest: Path) -> list[tuple[runner_pb2.Harness, str]]:
         resource
         for resource in yaml.safe_load_all(manifest.read_text())
         if resource["kind"] == "ConfigMap"
-        and resource["metadata"]["namespace"] == "agentplane-testing"
+        and resource["metadata"]["namespace"] == "agentplane-staging"
         and resource["metadata"]["name"] == "app-config"
     ]
     config = yaml.safe_load(config_map["data"]["config.yaml"])
@@ -32,5 +32,5 @@ def ollama_cases(manifest: Path) -> list[tuple[runner_pb2.Harness, str]]:
         if route in catalog.harnesses[Harness(runner_pb2.Harness.Name(harness))]
     ]
     if not cases:
-        raise ValueError("committed Agentplane testing config offers no Ollama smoke cases")
+        raise ValueError("committed Agentplane staging config offers no Ollama smoke cases")
     return cases

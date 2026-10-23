@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import shlex
 import subprocess
 from collections.abc import AsyncIterator, Iterator
@@ -37,7 +36,7 @@ from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2
 from agentplane.system_tests import mcp_servers
 from agentplane.system_tests.agent import Agent
-from agentplane.system_tests.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
+from agentplane.system_tests.conftest import Sandboxes, namespace
 from agentplane.system_tests.operator_login import (
     LoginBlockedError,
     OperatorCredentials,
@@ -217,7 +216,7 @@ class PolicyObjects:
 
 @pytest.fixture
 def policy_objects() -> Iterator[PolicyObjects]:
-    objects = PolicyObjects(namespace=os.environ.get(NAMESPACE, TESTING_NAMESPACE))
+    objects = PolicyObjects(namespace=namespace())
     try:
         yield objects
     finally:

@@ -35,7 +35,6 @@ flowchart LR
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
     end
     subgraph K3S_TRACK[System tests on k3s, retiring agentplane-testing]
-        LIVE_TARGETS_OFF_TESTING[Candidate: live targets off testing]
         STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
         AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
         TESTING_ENVIRONMENT_RETIRE[Blocked: delete agentplane-testing]
@@ -1930,21 +1929,12 @@ changes.
 
 ```mermaid
 flowchart LR
-    LIVE_TARGETS_OFF_TESTING[Candidate: live targets off testing]
     STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
     AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
     TESTING_ENVIRONMENT_RETIRE[Blocked: delete agentplane-testing]
-    LIVE_TARGETS_OFF_TESTING --> TESTING_ENVIRONMENT_RETIRE
     STAGING_FIRST_ROLLOUT --> TESTING_ENVIRONMENT_RETIRE
     AGENT_TESTING_ACCESS_RETIRE --> TESTING_ENVIRONMENT_RETIRE
 ```
-
-### `LIVE_TARGETS_OFF_TESTING` — no live target points at testing
-
-**Candidate.** Delete the `_live` targets of `test_dispatcher`, `test_storage`, `test_thread_stream` and
-`test_vm_workspace_ownership`, which their k3s and `_vm` targets cover. `test_thread_latency` and
-`test_ollama_routes`, which need Electric and the GPU Ollama, run against staging and read staging's app ConfigMap.
-The same change deletes the `live` variant from `system_test` and the `TESTING_NAMESPACE` default.
 
 ### `STAGING_FIRST_ROLLOUT` — risky config goes to staging
 
@@ -1957,20 +1947,24 @@ cert-manager, Gateway API and Kyverno changes have no test, so staging is the fi
 
 **Candidate.** The managed presets stop selecting the `agentplane-testing-operator` Role and the `agentplane-testing`
 egress policy ([agent RBAC](../../cluster/docs/agent_rbac.md)); the recipes that used them point at system tests
-through `bbr` and at staging reads.
+through `bbr` and at staging reads. The grants that served only the deleted `_live` targets go too: testing's
+`AcceptanceToken` and `_DISPATCHER_ACCEPTANCE_RULES` (`cluster/cdk8s/agentplane/testing.py`), and the Action policy
+admitting boxes to testing's app (`actions_staging_policies.py`).
 
 ### `TESTING_ENVIRONMENT_RETIRE` — delete `agentplane-testing`
 
-**Blocked on the three nodes above.** Three PRs: the Flux kustomization, image pins, generated manifests, DNS and
+**Blocked on the two nodes above.** Three PRs: the Flux kustomization, image pins, generated manifests, DNS and
 routes; the Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and
-volumes, a data drop that waits for the operator's word. Preserve staging.
+volumes, a data drop that waits for the operator's word. Preserve staging. The k3s fixture builds on testing's
+environment (`cluster/cdk8s/agentplane/testing.py`'s `ENV`, operator OIDC and Action federation), so the first PR
+moves what the fixture reads into it rather than deleting it.
 
 ## 15. Cleanups after the current tracks
 
 Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
 lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the integrated Connection/OAuth runtime
 and its old tables in [MCP edge extraction](mcp_edge_extraction.md#remaining-work); testing's Dex MCP client and Action groups
-in `TESTING_ENVIRONMENT_RETIRE`; the `TESTING_NAMESPACE` default in `LIVE_TARGETS_OFF_TESTING`. The overview's graph is in
+in `TESTING_ENVIRONMENT_RETIRE`. The overview's graph is in
 [Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
 produce are named at the fake and are not cleanups.
 

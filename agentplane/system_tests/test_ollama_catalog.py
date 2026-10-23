@@ -25,10 +25,10 @@ def _manifest(tmp_path: Path, harnesses: dict[str, list[str]]) -> Path:
     path.write_text(
         yaml.safe_dump_all(
             [
-                {"kind": "Service", "metadata": {"name": "app", "namespace": "agentplane-testing"}},
+                {"kind": "Service", "metadata": {"name": "app", "namespace": "agentplane-staging"}},
                 {
                     "kind": "ConfigMap",
-                    "metadata": {"name": "app-config", "namespace": "agentplane-testing"},
+                    "metadata": {"name": "app-config", "namespace": "agentplane-staging"},
                     "data": {"config.yaml": yaml.safe_dump(config, sort_keys=False)},
                 },
             ]
@@ -55,7 +55,7 @@ def test_no_ollama_cases_fails_instead_of_silently_skipping(tmp_path: Path) -> N
 
 
 def test_committed_app_config_supplies_smoke_cases() -> None:
-    path = get_required_path("ducktape/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml")
+    path = get_required_path("ducktape/cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml")
     cases = ollama_cases(path)
     assert len(cases) == len(set(cases))
 

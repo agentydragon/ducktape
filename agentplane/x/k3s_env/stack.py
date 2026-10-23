@@ -32,7 +32,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from agentplane.system_tests.conftest import AUDIENCE, TESTING_SERVICE_ACCOUNT
+from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
 from agentplane.testing import tls
 from agentplane.x.k3s_env import rendered_fixture, vm_sandboxes
 from agentplane.x.k3s_env.bootstrap import Bootstrap
@@ -503,7 +503,7 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
                 mcp_edge_url=f"{mcp.mcp_edge_origin}/mcp",
             )
         token = k3s.kubectl(
-            "-n", fixture.namespace, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
+            "-n", fixture.namespace, "create", "token", AGENT_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
         ).strip()
         print("memory:", run("free", "-m"))
         timeline.mark("stack ready")

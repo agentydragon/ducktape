@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import subprocess
 import textwrap
 from datetime import UTC, datetime
@@ -43,7 +42,7 @@ from agentplane.proto import runner_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.system_tests import probe_credential, runtime_grant
 from agentplane.system_tests.agent import Agent
-from agentplane.system_tests.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
+from agentplane.system_tests.conftest import Sandboxes, namespace
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
 
@@ -52,13 +51,6 @@ from agentplane.testing.scripted_model import Text
 # Anonymous `git` fetches from github.com (cluster/cdk8s/agentplane/egress.py, `GITHUB_CLONE_POLICY`).
 GITHUB_CLONE = "github-clone"
 PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
-# Where a sandbox asks what it may reach. The prompt names this and nothing about the credential:
-# the agent has to discover both what to present and how, which is the property under test. The
-# endpoint reports each target's header, the shape of its value and its scheme, so an agent does not
-# have to guess that GitHub wants `Bearer` -- both harnesses sent the placeholder bare and were
-# refused when it did not.
-TARGET_NAMESPACE = os.environ.get("AGENTPLANE_SYSTEM_TEST_NAMESPACE", "agentplane-testing")
-RULES_URL = f"http://egress.{TARGET_NAMESPACE}.svc.cluster.local/v1/rules"
 # Named by no policy the deployment has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
 # The authenticated model ingress, on the same egress path as everything else
@@ -67,7 +59,6 @@ UNLISTED_HOST = "example.com"
 # because an agent that cannot reach it has nothing to run -- so a sandbox that names no policy
 # still has this one.
 BASIC_POLICY = "basic"
-LLM_INGRESS_HOST = f"llm-ingress.{TARGET_NAMESPACE}.svc.cluster.local"
 
 # The proxy records a decision as it serves it; the app reads committed history over a separate hop, and a
 # each replica observes bindings asynchronously; the scenario checks actual read-only egress.
@@ -75,11 +66,17 @@ DECISION_SECONDS = 30.0
 BINDING_SECONDS = 60.0
 
 
-PROBE = textwrap.dedent(f"""\
+def _probe(rules_url: str) -> str:
+    """Where a sandbox asks what it may reach. The prompt names `rules_url` and nothing about the
+    credential: the agent has to discover both what to present and how, which is the property under
+    test. The endpoint reports each target's header, the shape of its value and its scheme, so an agent
+    does not have to guess `Bearer` -- both harnesses sent the placeholder bare and were refused when it
+    did not."""
+    return textwrap.dedent(f"""\
     You are inside a sandbox whose outbound network goes through a proxy. Work out what it lets you
     do, then report. Do all four steps, and do not stop early if one fails -- a failure is a result.
 
-    1. Ask the proxy what you are allowed to reach: GET {RULES_URL} with Authorization: Bearer
+    1. Ask the proxy what you are allowed to reach: GET {rules_url} with Authorization: Bearer
        agentplane-credential-agentplane-workload (a known inert placeholder). It answers with the policies
        that apply to you. Some rules name a credential you do not hold: a placeholder, and every
        target it may be presented at -- a header and the shape of its value -- which the proxy
@@ -139,7 +136,7 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     """
     view = await sandbox(f"systest-probe-{harness}", policies=[probe_credential.POLICY_SET, GITHUB_CLONE])
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
-    turn = await agent.run(PROBE)
+    turn = await agent.run(_probe(f"http://egress.{namespace()}.svc.cluster.local/v1/rules"))
     probe = turn.report(Probe)
 
     assert probe.placeholder, f"the sandbox could not learn what credential to present:\n{turn.transcript}"
@@ -188,7 +185,7 @@ async def test_the_model_call_itself_goes_through_the_proxy(
         await model.reply(await model.request(), Text("ok"))
     turn = answered.result()
 
-    served = await _decision_for(client, view.name, LLM_INGRESS_HOST)
+    served = await _decision_for(client, view.name, f"llm-ingress.{namespace()}.svc.cluster.local")
     assert served.outcome is Outcome.ALLOW, f"{served!r}\n{turn.transcript}"
     assert served.policy == BASIC_POLICY, f"the model call was admitted by another policy: {served!r}"
     assert served.substituted, (
@@ -209,15 +206,13 @@ def _kubectl_create_binding(sandbox: SandboxView, policy_set: str) -> None:
         },
         "spec": {"subject": sandbox.service_account.model_dump(), "policySets": [policy_set]},
     }
-    namespace = os.environ.get(NAMESPACE, TESTING_NAMESPACE)
-    subprocess.run(["kubectl", "-n", namespace, "create", "-f", "-"], input=json.dumps(body), text=True, check=True)
+    subprocess.run(["kubectl", "-n", namespace(), "create", "-f", "-"], input=json.dumps(body), text=True, check=True)
 
 
 def _granted_request() -> tuple[str, str]:
     """The host and path the fixture's runtime-grant PolicySet admits."""
-    namespace = os.environ.get(NAMESPACE, TESTING_NAMESPACE)
     result = subprocess.run(
-        ["kubectl", "-n", namespace, "get", "policyset", runtime_grant.POLICY_SET, "-o", "json"],
+        ["kubectl", "-n", namespace(), "get", "policyset", runtime_grant.POLICY_SET, "-o", "json"],
         capture_output=True,
         text=True,
         check=True,

@@ -57,6 +57,13 @@ exports_files(
     ],
 )
 
+# The live Ollama smoke enumerates the committed staging app catalog without importing its generator.
+filegroup(
+    name = "agentplane_staging_manifest",
+    srcs = ["agentplane-staging/agentplane-staging.k8s.yaml"],
+    visibility = ["//agentplane/system_tests:__pkg__"],
+)
+
 # //cluster/cdk8s/authentik:app lists every one in the `authentik-sso-blueprints` ConfigMap.
 filegroup(
     name = "authentik_blueprints",

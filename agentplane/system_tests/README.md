@@ -17,11 +17,11 @@ marked `vm_sandboxes`. `system_test(vm_sandboxes = ...)` runs those cases, and o
 `test_vm_sandbox_vm` boots a VM Sandbox and runs a scripted turn on each harness through the
 launcher's egress relay. The other `_vm` targets are `manual`; name one to run it.
 `system_test(real_model = True)` runs the `real_model` cases as `<scenario>_real_model`
-([Real model on k3s](#real-model-on-k3s)). `<scenario>_live` runs the scenario against the deployment
-those variables and the caller's kubeconfig name, testing by default ([Running live](#running-live)).
+([Real model on k3s](#real-model-on-k3s)). Two checks need what only a deployment has and run against
+staging by hand ([Running live](#running-live)).
 
-The model backend is the target's too (`AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND`). A deployment serves a
-real model. On the k3s stack, LLM ingress forwards to the scenario itself, which plays the model
+The model backend is the target's too (`AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND`). The `_real_model` stack
+and a deployment serve a real model. On the other stacks, LLM ingress forwards to the scenario itself, which plays the model
 ([`scripted_upstream.py`](scripted_upstream.py)): the `scripted` fixture hands a scenario the
 `ScriptedModel` of its own Sandbox's Pod, and the scenario answers each request and asserts what
 the harness sent. A case marked `real_model` or `scripted_model` runs only where that backend is;
@@ -54,11 +54,11 @@ refusals and other server failures are not startup readiness signals.
 `test_thread_stream` is a browser's view of a Thread with the scripted model: every tab follows one
 archived log by event id, a reconnect resumes after its `Last-Event-ID`, a command id answers only
 the command it first named, and turns nobody watches are archived, a failed one included, with the
-next input its own turn. It runs live as `test_thread_stream_live`.
+next input its own turn.
 
 ## Thread latency
 
-`test_thread_latency` times a one-word turn at low reasoning effort and holds what agentplane adds
+`test_thread_latency` times a one-word turn on staging at low reasoning effort and holds what agentplane adds
 to the harness's own reported turn to half a second, then times the browser's reads to open that
 thread, per stage, cold and warm, against regression ceilings; its module docstring defines each
 interval. Each run writes its timings to
@@ -71,10 +71,10 @@ opens two Codex Sessions without sending a model turn. The first setup checks th
 second Session's workspace path is absent; the second exercises normal runner setup, checks UID/GID
 107 ownership, then runs `git init` and `git rev-parse` with global and system Git config disabled.
 Fixture teardown suspends and deletes only the Sandbox created by that invocation.
-`test_vm_workspace_ownership_vm` runs it on a stack of its own; live:
+`test_vm_workspace_ownership_vm` runs it on a stack of its own; it is `manual`:
 
 ```bash
-bazelisk test //agentplane/system_tests:test_vm_workspace_ownership_live --test_output=streamed
+bbr test //agentplane/system_tests:test_vm_workspace_ownership_vm
 ```
 
 The result is written to the target's `test.outputs/vm-workspace-ownership.json`.
@@ -86,15 +86,14 @@ built-in Pod `DirectoryTree` and VM `RawDiskImage`/ext4 workspace paths. It chec
 PVC identity and layout records, marker bytes across suspend/resume, refusal of an incompatible
 claim before workload start, and retained data after VM replacement. It creates only its own
 Sandbox, template and workload, then removes them through UID-preconditioned lifecycle operations.
-It refuses a deployment that already has Sandboxes, so live on testing it runs only while no one else
-uses it; `test_storage` and `test_storage_vm` run the Pod and VM cases on stacks of their own.
+It refuses a stack that already has Sandboxes. `test_storage` and `test_storage_vm` (`manual`) run the
+Pod and VM cases on stacks of their own:
 
 ```bash
-bazelisk test //agentplane/system_tests:test_storage_live --test_output=streamed
+bbr test //agentplane/system_tests:test_storage //agentplane/system_tests:test_storage_vm
 ```
 
-The target writes `test.outputs/storage-{pod-directory,vm-raw}.json`. The live target is
-`manual` and `no-remote-exec`; general controlled-host setup is below.
+The targets write `test.outputs/storage-{pod-directory,vm-raw}.json`.
 
 ## Suspend and resume
 
@@ -135,29 +134,20 @@ Service remains `session-dispatcher:8080`; replica operations target the `runner
 Deployment, and direct Pod probes use the shared gRPC listener on `8080`.
 
 The `queue` case checks authenticated submission to a stopped Sandbox, durable queueing, and
-runner admission after an explicit start. It uses a fixture Sandbox and the testing app's workload
-identity for TokenReview; it does not call app HTTP or run a model turn. Run it on the authorized
-operator host or from a `claude-ai` Sandbox (the
-[testing operator Role](../../cluster/docs/agent_rbac.md#testing-only-agentplane-operator-access) holds the grants it needs):
+runner admission after an explicit start. It uses a fixture Sandbox and the stack app's workload
+identity for TokenReview; it does not call app HTTP or run a model turn. One case alone:
 
 ```bash
-bazelisk test //agentplane/system_tests:test_dispatcher_live \
-  --test_arg=-k --test_arg=queue --test_output=streamed
+bbr test //agentplane/system_tests:test_dispatcher --test_arg=-k --test_arg=queue
 ```
 
-To cover replica takeover and deletion broadcast, run the bounded testing-only replica case:
-
-```bash
-bazelisk test //agentplane/system_tests:test_dispatcher_live \
-  --test_arg=-k --test_arg=replicas --test_output=streamed
-```
-
-It queues a setting change in a fresh stopped Sandbox, temporarily scales the testing Runner Gateway
+The `replicas` case covers replica takeover and deletion broadcast. It queues a setting change in a
+fresh stopped Sandbox, temporarily scales the Runner Gateway
 from one replica to two, deletes the original owner's Pod with a UID precondition, and observes
 Lease takeover through a watch. The retained command is then delivered after explicitly starting
 the Sandbox. Finally, streams pinned to both replica Pods must receive the queued command's
 terminal deletion outcome. No model turn or app HTTP API is used. Authentication uses a short-lived
-token bound to an existing testing app Pod, so an app rollout during the probe revokes that token.
+token bound to an existing app Pod, so an app rollout during the probe revokes that token.
 
 The fixture Sandbox is deleted by UID; the failover case deletes only the recorded owner Pod. The
 original replica count is restored if the Deployment UID and generation still match the temporary
@@ -166,21 +156,13 @@ scale, preserving concurrent GitOps/operator changes. Evidence is written to
 case retains the original single-replica delivery check.
 
 The `opted_in` case covers send-triggered wake for both app `OpenSession` and notification
-`SubmitInput`. Run it after the Goose migration completes and the Runner Gateway, Sandbox Controller, app
-and notification images are Ready and the caller allowlist matches the intended identities:
-
-```bash
-bazelisk test //agentplane/system_tests:test_dispatcher_live \
-  --test_arg=-k --test_arg=opted_in --test_output=streamed
-```
-
-It creates one stopped Sandbox with `wakeOnSend: true`, then concurrently submits an app
+`SubmitInput`. It creates one stopped Sandbox with `wakeOnSend: true`, then concurrently submits an app
 `OpenSession` and a notification `SubmitInput` using short-lived tokens bound to existing Pods. Both
 senders must share one `wakeGeneration`; the Dispatcher waits for a new Ready incarnation before
 admitting the Session and input. The `queue` case covers the default `wakeOnSend: false`, which
 leaves a send queued without changing Sandbox state. New Sandboxes default to false; the app's
 create and edit controls let the operator opt in explicitly, and changing the setting alone does
-not wake a Sandbox. These cases exercise testing, not staging. The Dispatcher charges at most ten
+not wake a Sandbox. The Dispatcher charges at most ten
 distinct wake generations per authenticated caller per rolling minute.
 
 ## MCP integration
@@ -261,18 +243,16 @@ fixture's own PolicySet ([`runtime_grant.py`](runtime_grant.py)), not one a depl
 
 ## Running live
 
-A `_live` target is not in CI and not on RBE: it is `manual`, so `//...` never selects it, and it
-needs a kubeconfig and a route to the cluster.
-
-Bazel excludes `manual` targets from package patterns, so `:all` runs the fast offline driver
-tests and the k3s targets, not any live run. Name the live target explicitly:
+`test_thread_latency` (Electric's sync path) and `test_ollama_routes` (the GPU Ollama) need what only a
+deployment has, and run against staging. They are not in CI and not on RBE: they are `manual`, so
+`//...` never selects them, and they need a kubeconfig and a route to the cluster. Name one explicitly:
 
 ```bash
 bazelisk test //agentplane/system_tests:test_thread_latency --test_output=streamed --test_arg=-s
 ```
 
 `//agentplane/system_tests:test_ollama_routes` exercises every configured Ollama chat
-route offered by the committed testing app ConfigMap, on each harness that offers it,
+route offered by the committed staging app ConfigMap, on each harness that offers it (Codex alone today),
 with the 128k cases first. Collection reads the generated manifest, not cdk8s Python;
 each case still checks that the live app offers the route before opening a session. Each cell creates a Sandbox,
 opens a real session, and requires recorded shell-tool output. It has an absolute
@@ -290,8 +270,8 @@ For transient sidecar diagnosis, `--test_env=OLLAMA_SMOKE_HOLD_SECONDS=30` retai
 the isolated Sandbox for at most 30 seconds after the turn result is written, before
 normal fixture cleanup.
 
-By default it tests `https://agentplane-testing.allegedly.works` and mints its own bearer token with
-`kubectl -n agentplane-testing create token agentplane-agent --audience=agentplane`. That call needs
+By default they test `https://agentplane-staging.allegedly.works` and mint their own bearer token with
+`kubectl -n agentplane-staging create token agentplane-agent --audience=agentplane`. That call needs
 RBAC on `serviceaccounts/token`, and the app only admits subjects its `AGENTPLANE_TOKEN_SUBJECTS`
 names, so a token for any other ServiceAccount is refused with `403`.
 
@@ -299,15 +279,12 @@ Override any of it through the environment:
 
 | Variable                                 | Default                                      |
 | ---------------------------------------- | -------------------------------------------- |
-| `AGENTPLANE_SYSTEM_TEST_URL`             | `https://agentplane-testing.allegedly.works` |
+| `AGENTPLANE_SYSTEM_TEST_URL`             | `https://agentplane-staging.allegedly.works` |
 | `AGENTPLANE_SYSTEM_TEST_TOKEN`           | minted with `kubectl`                        |
-| `AGENTPLANE_SYSTEM_TEST_NAMESPACE`       | `agentplane-testing`                         |
+| `AGENTPLANE_SYSTEM_TEST_NAMESPACE`       | `agentplane-staging`                         |
 | `AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT` | `agentplane-agent`                           |
 
-Staging remains available for ad hoc click-through tests by overriding the URL and namespace.
-The testing environment is Flux-managed and exposes the app and Dex HTTPS routes needed for the
-browser authorization-code flow. Do not copy credentials into the checkout or pass them as
-command-line arguments.
+Do not copy credentials into the checkout or pass them as command-line arguments.
 
 ### Controlled-host preflight
 
@@ -323,8 +300,8 @@ Before starting a long run, check the client-side seams separately:
 command -v bazelisk kubectl
 bazelisk version
 kubectl config current-context
-kubectl -n agentplane-testing auth can-i create serviceaccounts/token/agentplane-agent
-kubectl -n agentplane-testing create token agentplane-agent \
+kubectl -n agentplane-staging auth can-i create serviceaccounts/token/agentplane-agent
+kubectl -n agentplane-staging create token agentplane-agent \
   --audience=agentplane --duration=600s >/dev/null
 ```
 
@@ -337,16 +314,15 @@ runtime before investigating staging.
 
 Use the first point at which the run fails to choose the next investigation:
 
-| Observation                                                   | Likely seam                                                                  |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| No `systest-*` Sandbox is created                             | Bazel client, module/repository rules, kubeconfig, or token setup            |
-| Sandbox is created but never becomes ready                    | Scheduling, image pull, runner bootstrap, or testing capacity                |
-| App rejects the initial API request                           | Token audience, subject allowlist, or app ingress                            |
-| Model turn hangs and the decision history is empty            | Sandbox proxy environment, proxy route, or model ingress path                |
-| Ring records a deny for an expected destination               | Egress policy/binding or destination URL mismatch                            |
-| Rules discovery succeeds but destination authentication fails | Placeholder substitution or independent destination authentication           |
-| Test assertions pass but teardown reports a failure           | Runtime cleanup/reconciliation; inspect the named Sandbox before rerunning   |
-| Process is killed and `systest-*` Sandboxes remain            | Expected teardown limitation; clean them up deliberately before the next run |
+| Observation                                         | Likely seam                                                                  |
+| --------------------------------------------------- | ---------------------------------------------------------------------------- |
+| No `systest-*` Sandbox is created                   | Bazel client, module/repository rules, kubeconfig, or token setup            |
+| Sandbox is created but never becomes ready          | Scheduling, image pull, runner bootstrap, or staging capacity                |
+| App rejects the initial API request                 | Token audience, subject allowlist, or app ingress                            |
+| Model turn hangs and the decision history is empty  | Sandbox proxy environment, proxy route, or model ingress path                |
+| Ring records a deny for an expected destination     | Egress policy/binding or destination URL mismatch                            |
+| Test assertions pass but teardown reports a failure | Runtime cleanup/reconciliation; inspect the named Sandbox before rerunning   |
+| Process is killed and `systest-*` Sandboxes remain  | Expected teardown limitation; clean them up deliberately before the next run |
 
 Keep the complete test output and the proxy/app decision evidence together.
 The model transcript explains what the agent attempted, but the decision history
@@ -354,8 +330,8 @@ is the authority for what the proxy actually served.
 
 ### Where an agent can run it
 
-Agent pods must use `bbr`/CI, never local Bazel or pytest. The live targets are
-`manual` / `no-remote-exec` and lacks an approved CI runner with staging identity and
+Agent pods must use `bbr`/CI, never local Bazel or pytest. The live checks are
+`manual` / `no-remote-exec` and lack an approved CI runner with staging identity and
 connectivity. Therefore it is **blocked from agent pods**; do not disable remote
 execution/caching or mint substitute credentials to work around that boundary.
 The controlled-host instructions above are operator-only, not an agent-pod fallback.
@@ -365,21 +341,21 @@ Teardown subscribes to `/live/sandboxes` until a fresh watch snapshot reports ef
 mode for the created Sandbox's name and UID, within the existing readiness bound. The spec write
 alone does not satisfy deletion admission. Authorization refusals fail immediately; teardown
 does not poll the inventory, reconnect a dropped stream, or delete a replacement Sandbox.
-Afterwards, check that nothing leaked: `kubectl -n agentplane-testing get sandboxes.agentplane.allegedly.works`
+Afterwards, check that nothing leaked: `kubectl -n agentplane-staging get sandboxes.agentplane.allegedly.works`
 should show no `systest-*`.
 
 ## What it costs
 
-Each scenario provisions a Pod and runs turns on the cheap-experiments LiteLLM key with Haiku, so a
-full run is minutes and a few cents. Sandboxes are suspended and deleted in fixture teardown,
-including after a failure; a teardown that cannot delete one fails loudly, because a leaked sandbox
-holds a PVC and a node slot in testing.
+A `_real_model` target runs a few turns on the BuildBuddy live-test key (Haiku and luna) on a stack of
+its own, so a run is minutes and a few cents. A live check's Sandboxes are suspended and deleted in
+fixture teardown, including after a failure; a teardown that cannot delete one fails loudly, because a
+leaked sandbox holds a PVC and a node slot in staging.
 
 ## TODO: sweep sandboxes a killed run leaks
 
 Fixture teardown suspends and deletes every sandbox a scenario created, including after a failure.
 It cannot run if the process is killed outright — a Bazel timeout, a `^C`, a dropped connection —
-and each leaked sandbox holds a PVC and a node slot in testing until someone notices.
+and each leaked sandbox holds a PVC and a node slot in staging until someone notices.
 
 What that wants is a sweep at session start: list the sandboxes whose names carry this suite's
 `systest-` stem, and delete any older than a run could plausibly be. Deliberately not built yet,

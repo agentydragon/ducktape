@@ -1,4 +1,4 @@
-"""A system test scenario: run on a k3s stack of its own and, opted in, with a real model or live against a deployed instance."""
+"""A system test scenario: run on a k3s stack of its own, opted in with VM Sandboxes or a real model."""
 
 load("//agentplane/x/k3s_env:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -30,10 +30,9 @@ _VM_FIXTURE = "//agentplane/x/k3s_env:rendered/local-model-vm.json"
 _REAL_MODEL_FIXTURE = "//agentplane/x/k3s_env:rendered/public-litellm.json"
 _REAL_MODEL_SECRET = "OPENAI_API_KEY"
 
-def system_test(name, srcs, deps, k3s = None, vm_sandboxes = None, real_model = False, live = True, mcp_fixtures = False, size = "small", timeout = None):
+def system_test(name, srcs, deps, k3s = None, vm_sandboxes = None, real_model = False, mcp_fixtures = False):
     """Generates `name` when `k3s` names its scenarios' kind, `name + "_vm"` when `vm_sandboxes` says
-    where it runs, `name + "_real_model"` when `real_model` is True, and `name + "_live"` unless `live`
-    is False.
+    where it runs, and `name + "_real_model"` when `real_model` is True.
 
     `name` starts its own k3s stack in one RBE action (`agentplane.x.k3s_env.system_test_target`) and
     runs the `scripted_model` scenarios and the unmarked ones, in PR CI like any test; `k3s` is
@@ -42,10 +41,7 @@ def system_test(name, srcs, deps, k3s = None, vm_sandboxes = None, real_model = 
     runs, on a stack with KubeVirt; `vm_sandboxes` is `"ci"` for what only a VM exercises (bring-up,
     networking), else `"manual"`, run by hand. `name + "_real_model"` runs the `real_model` scenarios on
     a k3s stack whose LLM ingress forwards to the public LiteLLM; it is tagged `live_openai_api`, so PR CI
-    builds it and `--config=live-openai` runs it. `name + "_live"` runs against the deployment the caller's
-    environment names (`AGENTPLANE_SYSTEM_TEST_*`, testing by default) with the caller's kubeconfig and
-    a real model, off RBE; a scenario with only `scripted_model` cases has nothing to run there and
-    passes `live = False`. `size` and `timeout` apply to `name + "_live"`.
+    builds it and `--config=live-openai` runs it.
 
     A hidden library owns the source, so all targets share one compiled copy. Gazelle does not
     manage macro rules: exclude the source in the BUILD file and keep `deps` by hand.
@@ -60,27 +56,6 @@ def system_test(name, srcs, deps, k3s = None, vm_sandboxes = None, real_model = 
         "main_module": "pytest_bazel",
         "deps": [":" + name + "_lib", "@pypi//pytest_bazel"],
     }
-    if live:
-        py_test(
-            name = name + "_live",
-            size = size,
-            timeout = timeout,
-            # kubectl reads the caller's own kubeconfig; without HOME or KUBECONFIG it falls back to
-            # http://localhost:8080 and fails for a reason that looks nothing like the cause.
-            env_inherit = [
-                "AGENTPLANE_SYSTEM_TEST_NAMESPACE",
-                "AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT",
-                "AGENTPLANE_SYSTEM_TEST_TOKEN",
-                "AGENTPLANE_SYSTEM_TEST_URL",
-                "HOME",
-                "KUBECONFIG",
-            ],
-            tags = [
-                "manual",
-                "no-remote-exec",
-            ],
-            **common
-        )
     if k3s != None:
         _k3s_test(
             name = name,

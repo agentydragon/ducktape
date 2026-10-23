@@ -1,9 +1,9 @@
 """Fixtures for the system tests: a client against a deployed app, both harnesses, and
 sandboxes that clean up after themselves.
 
-Which instance is under test comes from the environment; the shipped default is the isolated
-testing deployment. Staging remains available for explicit ad hoc runs, and a scenario's k3s
-target publishes a k3s stack of its own the same way (`agentplane.x.k3s_env.system_test_target`).
+Which instance is under test comes from the environment: a scenario's target publishes a k3s stack of
+its own (`agentplane.x.k3s_env.system_test_target`). The live checks that need what only a deployment
+has (`test_thread_latency`, `test_ollama_routes`) default to staging.
 
 So does the model backend (`MODEL_BACKEND`): a real model, the default, or one the scenario scripts
 (`scripted_upstream`). A scenario that needs one marks it, and the other target deselects it.
@@ -51,9 +51,10 @@ class ModelBackend(StrEnum):
     SCRIPTED_MODEL = "scripted_model"
 
 
-TESTING_URL = "https://agentplane-testing.allegedly.works"
-TESTING_NAMESPACE = "agentplane-testing"
-TESTING_SERVICE_ACCOUNT = "agentplane-agent"
+STAGING_URL = "https://agentplane-staging.allegedly.works"
+STAGING_NAMESPACE = "agentplane-staging"
+# The app's agent identity in every deployment (cluster/cdk8s/agentplane/app.py).
+AGENT_SERVICE_ACCOUNT = "agentplane-agent"
 AUDIENCE = "agentplane"
 
 # The Pod SandboxTemplate every deployment offers, and the VM one of a deployment that runs VM Sandboxes.
@@ -120,12 +121,12 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 def namespace() -> str:
     """Read at call time: the k3s target publishes its stack after the scenario modules are imported."""
-    return os.environ.get(NAMESPACE, TESTING_NAMESPACE)
+    return os.environ.get(NAMESPACE, STAGING_NAMESPACE)
 
 
 @pytest.fixture(scope="session")
 def base_url() -> str:
-    return os.environ.get(BASE_URL, TESTING_URL)
+    return os.environ.get(BASE_URL, STAGING_URL)
 
 
 @pytest.fixture(scope="session")
@@ -134,9 +135,7 @@ def token() -> str:
     if (supplied := os.environ.get(TOKEN)) is not None:
         return supplied
     return mint_token(
-        namespace=namespace(),
-        service_account=os.environ.get(SERVICE_ACCOUNT, TESTING_SERVICE_ACCOUNT),
-        audience=AUDIENCE,
+        namespace=namespace(), service_account=os.environ.get(SERVICE_ACCOUNT, AGENT_SERVICE_ACCOUNT), audience=AUDIENCE
     )
 
 
