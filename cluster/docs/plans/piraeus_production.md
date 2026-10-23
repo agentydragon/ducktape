@@ -20,18 +20,12 @@ Etcd recovery relies on the two surviving healthy members; preserve the cluster'
 existing identity and credentials and rehearse member removal/rejoin. This
 exception does not waive preservation of application data or SeaweedFS master state.
 
-The first physical node, `ovh-ns1001419`, was converted on 2026-10-22. Attic and
-Study Casino returned to three healthy members with their replacement replicas
-on strict-local Piraeus claims. The new Piraeus SSD volume server passed a
-bounded native move of one 239 MB volume and separate owned S3 write/read checks;
-all 34 SSD volume IDs retain two copies. Bulk redistribution has not run.
-Seaweed master-2 returned from its temporary HDD claim to a 4Gi strict-local
-Piraeus claim on the first node, preserving Raft identity and all cold-copy file
-hashes/metadata. Three-master agreement and owned S3 read/write checks passed;
-operator/Helm/Flux management resumed. The HDD source remains retained.
-The [node-roll runbook](../runbooks/piraeus_node_roll.md) records that handoff,
-the next control-plane candidates, per-node readiness gates and conditional
-HDD-worker/control-plane pairing. No later node roll has started.
+The three OVH SSD control planes, OptiPlex and the first HDD worker
+`ovh-ns103656` are converted and admitted. `ovh-ns103711` is the current HDD
+rebuild target; `ovh-ns102453` follows after application redundancy is restored.
+The [node-roll runbook](../runbooks/piraeus_node_roll.md) supplies execution gates;
+the migration evidence index carries dated acceptance results. The remaining
+application work is sequenced below, including claims that outlive a node roll.
 
 The [disposable QEMU rehearsal](../../debug/piraeus_migration/first_node/README.md)
 and physical first-node checks cover LVM_THIN lifecycle and control-plane
@@ -499,46 +493,132 @@ them on a legacy `localpath` LV. Use application-native replication or a quiesce
 final copy for other state, keeping each conversion serial and independently
 reviewable.
 
-### Existing local-path workload candidates
+### Remaining local-path PVC migration sequence
 
-The 2026-10-19 PVC inventory is a dated snapshot, not a current migration list.
-For larger node-local workloads, the desired access policy is a dedicated
-single-copy class with `placementCount: 1` and
-`linstor.csi.linbit.com/allowRemoteVolumeAccess: "false"`. Because remote-access
-permission is a StorageClass parameter, remote-capable and strict-local claims
-need separate classes. A strict-local PV's node affinity keeps its pod on the
-node with its diskful volume and avoids remote block I/O. With one diskful copy,
-a node failure loses Piraeus' live copy; recovery must come from application
-replication or backup. Relocating a healthy volume is a separate copy operation
-over the network. For databases with application replicas, use one strict-local
-Piraeus volume per member and rely on the database's own replication; do not add
-a second Piraeus copy by default. Schedule and rate-limit deliberate relocations.
+Scope: migrate every remaining **live** local-path application claim to Piraeus,
+including WALs, queues and singleton filesystems. Converting the physical disks
+alone does not finish the migration. The read-only cluster inventory captured
+2026-10-23 at 21:59 UTC contained 46 local-path PVCs, including retired claims,
+dormant applications and in-progress handoff sources. Refresh consumers, actual
+bytes and ownership before each wave; this is an execution order, not a claim
+that every listed PVC is still active.
 
-| Workload                 | Snapshot from the inventory                                                                                                     | Migration shape and data-preservation gate                                                                                                                                                                                                                                                                                                 |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Grocy                    | Two 1 GiB household config claims on `ovh-ns103711`, with VolSync backup PVCs on SeaweedFS.                                     | Good first app-data migration candidate: provision a new strict-local PVC, stop/quiesce Grocy for a final copy, restore, run SQLite `PRAGMA integrity_check`, and verify the app before cutover. Existing direct-rsync backups are crash-consistent and can occasionally catch torn SQLite writes, so validate the selected restore point. |
-| Haku Anki collection     | 2 GiB on `ovh-ns103711`.                                                                                                        | The owner has said this collection is disposable. A future migration can recreate it empty; that statement is not an instruction to delete the live PVC now.                                                                                                                                                                               |
-| Mimir ingesters          | Two 10 GiB claims, one each on `ovh-ns102453` and `ovh-ns103711`; RF=2, with blocks in SeaweedFS S3.                            | These PVCs hold ingester WAL and recent head data, not merely disposable cache. Migrate one member at a time with Mimir's drain/flush path, verify the survivor and recent queries, then confirm the resulting blocks in S3. A fresh empty claim is only appropriate with an explicitly accepted recent-data loss window.                  |
-| Loki write               | Two 10 GiB claims on separate OVH HDD nodes; write replicas use RF=2 and chunks/index live in SeaweedFS S3.                     | The PVCs hold ingester WAL, so treat them like recent write state. Drain and flush one writer at a time and verify queries before proceeding. Loki backend cache is already `emptyDir`; it does not need a Piraeus PVC.                                                                                                                    |
-| ActivityWatch            | 10 GiB SQLite database on `wyrm2` via `local-path-proxmox`.                                                                     | Not in the initial Talos rollout; Wyrm2/NixOS is a later Piraeus phase. Device importers can rebuild only history still retained on those devices. Preserve and restore the database unless completeness of that source history has been checked.                                                                                          |
-| ClickHouse               | Two 500 GiB retained data claims on separate HDD nodes; one shard with two ClickHouse replicas, plus three 2 GiB Keeper claims. | Large, non-cache state. If moved, give each ClickHouse member one strict-local Piraeus volume and use ClickHouse replication to rebuild/validate one member at a time. Keep Keeper quorum healthy during the move and confirm queries before advancing; avoid duplicating ClickHouse's replica with Piraeus replication by default.        |
-| PostgreSQL/CNPG replicas | Multiple per-instance claims across local-path SSD/HDD classes.                                                                 | Treat each database separately because backup configuration and recovery paths vary. A plausible target is one strict-local Piraeus volume per CNPG member, with controlled switchover/rebuild and each cluster's configured backup/WAL recovery gate verified first.                                                                      |
-| Valkey replicas          | Multiple small per-member claims; the inventory includes Forgejo, Langfuse, and OCI-cache instances.                            | Decide per instance whether its contents are rebuildable cache or meaningful persisted state. For replicated instances, use one strict-local Piraeus volume per member and validate application replication or restore; do not assume that two Valkey pods are a backup.                                                                   |
+Use `piraeus-hdd-local` for the HDD application volumes below and
+`piraeus-ssd-local` for latency-sensitive database members. Both are initially
+single-copy and strict-local: application replication or an accepted backup
+supplies recovery. Keep replicas on distinct nodes. Measure actual used bytes
+and reserve growth/copy headroom before assigning an enforced PVC limit; legacy
+local-path requests were neither quotas nor physical reservations. Retain source
+PVs before claim replacement, and preserve off-node data before any disk wipe.
 
-These classifications come from the [dated PVC inventory](../../debug/piraeus_migration/inventory/pv-consumers.tsv)
-and current checked-in workload definitions, including [Mimir](../../cdk8s/monitoring/mimir.py),
-[Loki](../../cdk8s/monitoring/loki.py), [ActivityWatch](../../cdk8s/activitywatch/app.py),
-[Grocy](../../cdk8s/grocy/app.py), [Home Assistant](../../cdk8s/home_assistant/app.py),
-and [ClickHouse](../../cdk8s/clickhouse/installation.py). Refresh live placement,
-actual bytes used, backup restoreability and app replication health before turning
-any candidate into a migration sequence.
+#### 1. Finish small application handoffs from `103711`
 
-The local-path PVC requests are not disk quotas or reservations: they are
-directories sharing the node's XFS filesystem. In particular, an 1800 GiB
-Seaweed claim does not mean 1800 GiB is occupied, and the declared local-path
-requests can exceed the physical filesystem. Base any future capacity split on
-measured bytes, growth and restore headroom, Seaweed's replica placement, and
-each node's other consumers, rather than adding PVC request sizes.
+| Workload and claims                                  | Target and procedure                                                                                                                                                               | Acceptance before retiring the source                                                                                                                                                                                        |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Grocy SF and Vallejo, each `grocy-config-ovh` (1Gi)  | Cold VolSync clone into separate 1Gi `grocy-config-piraeus` claims on `103656`; restart each app from its new claim and retarget its existing backup source.                       | Matching file hashes, modes, ownership and symlinks; SQLite integrity; app readiness; successful subsequent backup. Old claims remain until the new GitOps configuration is accepted.                                        |
+| OCI-cache Valkey, two 2Gi member claims              | Move the `103711` member first using coordinated native failover, then seed its replacement on `103656`. Move the remaining `102453` member only after `103711` is admitted again. | Native roles, caught-up replication/AOF, correct primary Service endpoints and OCI-cache connectivity. Its Valkey contents are rebuildable cache/index; registry blobs and manifests in SeaweedFS are separate durable data. |
+| Langfuse Valkey, two 2Gi member claims               | The same serial native failover/replica-seeding procedure, preserving the queue. Put members on separate converted HDD nodes before rolling `102453`.                              | Caught-up offsets, healthy persistence, primary Service and Langfuse producer/worker reconnection. Do not flush the queue or assume it is disposable cache.                                                                  |
+| Haku Anki, `haku-sandbox/haku-anki-collection` (2Gi) | Recreate empty on a new 2Gi Piraeus claim and update its Deployment/claim declaration.                                                                                             | App starts on the new claim; desired configuration cannot remount the old local-path claim. The owner explicitly waived this collection's contents.                                                                          |
+
+The live claim is named `haku-anki-collection`; no `haku-anki-connection` claim
+was present in this inventory. These handoffs are already authorized for the
+current node; completion still requires the actual per-app acceptance checks.
+
+#### 2. Move monitoring WALs and Alertmanager state, one member at a time
+
+| Workload and remaining claims                      | Procedure and order                                                                                                                                                                                               | Required data gate                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mimir, `storage-mimir-ingester-{0,1}` (10Gi each)  | Move ingester 1 off `103711` first; move ingester 0 off `102453` after redundancy is restored on converted nodes. Prepare shutdown, flush/ship the TSDB head, stop gracefully, then replace that ordinal's claim. | Observe completed compaction and block uploads without new failures, clean shutdown, healthy survivor, continuing ingestion and recent/historical queries. The WAL/head is recent metric data; a successful flush HTTP response alone does not prove upload success. Copy cold state if the flush cannot be proven; do not silently accept data loss. |
+| Loki, `data-loki-write-{0,1}` (10Gi each)          | Move writer 1 first, restore both writers, then move writer 0 before `102453` is erased. Use native flush/graceful shutdown before replacing each claim.                                                          | Verify chunk flushes and readable recent logs, then replacement ring health and continuing ingestion. The waiver for the mismatched Seaweed Loki volume 216 does not waive every writer WAL. Backend `emptyDir` caches need no new PVC.                                                                                                               |
+| Alertmanager, `db-alertmanager-monitoring-1` (1Gi) | Move member 1; member 0 already runs on Piraeus SSD. Preserve the small cold state or prove the surviving peer contains the complete silence/notification state.                                                  | Healthy gossip, silences and notification deduplication state retained, replacement Ready and both members joined.                                                                                                                                                                                                                                    |
+
+Keep the peer's Pod and claim identity unchanged during each handoff. Hold the
+specific Helm/Flux/operator owner as needed and remove every temporary hold
+after acceptance. Do not roll both members of a service together.
+
+#### 3. Rebuild `103711` and restore bulk-service redundancy
+
+Finish the application handoffs above before the destructive boundary. The
+owner permits temporary single surviving Seaweed copies while rebuilding this
+node, including the source copy of Loki volume 216, and a temporary single
+ClickHouse data replica on `102453`. Refresh and verify those surviving copies;
+these exceptions do not waive Grocy, Langfuse queues or monitoring WAL state.
+
+Add a node-specific 1700Gi Piraeus HDD Seaweed group after physical pool
+acceptance, then restore Seaweed replication. Recreate ClickHouse replica 0 on a
+500Gi Piraeus claim using native ClickHouse replication and its existing replica
+identity. Require healthy Keeper quorum, all replicated tables caught up,
+empty replication queues and successful queries before touching replica 1.
+Keeper's three members are already on Piraeus SSD. Keep the shared thin-pool
+headroom visible and open the agreed overcommit issue when provisioned PVC
+limits actually exceed its physical data capacity.
+
+#### 4. Evacuate all remaining live state from `102453`
+
+After `103711` and the moved services are accepted:
+
+1. Finish the second OCI-cache and Langfuse members and the Mimir/Loki ordinal-0
+   moves from the waves above. Place each replacement away from its peer.
+2. Move the remaining local-path CNPG primaries by promoting their healthy
+   Piraeus standby, then rebuilding only the old primary on a new Piraeus claim.
+   Work serially and preserve the configured member count. The inventory lists
+   `claude-session-sync-db`, `gatus-db`, `haku-console-db`, `haku-mailbox-db`,
+   `litellm-db`, `matrix-db`, `mcp-oauth-state-db`, `grafana-db-ovh`, `ntfy-db`
+   and `plaid-mcp-db`. Verify current roles and observed WAL replay separately
+   for every cluster; a new-claim StorageClass setting does not migrate a bound
+   primary PVC.
+3. Move ClickHouse replica 1 only after replica 0 is accepted on Piraeus. Use
+   native rebuild and table/query checks again, with Keeper quorum intact.
+4. Evacuate or replace the last legacy Seaweed HDD server using current native
+   placement and space checks. The single-copy exception above is specific to
+   `103711`; reassess the next node's outage before retiring its server.
+5. Preserve the two `piraeus-migration-preservation/ovh-ns104952-history` and
+   `ovh-ns104963-history`
+   archives on converted storage before erasing their `102453` backing files,
+   unless the owner explicitly releases those archives.
+
+Only then drain/reimage `102453` and admit its Piraeus pool. Independently
+review the archived/dormant claims below before its destructive boundary; an
+absent Pod does not establish that its data is disposable.
+
+#### 5. Resolve dormant claims and later NixOS storage
+
+The inventory also includes these local-path claims with no running application
+consumer. Classify each before releasing its backing disk:
+
+- `agentplane-staging/public-coder-ducktape-2-{state,workspace}` and
+  `public-coder-agent-{state-v2,diagnostics,sshpiper-recordings}`: identify the
+  owning workload and preserve unique workspaces, authored files and required
+  recordings with a quiesced copy/VolSync restore. Resume on Piraeus if still
+  wanted; obtain a claim-specific deletion decision otherwise. The prior waiver
+  for dormant data on another node is not a blanket waiver for these claims.
+- `volsync-src-public-coder-agent-state-v2-restic-cache`: treat as rebuildable
+  cache only after verifying the actual backup repository and source data survive.
+- Retired Home Assistant, Keeper, CNPG and Seaweed source claims on already
+  converted nodes: verify the accepted replacement and whether the old files
+  were erased, remove obsolete GitOps declarations, then clean up exact PVC/PV
+  metadata. Do not describe erased retained files as an available backup or
+  create a new volume merely to reproduce dead metadata.
+- `activitywatch/activitywatch-data` (10Gi, SQLite on `wyrm2`): migrate during the
+  separately accepted NixOS/Piraeus phase. Cold-copy/restore and check SQLite
+  plus historical queries. Device importers are not proof that complete history
+  can be regenerated. Keep existing OpenEBS storage under its current owner.
+
+#### 6. Remove local-path defaults that could recreate the old layout
+
+Per-ordinal, precreated Piraeus PVCs are a temporary bridge: a restarted Pod
+reuses them, but deleting the claim can recreate local-path storage from the old
+immutable StatefulSet template. After each application's members are migrated,
+change its authoritative CNPG/Valkey/Helm/Deployment claim defaults and perform
+any required orphan/adopt StatefulSet template handoff while preserving Pod/PVC
+identities. Keep Seaweed's new groups explicitly Piraeus-backed. Update VolSync
+sources, caches and verification Jobs too; remove obsolete migration objects.
+
+Completion means no live application depends on a local-path PV, no active
+workload template can silently allocate another one, required retained data is
+preserved or explicitly waived, temporary holds/helpers are removed, and normal
+Flux/operator management agrees with the accepted application state. Later
+remote-access or extra Piraeus replicas remain separate opt-in work.
 
 ### Capacity changes and later hardware
 
@@ -548,20 +628,70 @@ storage after cutover and cleanup; this does not shrink an existing server PVC.
 Kubernetes PVC shrink and thin-pool shrink are not assumed operations. Use new
 claims or verified replica relocation when reducing an allocation.
 
-After the first node passes, refresh the inventory to choose the next SSD node.
-The earlier candidate order was `104952` then `104963`; the latter has a testing
-PostgreSQL singleton requiring a preserved-data migration or accepted outage.
-Choose the first HDD conversion from current consumer/evacuation evidence, then
-size its system partitions independently. Do not carry the old 1536 GiB legacy
-filesystem budgets forward into the whole-data-disk design.
+Continue with the remaining HDD workers using the sequence above and current
+capacity evidence. Keep their accepted system-volume budgets separate from the
+whole-data-disk pool; do not carry the old 1536Gi legacy filesystem budget into
+the new layout. Extra hardware is not a prerequisite for this rollout.
 
 OptiPlex is converted and admitted to Piraeus; its [provisioning record](../optiplex_provisioning.md)
 contains the installed disk layout, with current [migration status](../../debug/piraeus_migration/README.md).
-Wyrm2 still needs a separately reviewed recipe for dedicated SSD/HDD virtual
-disks after Atlas capacity and slots are verified; existing OpenEBS VGs remain
-owned by OpenEBS. Inventory iguana/rugged online, including encryption and
-unlock behavior, before their later enrollment. Unmatched wyrm2 LVs and Released
-PVs require their own ownership/data audit and do not fund this rollout.
+The Atlas/Wyrm2 phase below is deliberately separate from the OVH rollout.
+Inventory iguana/rugged online, including encryption and unlock behavior, before
+their later enrollment. Unmatched Wyrm2 LVs and Released PVs require their own
+ownership/data audit and do not fund the current rollout.
+
+### Wyrm2 first; Atlas reinstall is a separate later decision
+
+The owner wants Piraeus on Wyrm2 with **both SSD and HDD drives attached**.
+First migrate storage while **keeping Wyrm2 virtualized on Atlas/Proxmox**.
+Co-plan stable device attachment, pool sizing and data preservation within that
+existing arrangement. Piraeus qualification and the application migration must
+not depend on reinstalling Atlas or moving Wyrm2 to bare metal.
+
+Separately, the owner reports little use of Atlas's other VMs and may later
+reinstall Atlas with Wyrm2 as the top-level host OS. Revisit that architecture
+only after the VM-based Piraeus migration is accepted. Preserve the distinction
+between attaching/preparing explicit devices for the VM and erasing Atlas's
+host or guest disks; no Atlas reinstall or whole-host wipe is approved here.
+
+For the Piraeus-first phase, review inventory, SSD/HDD device attachment,
+OpenEBS/application migration, capacity, recovery and host compatibility below.
+The host-reinstallation parts of the worksheet are future joint planning, not
+prerequisites for this first phase.
+
+Prepare a concrete worksheet for joint review:
+
+1. Inventory physical drives by serial/WWID, media, capacity and health; map
+   Proxmox pools, VM disks, passthrough devices, encryption and every filesystem/LV
+   to those drives. Check actual SSD/HDD connectivity and GPU/IOMMU needs rather
+   than assuming the current VM layout maps cleanly to bare metal.
+2. Inventory Atlas and every VM, including stopped guests, datasets, snapshots,
+   host configuration and credentials. Identify unique authored data and current
+   consumers; low VM usage does not establish that their disks are disposable.
+   Include ActivityWatch and existing OpenEBS-backed Kubernetes claims on Wyrm2.
+3. Propose explicit system/runtime capacity and separate Piraeus SSD/HDD pool
+   budgets, device ownership and encryption/boot/unlock behavior. Show what fits
+   using measured live bytes, copy staging space and growth reserve. Preserve
+   home-site placement semantics; do not extend synchronous replication across
+   the home/OVH link by default.
+4. Specify how each retained dataset leaves the disks to be erased, where its
+   verified recovery copy lives, how it returns and what application checks
+   establish success. A backup on another VM disk in the same wipe set is not
+   off-machine recovery. Establish staging capacity before choosing a wipe order.
+5. Design installation/remote-console access, network and mesh identities,
+   Kubernetes node identity, GPU workloads and the outage/rollback procedure.
+   Decide whether Atlas's non-Wyrm2 services remain needed and where each runs.
+6. Review the exact device map and migration/preservation procedure together
+   before preparing the VM's Piraeus devices. Review any later host reinstall
+   separately, including its full wipe set and recovery evidence. This plan
+   grants no Atlas/Wyrm2 wipe approval.
+
+Reuse the existing LINSTOR cluster and media StorageClasses after host/kernel,
+DRBD, CSI and pool acceptance. Keep existing OpenEBS VGs under OpenEBS ownership
+until their consumers are migrated and an explicit ownership handoff is accepted;
+never initialize a Piraeus pool over a live OpenEBS device. Choose the VM's dedicated virtual disks versus physical-device passthrough
+jointly. Keep the later Proxmox retirement decision independent of both this
+VM-based migration and the current OVH work.
 
 ## Placement policy to implement and prove
 

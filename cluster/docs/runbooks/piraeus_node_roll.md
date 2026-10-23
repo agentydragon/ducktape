@@ -526,7 +526,21 @@ cleanup. Include that rollout in acceptance and remove copied holds too.
 #### Remaining services
 
 Inventory worker WALs, Keeper/data replicas and local application/backup
-claims similarly.
+claims similarly. Treat Mimir TSDB heads/WAL and Loki writer WAL as recent data:
+prepare native shutdown, flush to object storage, observe uploads/flush failures
+and recent queries, then stop one ordinal gracefully. A flush endpoint's HTTP
+success is not evidence that every upload succeeded. If that cannot be proved,
+preserve the cold local state before replacing its claim. Restore and accept
+both members before moving the other one. Preserve Alertmanager silence and
+notification state through verified peer synchronization or a cold copy.
+
+Changing a StorageClass default never migrates bound PVCs. A precreated
+per-ordinal Piraeus claim can bridge an immutable StatefulSet template, but its
+old local-path template remains a recovery hazard: migrate the authoritative
+claim default with a controlled orphan/adopt handoff once all members are ready.
+Update backup sources and verification Jobs with the application. A retained
+PVC/PV with erased files is metadata cleanup, not an application migration;
+verify its replacement before removing that exact obsolete record.
 For a worker with a Piraeus FILE_THIN canary, enumerate all live resources and
 snapshots before removing its backing directory. Move LINSTOR/CSI control
 services off the outage set and verify metadata persistence and recovery access.
