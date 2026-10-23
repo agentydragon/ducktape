@@ -1,48 +1,1711 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CI latency · 20–22 October 2026</title><style>
-:root{--ink:#172c37;--muted:#536773;--line:#d1dce0;--blue:#135d87;--teal:#087a73;--paper:#f4f6f7}*{box-sizing:border-box}html{scroll-behavior:auto}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 system-ui,sans-serif}main{max-width:1190px;margin:auto;padding:42px 30px 80px}h1{font-size:clamp(32px,4vw,51px);line-height:1.13;letter-spacing:-.035em;max-width:970px;margin:14px 0 24px}h2{font-size:28px;line-height:1.25;letter-spacing:-.02em;margin:0 0 20px}h3{font-size:21px;line-height:1.35;margin:25px 0 10px}p{margin:10px 0 18px;max-width:100ch}a{color:var(--blue);overflow-wrap:anywhere;text-underline-offset:3px}code{font-size:.85em;overflow-wrap:anywhere}.eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:750;color:var(--muted)}.lede{font-size:21px;max-width:900px}.small,figcaption{font-size:13px;color:var(--muted)}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:26px 0}.card,.box{padding:19px 22px;background:white;border:1px solid var(--line);border-radius:10px}.metric{display:block;font-size:34px;font-weight:750;line-height:1.25;margin:8px 0}.callout{background:#e4efec;border-left:5px solid var(--teal);padding:20px 24px;border-radius:0 10px 10px 0;margin:24px 0}.warning{background:#fff0dc;border-left-color:#ae6610}nav{display:flex;flex-wrap:wrap;gap:10px 20px;font-size:14px;margin:24px 0 34px}section{border-top:1px solid var(--line);margin-top:42px;padding-top:28px}table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:11px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}th{background:#e5ecef;font-weight:700}td:first-child{font-weight:600}.scroll{overflow-x:auto;margin:18px 0}details{background:white;border:1px solid var(--line);border-radius:8px;padding:15px 19px;margin:15px 0}summary{font-weight:700;cursor:pointer}ul,ol{padding-left:25px}li{margin:8px 0}.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}.tag{display:inline-block;font-size:12px;background:#e1e9ed;border-radius:5px;padding:2px 7px;font-weight:650}.rank{scroll-margin-top:20px}.rank h3{margin-top:0}.rank p:last-child{margin-bottom:0}.bars{display:grid;gap:9px;margin:20px 0}.bar-row{display:grid;grid-template-columns:190px 1fr 85px;gap:10px;align-items:center;font-size:14px}.bar-track{height:22px;background:#e4e9ec;border-radius:4px;overflow:hidden}.bar{height:100%;background:#277c8a}.bar-row:nth-child(2) .bar{background:#916137}.model label{display:block;margin-top:15px;font-weight:650}.model input{width:100%;max-width:660px}.model output{display:block;font-size:28px;font-weight:750;margin-top:20px}.timeline{min-width:850px}.rank-table{min-width:850px}footer{margin-top:36px;font-size:13px;color:var(--muted)}@media(max-width:680px){main{padding:26px 16px 55px}.cards,.two{grid-template-columns:1fr}.metric{font-size:30px}h2{font-size:25px}.lede{font-size:18px}.bar-row{grid-template-columns:115px 1fr 63px;font-size:12px}.card,.box{padding:16px}.scroll table{min-width:650px}nav{gap:8px 14px}th,td{padding:9px}.callout{padding:16px 18px}}
-</style></head><body><main><header><div class="eyebrow">Ducktape · CI latency · reviewed investigation</div><h1>Make heavy tests depend on less.<br>Then make their clusters cheaper.</h1><p class="lede">The new k3s tests can add minutes when they execute. Warm verdicts already make the same full suite fast. The best first intervention is an API-only app image for backend fixtures, followed by deterministic fixture manifests and narrower Python build inputs.</p><p class="small">Window: 20 October 05:30 → 22 October 05:30 UTC, 2026 (19 October 22:30 → 21 October 22:30 PDT). Source and policy pinned below. Estimates are proposals; this report changes no CI policy or deployed settings.</p></header>
-<div class="cards"><div class="card">PR Bazel job, runtime p90<span class="metric">10m 09s</span>609s over 368 assigned, completed attempts; queue p90 36s. Different clocks.</div><div class="card">Exact-head required gates<span class="metric">2m 53s / 10m 18s</span>p50 / p90, 54 passing sampled heads. Workflow-start proxy; readiness unobserved.</div><div class="card">k3s/system-test changes<span class="metric">9m 13s</span>Median required-gate proxy; p90 13m 18s, n=7. Workload class, not a causal before/after.</div></div>
-<div class="callout"><strong>Best first change: stop putting the SPA in the API-only fixture image.</strong><p>A real Bazel query finds the production frontend bundle in all 11 automatic k3s test closures, plus 3 manual VM variants. Those fixtures disable Electric and never serve that frontend. Keep the production image and browser coverage; give the existing API-only composition its own image. Planning estimate: <strong>2–6 minutes less feedback on an eligible cold UI change</strong>, zero if cached or another changed input still selects the tests. No matched production-UI-only speedup was measured.</p><p><strong>For common fast PRs:</strong> select the Nix source-artifact gate by verified Bazel/Nix dependencies; budget 30–70s when it is the last gate. <strong>For genuinely backend-wide cold runs:</strong> trial an immutable unpacked-image seed and a better VM worker class. Do not replace real Kubernetes coverage with mocks.</p></div>
-<nav aria-label="Report navigation"><a href="#ranking">Ranked interventions</a><a href="#feedback">PR feedback</a><a href="#k3s">What k3s costs</a><a href="#cases">Critical paths</a><a href="#experiments">New experiments</a><a href="#architecture">Architecture choices</a><a href="#capacity">Capacity & cost</a><a href="#plans">Plan tracks</a><a href="#continuity">Prior work</a><a href="#method">Evidence & limits</a></nav>
-<section id="ranking"><h2>Priorities: 17 concrete interventions</h2><p>Ranked by likely payoff, implementation effort, coverage risk and confidence. <strong>Time ranges below are engineering forecasts conditional on an eligible workload, not measured treatment effects or statistical confidence intervals.</strong> They include a zero outcome where cached work, overlap or another gate can erase the gain. Do not add rows: many remove the same import/build/test path. No valid population-wide savings estimate exists without replaying affected selection.</p><div class="scroll"><table><thead><tr><th scope="col">Priority / change</th><th scope="col">Expected impact per eligible run</th><th scope="col">Effort / confidence</th><th scope="col">Track</th></tr></thead><tbody><tr><td><a href="#r1">1. API-only fixture image</a></td><td>2–6 min; 0 on cache/overlap</td><td>Small–medium · high edge confidence</td><td><code>CI_API_ONLY_APP_IMAGE</code></td></tr><tr><td><a href="#r2">2. Deterministic, feature-scoped fixture rendering</a></td><td>1–5 min; 0 for semantic changes</td><td>Small–medium · experimentally confirmed mechanism</td><td><code>CI_K3S_DETERMINISTIC_RENDER</code></td></tr><tr><td><a href="#r3">3. Separate image bytecode and consumed layers</a></td><td>30–90s on a rebuilding image chain</td><td>Medium · current critical-path evidence</td><td><code>CI_PY_IMAGE_INPUT_CUTS</code></td></tr><tr><td><a href="#r4">4. Select Nix artifact checks from real dependency closures</a></td><td>30–70s when Nix gates the PR</td><td>Medium · high payoff, nontrivial correctness</td><td><code>CI_INCREMENTAL_ARTIFACT_GATE</code></td></tr><tr><td><a href="#r5">5. Make superseded remote builds actually quiesce</a></td><td>0 guaranteed PR seconds; minutes of obsolete work</td><td>Medium–large · continuation observed</td><td><code>CI_REMOTE_CANCEL_QUIESCENCE</code></td></tr><tr><td><a href="#r6">6. Clone an immutable unpacked image seed into fresh actions</a></td><td>30–100s per cold cluster tail</td><td>Large · medium–low until spike</td><td><code>CI_K3S_IMAGE_SEED</code></td></tr><tr><td><a href="#r7">7. Give VM tests an appropriate executor class</a></td><td>40–140s on cold VM-gated runs</td><td>Medium–large · worker capability unproven</td><td><code>CI_VM_EXECUTOR_CLASS</code></td></tr><tr><td><a href="#r8">8. Scope Python fixtures and extract runner-only helpers</a></td><td>0–60s gate; many fewer invalidations</td><td>Medium · graph verified, latency forecast</td><td><code>CI_SCOPED_TEST_FIXTURES</code></td></tr><tr><td><a href="#r9">9. Put DCR protocol coverage in a component fixture</a></td><td>~150–200 worker-s saved; usually 0 gate seconds</td><td>Small–medium · high unnecessary-stack confidence</td><td><code>CI_DCR_COMPONENT_TIER</code></td></tr><tr><td><a href="#r10">10. Give type actions source inputs and true type-only deps</a></td><td>0–60s gate; excludes GiB-scale prerequisites</td><td>Large · provider correctness must be proven</td><td><code>CI_MYPY_TYPE_INPUTS</code></td></tr><tr><td><a href="#r11">11. Finish Action Go cutover and delete Python parity work</a></td><td>0–20s image-path saving; test saving unmeasured</td><td>Existing track · correctness gates first</td><td><code>ACTION_SERVICE_GO_PORT</code></td></tr><tr><td><a href="#r12">12. Remove app from backend-only stacks; decide final BFF owner</a></td><td>20–70s per eligible cold stack</td><td>Large · contract/state migration</td><td><code>CI_BACKEND_DIRECT_CLIENTS / APP_STATE_OWNER_DECISION</code></td></tr><tr><td><a href="#r13">13. Prove affected selection for leaf rules before full sweeps</a></td><td>1–6 min on eligible cold leaf-rule PRs</td><td>Large · high correctness risk</td><td><code>CI_PRECISE_RULE_SELECTION</code></td></tr><tr><td><a href="#r14">14. Group compatible scenarios into a few isolated stacks</a></td><td>0–60s gate; ~5–12 worker-min saved</td><td>Medium–large · invalidate more together</td><td><code>CI_K3S_SCENARIO_GROUPS</code></td></tr><tr><td><a href="#r15">15. Shorter fixture probes and valid Python runfiles bytecode</a></td><td>5–20s per cold action</td><td>Small–medium · bounded phases</td><td><code>CI_K3S_STARTUP_REMAINDER</code></td></tr><tr><td><a href="#r16">16. Cache pinned Nix sources, if restore wins</a></td><td>0–20s on a Nix-last cold runner</td><td>Small spike · net benefit unmeasured</td><td><code>CI_NIX_SOURCE_CACHE_SPIKE</code></td></tr><tr><td><a href="#r17">17. Isolate non-gating publication capacity</a></td><td>0–60s burst queue saving; near zero when quiet</td><td>Medium–large · queue evidence, pool economics unknown</td><td><code>CI_PUBLICATION_RUNNER_POOL</code></td></tr></tbody></table></div><p class="small">Start with #1–4 as independently reviewable changes. #5 is an observed unresolved cancellation boundary; #6–7 are the larger cold-cluster bets. #11 is already in flight. Existing authorization for a migration does not waive its compatibility/rollout gates.</p><details class="rank" id="r1" open><summary>1. API-only fixture image</summary><p>Add an API-only image binary/layers beside <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/agentplane/app/BUILD.bazel#L502">agentplane/app/BUILD.bazel</a> without <code>frontend:bundle</code> or <code>service_worker_js</code>; point only the API-only k3s fixture at it. Production retains the full image. Query <a href="https://app.buildbuddy.io/invocation/f7a6c3e7-0b42-4a9e-8601-54f230c8fe9c">f7a6c3e7</a> proves 14 reverse-dependent tests before manual filtering; current CI runs 11. <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/agentplane/app/main.py#L231">agentplane/app/main.py</a> gates asset reads on Electric, which the fixture omits. This cuts execution triggers as well as bytes.</p><p><strong>Impact model:</strong> Forecast conditional on a production-bundle-only edit that currently invalidates k3s: retain roughly 2–5 minutes of browser/component work instead of also waiting for a 4–7 minute cluster tail. Range 120–360s; plausible lower bound zero. The pure frontend harness example selects no k3s already; that is a counterexample to treating all UI edits alike.</p><p><strong>Acceptance and falsification:</strong> Replay a production SPA edit through bazel-diff before/after; verify all 11 fixture TestRunner input digests stay equal while frontend checks change. Run API-only lifecycle and full-image browser coverage. Falsified if a remaining real dependency still changes the fixture image or its manifests.</p></details><details class="rank" id="r2" open><summary>2. Deterministic, feature-scoped fixture rendering</summary><p>Move database, app/OIDC, bcrypt and MCP credential generation into per-action runtime inputs/placeholders; split <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/agentplane/x/k3s_env/BUILD.bazel#L374">the five-output render rule</a> by backend/MCP/VM feature. The current shared rule emits random fields into every variant. New RBE experiment <a href="https://app.buildbuddy.io/invocation/82a877b1-4054-4ae5-bae1-5a315cae093e">82a877b1</a> found 17/22/17 differing paths for identical base/MCP/VM inputs; controlled outputs matched completely.</p><p><strong>Impact model:</strong> Forecast 60–300s on an edit that reruns the renderer but leaves a consumed variant semantically unchanged; potentially up to the whole 434s cluster critical path, less retained gates. It saves zero on changes to the actual service config/images. Current population frequency is unmeasured; determinism is not a promise that all chart changes become cache hits.</p><p><strong>Acceptance and falsification:</strong> Implement real placeholders with correct shared references and per-stack secrets; do not ship fixed test credentials. Render each variant twice in separate processes, change MCP-only config, and prove base/VM digests and unaffected test verdicts reuse. The experiment controlled randomness at the test boundary; production placeholder code remains to implement.</p></details><details class="rank" id="r3"><summary>3. Separate image bytecode and consumed layers</summary><p>Split <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/devinfra/oci/py_image.bzl#L151">whole-image compileall</a> into runtime, dependency and app-source bytecode; keep static assets out. Emit only consumed image layers, or hide implementation-only roots from broad selection. The shared-layer helper still creates discarded per-binary interpreter archives and an umbrella that roots them. A real query verified these targets; nine call sites exist.</p><p><strong>Impact model:</strong> One current mixed frontend case has 78.39s in app_bytecode, 33.99s in the package tar and 18.68s in its descriptor on the reported dependency chain. Forecast 30–90s for app/static invalidations by reusing stable bytecode/package outputs; cold all-input builds may save nothing. Up to nine duplicate interpreter tars disappear from a cold full sweep, but their elapsed savings were not measured. Do not add these upper bounds together.</p><p><strong>Acceptance and falsification:</strong> Compare a UI-only and one-file Python edit using aquery/profile and image digests. Verify hash-mode .pyc, co_filename, exact interpreter version, ownership and startup. All public image targets must still build their consumed layers transitively; do not mark public coverage manual.</p></details><details class="rank" id="r4"><summary>4. Select Nix artifact checks from real dependency closures</summary><p>In <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/.github/workflows/nix-wheel-check.yml#L133">.github/workflows/nix-wheel-check.yml</a>, compute affected release groups from Bazel reverse dependencies plus Nix consumer dependencies. Currently all 13 assets / 11 groups are source-built/fetched/checked on every eligible PR. Keep full fallback for flake, lock, registry, package definitions and uncertain graph changes; retain policy checks unless separately proven unaffected.</p><p><strong>Impact model:</strong> Nix is last for 15/54 first-green heads. PR step medians are 27s remote artifact build, 3s fetch, 9s Attic setup and 15s package/import step. A 105s docs head cannot beat its approximately 64–70s remaining gate, so the common docs saving is around 35–40s, not the entire 104s job. Plan 30–70s on Nix-last edits; zero where Bazel remains slower.</p><p><strong>Acceptance and falsification:</strong> Replay util → git-hooks/ducktape and claude-api → aiquota → statusline, ZIP-only changes and missing outputs. Preserve source-built overrides for all selected consumers and both assets of multiasset releases. Compare final required-gate time, not just the Nix job.</p></details><details class="rank" id="r5"><summary>5. Make superseded remote builds actually quiesce</summary><p>The current signal/child-ID fix is present and its explicit cancellation RPC succeeds, yet three sampled cancelled jobs still submit their own new actions afterward. Extend the <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/devinfra/ci/bb_remote_log.sh#L17">cancellation lifecycle</a> to stop the originating outer/inner build and verify no new work appears; use a bounded cleanup supervisor if GitHub’s signal grace is insufficient. Do not simply repeat the landed trap change.</p><p><strong>Impact model:</strong> Observed own-action tails end 211–267s after GitHub cancellation. The post-cancel action-wall intervals sum to 2,113 / 257 / 943 seconds in those three samples; these overlap and are not CPU or feedback time. NEW identifies originating work, but later consumers may share it, so not all continuation is avoidable waste. It is not extra GitHub occupancy. Forecast 0–30s of burst feedback benefit only if freed resources matter; direct RBE queues are usually subsecond. Exact avoidable worker-seconds and server visibility limits are in the follow-up evidence.</p><p><strong>Acceptance and falsification:</strong> Reproduce cancellation while an inner build is actively submitting actions, inspect outer and child IDs, and prove no NEW executions start after the stop deadline while a replacement passes. An HTTP-success CancelExecutions response is insufficient. Hosted service semantics/acknowledgment are an explicit external boundary; no production cancellation change was tested.</p></details><details class="rank" id="r6"><summary>6. Clone an immutable unpacked image seed into fresh actions</summary><p>Prototype a digest-keyed, trusted seed of pinned containerd content/snapshots; clone it copy-on-write into each fresh RBE action, then import changed service layers. Preserve fresh cluster/database/identity state. Current <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/agentplane/x/k3s_env/stack.py#L202">importer</a> streams deduplicated OCI blobs per image but still repeats unpack filesystem work in each action.</p><p><strong>Impact model:</strong> Latest observed Pod imports are about 71–110s and the VM’s image imports about 207s; the older three-run model-free profile was 34–89s. Forecast 30–100s end-to-end on cold affected stacks after seed clone/check cost. This is a sizing estimate, not a measured speedup. A plain prebuilt tar avoids framing but leaves unpack, and a warm verdict already saves the entire action.</p><p><strong>Acceptance and falsification:</strong> Start with immutable PostgreSQL/operator/harness layers on one fixed source. Key kernel/containerd/k3s/snapshotter/features and layer digests, validate GC roots/leases, and exclude PR code, credentials and mutable Kubernetes state from the seed. Compare clone+import+first usable Session, cold and warm. Stop if transfer/unpack cost merely moves or platform support is unavailable.</p></details><details class="rank" id="r7"><summary>7. Give VM tests an appropriate executor class</summary><p>Benchmark a dedicated KVM-capable pool, or first a faster-disk/higher-memory VM action shape in <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/agentplane/x/k3s_env/defs.bzl#L3">agentplane/x/k3s_env/defs.bzl</a>. Current RBE kernel lacks /dev/kvm and CONFIG_KVM, so KubeVirt uses QEMU TCG. VM stacks keep snapshots on disk because tmpfs leaves insufficient room for two 1.5GiB guests.</p><p><strong>Impact model:</strong> Current example: VM process 432s versus next Pod process 285s. Even eliminating the VM action entirely saves at most about 148s of that inner finish path. Most of its pre-case time is imports/readiness: stack Ready at 276s from fixture start. Forecast 40–140s for a combined better I/O/guest-acceleration result, with zero plausible if provisioning/queue costs cancel gains. KVM alone cannot remove image import.</p><p><strong>Acceptance and falsification:</strong> Hold images and scenario/case set constant; measure pool queue, input fetch, node/import/Ready, first turn and total action. Preserve KubeVirt, Kyverno relay, PVC/image-volume and identity coverage. Keep one emulation compatibility path if needed. More memory alone does not establish faster CPU or disk.</p></details><details class="rank" id="r8"><summary>8. Scope Python fixtures and extract runner-only helpers</summary><p>Make <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/agentplane/app/conftest.py#L20">the package conftest</a> small and register heavy fixtures only for consumers. Move the History fixture’s RunningRunner-based ingest bridge to its two runner integration callers. Query found 53 Python tests depend on the app/runner fixture union, including 38 app tests. Six independent tests contain 308–309 literal labels versus 9–25 after removing that one edge.</p><p><strong>Impact model:</strong> Forecast 0–60s gate saving on changes whose only connection to those independent tests is the fixture; a real bridge/native test can still dominate. Worker savings and cache stability may be larger. The 107 → 43 History helper closure count and six-test cuts are static estimates, not configured post-change results. Removing one of several overlapping paths may save zero until all are cut.</p><p><strong>Acceptance and falsification:</strong> Keep root pytest/asyncio policy and failure diagnostics, preserve collection/case IDs, and exercise real native integration callers. Confirm native CLI/Go/image assets disappear from independent tests and mypy inputs. Do not use global --noconftest or fake the runtime platform.</p></details><details class="rank" id="r9"><summary>9. Put DCR protocol coverage in a component fixture</summary><p><a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/agentplane/system_tests/test_dcr.py#L1">Two registration cases</a> provision the full model-free stack plus Dex and two MCP server images, but execute no Action, Sandbox or Pod behavior. Use a real Action server and PostgreSQL (and real API server only where authority needs it); keep one discovery/ingress smoke in test_mcp.</p><p><strong>Impact model:</strong> Observed DCR target process 218.6s, fixture Ready at 167.8s. Budget a 20–60s real component replacement: roughly 150–200 worker-seconds saved on this example. In the all-11 run, removing DCR alone saves zero end-to-end because VM and messaging finish later. Standalone DCR-only selection can save roughly 2–3 minutes, but no such production sample was established.</p><p><strong>Acceptance and falsification:</strong> Retain both redirect registrations, HTTP discovery/challenge/registration contracts and storage semantics on the real server. Keep deployment/loopback-origin wiring tested by the existing MCP stack. Coordinate with Action Go cutover instead of building a throwaway second harness.</p></details><details class="rank" id="r10"><summary>10. Give type actions source inputs and true type-only deps</summary><p>Patch/upstream pinned rules_mypy’s default_runfiles inputs with a transitive type-input provider; support pyi_deps before separating TYPE_CHECKING imports in Gazelle. <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/BUILD.bazel#L24">Current repo policy</a> forces type-only edges into runtime deps because the aspect follows deps only. A current mypy acceptance action lists 3.53GB of inputs downstream of the app image.</p><p><strong>Impact model:</strong> Forecast 0–60s on chains where typechecking waits for native/image outputs or irrelevant data invalidates the checker; direct mypy process savings can be smaller. The mixed UI critical path includes a 33.23s mypy action plus the image build chain. No post-change input census or benchmark exists. This preserves the convenient per-target aspect; it is not the previously deferred batch checker.</p><p><strong>Acceptance and falsification:</strong> Include generated .pyi, py.typed, imports directories, metadata, Pydantic/SQLAlchemy plugins and intentional type errors. Verify data-only changes stop invalidating type actions while source/stub changes still do. Keep internal-cache propagation disabled until its separate format/merging/disk problem is solved.</p></details><details class="rank" id="r11"><summary>11. Finish Action Go cutover and delete Python parity work</summary><p>Complete caller migration, real-client acceptance, testing/staging cutover and Python retirement in <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/agentplane/plans/action_service_go_port.md#L105">agentplane/plans/action_service_go_port.md</a>. Update fixture images/migrator and delete retired Python tests/golden/parity generators and unused FastMCP dependency only after authority/data compatibility passes.</p><p><strong>Impact model:</strong> Current fixture source still selects Python Actions; an in-flight Go-fixture run imports its Action image in about 5s while app import takes 41s. Since app keeps Python, Action alone cannot remove the shared interpreter or all 382MiB of Python-exclusive fixture bytes. Budget 0–20s on the image path; do not turn ~11.6k test LOC into invented seconds. Test retirement requires measured selected actions/CPU before claiming more.</p><p><strong>Acceptance and falsification:</strong> Preserve OAuth PKCE/hash behavior, stored JSON, decisions/executions, operator identity, watches, MCP and Web Push; prevent mixed worker/push ownership. Reconcile testing-first cutover with the testing-retirement plan. Removing a route mirror via generated facade does not remove a service image.</p></details><details class="rank" id="r12"><summary>12. Remove app from backend-only stacks; decide final BFF owner</summary><p>Drive backend-only scenarios through service APIs and shared Sandbox construction, retaining a representative app end-to-end path. Separately decide between a thin Python BFF, a Go BFF or browser-to-service facades after moving app-owned Thread names/archive state and browser-session/auth responsibilities. See <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/agentplane/plans/grpc_http_facade.md#L197">agentplane/plans/grpc_http_facade.md</a>.</p><p><strong>Impact model:</strong> App import is 20.2–40.9s in current timelines. After Action Python retirement, removing app+migrate can remove most of the older inventory’s 382.1MiB Python-exclusive layers, minus replacements. Forecast 20–70s for eligible cold stacks including startup; the old 9–14% proportional action model is not measured port benefit. Thin facades alone retain app/Python, so assign them zero image-removal savings.</p><p><strong>Acceptance and falsification:</strong> Keep user-authored Thread metadata and browser authority durable. Define token issuance/audience/renewal, logout, operator attribution, Thread existence checks and command/wake ownership. Keep full app/browser/stream composition tests. Do not remove app from a test whose behavior is explicitly app composition.</p></details><details class="rank" id="r13"><summary>13. Prove affected selection for leaf rules before full sweeps</summary><p>Retain conservative global fallback, but teach <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/devinfra/ci/bazel_ci.py#L35">devinfra/ci/bazel_ci.py</a> a verified subset of leaf .bzl load/reverse-dependency changes. Current policy sends any .bzl or nested package/lock manifest to //.... In 46 sampled PR logs, 9 explicitly take that route; only 2 are .bzl cases, so do not claim most sweeps are safely narrowable.</p><p><strong>Impact model:</strong> Forecast 60–360s when a leaf helper currently causes an uncached repository sweep; zero on the observed 16s fully warm test phase. Root module/lock/.bazelrc cases are not automatically eligible. This can reduce configured graph size and action work, but target count alone does not measure analysis reuse.</p><p><strong>Acceptance and falsification:</strong> Compare both revisions’ load and external dependency graphs, handle deletes/renames/generated sources/nested modules, replay historical failing full sweeps, and fail closed on ambiguity. Keep full devel sweeps. A path allowlist alone is not a correctness proof.</p></details><details class="rank" id="r14"><summary>14. Group compatible scenarios into a few isolated stacks</summary><p>Prototype 2–4 cacheable Pod scenario groups with a stack per action, preserving PR isolation; keep destructive storage/lifecycle and VM separate. Current ten Pod actions each start/import a full stack. This differs from one shared multi-PR cluster, which is not recommended.</p><p><strong>Impact model:</strong> Ten → three stacks avoids seven setups. At current Pod startup/import magnitudes, about 300–700 worker-seconds is a plausible setup saving, not a wall-clock sum. Forecast 0–60s gate saving; a longer serial group can instead regress latency. It is secondary to smaller dependency closures because grouping broadens invalidation and rerun scope.</p><p><strong>Acceptance and falsification:</strong> Compare a single-scenario edit and a broad service edit; preserve all harness/case variants, explicit unique ownership and cleanup. Storage tests refuse preexisting Sandboxes, and cluster-level controllers/RBAC/CRDs cannot be reset merely by changing namespaces. Reject if the slowest group is later than the baseline or cache misses cost more than setup reuse.</p></details><details class="rank" id="r15"><summary>15. Shorter fixture probes and valid Python runfiles bytecode</summary><p>Expose fixture-only readiness cadence (1–2s instead of 10s) through typed constructs, and separately repair RBE interpreter/stdlib wiring for rules_python precompile. Production probes stay unchanged. The earlier in-process migration retry fix and build-time chart rendering are already landed.</p><p><strong>Impact model:</strong> Current post-manifest Deployment waits are about 26–31s. A 10s probe can add up to 8–9s per sequential readiness dependency; do not sum that over concurrently starting services. Remaining Python imports historically cost 10–13s, roughly three quarters compilation: at most about 8–10s removable there. Forecast combined 5–20s on an affected cold action, with zero if probes/bytecode are not the tail.</p><p><strong>Acceptance and falsification:</strong> Measure listening vs Ready and imported vs compiled bytecode on matched workers. Keep real health and failure checks, correct Python magic/path/hash mode, and no timeout increases. include_pyc is currently broken on RBE; simply enabling it repeats a known failure.</p></details><details class="rank" id="r16"><summary>16. Cache pinned Nix sources, if restore wins</summary><p>Trial a narrowly keyed trusted cache of the pinned flake Git/source preparation used by <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/.github/workflows/nix-wheel-check.yml#L119">the policy step</a>; keep PR writes from poisoning the trusted shared source cache. This is a source-preparation experiment, not the previously rejected prepared-container or combined-evaluation approach.</p><p><strong>Impact model:</strong> Three fresh docs jobs substitute all policy markers but spend 24–35s before the build plan, including a 15–25s Git-cache unpack interval. Those intervals mix fetch/unpack/evaluation. Forecast 0–20s net if restore/validation is cheaper; require a restore budget below about 8s. On a Bazel-last PR it saves runner time only.</p><p><strong>Acceptance and falsification:</strong> Alternate restore/no-restore on clean hosted runners at one flake.lock; account for archive upload/download and Nix version/path validity. Reject if net required-gate time or occupied runner time worsens. Combining Nix commands previously saved no useful evaluation time and is not revived here.</p></details><details class="rank" id="r17"><summary>17. Isolate non-gating publication capacity</summary><p>Evaluate fresh isolated self-hosted or separately provisioned runners for trusted post-merge release/image and visual-publisher jobs, leaving required PR jobs on the present pool. Preserve complete non-cancelling publication and the coalescing policy; do not cancel push builds wholesale, which previously starved deployment artifacts.</p><p><strong>Impact model:</strong> During the October21 07:30–09:00 burst, push CI/release/image jobs consume459.5 runner-minutes and visual publication136.1, versus361.4 across PR Bazel/wheel/pre-commit. Occupancy reaches20 for15.1min and PR Bazel queue p90 is56s. Forecast0–60s reduction for a capacity-limited burst after offload; the ordinary queue median2s leaves little quiet-period upside. Unknown account plan/other repos/pool limits prevent a guaranteed capacity claim. Additional infrastructure cost is unpriced.</p><p><strong>Acceptance and falsification:</strong> Measure total occupied hosted slots and waiting independent PR jobs before/after; verify the alternate runner limit actually separates capacity and includes boot cost. Use disposable VMs, trusted workflow code, explicit artifact/secret trust and the existing fork boundary. Reject if queue merely moves or publishing slows enough to worsen release currency. This is a capacity intervention, not a way to shorten an executing k3s test.</p></details></section>
-<section id="feedback"><h2>What a PR author waits for</h2><div class="scroll"><table><thead><tr><th scope="col">Changed-path class</th><th scope="col">Heads with exact in-window match</th><th scope="col">Required-check proxy p50 / p90 (s)</th><th scope="col">Failed / cancelled / pending in this head sample</th><th scope="col">Auto-merge readiness / notification receipt</th></tr></thead><tbody><tr><td>Agentplane backend</td><td>20</td><td>213 / 496</td><td>0 / 0 / 0</td><td>n=0 / n=0</td></tr><tr><td>build/CI/tooling</td><td>2</td><td>157 / 163</td><td>0 / 0 / 0</td><td>n=0 / n=0</td></tr><tr><td>cdk8s</td><td>10</td><td>160 / 215</td><td>0 / 0 / 0</td><td>n=0 / n=0</td></tr><tr><td>docs-only</td><td>11</td><td>105 / 116</td><td>0 / 0 / 0</td><td>n=0 / n=0</td></tr><tr><td>frontend/UI</td><td>2</td><td>410 / 703</td><td>0 / 0 / 0</td><td>n=0 / n=0</td></tr><tr><td>k3s/system-tests</td><td>7</td><td>553 / 798</td><td>0 / 0 / 0</td><td>n=0 / n=0</td></tr><tr><td>other code/config</td><td>1</td><td>103 / 103</td><td>0 / 0 / 0</td><td>n=0 / n=0</td></tr><tr><td>other infrastructure</td><td>1</td><td>203 / 203</td><td>0 / 0 / 0</td><td>n=0 / n=0</td></tr></tbody></table></div><p>54/80 selected latest heads have an in-window PR workflow and complete reconstructed successful required checks. All 54 first-green observations pass; this is a <strong>survivor sample</strong>, not 100% CI reliability. The other 26 sampled latest heads have no usable exact in-window match or complete matching checks and are excluded, not counted green. Classes have precedence docs → k3s/system tests → cdk8s → build tooling → frontend → Agentplane backend → other infrastructure → other. Mixed changes inherit the first matching class; the two UI-class heads are not two clean UI-only treatments.</p>
-<p>Start: earliest matching PR workflow creation for that exact head. Stop: first reconstructed moment the latest-started check state has all three required contexts successful, using <code>filter=all</code>, not the last later rerun. GitHub timestamps have second resolution; push timestamps and first observed full-policy eligibility are unavailable. We do not substitute PR creation or merge time. Bazel is last for 39/54 heads, Nix for 15; pre-commit never finishes last here.</p>
-<p>Live devel policy requires <code>Build artifacts + imports check</code>, <code>Pre-commit checks</code>, and <code>bazel-ci / Test &amp; Build</code>. Zero required approvals; no strict up-to-date, code-owner, last-push or review-thread requirement. Linear history, draft/conflicts and the extra approval rule for unattributed changes still matter. Historical draft/mergeability/attribution state at check completion was not observed: <strong>auto-merge readiness n=0</strong>. All 54 included heads are same-repository; fork-head sample n=0. The trusted-fork workflow and its actual wheel job remain distinct from its short alias context, but this cohort cannot estimate fork-approval or trust-path latency.</p>
-<details><summary>Why rerun history matters</summary><p>PR #10885 has repeated workflows at one head. Selecting only the latest green checks inflated its apparent latency to 33,184s; reconstructing its first successful gate state gives 103s. Repeated unchanged heads are not new pushes. Other long failed/retried cases remain in the attempt census and failure analysis. Latest-head metadata can bias a latest-head sample toward survivors, which is why job outcomes are shown separately.</p></details></section>
-<h3>Representative exact-head gate timelines</h3><div class="scroll"><table><thead><tr><th scope="col">PR / class</th><th scope="col">PR head</th><th scope="col">Start proxy (UTC)</th><th scope="col">Pre-commit +s</th><th scope="col">Nix +s</th><th scope="col">Bazel +s</th><th scope="col">First all-green +s</th></tr></thead><tbody><tr><td><a href="https://github.com/agentydragon/ducktape/pull/11256">#11256</a><br>docs-only</td><td><code>352ea063bfd7</code></td><td>2026-10-20T05:53:58+00:00</td><td>67</td><td>105</td><td>80</td><td>105</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/pull/11279">#11279</a><br>Agentplane backend</td><td><code>8d94ae7b327d</code></td><td>2026-10-20T07:27:37+00:00</td><td>70</td><td>90</td><td>213</td><td>213</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/pull/11290">#11290</a><br>frontend/UI</td><td><code>028ab6da353e</code></td><td>2026-10-20T09:23:19+00:00</td><td>63</td><td>113</td><td>410</td><td>410</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/pull/11313">#11313</a><br>cdk8s</td><td><code>f6a54f3cf998</code></td><td>2026-10-21T00:02:42+00:00</td><td>66</td><td>104</td><td>160</td><td>160</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/pull/11419">#11419</a><br>k3s/system-tests</td><td><code>a7d3e78a913b</code></td><td>2026-10-21T22:48:28+00:00</td><td>70</td><td>112</td><td>553</td><td>553</td></tr></tbody></table></div><p class="small">Completion offsets for the three matching required contexts. Check creation/queryability, webhook/inbox/harness delivery and full-policy readiness are unavailable for these historic heads; no receipt percentile is implied. Evidence retains full head SHA and each exact check/job URL.</p>
-<div class="scroll"><table><thead><tr><th scope="col">Assigned, completed PR job attempts</th><th scope="col">n</th><th scope="col">Queue p50 / p90 / max (s)</th><th scope="col">Runtime p50 / p90 (s)</th><th scope="col">All attempts by conclusion</th></tr></thead><tbody><tr><td>bazel-ci / Test &amp; Build</td><td>368</td><td>2 / 36 / 135</td><td>205 / 609</td><td>{&#x27;failure&#x27;: 49, &#x27;success&#x27;: 278, &#x27;cancelled&#x27;: 42}</td></tr><tr><td>Build artifacts + imports check</td><td>364</td><td>2 / 13 / 135</td><td>104 / 154</td><td>{&#x27;success&#x27;: 350, &#x27;cancelled&#x27;: 14, &#x27;failure&#x27;: 2}</td></tr><tr><td>Pre-commit checks</td><td>363</td><td>2 / 12 / 168</td><td>64 / 71</td><td>{&#x27;success&#x27;: 356, &#x27;failure&#x27;: 2, &#x27;cancelled&#x27;: 6}</td></tr></tbody></table></div>
-<section id="k3s"><h2>What the heavier tests really cost</h2><p><strong>Current source: ten Pod scenarios plus one VM scenario run automatically when selected and are verdict-cacheable.</strong> Each action starts a fresh k3s/containerd, imports its fixture and runs real Pods/services. The standalone model-free lifecycle workflow is still manual; it is not the new PR cost. Three additional VM scenarios are now manual, although historical migration runs in this window executed all four VM variants.</p>
-<div class="two"><div class="box"><h3>Real cluster, deliberately reduced platform</h3><p>Pinned k3s, kubelet, kube-proxy, flannel host-gw, CoreDNS, local-path PVCs, ImageVolume, real TokenReview/controllers, one PostgreSQL 18 Deployment with service-owned DBs, and Go control-plane services. The app/API and current-source Python Actions remain. No Electric/browser, Cilium, CNPG operator, Gateway API, cert-manager, ESO or monitoring stack. MCP adds Dex and two MCP fixtures; VM adds KubeVirt/Kyverno and a small guest.</p><p>Each action requests four estimated compute units and 50GB disk, bridge networking, <code>recycle-runner=false</code>. Pod overlay snapshots are tmpfs; content stays on disk. VM snapshots stay on disk. Outer BuildBuddy runner recycling is separate and already enabled.</p></div><div class="box"><h3>The expensive path is inside the action</h3><p>OCI layouts → per-image tar streams with distinct blobs sent once → containerd content store and unpack → manifests → Deployments Ready → scenario. No Docker-load tarball or external runtime image pull is required for supplied layouts. Current <code>--no-unpack</code> would only skip import unpack; first use still needs usable snapshots. The <a href="https://github.com/containerd/containerd/blob/main/cmd/ctr/commands/images/import.go">upstream import implementation</a> supports that distinction.</p><p>Historical native CPU profile found filesystem apply/writes dominant, not Python tar CPU. An input closure of 6.06GB is not 6.06GB downloaded on each run: current measured input fetch is usually subsecond to a few seconds. Benefit comes from fewer invalidations, build prerequisites and unpack writes, not an invented bytes/bandwidth conversion.</p></div></div>
-<p>71 diagnostic job logs contain 135 true k3s terminal target summaries in 12 jobs: <strong>50 executed, 85 cached</strong>; only five jobs actually execute any k3s target. All those terminal k3s summaries pass. The diagnostic sample is outcome-stratified, not population weighted; absent summaries can mean early failure/cancellation. Offline tests beside system tests and <code>test_render</code> are excluded. October 20 has no true k3s summaries in this sample; October 21 has 46 executed / 23 cached; October 22 has 4 / 62. This is migration/selection/cache evidence, not a controlled before/after estimate.</p>
-<p>One broad warm push finishes its inner test sweep in <strong>16.19s</strong> with all eleven k3s results cached and no direct remote executions. A cold broad PR takes <strong>594.96s</strong> inner test time, including a VM internal retry. Merely having a target selected does not mean paying its printed historical test duration.</p>
-<h3>Current-shape example: 11 cluster actions overlap</h3><p><a href="https://github.com/agentydragon/ducktape/actions/runs/39727246528/job/119653881938">GitHub job</a> · <a href="https://app.buildbuddy.io/invocation/86a6052a-2a5c-583f-881e-86c60b6723ba">BuildBuddy</a> · tested merge <code>4cc922d0cf690f944015b0a82e5a9e7e4c9c9f8d</code>. This in-flight Actions migration attempt fails MCP assertions; the other ten targets pass. It is used for cost/finish-path diagnosis, not as a green baseline.</p>
-<div class="scroll"><table><thead><tr><th scope="col">Target</th><th scope="col">Test process (s)</th><th scope="col">Fixture phase evidence</th></tr></thead><tbody><tr><td>VM sandbox</td><td>432.3</td><td>Node Ready 28.1s; VM infrastructure import ≈98s; all imports complete 243.6s; stack Ready 276.2s</td></tr><tr><td>Agent messaging</td><td>285.0</td><td>Node 12.1s; imports complete 82.9s; stack Ready 114.1s</td></tr><tr><td>DCR</td><td>218.6</td><td>Node 24.8s; imports complete 134.3s; stack Ready 167.8s</td></tr><tr><td>Dispatcher / egress</td><td>211.4 / 207.1</td><td>Run concurrently; not added to VM latency</td></tr><tr><td>MCP</td><td>200.3 (failed)</td><td>Stack Ready 149.3s; error envelope parsed as Action view during client migration</td></tr><tr><td>Presets / instructions / thread stream</td><td>195.9 / 181.4 / 181.2</td><td>Each owns a separate fresh stack</td></tr><tr><td>Storage / suspend-resume</td><td>149.0 / 135.0</td><td>Model-free and scripted compositions differ</td></tr></tbody></table></div><p class="small">Fixture times start at its own Timeline origin; process time also includes launcher/Python setup, scenarios and teardown. Do not subtract these as if all clocks share an origin. Import totals sum the serial image import intervals, not concurrent service readiness.</p></section>
-<div class="bars" aria-label="Example process times, seconds"><div class="bar-row"><span>VM sandbox</span><span class="bar-track"><span class="bar" style="display:block;width:100%"></span></span><strong>432s</strong></div><div class="bar-row"><span>Agent messaging</span><span class="bar-track"><span class="bar" style="display:block;width:66%"></span></span><strong>285s</strong></div><div class="bar-row"><span>DCR</span><span class="bar-track"><span class="bar" style="display:block;width:50.6%"></span></span><strong>219s</strong></div></div>
-<div class="box model"><h3>Why a faster VM eventually stops helping</h3><p>Counterfactual finish-time model for the 11-action example, holding action starts, remaining work and non-Bazel gates fixed. Baseline workflow-start → Bazel verdict is 531s. This attempt remains red until its MCP defect is fixed; the model predicts terminal feedback cost, not readiness.</p><label for="vm-speed">Shorten VM action only: <span id="vm-value">0</span>s</label><input id="vm-speed" type="range" min="0" max="300" value="0" step="5"><label for="all-speed">Shorten setup in every k3s action: <span id="all-value">0</span>s</label><input id="all-speed" type="range" min="0" max="120" value="0" step="5"><output id="model-result" aria-live="polite">531s modeled terminal feedback · 0s saved</output><p class="small">Removing the VM tail exposes messaging after about 148s saved. Across-stack import reductions can shorten both. Fixed outer cost ≈92.5s, non-Bazel gate floor 118s; reducing setup can change scheduling in reality. This is an Amdahl-style bound, not an experiment or additive savings forecast.</p></div>
-<section id="cases"><h2>The critical paths, phase by phase</h2><div class="scroll"><table><thead><tr><th scope="col">Case / job</th><th scope="col">GH queue</th><th scope="col">GH setup</th><th scope="col">Remote step → inner test</th><th scope="col">Inner test</th><th scope="col">After test → GH end</th><th scope="col">Invocation / tested source</th></tr></thead><tbody><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39376726690/job/118476423776">39376726690</a></td><td>2</td><td>10</td><td>58</td><td>54</td><td>8</td><td><a href="https://app.buildbuddy.io/invocation/a42a163e-b8f4-5cf8-8c9e-cac0287422e7">2031140e37</a></td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39390580708/job/118520846093">39390580708</a></td><td>38</td><td>9</td><td>58</td><td>232</td><td>14</td><td><a href="https://app.buildbuddy.io/invocation/9329f485-0e9e-50ca-a4aa-b8a51415e465">97c91d5092</a></td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39400303696/job/118553050858">11290</a></td><td>65</td><td>10</td><td>56</td><td>265</td><td>11</td><td><a href="https://app.buildbuddy.io/invocation/f0eac10c-0e0a-572e-9821-5818fd665e39">0d3830a0fe</a></td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39636174161/job/119347145619">10322</a></td><td>3</td><td>10</td><td>47</td><td>422</td><td>27</td><td><a href="https://app.buildbuddy.io/invocation/c88164a8-c5fa-530b-a72f-36240213800f">a0462fac49</a></td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39655069448/job/119413051703">11404</a></td><td>2</td><td>9</td><td>131</td><td>465</td><td>10</td><td><a href="https://app.buildbuddy.io/invocation/3d2e3092-7d3a-5f6e-a6b8-0ac67aa962fb">81c60d876a</a></td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39685233976/job/119517488398">39685233976</a></td><td>2</td><td>12</td><td>60</td><td>595</td><td>26</td><td><a href="https://app.buildbuddy.io/invocation/1b2c2bbb-ed93-5e33-bb5a-a0c7b06432ef">6c44c0efc0</a></td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39711203920/job/119602704107">39711203920</a></td><td>2</td><td>9</td><td>39</td><td>75</td><td>25</td><td><a href="https://app.buildbuddy.io/invocation/730ebabe-d1f3-5de4-8ecf-b67cb705fe6c">2401bc50a3</a></td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39719513125/job/119629472225">39719513125</a></td><td>2</td><td>9</td><td>22</td><td>16</td><td>25</td><td><a href="https://app.buildbuddy.io/invocation/58d19cc6-d3e8-5c32-a888-76faf41e38b2">90e5898690</a></td></tr></tbody></table></div><p>Seconds, mutually sequential intervals within each job. Remote-step → test mixes request/allocation, source/tools and affected-target queries; it is <strong>not all VM boot</strong>. The actual queue/boot split is unavailable for these outer runners. Post-test includes the succeeding build, diagnostics, teardown and GitHub finalization. Profiles split target-pattern evaluation from overlapping load/analysis/execution; configured target counts alone do not prove discarded analysis cache.</p>
-<p>Historical pre-k3s frontend-class PR #11290 still spends 207.5s in a bridge shard. Mixed frontend PR #10322 has a 386.7s chain through package tar → 78.4s whole-image bytecode → image descriptor/image → 33.2s mypy acceptance action. cdk8s PR #11404 has a 430.5s path through a 39s fixture render and 391s deployed-dispatcher k3s test. These explain why merely raising parallelism or tuning a generic queue cannot remove the tail.</p>
-<p>Cold rename PR run 39685233976 has a 584.7s dependency path. Its VM action first executes for 204.5s, receives BuildBuddy status 14 (<code>error pausing VM</code>, Firecracker socket unavailable), then executes a successful 361.2s retry. About 209s of the path’s “other” is that failed attempt/retry, not an unexplained provision delay. Three other VM targets in that historical run are now manual. The current 11-action example starts all its tests around 4.5s into Bazel and has tiny RBE queues: earlier test scheduling or more <code>--jobs</code> cannot materially advance that particular path.</p><div class="scroll"><table><thead><tr><th scope="col">Case</th><th scope="col">Direct executed actions, all mnemonics</th><th scope="col">Worker-process seconds</th><th scope="col">CPU seconds</th><th scope="col">RBE queue p90 (s)</th></tr></thead><tbody><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39376726690/job/118476423776">39376726690</a></td><td>22</td><td>171</td><td>163</td><td>0.066</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39390580708/job/118520846093">39390580708</a></td><td>23</td><td>2,809</td><td>4,934</td><td>0.062</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39400303696/job/118553050858">11290</a></td><td>233</td><td>9,063</td><td>12,122</td><td>0.065</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39636174161/job/119347145619">10322</a></td><td>74</td><td>4,417</td><td>6,983</td><td>0.124</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39655069448/job/119413051703">11404</a></td><td>114</td><td>6,969</td><td>9,123</td><td>0.102</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39685233976/job/119517488398">39685233976</a></td><td>43</td><td>5,522</td><td>11,628</td><td>0.205</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39711203920/job/119602704107">39711203920</a></td><td>10</td><td>61</td><td>15</td><td>0.066</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/39719513125/job/119629472225">39719513125</a></td><td>0</td><td>0</td><td>0</td><td>0.000</td></tr></tbody></table></div><p class="small">Includes retries; excludes linked/merged executions and cache hits. Worker seconds overlap; CPU seconds are reported CPU nanoseconds, not elapsed time. They are never added to GitHub runner-seconds. Input fetch on the inspected actions is small compared with process execution; the large declared input sizes primarily demonstrate dependency and unpack work.</p></section>
-<section id="experiments"><h2>New tested findings, with limits</h2><h3>Renderer nondeterminism: demonstrated and controlled</h3><p>At source <code>eabea95e089b005b8d59b1c5269c6178a0cd009e</code>, a temporary Bazel test renders base, MCP and VM variants twice with identical inputs. Natural renders differ at 17, 22 and 17 resource-field paths. A control fixes only chart/database password generation, bcrypt salt and Fernet key generation at the test boundary; all three full-output digest pairs then match, with zero differing paths.</p><p>First attempt <a href="https://app.buildbuddy.io/invocation/57cdb4fc-0cd9-45a8-a76c-33bdb422a6d5">57cdb4fc</a> failed because the control omitted independently generated database passwords. Exactly one localized correction produced <a href="https://app.buildbuddy.io/invocation/82a877b1-4054-4ae5-bae1-5a315cae093e">82a877b1</a>: <strong>3 passed</strong>, pytest 7.65s, TestRunner 37.4s, Bazel 41.237s. Final temporary patch SHA-256 <code>835d2d54d641af91bac185665a35997907581030c4edac35d295e094c776da54</code>. No production rendering code changed and no CI speedup was measured. Credentials themselves are not published.</p>
-<h3>Dependency cuts: real expanded graph, not just source reading</h3><p><a href="https://app.buildbuddy.io/invocation/f7a6c3e7-0b42-4a9e-8601-54f230c8fe9c">Frontend query</a> returns fourteen system-test py_tests reverse-dependent on the frontend bundle: eleven automatic plus three manual. <a href="https://app.buildbuddy.io/invocation/d0e5669f-8d43-47f6-86d9-a37618c11883">Fixture/layer query</a> confirms 53 tests in the app/runner fixture union, 38 under app, and the discarded interpreter archives. These are unconfigured graph results before CI tag filtering. Static counterfactual label counts are separately labeled; no image cut or runtime behavior was tested.</p>
-<h3>Nix cache follow-up: successful substitution now verified</h3><p>Three recent unrelated docs jobs (<a href="https://github.com/agentydragon/ducktape/actions/runs/39662604347/job/119439250652">job 119439250652</a>, <a href="https://github.com/agentydragon/ducktape/actions/runs/39690811659/job/119536244566">119536244566</a>, <a href="https://github.com/agentydragon/ducktape/actions/runs/39717399237/job/119622709105">119622709105</a>) each fetch all eleven source-artifact markers from Attic. The three policy markers substitute too. This resolves the prior report’s “subsequent marker substitution unverified” item. It does not prove all invalidation cases or a matched CI speedup.</p><p>Despite those tiny hits, the policy step spends 24–35s before its build plan. Logs show source copying and pinned nixpkgs Git-cache unpacking; unpack-start → plan alone is 15–25s and still mixes evaluation. This supports a specific pinned-source-cache spike, while the previously rejected combined Nix evaluation remains rejected.</p></section>
-<section id="failure-followup"><h2>Slow failures have different causes</h2><p>Six of the eleven failed diagnostic Bazel jobs fail compilation/type/analysis; five reach failed or timed-out tests. The 1,713s broad failure is an <strong>unlanded explicit-test-file argv experiment</strong>, not evidence that current k3s broke CI. Its manifest test rejects the injected filename through the settings CLI parser; a Props test changes pytest rootdir and loses its ancestor <code>synced_db</code> fixture. The other failed targets were not all individually diagnosed. Do not revive blanket test-file argv injection as a safe startup optimization.</p><p>Two browser failures also differ: one expanded-command selection has ~101px geometry mismatch; another records <code>scrollend</code> before <code>stream-rendered</code>, failing to establish the intended overlap. The latter is a test orchestration condition, not proof the app detach invariant failed. Two small component timeouts stop after <code>pytest.main</code> arguments with no session header or stack: the pre-session/discovery boundary is proven, the blocked operation is unknown. The smallest missing trace is a stack/import/discovery dump at that boundary; increasing timeouts is not a diagnosis.</p><h3>Successful cancellation RPC is not a stop guarantee</h3><p>Three later cancelled jobs use byte-identical current wrappers and log the exact child RPC successfully. Their originating NEW executions still queue/start after GitHub end and finish +235.7s, +266.7s and +211.3s. A fourth cancellation happens before test/build IDs exist, then starts a query child +6.6s later. <a href="https://github.com/buildbuddy-io/buildbuddy/blob/a07198b9707dc26cbce3827d807da6854a978638/enterprise/server/remote_execution/execution_server/execution_server.go#L1980">The pinned upstream handler</a> scans current in-progress tasks, preserves shared tasks and does not implement a future-submission barrier or quiescence wait. The hosted revision and server cancellation/task-sharing trace are unknown; this is a consistent mechanism, not a proved hosted root cause. The concrete next change is origin-stop plus bounded repeated child cleanup/quiescence verification, preserving shared work.</p></section>
-<section id="architecture"><h2>Which larger changes are worth considering?</h2><h3>Prefer immutable image seeds to shared multi-PR clusters</h3><p>A persistent multi-PR cluster removes startup on paper but namespaces do not isolate CRDs, cluster RBAC/controllers, node/host mounts, storage provisioners or arbitrary PR code. It adds state pollution, credential exposure, noisy-neighbor behavior and dishonest action-cache inputs. Fresh per-action clones of trusted immutable content preserve the existing isolation boundary. A fully booted k3s snapshot has more potential but must regenerate certs/identity/network/leases, recover databases and handle clocks. Start with content/snapshot seeds and prove BuildBuddy support first; <a href="https://www.buildbuddy.io/docs/remote-runner-introduction/">BuildBuddy documents outer-runner snapshotting</a>, which does not itself prove an inner k3s seed is supported.</p>
-<h3>Choose tiers by the behavior they exercise</h3><p>Use real API-server/etcd envtest for admission, watches, RBAC/TokenReview and reconcilers that need no Pods. Keep k3s for kubelet/CNI/DNS/image volumes/PVCs/sidecars and real Sandbox paths; keep KubeVirt/Kyverno for VM paths. DCR registration is the clean component candidate. Do not replace lifecycle/storage/streaming end-to-end coverage just to remove a costly test. A bundled control-plane Pod can reduce Pod scheduling/probe overhead, but still imports the same binaries and must preserve distinct service credentials; one union ServiceAccount would change the security contract.</p>
-<h3>Actions Go first; app/BFF deletion is a separate decision</h3><p><a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/agentplane/plans/action_service_go_port.md">agentplane/plans/action_service_go_port.md</a> has most Go implementation stages landed and caller/testing/staging/Python retirement still in flight at the pinned source. The fixture still selects Python Actions there; newer in-flight heads are separately measured. The generated-facade track removes handwritten route/client/model mirrors but deliberately keeps app origin/login/CSRF/token exchange and app-owned composition/state.</p><p>The older October 21 model-free inventory is 938,776,320 distinct blob bytes (895.3MiB): 410.7MiB Python group, 313MiB Go services, 24.9MiB Goose, 68MiB runner/tools and 78.8MiB PostgreSQL. 382.1MiB is exclusive to the Python images, <strong>42.7% of distinct stored bytes</strong>. Removing Actions alone cannot claim those bytes while app remains. Removing both requires replacement bytes and state/auth ownership; the plan’s 9–14% action saving is only a proportional model, not an empirical Go-port result.</p><p>Possible end states are: thin app BFF (least migration; retains Python), Go BFF (moves runtime but keeps the owner), or static browser plus service facades and explicit credential/state owners (largest change). App Thread names/archive state and browser sessions are user data, not disposable relay state. Removing a database from Dispatcher does not eliminate PostgreSQL from app, Actions, History, egress and Notifications. The fixture already omits the CNPG operator.</p>
-<details><summary>Alternatives with counterevidence or insufficient upside</summary><ul><li><code>ctr --local</code>: previous paired means 230.3s vs 232.8s action, 79.4 vs 83.2s import; opposite worker directions. No useful speedup established.</li><li>Parallel VM/core imports: previously slower under I/O contention; no custom import scheduler recommended. Deployments already start concurrently, even though kubectl waits are printed serially.</li><li><code>--no-unpack</code>: moves work to first use unless there is real snapshot reuse. Require first usable Session, not a shorter importer number.</li><li>Another generic Go rewrite: the earlier LLM ingress port did not establish lifecycle speedup. Measure exclusive bytes and selected CPU first.</li><li>Go stripping/compression or lazy/erofs/stargz images: experimental candidates after inspecting exact current link/debug modes and snapshotter/ImageVolume compatibility; no measured removable-byte result, so not counted as a quantified quick win.</li><li>All-in-one control-plane Pod: existing unscheduled spike; upper opportunity is part of the ~26–53s readiness phase, not all image bytes or all startup.</li><li>More GitHub slots: can address the observed 36s queue p90, not executing 4–7 minute cluster actions. More RBE capacity has little support from the inspected subsecond queues.</li></ul></details></section>
-<h3>All-workflow busy-burst occupancy</h3><div class="scroll"><table><thead><tr><th scope="col">UTC interval</th><th scope="col">PR Bazel attempts</th><th scope="col">Queue p50 / p90 / max (s)</th><th scope="col">Peak runners</th><th scope="col">Minutes at ≥20</th></tr></thead><tbody><tr><td>2026-10-20T06:00:00Z → 07:30:00Z</td><td>32</td><td>2 / 9 / 65</td><td>20</td><td>1.0</td></tr><tr><td>2026-10-21T07:30:00Z → 09:00:00Z</td><td>46</td><td>2 / 56 / 85</td><td>20</td><td>15.1</td></tr></tbody></table></div><p class="small">Busiest90-minute CI-arrival bucket per UTC day, not the worst queue chosen after seeing results. Work created up to45minutes earlier is included; still a completed-job lower bound.</p>
-<section id="capacity"><h2>Capacity and resource cost are different from feedback</h2><div class="scroll"><table><thead><tr><th scope="col">Workflow</th><th scope="col">Measured runner-hours in 48h</th><th scope="col">Coverage</th></tr></thead><tbody><tr><td>.github/workflows/ci.yml</td><td>103.71</td><td>All run jobs</td></tr><tr><td>.github/workflows/nix-wheel-check.yml</td><td>18.98</td><td>All run jobs</td></tr><tr><td>.github/workflows/pre-commit.yml</td><td>14.32</td><td>All run jobs</td></tr><tr><td>.github/workflows/pr-visuals-publish.yml</td><td>4.85</td><td>Sampled busy windows only</td></tr><tr><td>.github/workflows/nix-attic-push.yml</td><td>3.35</td><td>Sampled busy windows only</td></tr><tr><td>.github/workflows/agentplane-runner-ducktape-image.yml</td><td>0.42</td><td>Sampled busy windows only</td></tr><tr><td>.github/workflows/sync-pins.yml</td><td>0.25</td><td>Sampled busy windows only</td></tr><tr><td>.github/workflows/agentplane-runner-image.yml</td><td>0.15</td><td>Sampled busy windows only</td></tr></tbody></table></div><p>The job census covers all 2,140 CI/trusted-fork/wheel/pre-commit workflow runs and supplements all workflows in each UTC day’s busiest 90-minute CI-arrival bucket, with a 45-minute lookback. Completed positive-runner-ID occupancy reaches <strong>20 runners</strong>; it is a lower bound, not the account plan or live utilization. Most GitHub queues are short, but the PR Bazel p90/max is 36/135s. Push validation/release/image work occupies the same hosted capacity; a runner waiting for BuildBuddy still consumes a GitHub slot.</p>
-<p>All-workflow occupancy outside the busy samples is incomplete; visual/Attic/image hours above are not comparable full-window censuses. Unfinished jobs, synthetic skipped/cancelled timestamps, work beginning before the lookback, other repositories and unknown account limits are excluded. CodeQL default setup is not configured; two CodeQL-path runs exist, with no evidence making CodeQL the current cause.</p>
-<p>RBE phase evidence separates queue/input/setup/process/upload. A few slow pools or workers can matter, but observed p90 queues for the representative inner tests are about 0.06–0.21s, except a mixed UI case at 0.12s with one 4.07s action. Worker process duration and failures dominate those paths. The 575s VM chain contains a retry; labeling it provisioning would lead to the wrong intervention.</p></section>
-<section id="plans"><h2>Map the recommendation to the existing plan</h2><div class="scroll"><table><thead><tr><th scope="col">Existing track at pinned source</th><th scope="col">CI consequence / proposed addition</th></tr></thead><tbody><tr><td><code>ACTION_SERVICE_GO_PORT</code></td><td>Continue L–O; measure exclusive bytes/test work after caller and fixture cutover. Do not start another port track.</td></tr><tr><td><code>RUNNER_HARNESS_DELIVERY_DESIGN</code></td><td>Compare image volume vs pinned on-demand artifacts including fetch/cache and first turn. A Codex-only presets image is a possible interim cut; both-harness scenarios retain both.</td></tr><tr><td><code>K3S_BUNDLED_SERVICES_SPIKE</code></td><td>Retain as lower-priority bounded topology experiment; it cannot remove image bytes or shared Python on its own.</td></tr><tr><td><code>APP_TEST_RUNNER_FIXTURES_GO / FAKE_CLIENTS_TO_ENVTEST</code></td><td>Coordinate fixture-scope extraction with these candidate tracks; keep real-platform component coverage.</td></tr><tr><td><code>HISTORY_READS_FACADE / grpc_http_facade</code></td><td>Useful route/model deletion, but no automatic app image retirement. Add APP_STATE_OWNER_DECISION only if considering BFF retirement.</td></tr><tr><td><code>DISPATCHER_PERSISTENCE_MODEL_DESIGN / CNPG_FREE_K3S_INTEGRATION_TIER</code></td><td>Existing queue/state decision remains; current fixture already has no CNPG operator, other service state still requires PostgreSQL.</td></tr><tr><td><code>K3S_SPIKE_TARGETS_RETIRE / K3S_ENV_OUT_OF_X</code></td><td>Manual duplicate cleanup and rename; neither removes the eleven automatic scenario stacks.</td></tr><tr><td><code>K3S_TEST_GUEST_RETIRE</code></td><td>Wait for production layered guest to boot under the CI executor. Removing the special guest is maintainability work, not demonstrated boot savings.</td></tr><tr><td><code>TESTING_ENVIRONMENT_RETIRE / STAGING_FIRST_ROLLOUT</code></td><td>Resolve acceptance destination with Action cutover. k3s lacks Cilium/Flux/CNPG/ESO/cert-manager/Gateway parity; retiring testing moves first exposure to staging.</td></tr><tr><td><code>New CI tracks</code></td><td>CI_API_ONLY_APP_IMAGE; CI_K3S_DETERMINISTIC_RENDER; CI_PY_IMAGE_INPUT_CUTS; CI_INCREMENTAL_ARTIFACT_GATE; CI_REMOTE_CANCEL_QUIESCENCE; CI_K3S_IMAGE_SEED; CI_VM_EXECUTOR_CLASS. These are proposed here, not silently added to the dispatch DAG.</td></tr></tbody></table></div><p>Source: <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/agentplane/plans/task_dag.md">agentplane/plans/task_dag.md</a> and linked owner plans. Status is as documented at the pinned source, not a claim of current deployment or a request to dispatch all tracks. Start with independent small PRs #1–4; define the image-seed and VM-pool acceptance experiments before large architectural investment.</p></section>
-<section id="continuity"><h2>What happened to the previous investigation?</h2><p>Read the complete latest latency HTML (including disclosures), manifest and substantive supporting experiment/case evidence at 281f74f3ea. It covers October 9–10, with October 11 follow-ups; sibling reliability updates did not refresh latency. The current report replaces that snapshot while retaining the following decisions. <a href="https://github.com/agentydragon/ducktape/blob/281f74f3ea7d54478e390ec1232708fc040bc722/latency/index.html">Pinned previous report</a> · <a href="https://github.com/agentydragon/ducktape/blob/281f74f3ea7d54478e390ec1232708fc040bc722/latency/evidence.json">previous evidence</a>.</p><div class="scroll"><table><thead><tr><th scope="col">Prior result / promised follow-up</th><th scope="col">Current disposition</th></tr></thead><tbody><tr><td>October 10 queue/head baseline</td><td>Retained as historical: busy Bazel queue p90 60s; passing-head proxy p50/p90 159/458s, n=47. Current 36s queue p90 and 173/618s heads use different windows/classes/sample; no causal rollout comparison.</td></tr><tr><td>Bridge sharding #9847 and history wakeups #9852</td><td>Landed; do not re-propose. Current pre-k3s bridge shard still 207–224s. Earlier one-pair 84s critical-path gain cost ~32% worker/+34% CPU; preserved as historical tradeoff.</td></tr><tr><td>Indexing fixture #9875</td><td>Landed; prior 147.3→41.3s single action pair retained. It is no longer the main observed cold k3s tail; production persistence profiling remains a separate lower-priority workstream.</td></tr><tr><td>PostgreSQL templates #9925</td><td>Landed. Prior window-browser 211.6→104.6s observational pair retained; browser 8→16 shards confounded template attribution. Current DCR/k3s PostgreSQL already one instance per stack; do not remove real migration coverage.</td></tr><tr><td>Props concurrent prefetch #9984</td><td>Landed-source pattern retained. Prior focused 25–42s action saving; sequential direct runfiles loading was slower. No matched current Props rerun added because new cluster/dependency and rule-regression tails take priority.</td></tr><tr><td>Remote cancellation #9369/#9873</td><td>Stable hosted grouping and trap/child-ID implementation retained. Current own-action continuation despite successful explicit RPC reopens quiescence acceptance; the earlier live probe was necessary but not sufficient.</td></tr><tr><td>Gazelle consolidation #9879/#9880 and citools #9860</td><td>Separate Gazelle workflow absent and live rules have three contexts. Keep landed simplification; no new standalone workflow proposal.</td></tr><tr><td>Runner VM #9886 / NixOS image #9844 / contract cancellation #9845</td><td>Retain landed narrowed trigger, pins, publication target and PR cancellation. Same-derivation Attic image substitution remains unverified here; nonrequired image workflows are lower priority than measured gate tails. Smallest follow-up is one upload + identical-derivation consumer log, not another speculative caching edit.</td></tr><tr><td>Policy/source-marker caches #9890/#9901</td><td>Advanced: three current docs jobs substitute all eleven source markers and three policy markers. Changed-wheel consumer invalidation and matched end-to-end effect are not established. Current 24–35s pre-plan source preparation is separately measured.</td></tr><tr><td>Combined Nix evaluation</td><td>Retain rejection: identical 13 derivations, no meaningful wall benefit in earlier warm evaluation pairs. Current source-cache candidate is a different mechanism and must beat restore cost.</td></tr><tr><td>Mypy batching/internal caches</td><td>Retain deferral: convenient aspect and import visibility matter. Prior four-file batch CPU improvement did not establish equivalent dependency boundaries or CI speedup. SQLite/ZIP propagation and disk problems remain; source-input provider is a distinct proposed cut.</td></tr><tr><td>Shallow checkout / warm Bazel server / setup</td><td>Retain landed behavior and old evidence: checkout median ~17→7s, whole-PR adjusted effect uncertain; seven-test warm driver 27.1s faster. Current shared test/build runner already retains server; no reimplementation.</td></tr><tr><td>Browser sharding / manifest parse-once</td><td>Retain landed code and original experiment limits. More shards increase setup/CPU; current later browser assertions are separate correctness issues. Deterministic render work targets different random-output behavior.</td></tr><tr><td>Prepared containers / closure trims</td><td>Retain rejection: earlier hosted prepared-container/trim trials were slower. Smaller artifact size alone is not a latency result. Current dependency cuts remove concrete prerequisites and repeated bytecode, not merely a smaller devshell.</td></tr><tr><td>Visual artifact discovery / publisher</td><td>Retain earlier 19,328→2,877 rows without losing visual manifests; CAS downloads already concurrent. Earlier 349s publisher tail unresolved. Nonrequired publication does not gate readiness; no isolated write-capable publisher experiment added here.</td></tr><tr><td>Base-hash / release-verdict reuse</td><td>Keep exact-source/stamp correctness constraints and old ~16.5s warm selection ceiling. Current narrow docs job still spends around a minute before skipping all targets, but provisioning/query subphases are not fully separated. Image digest skipping and output reuse already exist.</td></tr><tr><td>Agent-visible delivery / CodeQL</td><td>Refreshed: one new live accessibility sample, no subscription/harness receipt distribution; CodeQL default setup remains not-configured. No capacity/scanning policy changed.</td></tr></tbody></table></div></section>
-<section id="method"><h2>Evidence, clocks and practical limits</h2><h3>Population and reproducibility</h3><p>5,212 distinct workflow runs created in the fixed 48-hour window, queried in recursively split uncapped windows (&lt;1,000 results each). Job APIs paginate all attempts. Census: all 2,140 CI/trusted-fork/wheel/pre-commit runs; additional all-workflow busy-window samples are explicitly separate. Main sweep began 05:34:10 UTC and ended 05:51:28 on October 22; supplemental calls and experiments have their own timestamps. It is not an atomic snapshot. 80 evenly spaced PR numbers from 296 PRs updated over October 20–22 are sampled; 54 have usable exact-head gates in the fixed run window. Per-head SHAs/check links and excluded counts are in evidence.</p><p>Nearest-rank percentiles; no unfinished duration is turned into zero. Positive assigned runner IDs are required for runtime/occupancy. Same-run/name/runner/start/end aliases are deduplicated; no duplicate executed intervals were found in this census. Runs are not distinct PRs and reruns are not pushes. Warm versus cold means observed test/action cache results, not an uncontrolled branch-day label. No sample supports attributing p90 change to k3s or cdk8s alone.</p>
-<h3>Agent-visible signals</h3><p>One supplementary live push job <a href="https://github.com/agentydragon/ducktape/actions/runs/39730168612/job/119663140215">119663140215</a> starts 05:48:54 and completes 05:52:33 UTC. API polling first observes its terminal success at 05:52:44.6 (≈11.6s after timestamp, bounded by the polling interval). Its inner BuildBuddy critical-path log is unavailable at the 05:51:55.8–59.8 observation and accessible during 05:52:19.8–24.6, before GitHub terminal. A valid GitHub job-log read succeeds by 05:54:10.6; earlier log probes omitted the CLI ANSI flag and cannot bound endpoint availability. This corrected probe limitation is retained in evidence; it is not a 98s GitHub-log delay claim.</p><p>Sample size for API-terminal/diagnostic availability: one push job, outside the fixed population window, roughly 20s polling plus request time. No PR notification delivery distribution is inferred from it. Webhook acceptance/delivery, subscription inbox read and actual agent harness receipt are all <strong>n=0</strong>; those tools/traces were not available here. Notification completion timestamps alone would not establish delivery.</p>
-<h3>Limits that affect decisions</h3><ul><li>Outer remote request → test is measured, but VM queue vs boot vs setup is not fully exposed. Warm repo sync does not prove analysis-cache reuse.</li><li>Archived logs/profiles represent exact tested merge/source revisions; the inspected devel source is separately pinned. Actions/fixture transitions and VM-manual changes occur within this window.</li><li>48-hour occupancy outside the core workflows is incomplete; other repositories, the account concurrency limit, and historical GitHub incidents were not censused. Completed occupancy is a lower bound.</li><li>Transient session DNS/TLS/API failures were bounded/retried and do not prove a CI service outage. Exact invocation HTTPS access recovered; two real query checks and the renderer experiment ran on RBE.</li><li>All forecast ranges are conditional and overlapping. No current optimization was rolled out, no population before/after speedup measured, and no raw logs, profiles, credentials, identities or inbox contents are published.</li></ul>
-<p>Inspected devel: <a href="https://github.com/agentydragon/ducktape/blob/eabea95e089b005b8d59b1c5269c6178a0cd009e/README.md">eabea95e089b005b8d59b1c5269c6178a0cd009e</a>. <a href="evidence.json">Reviewed measurements and experiment summaries</a> · <a href="manifest.json">Manifest</a>. The report is a standalone HTML file on the report branch; GitHub Pages deployment is not implied. Download/open it locally for interactive controls.</p></section>
-<footer>CI latency snapshot · October 20–22, 2026 · GitHub Actions → BuildBuddy → Bazel → k3s. Independent latency namespace; reliability history preserved.</footer></main><script>
-const vm=document.getElementById('vm-speed'),all=document.getElementById('all-speed');
-const finishes=[['vm',438.313],['messaging',290.699],['dcr',224.531],['dispatcher',216.977],['egress',212.981],['mcp',205.901],['presets',201.829],['instructions',187.323],['thread',186.836],['storage',154.572],['suspend',140.594]];
-function update(){document.getElementById('vm-value').textContent=vm.value;document.getElementById('all-value').textContent=all.value;const finish=Math.max(118,92.545+Math.max(34,...finishes.map(([name,t])=>Math.max(0,t-Number(all.value)-(name==='vm'?Number(vm.value):0)))));document.getElementById('model-result').textContent=`${Math.round(finish)}s modeled terminal feedback · ${Math.round(531-finish)}s saved`;}
-vm.addEventListener('input',update);all.addEventListener('input',update);update();
-</script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CI latency · 22–23 October 2026</title>
+    <style>
+      :root {
+        --ink: #17303b;
+        --muted: #536671;
+        --line: #d5dfe2;
+        --blue: #105b80;
+        --paper: #f5f7f8;
+        --teal: #09766e;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          16px/1.65 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 1180px;
+        margin: auto;
+        padding: 40px 30px 70px;
+      }
+      h1 {
+        font-size: clamp(31px, 4.2vw, 50px);
+        line-height: 1.12;
+        letter-spacing: -0.035em;
+        max-width: 950px;
+        margin: 14px 0 20px;
+      }
+      h2 {
+        font-size: 28px;
+        line-height: 1.25;
+        letter-spacing: -0.02em;
+        margin: 0 0 20px;
+      }
+      h3 {
+        font-size: 20px;
+        line-height: 1.3;
+        margin: 24px 0 10px;
+      }
+      p {
+        margin: 10px 0 18px;
+        max-width: 100ch;
+      }
+      a {
+        color: var(--blue);
+        overflow-wrap: anywhere;
+        text-underline-offset: 3px;
+      }
+      code {
+        font-size: 0.86em;
+        overflow-wrap: anywhere;
+      }
+      .eyebrow {
+        font-size: 12px;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+        font-weight: 750;
+        color: var(--muted);
+      }
+      .lede {
+        font-size: 20px;
+        max-width: 980px;
+      }
+      .small,
+      figcaption {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin: 23px 0;
+      }
+      .card {
+        background: white;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 17px 20px;
+      }
+      .metric {
+        display: block;
+        font-size: 31px;
+        line-height: 1.2;
+        font-weight: 750;
+        margin: 9px 0;
+      }
+      .callout {
+        padding: 18px 22px;
+        background: #e3efeb;
+        border-left: 5px solid var(--teal);
+        margin: 22px 0;
+        border-radius: 0 8px 8px 0;
+      }
+      .warning {
+        background: #fff0da;
+        border-left-color: #a26414;
+      }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 20px;
+        font-size: 14px;
+        margin: 25px 0;
+      }
+      section {
+        border-top: 1px solid var(--line);
+        margin-top: 38px;
+        padding-top: 28px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        background: #e4ecef;
+      }
+      td:first-child {
+        font-weight: 650;
+      }
+      .scroll {
+        overflow-x: auto;
+        margin: 18px 0;
+      }
+      details {
+        background: white;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 15px 19px;
+        margin: 14px 0;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 700;
+      }
+      li {
+        margin: 8px 0;
+      }
+      .two {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      .bars {
+        display: grid;
+        gap: 12px;
+        margin: 22px 0;
+      }
+      .bar-row {
+        display: grid;
+        grid-template-columns: 190px 1fr 110px;
+        gap: 10px;
+        align-items: center;
+        font-size: 14px;
+      }
+      .track {
+        background: #e0e8eb;
+        height: 24px;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .bar {
+        height: 100%;
+        background: #277c8a;
+      }
+      .old {
+        background: #9baab2;
+      }
+      .timeline {
+        min-width: 850px;
+      }
+      .prior {
+        min-width: 740px;
+      }
+      footer {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 32px;
+      }
+      button {
+        font: inherit;
+        color: var(--blue);
+        background: white;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 5px 10px;
+        cursor: pointer;
+      }
+      @media (max-width: 680px) {
+        main {
+          padding: 24px 16px 50px;
+        }
+        .cards,
+        .two {
+          grid-template-columns: 1fr;
+        }
+        .metric {
+          font-size: 28px;
+        }
+        .lede {
+          font-size: 18px;
+        }
+        h2 {
+          font-size: 25px;
+        }
+        .bar-row {
+          grid-template-columns: 115px 1fr 76px;
+          font-size: 12px;
+        }
+        .scroll table {
+          min-width: 650px;
+        }
+        .callout {
+          padding: 16px;
+        }
+        .card {
+          padding: 15px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="eyebrow">Ducktape · CI latency refresh · 22–23 October 2026</div>
+        <h1>The artifact gate now sets<br />the common-case floor.</h1>
+        <p class="lede">
+          A new full-workstation Home Manager evaluation is the largest newly identified cost on fast PRs. Cold k3s
+          tests still dominate the long tail. Prioritize selecting the host evaluation by verified inputs, then cut the
+          SPA dependency from the API fixture image.
+        </p>
+        <p class="small">
+          New window: 22 October 05:30 → 23 October 13:40 UTC (32h 10m), contiguous with the previous report’s
+          population window. Analysis-only: no production workflow, scanning policy or deployed setting changed.
+        </p>
+      </header>
+      <div class="cards">
+        <div class="card">
+          First successful required-check state<span class="metric">3m 48s / 11m 48s</span>p50 / p90, n=77 sampled exact
+          heads. Workflow-creation proxy; full auto-merge readiness unobserved.
+        </div>
+        <div class="card">
+          Artifact gate finishes last<span class="metric">43 / 77 heads</span>Bazel finishes last for 33; pre-commit for
+          one. Previously artifacts were last for 15 / 54.
+        </div>
+        <div class="card">
+          New host-evaluation step<span class="metric">88s / 184s</span>Step p50 / p90, n=354 successful PR jobs
+          containing it. It fetches more than Nix expression text.
+        </div>
+      </div>
+      <div class="callout">
+        <strong>Recommended next change: preserve the pinned-host check, select when it runs.</strong>
+        <p>
+          Keep the new regression coverage for missing released pins. Run full evaluation for its Nix, registry, script
+          and encrypted-config inputs; reuse a proven base verdict only when those inputs are unchanged. Keep the
+          required check context and fail closed on uncertain selection. Forecast
+          <strong>40–90s less feedback on eligible artifact-last PRs</strong>; zero when another gate wins. A local
+          unchanged-derivation probe passed; the full selector and a hosted before/after remain to implement.
+        </p>
+      </div>
+      <nav aria-label="Report navigation">
+        <a href="#changes">What changed</a><a href="#feedback">PR feedback</a><a href="#nix">New artifact-gate cost</a
+        ><a href="#cases">Critical paths</a><a href="#capacity">Queues & resource cost</a
+        ><a href="#ranking">Next interventions</a><a href="#continuity">Prior-work inventory</a
+        ><a href="#method">Clocks & evidence</a>
+      </nav>
+      <section id="changes">
+        <h2>What landed since the last snapshot</h2>
+        <div class="scroll">
+          <table class="">
+            <thead>
+              <tr>
+                <th scope="col">Change</th>
+                <th scope="col">Verified current consequence</th>
+                <th scope="col">Limit</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/pull/11454">#11454</a>
+                  · Actions callers / Go fixture
+                </td>
+                <td>
+                  Fixture now imports the Go Action service and Goose migrations.
+                  <a href="https://github.com/agentydragon/ducktape/pull/11602">#11602</a>
+                  records staging cutover; Python HTTP/MCP/policy/store and golden paths are retired through
+                  <a href="https://github.com/agentydragon/ducktape/pull/11716">#11716</a>
+                  /
+                  <a href="https://github.com/agentydragon/ducktape/pull/11728">#11728</a>.
+                </td>
+                <td>
+                  Remove “finish Actions Go” from the recommendation list. Current source/CI reviewed; live rollout was
+                  not audited and a population speedup is unmeasured.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/pull/11504">#11504</a>
+                  · independent static frontend
+                </td>
+                <td>
+                  The nginx image and deployment landed. The API image binary still includes
+                  <code>frontend:bundle</code> and the service worker.
+                </td>
+                <td>
+                  Independent publication does not yet cut the fixture dependency; the current query still finds 11
+                  automatic + 3 manual tests.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/pull/11510">#11510</a>
+                  · pinned CLI wheels
+                </td>
+                <td>
+                  Adds <code>Evaluate pinned Wyrm2 Home Manager</code> at 07:24 UTC on October 22. Per-tool release
+                  expansion also increases source artifact checks to 17 assets / 15 groups.
+                </td>
+                <td>
+                  The guard catches real pinned-consumer failures that source overrides can hide. Preserve that
+                  coverage.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/pull/11648">#11648</a>
+                  /
+                  <a href="https://github.com/agentydragon/ducktape/pull/11649">#11649</a>
+                  · publication verdict reuse
+                </td>
+                <td>
+                  A current successful push planner reuses the verified literal
+                  <code>bbr</code> test verdict; a suite without a matching summary retains its gate.
+                </td>
+                <td>
+                  One planner decision is operational proof, not a measured population saving. In this example bbr was
+                  unchanged and not released, so that notice alone saved no bbr job.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/pull/11713">#11713</a>
+                  /
+                  <a href="https://github.com/agentydragon/ducktape/pull/11721">#11721</a>
+                  /
+                  <a href="https://github.com/agentydragon/ducktape/pull/11727">#11727</a>
+                  · MCP edge staging
+                </td>
+                <td>
+                  Current task DAG has
+                  <code>ACTION_MCP_EDGE_SPLIT</code> active; schema/runtime stages have landed.
+                </td>
+                <td>
+                  An in-flight ownership migration; no CI image-removal saving assigned. Preserve app-owned
+                  thread/session/auth state.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">
+          Sources:
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/6f85f6f18d092084e914e6351192991b8faf54f8/agentplane/x/k3s_env/BUILD.bazel"
+            >agentplane/x/k3s_env/BUILD.bazel</a
+          >,
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/6f85f6f18d092084e914e6351192991b8faf54f8/agentplane/app/BUILD.bazel"
+            >agentplane/app/BUILD.bazel</a
+          >,
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/6f85f6f18d092084e914e6351192991b8faf54f8/.github/workflows/nix-wheel-check.yml"
+            >.github/workflows/nix-wheel-check.yml</a
+          >,
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/6f85f6f18d092084e914e6351192991b8faf54f8/devinfra/ci/publication_test_verdicts.py"
+            >devinfra/ci/publication_test_verdicts.py</a
+          >,
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/6f85f6f18d092084e914e6351192991b8faf54f8/agentplane/plans/task_dag.md"
+            >agentplane/plans/task_dag.md</a
+          >.
+        </p>
+      </section>
+      <section id="feedback">
+        <h2>What PR authors actually wait for</h2>
+        <p>
+          80 systematically spaced PR numbers from 267 PRs updated since the previous window began; 77 latest heads have
+          exact in-window workflow/check matches. Three unmatched heads are excluded. All 77 usable heads eventually
+          reach a reconstructed successful required-check state:
+          <strong>this is a latest-head survivor sample, not 100% CI reliability</strong>. Superseded heads and failed
+          attempts remain in the job census below.
+        </p>
+        <div class="scroll">
+          <table class="">
+            <thead>
+              <tr>
+                <th scope="col">Changed-path class</th>
+                <th scope="col">Sampled / passing heads</th>
+                <th scope="col">Check-state proxy p50 / p90 (s)</th>
+                <th scope="col">No match</th>
+                <th scope="col">Required runner-min/head p50 / p90</th>
+                <th scope="col">Full readiness / agent receipt</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Agentplane backend</td>
+                <td>5 / 5</td>
+                <td>284 / 700</td>
+                <td>0</td>
+                <td>8.3 / 15.2</td>
+                <td>n=0 / n=0</td>
+              </tr>
+              <tr>
+                <td>build/CI/tooling</td>
+                <td>11 / 11</td>
+                <td>220 / 508</td>
+                <td>0</td>
+                <td>5.5 / 11.9</td>
+                <td>n=0 / n=0</td>
+              </tr>
+              <tr>
+                <td>cdk8s</td>
+                <td>30 / 28</td>
+                <td>255 / 1002</td>
+                <td>2</td>
+                <td>8.0 / 20.0</td>
+                <td>n=0 / n=0</td>
+              </tr>
+              <tr>
+                <td>docs-only</td>
+                <td>4 / 4</td>
+                <td>183 / 292</td>
+                <td>0</td>
+                <td>5.0 / 6.9</td>
+                <td>n=0 / n=0</td>
+              </tr>
+              <tr>
+                <td>k3s/system-tests</td>
+                <td>4 / 3</td>
+                <td>553 / 1615</td>
+                <td>1</td>
+                <td>11.2 / 23.1</td>
+                <td>n=0 / n=0</td>
+              </tr>
+              <tr>
+                <td>other code/config</td>
+                <td>8 / 8</td>
+                <td>209 / 308</td>
+                <td>0</td>
+                <td>5.8 / 8.8</td>
+                <td>n=0 / n=0</td>
+              </tr>
+              <tr>
+                <td>other infrastructure</td>
+                <td>18 / 18</td>
+                <td>166 / 385</td>
+                <td>0</td>
+                <td>5.4 / 7.0</td>
+                <td>n=0 / n=0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">
+          Runner-minutes sum assigned, completed required-job attempts for that head; parallel jobs overlap and are not
+          added to feedback latency. Cost population can differ from passing heads (cdk8s: 29 heads with job evidence,
+          28 with complete checks). Class precedence: docs → k3s/system tests → cdk8s → build/CI/tooling → frontend →
+          Agentplane backend → infrastructure → other. Mixed changes inherit the first match. No exclusive frontend/UI
+          head fell in the systematic cohort.
+        </p>
+        <details>
+          <summary>Five frontend-titled supplemental PRs, kept separate from the headline sample</summary>
+          <p>
+            Selected by titles, not duration or outcome: frontend refactors #11529, #11544, #11545, #11547 and schema
+            generation #11581. Four pass (proxy p50 / p90 181 / 667s); one remains failed at collection. They are a
+            mixed-workload supplement, not a frontend treatment group.
+          </p>
+          <div class="scroll">
+            <table class="">
+              <thead>
+                <tr>
+                  <th scope="col">PR</th>
+                  <th scope="col">Precedence class</th>
+                  <th scope="col">Exact-head state</th>
+                  <th scope="col">Proxy (s)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/11529">#11529</a>
+                  </td>
+                  <td>other code/config</td>
+                  <td>passing</td>
+                  <td>181</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/11544">#11544</a>
+                  </td>
+                  <td>build/CI/tooling</td>
+                  <td>passing</td>
+                  <td>667</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/11545">#11545</a>
+                  </td>
+                  <td>other code/config</td>
+                  <td>passing</td>
+                  <td>177</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/11547">#11547</a>
+                  </td>
+                  <td>frontend/UI</td>
+                  <td>passing</td>
+                  <td>666</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/11581">#11581</a>
+                  </td>
+                  <td>build/CI/tooling</td>
+                  <td>failed</td>
+                  <td>—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            UI #11547 is the only exclusive frontend class in this supplement (666s, n=1). Other frontends such as Plaid
+            fall under “other code/config” in the retained Agentplane-focused classifier; the title-based supplement
+            exposes that limitation instead of relabeling the main cohort.
+          </p>
+        </details>
+        <div class="scroll">
+          <table class="">
+            <thead>
+              <tr>
+                <th scope="col">PR job attempts</th>
+                <th scope="col">Assigned, completed n</th>
+                <th scope="col">Queue p50 / p90 / max (s)</th>
+                <th scope="col">Runtime p50 / p90 (s)</th>
+                <th scope="col">All attempts, including unassigned</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>bazel-ci / Test &amp; Build</td>
+                <td>498</td>
+                <td>2 / 70 / 313</td>
+                <td>178 / 699</td>
+                <td>cancelled: 83, success: 354, failure: 66</td>
+              </tr>
+              <tr>
+                <td>Build artifacts + imports check</td>
+                <td>490</td>
+                <td>2 / 45 / 296</td>
+                <td>164 / 252</td>
+                <td>success: 449, cancelled: 43, failure: 1</td>
+              </tr>
+              <tr>
+                <td>Pre-commit checks</td>
+                <td>491</td>
+                <td>2 / 49 / 235</td>
+                <td>65 / 73</td>
+                <td>success: 476, failure: 6, cancelled: 11</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Compared with October 20–22: Bazel runtime p90 rises
+          <strong>609 → 699s</strong>, queue p90 <strong>36 → 70s</strong>; the sampled head proxy changes
+          <strong>173 / 618 → 228 / 708s</strong>. Artifacts runtime rises <strong>104 / 154 → 164 / 252s</strong>.
+          Windows, PR composition, cache state and latest-head samples differ; these are descriptive changes, not causal
+          effects of cdk8s, Go retirement or the frontend split.
+        </p>
+        <h3>Exact-head required-check timelines</h3>
+        <div class="scroll">
+          <table class="timeline">
+            <thead>
+              <tr>
+                <th scope="col">PR / class</th>
+                <th scope="col">PR head</th>
+                <th scope="col">Start proxy UTC</th>
+                <th scope="col">Pre-commit +s</th>
+                <th scope="col">Artifacts +s</th>
+                <th scope="col">Bazel +s</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a href="https://github.com/agentydragon/ducktape/pull/11728">#11728</a><br />docs-only</td>
+                <td><code>f018dc5818a3</code></td>
+                <td>2026-10-23T13:20:04Z</td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39960325069/job/120436409475">64s</a>
+                </td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39960325050/job/120436409309">183s</a>
+                </td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39960325167/job/120436409634">79s</a>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/pull/11724">#11724</a><br />Agentplane backend
+                </td>
+                <td><code>abdeb05a42b6</code></td>
+                <td>2026-10-23T12:59:41Z</td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39957567188/job/120427125601">65s</a>
+                </td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39957567297/job/120427125699">153s</a>
+                </td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39957567224/job/120427125678">284s</a>
+                </td>
+              </tr>
+              <tr>
+                <td><a href="https://github.com/agentydragon/ducktape/pull/11627">#11627</a><br />cdk8s</td>
+                <td><code>8f89099ca21b</code></td>
+                <td>2026-10-23T04:14:11Z</td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39899242080/job/120236711601">93s</a>
+                </td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39899242084/job/120236830412">246s</a>
+                </td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39899242085/job/120236712159">255s</a>
+                </td>
+              </tr>
+              <tr>
+                <td><a href="https://github.com/agentydragon/ducktape/pull/11454">#11454</a><br />k3s/system-tests</td>
+                <td><code>8dc77bd9ecb7</code></td>
+                <td>2026-10-22T06:35:32Z</td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39734906374/job/119678207458">117s</a>
+                </td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39734906124/job/119678207041">145s</a>
+                </td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39734906371/job/119678207798">553s</a>
+                </td>
+              </tr>
+              <tr>
+                <td><a href="https://github.com/agentydragon/ducktape/pull/11645">#11645</a><br />cdk8s</td>
+                <td><code>c603835e5b91</code></td>
+                <td>2026-10-23T06:28:19Z</td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39911679047/job/120275886868">260s</a>
+                </td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39911678924/job/120275886355">394s</a>
+                </td>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39911678990/job/120283507423">1924s</a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">
+          Start = earliest matching in-window workflow creation for this exact PR head. Stop = first reconstructed
+          all-success state of the three current required contexts, using all attempts and the latest-started check per
+          context at each event. GitHub second-resolution timestamps; no push-to-green precision implied. Later reruns
+          do not overwrite an earlier first green.
+        </p>
+      </section>
+      <section id="nix">
+        <h2>The new host evaluation explains the common-case shift</h2>
+        <p>
+          The new step evaluates the full pinned Wyrm2 Home Manager activation derivation before source-artifact
+          overrides. It was added to catch missing first-release pins. In the successful-job shape comparison, the gate
+          median is <strong>103s without the step (n=95)</strong> and <strong>171s with it (n=354)</strong>; p90 is 125s
+          versus 269s. These are different workloads over a transition, not a controlled before/after.
+        </p>
+        <div
+          class="bars"
+          role="img"
+          aria-label="Artifact gate median runtime: previous workflow shape 103 seconds; new workflow shape 171 seconds"
+        >
+          <div class="bar-row">
+            <span>No host evaluation · n=95</span>
+            <div class="track">
+              <div class="bar old" style="width: 60.23%"></div>
+            </div>
+            <strong>103s median</strong>
+          </div>
+          <div class="bar-row">
+            <span>Host evaluation · n=354</span>
+            <div class="track"><div class="bar" style="width: 100%"></div></div>
+            <strong>171s median</strong>
+          </div>
+        </div>
+        <div class="scroll">
+          <table class="">
+            <thead>
+              <tr>
+                <th scope="col">Successful PR step</th>
+                <th scope="col">Old-shape p50 / p90 (s)</th>
+                <th scope="col">New-shape p50 / p90 (s)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Evaluate pinned Wyrm2 Home Manager</td>
+                <td>—</td>
+                <td>88 / 184</td>
+              </tr>
+              <tr>
+                <td>Check generated command policies</td>
+                <td>29 / 34</td>
+                <td>4 / 5</td>
+              </tr>
+              <tr>
+                <td>Build artifacts from source</td>
+                <td>26 / 46</td>
+                <td>28 / 44</td>
+              </tr>
+              <tr>
+                <td>Fetch artifacts</td>
+                <td>3 / 4</td>
+                <td>3 / 5</td>
+              </tr>
+              <tr>
+                <td>Start incremental Attic upload</td>
+                <td>9 / 10</td>
+                <td>9 / 10</td>
+              </tr>
+              <tr>
+                <td>Nix build + imports check</td>
+                <td>15 / 17</td>
+                <td>17 / 19</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>It downloads workstation packages during evaluation</h3>
+        <p>
+          In
+          <a href="https://github.com/agentydragon/ducktape/pull/11728">#11728</a>
+          (docs only),
+          <a href="https://github.com/agentydragon/ducktape/actions/runs/39960325050/job/120436409309"
+            >the artifact job</a
+          >
+          lasts 175s and finishes at +183s; Bazel is already done at +79s. The host evaluation runs 13:20:27–13:21:59
+          UTC (92s). Logs show flake source substitution/unpacking, realization of the skills directory, and fetching
+          the Google Drive / drivectl closures.
+        </p>
+        <p>
+          The mechanisms are explicit:
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/6f85f6f18d092084e914e6351192991b8faf54f8/nix/home/skills.nix"
+            >nix/home/skills.nix</a
+          >
+          enumerates a derivation with <code>builtins.readDir</code>;
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/6f85f6f18d092084e914e6351192991b8faf54f8/nix/packages/gaffer.nix"
+            >nix/packages/gaffer.nix</a
+          >
+          uses <code>builtins.fetchClosure</code> when the workstation references those packages. A successful
+          <code>strace</code> of evaluation against an immutable source with evaluator caching disabled observes 156
+          repository path probes/accesses, spanning Nix modules, registries, scripts and referenced encrypted
+          configuration. This is an observed input set, not a complete static dependency graph. Raw traces and
+          encrypted-input filenames remain local.
+        </p>
+        <div class="callout">
+          <strong>Bounded experiment: an unrelated plan edit leaves the full host derivation unchanged.</strong>
+          <p>
+            At source <code>6f85f6f18d09</code>, evaluate with <code>eval-cache=false</code>, append a comment to
+            <code>agentplane/plans/task_dag.md</code>, then evaluate again. Both evaluations succeed and return the
+            identical derivation. The temporary edit was restored. This proves that one input is irrelevant; it does not
+            validate a complete selector or measure fresh-host savings.
+          </p>
+        </div>
+        <p>
+          <strong
+            >Implement in
+            <a
+              href="https://github.com/agentydragon/ducktape/blob/6f85f6f18d092084e914e6351192991b8faf54f8/.github/workflows/nix-wheel-check.yml"
+              >.github/workflows/nix-wheel-check.yml</a
+            >:</strong
+          >
+          preserve the required job and the pin-regression guard. Add a conservative input manifest/selector for that
+          host evaluation, including enumerated directories and non-Nix files; require a successful trusted base verdict
+          before reuse. Nix/flake changes or unknown dependencies run the full path. Do not use “Nix-only paths” or
+          “docs-only” as a shortcut: commands in Markdown and external scripts are real evaluated inputs.
+        </p>
+        <p>
+          <strong>Saving model:</strong> skipping the 92s host step in the docs example restores some cold source/policy
+          preparation that it currently warms. The next gate is at +79s. Budget 40–90s less end-to-end feedback on
+          eligible Nix-last PRs, not 88s guaranteed on every PR. Validate with missing-pin, command-file, registry,
+          encrypted-config and unchanged-source replays, then alternating clean hosted runs. Current all-17 artifact
+          selection is a separate follow-up.
+        </p>
+      </section>
+      <section id="cases">
+        <h2>Cold tests still determine the long tail</h2>
+        <p>
+          53 outcome-stratified diagnostic jobs: 30 successes, 12 failures, 8 cancellations, plus 3 late successful
+          pushes. Thirty contain true k3s terminal summaries:
+          <strong>330 summaries = 182 executed passes + 6 executed failures + 142 cached passes</strong>; 19 jobs
+          execute at least one such target. This sample is not population weighted, and missing summaries can mean early
+          failure/cancellation. A selected cached test’s printed duration is historical, not new worker time.
+        </p>
+        <p>
+          Eleven automatic scenarios still own fresh k3s/containerd stacks. Go Actions is now in the fixture; the app
+          and its Python image remain. The separate model-free lifecycle workflow stays manual. Pod snapshots use tmpfs,
+          VM snapshots disk; the VM path retains KubeVirt/Kyverno and software guest emulation in the previously
+          inspected executor environment. No new KVM capability was established.
+        </p>
+        <h3>Sequential phase measurements</h3>
+        <div class="scroll">
+          <table class="timeline">
+            <thead>
+              <tr>
+                <th scope="col">Case / job</th>
+                <th scope="col">GH queue</th>
+                <th scope="col">GH setup</th>
+                <th scope="col">Remote step → test</th>
+                <th scope="col">Inner test</th>
+                <th scope="col">Test end → job end</th>
+                <th scope="col">Inner invocation / tested source</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39957567224/job/120427125678"
+                    >Typical backend / #11724</a
+                  >
+                </td>
+                <td>2</td>
+                <td>11</td>
+                <td>62</td>
+                <td>198</td>
+                <td>11</td>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/f2c0934e-ea05-54af-928f-aeec0c885450">f2c0934e</a
+                  ><br /><code>fc95cdd0d704</code>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39734906371/job/119678207798"
+                    >k3s head / #11454</a
+                  >
+                </td>
+                <td>47</td>
+                <td>9</td>
+                <td>45</td>
+                <td>440</td>
+                <td>8</td>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/4aeb755c-b674-5953-ac56-595432c78734">4aeb755c</a
+                  ><br /><code>5b00da618d9f</code>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39744552747/job/119709677984"
+                    >Mixed UI / #11527</a
+                  >
+                </td>
+                <td>5</td>
+                <td>10</td>
+                <td>58</td>
+                <td>644</td>
+                <td>10</td>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/3c991f62-c643-5f5f-a6e3-5a78a9355ff5">3c991f62</a
+                  ><br /><code>a223495ffc24</code>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39746226690/job/119715229512"
+                    >Cold cdk8s / #11521</a
+                  >
+                </td>
+                <td>8</td>
+                <td>9</td>
+                <td>59</td>
+                <td>808</td>
+                <td>10</td>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/d5ac48cd-cd28-5813-b6ac-141eb075076a">d5ac48cd</a
+                  ><br /><code>c6b0e29ddedd</code>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39738176768/job/119688724251"
+                    >Failed rules_python upgrade</a
+                  >
+                </td>
+                <td>100</td>
+                <td>11</td>
+                <td>41</td>
+                <td>1032</td>
+                <td>8</td>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/794c609a-963d-540d-9983-db810f1041f5">794c609a</a
+                  ><br /><code>a034d8a258aa</code>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39960948566/job/120438493625"
+                    >Warm full devel sweep</a
+                  >
+                </td>
+                <td>2</td>
+                <td>10</td>
+                <td>27</td>
+                <td>13</td>
+                <td>29</td>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/e4cb4e61-4d0f-5f5b-9a1d-c6e56d857242">e4cb4e61</a
+                  ><br /><code>873e04140634</code>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">
+          All durations are seconds; columns form sequential intervals inside a job. Remote-step → test includes
+          allocation, source/tool setup and selection queries; VM queue/boot split is unknown. Test end → job end
+          includes build, diagnostics and teardown. The inspected devel source is pinned separately from these synthetic
+          merge/source revisions.
+        </p>
+        <ul>
+          <li>
+            <strong>Typical backend:</strong> #11724 spends 193.6s on a thread-browser shard. Backend-class changes can
+            invalidate browser composition through shared fixtures; “backend” is not a promise of unit-test-only work.
+          </li>
+          <li>
+            <strong>Mixed UI:</strong> #11527 has a 634.4s dependency path: TypeScript/esbuild → app package
+            tar/bytecode → app image → 434s MCP test. Its MCP fixture reaches node Ready at 32.7s, imports complete at
+            224.6s and stack Ready at 254.2s; app and runner imports cost 52.7s / 54.4s, Go Actions 6.0s. RBE queue p90
+            is 0.064s. Increasing remote slots cannot remove this dependency chain.
+          </li>
+          <li>
+            <strong>Successful cold cdk8s:</strong> #11521 has a 749.9s VM action. Its first execution runs 412.7s, then
+            status 14 reports a Firecracker pause socket connection refusal; a second execution runs 332.3s and
+            succeeds. The critical-path “other” share is mostly that failed attempt. Hosted Firecracker lifecycle logs
+            are the missing boundary; do not call it VM provisioning or propose a timeout increase.
+          </li>
+          <li>
+            <strong>Failed upgrade:</strong> the 1,032s rules_python sweep has 2,189 direct remote executions, 12,757
+            profiled action-processing events and 2,840 executed mypy actions. Analysis is 63.9s but overlaps execution;
+            first actions start around 8.8s and late mypy actions finish near 1,032s. The longest dependency path is
+            only 424.3s. Full-sweep breadth and client scheduling/workload throughput matter here; do not explain the
+            entire job with its VM critical path or add overlapping analysis/execution phases. Failures include a
+            missing <code>homeassistant/requirements.override.txt</code> and a requirements freshness test with changed
+            path comments.
+          </li>
+          <li>
+            <strong>Warm sweep:</strong> at <code>873e04140634</code>, full inner tests finish in 13.322s with zero
+            direct remote executions returned. Warm verdict reuse already avoids the cold action cost; no additional
+            Go-port savings are inferred.
+          </li>
+        </ul>
+        <details id="spike" open>
+          <summary>API-image dependency cut: graph and runtime spike passed</summary>
+          <p>
+            Current query
+            <a href="https://app.buildbuddy.io/invocation/38db1293-9e96-4472-82a9-cd4d32b2b039">38db1293</a>
+            finds 14 k3s test targets reverse-dependent on the SPA bundle (11 automatic). Remove only the
+            bundle/service-worker data from
+            <code>app_image_bin</code> in an isolated source worktree; query
+            <a href="https://app.buildbuddy.io/invocation/63a6214d-28ae-46b1-84a0-84cda4a46d4a">63a6214d</a>
+            then returns zero.
+          </p>
+          <p>
+            Real RBE test invocation
+            <a href="https://app.buildbuddy.io/invocation/c182c9fe-a42b-43a3-b283-1dd661aee5e8">c182c9fe</a>:
+            <code>test_thread_stream</code> passes (411.9s test process), and <code>test_static_image</code> passes
+            (21.2s). Bazel takes 557.532s including cold image prerequisites. The thread fixture’s runner import alone
+            is 118.3s; this is a correctness spike, not evidence that a smaller image made a cold test fast.
+          </p>
+          <p>
+            The implementation should add a separate API-only fixture image and preserve the production image’s
+            compatibility path. Replay a production bundle-only edit through affected selection and verify all 11
+            fixture test inputs stay unchanged while browser/static coverage still runs. All-scenario and matched
+            unmodified/post-cut validation remain required. Conditional historical planning range: 2–6 minutes less
+            feedback on an eligible cold UI edit, zero on cache/overlap; no measured treatment effect.
+          </p>
+        </details>
+        <h3>The longest sampled head includes a real failed attempt</h3>
+        <p>
+          <a href="https://github.com/agentydragon/ducktape/pull/11645">#11645</a>
+          needs 1,924s from its workflow proxy to first green. Its VM test fails after 1,074s with “session stream ended
+          before the turn completed”; setup alone reaches stack Ready at 738.3s, including app import 94.3s and
+          runner-disk import 98s. The failure is an assertion, not a Bazel timeout. The test log does not identify why
+          the stream closed; the smallest missing evidence is the runner/gateway/guest diagnostic bundle for that failed
+          session.
+        </p>
+        <p>
+          Attempt 1 finishes at 06:48:51; attempt 2 records run start at 06:51:30 and its assigned job starts at
+          06:51:33 (3s later), then succeeds at 07:00:23. The 159s before the rerun request is unobserved process time.
+          The API reports the same User-type triggering account for both attempts; it does not establish manual/operator
+          delay. This case is distinct from the successful action-level Firecracker retry above.
+        </p>
+      </section>
+      <section id="capacity">
+        <h2>Queue bursts worsened; compute cost is a separate question</h2>
+        <div class="scroll">
+          <table class="">
+            <thead>
+              <tr>
+                <th scope="col">UTC burst</th>
+                <th scope="col">CI arrivals</th>
+                <th scope="col">PR Bazel jobs</th>
+                <th scope="col">Queue p50 / p90 / max (s)</th>
+                <th scope="col">Completed-job peak</th>
+                <th scope="col">Minutes at ≥20</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>2026-10-22T06:00:00Z → 07:30:00Z</td>
+                <td>125</td>
+                <td>82</td>
+                <td>27 / 160 / 313</td>
+                <td>20</td>
+                <td>40.4</td>
+              </tr>
+              <tr>
+                <td>2026-10-23T09:00:00Z → 10:30:00Z</td>
+                <td>73</td>
+                <td>48</td>
+                <td>2 / 54 / 181</td>
+                <td>20</td>
+                <td>21.8</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Each day’s busiest fixed 90-minute CI-arrival bucket was selected before looking at queue outcomes;
+          all-workflow jobs include a 45-minute lookback. On October 22, completed occupancy reaches 20 for 40.4
+          minutes, with Bazel queue p90 160s. That supports a contention hypothesis during the burst; it does not prove
+          the account plan, hidden scheduler priority or an account-wide utilization census.
+        </p>
+        <p>
+          In that burst, PR core workflows occupy 581.6 runner-minutes; push CI/publication 297.9; visual publication
+          207.8. Publication verdict reuse has since landed. Offloading nonrequired jobs could help a future
+          capacity-limited burst, but first verify that an alternate pool separates capacity and include its
+          boot/cost/trust boundary. Preserve non-cancelling push publication: cancelling those runs previously starved
+          releases.
+        </p>
+        <div class="scroll">
+          <table class="">
+            <thead>
+              <tr>
+                <th scope="col">Workflow</th>
+                <th scope="col">Occupied runner-hours</th>
+                <th scope="col">Coverage</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>.github/workflows/ci.yml</td>
+                <td>109.85</td>
+                <td>full core window</td>
+              </tr>
+              <tr>
+                <td>.github/workflows/nix-wheel-check.yml</td>
+                <td>36.19</td>
+                <td>full core window</td>
+              </tr>
+              <tr>
+                <td>.github/workflows/pre-commit.yml</td>
+                <td>19.08</td>
+                <td>full core window</td>
+              </tr>
+              <tr>
+                <td>.github/workflows/pr-visuals-publish.yml</td>
+                <td>7.45</td>
+                <td>busy windows only</td>
+              </tr>
+              <tr>
+                <td>.github/workflows/nix-attic-push.yml</td>
+                <td>4.22</td>
+                <td>busy windows only</td>
+              </tr>
+              <tr>
+                <td>.github/workflows/agentplane-runner-ducktape-image.yml</td>
+                <td>3.23</td>
+                <td>busy windows only</td>
+              </tr>
+              <tr>
+                <td>.github/workflows/buildbuddy-remote-runner-image.yml</td>
+                <td>1.17</td>
+                <td>busy windows only</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">
+          Completed positive-runner-ID lower bound, clipped to the 32h 10m window. Other repositories, unfinished jobs
+          and pre-lookback work are absent. The non-core rows are sampled busy windows; do not compare them as
+          full-window censuses or compare these totals directly with the previous 48h totals.
+        </p>
+        <div class="scroll">
+          <table class="">
+            <thead>
+              <tr>
+                <th scope="col">Inner test case</th>
+                <th scope="col">Direct remote executions</th>
+                <th scope="col">Worker-process seconds</th>
+                <th scope="col">CPU seconds</th>
+                <th scope="col">RBE queue p90 (s)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39957567224/job/120427125678"
+                    >Typical backend / #11724</a
+                  >
+                </td>
+                <td>24</td>
+                <td>2192</td>
+                <td>3891</td>
+                <td>0.066</td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39734906371/job/119678207798"
+                    >k3s head / #11454</a
+                  >
+                </td>
+                <td>148</td>
+                <td>7489</td>
+                <td>12843</td>
+                <td>0.066</td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39744552747/job/119709677984"
+                    >Mixed UI / #11527</a
+                  >
+                </td>
+                <td>409</td>
+                <td>9908</td>
+                <td>15993</td>
+                <td>0.064</td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39746226690/job/119715229512"
+                    >Cold cdk8s / #11521</a
+                  >
+                </td>
+                <td>173</td>
+                <td>8909</td>
+                <td>13743</td>
+                <td>0.064</td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39738176768/job/119688724251"
+                    >Failed rules_python upgrade</a
+                  >
+                </td>
+                <td>2189</td>
+                <td>43492</td>
+                <td>50410</td>
+                <td>0.063</td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/actions/runs/39960948566/job/120438493625"
+                    >Warm full devel sweep</a
+                  >
+                </td>
+                <td>0</td>
+                <td>0</td>
+                <td>0</td>
+                <td>n=0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">
+          Direct/originating execution records only; cached and linked/shared execution records excluded, retries
+          included. Worker-process intervals overlap; CPU is reported CPU nanoseconds converted to seconds. Never add
+          either to GitHub runner occupancy. Zero direct executions is not zero outer cost. All representative RBE queue
+          p90 values are approximately 0.06s; the cold upgrade has one 4.48s remote queue outlier.
+        </p>
+      </section>
+      <section id="ranking">
+        <h2>Next interventions, ranked for the current evidence</h2>
+        <p>
+          Conditional engineering forecasts, not treatment effects. Savings overlap, depend on cache/selection and can
+          be erased by the next required gate. No production policy changed.
+        </p>
+        <div class="scroll">
+          <table class="">
+            <thead>
+              <tr>
+                <th scope="col">Priority / exact change</th>
+                <th scope="col">Expected eligible feedback effect</th>
+                <th scope="col">Effort / confidence / validation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1. Select the new pinned-host evaluation</td>
+                <td>40–90s on artifact-last unaffected heads; 0 elsewhere</td>
+                <td>
+                  Medium; high observed cost, medium selector confidence. Use actual evaluation inputs + trusted
+                  successful base proof, conservative fallback, and replay missing-pin/registry/command regressions.
+                  Compare clean hosted head feedback.
+                </td>
+              </tr>
+              <tr>
+                <td>2. Add a fixture-only API image without SPA assets</td>
+                <td>Historical planning range 2–6min on cold production-UI edits; 0 cached/overlap</td>
+                <td>
+                  Small–medium; current graph cut and two runtime tests pass. Preserve production image and full
+                  browser/static coverage; validate all 11 input digests and affected selection.
+                </td>
+              </tr>
+              <tr>
+                <td>3. Make fixture renders deterministic and feature-scoped</td>
+                <td>Historical forecast 1–5min on semantically unchanged variants; 0 real config changes</td>
+                <td>
+                  Small–medium; prior controlled experiment confirmed randomness; mechanism unchanged. Generate
+                  per-stack runtime secrets, split variant outputs; test repeated renders and MCP-only edits.
+                </td>
+              </tr>
+              <tr>
+                <td>4. Select the 17 source artifact checks by verified dependencies</td>
+                <td>Prior forecast 30–70s when artifact remainder gates; 0 if host/Bazel wins</td>
+                <td>
+                  Medium; expanded roster is current, savings unmeasured. Preserve all selected consumers/assets and
+                  full fallback; pair with, but do not add blindly to, #1.
+                </td>
+              </tr>
+              <tr>
+                <td>5. Split stable Python bytecode / consumed image layers</td>
+                <td>Historical 30–90s on rebuilding chains; current mixed-UI bytecode component 23s</td>
+                <td>
+                  Medium; high dependency evidence, variable worker timing. Compare UI-only and Python-only edits;
+                  preserve interpreter/hash/ownership and public-image coverage.
+                </td>
+              </tr>
+              <tr>
+                <td>6. Prove remote-origin stop and quiescence on supersession</td>
+                <td>No guaranteed PR seconds; avoid obsolete worker work if exclusive</td>
+                <td>
+                  Medium–large; prior three continuations unresolved, wrapper unchanged. Stop origin plus bounded child
+                  cleanup; inspect future submissions and shared-task ownership. Hosted trace/semantics are the
+                  boundary.
+                </td>
+              </tr>
+              <tr>
+                <td>7. Isolate nonrequired publication capacity if capacity separates</td>
+                <td>0–160s plausible burst queue opportunity; near 0 when quiet</td>
+                <td>
+                  Medium–large; current burst observed, pool economics/capacity unproved. Re-measure after verdict
+                  reuse; compare independent queued PR jobs and release currency.
+                </td>
+              </tr>
+              <tr>
+                <td>8. Prototype immutable image seeds / suitable VM workers</td>
+                <td>Historical cold-stack forecasts 30–100s / 40–140s; unmeasured</td>
+                <td>
+                  Large; do not combine ranges. Fresh MCP/VM imports and recurring pause retry justify bounded trials.
+                  Keep fresh state, trusted digest keys and KubeVirt coverage; verify platform support first.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>External reliability follow-up:</strong> carry the two report windows’ exact status-14 VM pause/socket
+          examples to the BuildBuddy owner with a hosted lifecycle trace request. The repository already requests fresh
+          inner runners; server-side pause behavior cannot be proved or repaired from these APIs. Do not disable
+          recycling blindly, increase timeouts, or count the whole failed attempt as guaranteed end-to-end savings.
+        </p>
+        <p>
+          Remaining fixture-scope, DCR component, type-only mypy, precise leaf-rule selection, grouped scenarios and
+          probe/bytecode ideas retain their original bounds below. Their next validation is specific; no new savings
+          assigned without a source change or experiment.
+        </p>
+      </section>
+      <section id="continuity">
+        <h2>Disposition of the complete previous investigation</h2>
+        <p>
+          Read the full previous HTML including disclosures, manifest and substantive supporting evidence at
+          <a href="https://github.com/agentydragon/ducktape/blob/7fad6d2e9a/latency/index.html">7fad6d2e9a</a>, covering
+          October 20–22;
+          <a href="https://github.com/agentydragon/ducktape/blob/7fad6d2e9a/latency/evidence.json"
+            >commit-pinned evidence</a
+          >
+          retains its experimental detail. Every previous ranked intervention is accounted for here. Historical
+          measurements keep their original window; unchanged mechanisms were not re-tested merely to repeat a result.
+        </p>
+        <button type="button" id="toggle-continuity" aria-expanded="false">Expand prior-work details</button>
+        <details class="continuity-detail" id="prior-recommendations">
+          <summary>All 17 previous recommendations: retained, advanced, retired or deferred</summary>
+          <div class="scroll">
+            <table class="prior">
+              <thead>
+                <tr>
+                  <th scope="col">Previous rank / intervention</th>
+                  <th scope="col">Disposition</th>
+                  <th scope="col">Current evidence / next boundary</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1 · API-only fixture image</td>
+                  <td>Advanced</td>
+                  <td>
+                    Static nginx image landed in #11504 but app_image_bin still includes SPA assets. Current real query
+                    still finds 14 tests, 11 automatic. Isolated cut removes all 14 reverse edges and passes
+                    thread-stream plus static-image tests; all-scenario/matched CI validation remains for
+                    implementation.
+                  </td>
+                </tr>
+                <tr>
+                  <td>2 · Deterministic feature-scoped rendering</td>
+                  <td>Retained</td>
+                  <td>
+                    Same random database/OIDC credentials, bcrypt salt and Fernet generation remain. Retain October
+                    20-22 control experiment (17/22/17 differing paths -&gt; zero); no repeat without a source change to
+                    the mechanism. Split variants and fill runtime secrets.
+                  </td>
+                </tr>
+                <tr>
+                  <td>3 · Python bytecode and consumed layers</td>
+                  <td>Retained</td>
+                  <td>
+                    No devinfra/oci change in source interval. Fresh mixed-UI critical path includes 23.24s app_bytecode
+                    and 10.91s package tar; earlier 78.39s bytecode is historical, not current fixed cost.
+                  </td>
+                </tr>
+                <tr>
+                  <td>4 · Incremental source-artifact gate</td>
+                  <td>Updated</td>
+                  <td>
+                    Roster grew 13/11 -&gt; 17/15 assets/groups; full checks remain. New pinned Wyrm2 evaluation is an
+                    independent larger common-case cost. Prioritize selecting that evaluation, then source-artifact
+                    closure selection.
+                  </td>
+                </tr>
+                <tr>
+                  <td>5 · Remote cancellation quiescence</td>
+                  <td>Unresolved</td>
+                  <td>
+                    Wrapper unchanged. One recent cancelled head has no completed originating executions after GitHub
+                    end in the returned records; the observation does not establish absence of shared, in-flight or
+                    future work, or invalidate three prior continuation examples. Hosted origin-stop/task-sharing trace
+                    still missing.
+                  </td>
+                </tr>
+                <tr>
+                  <td>6 · Immutable unpacked image seeds</td>
+                  <td>Retained, lower priority</td>
+                  <td>
+                    Current MCP imports finish at 224.6s; app and runner imports each exceed 50s. Still a bounded
+                    platform spike, not a measured saving. Preserve fresh state and digest-keyed trusted seeds.
+                  </td>
+                </tr>
+                <tr>
+                  <td>7 · Appropriate VM executor class</td>
+                  <td>Retained with new evidence</td>
+                  <td>
+                    Fresh VM first-green attempt has 738.3s fixture readiness and a stream-ended assertion; another
+                    successful run repeats a VM action after status-14 Firecracker pause failure. Separate I/O/TCG
+                    sizing from hosted worker reliability; no KVM or seed support newly established.
+                  </td>
+                </tr>
+                <tr>
+                  <td>8 · Scoped fixtures/runner-only helpers</td>
+                  <td>Partial progress</td>
+                  <td>
+                    #11471 extracted test runtime assets, but package conftest still registers broad app/runner
+                    fixtures. No current post-change configured closure census or measured latency benefit; retain
+                    remaining ownership cuts with acceptance tests.
+                  </td>
+                </tr>
+                <tr>
+                  <td>9 · DCR component fixture</td>
+                  <td>Retained, deferred</td>
+                  <td>
+                    test_dcr remains a full k3s MCP fixture after Go migration. Reuse Go Action component infrastructure
+                    and keep discovery/ingress smoke; do not rebuild the retired Python service fixture. Historical
+                    150-200 worker-second estimate is not current gate savings.
+                  </td>
+                </tr>
+                <tr>
+                  <td>10 · Mypy source/type-only inputs</td>
+                  <td>Retained</td>
+                  <td>
+                    No provider/input cut landed. Cold rules_python sweep ends in mypy actions around 1032s, far beyond
+                    a 424s longest dependency path; do not mislabel this as only VM runtime. Preserve per-target aspect
+                    and stub/plugin coverage.
+                  </td>
+                </tr>
+                <tr>
+                  <td>11 · Actions Go cutover/Python retirement</td>
+                  <td>Resolved in source</td>
+                  <td>
+                    #11454 switched callers/fixtures, #11602 records staging cutover, Python
+                    entrypoint/HTTP/MCP/policy/store/golden paths retired through #11716/#11728. Remove as a new
+                    recommendation. Source/CI evidence only; no live rollout audit or measured population speedup here.
+                  </td>
+                </tr>
+                <tr>
+                  <td>12 · Backend-only app removal/BFF owner</td>
+                  <td>Updated, deferred</td>
+                  <td>
+                    Static serving separation is landed, while app image and app-owned thread/auth state remain. MCP
+                    edge split is active in current task DAG. Preserve data/authority ownership; no claim that the
+                    Python-exclusive October 21 byte inventory still applies.
+                  </td>
+                </tr>
+                <tr>
+                  <td>13 · Precise leaf-rule affected selection</td>
+                  <td>Retained, lower priority</td>
+                  <td>
+                    Any .bzl/root dependency manifest still triggers full sweep. Cold rules_python failure illustrates
+                    broad cost but is not a safely narrowable leaf-rule case. Require both-revision graph proof and full
+                    fallback.
+                  </td>
+                </tr>
+                <tr>
+                  <td>14 · Scenario grouping</td>
+                  <td>Retained, deferred</td>
+                  <td>
+                    Still eleven automatic fresh stacks. Keep 2-4 isolated groups as a later worker-cost experiment
+                    after dependency cuts; no serial group or shared multi-PR cluster tested.
+                  </td>
+                </tr>
+                <tr>
+                  <td>15 · Fixture probes/runfiles bytecode</td>
+                  <td>Retained, lower priority</td>
+                  <td>
+                    Keep historical 5-20s conditional range, Python precompile RBE failure and already-landed
+                    migration/rendering fixes. No evidence justifies raising timeouts or re-enabling broken bytecode
+                    wiring.
+                  </td>
+                </tr>
+                <tr>
+                  <td>16 · Pinned Nix source cache</td>
+                  <td>Updated</td>
+                  <td>
+                    New full-host evaluation adds several flake inputs, skills realization and fetchClosure package
+                    downloads. Source-only cache cannot remove all of this; selection comes first. Prepared containers
+                    and combined evaluation remain rejected pending a different mechanism.
+                  </td>
+                </tr>
+                <tr>
+                  <td>17 · Non-gating publication capacity</td>
+                  <td>Updated</td>
+                  <td>
+                    Busy Bazel queue p90 reaches 160s with completed occupancy at 20 for 40.4min. #11648/#11649 now
+                    reuse exact push-CI test verdicts; one planner confirms reuse, suites retain tests. Account
+                    separation and net alternate-pool economics remain unproved; no recommendation to cancel publishing
+                    pushes.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+        <details class="continuity-detail">
+          <summary>Older experiments, rejections and promised follow-ups</summary>
+          <div class="scroll">
+            <table class="prior">
+              <thead>
+                <tr>
+                  <th scope="col">Prior result</th>
+                  <th scope="col">Disposition / continuity</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Bridge sharding/history notifications</td>
+                  <td>
+                    Landed; retain earlier 84s single-pair critical-path benefit with about 32% more worker wall time.
+                    No new matched comparison; do not re-propose.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Indexing fixture/PostgreSQL templates</td>
+                  <td>
+                    Landed; retain 147.3-&gt;41.3s indexing pair and observational 211.6-&gt;104.6s browser pair with
+                    shard confounding. No new production persistence profile; lower priority than observed gates.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Props concurrent prefetch</td>
+                  <td>
+                    Landed pattern; historical 25-42s focused action benefit and slower direct runfiles loading
+                    retained. Deferred matched current replay because host gate and k3s tails dominate this
+                    investigation.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Gazelle workflow consolidation/citools</td>
+                  <td>
+                    Landed and current three required contexts reconfirmed. No separate Gazelle workflow recommendation.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Runner VM/NixOS image/contract workflow</td>
+                  <td>
+                    Retain narrowed triggers/pins/cancellation. Same-derivation image substitution remains unverified;
+                    smallest remaining check is upload plus identical-derivation consumer, deferred behind required-gate
+                    work.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Nix marker/policy caches</td>
+                  <td>
+                    Previous three successful source/policy substitutions retained. Current docs log substitutes policy
+                    markers after new host evaluation. Changed-consumer invalidation and matched gate speedup remain
+                    unmeasured.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Combined Nix evaluation/prepared containers</td>
+                  <td>
+                    Prior rejection retained; no new controlled evidence reverses it. Selecting a newly added host
+                    evaluation is a different change.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Mypy batching/internal caches</td>
+                  <td>
+                    Deferral retained; previous CPU-only win did not prove equivalent boundaries or CI savings.
+                    Source-input provider remains distinct; internal cache format/disk issues unchanged.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Shallow checkout/warm server/browser sharding/parse-once</td>
+                  <td>
+                    Retain landed behavior and original limitations. Warm source example has 13.322s full inner sweep;
+                    target count alone cannot establish analysis-cache reuse.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Visual artifact discovery/publisher</td>
+                  <td>
+                    Retain row reduction 19328-&gt;2877 and concurrent CAS fetches. Historical 349s publisher tail
+                    remains a separate nonrequired investigation; no write-capable publisher experiment run here.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Base hashes/release-verdict reuse</td>
+                  <td>
+                    Advanced by #11648/#11649: current push planner verifies literal bbr test verdict; unsupported suite
+                    remains gated. No population runner/feedback saving measured.
+                  </td>
+                </tr>
+                <tr>
+                  <td>CodeQL and agent delivery</td>
+                  <td>
+                    CodeQL default setup still not configured. New live availability sample is censored; no
+                    subscription/inbox/harness trace tools were exposed. Preserve previous one-push availability
+                    observation as historical only.
+                  </td>
+                </tr>
+                <tr>
+                  <td>ctr --local/parallel imports/no-unpack/generic Go rewrite</td>
+                  <td>
+                    Retain counterevidence or deferral: no useful paired --local speedup; parallel imports were slower;
+                    --no-unpack moves first-use work; byte reduction is not a measured runtime improvement.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Architecture/plan tracks</td>
+                  <td>
+                    ACTION_SERVICE_GO_PORT retired in source; ACTION_MCP_EDGE_SPLIT active. Runner harness delivery,
+                    bundled service spike, app/envtest boundaries, dispatcher persistence, real-model
+                    credentials/coverage, testing retirement and layered VM guest remain separate decisions with
+                    original correctness gates.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            The original October 16/21 native profile and byte inventory remain historical: image import 148.406s, k3s
+            startup 20.923s, 50 kubectl calls 70.889s; 895.3MiB distinct stored bytes, 382.1MiB exclusive to the
+            then-Python images. Go retirement changes that inventory; no fresh byte census or proportional “Go speedup”
+            is manufactured. Current log timelines are shown above.
+          </p>
+          <p>
+            Later architecture alternatives remain explicit: prefer fresh immutable content clones over a shared
+            multi-PR cluster; envtest can cover control-plane-only contracts but not real Pods/CNI/PVC/KubeVirt
+            behavior. App Thread metadata and auth ownership remain durable data. A thin facade or standalone MCP edge
+            does not by itself retire app/PostgreSQL. Existing real-model, testing-retirement and layered-guest
+            acceptance gates still apply.
+          </p>
+        </details>
+      </section>
+      <section id="method">
+        <h2>Evidence, clocks and limits</h2>
+        <p>
+          <strong>Population:</strong> 6,422 distinct workflow runs in recursively split uncapped API windows. Jobs
+          cover all 2,749 CI/trusted-fork/artifact/pre-commit runs plus all-workflow busy samples: 3,971 collected runs
+          and 10,683 distinct job records. Sweep: 2026-10-23T13:42:53.125292+00:00 → 2026-10-23T13:57:02.637443+00:00.
+          Supplementary logs/experiments have their own clocks; this is not an atomic snapshot. Old unfinished core runs
+          are included separately and excluded from in-window duration samples.
+        </p>
+        <p>
+          <strong>Policy:</strong> current devel rules require <code>Build artifacts + imports check</code>,
+          <code>Pre-commit checks</code> and <code>bazel-ci / Test &amp; Build</code>. Zero required approvals; no
+          strict up-to-date/code-owner/last-push/thread requirement. Linear history, draft/conflicts and the extra
+          approval rule for unattributed changes still matter. Historical eligibility was not observed. All 80
+          systematic latest heads are same-repository; fork feedback n=0. Trusted-fork environment/alias behavior is
+          retained in source but not measured by this cohort. CodeQL default setup is <code>not-configured</code>; no
+          current CodeQL contention diagnosis.
+        </p>
+        <p>
+          <strong>What is unavailable:</strong> push times, historical full-policy auto-merge eligibility, first check
+          queryability and notification/inbox/harness receipt. All corresponding distributions are <strong>n=0</strong>;
+          neither merge timestamps nor terminal check timestamps substitute for them. Current mergeable/draft fields are
+          a collection-time snapshot only.
+        </p>
+        <h3>New live diagnostic availability observation is censored</h3>
+        <p>
+          One supplementary PR job,
+          <a href="https://github.com/agentydragon/ducktape/actions/runs/39963245539/job/120446356635">120446356635</a>,
+          starts at 13:41:42 UTC, after the fixed population window. At bounded roughly 20s polling observations from
+          13:44:50 through 13:57:54, it remains in progress and neither the GitHub job-log endpoint nor the inner
+          BuildBuddy critical-path tool log is accessible. No terminal/access-delay percentile follows.
+          Check/webhook/inbox/harness delivery was not exposed by connected tools. The previous snapshot’s one
+          completed-push availability observation remains historical, with its invalid early log-probe limitation
+          preserved in the prior evidence.
+        </p>
+        <p>
+          <strong>Statistics:</strong> nearest-rank percentiles; seconds unless explicitly runner-minutes/hours or
+          worker/CPU seconds. Positive assigned runner IDs and completed timestamps are required for occupancy/runtime;
+          missing durations never become zero. Current required-job samples contain no unfinished in-window attempts at
+          collection. End-before-start ordering handles adjacent intervals. All-check completion, first required green,
+          eventual merge and full readiness are different outcomes.
+        </p>
+        <p>
+          <strong>Coverage:</strong> required-check heads, core attempts, outcome-stratified log samples and busy-window
+          supplements are separate populations. No cdk8s/Go/frontend causal before-after estimate, billed compute
+          attribution, complete account concurrency census or hosted VM lifecycle trace is available. No Shapley
+          attribution collected. Failure logs establish specific failures; the VM stream-close cause and some older
+          browser/discovery incidents retain their named missing traces rather than an invented cause.
+        </p>
+        <p>
+          <strong>Reproduce:</strong> query Actions runs below the 1,000-result cap; jobs with <code>filter=all</code>;
+          checks for each exact SHA with <code>filter=all</code>. Run the unchanged skill
+          <code>evidence.sh</code> recipes on the merged snapshot. Phase cases use each job’s deterministic test/build
+          IDs, confirmed against its CI command/log, then BuildBuddy command profiles, critical-path tool logs and
+          direct execution records. Raw payloads, profiles, logs, traces, credentials and account identities stay local.
+          Supporting evidence records reviewed numeric excerpts, links and methods.
+        </p>
+        <p>
+          Inspected devel:
+          <a href="https://github.com/agentydragon/ducktape/blob/6f85f6f18d092084e914e6351192991b8faf54f8/README.md"
+            >6f85f6f18d092084e914e6351192991b8faf54f8</a
+          >. <a href="evidence.json">Reviewed data and experiment summaries</a> · <a href="manifest.json">Manifest</a> ·
+          <a href="https://github.com/agentydragon/ducktape/blob/7fad6d2e9a/latency/index.html">Previous report</a>.
+          Download/open the standalone HTML locally. No GitHub Pages deployment is implied.
+        </p>
+      </section>
+      <footer>CI latency · October 22–23, 2026 · latest-only latency namespace; sibling reports preserved.</footer>
+    </main>
+    <script>
+      document.getElementById("toggle-continuity").addEventListener("click", function () {
+        const open = this.getAttribute("aria-expanded") !== "true";
+        document.querySelectorAll(".continuity-detail").forEach((x) => (x.open = open));
+        this.setAttribute("aria-expanded", String(open));
+        this.textContent = open ? "Collapse prior-work details" : "Expand prior-work details";
+      });
+    </script>
+  </body>
+</html>
