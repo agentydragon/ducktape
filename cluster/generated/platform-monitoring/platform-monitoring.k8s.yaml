@@ -156,7 +156,7 @@ spec:
                 ),
                 "device_path", "/dev/$1", "disk", "^(.+)$"
               )
-              * on (node) group_left () kube_node_role{role="control-plane"}
+              * on (node) group_left () max by (node) (kube_node_role{role="control-plane"} == 1)
             ) > bool 0
           record: cluster:talos_system_disk_device_info
         - alert: ControlPlaneSystemDiskBusy
@@ -390,6 +390,17 @@ spec:
         - expr: disk_usage:pool_capacity_bytes - disk_usage:pool_free_bytes
           record: disk_usage:pool_used_bytes
         - expr: |
+            max by (resource, volume) (
+              label_replace(
+                label_replace(
+                  linstor_volume_definition_size_bytes,
+                  "resource", "$1", "name", "(.+)"
+                ),
+                "volume", "$1", "volume_number", "(.+)"
+              )
+            )
+          record: disk_usage:volume_definition_size_bytes
+        - expr: |
             (
               max by (resource, persistentvolume) (
                 label_replace(
@@ -420,16 +431,17 @@ spec:
               max by (persistentvolume, phase) (kube_persistentvolume_status_phase == 1)
           record: disk_usage:piraeus_volume:info
         - expr: |
-            (
-              (
-                group by (node, storage_pool, resource) (linstor_volume_state)
-                * on (resource) group_left (persistentvolume, namespace, persistentvolumeclaim, phase)
-                  disk_usage:piraeus_volume:info
-              )
-              or on (node, storage_pool, resource)
-                group by (node, storage_pool, resource) (linstor_volume_state)
-            )
+            group by (node, storage_pool, resource, volume) (linstor_volume_state)
             and on (node, storage_pool) disk_usage:pool_capacity_bytes
+          record: disk_usage:diskful_volume:info
+        - expr: |
+            (
+              group by (node, storage_pool, resource) (disk_usage:diskful_volume:info)
+              * on (resource) group_left (persistentvolume, namespace, persistentvolumeclaim, phase)
+                disk_usage:piraeus_volume:info
+            )
+            or on (node, storage_pool, resource)
+              group by (node, storage_pool, resource) (disk_usage:diskful_volume:info)
           record: disk_usage:volume:info
         - expr: |
             sum by (node, storage_pool, resource) (linstor_volume_allocated_size_bytes >= 0)
@@ -438,20 +450,14 @@ spec:
               disk_usage:volume:info
           record: disk_usage:volume_allocated_bytes
         - expr: |
-            (
             sum by (node, storage_pool, resource) (
-              group by (node, storage_pool, resource, volume) (linstor_volume_state)
+              disk_usage:diskful_volume:info
               * on (resource, volume) group_left ()
-                max by (resource, volume) (
-                  label_replace(label_replace(
-                    linstor_volume_definition_size_bytes,
-                    "resource", "$1", "name", "(.+)"),
-                    "volume", "$1", "volume_number", "(.+)")
-                )
-              and on (node, storage_pool) disk_usage:pool_capacity_bytes
+                disk_usage:volume_definition_size_bytes
             )
-            ) * on (node, storage_pool, resource)
-              group_left (persistentvolume, namespace, persistentvolumeclaim, phase) disk_usage:volume:info
+            * on (node, storage_pool, resource)
+              group_left (persistentvolume, namespace, persistentvolumeclaim, phase)
+              disk_usage:volume:info
           record: disk_usage:volume_capacity_bytes
         - expr: |-
             sum by (node, storage_pool) (disk_usage:volume_capacity_bytes)

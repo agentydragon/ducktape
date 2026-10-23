@@ -47,11 +47,32 @@ allocation as an estimate rather than forcing the two to reconcile.
 - Machine selection applies to node-owned panels. S3 bucket totals lack storage
   host ownership and remain explicitly cluster-wide.
 
+## Recording-rule pipeline
+
+The `piraeus-storage` group keeps these dependent rules together and in evaluation
+order. Pool totals establish which node/pool pairs are diskful. Native volume
+definition sizes normalize LINSTOR's `name` and `volume_number` labels to
+`resource` and `volume`; LINSTOR volume state is then restricted to those
+diskful pools. That per-copy inventory is collapsed to resource identity and
+joined with kube-state-metrics PV/claim/phase metadata when it exists. The
+allocated-size rule sums native allocation per diskful resource copy, while the
+capacity rule sums normalized definition sizes per copy. Both final rules add
+the same optional PV metadata, so resources without a current PV remain visible.
+
+Each multi-stage query is a complete `.promql` expression. `rules.py` registers
+the expression file and its recording-rule name; it does not assemble query
+fragments. This keeps the label normalization, joins, and output labels reviewable
+as the exact expressions Prometheus evaluates.
+
 ## Verification boundary
 
 The metadata join resolved all 32 live Piraeus PVs. Read-only Mimir probes of all
 48 dashboard targets parsed successfully for All, `ovh-ns104963`, and
 `ovh-ns103711`. Existing collector targets returned data where applicable;
 22 Piraeus targets await deployment of the native scrape and recording rules.
-Those probes do not establish browser interpolation or rendering. Full Grafana
-verification remains required after the metrics are available.
+The 22 expressions in the generated disk-usage PrometheusRule parsed successfully
+through Mimir after the pipeline refactor. Newly introduced recording stages do
+not have live series until deployment, so this confirms query acceptance rather
+than runtime samples. Neither probe establishes browser interpolation or
+rendering. Full Grafana verification remains required after the metrics are
+available.

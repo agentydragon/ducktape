@@ -1,0 +1,4 @@
+sum by (node, storage_pool, resource) (linstor_volume_allocated_size_bytes >= 0)
+* on (node, storage_pool, resource)
+  group_left (persistentvolume, namespace, persistentvolumeclaim, phase)
+  disk_usage:volume:info

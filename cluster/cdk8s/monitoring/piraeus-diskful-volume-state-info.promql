@@ -1,0 +1,2 @@
+group by (node, storage_pool, resource, volume) (linstor_volume_state)
+and on (node, storage_pool) disk_usage:pool_capacity_bytes

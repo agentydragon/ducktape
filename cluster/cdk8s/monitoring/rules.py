@@ -525,6 +525,12 @@ _PIRAEUS = [
         'max by (node, storage_pool) (linstor_storage_pool_capacity_free_bytes{driver="LVM_THIN"} >= 0)',
     ),
     Rule.record("disk_usage:pool_used_bytes", "disk_usage:pool_capacity_bytes - disk_usage:pool_free_bytes"),
+    Rule.record(
+        "disk_usage:volume_definition_size_bytes",
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-volume-definition-size.promql")
+        ).read_text(),
+    ),
     # PV claim references survive release; retain their resource/PV identity and phase rather than
     # silently attributing an old retained resource to a newly created PVC with the same name.
     Rule.record(
@@ -532,37 +538,24 @@ _PIRAEUS = [
         get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-volume-info.promql")).read_text(),
     ),
     Rule.record(
+        "disk_usage:diskful_volume:info",
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-diskful-volume-state-info.promql")
+        ).read_text(),
+    ),
+    Rule.record(
         "disk_usage:volume:info",
-        dedent("""\
-            (
-              (
-                group by (node, storage_pool, resource) (linstor_volume_state)
-                * on (resource) group_left (persistentvolume, namespace, persistentvolumeclaim, phase)
-                  disk_usage:piraeus_volume:info
-              )
-              or on (node, storage_pool, resource)
-                group by (node, storage_pool, resource) (linstor_volume_state)
-            )
-            """)
-        + "and on (node, storage_pool) disk_usage:pool_capacity_bytes\n",
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-diskful-volume-info.promql")
+        ).read_text(),
     ),
     Rule.record(
         "disk_usage:volume_allocated_bytes",
-        dedent("""\
-            sum by (node, storage_pool, resource) (linstor_volume_allocated_size_bytes >= 0)
-            * on (node, storage_pool, resource)
-              group_left (persistentvolume, namespace, persistentvolumeclaim, phase)
-              disk_usage:volume:info
-            """),
+        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-volume-allocated.promql")).read_text(),
     ),
     Rule.record(
         "disk_usage:volume_capacity_bytes",
-        "(\n"
-        + get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-volume-capacity.promql"))
-        .read_text()
-        .removesuffix("\n")
-        + "\n) * on (node, storage_pool, resource)\n"
-        "  group_left (persistentvolume, namespace, persistentvolumeclaim, phase) disk_usage:volume:info\n",
+        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-volume-capacity.promql")).read_text(),
     ),
     Rule.record(
         "disk_usage:pool_committed_bytes",
