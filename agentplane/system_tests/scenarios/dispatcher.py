@@ -2,14 +2,15 @@
 
 import asyncio
 import json
+import re
 import sqlite3
 import sys
 import tarfile
 from collections.abc import AsyncIterator, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 from uuid import UUID, uuid4
 
 import grpc
@@ -26,7 +27,6 @@ from agentplane.system_tests.cleanup_diagnostics import capture_without_masking,
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.sandbox import POD_TEMPLATE
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 SERVICE = "session-dispatcher"
@@ -308,29 +308,84 @@ async def _cleanup_sandbox(
 
 @asynccontextmanager
 async def _forward(cluster: Cluster, resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
-    port = pick_free_port()
-    process = await asyncio.create_subprocess_exec(
-        *cluster.command(),
-        "port-forward",
-        resource,
-        f"{port}:8080",
-        "--address=127.0.0.1",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    assert process.stdout is not None
-    try:
-        async with asyncio.timeout(30):
-            while line := await process.stdout.readline():
-                if line.startswith(b"Forwarding from 127.0.0.1:"):
-                    break
-            else:
-                raise RuntimeError("Dispatcher port-forward ended before listening")
-        yield f"127.0.0.1:{port}"
-    finally:
+    async def stop(process: asyncio.subprocess.Process) -> None:
         if process.returncode is None:
-            process.terminate()
-        await process.wait()
+            with suppress(ProcessLookupError):
+                process.terminate()
+        try:
+            async with asyncio.timeout(10):
+                await process.wait()
+        except TimeoutError:
+            with suppress(ProcessLookupError):
+                process.kill()
+            await process.wait()
+
+    async def drain_output(
+        process: asyncio.subprocess.Process, log_file: BinaryIO, ready: asyncio.Future[int | None]
+    ) -> None:
+        assert process.stdout is not None
+        try:
+            while line := await process.stdout.readline():
+                log_file.write(line)
+                if not ready.done() and (
+                    match := re.match(rb"Forwarding from 127\.0\.0\.1:(\d+) -> 8080(?:\s|$)", line)
+                ):
+                    ready.set_result(int(match[1]))
+        finally:
+            if not ready.done():
+                ready.set_result(None)
+
+    async def stop_and_drain(process: asyncio.subprocess.Process, drain_task: asyncio.Task[None]) -> None:
+        try:
+            await stop(process)
+        finally:
+            try:
+                async with asyncio.timeout(5):
+                    await drain_task
+            except TimeoutError:
+                drain_task.cancel()
+                await asyncio.gather(drain_task, return_exceptions=True)
+
+    spawn = asyncio.create_task(
+        asyncio.create_subprocess_exec(
+            *cluster.command(),
+            "port-forward",
+            resource,
+            ":8080",
+            "--address=127.0.0.1",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+    )
+    cancelled_during_spawn = False
+    try:
+        process = await asyncio.shield(spawn)
+    except asyncio.CancelledError:
+        process = await asyncio.shield(spawn)
+        cancelled_during_spawn = True
+    assert process.stdout is not None
+    log_path = undeclared_outputs_dir() / f"dispatcher-port-forward-{uuid4().hex}.log"
+    with log_path.open("wb") as log_file:
+        ready: asyncio.Future[int | None] = asyncio.get_running_loop().create_future()
+        drain_task = asyncio.create_task(drain_output(process, log_file, ready))
+        try:
+            if cancelled_during_spawn:
+                raise asyncio.CancelledError
+            try:
+                async with asyncio.timeout(30):
+                    port = await ready
+            except TimeoutError as exc:
+                raise RuntimeError(f"Dispatcher port-forward did not report a listener; see {log_path}") from exc
+            if port is None:
+                raise RuntimeError(f"Dispatcher port-forward ended before listening; see {log_path}")
+            yield f"127.0.0.1:{port}"
+        finally:
+            cleanup = asyncio.create_task(stop_and_drain(process, drain_task))
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                await asyncio.shield(cleanup)
+                raise
 
 
 async def _dispatch_until(

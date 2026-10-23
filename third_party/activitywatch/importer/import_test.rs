@@ -7,7 +7,6 @@
 //! real, not modelled.
 
 use std::fs;
-use std::net::TcpListener;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Child;
@@ -68,14 +67,6 @@ fn aw_server_bin() -> PathBuf {
         .unwrap_or_else(|| panic!("aw_server_bin not in runfiles at {rel}"))
 }
 
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 /// A running aw-server child, killed when the guard drops.
 struct ServerGuard {
     child: Child,
@@ -88,7 +79,7 @@ impl Drop for ServerGuard {
     }
 }
 
-fn spawn_server(datadir: &Path, port: u16, api_key: Option<&str>) -> ServerGuard {
+fn spawn_server(datadir: &Path, api_key: Option<&str>) -> (ServerGuard, PathBuf) {
     fs::create_dir_all(datadir).unwrap();
     let mut command = Command::new(aw_server_bin());
     command
@@ -96,7 +87,7 @@ fn spawn_server(datadir: &Path, port: u16, api_key: Option<&str>) -> ServerGuard
         .arg("--host")
         .arg("127.0.0.1")
         .arg("--port")
-        .arg(port.to_string())
+        .arg("0")
         .arg("--dbpath")
         .arg(datadir.join("aw.sqlite"))
         .env("HOME", datadir)
@@ -110,12 +101,30 @@ fn spawn_server(datadir: &Path, port: u16, api_key: Option<&str>) -> ServerGuard
         fs::write(&config, format!("[auth]\napi_key = \"{key}\"\n")).unwrap();
         command.arg("--config").arg(config);
     }
+    // Rocket reports its actual port after binding port zero. Keep both streams
+    // together so startup failures remain inspectable, including in CI artifacts.
+    let log_path = std::env::var("TEST_UNDECLARED_OUTPUTS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| datadir.to_path_buf())
+        .join(format!(
+            "{}-{}-server.log",
+            datadir
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_string_lossy(),
+            datadir.file_name().unwrap().to_string_lossy()
+        ));
+    let log = fs::File::create(&log_path).expect("server log");
     let child = command
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .env("ROCKET_CLI_COLORS", "false")
+        .env("ROCKET_LOG_LEVEL", "normal")
+        .stdout(Stdio::from(log.try_clone().expect("clone server log")))
+        .stderr(Stdio::from(log))
         .spawn()
         .expect("spawn aw-server");
-    ServerGuard { child }
+    (ServerGuard { child }, log_path)
 }
 
 async fn wait_ready(client: &AwClient) {
@@ -144,9 +153,36 @@ async fn aw_server_authed(
     api_key: Option<&str>,
 ) -> (ServerGuard, AwClient) {
     client_env_setup();
-    let port = free_port();
-    let guard = spawn_server(&root.join(name), port, api_key);
-    let url = format!("http://127.0.0.1:{port}");
+    let (mut guard, log_path) = spawn_server(&root.join(name), api_key);
+    let url = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let log = fs::read_to_string(&log_path).expect("read server log");
+            for line in log
+                .split_inclusive('\n')
+                .filter(|line| line.ends_with('\n'))
+            {
+                if let Some((_, address)) =
+                    line.split_once("Rocket has launched from http://127.0.0.1:")
+                {
+                    let port: u16 = address.trim().parse().expect("Rocket launch port");
+                    assert_ne!(port, 0);
+                    return format!("http://127.0.0.1:{port}");
+                }
+            }
+            assert!(
+                guard.child.try_wait().expect("server status").is_none(),
+                "aw-server exited: {log}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "aw-server did not publish its endpoint: {}",
+            fs::read_to_string(&log_path).unwrap()
+        )
+    });
     let client = connect(&url, api_key.map(str::to_string), name).expect("client");
     wait_ready(&client).await;
     (guard, client)
