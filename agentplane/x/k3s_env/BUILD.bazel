@@ -180,7 +180,6 @@ py_test(
         ":fixture_chart",
         ":fixture_database",
         ":rendered_fixture",
-        ":runtime_credentials",
         "//:conftest",
         "//agentplane/action_service:oauth_settings",
         "//agentplane/action_service:settings",
@@ -228,7 +227,6 @@ py_library(
     deps = [
         ":bootstrap",
         ":rendered_fixture",
-        ":runtime_credentials",
         ":vm_sandboxes",
         "//agentplane/system_tests:conftest",
         "//agentplane/testing:tls",
@@ -310,7 +308,6 @@ py_library(
     testonly = True,
     srcs = ["fixture_chart.py"],
     deps = [
-        ":fixture_credentials",
         ":fixture_database",
         ":rendered_fixture",
         "//agentplane:subjects",
@@ -349,6 +346,7 @@ py_library(
         "//cluster/cdk8s/agentplane:testing",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//model_catalog:catalog",
+        "@pypi//bcrypt",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -361,7 +359,6 @@ py_library(
     name = "rendered_fixture",
     srcs = ["rendered_fixture.py"],
     deps = [
-        ":fixture_credentials",
         "@pypi//pydantic",
     ],
 )
@@ -372,7 +369,6 @@ py_library(
     srcs = ["render_fixture.py"],
     deps = [
         ":fixture_chart",
-        ":fixture_credentials",
         ":rendered_fixture",
     ],
 )
@@ -415,27 +411,12 @@ py_library(
         "postgres_entrypoint.sh",
     ],
     deps = [
-        ":fixture_credentials",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/agentplane:environment",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
-    ],
-)
-
-py_library(
-    name = "fixture_credentials",
-    srcs = ["fixture_credentials.py"],
-)
-
-py_library(
-    name = "runtime_credentials",
-    srcs = ["runtime_credentials.py"],
-    deps = [
-        ":fixture_credentials",
-        "@pypi//bcrypt",
     ],
 )
 

@@ -34,7 +34,7 @@ import yaml
 
 from agentplane.system_tests.conftest import AUDIENCE, TESTING_SERVICE_ACCOUNT
 from agentplane.testing import tls
-from agentplane.x.k3s_env import rendered_fixture, runtime_credentials, vm_sandboxes
+from agentplane.x.k3s_env import rendered_fixture, vm_sandboxes
 from agentplane.x.k3s_env.bootstrap import Bootstrap
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -428,8 +428,6 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
             ),
             models,
             mcp,
-            credentials=runtime_credentials.credentials(),
-            mcp_credentials=runtime_credentials.mcp_credentials() if mcp is not None else None,
         )
         if fixture.vm_sandboxes:
             layouts += sorted(get_required_path("_main/agentplane/x/k3s_env/guest").glob("*_layout.rloc"))

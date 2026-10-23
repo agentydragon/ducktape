@@ -17,7 +17,7 @@ from agentplane.action_service.settings import Settings as ActionsSettings
 from agentplane.app.settings import Settings as AppSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
-from agentplane.x.k3s_env import fixture_chart, fixture_database, rendered_fixture, runtime_credentials
+from agentplane.x.k3s_env import fixture_chart, fixture_database, rendered_fixture
 from agentplane.x.k3s_env.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
 from util.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
@@ -46,19 +46,7 @@ def _filled_fixture() -> rendered_fixture.RenderedFixture:
         ),
         LocalModel(url="http://scripted-model.k3s-fixture.invalid:4000"),
         _MCP,
-        credentials=runtime_credentials.credentials(),
-        mcp_credentials=runtime_credentials.mcp_credentials(),
     )
-
-
-def test_stacks_get_independent_credentials() -> None:
-    first = _filled_fixture().objects
-    second = _filled_fixture().objects
-    for name in ("postgres-app", fixture_chart.OPERATOR_SECRET):
-        assert (
-            _resource(first, "Secret", name)["stringData"]["password"]
-            != _resource(second, "Secret", name)["stringData"]["password"]
-        )
 
 
 def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:

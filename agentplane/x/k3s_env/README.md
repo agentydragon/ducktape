@@ -27,10 +27,10 @@ rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixt
 (`mcp_fixtures/*_layout`), with test-only Dex clients, operator, MCP server and Action groups. The
 standalone MCP edge serves its OAuth and MCP endpoints in this fixture; Actions keeps its separate
 OAuth client for the upstream fixture used by `test_mcp`. Dex
-reads a config Secret holding the bcrypt hash of the stack's generated operator password.
-Cached manifests contain credential placeholders. Before applying them, each stack generates its own
-database passwords, OIDC client/session secrets and, for MCP fixtures, Dex password and bcrypt hash;
-`rendered_fixture.fill` substitutes them alongside the per-stack TLS material and forwarded origins.
+reads a config Secret holding the bcrypt hash of a fixed test-only operator password.
+Database passwords and OIDC client/session secrets are fixed test-only literals; Dex uses a fixed
+bcrypt salt so its hash is repeatable. The rendered JSON is a Bazel build output, not checked into git.
+`rendered_fixture.fill` supplies the runtime TLS material, model endpoint and forwarded origins.
 Dex serves on its in-cluster Service name, which the test process resolves through `/etc/hosts`.
 It serves TLS because the app and edge use a plain-http OAuth origin only on loopback: a CA made per
 stack signs its certificate, and the app, Actions and edge trust that CA. In MCP fixtures the app and
