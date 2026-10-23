@@ -386,6 +386,36 @@ describes the cached-location failure. Retire only the evacuated ordinal:
 `ssd-0` permits removal of the remaining old group. The HDD group needs the same
 ordinal check. Do not treat a generic PVC-roll drain as proof of evacuation.
 
+### Retiring HDD ordinal 0 while preserving ordinal 1
+
+For the approved `103711` single-copy window, preserve the legacy HDD peer
+`seaweedfs-volume-hdd-1` on `102453`. A plain replicas 2 to 1 removes ordinal 1,
+which is the peer that must survive. The pinned operator has no per-CR pause or
+ordinal-start field and would reconcile the old group's replica count back.
+
+First remove only `hdd` from the Seaweed CR's desired topology map. Operator
+0.1.42 iterates configured groups and leaves omitted groups' existing resources
+in place; verify the deployed operator version before relying on this. Wait for
+the CR to observe the new generation and verify the old StatefulSet, both Pod
+UIDs, services and claims remain unchanged. The old StatefulSet temporarily
+holds the legacy group's desired state outside topology reconciliation.
+
+Refresh every source volume's off-node survivor and the user's scoped waiver,
+plus masters, filer/database, S3 and affected FUSE client health. Under exact
+StatefulSet UID/resource-version guards, atomically set `ordinals.start: 1` and
+`replicas: 1`; retain both PVCs and verify only ordinal 0 stops. Require the
+original ordinal 1 Pod/claim identities, native server registration, surviving
+volume placement and application reads to remain healthy. Never create ordinal
+2 or delete the peer's PVC as part of this transition.
+
+Keep this explicit legacy exception until `102453` is migrated. After `103711`
+pool acceptance, add its own readiness-gated 1700Gi Piraeus HDD topology and
+restore replication before touching the remaining peer. When that peer is
+replaced, retire the legacy StatefulSet, services/monitor and obsolete claims
+under their own acceptance gates. Do not re-add `hdd` while its ordinal-start
+exception remains, and do not treat retained metadata as preservation after a
+physical disk wipe.
+
 ### Seaweed master-2: return it to the first Piraeus node
 
 Before the next control-plane drain, return master-2 from `ovh-ns102453` to

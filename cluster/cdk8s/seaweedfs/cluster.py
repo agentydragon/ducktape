@@ -313,8 +313,12 @@ def seaweed(scope: Construct) -> Seaweed:
             # self-contained (no inheritance from a base spec.volume; topology-only deployment
             # needs the operator's nil-safe BaseVolumeSpec fallback, added in 1.0.20).
             volume_topology={
-                # Keep the two existing local-path HDD servers and add the converted 103656
-                # worker as a separate Piraeus storage group below.
+                # Legacy hdd StatefulSet is outside the topology map during its final
+                # two-node migration. Operator 0.1.42 leaves omitted groups in place;
+                # the controlled ordinal handoff keeps hdd-1 on 102453 while retiring
+                # hdd-0 on 103711. Do not re-add hdd: that would reconcile replicas
+                # against its temporary ordinals.start=1. Remove the legacy resources
+                # after 102453's replacement is accepted (piraeus_node_roll.md).
                 # -disk=hdd matches the flat servers' default disk type ("" == hdd, verified
                 # in seaweedfs 4.29 ToDiskType).
                 #
@@ -332,14 +336,6 @@ def seaweed(scope: Construct) -> Seaweed:
                 # Slots are independent of bytes: tiny or partial collection volumes still
                 # consume slots. 2000 leaves room for growth; minFreeSpacePercent remains the
                 # physical-space guard.
-                "hdd": _volume_topology(
-                    rack="hil-ovh-h109b04",
-                    storage="1800Gi",
-                    storage_class="local-path-ovh-hdd",
-                    disk="hdd",
-                    replicas=2,
-                    max_volume_counts=2000,
-                ),
                 # The readiness label gates this PVC consumer until the HDD pool passes acceptance.
                 "hdd-piraeus-103656": _volume_topology(
                     rack="hil-ovh-h109b04",

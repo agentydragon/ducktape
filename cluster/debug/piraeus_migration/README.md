@@ -118,7 +118,8 @@ ownership, and symlink targets matched, and SQLite integrity checks returned
 `ok` before and after startup. The existing SeaweedFS backup sources were
 retargeted to the Piraeus claims and completed a cold refresh. Both deployments
 are Ready on `103656`; the old source PVCs/PVs remain Bound with `Retain`. Their
-Flux Kustomizations remain held until the source change is published and merged.
+Flux Kustomizations have resumed and observed the merged configuration; both
+remain Ready on their Piraeus claims.
 
 ## Evidence map
 

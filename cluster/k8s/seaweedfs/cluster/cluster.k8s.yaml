@@ -102,40 +102,6 @@ spec:
         operator: Exists
   volumeServerDiskCount: 1
   volumeTopology:
-    hdd:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels:
-                  app.kubernetes.io/instance: seaweedfs
-                  seaweedfs/topology: hdd
-              topologyKey: kubernetes.io/hostname
-      dataCenter: hil
-      env:
-        - name: GOMEMLIMIT
-          value: 1400MiB
-      extraArgs:
-        - -disk=hdd
-      limits:
-        memory: 1536Mi
-      maxVolumeCounts: 2000
-      metricsPort: 9325
-      minFreeSpacePercent: 10
-      nodeSelector:
-        storage.allegedly.works/tier: hdd
-      priorityClassName: stateful-infra
-      rack: hil-ovh-h109b04
-      replicas: 2
-      requests:
-        cpu: 100m
-        memory: 512Mi
-        storage: 1800Gi
-      storageClassName: local-path-ovh-hdd
-      tolerations:
-        - effect: NoSchedule
-          key: node-role.kubernetes.io/control-plane
-          operator: Exists
     hdd-piraeus-103656:
       affinity:
         podAntiAffinity:
