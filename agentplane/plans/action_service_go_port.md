@@ -71,16 +71,15 @@ in the one Go binary until that separate extraction.
 
 The accepted Go cutover permits source retirement now. The Python wait, operator stream, Web Push, MCP
 executor, coordinator, store, policy evaluator and informer runtimes and their runtime tests are retired
-in the source tree. The app still imports Python policy view types, the PolicySet parser, models and
-configuration types. The Alembic compatibility bridge keeps
-`db.py`, `updates.py`, `database_migrate.py` and migration history until its separate retirement;
-published rollback images, database history and Sandbox storage remain. Stage O remains active.
+in the source tree. The app still imports policy view types, the PolicySet parser, operator identity,
+policy kind/source and shared configuration types. The Alembic ORM, update broker, migration runner,
+revision source and Alembic compatibility cases are retired; Goose is the sole migrator. This source
+cleanup makes no schema or data changes. Published rollback images, Goose SQL/history and Sandbox
+storage remain. Stage O remains active.
 
-Retire the Alembic bridge. Remove
-`agentplane_oauth_kv`, enrollment `decision_digest`/`browser_hash`, and grant
+Remove `agentplane_oauth_kv`, enrollment `decision_digest`/`browser_hash`, and grant
 `request_digest`/`activation_deadline` only after their deployed readers are gone, through new
-migrations. Audit callers before removing shared Python models, configuration types or packages; the
-Go protos, generated clients and current deployment contracts remain.
+migrations. The Go protos, generated clients and current deployment contracts remain.
 
 ## After the flip: the edge split
 

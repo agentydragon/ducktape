@@ -1,55 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
-
-# Alembic discovers revisions by reading these files at runtime, and gazelle does not manage this
-# list or the `exports_files` it names. A migration left out of either is silently never applied.
-filegroup(
-    name = "files",
-    srcs = [
-        "env.py",
-        "script.py.mako",
-        "//agentplane/action_service/migrations/versions:0001_action_service.py",
-        "//agentplane/action_service/migrations/versions:0002_decision_provider_reason.py",
-        "//agentplane/action_service/migrations/versions:0003_executor_liveness.py",
-        "//agentplane/action_service/migrations/versions:0004_drop_action_outbox.py",
-        "//agentplane/action_service/migrations/versions:0005_structured_action.py",
-        "//agentplane/action_service/migrations/versions:0006_decision_note.py",
-        "//agentplane/action_service/migrations/versions:0007_cancellation_actor.py",
-        "//agentplane/action_service/migrations/versions:0008_external_connections.py",
-        "//agentplane/action_service/migrations/versions:0009_action_external_grant.py",
-        "//agentplane/action_service/migrations/versions:0010_connection_enrollments.py",
-        "//agentplane/action_service/migrations/versions:0011_enrollment_reconnect.py",
-        "//agentplane/action_service/migrations/versions:0012_action_push_subscription.py",
-        "//agentplane/action_service/migrations/versions:0013_mcp_server_linkage.py",
-        "//agentplane/action_service/migrations/versions:0014_action_policies.py",
-        "//agentplane/action_service/migrations/versions:0015_action_request_context.py",
-        "//agentplane/action_service/migrations/versions:0016_structured_principals.py",
-        "//agentplane/action_service/migrations/versions:0017_drop_mcp_linkage_provider.py",
-        "//agentplane/action_service/migrations/versions:0018_mcp_refresh_failure_error.py",
-        "//agentplane/action_service/migrations/versions:0019_action_history_page.py",
-        "//agentplane/action_service/migrations/versions:0020_drop_action_request_provenance.py",
-        "//agentplane/action_service/migrations/versions:0021_connection_rebind.py",
-        "//agentplane/action_service/migrations/versions:0022_connection_binding_change.py",
-        "//agentplane/action_service/migrations/versions:0023_connection_binding_required.py",
-        "//agentplane/action_service/migrations/versions:0024_drop_grant_caller.py",
-        "//agentplane/action_service/migrations/versions:0025_drop_binding_change.py",
-        "//agentplane/action_service/migrations/versions:0026_drop_retired_policy_source.py",
-        "//agentplane/action_service/migrations/versions:0027_drop_reconciliation_audit.py",
-        "//agentplane/action_service/migrations/versions:0028_drop_external_grant.py",
-    ],
-    visibility = ["//agentplane/action_service:__pkg__"],
-)
-
-py_library(
-    name = "env",
-    srcs = ["env.py"],
-    deps = [
-        "//agentplane/action_service:db",
-        "@pypi//alembic",
-    ],
-)
+load("//devinfra/python:defs.bzl", "py_test")
 
 pkg_tar(
     name = "binary_layer",
@@ -92,10 +44,8 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/action_service:conftest",
-        "//agentplane/action_service:database_migrate",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
-        "//util/testing:postgres_schema",
         "@pypi//psycopg",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

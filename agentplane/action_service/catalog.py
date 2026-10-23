@@ -14,13 +14,6 @@ Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=20
 DIRECT_TOOL_SEPARATOR = "__"
 
 
-class ActionIdentity(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    group: Key
-    name: Key
-
-
 class ActionDefinition(BaseModel):
     """One namespaced Action's Agent-facing description and parameter contract."""
 

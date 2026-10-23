@@ -9,21 +9,6 @@ package(
 )
 
 py_library(
-    name = "fixtures",
-    srcs = ["fixtures.py"],
-    deps = [
-        "//agentplane/action_service:database_migrate",
-        "//agentplane/action_service:db",
-        "//util/testing:postgres_fixtures",
-        "//util/testing:sqlalchemy_engines",
-        "@pypi//asyncpg",
-        "@pypi//psycopg",
-        "@pypi//pytest",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "oauth_mcp_server",
     srcs = ["oauth_mcp_server.py"],
     deps = [

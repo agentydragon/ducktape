@@ -1,10 +1,3 @@
 """Register Action Service test fixtures."""
 
-from agentplane.action_service.testing.fixtures import action_database_template, db_url, engine
-from util.testing.postgres_fixtures import (
-    database_clones,
-    database_names,
-    postgres_admin_url,
-    postgres_container,
-    postgres_image,
-)
+from util.testing.postgres_fixtures import database_names, postgres_admin_url, postgres_container, postgres_image

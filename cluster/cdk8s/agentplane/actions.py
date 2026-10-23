@@ -1,4 +1,4 @@
-"""The Action Service: its Deployment (+ Alembic migrate initContainer), RBAC, ConfigMaps,
+"""The Action Service: its Deployment (+ Goose migrate initContainer), RBAC, ConfigMaps,
 Service, NetworkPolicy, ServiceMonitor, optional PodDisruptionBudget, and the public HTTPRoute of
 an environment with an Action Service hostname. Staging's policy sets are added by its chart.
 """
