@@ -1561,6 +1561,13 @@ fn direct_callable_origin(expr: &Expr) -> Option<ValueOrigin> {
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 pub(crate) struct FlowWorkStats {
     pub(crate) event_executions: usize,
+    pub(crate) argument_evaluations: usize,
+}
+
+#[derive(Clone)]
+struct CachedArgument {
+    values: Values,
+    binding_dependencies: BTreeSet<Id>,
 }
 
 struct FlowSolver {
@@ -1727,15 +1734,7 @@ impl FlowSolver {
                 let targets = self
                     .flow
                     .values_of_value_expr_tracking(&callee, &mut dependencies);
-                let written_params: BTreeSet<_> = targets
-                    .iter()
-                    .filter_map(|target| match target {
-                        ValueOrigin::Function(function) => self.flow.params.get(&function),
-                        _ => None,
-                    })
-                    .flat_map(|params| params.iter().flatten().cloned())
-                    .collect();
-                let mut cached_args: Vec<Option<Values>> = vec![None; args.len()];
+                let mut cached_args: Vec<Option<CachedArgument>> = vec![None; args.len()];
 
                 for target in targets {
                     let ValueOrigin::Function(function) = target else {
@@ -1748,26 +1747,44 @@ impl FlowSolver {
                     for (arg_index, (param, arg)) in params.into_iter().zip(&args).enumerate() {
                         if let Some(param) = param {
                             let values = if let Some(cached) = &cached_args[arg_index] {
-                                cached.clone()
+                                cached.values.clone()
                             } else {
                                 let mut arg_dependencies = BTreeSet::new();
+                                #[cfg(test)]
+                                {
+                                    self.stats.argument_evaluations += 1;
+                                }
                                 let values = self
                                     .flow
                                     .values_of_value_expr_tracking(arg, &mut arg_dependencies);
-                                // This Invoke mutates only known parameter bindings. If this
-                                // argument reads none of them, the first-use result remains
-                                // exact for later targets; all other arguments keep legacy
-                                // evaluation timing and see every preceding parameter merge.
-                                let can_cache = arg_dependencies.iter().all(|dependency| {
-                                    !matches!(dependency, FlowDependency::Binding(id) if written_params.contains(id))
-                                });
+                                let binding_dependencies = arg_dependencies
+                                    .iter()
+                                    .filter_map(|dependency| match dependency {
+                                        FlowDependency::Binding(id) => Some(id.clone()),
+                                        _ => None,
+                                    })
+                                    .collect();
                                 dependencies.extend(arg_dependencies);
-                                if can_cache {
-                                    cached_args[arg_index] = Some(values.clone());
-                                }
+                                cached_args[arg_index] = Some(CachedArgument {
+                                    values: values.clone(),
+                                    binding_dependencies,
+                                });
                                 values
                             };
-                            self.merge_binding(param, values, &mut changed);
+                            // Invoke only changes parameter bindings. Cached argument queries
+                            // remain exact until a binding they read actually grows; property,
+                            // return, and parameter metadata facts are immutable during this
+                            // event. Invalidate after each real merge so later arguments still
+                            // observe the legacy left-to-right parameter updates.
+                            if self.merge_binding(param.clone(), values, &mut changed) {
+                                for cached in &mut cached_args {
+                                    if cached.as_ref().is_some_and(|cached| {
+                                        cached.binding_dependencies.contains(&param)
+                                    }) {
+                                        *cached = None;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1780,10 +1797,17 @@ impl FlowSolver {
         self.schedule_changed_events(index, round, initial_sweep, changed);
     }
 
-    fn merge_binding(&mut self, id: Id, values: Values, changed: &mut BTreeSet<FlowDependency>) {
-        if self.flow.merge_binding(id.clone(), values) {
+    fn merge_binding(
+        &mut self,
+        id: Id,
+        values: Values,
+        changed: &mut BTreeSet<FlowDependency>,
+    ) -> bool {
+        let merged = self.flow.merge_binding(id.clone(), values);
+        if merged {
             changed.insert(FlowDependency::Binding(id));
         }
+        merged
     }
 
     fn merge_property(
