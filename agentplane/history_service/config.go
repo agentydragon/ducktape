@@ -101,11 +101,11 @@ func (c *config) validate() error {
 		name  string
 		value int
 	}{{"port", c.Port}, {"ingress.port", c.Ingress.Port}} {
-		if port.value < 0 || port.value > 65535 {
-			return fmt.Errorf("%s must be between 0 and 65535", port.name)
+		if port.value < 1 || port.value > 65535 {
+			return fmt.Errorf("%s must be between 1 and 65535", port.name)
 		}
 	}
-	if c.Port != 0 && c.Port == c.Ingress.Port {
+	if c.Port == c.Ingress.Port {
 		return errors.New("port and ingress.port must differ")
 	}
 	if c.RequestTimeoutSeconds <= 0 || c.RequestTimeoutSeconds > 60 {

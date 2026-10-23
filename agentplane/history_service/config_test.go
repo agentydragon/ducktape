@@ -74,17 +74,6 @@ func TestASettingAFileSetsToItsNonDefaultOverridesTheDefault(t *testing.T) {
 	}
 }
 
-func TestListenersCanRequestEphemeralPorts(t *testing.T) {
-	file := strings.Replace(requiredFile, "ingress:\n", "port: 0\ningress:\n  port: 0\n", 1)
-	c, err := loadTestConfig(t, file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Port != 0 || c.Ingress.Port != 0 {
-		t.Errorf("ephemeral listener ports = %d and %d, want zero", c.Port, c.Ingress.Port)
-	}
-}
-
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
 		"unknown key":                  requiredFile + "bogus: 1\n",

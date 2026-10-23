@@ -26,7 +26,6 @@ go_library(
         "//agentplane/egress/upstream",
         "//agentplane/grpc/facade",
         "//agentplane/policy/reader",
-        "//agentplane/startup",
         "//agentplane/workload_auth/go/auth",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_spf13_viper//:viper",

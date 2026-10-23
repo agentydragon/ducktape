@@ -27,7 +27,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/startup"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"golang.org/x/sync/errgroup"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
@@ -36,7 +35,6 @@ import (
 )
 
 const (
-	startupFileEnv = "AGENTPLANE_EGRESS_STARTUP_FILE"
 	// drainTimeout bounds how long admitted requests may finish after a termination signal, inside
 	// the Pod's termination grace.
 	drainTimeout = 20 * time.Second
@@ -46,12 +44,6 @@ const (
 	changesHeartbeat  = 15 * time.Second
 	readHeaderTimeout = 30 * time.Second
 )
-
-type startupEndpoints struct {
-	Proxy    string `json:"proxy"`
-	Admin    string `json:"admin"`
-	AgentAPI string `json:"agent_api"`
-}
 
 func main() {
 	c, err := loadConfig()
@@ -236,11 +228,6 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer adminListener.Close()
-	if err := startup.Publish(os.Getenv(startupFileEnv), startupEndpoints{
-		Proxy: proxyListener.Addr().String(), Admin: adminListener.Addr().String(), AgentAPI: agentAPIListener.Addr().String(),
-	}); err != nil {
-		return err
-	}
 	// The facade outlives the termination signal so that reads admitted before it finish while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()

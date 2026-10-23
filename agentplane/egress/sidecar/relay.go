@@ -10,15 +10,12 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/agentydragon/ducktape/agentplane/startup"
 )
 
 const (
@@ -28,12 +25,6 @@ const (
 	maxHeadBytes         = 64 * 1024
 	pipeChunkBytes       = 64 * 1024
 )
-
-type startupEndpoints struct {
-	Listener       string            `json:"listener"`
-	Readiness      string            `json:"readiness"`
-	PlatformRoutes map[string]string `json:"platform_routes"`
-}
 
 type sidecar struct {
 	config config
@@ -73,15 +64,6 @@ func (s *sidecar) run(ctx context.Context) error {
 	s.proxyListener = listener
 	if ctx.Err() != nil {
 		return nil
-	}
-	routeEndpoints := make(map[string]string, len(routes))
-	for _, route := range routes {
-		routeEndpoints[route.name] = route.listen.Addr().String()
-	}
-	if err := startup.Publish(os.Getenv(startupFileEnv), startupEndpoints{
-		Listener: listener.Addr().String(), Readiness: s.readinessListener.Addr().String(), PlatformRoutes: routeEndpoints,
-	}); err != nil {
-		return err
 	}
 	serveErrors := make(chan error, len(routes)+2)
 	serve := func(name string, run func() error) {

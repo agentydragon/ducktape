@@ -96,12 +96,21 @@ func openListener(address string) (net.Listener, error) {
 		return net.Listen("tcp", address)
 	}
 	fd, err := strconv.Atoi(fdText)
-	if err != nil || fd < 0 {
+	if err != nil || fd < 3 {
 		return nil, fmt.Errorf("invalid inherited listener address %q", address)
 	}
 	file := os.NewFile(uintptr(fd), address)
 	if file == nil {
 		return nil, fmt.Errorf("invalid inherited listener file descriptor %d", fd)
+	}
+	listening, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_ACCEPTCONN)
+	if err != nil {
+		file.Close()
+		return nil, fmt.Errorf("inspect inherited listener %q: %w", address, err)
+	}
+	if listening != 1 {
+		file.Close()
+		return nil, fmt.Errorf("inherited descriptor %q is not listening", address)
 	}
 	listener, err := net.FileListener(file)
 	closeErr := file.Close()
@@ -112,18 +121,18 @@ func openListener(address string) (net.Listener, error) {
 		listener.Close()
 		return nil, fmt.Errorf("close inherited listener file %q: %w", address, closeErr)
 	}
+	if _, ok := listener.(*net.TCPListener); !ok {
+		listener.Close()
+		return nil, fmt.Errorf("inherited descriptor %q is not a TCP listener", address)
+	}
 	return listener, nil
 }
 
-// serveFacade answers the Dispatcher's HTTP/JSON form on address, forwarding each request over
+// serveFacade answers the Dispatcher's HTTP/JSON form on listener, forwarding each request over
 // loopback to the gRPC server so the servicer authenticates it.
-func serveFacade(ctx context.Context, address string, grpcListener net.Listener, failed chan<- error) (*http.Server, error) {
+func serveFacade(ctx context.Context, listener net.Listener, grpcListener net.Listener, failed chan<- error) (*http.Server, error) {
 	handler, err := facade.NewHandler(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(grpcListener.Addr().(*net.TCPAddr).Port)),
 		dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
-	if err != nil {
-		return nil, err
-	}
-	listener, err := openListener(address)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +142,25 @@ func serveFacade(ctx context.Context, address string, grpcListener net.Listener,
 	return server, nil
 }
 
-func serve(ctx context.Context, c config) error {
+func listenAndServe(ctx context.Context, c config) error {
+	listener, err := openListener(c.ListenAddress)
+	if err != nil {
+		return fmt.Errorf("gRPC listener: %w", err)
+	}
+	defer listener.Close()
+	var httpListener net.Listener
+	if c.HTTPListenAddress != "" {
+		httpListener, err = openListener(c.HTTPListenAddress)
+		if err != nil {
+			return fmt.Errorf("HTTP listener: %w", err)
+		}
+		defer httpListener.Close()
+	}
+	return serve(ctx, c, listener, httpListener)
+}
+
+// serve uses supplied listeners; a nil HTTP listener disables the facade.
+func serve(ctx context.Context, c config, listener, httpListener net.Listener) error {
 	config, err := kubernetesConfig(c)
 	if err != nil {
 		return err
@@ -240,15 +267,10 @@ func serve(ctx context.Context, c config) error {
 	g.RegisterRunnerControl(server)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	listener, err := openListener(c.ListenAddress)
-	if err != nil {
-		return err
-	}
-	defer listener.Close()
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
 	var facadeServer *http.Server
-	if c.HTTPListenAddress != "" {
-		if facadeServer, err = serveFacade(ctx, c.HTTPListenAddress, listener, failed); err != nil {
+	if httpListener != nil {
+		if facadeServer, err = serveFacade(ctx, httpListener, listener, failed); err != nil {
 			return err
 		}
 	}
@@ -290,7 +312,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := serve(ctx, c); err != nil && !errors.Is(err, context.Canceled) {
+	if err := listenAndServe(ctx, c); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("Runner Gateway stopped", "error", err)
 		os.Exit(1)
 	}

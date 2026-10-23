@@ -25,10 +25,24 @@ conversation and from Runner admission.
 - `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
   `gateway_process.py` runs the real binary for cross-language acceptance.
 
-Listener settings accept ordinary host:port addresses and `fd:N`, where `N` is an
-inherited listening socket descriptor. Both gRPC and the optional HTTP facade
-can serve on a listener held continuously by a parent process. The process
-consumes the inherited descriptor and owns the listener until shutdown.
+Listener settings accept ordinary TCP `host:port` addresses and `fd:N`, where `N`
+is the descriptor number **in the child process** (at least 3). An inherited
+socket must already be bound and listening on TCP. Both gRPC and the optional
+HTTP facade use the same convention. Invalid descriptors fail startup without
+falling back to another address.
+
+Startup follows Go's `ListenAndServe`/`Serve` separation: `listenAndServe` obtains
+and owns the listeners, while `serve` takes `net.Listener` values. A nil HTTP
+listener disables the facade. FD parsing and conversion stay at the process
+boundary; serving code never handles descriptor numbers. `net.FileListener`
+duplicates the descriptor, so startup closes the inherited descriptor after
+conversion and closes the resulting listener on exit, including setup failure.
+The parent closes its own socket copy after spawning the child.
+
+For Go parents, `exec.Cmd.ExtraFiles` assigns child descriptors `3+i`; Python's
+`pass_fds` preserves descriptor numbers. The launcher supplies the corresponding
+`fd:N` values. Client addresses come from the parent's held listener, without
+startup files or log parsing.
 
 Build `//agentplane/runner_gateway:runner-gateway` or `//agentplane/runner_gateway:image`.
 The migrator image is `//agentplane/runner_gateway/migrations:image`; serving never applies

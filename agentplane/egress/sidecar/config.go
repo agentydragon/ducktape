@@ -8,10 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	configFileEnv  = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
-	startupFileEnv = "AGENTPLANE_EGRESS_SIDECAR_STARTUP_FILE"
-)
+const configFileEnv = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 
 // A pointer distinguishes a missing listen_port from an explicit ephemeral port (0).
 type platformRouteConfig struct {

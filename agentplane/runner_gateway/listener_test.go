@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"syscall"
 	"testing"
@@ -77,7 +79,7 @@ func TestOpenListenerServesOnTheInheritedSocket(t *testing.T) {
 }
 
 func TestOpenListenerRejectsInvalidInheritedDescriptors(t *testing.T) {
-	for _, address := range []string{"fd:not-a-number", "fd:-1"} {
+	for _, address := range []string{"fd:not-a-number", "fd:-1", "fd:0", "fd:1", "fd:2"} {
 		t.Run(address, func(t *testing.T) {
 			listener, err := openListener(address)
 			if err == nil {
@@ -86,4 +88,66 @@ func TestOpenListenerRejectsInvalidInheritedDescriptors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOpenListenerBindsTCPAddress(t *testing.T) {
+	listener, err := openListener("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if _, ok := listener.(*net.TCPListener); !ok {
+		t.Fatalf("listener type = %T", listener)
+	}
+	other, err := net.Listen("tcp", listener.Addr().String())
+	if err == nil {
+		other.Close()
+		t.Fatal("another listener acquired the bound address")
+	}
+}
+
+func TestOpenListenerRejectsNonListeningDescriptor(t *testing.T) {
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	defer write.Close()
+	fd, err := syscall.Dup(int(read.Fd()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := openListener("fd:" + strconv.Itoa(fd))
+	if err == nil {
+		listener.Close()
+		t.Fatal("pipe accepted as a listener")
+	}
+}
+
+func TestListenAndServeClosesGRPCListenerWhenHTTPListenerFails(t *testing.T) {
+	original, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer original.Close()
+	address := original.Addr().String()
+	file, err := original.(*net.TCPListener).File()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fd, err := syscall.Dup(int(file.Fd()))
+	file.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original.Close()
+	c := config{ListenAddress: "fd:" + strconv.Itoa(fd), HTTPListenAddress: "fd:not-a-number"}
+	if err := listenAndServe(context.Background(), c); err == nil {
+		t.Fatal("invalid HTTP listener did not fail startup")
+	}
+	rebound, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatalf("gRPC listener leaked after startup failed: %v", err)
+	}
+	rebound.Close()
 }

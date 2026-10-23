@@ -1,8 +1,0 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-
-go_library(
-    name = "startup",
-    srcs = ["startup.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/startup",
-    visibility = ["//agentplane:__subpackages__"],
-)
