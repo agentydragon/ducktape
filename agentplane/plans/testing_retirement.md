@@ -28,7 +28,7 @@ gone, staging is the first cluster such a change reaches.
    only the deleted `_live` targets go with them.
 3. **`TESTING_ENVIRONMENT_RETIRE`**, three PRs: the Flux kustomization, image pins, manifests, DNS and routes; the
    Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and volumes,
-   a data drop that lands only on the operator's word. The k3s fixture builds on testing's cdk8s environment, so the
+   a data drop the operator cleared for any time (2026-10-23: nothing there is kept). The k3s fixture builds on testing's cdk8s environment, so the
    first PR moves what the fixture reads into it.
 
 Speed, in parallel:

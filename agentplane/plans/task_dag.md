@@ -1955,7 +1955,7 @@ admitting boxes to testing's app (`actions_staging_policies.py`).
 
 **Blocked on the two nodes above.** Three PRs: the Flux kustomization, image pins, generated manifests, DNS and
 routes; the Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and
-volumes, a data drop that waits for the operator's word. Preserve staging. The k3s fixture builds on testing's
+volumes, a data drop the operator cleared for any time (2026-10-23: nothing there is kept). Preserve staging. The k3s fixture builds on testing's
 environment (`cluster/cdk8s/agentplane/testing.py`'s `ENV`, operator OIDC and Action federation), so the first PR
 moves what the fixture reads into it rather than deleting it.
 
