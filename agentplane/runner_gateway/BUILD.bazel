@@ -129,6 +129,7 @@ go_library(
         "//agentplane/runner_gateway/gateway",
         "//agentplane/sandboxes/api",
         "//agentplane/workload_auth/go/auth",
+        "//util/netlistener",
         "@com_github_go_logr_logr//:logr",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",

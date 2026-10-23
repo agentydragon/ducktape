@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/util/netlistener"
 	"github.com/go-logr/logr"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -90,44 +90,6 @@ func reportUnexpected(ctx context.Context, failed chan<- error, role string, err
 	failed <- fmt.Errorf("%s: %w", role, err)
 }
 
-func openListener(address string) (net.Listener, error) {
-	fdText, inherited := strings.CutPrefix(address, "fd:")
-	if !inherited {
-		return net.Listen("tcp", address)
-	}
-	fd, err := strconv.Atoi(fdText)
-	if err != nil || fd < 3 {
-		return nil, fmt.Errorf("invalid inherited listener address %q", address)
-	}
-	file := os.NewFile(uintptr(fd), address)
-	if file == nil {
-		return nil, fmt.Errorf("invalid inherited listener file descriptor %d", fd)
-	}
-	listening, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_ACCEPTCONN)
-	if err != nil {
-		file.Close()
-		return nil, fmt.Errorf("inspect inherited listener %q: %w", address, err)
-	}
-	if listening != 1 {
-		file.Close()
-		return nil, fmt.Errorf("inherited descriptor %q is not listening", address)
-	}
-	listener, err := net.FileListener(file)
-	closeErr := file.Close()
-	if err != nil {
-		return nil, fmt.Errorf("open inherited listener %q: %w", address, err)
-	}
-	if closeErr != nil {
-		listener.Close()
-		return nil, fmt.Errorf("close inherited listener file %q: %w", address, closeErr)
-	}
-	if _, ok := listener.(*net.TCPListener); !ok {
-		listener.Close()
-		return nil, fmt.Errorf("inherited descriptor %q is not a TCP listener", address)
-	}
-	return listener, nil
-}
-
 // serveFacade answers the Dispatcher's HTTP/JSON form on listener, forwarding each request over
 // loopback to the gRPC server so the servicer authenticates it.
 func serveFacade(ctx context.Context, listener net.Listener, grpcListener net.Listener, failed chan<- error) (*http.Server, error) {
@@ -143,14 +105,14 @@ func serveFacade(ctx context.Context, listener net.Listener, grpcListener net.Li
 }
 
 func listenAndServe(ctx context.Context, c config) error {
-	listener, err := openListener(c.ListenAddress)
+	listener, err := netlistener.Open(c.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("gRPC listener: %w", err)
 	}
 	defer listener.Close()
 	var httpListener net.Listener
 	if c.HTTPListenAddress != "" {
-		httpListener, err = openListener(c.HTTPListenAddress)
+		httpListener, err = netlistener.Open(c.HTTPListenAddress)
 		if err != nil {
 			return fmt.Errorf("HTTP listener: %w", err)
 		}
