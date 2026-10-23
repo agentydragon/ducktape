@@ -120,3 +120,11 @@ The most important rubric items (cipher specifics, base32 alphabet, MAC
 construction shape, key derivation) are **exact**. The agent's recovered
 source either matches the constants verbatim or it doesn't. Paraphrased
 descriptions ("uses a Feistel cipher with some rounds") should score zero.
+
+## Listener startup
+
+`-addr` accepts a TCP `host:port` address or `fd:N` for an inherited listening TCP
+socket in the child process (`N >= 3`). Startup consumes the inherited descriptor,
+serves the resulting listener, and owns its cleanup. Tests keep the parent socket
+bound through subprocess creation and pass it explicitly; they use the parent's
+endpoint for requests and do not parse the startup banner.

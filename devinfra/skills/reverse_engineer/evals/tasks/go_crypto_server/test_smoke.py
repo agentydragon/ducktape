@@ -29,7 +29,7 @@ import pytest
 import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
+from util.net import listen_tcp
 
 PROTOCOL_VERSION = "ncs/1"
 ALPHABET = "3456789ABCDEFGHJKLMNPQRSTUVWXYZ$"
@@ -38,28 +38,35 @@ PAD = "~"
 
 @contextlib.contextmanager
 def _running(binary: Path) -> Iterator[httpx.Client]:
-    port = pick_free_port()
-    proc = subprocess.Popen([str(binary), "-addr", f"127.0.0.1:{port}"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    base = f"http://127.0.0.1:{port}"
-    try:
-        with httpx.Client(base_url=base, timeout=2.0) as client:
-            deadline = time.monotonic() + 5.0
-            while time.monotonic() < deadline:
-                try:
-                    client.post("/v1/register", json={"v": PROTOCOL_VERSION, "op": "register", "body": {}})
-                    break
-                except httpx.HTTPError:
-                    time.sleep(0.05)
-            else:
-                raise RuntimeError(f"server at {binary} never came up")
-            yield client
-    finally:
-        proc.terminate()
+    with listen_tcp() as listener:
+        proc = subprocess.Popen(
+            [str(binary), "-addr", f"fd:{listener.socket.fileno()}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            pass_fds=[listener.socket.fileno()],
+        )
+        listener.socket.close()
+        base = f"http://{listener.host}:{listener.port}"
         try:
-            proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
+            with httpx.Client(base_url=base, timeout=2.0) as client:
+                deadline = time.monotonic() + 5.0
+                while time.monotonic() < deadline:
+                    try:
+                        client.post("/v1/register", json={"v": PROTOCOL_VERSION, "op": "register", "body": {}})
+                        break
+                    except httpx.HTTPError:
+                        time.sleep(0.05)
+                else:
+                    raise RuntimeError(f"server at {binary} never came up")
+                yield client
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
 
 
 def _decode_base32_custom(s: str) -> bytes:
