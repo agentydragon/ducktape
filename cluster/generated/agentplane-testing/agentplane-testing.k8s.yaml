@@ -2537,7 +2537,7 @@ spec:
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-testing:agentplane-agent"]'
             - name: AGENTPLANE_CONNECTION_SERVICE_URL
-              value: http://actions.agentplane-testing.svc:8080/
+              value: http://mcp-edge.agentplane-testing.svc:8080/
             - name: AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET
               value: "{sandbox}-control.{namespace}.svc:8080"
             - name: AGENTPLANE_CONFIG_FILE
@@ -2633,7 +2633,7 @@ spec:
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-testing:agentplane-agent"]'
             - name: AGENTPLANE_CONNECTION_SERVICE_URL
-              value: http://actions.agentplane-testing.svc:8080/
+              value: http://mcp-edge.agentplane-testing.svc:8080/
           image: git.allegedly.works/ducktape-ci/agentplane-app-migrate:unset
           imagePullPolicy: Always
           name: migrate
@@ -5964,6 +5964,25 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: app-to-mcp-edge
+  namespace: agentplane-testing
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: mcp-edge
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: app
 ---
 apiVersion: apps/v1
 kind: Deployment

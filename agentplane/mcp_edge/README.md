@@ -3,8 +3,8 @@
 The standalone `mcp-edge` binary is the next caller of the Action Service's gRPC API. It owns
 external Connections, grants and OAuth tokens in its PostgreSQL database, serves the operator
 [`ConnectionService`](connection_service.proto) over gRPC and HTTP/JSON, and, when OAuth is
-configured, serves `/mcp` and the OAuth protocol routes. The integrated edge in the Action Service
-remains the live endpoint until the separate deployment and traffic cutover.
+configured, serves `/mcp` and the OAuth protocol routes. Testing sends operator Connection calls to the standalone edge. Staging Connection calls and
+external MCP/OAuth still use the integrated edge in Actions until their separate handoff.
 The cutover sets Actions' `integrated_connection_service` to false and removes its OAuth
 configuration before transferring Connection and OAuth table ownership. Actions then registers
 neither the Connection gRPC service nor its generated HTTP facade.
