@@ -209,13 +209,13 @@ spec:
   groups:
     - name: disk-usage
       rules:
-        - expr: group by (node, device, mountpoint) (node_filesystem_size_bytes{fstype=~"ext4|xfs",device!=""} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}))
+        - expr: group by (node, device, mountpoint) (node_filesystem_size_bytes{fstype=~"ext4|xfs",device!="",device!~"/dev/drbd.*"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}))
           record: disk_usage:mount:info
-        - expr: max by (node, device) (node_filesystem_size_bytes{fstype=~"ext4|xfs",device!=""} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}))
+        - expr: max by (node, device) (node_filesystem_size_bytes{fstype=~"ext4|xfs",device!="",device!~"/dev/drbd.*"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}))
           record: disk_usage:filesystem_size_bytes
-        - expr: max by (node, device) (node_filesystem_free_bytes{fstype=~"ext4|xfs",device!=""} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}))
+        - expr: max by (node, device) (node_filesystem_free_bytes{fstype=~"ext4|xfs",device!="",device!~"/dev/drbd.*"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}))
           record: disk_usage:filesystem_free_bytes
-        - expr: max by (node, device) (node_filesystem_avail_bytes{fstype=~"ext4|xfs",device!=""} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}))
+        - expr: max by (node, device) (node_filesystem_avail_bytes{fstype=~"ext4|xfs",device!="",device!~"/dev/drbd.*"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}))
           record: disk_usage:filesystem_avail_bytes
         - expr: |
             max by (node, device, media) (
@@ -329,7 +329,11 @@ spec:
             ),
               "category", "Postgres (CNPG)", "", ""
             )
+          record: disk_usage:application_used_bytes
+        - expr: |
+            disk_usage:application_used_bytes
             or
+            (
             label_replace(
             label_replace(
               label_join(
@@ -342,6 +346,8 @@ spec:
             ),
               "category", "Kubelet-measured PVCs", "", ""
             )
+              unless on (namespace, persistentvolumeclaim) disk_usage:application_used_bytes
+            )
           record: disk_usage:component_used_bytes
         - expr: |
             disk_usage:filesystem_size_bytes - disk_usage:filesystem_free_bytes
@@ -350,6 +356,98 @@ spec:
               or on (node, device) 0 * disk_usage:filesystem_size_bytes
             )
           record: disk_usage:unattributed_bytes
+    - name: piraeus-storage
+      rules:
+        - expr: max by (node, storage_pool) (linstor_storage_pool_capacity_total_bytes{driver="LVM_THIN"} > 0)
+          record: disk_usage:pool_capacity_bytes
+        - expr: max by (node, storage_pool) (linstor_storage_pool_capacity_free_bytes{driver="LVM_THIN"} >= 0)
+          record: disk_usage:pool_free_bytes
+        - expr: disk_usage:pool_capacity_bytes - disk_usage:pool_free_bytes
+          record: disk_usage:pool_used_bytes
+        - expr: |
+            (
+              max by (resource, persistentvolume) (
+                label_replace(
+                  kube_persistentvolume_info{csi_driver="linstor.csi.linbit.com",csi_volume_handle!=""},
+                  "resource", "$1", "csi_volume_handle", "(.+)"
+                )
+              )
+              * on (persistentvolume) group_left (namespace, persistentvolumeclaim, phase)
+                (
+                  max by (persistentvolume, namespace, persistentvolumeclaim) (
+                    label_replace(label_replace(
+                      kube_persistentvolume_claim_ref,
+                      "namespace", "$1", "claim_namespace", "(.+)"),
+                      "persistentvolumeclaim", "$1", "name", "(.+)")
+                  )
+                  * on (persistentvolume) group_left (phase)
+                    max by (persistentvolume, phase) (kube_persistentvolume_status_phase == 1)
+                )
+            )
+            or on (resource)
+            max by (resource, persistentvolume) (
+              label_replace(
+                kube_persistentvolume_info{csi_driver="linstor.csi.linbit.com",csi_volume_handle!=""},
+                "resource", "$1", "csi_volume_handle", "(.+)"
+              )
+            )
+            * on (persistentvolume) group_left (phase)
+              max by (persistentvolume, phase) (kube_persistentvolume_status_phase == 1)
+          record: disk_usage:piraeus_volume:info
+        - expr: |
+            (
+              (
+                group by (node, storage_pool, resource) (linstor_volume_state)
+                * on (resource) group_left (persistentvolume, namespace, persistentvolumeclaim, phase)
+                  disk_usage:piraeus_volume:info
+              )
+              or on (node, storage_pool, resource)
+                group by (node, storage_pool, resource) (linstor_volume_state)
+            )
+            and on (node, storage_pool) disk_usage:pool_capacity_bytes
+          record: disk_usage:volume:info
+        - expr: |
+            sum by (node, storage_pool, resource) (linstor_volume_allocated_size_bytes >= 0)
+            * on (node, storage_pool, resource)
+              group_left (persistentvolume, namespace, persistentvolumeclaim, phase)
+              disk_usage:volume:info
+          record: disk_usage:volume_allocated_bytes
+        - expr: |
+            (
+            sum by (node, storage_pool, resource) (
+              group by (node, storage_pool, resource, volume) (linstor_volume_state)
+              * on (resource, volume) group_left ()
+                max by (resource, volume) (
+                  label_replace(label_replace(
+                    linstor_volume_definition_size_bytes,
+                    "resource", "$1", "name", "(.+)"),
+                    "volume", "$1", "volume_number", "(.+)")
+                )
+              and on (node, storage_pool) disk_usage:pool_capacity_bytes
+            )
+            ) * on (node, storage_pool, resource)
+              group_left (persistentvolume, namespace, persistentvolumeclaim, phase) disk_usage:volume:info
+          record: disk_usage:volume_capacity_bytes
+        - expr: |-
+            sum by (node, storage_pool) (disk_usage:volume_capacity_bytes)
+            or on (node, storage_pool) (
+              (0 * disk_usage:pool_capacity_bytes) unless on (node, storage_pool) disk_usage:volume:info
+            )
+          record: disk_usage:pool_committed_bytes
+        - expr: max by (namespace, persistentvolumeclaim, node) (kubelet_volume_stats_used_bytes)
+          record: disk_usage:pvc_used_bytes
+        - alert: PiraeusPoolExhaustionPredicted
+          annotations:
+            description: The pool has less than 25% physical free space and its six-hour linear trend predicts exhaustion within 24 hours. Check actual free space, recent migrations, snapshots and growth before acting. PVC commitments may exceed physical capacity by design.
+            summary: Piraeus pool {{ $labels.node }}/{{ $labels.storage_pool }} may fill within 24 hours
+          expr: |-
+            (predict_linear(disk_usage:pool_free_bytes[6h], 24 * 3600) < 0)
+            and (disk_usage:pool_free_bytes / disk_usage:pool_capacity_bytes < 0.25)
+            and (count_over_time(disk_usage:pool_free_bytes[6h]) >= 100)
+            and (disk_usage:pool_free_bytes offset 6h)
+          for: 1h
+          labels:
+            severity: warning
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule

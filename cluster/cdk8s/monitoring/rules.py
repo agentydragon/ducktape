@@ -373,7 +373,7 @@ _NODE_EXPORTER_NODE = (
     'on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",'
     'pod=~"prometheus-node-exporter-.+"})'
 )
-_FILESYSTEMS = 'fstype=~"ext4|xfs",device!=""'
+_FILESYSTEMS = 'fstype=~"ext4|xfs",device!="",device!~"/dev/drbd.*"'
 
 
 def _filesystem_bytes(metric: str) -> str:
@@ -444,7 +444,7 @@ _DISK_USAGE = [
         + "\n)\n",
     ),
     Rule.record(
-        "disk_usage:component_used_bytes",
+        "disk_usage:application_used_bytes",
         "\nor\n".join(
             [
                 # Each pod-joining branch narrows the right side to its own pods: a pod elsewhere with two
@@ -480,21 +480,106 @@ _DISK_USAGE = [
                     .read_text()
                     .removesuffix("\n"),
                 ),
-                _component(
-                    "Kubelet-measured PVCs",
-                    get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/pvc-disk-usage.promql"))
-                    .read_text()
-                    .removesuffix("\n"),
-                ),
             ]
         )
         + "\n",
+    ),
+    # The filesystem total and application detail overlap. Use kubelet only as a fallback for a PVC
+    # without application attribution; otherwise adding CSI joins would count its bytes twice.
+    Rule.record(
+        "disk_usage:component_used_bytes",
+        "disk_usage:application_used_bytes\nor\n(\n"
+        + _component(
+            "Kubelet-measured PVCs",
+            get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/pvc-disk-usage.promql"))
+            .read_text()
+            .removesuffix("\n"),
+        )
+        + "\n  unless on (namespace, persistentvolumeclaim) disk_usage:application_used_bytes\n)\n",
     ),
     Rule.record(
         "disk_usage:unattributed_bytes",
         get_required_path(
             own_repo_rlocation("cluster/cdk8s/monitoring/disk-usage-unattributed-bytes.promql")
         ).read_text(),
+    ),
+]
+
+# Piraeus copies belong to storage nodes, regardless of where a PVC is mounted. Native LINSTOR
+# allocation, thin-pool physical use, and kubelet filesystem use are separate measurements. In
+# particular, a DRBD mount must never become another physical disk in the filesystem totals above.
+_PIRAEUS = [
+    Rule.record(
+        "disk_usage:pool_capacity_bytes",
+        'max by (node, storage_pool) (linstor_storage_pool_capacity_total_bytes{driver="LVM_THIN"} > 0)',
+    ),
+    Rule.record(
+        "disk_usage:pool_free_bytes",
+        'max by (node, storage_pool) (linstor_storage_pool_capacity_free_bytes{driver="LVM_THIN"} >= 0)',
+    ),
+    Rule.record("disk_usage:pool_used_bytes", "disk_usage:pool_capacity_bytes - disk_usage:pool_free_bytes"),
+    # PV claim references survive release; retain their resource/PV identity and phase rather than
+    # silently attributing an old retained resource to a newly created PVC with the same name.
+    Rule.record(
+        "disk_usage:piraeus_volume:info",
+        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-volume-info.promql")).read_text(),
+    ),
+    Rule.record(
+        "disk_usage:volume:info",
+        dedent("""\
+            (
+              (
+                group by (node, storage_pool, resource) (linstor_volume_state)
+                * on (resource) group_left (persistentvolume, namespace, persistentvolumeclaim, phase)
+                  disk_usage:piraeus_volume:info
+              )
+              or on (node, storage_pool, resource)
+                group by (node, storage_pool, resource) (linstor_volume_state)
+            )
+            """)
+        + "and on (node, storage_pool) disk_usage:pool_capacity_bytes\n",
+    ),
+    Rule.record(
+        "disk_usage:volume_allocated_bytes",
+        dedent("""\
+            sum by (node, storage_pool, resource) (linstor_volume_allocated_size_bytes >= 0)
+            * on (node, storage_pool, resource)
+              group_left (persistentvolume, namespace, persistentvolumeclaim, phase)
+              disk_usage:volume:info
+            """),
+    ),
+    Rule.record(
+        "disk_usage:volume_capacity_bytes",
+        "(\n"
+        + get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-volume-capacity.promql"))
+        .read_text()
+        .removesuffix("\n")
+        + "\n) * on (node, storage_pool, resource)\n"
+        "  group_left (persistentvolume, namespace, persistentvolumeclaim, phase) disk_usage:volume:info\n",
+    ),
+    Rule.record(
+        "disk_usage:pool_committed_bytes",
+        "sum by (node, storage_pool) (disk_usage:volume_capacity_bytes)\n"
+        "or on (node, storage_pool) (\n"
+        "  (0 * disk_usage:pool_capacity_bytes) unless on (node, storage_pool) disk_usage:volume:info\n)",
+    ),
+    Rule.record(
+        "disk_usage:pvc_used_bytes", "max by (namespace, persistentvolumeclaim, node) (kubelet_volume_stats_used_bytes)"
+    ),
+    Rule.alert(
+        "PiraeusPoolExhaustionPredicted",
+        "(predict_linear(disk_usage:pool_free_bytes[6h], 24 * 3600) < 0)\n"
+        "and (disk_usage:pool_free_bytes / disk_usage:pool_capacity_bytes < 0.25)\n"
+        "and (count_over_time(disk_usage:pool_free_bytes[6h]) >= 100)\n"
+        "and (disk_usage:pool_free_bytes offset 6h)",
+        for_="1h",
+        labels={"severity": "warning"},
+        summary="Piraeus pool {{ $labels.node }}/{{ $labels.storage_pool }} may fill within 24 hours",
+        description=(
+            "The pool has less than 25% physical free space and its six-hour linear trend predicts "
+            "exhaustion within 24 hours. Check actual free space, recent migrations, snapshots and "
+            "growth before acting. PVC commitments may exceed physical capacity by design."
+        ),
     ),
 ]
 
@@ -575,7 +660,7 @@ def chart(app: App) -> Chart:
         chart,
         "disk-usage-rules",
         metadata=ApiObjectMetadata(name="disk-usage-rules", namespace=NAMESPACE),
-        groups=[group("disk-usage", _DISK_USAGE)],
+        groups=[group("disk-usage", _DISK_USAGE), group("piraeus-storage", _PIRAEUS)],
     )
     PrometheusRule(
         chart,

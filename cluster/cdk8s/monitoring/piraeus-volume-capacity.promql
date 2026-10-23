@@ -1,0 +1,11 @@
+sum by (node, storage_pool, resource) (
+  group by (node, storage_pool, resource, volume) (linstor_volume_state)
+  * on (resource, volume) group_left ()
+    max by (resource, volume) (
+      label_replace(label_replace(
+        linstor_volume_definition_size_bytes,
+        "resource", "$1", "name", "(.+)"),
+        "volume", "$1", "volume_number", "(.+)")
+    )
+  and on (node, storage_pool) disk_usage:pool_capacity_bytes
+)
