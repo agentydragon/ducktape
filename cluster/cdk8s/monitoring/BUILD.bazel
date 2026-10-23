@@ -232,6 +232,7 @@ py_library(
         "control-plane-lease-put-latency-warning.promql",
         "control-plane-pod-system-disk-writer-high-warning.promql",
         "control-plane-system-disk-busy-warning.promql",
+        "control-plane-system-disk-device-info.promql",
         "disk-usage-pvc-path-info.promql",
         "disk-usage-unattributed-bytes.promql",
         "external-secrets-controller-backlogged-warning.promql",

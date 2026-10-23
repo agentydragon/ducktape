@@ -141,32 +141,57 @@ spec:
   groups:
     - name: control-plane-io
       rules:
+        - expr: |
+            max by (node, disk, device_path) (
+              label_replace(
+                label_replace(
+                  max by (node, device) (
+                    node_filesystem_size_bytes{mountpoint="/var", device=~"^/dev/.+"}
+                    * on (namespace, pod) group_left (node)
+                      max by (namespace, pod, node) (
+                        kube_pod_info{namespace="monitoring", pod=~"prometheus-node-exporter-.+"}
+                      )
+                  ),
+                  "disk", "$1", "device", "^/dev/(nvme[0-9]+n[0-9]+|mmcblk[0-9]+|[a-z]+)(p?[0-9]+)?$"
+                ),
+                "device_path", "/dev/$1", "disk", "^(.+)$"
+              )
+              * on (node) group_left () kube_node_role{role="control-plane"}
+            ) > bool 0
+          record: cluster:talos_system_disk_device_info
         - alert: ControlPlaneSystemDiskBusy
           annotations:
-            description: /dev/sda on control-plane node {{ $labels.node }} has been busy for more than 50% of wall time over 15 minutes. This disk also carries Talos EPHEMERAL and etcd.
-            summary: Control-plane system disk is busy on {{ $labels.node }}
+            description: Device {{ $labels.device_path }} backing Talos /var on control-plane node {{ $labels.node }} has been busy for more than 50% of wall time over 15 minutes. Talos EPHEMERAL and etcd use this system disk.
+            summary: Control-plane system disk {{ $labels.device_path }} is busy on {{ $labels.node }}
           expr: |
-            (
-              rate(node_disk_io_time_seconds_total{device="sda"}[10m])
-              * on(namespace, pod) group_left(node)
+            label_replace(
+              rate(node_disk_io_time_seconds_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[10m]),
+              "disk", "$1", "device", "^(.+)$"
+            )
+            * on (namespace, pod) group_left (node)
+              max by (namespace, pod, node) (
                 kube_pod_info{namespace="monitoring", pod=~"prometheus-node-exporter-.+"}
-              * on(node) group_left()
-                kube_node_role{role="control-plane"}
-            ) > 0.50
+              )
+            * on (node, disk) group_left (device_path) cluster:talos_system_disk_device_info{disk!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}
+            > 0.50
           for: 15m
           labels:
             severity: warning
         - alert: ControlPlanePodSystemDiskWriterHigh
           annotations:
-            description: Pod {{ $labels.namespace }}/{{ $labels.pod }} on {{ $labels.node }} is writing {{ $value | humanize1024 }}B/s to /dev/sda for more than 10 minutes, which can contend with etcd.
-            summary: Pod {{ $labels.namespace }}/{{ $labels.pod }} is writing heavily to control-plane /dev/sda
+            description: Pod {{ $labels.namespace }}/{{ $labels.pod }} on {{ $labels.node }} is writing {{ $value | humanize1024 }}B/s to {{ $labels.device_path }}, the device backing Talos /var, for more than 10 minutes, which can contend with etcd.
+            summary: Pod {{ $labels.namespace }}/{{ $labels.pod }} is writing heavily to {{ $labels.device_path }}
           expr: |
-            (
-              sum by (namespace, pod, node) (
-                rate(container_fs_writes_bytes_total{device="/dev/sda", container!="", pod!="", namespace!="kube-system"}[10m])
+            sum by (namespace, pod, node, device_path) (
+              label_replace(
+                rate(
+                  container_fs_writes_bytes_total{
+                    device=~"^/dev/.+", container!="", pod!="", namespace!="kube-system"
+                  }[10m]
+                ),
+                "device_path", "$1", "device", "^(.+)$"
               )
-              * on(node) group_left()
-                kube_node_role{role="control-plane"}
+              * on (node, device_path) group_left () cluster:talos_system_disk_device_info{disk!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}
             ) > 1048576
           for: 10m
           labels:

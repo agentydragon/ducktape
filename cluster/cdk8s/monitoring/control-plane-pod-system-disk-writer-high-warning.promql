@@ -1,7 +1,11 @@
-(
-  sum by (namespace, pod, node) (
-    rate(container_fs_writes_bytes_total{device="/dev/sda", container!="", pod!="", namespace!="kube-system"}[10m])
+sum by (namespace, pod, node, device_path) (
+  label_replace(
+    rate(
+      container_fs_writes_bytes_total{
+        device=~"^/dev/.+", container!="", pod!="", namespace!="kube-system"
+      }[10m]
+    ),
+    "device_path", "$1", "device", "^(.+)$"
   )
-  * on(node) group_left()
-    kube_node_role{role="control-plane"}
+  * on (node, device_path) group_left () cluster:talos_system_disk_device_info{disk!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}
 ) > 1048576
