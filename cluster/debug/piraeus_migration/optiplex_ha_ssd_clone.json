@@ -1,6 +1,6 @@
 {
   "observedAt": "2026-10-23T09:49:25.428811+00:00",
-  "purpose": "Preflight restore only; HA is still running on its original local-path PVC. Final frozen backup and fresh restore are required before wipe.",
+  "purpose": "Preflight and final stopped-HA VolSync recovery copies. HA remains stopped on its original PVC; this does not complete the other retained-directory or node-reimage gates.",
   "replicationDestination": {
     "namespace": "home-assistant",
     "name": "optiplex-migration-ha-ssd-restore",
@@ -111,5 +111,101 @@
     "fixedLANAuthenticated": "192.168.1.10",
     "currentDHCPAuthenticated": "192.168.1.103",
     "note": "DHCP address may change at maintenance boot; re-observe MAC before reset."
+  },
+  "finalColdBackup": {
+    "phase": "cold-backup-and-ssd-restore-verified",
+    "stoppedVerifiedAt": "2026-10-23T09:58:41.539832+00:00",
+    "manualTrigger": "optiplex-cold-20261023T095841Z",
+    "previousLastSyncTime": "2026-10-23T06:17:17Z",
+    "snapshot": "75ece0ce",
+    "completedAt": "2026-10-23T09:58:49Z",
+    "sourcePaused": true,
+    "restoreAsOf": "2026-10-23T09:59:29.114911+00:00",
+    "verifiedAt": "2026-10-23T10:02:25.500750+00:00",
+    "sourceStatus": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-10-23T09:58:49Z",
+          "message": "Waiting for next scheduled synchronization",
+          "reason": "WaitingForSchedule",
+          "status": "False",
+          "type": "Synchronizing"
+        }
+      ],
+      "lastManualSync": "optiplex-cold-20261023T095841Z",
+      "lastSyncDuration": "8.868453224s",
+      "lastSyncTime": "2026-10-23T09:58:49Z",
+      "latestMoverStatus": {
+        "logs": "using parent snapshot 33239fa9\nAdded to the repository: 4.780 MiB (1.675 MiB stored)\nprocessed 462 files, 9.516 MiB in 0:01\nsnapshot 75ece0ce saved\nRestic completed in 4s",
+        "result": "Successful"
+      },
+      "nextSyncTime": "2026-10-23T12:17:00Z",
+      "restic": {
+        "lastPruned": "2026-10-19T00:17:14Z"
+      }
+    },
+    "restoreStatus": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-10-23T09:59:58Z",
+          "message": "Waiting for manual trigger",
+          "reason": "WaitingForManual",
+          "status": "False",
+          "type": "Synchronizing"
+        }
+      ],
+      "lastManualSync": "optiplex-cold-20261023T095841Z",
+      "lastSyncDuration": "29.442631549s",
+      "lastSyncTime": "2026-10-23T09:59:58Z",
+      "latestImage": {
+        "apiGroup": "",
+        "kind": "PersistentVolumeClaim",
+        "name": "optiplex-migration-ha-final-ssd"
+      },
+      "latestMoverStatus": {
+        "logs": "restoring snapshot 75ece0ce of [/data] at 2026-10-23 09:58:44.361181451 +0000 UTC by root@volsync to .\nRestic completed in 17s",
+        "result": "Successful"
+      }
+    },
+    "destinationPVC": {
+      "name": "optiplex-migration-ha-final-ssd",
+      "uid": "e026d658-1532-4fc9-a420-a26966433cd8",
+      "storageClass": "seaweedfs-ovh-ssd",
+      "volumeName": "pvc-e026d658-1532-4fc9-a420-a26966433cd8"
+    },
+    "destinationPV": {
+      "uid": "62107500-4f87-4acf-8631-f24fc5029ecb",
+      "reclaimPolicy": "Retain",
+      "csi": {
+        "driver": "seaweedfs-csi-driver",
+        "volumeAttributes": {
+          "diskType": "ssd",
+          "parentDir": "/buckets",
+          "replication": "001",
+          "storage.kubernetes.io/csiProvisionerIdentity": "1792691030731-510-seaweedfs-csi-driver",
+          "volumeCapacity": "34359738368",
+          "volumeName": "pvc-e026d658-1532-4fc9-a420-a26966433cd8"
+        },
+        "volumeHandle": "/buckets/pvc-e026d658-1532-4fc9-a420-a26966433cd8"
+      }
+    },
+    "readOnlyVerification": {
+      "files": 462,
+      "bytes": 9977860,
+      "treeSha256": "e804173bc5bd0c38d68bd6d034a1b661951c605399e66168f8b6dfb2de7f5a14",
+      "requiredConfigFilesPresent": true,
+      "requiredStorageJsonValid": true
+    },
+    "frozenSourceRegularFilesMatchRestore": true,
+    "holds": {
+      "homeAssistantReplicas": 0,
+      "tokenProvisionerSuspended": true,
+      "replicationSourcePaused": true,
+      "originalBackupSchedulePreserved": {
+        "schedule": "17 */6 * * *"
+      },
+      "homeAssistantFluxSuspended": true,
+      "parentReconciliationGuard": "disabled"
+    }
   }
 }
