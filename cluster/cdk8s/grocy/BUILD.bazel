@@ -59,7 +59,7 @@ py_library(
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
-        "//grocy_mcp:mcp_types",
+        "//grocy_mcp:tool_models",
         "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

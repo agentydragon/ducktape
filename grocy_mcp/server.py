@@ -40,8 +40,8 @@ from prometheus_client import Gauge, start_http_server
 
 from grocy_mcp.batch_tools import register_batch_tools
 from grocy_mcp.client import GrocyClient
-from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.tool_metadata import TOOL_OVERRIDES
+from grocy_mcp.tool_models import ServerSettings
 from mcp_infra.authentik_auth.provider import build_authentik_auth
 from mcp_infra.authentik_auth.token_exchange import AuthentikTokenExchanger, build_authentik_backend_token_provider
 from mcp_infra.persistence import build_client_storage

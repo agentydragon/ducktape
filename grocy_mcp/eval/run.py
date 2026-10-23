@@ -20,8 +20,8 @@ from grocy_mcp.client import GrocyClient
 from grocy_mcp.eval.cases import EvalCase
 from grocy_mcp.eval.prompts import POSTMORTEM_PROMPT, SYSTEM_PROMPT
 from grocy_mcp.eval.result_types import EvalResult
-from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_mcp
+from grocy_mcp.tool_models import ServerSettings
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 from util.bazel.runfiles import get_required_path
 from util.net import listen_tcp

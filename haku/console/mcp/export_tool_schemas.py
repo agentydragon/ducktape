@@ -36,7 +36,7 @@ from fastmcp import Client, FastMCP
 
 from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
-from grocy_mcp.mcp_types import ServerSettings
+from grocy_mcp.tool_models import ServerSettings
 from haku.console.tools.routine import LaunchRoutineArguments, LaunchRoutineResult
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 from x.google_mcp_server import gmail as gmail_tools, google_calendar as google_calendar_tools
@@ -317,7 +317,7 @@ async def build_mcp_tool_results_schema() -> dict[str, Any]:
 
     The output-side mirror of :func:`build_mcp_tool_arguments_schema`. Every reflected server's
     tools carry trusted return types — the in-process servers' ducktape Pydantic models and
-    ``grocy-sf``'s custom batch tools (also ducktape Pydantic models in ``grocy_mcp.mcp_types``) —
+    ``grocy-sf``'s custom batch tools (also ducktape Pydantic models in ``grocy_mcp.tool_models``) —
     so the ``outputSchema`` FastMCP derives from them is a reliable single source of truth. The
     grocy-sf OpenAPI tools are not reflected here at all: the exporter builds only the batch tools,
     and grocy-sf strips output schemas from its OpenAPI tools at runtime anyway

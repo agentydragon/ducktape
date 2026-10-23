@@ -34,8 +34,8 @@ py_library(
         ":prompts",
         ":result_types",
         "//grocy_mcp:client",
-        "//grocy_mcp:mcp_types",
         "//grocy_mcp:server",  # transitively provides server_instructions.md via runfiles
+        "//grocy_mcp:tool_models",
         "//mcp_infra:request_scoped_openapi",
         "//util:net",
         "//util/bazel:runfiles",

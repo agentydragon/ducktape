@@ -1,7 +1,7 @@
 """Types modelling Grocy's API surface.
 
 Entity type enums and writable field sets. These correspond to Grocy's schema —
-not to the MCP tool I/O types (see mcp_types.py for those).
+not to the MCP tool I/O types (see tool_models.py for those).
 """
 
 from __future__ import annotations
