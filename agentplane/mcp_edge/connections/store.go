@@ -63,12 +63,9 @@ type grant struct {
 	id, connectionID uuid.UUID
 	revision         int32
 	// caller is the ServiceAccount consent chose; a rebind changes the Connection's boundCaller, not this.
-	caller           auth.Account
-	issuer, clientID string
-	status           grantStatus
-	// activationDeadline is set only on a grant the Python service bound pending, which could not be activated after
-	// it; the Go authorization server creates a grant active.
-	activationDeadline     *time.Time
+	caller                 auth.Account
+	issuer, clientID       string
+	status                 grantStatus
 	createdAt              time.Time
 	activatedAt, revokedAt *time.Time
 }
@@ -188,7 +185,7 @@ func attachGrants(ctx context.Context, tx *sql.Tx, connections []connection) err
 		index[c.id] = i
 	}
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, connection_id, revision, original_caller, issuer, client_id, status, activation_deadline, created_at,
+		SELECT id, connection_id, revision, original_caller, issuer, client_id, status, created_at,
 			activated_at, revoked_at
 		FROM external_connection_grant WHERE connection_id = ANY($1::uuid[]) ORDER BY revision`, ids)
 	if err != nil {
@@ -199,8 +196,8 @@ func attachGrants(ctx context.Context, tx *sql.Tx, connections []connection) err
 		var g grant
 		var caller []byte
 		if err := rows.Scan(
-			&g.id, &g.connectionID, &g.revision, &caller, &g.issuer, &g.clientID, &g.status, &g.activationDeadline,
-			&g.createdAt, &g.activatedAt, &g.revokedAt,
+			&g.id, &g.connectionID, &g.revision, &caller, &g.issuer, &g.clientID, &g.status, &g.createdAt,
+			&g.activatedAt, &g.revokedAt,
 		); err != nil {
 			return err
 		}

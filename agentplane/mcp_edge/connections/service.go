@@ -141,7 +141,7 @@ func connectionView(c connection) (*pb.Connection, error) {
 		view.Grants = append(view.Grants, &pb.Grant{
 			Id: g.id.String(), ConnectionId: g.connectionID.String(), Revision: g.revision,
 			Caller: serviceAccount(g.caller), Issuer: g.issuer, ClientId: g.clientID, Status: grantStatus,
-			ActivationDeadline: timestamp(g.activationDeadline), CreatedAt: timestamppb.New(g.createdAt),
+			CreatedAt:   timestamppb.New(g.createdAt),
 			ActivatedAt: timestamp(g.activatedAt), RevokedAt: timestamp(g.revokedAt),
 		})
 	}

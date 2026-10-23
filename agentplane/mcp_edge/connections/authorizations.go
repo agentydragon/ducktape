@@ -140,8 +140,7 @@ func createConnection(ctx context.Context, tx *sql.Tx, g grant, displayName stri
 	return notify(ctx, tx)
 }
 
-// insertGrant stores the grant with no request_digest or activation_deadline: it is created active, in a transaction
-// that is never retried.
+// insertGrant stores a grant active, in a transaction that is never retried.
 func insertGrant(ctx context.Context, tx *sql.Tx, g grant) error {
 	caller, err := encodeAccount(g.caller)
 	if err != nil {

@@ -135,7 +135,7 @@ func TestActivatingAnAllowCreatesTheConnectionItNamedOnce(t *testing.T) {
 		grants[0].GetId() != id.String() || grants[0].GetRevision() != 1 ||
 		grants[0].GetStatus() != pb.GrantStatus_GRANT_STATUS_ACTIVE || *accountOf(grants[0].GetCaller()) != callerAccount ||
 		grants[0].GetIssuer() != testServerIssuer || grants[0].GetClientId() != testClient ||
-		grants[0].GetActivatedAt() == nil || grants[0].ActivationDeadline != nil {
+		grants[0].GetActivatedAt() == nil {
 		t.Errorf("created %v", c)
 	}
 	wantRefusal(t, "a second activation", s.activate(t, id, approver), refusedClaimed)

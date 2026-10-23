@@ -164,7 +164,6 @@ function adaptGrant(message: GrantMessage): ConnectionGrant {
     issuer: message.issuer,
     client_id: message.clientId,
     status: grantStatusToUi(message.status),
-    activation_deadline: optionalTimestampToIso(message.activationDeadline, "grant activation deadline"),
     created_at: timestampToIso(message.createdAt, "grant creation time"),
     activated_at: optionalTimestampToIso(message.activatedAt, "grant activation time"),
     revoked_at: optionalTimestampToIso(message.revokedAt, "grant revocation time"),

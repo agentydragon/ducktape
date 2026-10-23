@@ -16,7 +16,6 @@ export function sampleConnection(): Connection {
         issuer: "https://actions.example.test",
         client_id: "registered-client-123",
         status: "active",
-        activation_deadline: "2026-09-09T12:15:00Z",
         created_at: "2026-09-09T12:00:00Z",
         activated_at: "2026-09-09T12:01:00Z",
         revoked_at: null,

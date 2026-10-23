@@ -113,7 +113,6 @@ export type ConnectionGrant = {
   issuer: string;
   client_id: string;
   status: "pending" | "active" | "revoked";
-  activation_deadline: string | null;
   created_at: string;
   activated_at: string | null;
   revoked_at: string | null;

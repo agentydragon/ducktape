@@ -32,7 +32,7 @@ in the one Go binary until that separate extraction.
 | Stage | Status   | Change                                                                                                                                                                                                                                                                               |
 | ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | N     | Accepted | Go Actions and Goose are live in staging and testing; existing Action/Connection/grant counts and Sandbox identities are preserved. The disposable Runner/egress catalog probe and public-route metadata/authentication checks passed. External-user reauthorization remains manual. |
-| O     | Active   | Retire the Alembic bridge; audit shared app contracts. Preserve existing data and published rollback images. Drop unused stored columns only with new migrations after deployed readers are gone.                                                                                    |
+| O     | Active   | Deploy the grant `activation_deadline` reader removal. Verify migration 00004 applied and Connection, grant, request and Sandbox state preserved. After old readers are gone, drop the final column with a new migration. Keep published rollback images.                            |
 
 ## Cutover requirements
 
@@ -77,10 +77,10 @@ revision source and Alembic compatibility cases are retired; Goose is the sole m
 cleanup makes no schema or data changes. Published rollback images, Goose SQL/history and Sandbox
 storage remain. Stage O remains active.
 
-Remove `agentplane_oauth_kv`, enrollment `decision_digest`/`browser_hash`, and grant
-`request_digest` only after their deployed readers are gone, through new migrations. Keep
-`activation_deadline` until its deployed Go, proto and frontend readers are retired. The Go protos,
-generated clients and current deployment contracts remain.
+Goose migration 00004 drops `agentplane_oauth_kv`, enrollment `decision_digest`/`browser_hash`, and
+grant `request_digest`. The grant `activation_deadline` reader and API field are retired in source.
+Keep its SQL column until deployments using the old reader have been replaced, then drop it through
+a new migration. Other deployment contracts remain.
 
 ## After the flip: the edge split
 

@@ -2851,7 +2851,6 @@ function connectionJson(row: Connection): Record<string, unknown> {
       issuer: grant.issuer,
       clientId: grant.client_id,
       status: `GRANT_STATUS_${grant.status.toUpperCase()}`,
-      ...(grant.activation_deadline === null ? {} : { activationDeadline: grant.activation_deadline }),
       createdAt: grant.created_at,
       ...(grant.activated_at === null ? {} : { activatedAt: grant.activated_at }),
       ...(grant.revoked_at === null ? {} : { revokedAt: grant.revoked_at }),
