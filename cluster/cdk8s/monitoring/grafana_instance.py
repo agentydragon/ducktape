@@ -46,6 +46,9 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
 HOSTNAME = "grafana.allegedly.works"
+# Adopt the existing Grafana UID, originally derived from the Loki CR's metadata.uid.
+# Keep this identity stable: changing it makes the operator delete the old datasource.
+# The existing CR cannot gain immutable spec.uid; use the supported legacy datasource.uid.
 LOKI_DATASOURCE_UID = "fc9a18f9-6955-4e40-95c1-66e32e7e8431"
 # The Service grafana-operator creates for the Grafana named `_NAME`.
 _SERVICE = ServiceRef(
