@@ -2,7 +2,6 @@ load("@aspect_bazel_lib//lib:directory_path.bzl", "directory_path")
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
-load("@rules_proto_grpc//:defs.bzl", "proto_plugin")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 load(":typescript_proto.bzl", "typescript_proto_compile")
 
@@ -18,21 +17,6 @@ js_binary(
     name = "protoc_gen_es",
     data = ["//:node_modules/@bufbuild/protoc-gen-es"],
     entry_point = ":protoc_gen_es_entry",
-)
-
-proto_plugin(
-    name = "protoc_gen_es_plugin",
-    options = [
-        "target=js+dts",
-        "import_extension=js",
-        "keep_empty_files=true",
-    ],
-    outputs = [
-        "{protopath}_pb.js",
-        "{protopath}_pb.d.ts",
-    ],
-    protoc_plugin_name = "es",
-    tool = ":protoc_gen_es",
 )
 
 # Generate browser-facing Agentplane protos from API roots. Imported schemas, including Google
