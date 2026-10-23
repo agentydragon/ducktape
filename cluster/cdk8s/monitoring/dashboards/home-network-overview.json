@@ -2762,10 +2762,7 @@
       }
     },
     {
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "datasource": "${DS_LOKI}",
       "description": "The switch's own log, sent by syslog.",
       "gridPos": {
         "h": 10,
@@ -2778,10 +2775,7 @@
       "type": "logs",
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": "${DS_LOKI}",
           "editorMode": "code",
           "expr": "{job=\"home-switch\", host!=\"atlas\"}",
           "queryType": "range",
