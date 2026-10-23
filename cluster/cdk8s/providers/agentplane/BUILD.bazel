@@ -9,7 +9,10 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "egress_credential",
     srcs = ["egress_credential.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         "//agentplane/crds:egresscredential",
         "@pypi//cdk8s",

@@ -7,11 +7,12 @@ cross-checked against the proxy's decision history, which is the system's own re
 admitted -- an agent saying "I fetched it" is equally consistent with a request the proxy admitted,
 one that never reached the proxy, and a model that ran nothing.
 
-The reported username is the load-bearing assertion. `agentydragon-agent` can only come back if the
-sandbox asked the proxy what it may present and was told, sent a placeholder it cannot itself
-resolve, the sidecar carried the Pod's token, the proxy admitted the request and swapped the real
-PAT in, and GitHub authenticated it. No part of that can be faked by a model being agreeable, and
-the placeholder appears nowhere in the prompt -- the agent has to go and find it.
+The reported username is the load-bearing assertion. The probe credential's account
+(`probe_credential`) can only come back if the sandbox asked the proxy what it may present and was
+told, sent a placeholder it cannot itself resolve, the sidecar carried the Pod's token, the proxy
+admitted the request and swapped in the token it holds for that account, and the API server
+authenticated it. No part of that can be faked by a model being agreeable, and the placeholder
+appears nowhere in the prompt -- the agent has to go and find it.
 
 What these encode is the deployed form of agentplane/egress/SPEC.md: a sandbox reaches what its
 policies name and nothing else, with the credential substituted at the proxy, and the model call is
@@ -40,7 +41,7 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision, Outcome
 from agentplane.proto import runner_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
-from agentplane.system_tests import runtime_grant
+from agentplane.system_tests import probe_credential, runtime_grant
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
@@ -48,10 +49,8 @@ from agentplane.testing.scripted_model import Text
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 
-# Staging's seeded policy and the credential it substitutes
-# (cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml, PolicySet "github-agentydragon-agent").
-GITHUB_AGENTYDRAGON_AGENT = "github-agentydragon-agent"
-GITHUB_API_HOST = "api.github.com"
+# Anonymous `git` fetches from github.com (cluster/cdk8s/agentplane/egress.py, `GITHUB_CLONE_POLICY`).
+GITHUB_CLONE = "github-clone"
 PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # Where a sandbox asks what it may reach. The prompt names this and nothing about the credential:
 # the agent has to discover both what to present and how, which is the property under test. The
@@ -60,9 +59,7 @@ PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # refused when it did not.
 TARGET_NAMESPACE = os.environ.get("AGENTPLANE_SYSTEM_TEST_NAMESPACE", "agentplane-testing")
 RULES_URL = f"http://egress.{TARGET_NAMESPACE}.svc.cluster.local/v1/rules"
-# Whose PAT the policy substitutes: the identity GitHub reports back if substitution worked.
-BOT_LOGIN = "agentydragon-agent"
-# Named by no policy staging has, so it is refused for want of a rule rather than by one.
+# Named by no policy the deployment has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
 # The authenticated model ingress, on the same egress path as everything else
 # (cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml, PolicySet "basic"). It holds
@@ -88,17 +85,19 @@ PROBE = textwrap.dedent(f"""\
        target it may be presented at -- a header and the shape of its value -- which the proxy
        swaps for the real value on its way out.
     2. Fetch the refs of the public repository {PUBLIC_REPO} (git ls-remote is enough; no clone).
-    3. Ask the GitHub API which account you are authenticated as: GET https://{GITHUB_API_HOST}/user,
-       presenting the credential exactly as step 1 described it: the rules give the header, the
-       shape of the value and, where the shape has one, the scheme. Build the value from those and
-       put the placeholder in verbatim -- it is not a secret, and it is all you get.
+    3. Ask the Kubernetes API which account you are authenticated as: POST
+       https://{probe_credential.HOST}{probe_credential.WHOAMI_PATH} with the JSON body
+       {{"apiVersion": "authentication.k8s.io/v1", "kind": "SelfSubjectReview"}}, presenting the
+       credential the rules name for that host and path exactly as step 1 described it: the rules give
+       the header, the shape of the value and, where the shape has one, the scheme. Build the value
+       from those and put the placeholder in verbatim -- it is not a secret, and it is all you get.
     4. Try to fetch https://{UNLISTED_HOST}/ and see whether you are allowed to.
 
     End your final message with exactly one JSON object and nothing after it:
 
-    {{"placeholder": "the placeholder string step 1 gave you, or null",
+    {{"placeholder": "the placeholder you presented in step 3, or null",
       "refs_ok": true or false,
-      "username": "the login the API reported, or null",
+      "username": "the status.userInfo.username the API reported, or null",
       "unlisted_refused": true if step 4 was refused or failed, false if it succeeded}}
     """)
 
@@ -110,7 +109,7 @@ class Probe(BaseModel):
 
     placeholder: str | None = Field(description="What the agent learned to present, from the rules endpoint.")
     refs_ok: bool = Field(description="Whether the public repository's refs came back.")
-    username: str | None = Field(description="The login GitHub reported for the substituted credential.")
+    username: str | None = Field(description="The account the API server reported for the substituted credential.")
     unlisted_refused: bool = Field(description="Whether the host no policy names was refused.")
 
 
@@ -133,27 +132,28 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
 ) -> None:
     """The whole path in one turn: the agent asks what it may reach, uses the credential it is told
-    about without ever holding it, is authenticated as the bot, and is refused everywhere the policy
-    does not name -- and the proxy agrees on every count.
+    about without ever holding it, is authenticated as that credential's account, and is refused
+    everywhere its policies do not name -- and the proxy agrees on every count.
 
-    Nothing here tells the agent the placeholder. If it comes back as the bot, discovery worked.
+    Nothing here tells the agent the placeholder. If it comes back as the account, discovery worked.
     """
-    view = await sandbox(f"systest-probe-{harness}", policies=[GITHUB_AGENTYDRAGON_AGENT])
+    view = await sandbox(f"systest-probe-{harness}", policies=[probe_credential.POLICY_SET, GITHUB_CLONE])
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     turn = await agent.run(PROBE)
     probe = turn.report(Probe)
 
     assert probe.placeholder, f"the sandbox could not learn what credential to present:\n{turn.transcript}"
     assert probe.refs_ok, f"the public repository was not reachable:\n{turn.transcript}"
-    assert probe.username == BOT_LOGIN, (
-        f"GitHub reported {probe.username!r}, so the credential the sandbox discovered did not "
-        f"resolve to the bot:\n{turn.transcript}"
+    # `system:serviceaccount:<namespace>:<name>`, in the fixture's egress credentials namespace.
+    assert (probe.username or "").endswith(f":{probe_credential.SERVICE_ACCOUNT}"), (
+        f"the API server reported {probe.username!r}, so the credential the sandbox discovered did not "
+        f"resolve to the probe's account:\n{turn.transcript}"
     )
     assert probe.unlisted_refused, f"{UNLISTED_HOST} was reachable:\n{turn.transcript}"
 
-    admitted = await _decision_for(client, view.name, GITHUB_API_HOST)
+    admitted = await _decision_for(client, view.name, probe_credential.HOST)
     assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}"
-    assert admitted.policy == GITHUB_AGENTYDRAGON_AGENT, f"{admitted!r}"
+    assert admitted.policy == probe_credential.POLICY_SET, f"{admitted!r}"
     assert admitted.substituted, f"the API call was admitted with no credential substituted: {admitted!r}"
 
     refused = await _decision_for(client, view.name, UNLISTED_HOST)

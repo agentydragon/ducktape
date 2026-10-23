@@ -54,17 +54,17 @@ py_library(
     ],
 )
 
-# The probe runs real model turns against a deployment; the other cases run scripted on k3s.
-# `eternal` for the suite's own bounds, not a warm run's ~120 s: each Sandbox may wait
-# SANDBOX_READY_SECONDS for its Pod and each turn TURN_SECONDS, so a cold run is most of an hour.
+# The probe runs a real model turn (`_real_model`); the other cases run scripted.
 system_test(
     name = "test_egress",
-    timeout = "eternal",
     srcs = ["test_egress.py"],
     k3s = "scripted",
+    live = False,
+    real_model = True,
     deps = [
         ":agent",
         ":conftest",
+        ":probe_credential",
         ":runtime_grant",
         ":scripted_upstream",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
@@ -571,6 +571,11 @@ py_library(
         "//agentplane/app:presets",
         "//agentplane/runner:harness",
     ],
+)
+
+py_library(
+    name = "probe_credential",
+    srcs = ["probe_credential.py"],
 )
 
 py_library(
