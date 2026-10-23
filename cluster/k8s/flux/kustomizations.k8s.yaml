@@ -1091,6 +1091,33 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: Install the OpenTofu provider after Crossplane core; its Workspace resources reconcile separately.
+  name: crossplane-provider-opentofu
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: pkg.crossplane.io/v1
+      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')
+      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')
+      kind: Provider
+  interval: 10m
+  path: ./cluster/generated/crossplane-provider-opentofu
+  prune: false
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: crossplane-provider-opentofu
+    namespace: ducktape-flux
+  timeout: 15m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: clickhouse
   namespace: ducktape-flux
 spec:
@@ -1959,6 +1986,32 @@ spec:
     namespace: ducktape-flux
   timeout: 10m
   wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Observe the existing Forgejo Tofu state with Crossplane management policies limited to Observe. tofu-controller remains the writer.
+  name: crossplane-tofu-spike
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: forgejo-gitops
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/crossplane-tofu-spike
+  prune: false
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: crossplane-tofu-spike
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: false
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

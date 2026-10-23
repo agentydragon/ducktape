@@ -20,6 +20,7 @@ from cluster.cdk8s import (
     claude_sandbox_secrets,
     cnpg_operator,
     crossplane,
+    crossplane_tofu_spike,
     descheduler,
     dns_automation,
     ducktape_flux,
@@ -583,6 +584,14 @@ def generate_manifests(root: Path) -> None:
         crossplane_kustomization,
         external_secrets_operator_kustomization,
     )
+    crossplane_opentofu_provider_artifact = artifact(
+        crossplane.OPENTOFU_PROVIDER_KUSTOMIZATION_NAME, crossplane.OPENTOFU_PROVIDER_OUTPUT_DIR
+    )
+    crossplane_opentofu_provider_kustomization = crossplane.opentofu_provider(
+        flux_chart,
+        write_directory(root, crossplane_opentofu_provider_artifact, crossplane.opentofu_provider_chart),
+        crossplane_kustomization,
+    )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     clickhouse_kustomization = clickhouse_installation.clickhouse(
         flux_chart,
@@ -718,7 +727,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
-    tofu_state_db.tofu_state_db(
+    tofu_state_db_kustomization = tofu_state_db.tofu_state_db(
         flux_chart, tofu_state_db_artifact, cnpg_kustomization, seaweedfs_operator_kustomization
     )
     mcp_oauth_state_artifact = artifact("mcp-oauth-state", mcp_oauth_state.OUTPUT_DIR)
@@ -892,9 +901,9 @@ def generate_manifests(root: Path) -> None:
     budget_ledger_module = terraform.gitops_module("budget-ledger")
     cpap_data_module = terraform.gitops_module("cpap-data")
     forgejo_agentydragon_repos_module = terraform.gitops_module("forgejo-agentydragon-repos")
-    forgejo_agentydragon_module = terraform.gitops_module("forgejo-agentydragon")
+    forgejo_agentydragon_module = terraform.gitops_module(crossplane_tofu_spike.TF_MODULE_NAME)
     finance_agent_module = terraform.gitops_module("finance-agent")
-    forgejo_gitops_modules.forgejo_gitops(
+    forgejo_gitops_kustomization = forgejo_gitops_modules.forgejo_gitops(
         flux_chart,
         write_directory(
             root,
@@ -911,6 +920,14 @@ def generate_manifests(root: Path) -> None:
             ),
         ),
         tofu_controller_kustomization,
+    )
+    crossplane_tofu_spike_artifact = artifact(crossplane_tofu_spike.NAME, crossplane_tofu_spike.OUTPUT_DIR)
+    crossplane_tofu_spike.resources(
+        flux_chart,
+        write_directory(root, crossplane_tofu_spike_artifact, crossplane_tofu_spike.chart),
+        crossplane_opentofu_provider_kustomization,
+        tofu_state_db_kustomization,
+        forgejo_gitops_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
     monitoring_stack.monitoring_stack(
@@ -1746,6 +1763,8 @@ def generate_manifests(root: Path) -> None:
             cnpg_artifact,
             crossplane_artifact,
             crossplane_litellm_provider_artifact,
+            crossplane_opentofu_provider_artifact,
+            crossplane_tofu_spike_artifact,
             external_secrets_config_artifact,
             external_secrets_operator_artifact,
             forgejo_artifact,

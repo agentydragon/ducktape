@@ -1,4 +1,6 @@
 # gazelle:resolve py crossplane_pkg_provider_crds //cluster/cdk8s/providers/crossplane:provider
+# gazelle:resolve py opentofu_workspace_crds //cluster/cdk8s/providers/crossplane:opentofu_workspace
+# gazelle:resolve py opentofu_providerconfig_crds //cluster/cdk8s/providers/crossplane:opentofu_providerconfig
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 
@@ -7,5 +9,31 @@ cdk8s_import(
     crd = "@crossplane_pkg_provider_crd//file",
     module_name = "crossplane_pkg_provider_crds",
     module_path = "io/crossplane/pkg",
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+cdk8s_import(
+    name = "opentofu_workspace",
+    crd = "@crossplane_opentofu_workspaces_crd//file",
+    crd_name = "workspaces.opentofu.upbound.io",
+    # The CRD uses case-sensitive enum values. cdk8s_import uppercases enum values,
+    # so retain these fields as strings and keep their accepted values covered by tests.
+    crd_remove_paths = [
+        "spec.versions.0.schema.openAPIV3Schema.properties.spec.properties.deletionPolicy.enum",
+        "spec.versions.0.schema.openAPIV3Schema.properties.spec.properties.forProvider.properties.remotePullPolicy.enum",
+        "spec.versions.0.schema.openAPIV3Schema.properties.spec.properties.forProvider.properties.source.enum",
+        "spec.versions.0.schema.openAPIV3Schema.properties.spec.properties.managementPolicies.items.enum",
+    ],
+    module_name = "opentofu_workspace_crds",
+    module_path = "io/upbound/opentofu",
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+cdk8s_import(
+    name = "opentofu_providerconfig",
+    crd = "@crossplane_opentofu_providerconfigs_crd//file",
+    crd_name = "providerconfigs.opentofu.upbound.io",
+    module_name = "opentofu_providerconfig_crds",
+    module_path = "io/upbound/opentofu",
     visibility = ["//cluster/cdk8s:__subpackages__"],
 )

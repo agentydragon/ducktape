@@ -26,7 +26,10 @@ VERSION = "2.4.2"
 LITELLM_PROVIDER_KUSTOMIZATION_NAME = "crossplane-provider-litellm"
 LITELLM_PROVIDER_OUTPUT_DIR = f"{GENERATED_ROOT}/{LITELLM_PROVIDER_KUSTOMIZATION_NAME}"
 LITELLM_PROVIDER_PACKAGE = "git.allegedly.works/ducktape-ci/provider-litellm:v2.1.0-1.ducktape.5cc2f4308916"
-_LITELLM_PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
+OPENTOFU_PROVIDER_KUSTOMIZATION_NAME = "crossplane-provider-opentofu"
+OPENTOFU_PROVIDER_OUTPUT_DIR = f"{GENERATED_ROOT}/{OPENTOFU_PROVIDER_KUSTOMIZATION_NAME}"
+OPENTOFU_PROVIDER_PACKAGE = "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
+_PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
     api_version="pkg.crossplane.io/v1",
     kind="Provider",
     current="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
@@ -114,11 +117,38 @@ def litellm_provider(
         timeout="15m",
         prune=False,
         wait=True,
-        health_check_exprs=[_FORGEJO_PULL_SECRET_HEALTH, _LITELLM_PROVIDER_HEALTH],
+        health_check_exprs=[_FORGEJO_PULL_SECRET_HEALTH, _PROVIDER_HEALTH],
         depends_on=[
             flux_kustomization_depends_on(crossplane),
             flux_kustomization_depends_on(external_secrets_operator),
             KustomizationSpecDependsOn(name=FORGEJO_IMAGES_KUSTOMIZATION_NAME, namespace=flux.NAMESPACE),
         ],
         description="Install the LiteLLM Upjet provider after Crossplane core; LiteLLM resources reconcile separately.",
+    )
+
+
+def opentofu_provider_chart(app: App) -> Chart:
+    """Install Upbound's OpenTofu provider package."""
+    chart = Chart(app, OPENTOFU_PROVIDER_KUSTOMIZATION_NAME, disable_resource_name_hashes=True)
+    Provider(
+        chart,
+        "provider",
+        metadata=ApiObjectMetadata(name="provider-opentofu"),
+        spec=ProviderSpec(package=OPENTOFU_PROVIDER_PACKAGE, revision_activation_policy="Automatic"),
+    )
+    return chart
+
+
+def opentofu_provider(chart: Chart, directory: RenderedDirectory, crossplane: Kustomization) -> Kustomization:
+    """Wait for the OpenTofu provider CRDs and controller before applying Workspaces."""
+    return flux_kustomization(
+        chart,
+        OPENTOFU_PROVIDER_KUSTOMIZATION_NAME,
+        directory,
+        timeout="15m",
+        prune=False,
+        wait=True,
+        health_check_exprs=[_PROVIDER_HEALTH],
+        depends_on=[flux_kustomization_depends_on(crossplane)],
+        description="Install the OpenTofu provider after Crossplane core; its Workspace resources reconcile separately.",
     )

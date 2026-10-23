@@ -44,12 +44,12 @@ from cluster.cdk8s import ducktape_flux, flux
 from cluster.cdk8s.artifact_generators import artifact
 from cluster.cdk8s.flux import artifact_directory
 from cluster.cdk8s.providers.tofu_controller.terraform import Terraform
-from cluster.cdk8s.secret_ref import SecretKey, SecretRef
+from cluster.cdk8s.secret_ref import SecretKey
 from cluster.cdk8s.tofu_state import db
 
 NAMESPACE = "flux-system"
-_STATE_DB = f"postgres://tfstate@{db.DATABASE.rw.host}:{db.DATABASE.rw.port.number}/tfstate?sslmode=disable"
-_STATE_DB_PASSWORD = SecretRef(namespace=NAMESPACE, name="tofu-state-db-credentials").key("password")
+STATE_DATABASE_CONNECTION_STRING = db.STATE_CONNECTION_STRING
+STATE_DATABASE_PASSWORD = db.STATE_PASSWORD
 
 # Requests only. Without them runner pods are BestEffort, so the scheduler counts them as free and
 # stacks a synchronised wave of up to a dozen on one node. Observed per runner: median working set
@@ -66,6 +66,11 @@ _RUNNER_RESOURCES = TerraformV1Alpha2SpecRunnerPodTemplateSpecResources(
 def gitops_module(name: str) -> ArtifactGeneratorSpecArtifacts:
     """The artifact packaging the `tf/gitops/<name>` module, which its `gitops_terraform` CR reads."""
     return artifact(f"tf-gitops-{name}", f"{ducktape_flux.TF_GITOPS_ROOT}/{name}")
+
+
+def gitops_state_schema(name: str) -> str:
+    """The default Postgres backend schema for `tf/gitops/<name>`."""
+    return name.replace("-", "_")
 
 
 def secret_env(name: str, key: SecretKey) -> TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv:
@@ -138,14 +143,14 @@ def tofu_state_terraform(
         targets=targets,
         service_account_name="tf-runner",
         backend_config=TerraformV1Alpha2SpecBackendConfig(
-            custom_configuration=f'backend "pg" {{\n  conn_str    = "{_STATE_DB}"\n  schema_name = "{schema}"\n}}\n'
+            custom_configuration=f'backend "pg" {{\n  conn_str    = "{STATE_DATABASE_CONNECTION_STRING}"\n  schema_name = "{schema}"\n}}\n'
         ),
         vars=vars,
         depends_on=depends_on,
         runner_pod_template=TerraformV1Alpha2SpecRunnerPodTemplate(
             spec=TerraformV1Alpha2SpecRunnerPodTemplateSpec(
                 env_from=list(env_from) or None,
-                env=[secret_env("PGPASSWORD", _STATE_DB_PASSWORD), *env],
+                env=[secret_env("PGPASSWORD", STATE_DATABASE_PASSWORD), *env],
                 node_selector=node_selector,
                 resources=_RUNNER_RESOURCES,
                 volumes=list(volumes) or None,
@@ -203,7 +208,7 @@ def gitops_terraform(
         scope,
         id,
         name=name,
-        schema=schema or name.replace("-", "_"),
+        schema=schema or gitops_state_schema(name),
         source_ref=TerraformV1Alpha2SpecSourceRef(
             kind=TerraformV1Alpha2SpecSourceRefKind.EXTERNAL_ARTIFACT, name=module.name, namespace=flux.NAMESPACE
         ),
