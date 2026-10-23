@@ -5,6 +5,12 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
+from flux_helm.io.fluxcd.toolkit.helm import (
+    HelmReleaseSpecPostRenderers,
+    HelmReleaseSpecPostRenderersKustomize,
+    HelmReleaseSpecPostRenderersKustomizePatches,
+    HelmReleaseSpecPostRenderersKustomizePatchesTarget,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import namespaces, piraeus_metrics
@@ -43,6 +49,16 @@ _DRBD_ALLOY_CONFIG = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus
 _DRBD_ALLOY_CONFIG_MAP = "piraeus-drbd-alloy"
 _DRBD_ALLOY_IMAGE = "docker.io/grafana/alloy:v1.21.1"
 _DRBD_ALLOY_LABELS = {"app.kubernetes.io/name": "piraeus-drbd-metrics"}
+# Reactor is loopback-only while the chart's satellite PodMonitor targets pod IP. This
+# release is scoped to piraeus-datastore; chart output omits metadata.namespace, so
+# the post-render target selects this one named monitor in this release.
+_SATELLITE_POD_MONITOR_DELETE_PATCH = """\
+$patch: delete
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: linstor-satellite
+"""
 _TALOS_SATELLITE_PATCHES = [
     {"target": {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}, "patch": _REACTOR_CONFIG_PATCH}
 ]
@@ -428,6 +444,20 @@ def cluster_chart(app: App) -> Chart:
                 },
             ],
         },
+        post_renderers=[
+            HelmReleaseSpecPostRenderers(
+                kustomize=HelmReleaseSpecPostRenderersKustomize(
+                    patches=[
+                        HelmReleaseSpecPostRenderersKustomizePatches(
+                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
+                                group="monitoring.coreos.com", version="v1", kind="PodMonitor", name="linstor-satellite"
+                            ),
+                            patch=_SATELLITE_POD_MONITOR_DELETE_PATCH,
+                        )
+                    ]
+                )
+            )
+        ],
     )
     return chart
 

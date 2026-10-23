@@ -1327,6 +1327,20 @@ spec:
     remediation:
       retries: 3
   interval: 30m
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              $patch: delete
+              apiVersion: monitoring.coreos.com/v1
+              kind: PodMonitor
+              metadata:
+                name: linstor-satellite
+            target:
+              group: monitoring.coreos.com
+              kind: PodMonitor
+              name: linstor-satellite
+              version: v1
   timeout: 10m
   values:
     createApiTLS: cert-manager

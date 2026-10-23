@@ -1809,6 +1809,7 @@ py_library(
         ":namespaces",
         ":piraeus_metrics",
         "//cluster/cdk8s/monitoring:mimir",
+        "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
