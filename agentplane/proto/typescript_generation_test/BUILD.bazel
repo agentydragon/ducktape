@@ -1,0 +1,35 @@
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+
+# Keep this hand-authored fixture intact to test strip_import_prefix on a nested source.
+# gazelle:proto disable
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+proto_library(
+    name = "shared_proto",
+    srcs = ["virtual/shared.proto"],
+    import_prefix = "fixture",
+    strip_import_prefix = "virtual",
+)
+
+proto_library(
+    name = "left_proto",
+    srcs = ["left.proto"],
+    deps = [":shared_proto"],
+)
+
+proto_library(
+    name = "right_proto",
+    srcs = ["right.proto"],
+    deps = [":shared_proto"],
+)
+
+proto_library(
+    name = "root_proto",
+    srcs = ["root.proto"],
+    deps = [
+        ":left_proto",
+        ":right_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)

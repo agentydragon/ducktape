@@ -122,9 +122,7 @@ ts_library(
         ":schema",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/openapi-fetch",
-        "//agentplane/proto:event_log_pb",
-        "//agentplane/proto:runner_pb",
-        "//agentplane/proto:sandboxes_pb",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -135,9 +133,7 @@ ts_library(
     deps = [
         ":client",
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/mcp_edge:connection_service_pb",
-        "//agentplane/proto:sandboxes_pb",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -384,7 +380,7 @@ ts_library(
         ":live_stream",
         ":watch_stream",
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:operator_action_service_pb",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -1075,7 +1071,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -1132,7 +1128,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend/actions:policy",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -1204,7 +1200,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/action_service:web_push_service_pb",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -1357,7 +1353,7 @@ ts_library(
         "//agentplane/app/frontend/actions:proto_test_fixtures",
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/threads:local_commands",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 

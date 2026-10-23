@@ -13,7 +13,10 @@ import {
   type SessionDefaults,
 } from "./client";
 import { Disclosure, DisclosureBody } from "./disclosure";
-import { SessionSpecSchema, type SessionSpec } from "../../proto/runner_pb";
+import {
+  SessionSpecSchema,
+  type SessionSpec,
+} from "../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/runner_pb";
 
 type LoadedPresetDefaults = { preset: string | null; defaults: SessionDefaults | null };
 

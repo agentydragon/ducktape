@@ -30,11 +30,11 @@ import {
   type MatchedPolicy as ProtoMatchedPolicy,
   type PolicyEvidence as ProtoPolicyEvidence,
   type PolicySetEvidence as ProtoPolicySetEvidence,
-} from "../../../action_service/action_service_pb";
+} from "../../../../agentplane/proto/agentplane_proto_generated/agentplane/action_service/action_service_pb";
 import {
   DecideActionRequestRequestSchema,
   DecideActionRequestResponseSchema,
-} from "../../../action_service/operator_action_service_pb";
+} from "../../../../agentplane/proto/agentplane_proto_generated/agentplane/action_service/operator_action_service_pb";
 import type {
   ActionGroupView,
   ActionHistoryPage,

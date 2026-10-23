@@ -1,4 +1,3 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
@@ -668,17 +667,6 @@ go_proto_library(
     ],
 )
 
-ts_proto_library(
-    name = "action_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":action_service_proto",
-    deps = [
-        "//agentplane/proto:sandboxes_pb",
-        "//google/api:annotations_pb",
-    ],
-)
-
 # The agent-facing reference. Operator-only RPCs are a second proto so that this document describes only what an
 # agent may call.
 proto_openapi(
@@ -714,17 +702,6 @@ go_proto_library(
     deps = [
         ":action_service_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
-    ],
-)
-
-ts_proto_library(
-    name = "operator_action_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":operator_action_service_proto",
-    deps = [
-        ":action_service_pb",
-        "//google/api:annotations_pb",
     ],
 )
 
@@ -915,12 +892,4 @@ go_test(
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/structpb",
     ],
-)
-
-ts_proto_library(
-    name = "web_push_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":web_push_service_proto",
-    deps = ["//google/api:annotations_pb"],
 )

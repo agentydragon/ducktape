@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package agentplane.proto.typescript_generation_test;
+
+import "agentplane/proto/typescript_generation_test/left.proto";
+import "agentplane/proto/typescript_generation_test/right.proto";
+import "google/protobuf/timestamp.proto";
+
+message Root {
+  Left left = 1;
+  Right right = 2;
+  google.protobuf.Timestamp created_at = 3;
+}

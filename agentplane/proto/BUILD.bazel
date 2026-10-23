@@ -1,9 +1,64 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@aspect_bazel_lib//lib:directory_path.bzl", "directory_path")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load(":typescript_proto.bzl", "typescript_proto_compile")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
+
+directory_path(
+    name = "protoc_gen_es_entry",
+    directory = "//:node_modules/@bufbuild/protoc-gen-es/dir",
+    path = "bin/protoc-gen-es",
+)
+
+js_binary(
+    name = "protoc_gen_es",
+    data = ["//:node_modules/@bufbuild/protoc-gen-es"],
+    entry_point = ":protoc_gen_es_entry",
+)
+
+# Generate browser-facing Agentplane protos from API roots. Imported schemas, including Google
+# HTTP annotations, are discovered from each ProtoInfo closure.
+typescript_proto_compile(
+    name = "agentplane_proto_generated",
+    protos = [
+        ":event_log_proto",
+        ":runner_proto",
+        "//agentplane/action_service:operator_action_service_proto",
+        "//agentplane/action_service:web_push_service_proto",
+        "//agentplane/mcp_edge:connection_service_proto",
+    ],
+)
+
+js_library(
+    name = "agentplane_proto_js",
+    srcs = [":agentplane_proto_generated"],
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
+
+js_test(
+    name = "typescript_proto_runtime_test",
+    data = [
+        ":agentplane_proto_js",
+        ":typescript_transitive_fixture_js",
+    ],
+    entry_point = "typescript_proto_runtime_test.mjs",
+)
+
+typescript_proto_compile(
+    name = "typescript_transitive_fixture_generated",
+    testonly = True,
+    protos = ["//agentplane/proto/typescript_generation_test:root_proto"],
+)
+
+js_library(
+    name = "typescript_transitive_fixture_js",
+    testonly = True,
+    srcs = [":typescript_transitive_fixture_generated"],
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
 
 proto_library(
     name = "grpc_tunnel_proto",
@@ -28,14 +83,6 @@ py_proto_library_with_mypy_stubs(
     deps = [":command_proto"],
 )
 
-ts_proto_library(
-    name = "command_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":command_proto",
-    visibility = ["//visibility:public"],
-)
-
 proto_library(
     name = "event_proto",
     srcs = ["event.proto"],
@@ -52,15 +99,6 @@ py_proto_library_with_mypy_stubs(
     deps = [":event_proto"],
 )
 
-ts_proto_library(
-    name = "event_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":event_proto",
-    visibility = ["//visibility:public"],
-    deps = [":command_pb"],
-)
-
 proto_library(
     name = "event_log_proto",
     srcs = ["event_log.proto"],
@@ -72,15 +110,6 @@ py_proto_library_with_mypy_stubs(
     name = "event_log_pb2",
     visibility = ["//visibility:public"],
     deps = [":event_log_proto"],
-)
-
-ts_proto_library(
-    name = "event_log_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":event_log_proto",
-    visibility = ["//visibility:public"],
-    deps = [":event_pb"],
 )
 
 proto_library(
@@ -96,17 +125,10 @@ py_proto_library_with_mypy_stubs(
     deps = [":runner_proto"],
 )
 
-ts_proto_library(
-    name = "runner_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":runner_proto",
-    visibility = ["//visibility:public"],
-)
-
 proto_library(
     name = "sandboxes_proto",
     srcs = ["sandboxes.proto"],
+    visibility = ["//agentplane:__subpackages__"],
     deps = [
         "@protobuf//:duration_proto",
         "@protobuf//:struct_proto",
@@ -117,15 +139,6 @@ proto_library(
 py_proto_library_with_mypy_stubs(
     name = "sandboxes_pb2",
     deps = [":sandboxes_proto"],
-)
-
-ts_proto_library(
-    name = "sandboxes_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":sandboxes_proto",
-    visibility = ["//visibility:public"],
-    deps = [":runner_pb"],
 )
 
 # The Sandbox controller calls `Runner.Seal` through the Runner Gateway's proxy.

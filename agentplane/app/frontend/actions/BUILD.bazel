@@ -37,12 +37,11 @@ ts_library(
     deps = [
         ":types",
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:watch_stream",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 
@@ -54,9 +53,8 @@ ts_library(
     deps = [
         ":types",
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/app/frontend:mcp_linkage_client",
+        "//agentplane/proto:agentplane_proto_js",
     ],
 )
 

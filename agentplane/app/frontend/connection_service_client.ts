@@ -23,9 +23,12 @@ import {
   WatchConnectionsResponseSchema,
   type Connection as ConnectionMessage,
   type Grant as GrantMessage,
-} from "../../mcp_edge/connection_service_pb";
-import { Verdict } from "../../action_service/action_service_pb";
-import { ServiceAccountSchema, type ServiceAccount } from "../../proto/sandboxes_pb";
+} from "../../../agentplane/proto/agentplane_proto_generated/agentplane/mcp_edge/connection_service_pb";
+import { Verdict } from "../../../agentplane/proto/agentplane_proto_generated/agentplane/action_service/action_service_pb";
+import {
+  ServiceAccountSchema,
+  type ServiceAccount,
+} from "../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/sandboxes_pb";
 
 const OPERATOR = "/upstream/actions/v1/operator";
 const MAX_INT64 = 9_223_372_036_854_775_807n;

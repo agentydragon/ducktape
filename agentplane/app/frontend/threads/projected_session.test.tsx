@@ -7,9 +7,18 @@ import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CommandSchema, type Command } from "../../../proto/command_pb";
-import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
-import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
+import {
+  CommandSchema,
+  type Command,
+} from "../../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/command_pb";
+import {
+  EventEntrySchema,
+  type EventEntry,
+} from "../../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/event_log_pb";
+import {
+  ItemKind,
+  RecoveryDisposition,
+} from "../../../../agentplane/proto/agentplane_proto_generated/agentplane/proto/event_pb";
 import type * as ClientModule from "../client";
 import {
   submitInput,
