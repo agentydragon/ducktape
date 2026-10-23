@@ -37,6 +37,17 @@ prometheus.operator.servicemonitors "node" {
 }
 
 prometheus.operator.podmonitors "node" {
+  // The chart's PodMonitor targets the Reactor's port on the host-network pod IP,
+  // but Reactor deliberately listens on loopback. A narrowly scheduled host-network
+  // Alloy DaemonSet scrapes loopback directly, so don't scrape this monitor as well.
+  selector {
+    match_expression {
+      key      = "app.kubernetes.io/component"
+      operator = "NotIn"
+      values   = ["linstor-satellite"]
+    }
+  }
+
   rule {
     source_labels = ["__meta_kubernetes_pod_node_name"]
     regex         = sys.env("NODE_NAME")
