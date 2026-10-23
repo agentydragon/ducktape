@@ -393,7 +393,7 @@ ENV = Environment(
             # Claude and Codex publish their public CIMD documents at these origins.
             EgressRule.to_fqdns("claude.ai", "chatgpt.com"),
             # `github_public_repository` policies confirm a repository is public with an
-            # unauthenticated GitHub REST call (agentplane/action_service/github_policy/visibility.py); no credential
+            # unauthenticated Go GitHub REST lookup (agentplane/action_service/policies/visibility.go); no credential
             # rides this path.
             EgressRule.to_fqdns("api.github.com"),
             kubectl_passthrough_mcp.SERVICE.egress(),

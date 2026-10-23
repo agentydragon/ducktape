@@ -21,7 +21,7 @@ class _ResourceList(BaseModel):
 
 
 class ActionPolicyReader:
-    """Read-only Kubernetes projections, shared by the service and the app."""
+    """Read-only Kubernetes projections used by the integration app."""
 
     def __init__(self, *, namespace: str, custom_objects: CustomObjectsClient) -> None:
         self._namespace = namespace

@@ -1,4 +1,4 @@
-"""Strict rule parsing: what this service refuses, and the typed shapes it hands the evaluator."""
+"""Strict rule parsing: invalid policy shapes refused and typed models produced for PolicySet views."""
 
 from __future__ import annotations
 

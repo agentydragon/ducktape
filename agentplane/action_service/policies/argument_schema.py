@@ -1,19 +1,14 @@
-"""`argument_schema`: a listed Action matches when its arguments satisfy a JSON Schema, with plain
-JSON Schema semantics: the policy says which properties are required and which may be absent, so
-"absent or an integer" is expressible and `properties` alone never implies presence."""
+"""The `argument_schema` policy model and validation of its operator-authored JSON Schema."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Literal
 
 import jsonschema
-from jsonschema.exceptions import best_match
 from pydantic import Field, JsonValue, field_validator
 
-from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.models import PolicyKind
-from agentplane.action_service.policies.kind import Kind, Matched, NotMatched
+from agentplane.action_service.policies.kind import Kind
 
 # types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
 # gazelle:include_dep @pypi//referencing
@@ -34,13 +29,3 @@ class ArgumentSchema(Kind):
         except jsonschema.SchemaError as error:
             raise ValueError(f"schema is not a valid JSON Schema: {error.message}") from error
         return value
-
-
-def evaluate(
-    policy: ArgumentSchema, action: ActionIdentity, arguments: Mapping[str, JsonValue]
-) -> Matched | NotMatched:
-    validator = jsonschema.validators.validator_for(policy.argument_schema)(policy.argument_schema)
-    error = best_match(validator.iter_errors(dict(arguments)))
-    if error is None:
-        return Matched(f"arguments of {action.group}/{action.name} satisfy the schema")
-    return NotMatched(f"arguments do not satisfy the schema: {error.message}")

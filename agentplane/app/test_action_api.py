@@ -26,9 +26,6 @@ from starlette.routing import Route
 
 from agentplane.action_service import action_service_pb2 as action_pb
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
-from agentplane.action_service.policy_informer import PolicyIndex
-from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
-from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
@@ -73,7 +70,6 @@ class Review:
     login_as: Callable[[str], None]
     issuer: str
     exchanged_subjects: list[str]
-    policies: PolicyIndex
     app: FastAPI
     # Every refresh token presented to the login provider, in order.
     refreshes: list[str]
@@ -132,7 +128,6 @@ async def review(
             audience="test-app" if direct_federation and operator_connection != "wrong-audience" else "test-actions",
             jwks_uri=f"{idp_url}jwks/",
         )
-        policies = admitted_callers(PERSONAL)
         facade_requests: list[httpx.Request] = []
 
         async def action_service_facade(request: httpx.Request) -> httpx.Response:
@@ -365,29 +360,7 @@ async def review(
             )
         )
         yield Review(
-            browser,
-            second_browser,
-            login_as,
-            target_issuer,
-            exchanged_subjects,
-            policies,
-            app,
-            refreshes,
-            facade_requests,
-        )
-
-
-def _bind_live_sandbox(policies: PolicyIndex, sandbox_namespace: str) -> None:
-    """What the Action Service's informer would hold: a set and a binding naming the ServiceAccount
-    the sandbox runs as, plus one naming a like-named account elsewhere that must not show."""
-    add_policy_set(policies, "test-reads", [{"type": "exact_actions", "actions": {"test_review": ["record"]}}])
-    for name, namespace in (("live-launch", sandbox_namespace), ("live-elsewhere", "test-elsewhere")):
-        add_policy_binding(
-            policies,
-            name,
-            ServiceAccountRef(namespace=namespace, name="live"),
-            ["test-reads", "gone"],
-            namespace=sandbox_namespace,
+            browser, second_browser, login_as, target_issuer, exchanged_subjects, app, refreshes, facade_requests
         )
 
 
@@ -436,7 +409,6 @@ async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_o
     in place of the policy rather than showing an empty one, and an agent watching the same stream
     is told why rather than shown an operator's answer."""
     live_index.sandboxes["live"] = await namespace.sandbox("live")
-    _bind_live_sandbox(review.policies, namespace.name)
     browser = review.browser
     await browser.get("/auth/login")
     session = {"Cookie": f"{INSECURE_COOKIE}={browser.cookies[INSECURE_COOKIE]}"}
@@ -461,7 +433,6 @@ async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_o
 async def test_caller_grants_without_a_sandbox(
     review: Review, namespace: SandboxNamespace, operator_connection: str
 ) -> None:
-    _bind_live_sandbox(review.policies, namespace.name)
     for subject, name in (
         (namespace.account("live"), "external"),
         (ServiceAccountRef(namespace="other-namespace", name="live"), "unrelated"),

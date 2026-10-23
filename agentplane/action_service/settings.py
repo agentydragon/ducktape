@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.action_service.catalog import ActionGroup, Key
-from agentplane.action_service.github_policy.visibility import API_BASE_URL, CACHE_TTL_SECONDS
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
@@ -23,13 +22,13 @@ DEFAULT_DIRECT_WAIT_SECONDS = 30.0
 
 
 class GitHubVisibilitySettings(BaseModel):
-    """The unauthenticated GitHub REST lookup behind `github_public_repository` policies."""
+    """Go runtime settings for its unauthenticated GitHub repository visibility lookup."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    api_base_url: str = API_BASE_URL
+    api_base_url: str = "https://api.github.com"
     cache_ttl_seconds: float = Field(
-        default=CACHE_TTL_SECONDS,
+        default=86400.0,
         ge=0,
         description="How long one repository's confirmed visibility is reused before GitHub is asked again.",
     )

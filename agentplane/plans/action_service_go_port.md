@@ -32,7 +32,7 @@ in the one Go binary until that separate extraction.
 | Stage | Status   | Change                                                                                                                                                                                                                                                                               |
 | ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | N     | Accepted | Go Actions and Goose are live in staging and testing; existing Action/Connection/grant counts and Sandbox identities are preserved. The disposable Runner/egress catalog probe and public-route metadata/authentication checks passed. External-user reauthorization remains manual. |
-| O     | Active   | Retire the remaining Python policy evaluator and Alembic bridge; audit shared app contracts. Preserve existing data and published rollback images. Drop unused stored columns only with new migrations after deployed readers are gone.                                              |
+| O     | Active   | Retire the Alembic bridge; audit shared app contracts. Preserve existing data and published rollback images. Drop unused stored columns only with new migrations after deployed readers are gone.                                                                                    |
 
 ## Cutover requirements
 
@@ -69,13 +69,14 @@ in the one Go binary until that separate extraction.
 
 ## Python retirement
 
-The accepted Go cutover permits source retirement now. The Python wait, operator stream, Web Push,
-MCP executor, coordinator, store and their runtime tests are retired in the source tree. The app still
-imports Python policy views, models and configuration types. The Alembic compatibility bridge keeps
+The accepted Go cutover permits source retirement now. The Python wait, operator stream, Web Push, MCP
+executor, coordinator, store, policy evaluator and informer runtimes and their runtime tests are retired
+in the source tree. The app still imports Python policy view types, the PolicySet parser, models and
+configuration types. The Alembic compatibility bridge keeps
 `db.py`, `updates.py`, `database_migrate.py` and migration history until its separate retirement;
 published rollback images, database history and Sandbox storage remain. Stage O remains active.
 
-Retire the remaining Python evaluator-only code and Alembic bridge. Remove
+Retire the Alembic bridge. Remove
 `agentplane_oauth_kv`, enrollment `decision_digest`/`browser_hash`, and grant
 `request_digest`/`activation_deadline` only after their deployed readers are gone, through new
 migrations. Audit callers before removing shared Python models, configuration types or packages; the

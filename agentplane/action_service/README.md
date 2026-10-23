@@ -380,19 +380,12 @@ a matching allow records `PolicyEvidence`, including the matched rule and any re
 repository. A set has no deny form: no match leaves the request for a human. The Go
 [`api.SubmitActionRequest`](api/submit.go) validates arguments and decides before persistence.
 
-The integration app still uses the Python `policy_informer`, `policies/resources` parser and
-`policy_evaluation.resolve_bindings` to project caller and operator policy views. This shared view
-code does not dispatch Actions. Staging's network policy admits `api.github.com:443` for the Go
-provider's public-repository lookup.
-
-`policy_view` projects that same `resolve_bindings` for readers: `GET /v1/action-policy` answers
-the authenticated caller (the ServiceAccount its Pod runs as, on the workload route) and the
-`get_action_policy` tool a `target` (the caller itself by default, or a named ServiceAccount) with
-the redacted `CallerActionPolicyView`, and
-`GET /v1/operator/action-policy/service-accounts/{namespace}/{name}` answers the operator with
-`SubjectActionPolicyView`, adding each binding's labels and `ActionsReady` verdict and each named set as
-present, refused or missing. Both carry `synced`; the integration app's Sandbox page reads the
-operator form.
+The integration app reads PolicySet inventory from Kubernetes with the Python `policies/resources`
+parser, which exposes each set's generation and whether its Action rules were refused. Its action-policy
+view uses the Go Action Service response: Python defines the Pydantic wire shapes the app uses to render
+the resolved policy kinds. Policy resolution and admission remain in the Go informer and provider; the
+Python reader does not resolve bindings or make approval decisions. Staging's network policy admits
+`api.github.com:443` for the Go provider's public-repository lookup.
 
 The end-to-end proof is `//agentplane/system_tests:test_mcp`, which creates the set and binding
 for the Sandbox it launches through the Kubernetes API (see [the system tests README](../system_tests/README.md))

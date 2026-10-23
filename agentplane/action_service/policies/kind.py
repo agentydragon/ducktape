@@ -1,18 +1,13 @@
-"""What every policy kind shares: the operator-authored model its wire shape extends, and the
-answer its evaluator gives.
+"""The common Pydantic base for operator-authored Action policy shapes.
 
-A kind is one typed evaluator: YAML carries `type` and parameters, Python owns the semantics.
-Adding a constraint the YAML cannot express means adding a kind, never a DSL.
+The Go runtime evaluates the typed variants; Python validates and renders the wire models.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agentplane.action_service.catalog import Key
-from agentplane.action_service.models import MatchedRepository
 
 
 class Spec(BaseModel):
@@ -22,7 +17,7 @@ class Spec(BaseModel):
 
 
 class Kind(Spec):
-    """One kind's parameters; `type` names the evaluator, `actions` bounds it to listed Actions."""
+    """One kind's parameters; `type` names the variant and `actions` lists its Actions."""
 
     actions: dict[Key, frozenset[Key]] = Field(
         min_length=1, description="Action names by ActionGroup key; the policy matches only these."
@@ -35,14 +30,3 @@ class Kind(Spec):
             if not names:
                 raise ValueError(f"group {group!r} lists no actions")
         return value
-
-
-@dataclass(frozen=True, slots=True)
-class Matched:
-    explanation: str
-    repository: MatchedRepository | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class NotMatched:
-    reason: str

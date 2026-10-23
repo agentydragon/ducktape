@@ -32,10 +32,11 @@ unlabeled account is refused at the transport; a Connection's grant is refused a
 and at the dispatch claim. Removing the label or the object is the disable, and it takes effect on
 the next call rather than at the next consent.
 
-**A policy is one typed evaluator.** YAML carries `type` and parameters, Python owns the semantics
-(one module per kind under `action_service/policies/`). A constraint the YAML cannot express is a
-new kind, never a DSL. Kinds that consult state outside the arguments arrive with the Actions that
-need them, as `github_public_repository` did with its live visibility lookup.
+**Every policy kind is a typed contract.** Kubernetes carries `type` and parameters; the Go Action
+Service owns evaluation, while Python models validate and render those shapes. A constraint the
+wire format cannot express is a new kind, never a DSL. Kinds that consult state outside the
+arguments use the Go runtime's corresponding lookup, as `github_public_repository` does for
+repository visibility.
 
 **A policy set is the shared unit** and the only thing a subject references; a one-off grant is a
 small set of its own. An `action_auto_approve` rule auto-approves a matching request; a request matching nothing
@@ -129,7 +130,7 @@ binding revision they used.
 
 ## Rejected
 
-- **A policy DSL or expression language.** Every constraint is a reviewed Python evaluator with a
+- **A policy DSL or expression language.** Every constraint is a reviewed Go implementation with a
   typed wire model; the YAML can only select and parameterize kinds, so what a set can grant is
   bounded by code review, not by what an expression can reach.
 - **An `identities:` map in the Action Service settings as the external principal.** It was a

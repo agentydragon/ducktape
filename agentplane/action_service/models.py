@@ -70,7 +70,7 @@ def service_account_key(account: ServiceAccountRef) -> NamespacedName:
 
 
 class PolicyKind(StrEnum):
-    """The `type` of one Action policy; each names one Python evaluator."""
+    """The wire `type` of one Action policy kind."""
 
     EXACT_ACTIONS = "exact_actions"
     ARGUMENT_SCHEMA = "argument_schema"

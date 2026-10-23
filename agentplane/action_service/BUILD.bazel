@@ -123,103 +123,12 @@ py_library(
 )
 
 py_library(
-    name = "policy_informer",
-    srcs = ["policy_informer.py"],
-    deps = [
-        ":models",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:policy_sets",
-        "//agentplane:policy_watch",
-        "//agentplane:subjects",
-        "//agentplane/action_service/policies:registry",
-        "//agentplane/action_service/policies:resources",
-        "//util:kubernetes",
-        "//util:kubernetes_watch",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_test(
-    name = "test_policy_informer",
-    srcs = ["test_policy_informer.py"],
-    deps = [
-        ":conftest",
-        ":models",
-        ":policy_informer",
-        "//:conftest",
-        "//agentplane:crd_group",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:policy_sets",
-        "//agentplane:subjects",
-        "//agentplane/action_service/policies:resources",
-        "//agentplane/testing:kubernetes_apiserver",
-        "//util:kubernetes",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
-    name = "policy_evaluation",
-    srcs = ["policy_evaluation.py"],
-    deps = [
-        ":models",
-        ":policy_informer",
-        ":providers",
-        "//agentplane:policy_sets",
-        "//agentplane:subjects",
-        "//agentplane/action_service/policies:registry",
-    ],
-)
-
-py_library(
-    name = "providers",
-    srcs = ["providers.py"],
-    deps = [
-        ":models",
-        "//agentplane/action_service/policies:registry",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_policy_evaluation",
-    srcs = ["test_policy_evaluation.py"],
-    deps = [
-        ":conftest",
-        ":models",
-        ":policy_evaluation",
-        ":policy_informer",
-        ":policy_view",
-        ":providers",
-        "//:conftest",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:subjects",
-        "//agentplane/action_service/testing:policies",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "policy_view",
     srcs = ["policy_view.py"],
     deps = [
         ":models",
-        ":policy_evaluation",
-        ":policy_informer",
-        ":providers",
         "//agentplane:policy_sets",
-        "//agentplane:subjects",
-        "//agentplane/action_service/policies:argument_schema",
-        "//agentplane/action_service/policies:exact_actions",
-        "//agentplane/action_service/policies:github_public_repository",
-        "//agentplane/action_service/policies:github_repository",
-        "//agentplane/action_service/policies:home_assistant_entity_control",
         "//agentplane/action_service/policies:registry",
-        "//agentplane/action_service/policies:resources",
         "@pypi//pydantic",
     ],
 )
@@ -278,7 +187,6 @@ py_library(
         ":push_settings",
         "//agentplane:log_levels",
         "//agentplane:subjects",
-        "//agentplane/action_service/github_policy:visibility",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
