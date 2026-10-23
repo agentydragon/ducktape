@@ -104,6 +104,63 @@ Nebula endpoints and you get a tunnel-in-tunnel amplification loop. Incident:
    normal pod-to-pod ping (overlay path). Recreate test pods after a Cilium MTU
    change — existing pods keep their old veth MTU until recreated.
 
+## Service topology
+
+Cilium's Terraform-owned Helm values enable `loadBalancer.serviceTopology`.
+Individual Services opt in with `spec.trafficDistribution: PreferClose`, the name
+supported by pinned Cilium 1.19.8. The EndpointSlice controller supplies zone hints;
+Cilium filters eligible backends using the client node's zone. Without a matching
+zone it falls back to other eligible backends. Inspect the actual hints and agent
+backend maps when diagnosing selection. `internalTrafficPolicy: Local` takes
+precedence and must not be used where cross-node fallback is required.
+
+Placement and routing are separate: deploy ready replicas in each intended zone,
+then opt the Service in. Replicas on every node alone do not select a local
+backend. This setting preserves the existing VXLAN/Nebula encapsulation and MTU.
+Keep DNS and public website dependencies functional with only OVH nodes available.
+
+### Apply and roll agents
+
+Merging the Helm values does not deploy them: Cilium is installed by
+`null_resource.cilium_bootstrap`, not Flux. `rollOutCiliumPods: false` keeps a
+ConfigMap change from automatically replacing all agent Pods.
+
+1. Inspect the saved OpenTofu plan using the Cilium update precautions above.
+   Apply only the intended Cilium provisioner update; do not apply unrelated
+   Talos changes pulled in through bootstrap dependencies. Check Helm's resulting
+   diff before applying if its release values have drifted from the repository.
+2. Confirm `kube-system/cilium-config` has `enable-service-topology: "true"`.
+   Recreate one Cilium agent at a time on connected, Ready nodes; wait for its
+   replacement Ready and confirm the node remains Ready before continuing.
+   Reuse the canaries already running the setting; never restart all agents at
+   once to work around unavailable roaming nodes.
+3. Check each replacement's startup log and
+   `/tmp/cilium/config-map/enable-service-topology`. This startup flag is not
+   exposed by `cilium-dbg config get`. Verify same-zone selection and fallback
+   through a disposable Service; inspect its EndpointSlices and
+   `cilium-dbg service list`. Home WAN timeouts are tracked separately in #9604.
+4. Record disconnected nodes as pending; their replacement agents will load the
+   global setting when they return. A Ready Pod shown on a NotReady node is not
+   evidence of a live agent. Check those nodes after they reconnect.
+5. Once all connected agents use the global setting, delete the temporary
+   `kube-system/service-topology-canary` CiliumNodeConfig and remove its diagnostic
+   manifests under `cluster/debug/service-topology-canary/`. Its override is
+   identical to the new global value, so deletion requires no extra restart.
+   Unconnected nodes were not selected by the override.
+
+Then opt production Services in individually, checking placement, backend
+selection and fallback for each. Keep the OVH CoreDNS placement restriction until
+its replacement satisfies OVH-only resilience; topology enablement alone does
+not change CoreDNS ownership or placement. The broader work is tracked in #9605.
+
+### Rollback
+
+Revert `loadBalancer.serviceTopology` through the same Terraform/Helm owner,
+remove the temporary canary override if it still exists, and sequentially recreate
+affected connected agents. Verify the mounted startup setting is false. Reverting
+git or updating only the ConfigMap does not change existing agents' startup flags.
+Recheck any production Services opted in since enablement.
+
 ## Caveat: roaming nodes
 
 A single global Cilium `MTU` assumes a 1500 underlay. `rugged` (roaming laptop on

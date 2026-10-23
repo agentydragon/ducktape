@@ -12,6 +12,16 @@ kubeProxyReplacement: "true"
 k8sServiceHost: "localhost"
 k8sServicePort: "7445"
 
+# Honor topology hints on Services opting in with trafficDistribution: PreferClose.
+# Canary verified same-zone selection and cross-zone fallback over Nebula (#9605).
+# This filters backends; it does not change encapsulation or MTU.
+loadBalancer:
+  serviceTopology: true
+
+# Apply config changes with a deliberate, sequential agent rollout; see
+# cluster/docs/network.md. Disconnected roaming nodes must not block the rollout.
+rollOutCiliumPods: false
+
 # Host-networked Cilium pods need cluster DNS for Kubernetes service names.
 dnsPolicy: ClusterFirstWithHostNet
 
