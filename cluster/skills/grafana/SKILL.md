@@ -107,11 +107,14 @@ verification.
    the datasource **name**, so `{"uid": "${DS_LOKI}"}` becomes `{"uid": "Loki"}`
    and fails when that name differs from the UID. Update both
    `panel.datasource` and each `target.datasource`; a target overrides its panel.
-   The candidate verifier resolves inputs to live UIDs itself, masking this
-   deployment error. Before merge, also verify a temporary copy with inputs
-   replaced by the operator's datasource names. After import, query and render
-   the live dashboard: `DashboardSynchronized=True` does not prove datasource
-   references work.
+   Candidate verification reads the generated `GrafanaDashboard` resource for
+   the dashboard's ConfigMap key and applies that same name substitution before
+   creating its temporary dashboard. It then checks the resulting name against
+   live Grafana datasources; it does not repair a UID-shaped placeholder into a
+   valid UID. For another generated resource set, pass
+   `--grafana-dashboard-manifest <generated-resource-file>`. After import, query
+   and render the live dashboard: `DashboardSynchronized=True` does not prove
+   datasource references work.
 3. Do not rely on Grafana macros unless the browser request proves that the
    installed datasource plugin expands them. Fixed windows such as `[5m]` are
    valid and predictable. In particular, never ship a literal

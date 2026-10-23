@@ -25,7 +25,10 @@ from typing import Any
 from urllib.parse import urlencode, urlsplit
 
 import httpx
+import yaml
 from playwright.async_api import Page, async_playwright
+
+from util.bazel.runfiles import get_required_path
 
 DEFAULT_GRAFANA_URL = "https://grafana.allegedly.works"
 DEFAULT_SECRET = "monitoring/grafana-admin-password"
@@ -37,7 +40,8 @@ DEFAULT_SECRET = "monitoring/grafana-admin-password"
 # require writer auth only for candidate browser rendering.
 # TODO: Replace admin-secret auth with narrower identities: Viewer for deployed-dashboard
 # checks and the minimum write-capable scope needed for temporary candidate dashboards.
-DATASOURCE_PLACEHOLDERS = {"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}
+GRAFANA_DASHBOARD_MANIFEST = "cluster/generated/monitoring/grafana-instance/grafana-instance.k8s.yaml"
+DATASOURCE_PLACEHOLDER = re.compile(r"\$\{(DS_[A-Z0-9_]+)\}")
 UNRESOLVED_MACRO = re.compile(r"\$__[_a-zA-Z0-9]+")
 UNRESOLVED_VARIABLE = re.compile(r"\$(?:__[_a-zA-Z0-9]+|[_a-zA-Z][_a-zA-Z0-9]*)")
 PANEL_TITLE_VARIABLE = re.compile(
@@ -63,6 +67,11 @@ def parse_args() -> argparse.Namespace:
     source.add_argument("--live-uid", help="UID of an already deployed dashboard")
     parser.add_argument("--grafana-url", default=DEFAULT_GRAFANA_URL)
     parser.add_argument("--secret", default=DEFAULT_SECRET, help="namespace/name of the Grafana admin Secret")
+    parser.add_argument(
+        "--grafana-dashboard-manifest",
+        type=Path,
+        help="generated GrafanaDashboard resources; defaults to the packaged monitoring manifest",
+    )
     parser.add_argument("--from", dest="from_range", default="now-1h")
     parser.add_argument("--to", dest="to_range", default="now")
     parser.add_argument("--screenshot-dir", type=Path, required=True)
@@ -216,33 +225,73 @@ def datasource_map(api: GrafanaApi) -> tuple[dict[str, dict[str, Any]], dict[str
     entries = api.json_request("GET", "/api/datasources")
     by_name = {item["name"]: item for item in entries if item.get("name") and item.get("uid")}
     by_uid = {item["uid"]: item for item in entries if item.get("uid")}
-    for name in DATASOURCE_PLACEHOLDERS.values():
-        if name not in by_name:
-            raise VerificationError(f"live Grafana datasource {name!r} was not found")
     return by_name, by_uid
 
 
-def resolve_dashboard_datasources(value: Any, by_name: dict[str, dict[str, Any]], key: str | None = None) -> Any:
+def grafana_dashboard_manifest_path(explicit_path: Path | None) -> Path:
+    if explicit_path is not None:
+        return explicit_path
+    try:
+        return get_required_path(f"_main/{GRAFANA_DASHBOARD_MANIFEST}")
+    except RuntimeError:
+        # Keep direct invocations from the repository root useful outside Bazel.
+        path = Path(GRAFANA_DASHBOARD_MANIFEST)
+        if path.is_file():
+            return path
+        raise VerificationError(f"cannot find packaged GrafanaDashboard manifest {GRAFANA_DASHBOARD_MANIFEST}")
+
+
+def operator_datasources(manifest_path: Path, dashboard_filename: str) -> dict[str, str]:
+    try:
+        documents = yaml.safe_load_all(manifest_path.read_text())
+        matches = [
+            document
+            for document in documents
+            if isinstance(document, dict)
+            and document.get("kind") == "GrafanaDashboard"
+            and document.get("spec", {}).get("configMapRef", {}).get("key") == dashboard_filename
+        ]
+    except (OSError, yaml.YAMLError) as exc:
+        raise VerificationError(f"cannot read generated GrafanaDashboard resources {manifest_path}: {exc}") from exc
+    if len(matches) > 1:
+        raise VerificationError(f"multiple GrafanaDashboard resources reference {dashboard_filename!r}")
+    if not matches:
+        return {}
+
+    result: dict[str, str] = {}
+    for datasource in matches[0].get("spec", {}).get("datasources", []):
+        input_name = datasource.get("inputName")
+        datasource_name = datasource.get("datasourceName")
+        if not isinstance(input_name, str) or not isinstance(datasource_name, str):
+            raise VerificationError(
+                f"GrafanaDashboard for {dashboard_filename!r} has an invalid datasource mapping {datasource!r}"
+            )
+        if input_name in result:
+            raise VerificationError(f"GrafanaDashboard for {dashboard_filename!r} maps {input_name!r} more than once")
+        result[input_name] = datasource_name
+    return result
+
+
+def apply_operator_datasources(value: Any, by_input_name: dict[str, str]) -> Any:
     if isinstance(value, dict):
         return {
-            item_key: resolve_dashboard_datasources(item_value, by_name, item_key)
-            for item_key, item_value in value.items()
+            item_key: apply_operator_datasources(item_value, by_input_name) for item_key, item_value in value.items()
         }
     if isinstance(value, list):
-        return [resolve_dashboard_datasources(item, by_name, key) for item in value]
+        return [apply_operator_datasources(item, by_input_name) for item in value]
     if not isinstance(value, str):
         return value
-    match = re.fullmatch(r"\$\{(DS_[A-Z0-9_]+)\}", value)
-    if not match:
-        return value
-    placeholder = match.group(1)
-    try:
-        datasource = by_name[DATASOURCE_PLACEHOLDERS[placeholder]]
-    except KeyError as exc:
-        raise VerificationError(f"cannot resolve datasource placeholder {value}") from exc
-    if key == "datasource":
-        return {"type": datasource["type"], "uid": datasource["uid"]}
-    return datasource["uid"]
+
+    def replace(match: re.Match[str]) -> str:
+        input_name = match.group(1)
+        try:
+            return by_input_name[input_name]
+        except KeyError as exc:
+            raise VerificationError(
+                f"no generated GrafanaDashboard mapping for datasource input {input_name!r}"
+            ) from exc
+
+    return DATASOURCE_PLACEHOLDER.sub(replace, value)
 
 
 def dashboard_from_file(path: Path) -> dict[str, Any]:
@@ -272,9 +321,6 @@ def datasource_for(
         if uid in by_uid:
             return by_uid[uid]
     if isinstance(raw, str):
-        placeholder = re.fullmatch(r"\$\{(DS_[A-Z0-9_]+)\}", raw)
-        if placeholder:
-            return by_name[DATASOURCE_PLACEHOLDERS[placeholder.group(1)]]
         if raw in by_uid:
             return by_uid[raw]
         if raw in by_name:
@@ -569,7 +615,9 @@ async def async_main(args: argparse.Namespace) -> None:
     try:
         by_name, by_uid = datasource_map(api)
         if args.dashboard:
-            dashboard = resolve_dashboard_datasources(dashboard_from_file(args.dashboard), by_name)
+            dashboard = dashboard_from_file(args.dashboard)
+            manifest_path = grafana_dashboard_manifest_path(args.grafana_dashboard_manifest)
+            dashboard = apply_operator_datasources(dashboard, operator_datasources(manifest_path, args.dashboard.name))
             dashboard_context: contextlib.AbstractContextManager[tuple[str | None, dict[str, Any] | None]] = (
                 temporary_dashboard(api, dashboard)
             )
