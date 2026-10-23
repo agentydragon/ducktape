@@ -7,12 +7,13 @@ import os
 import subprocess
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Sequence
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
 import grpc
+import httpx
 import yaml
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from sqlalchemy.engine import make_url
@@ -23,7 +24,7 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.net import reserve_free_port
+from util.net import listen_tcp
 from util.settings_contract import env_name, settings_file
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -105,14 +106,15 @@ class GatewayProcess:
             await asyncio.sleep(min(0.05, remaining))
 
     async def stop(self) -> None:
-        if self.process.returncode is not None:
-            return
-        self.process.terminate()
+        if self.process.returncode is None:
+            with suppress(ProcessLookupError):
+                self.process.terminate()
         try:
             async with asyncio.timeout(10):
                 await self.process.wait()
         except TimeoutError:
-            self.process.kill()
+            with suppress(ProcessLookupError):
+                self.process.kill()
             await self.process.wait()
 
 
@@ -150,6 +152,25 @@ async def _wait_health(service: GatewayProcess, target: str, *, timeout_s: float
     await service._check_process()
 
 
+async def _wait_http_facade(service: GatewayProcess, *, timeout_s: float) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout_s
+    async with httpx.AsyncClient(timeout=2, trust_env=False) as client:
+        while True:
+            await service._check_process()
+            try:
+                response = await client.get(f"{service.http_url}/v1/dispatches")
+            except httpx.TransportError:
+                pass
+            else:
+                if response.status_code == 401:
+                    return
+                raise ConnectionError(f"HTTP facade returned {response.status_code} without credentials")
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise TimeoutError(f"Runner Gateway HTTP facade did not become ready; see {service.log_path}")
+            await asyncio.sleep(min(0.05, remaining))
+
+
 async def _wait_ready(service: GatewayProcess, *, timeout_s: float) -> None:
     deadline = asyncio.get_running_loop().time() + timeout_s
     while True:
@@ -159,6 +180,10 @@ async def _wait_ready(service: GatewayProcess, *, timeout_s: float) -> None:
             if remaining <= 0:
                 raise TimeoutError
             await _wait_health(service, service.target, timeout_s=remaining)
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise TimeoutError
+            await _wait_http_facade(service, timeout_s=remaining)
             return
         except ConnectionError, grpc.aio.AioRpcError, TimeoutError:
             remaining = deadline - asyncio.get_running_loop().time()
@@ -190,49 +215,81 @@ async def run_gateway(
     migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
     await asyncio.to_thread(_migrate, database_url, migration_log)
 
-    port = reserve_free_port()
-    http_port = reserve_free_port()
     binary = get_required_path(own_repo_rlocation(_GATEWAY_BINARY))
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
     # The settings file as the cdk8s renderer writes it: its keys checked against the Python model.
     # The database URL stays out of it, as in a deployment, where it is a Secret.
-    settings = settings_file(
-        Settings,
-        {
-            "sandbox_namespace": namespace,
-            "runner_token_file": str(runner_proxy_token_file),
-            "kubeconfig": str(kubeconfig),
-            "listen_address": f"127.0.0.1:{port}",
-            "http_listen_address": f"127.0.0.1:{http_port}",
-            "proxy_port": port,
-            "runner_control_target_template": f"127.0.0.1:{port}",
-            "dispatcher_audience": dispatcher_audience,
-            "gateway_audience": gateway_audience,
-            "runner_audience": runner_audience,
-            "dispatcher_callers": [f"{account.namespace}/{account.name}" for account in dispatcher_callers],
-            "gateway_callers": [f"{account.namespace}/{account.name}" for account in gateway_callers],
-        },
-    )
-    with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
-        settings_path = Path(settings_dir) / "settings.yaml"
-        settings_path.write_text(yaml.safe_dump(settings))
-        environment = {
-            **os.environ,
-            Settings.config_file_env: str(settings_path),
-            env_name(Settings, "dispatcher_database_url"): _wire_database_url(database_url),
-            env_name(Settings, "pod_name"): "runner-gateway-test",
-            # Kubernetes rejects loopback EndpointSlice addresses. This advertised test address
-            # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
-            env_name(Settings, "pod_ip"): "192.0.2.10",
-        }
-        process = await asyncio.create_subprocess_exec(
-            str(binary), env=environment, stdout=log_file, stderr=subprocess.STDOUT
+    with listen_tcp() as grpc_listener, listen_tcp() as http_listener:
+        settings = settings_file(
+            Settings,
+            {
+                "sandbox_namespace": namespace,
+                "runner_token_file": str(runner_proxy_token_file),
+                "kubeconfig": str(kubeconfig),
+                "listen_address": f"fd:{grpc_listener.socket.fileno()}",
+                "http_listen_address": f"fd:{http_listener.socket.fileno()}",
+                "proxy_port": grpc_listener.port,
+                "runner_control_target_template": f"{grpc_listener.host}:{grpc_listener.port}",
+                "dispatcher_audience": dispatcher_audience,
+                "gateway_audience": gateway_audience,
+                "runner_audience": runner_audience,
+                "dispatcher_callers": [f"{account.namespace}/{account.name}" for account in dispatcher_callers],
+                "gateway_callers": [f"{account.namespace}/{account.name}" for account in gateway_callers],
+            },
         )
-        service = GatewayProcess(
-            process=process, target=f"127.0.0.1:{port}", http_url=f"http://127.0.0.1:{http_port}", log_path=log_path
-        )
-        try:
-            await _wait_ready(service, timeout_s=startup_timeout_s)
-            yield service
-        finally:
-            await service.stop()
+        with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
+            settings_path = Path(settings_dir) / "settings.yaml"
+            settings_path.write_text(yaml.safe_dump(settings))
+            environment = {
+                **os.environ,
+                Settings.config_file_env: str(settings_path),
+                env_name(Settings, "dispatcher_database_url"): _wire_database_url(database_url),
+                env_name(Settings, "pod_name"): "runner-gateway-test",
+                # Kubernetes rejects loopback EndpointSlice addresses. This advertised test address
+                # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
+                env_name(Settings, "pod_ip"): "192.0.2.10",
+            }
+            spawn = asyncio.create_task(
+                asyncio.create_subprocess_exec(
+                    str(binary),
+                    env=environment,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    pass_fds=[grpc_listener.socket.fileno(), http_listener.socket.fileno()],
+                )
+            )
+            try:
+                process = await asyncio.shield(spawn)
+            except asyncio.CancelledError:
+                process = await asyncio.shield(spawn)
+                orphan = GatewayProcess(
+                    process=process,
+                    target=f"{grpc_listener.host}:{grpc_listener.port}",
+                    http_url=f"http://{http_listener.host}:{http_listener.port}",
+                    log_path=log_path,
+                )
+                cleanup = asyncio.create_task(orphan.stop())
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    await asyncio.shield(cleanup)
+                    raise
+                raise
+            grpc_listener.socket.close()
+            http_listener.socket.close()
+            service = GatewayProcess(
+                process=process,
+                target=f"{grpc_listener.host}:{grpc_listener.port}",
+                http_url=f"http://{http_listener.host}:{http_listener.port}",
+                log_path=log_path,
+            )
+            try:
+                await _wait_ready(service, timeout_s=startup_timeout_s)
+                yield service
+            finally:
+                cleanup = asyncio.create_task(service.stop())
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    await asyncio.shield(cleanup)
+                    raise
