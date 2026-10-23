@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+resources:
+  - home-application-probes.k8s.yaml
+configMapGenerator:
+  - name: home-application-probes-config
+    namespace: monitoring
+    literals:
+      - |
+        blackbox.yml=modules:
+          https_ipv4:
+            http:
+              body_size_limit: 64KiB
+              fail_if_not_ssl: true
+              follow_redirects: false
+              ip_protocol_fallback: false
+              method: GET
+              preferred_ip_protocol: ip4
+              proxy_from_environment: false
+              tls_config:
+                insecure_skip_verify: false
+            prober: http
+            timeout: 5s
+          tcp_ipv4:
+            prober: tcp
+            tcp:
+              ip_protocol_fallback: false
+              preferred_ip_protocol: ip4
+            timeout: 5s

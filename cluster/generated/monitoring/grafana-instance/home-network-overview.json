@@ -3340,6 +3340,183 @@
           "sort": "none"
         }
       }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 142
+      },
+      "id": 54,
+      "panels": [],
+      "title": "Outbound application probes",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "unit": "percent",
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "description": "Failure percentage among probe samples recorded in the preceding 5 minutes, split by source_node and target. 0% means all recorded probes passed. No data means no probe samples were available and is not treated as success.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 143
+      },
+      "id": 55,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "100 * (1 - avg_over_time(probe_success{job=\"monitoring/home-application-probes\"}[5m]))",
+          "legendFormat": "{{source_node}} → {{target}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "title": "Observed probe failures"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "description": "Blackbox exporter probe duration in seconds for each source_node and target. HTTPS duration includes DNS, TCP connection, TLS verification, and the HTTP request.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 143
+      },
+      "id": 56,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "probe_duration_seconds{job=\"monitoring/home-application-probes\"}",
+          "legendFormat": "{{source_node}} → {{target}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "title": "Probe duration"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "unit": "percent",
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "description": "Observed probe samples as a percentage of the 30 expected samples in each 5-minute window (10-second scrape interval). Missing series remain No data; reduced values show missing observations.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 143
+      },
+      "id": 57,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "100 * count_over_time(probe_success{job=\"monitoring/home-application-probes\"}[5m]) / 30",
+          "legendFormat": "{{source_node}} → {{target}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "title": "Probe sample coverage"
     }
   ],
   "refresh": "1m",

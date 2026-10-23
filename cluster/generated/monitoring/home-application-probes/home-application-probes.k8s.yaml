@@ -1,0 +1,202 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Direct TCP and HTTPS connectivity probes from optiplex.
+  labels:
+    app.kubernetes.io/name: home-application-probes
+    app.kubernetes.io/part-of: home-application-probes
+  name: home-application-probes
+  namespace: monitoring
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: home-application-probes
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: home-application-probes
+        app.kubernetes.io/part-of: home-application-probes
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --config.file=/etc/blackbox_exporter/blackbox.yml
+          image: quay.io/prometheus/blackbox-exporter:v0.28.0@sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            periodSeconds: 30
+          name: blackbox-exporter
+          ports:
+            - containerPort: 9115
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/blackbox_exporter
+              name: config
+              readOnly: true
+      nodeSelector:
+        kubernetes.io/hostname: optiplex
+      securityContext:
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - configMap:
+            name: home-application-probes-config
+          name: config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Direct TCP and HTTPS connectivity probes from wyrm2.
+  labels:
+    app.kubernetes.io/name: home-application-probes-wyrm2
+    app.kubernetes.io/part-of: home-application-probes
+  name: home-application-probes-wyrm2
+  namespace: monitoring
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: home-application-probes-wyrm2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: home-application-probes-wyrm2
+        app.kubernetes.io/part-of: home-application-probes
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --config.file=/etc/blackbox_exporter/blackbox.yml
+          image: quay.io/prometheus/blackbox-exporter:v0.28.0@sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            periodSeconds: 30
+          name: blackbox-exporter
+          ports:
+            - containerPort: 9115
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/blackbox_exporter
+              name: config
+              readOnly: true
+      nodeSelector:
+        kubernetes.io/hostname: wyrm2
+      securityContext:
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - configMap:
+            name: home-application-probes-config
+          name: config
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: home-application-probes
+  namespace: monitoring
+spec:
+  podMetricsEndpoints:
+    - interval: 10s
+      params:
+        module:
+          - tcp_ipv4
+        target:
+          - 1.1.1.1:443
+      path: /probe
+      port: http
+      relabelings:
+        - sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: source_node
+        - sourceLabels:
+            - __param_target
+          targetLabel: target
+      scrapeTimeout: 7s
+    - interval: 10s
+      params:
+        module:
+          - https_ipv4
+        target:
+          - https://data.forgejo.org/api/v1/version
+      path: /probe
+      port: http
+      relabelings:
+        - sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: source_node
+        - sourceLabels:
+            - __param_target
+          targetLabel: target
+      scrapeTimeout: 7s
+    - interval: 10s
+      params:
+        module:
+          - https_ipv4
+        target:
+          - https://github.com/robots.txt
+      path: /probe
+      port: http
+      relabelings:
+        - sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: source_node
+        - sourceLabels:
+            - __param_target
+          targetLabel: target
+      scrapeTimeout: 7s
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: home-application-probes

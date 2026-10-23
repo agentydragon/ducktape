@@ -355,6 +355,7 @@ py_library(
     srcs = ["gateway_probe.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":blackbox_exporter",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
@@ -365,6 +366,49 @@ py_library(
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "blackbox_exporter",
+    srcs = ["blackbox_exporter.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)
+
+py_library(
+    name = "home_application_probes",
+    srcs = ["home_application_probes.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":blackbox_exporter",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_home_application_probes",
+    srcs = ["test_home_application_probes.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    requires_docker = True,
+    deps = [
+        ":blackbox_exporter",
+        ":home_application_probes",
+        "//:conftest",
+        "//third_party/containers:blackbox_exporter",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )

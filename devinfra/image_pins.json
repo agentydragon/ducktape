@@ -16,5 +16,10 @@
     "image": "docker.io/excalidraw/excalidraw",
     "digest": "sha256:72600b725cfbf0c74f090b748f11bdd41ae205fc065ad02080d7b2ec37566079",
     "platforms": ["linux/amd64"]
+  },
+  "blackbox_exporter": {
+    "image": "quay.io/prometheus/blackbox-exporter",
+    "digest": "sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc",
+    "platforms": ["linux/amd64"]
   }
 }

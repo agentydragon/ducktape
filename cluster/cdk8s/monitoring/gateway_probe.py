@@ -33,6 +33,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.monitoring import blackbox_exporter
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.scripts.nebula_mesh import Mesh
@@ -118,10 +119,7 @@ def _daemon_set(scope: Chart, nodes: list[str]) -> None:
                     containers=[
                         k8s.Container(
                             name="blackbox-exporter",
-                            image=(
-                                "quay.io/prometheus/blackbox-exporter:v0.28.0"
-                                "@sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc"
-                            ),
+                            image=blackbox_exporter.IMAGE,
                             args=[f"--config.file={_CONFIG_DIR}/{_CONFIG_FILE}"],
                             ports=[k8s.ContainerPort(name=_PORT_NAME, container_port=_PORT)],
                             readiness_probe=k8s.Probe(

@@ -199,6 +199,7 @@ from cluster.cdk8s.monitoring import (
     grafana_helmrepository,
     grafana_instance,
     grafana_operator,
+    home_application_probes,
     home_switch as monitoring_home_switch,
     loki,
     mimir,
@@ -503,6 +504,20 @@ def generate_manifests(root: Path) -> None:
     smokeping.smokeping(
         flux_chart,
         write_directory(root, monitoring_smokeping_artifact, functools.partial(smokeping.chart, mesh=mesh)),
+        monitoring_crds_kustomization,
+    )
+    monitoring_home_application_probes_artifact = artifact(
+        "monitoring-home-application-probes", home_application_probes.OUTPUT_DIR
+    )
+    home_application_probes.home_application_probes(
+        flux_chart,
+        write_directory(
+            root,
+            monitoring_home_application_probes_artifact,
+            home_application_probes.chart,
+            namespace=home_application_probes.NAMESPACE,
+            config_map_generator=[home_application_probes.CONFIG_MAP],
+        ),
         monitoring_crds_kustomization,
     )
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
@@ -1874,6 +1889,7 @@ def generate_manifests(root: Path) -> None:
             metrics_server_artifact,
             monitoring_alloy_artifact,
             monitoring_gateway_probe_artifact,
+            monitoring_home_application_probes_artifact,
             monitoring_home_switch_artifact,
             monitoring_loki_artifact,
             monitoring_mimir_artifact,

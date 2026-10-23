@@ -112,3 +112,11 @@ oci_image_py(
     tag = "nginx-unprivileged:test",
     visibility = ["//visibility:public"],
 )
+
+oci_image_py(
+    name = "blackbox_exporter",
+    testonly = True,
+    image = "@blackbox_exporter_linux_amd64",
+    tag = "quay.io/prometheus/blackbox-exporter:v0.28.0",
+    visibility = ["//visibility:public"],
+)

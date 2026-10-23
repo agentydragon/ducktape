@@ -680,6 +680,11 @@ spec:
       name: monitoring-gateway-probe
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/monitoring/home-application-probes/**"
+          to: "@artifact/cluster/generated/monitoring/home-application-probes/"
+      name: monitoring-home-application-probes
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/home-switch/**"
           to: "@artifact/cluster/k8s/home-switch/"
       name: monitoring-home-switch
