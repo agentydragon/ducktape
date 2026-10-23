@@ -188,7 +188,13 @@ Retain. Do not rename/delete the namespace or its Kustomization.
    Confirm the pinned Home Assistant/provisioner and CPAP images are pullable
    from their registries before discarding the old image cache.
 2. Suspend reconciliation for the owning `home-assistant` and `cpap-sync`
-   Flux Kustomizations. Pause the Home Assistant token CronJob, CPAP sync
+   Flux Kustomizations. On each Kustomization, first set the live annotation
+   `kustomize.toolkit.fluxcd.io/reconcile: disabled` to protect it from its
+   parent, and set `spec.suspend: true` with field manager
+   `flux-client-side-apply`. Verify both survive a parent reconciliation;
+   an unprotected `kubectl patch` suspension was observed to disappear.
+   Record original annotations and suspension state for restoration. Pause
+   the Home Assistant token CronJob, CPAP sync
    CronJob, CPAP image-restart controller, and CI scheduling on OptiPlex.
    Stop Home Assistant cleanly; wait for its Pod to exit. Do not start the
    onboarding Job. Stop the stateless CPAP VM with `runStrategy: Halted` and
@@ -292,7 +298,8 @@ the cold capture of all four directories.
    `kubevirt.io/cpap-wifi` allocation, and a card HTTP read through `cpap-card`.
 6. Resume VolSync against the new claim and require a successful new Restic
    snapshot in the **existing repository**. Restore token and CPAP schedules,
-   image-restart controller and Flux reconciliation to their recorded states.
+   image-restart controller and Flux reconciliation to their recorded states,
+   removing the temporary parent-reconciliation guard annotation.
    Run one CPAP sync and verify its Forgejo result. Resume CI after confirming
    required images, emptyDir budgets and node ephemeral-storage accounting.
 7. Remove temporary restore Pods, disposable volumes and migration holds.
