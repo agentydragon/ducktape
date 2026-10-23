@@ -107,8 +107,8 @@ function useActionGroupHealth(): {
 }
 
 // /action-groups returns every configured group, sandbox-kind included; this page only cares
-// about mcp-kind ones. Every mcp-kind group whose config carries a server_id is guaranteed (by a
-// backend validation invariant, ActionCatalog._server_id_matches_group_key) to have that
+// about mcp-kind ones. Go catalog config validation requires every mcp-kind group whose config
+// carries a server_id to have that
 // server_id equal its own key -- so an oauth-linked group's key doubles as the join key, with no
 // separate field needed.
 function mergeRows(groups: ActionGroupView[], linkages: McpLinkageView[]): Row[] {
