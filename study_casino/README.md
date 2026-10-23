@@ -25,10 +25,14 @@ Staged API change: [action result discriminator rollout](docs/action_result_disc
 ## Auth
 
 OIDC Authorization Code (confidential client) in `auth.py`: `/auth/login` → Authentik →
-`/auth/callback` → HMAC-signed session cookie. Authentik resources:
-`tf/gitops/sso-providers/provider_study_casino.tf`. Users in `STUDY_CASINO_ADMIN_USERS`
-(comma-separated) manage everyone's prize catalogs via `/admin/*`; non-admins cannot create or
-delete prizes, even their own, but redeem against their own tokens.
+`/auth/callback` → HMAC-signed session cookie. Configure `STUDY_CASINO_OIDC_ISSUER`,
+`STUDY_CASINO_OIDC_CLIENT_ID`, `STUDY_CASINO_OIDC_CLIENT_SECRET`, and
+`STUDY_CASINO_SESSION_SECRET` together; empty or whitespace-only values are invalid, and a
+partial configuration fails settings validation before the app serves requests. With all four
+unset, the app accepts requests as user `default` for local development and tests. Authentik
+resources: `tf/gitops/sso-providers/provider_study_casino.tf`. Users in
+`STUDY_CASINO_ADMIN_USERS` (comma-separated) manage everyone's prize catalogs via `/admin/*`;
+non-admins cannot create or delete prizes, even their own, but redeem against their own tokens.
 
 ## State
 
