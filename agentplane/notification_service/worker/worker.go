@@ -97,8 +97,10 @@ type retention struct {
 // long to idle: until the next retention page or the next durable deadline, whichever is first.
 func (w *Worker) advance(ctx context.Context, sweep *retention) (idle time.Duration, worked bool, err error) {
 	if !time.Now().Before(sweep.due) {
-		if err = w.Store.CleanupGitHubDeliveries(ctx, time.Now().Add(-time.Duration(w.Settings.GitHubDeliveryRetentionDays)*24*time.Hour)); err != nil {
-			return 0, false, err
+		if days := w.Settings.GitHubDeliveryRetentionDays; days != nil {
+			if err = w.Store.CleanupGitHubDeliveries(ctx, time.Now().Add(-time.Duration(*days)*24*time.Hour)); err != nil {
+				return 0, false, err
+			}
 		}
 		if sweep.after, err = w.Store.Cleanup(ctx, sweep.after); err != nil {
 			return 0, false, err

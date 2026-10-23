@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, ClassVar
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, field_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.log_levels import LogLevels
@@ -150,11 +150,11 @@ class Settings(YamlFileSettings):
     )
     quotas: QuotaSettings = Field(default_factory=QuotaSettings)
     notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)
-    github_delivery_retention_days: int = Field(
+    github_delivery_retention_days: int | None = Field(
         default=7,
         ge=1,
         le=3650,
-        description="Days to retain raw GitHub deliveries, their IDs/digests and subject links. Bounds replay and deduplication; inbox payloads retain their separate 30-day lifetime.",
+        description="Days to retain raw GitHub deliveries (null retains indefinitely), their IDs/digests and subject links. Bounds replay and deduplication; inbox payloads retain their separate 30-day lifetime.",
     )
     stale_inbox_confirmation_s: PositiveSeconds = Field(
         default=30, le=3600, description="Seconds between first and confirming unavailable UID-pinned Sandbox lookup."
@@ -165,3 +165,8 @@ class Settings(YamlFileSettings):
     github: GitHubSettings | None = Field(
         default=None, description="GitHub source configuration. Disabled when absent from both YAML and environment."
     )
+
+    @field_validator("github_delivery_retention_days", mode="before")
+    @classmethod
+    def parse_infinite_retention(cls, value: object) -> object:
+        return None if value == "null" else value

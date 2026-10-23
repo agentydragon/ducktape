@@ -79,7 +79,7 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 		t.Fatal(err)
 	}
 	if c.DatabaseURL == "" || c.Namespace != "test-agentplane" || c.TokenAudience != "test-notifications" ||
-		c.OperatorReaderAccount != "test-app" || c.GitHubDeliveryRetentionDays != 14 || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
+		c.OperatorReaderAccount != "test-app" || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 14) || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
 		c.Actions.URL != "http://test-actions.invalid:8080" || c.Actions.TokenFile != "/test/tokens/actions" ||
 		c.RunnerGateway.ControlTarget != "{sandbox}-control.{namespace}.svc:8080" || c.RunnerGateway.TokenFile != "/test/tokens/gateway" ||
 		c.HistoryService.Target != "test-history.invalid:8080" || c.HistoryService.TokenFile != "/test/tokens/history" ||
@@ -102,7 +102,7 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if c.Quotas.InboxesPerAccount != 64 || c.Quotas.ActiveSubscriptionsPerInbox != 64 || c.Quotas.EntriesPerInbox != 10_000 {
 		t.Errorf("quota defaults: %+v", c.Quotas)
 	}
-	if c.NoticeDebounce.QuietSeconds != 2 || c.NoticeDebounce.MaxWaitSeconds != 10 || c.StaleInboxConfirmationSeconds != 30 || c.GitHubDeliveryRetentionDays != 7 {
+	if c.NoticeDebounce.QuietSeconds != 2 || c.NoticeDebounce.MaxWaitSeconds != 10 || c.StaleInboxConfirmationSeconds != 30 || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 7) {
 		t.Errorf("worker defaults: %+v", c.Settings)
 	}
 	if c.RunnerGateway.RequestTimeoutSeconds != 5 || c.HistoryService.RequestTimeoutSeconds != 20 ||
@@ -122,7 +122,7 @@ func TestAnEnvironmentVariableOverridesTheFileAtTopLevelAndNested(t *testing.T) 
 		t.Fatal(err)
 	}
 	if c.Port != 9001 || c.Quotas.EntriesPerInbox != 5 || c.NoticeDebounce.QuietSeconds != 7 ||
-		c.Actions.RequestTimeoutSeconds != 1.5 || c.StaleInboxConfirmationSeconds != 9 || c.GitHubDeliveryRetentionDays != 3 {
+		c.Actions.RequestTimeoutSeconds != 1.5 || c.StaleInboxConfirmationSeconds != 9 || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 3) {
 		t.Errorf("file and environment overrides: %+v", c)
 	}
 }
@@ -195,5 +195,31 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	}
 	if _, err := loadTestConfig(t, requiredFile, settingPrefix+"DATABASE_URL="); err == nil {
 		t.Error("accepted without a database URL")
+	}
+}
+
+func TestNullGitHubRetentionDisablesExpiry(t *testing.T) {
+	for _, tc := range []struct {
+		name, file, env string
+		want            *int
+	}{
+		{"YAML null", requiredFile + "github_delivery_retention_days: null\n", "", nil},
+		{"environment null", requiredFile + "github_delivery_retention_days: 14\n", settingPrefix + "GITHUB_DELIVERY_RETENTION_DAYS=null", nil},
+		{"environment finite over YAML null", requiredFile + "github_delivery_retention_days: null\n", settingPrefix + "GITHUB_DELIVERY_RETENTION_DAYS=3", new(3)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := []string{}
+			if tc.env != "" {
+				env = append(env, tc.env)
+			}
+			c, err := loadTestConfig(t, tc.file, env...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := c.GitHubDeliveryRetentionDays
+			if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
+				t.Fatalf("retention = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

@@ -246,7 +246,7 @@ and delivered inbox entry. Ingress performs no extra GitHub job/run lookup.
 PostgreSQL is the durable ingress journal, with committed ordering serialized against subscription
 creation. Inbox workers asynchronously replay from each subscription boundary; they recheck current App
 access, stable repository/installation identity, cancellation/version and inbox fencing. Raw GitHub receipts are deleted in batches once older than `github_delivery_retention_days`
-(default seven days), measured from local ingestion, including IDs, digests and subject links.
+(default seven days; `null` disables expiry), measured from local ingestion, including IDs, digests and subject links.
 This bounds catch-up and late PR/commit association matching even for active subscriptions;
 receipts that expire before matching cannot be recovered from this journal. Deduplication and
 conflicting-ID rejection last only while the receipt is retained. A redelivery after expiry is

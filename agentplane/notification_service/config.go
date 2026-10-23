@@ -158,6 +158,20 @@ func loadConfig() (config, error) {
 			return config{}, errors.New("could not read Notification Service settings file")
 		}
 	}
+	// Viper omits explicit YAML nulls when unmarshalling over defaults. Preserve the distinction
+	// between an absent retention key (seven days) and an explicit null (no expiry).
+	const retentionKey = "github_delivery_retention_days"
+	for _, key := range settings.AllKeys() {
+		if key == retentionKey && settings.Get(key) == nil {
+			c.GitHubDeliveryRetentionDays = nil
+		}
+	}
+	// Environment variables are strings; accept the JSON null spelling as the nullable value.
+	// A typed nil overrides the string before mapstructure tries to decode it as an integer.
+	if os.Getenv(settingPrefix+"GITHUB_DELIVERY_RETENTION_DAYS") == "null" {
+		c.GitHubDeliveryRetentionDays = nil
+		settings.Set(retentionKey, (*int)(nil))
+	}
 	// The errors name no value: a setting can be a Secret.
 	if err := settings.UnmarshalExact(&c); err != nil {
 		return config{}, errors.New("invalid Notification Service settings")

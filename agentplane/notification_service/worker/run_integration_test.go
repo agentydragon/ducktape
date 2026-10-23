@@ -117,7 +117,7 @@ func TestRunReturnsAProviderErrorOutsideItsContract(t *testing.T) {
 
 func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.T) {
 	settings := DefaultSettings()
-	settings.GitHubDeliveryRetentionDays = 3
+	settings.GitHubDeliveryRetentionDays = new(3)
 	h := newHarness(t, settings)
 	h.exec(t, `INSERT INTO github_delivery
 		(app_id, delivery_id, installation_id, event, digest, payload, received_at)
@@ -134,4 +134,35 @@ func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.
 		t.Fatalf("retained %d receipts, want only the two-day-old receipt", count)
 	}
 	h.exec(t, `DELETE FROM github_delivery WHERE app_id = 42`)
+}
+
+func TestInfiniteGitHubRetentionStillCleansUpInboxPayloads(t *testing.T) {
+	settings := DefaultSettings()
+	settings.GitHubDeliveryRetentionDays = nil
+	h := newHarness(t, settings)
+	sub := h.subscribe(t, "retention")
+	h.exec(t, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at)
+		VALUES ($1, 1, '{"provider":"github"}', '{}', now() - interval '31 days')`, sub.InboxID)
+	h.exec(t, `UPDATE inbox SET last_cursor = 1, next_attempt = now() + interval '1 hour' WHERE id = $1`, sub.InboxID)
+	h.exec(t, `INSERT INTO github_delivery
+		(app_id, delivery_id, installation_id, event, digest, payload, received_at)
+		VALUES (43, '00000000-0000-0000-0000-000000000003', 43, 'issue_comment', 'digest', '{}', now() - interval '4000 days')`)
+	if _, _, err := h.worker.advance(t.Context(), &retention{}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM github_delivery WHERE app_id = 43`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("retained %d raw receipts, want 1", count)
+	}
+	var expired bool
+	if err := h.db.QueryRowContext(t.Context(), `SELECT payload IS NULL FROM entry WHERE inbox_id = $1 AND cursor = 1`, sub.InboxID).Scan(&expired); err != nil {
+		t.Fatal(err)
+	}
+	if !expired {
+		t.Fatal("inbox payload did not expire")
+	}
+	h.exec(t, `DELETE FROM github_delivery WHERE app_id = 43`)
 }

@@ -88,9 +88,10 @@ together because their structure is versioned with the code.
 
 ### Raw GitHub delivery retention
 
-`github_delivery_retention_days` defaults to 7 and accepts whole days from 1 to 3650.
+`github_delivery_retention_days` defaults to 7 and accepts whole days from 1 to 3650, or `null` for infinite retention.
 Override it with `AGENTPLANE_NOTIFICATIONS_GITHUB_DELIVERY_RETENTION_DAYS` or deployment YAML.
-Workers delete up to 1000 expired raw deliveries per cleanup pass, once a minute per worker,
+Use `github_delivery_retention_days: null` in YAML or the literal `null` in the environment variable
+to disable raw delivery cleanup; zero remains invalid. Workers delete up to 1000 expired raw deliveries per cleanup pass, once a minute per worker,
 including their IDs, digests and subject links. This bounds source replay, late association
 matching and delivery-ID deduplication, including for active subscriptions. Inbox payload copies
 keep their independent 30-day retention. Changing this setting does not enable the GitHub provider.
