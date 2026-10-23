@@ -25,14 +25,12 @@ from model_catalog.catalog import Route
 
 @dataclass(frozen=True)
 class ReplicaProfile:
-    """The replicas/strategy/minReadySeconds/PDB shape shared by every Deployment in an
-    environment (llm-ingress, egress, app, actions)."""
+    """A Deployment's replica count, rollout strategy, readiness delay, and eviction budget."""
 
     count: int
     strategy: DeploymentStrategy
     min_ready: Duration | None
-    # PodDisruptionBudget minAvailable, or None for no budget (one replica has nothing to
-    # keep). Sized so a zero-maxUnavailable rollout never trips it.
+    # PodDisruptionBudget minAvailable for voluntary evictions, or None for no budget.
     pdb_min_available: int | None
 
 
@@ -63,8 +61,9 @@ class EgressProps:
     # mounts the ConfigMap by the same name.
     ca_secret_name: str
     credentials_namespace: str
-    # None retains the environment's replica profile and the caller's placement.
-    # Otherwise run one proxy per listed zone and prefer same-zone Service endpoints.
+    replicas: ReplicaProfile
+    traffic_distribution: str | None
+    # Restrict placement and spread across these zones; None retains caller placement.
     zones: tuple[str, ...] | None = None
     # Static relay clients outside the runner namespace; admission is not an egress grant.
     external_workload_namespaces: tuple[str, ...] = ()

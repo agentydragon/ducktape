@@ -5,7 +5,6 @@ EgressCredential resources and egress PolicySets it reads.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
@@ -805,11 +804,6 @@ class Egress(Construct):
         }
 
         zones = self.env.egress.zones
-        replica_profile = (
-            replace(self.env.replicas, count=len(zones), pdb_min_available=len(zones) - 1)
-            if zones is not None
-            else None
-        )
         workload = add_service_workload(
             self,
             self.env,
@@ -836,8 +830,8 @@ class Egress(Construct):
             ),
             tolerate_control_plane=True,
             placement=self.placement if zones is None else None,
-            replica_profile=replica_profile,
-            traffic_distribution="PreferClose" if zones is not None else None,
+            replica_profile=self.env.egress.replicas,
+            traffic_distribution=self.env.egress.traffic_distribution,
             registry_secret_name=self.registry_secret_name,
         )
         if zones is not None:
