@@ -39,6 +39,7 @@ py_library(
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//grpcio_health_checking",
+        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pyyaml",
         "@pypi//sqlalchemy",
