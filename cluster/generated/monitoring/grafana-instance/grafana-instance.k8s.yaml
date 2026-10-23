@@ -423,6 +423,9 @@ spec:
   configMapRef:
     key: home-network-overview.json
     name: home-network-overview-dashboard
+  datasources:
+    - datasourceName: Loki
+      inputName: DS_LOKI
   folder: Home network
   instanceSelector:
     matchLabels:

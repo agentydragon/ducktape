@@ -83,7 +83,7 @@ _FILE_DASHBOARDS = {
     "cluster-disk-usage": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}),
     "io-pressure": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}),
     # Beside the AT&T gateway exporter's own "Home gateway" dashboard.
-    "home-network-overview": _FileDashboard(datasources={}, folder="Home network"),
+    "home-network-overview": _FileDashboard(datasources={"DS_LOKI": "Loki"}, folder="Home network"),
 }
 
 
