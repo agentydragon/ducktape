@@ -1,11 +1,15 @@
-# Notification Service API and delivery semantics
+# Notification Service API
 
-For setup and configuration, see the [service README](../README.md).
+The workload API is defined by [`notifications.proto`](../notifications.proto); its HTTP form is
+served at `/openapi.json`. The operator API is defined separately by
+[`notifications_operator.proto`](../notifications_operator.proto). Setup and configuration belong
+in the [service README](../README.md); internal delivery and storage design is in
+[architecture](architecture.md).
 
 ## Agent API
 
-Workload bearer authentication uses TokenReview. Owner authority is the
-verified ServiceAccount, shared by its workloads. Every creation specifies `destination_ref`
+Workload calls require a Pod-bound Kubernetes ServiceAccount bearer token with the configured
+audience. Owner authority is the verified ServiceAccount, shared by its workloads. Every creation specifies `destination_ref`
 (namespace/name/UID) and `session_id`; inbox and subscription IDs identify subsequent operations.
 The caller's inboxes and subscriptions are those opened for the Sandbox that runs as its account now: a Sandbox
 recreated under a deleted one's name sees none of the deleted one's, and an account no Sandbox runs as has none.
@@ -67,13 +71,9 @@ A `source` with neither field set is rejected as `INVALID_ARGUMENT`. A service w
 a `github` source with `PERMISSION_DENIED`; no route lists enabled providers. Inbox cursors,
 acknowledgement, and runner notices remain provider-neutral.
 
-The platform prompt supplies service URLs, authentication, explicit destination identifiers and
-essential decision rules. The service's [`/llms.txt`](agents/llms.txt) links to agent workflows for
-subscriptions, inbox handling and GitHub. Update those guides when the corresponding behavior changes.
-Prompt changes apply to newly opened sessions; existing runner sessions keep their immutable specs.
-Notices carry only the inbox ID and preparation-time acknowledgement/coverage cursors; retrieval,
-paging, and contiguous-ack instructions live in the served inbox-handling guide. Previously prepared notices
-keep their original text on retries.
+Agent workflows are served through [`/llms.txt`](agents/llms.txt). Notices identify the inbox
+and its preparation-time acknowledgement/coverage cursors; reading and acknowledging the inbox
+remain explicit client operations. A retried notice retains its original text.
 
 ## Messages
 
@@ -83,29 +83,25 @@ namespace by name, optionally pinned to one incarnation by `uid`, by inbox tag (
 `allSandboxes`; grants combine additively. A target without `uid` follows a Sandbox deleted and recreated under its
 name. A tag target matches the Sandbox's `spec.inboxTags` as the service reads it at acceptance, so removing the tag
 stops new sends to it, and a deleted Sandbox matches nothing. The service
-checks the grant against its watched view of the namespace's PolicySets and PolicyBindings at acceptance: it
-refuses every send as `UNAVAILABLE` before its first sync and once a watched kind has missed three periods of
-`policy_watch_period_s`, and it reports each binding's rules in its `SessionInboxAccessReady` condition. Replicas
-watch independently, so a grant or revocation takes effect on each as it observes it. Revocation stops new sends
+refuses sends as `UNAVAILABLE` until its permission view is initialized, or while it is stale.
+A grant or revocation takes effect on each replica as that replica observes it. Revocation stops new sends
 only; accepted messages stay in the inbox. The recipient needs no subscription or consent of its own.
 
 A send names the Sandbox (namespace and name; `uid` optional) and the Session ID, as a subscription does. The
 service pins the UID of the Sandbox it finds and refuses a missing Sandbox, one outside its namespace or another
 incarnation than a given `uid` as `NOT_FOUND`; it never retargets. A suspended Sandbox accepts messages; its
-notice waits in the Dispatcher until the Sandbox runs again, and resumes it only when the Sandbox has
-`spec.wakeOnSend` and the deployment lists this service among the Dispatcher's wake callers. The
-inbox is the Sandbox ServiceAccount's inbox for that Session. When it does not exist yet, the service first asks
-the History Service which Sandbox wrote the Session (`SessionSummary.sandbox`) and refuses a Session recorded for
-no Sandbox or another one as `NOT_FOUND`, so invented Session IDs cannot use up the recipient's inbox quota.
-History records the Sandbox by name, so a Session of a deleted predecessor of the same name passes. Sends to an
-existing inbox skip the check.
+notice waits until the Sandbox runs again unless wake-on-send is enabled and authorized for this
+service. The inbox belongs to the Sandbox ServiceAccount for that Session. Creating a recipient inbox
+requires retained Session history associated with that Sandbox; missing or unrelated history returns
+`NOT_FOUND`. This association checks the Sandbox name, so a Session of a deleted predecessor with
+the same name can pass. Sending to an existing inbox does not repeat the history check.
 
 A message is an inbox entry like any other, with the same cursors, notices, acknowledgement, payload expiry and
 purge. Its event identity is the message ID and the sender ServiceAccount the service authenticated; its payload
 is the `body` and the optional `from_session`, the sender's unverified label for the Session it writes from. The
 idempotency key is unique per sender within the inbox: an identical retry answers with the accepted message,
 also after its payload expired, and other content under the key is `ALREADY_EXISTS`. Bodies are UTF-8, at most
-`message_body_limit_bytes`; the database refuses more than 256 KiB whatever the setting. A sender may have
+`message_body_limit_bytes`, with an absolute maximum of 256 KiB. A sender may have
 `quotas.unacknowledged_messages_per_sender` messages in an inbox beyond its acknowledged cursor; messages do not
 count towards `quotas.entries_per_inbox`.
 
@@ -114,175 +110,93 @@ the inbox's cursors: `covered` (a notice named the message), `acknowledged` (the
 and `inbox_retired`. It shows no cursors or other entries. Another account's message, an unknown ID and a
 message whose inbox was purged are all `NOT_FOUND`.
 
-## Persistence and recovery
+## Delivery, retention and quotas
 
-The service has its own PostgreSQL database and role on the shared cluster. Migrations are Goose files run by an
-image-coupled migrator under an advisory migration lock.
+Entries form a committed contiguous prefix and are deduplicated by provider event identity within
+an inbox. One entry can match multiple subscriptions. Reading, notice preparation and notice
+confirmation never acknowledge entries; only explicit acknowledgement advances that prefix.
+Notice admission and harness confirmation are distinct states, and neither proves that an agent
+handled the entries. Unacknowledged entries do not cause repeated reminders. Notification delivery
+does not promise exactly-once native execution.
 
-A short inbox row lock serializes cursor allocation, payload insertion, overlapping subscription
-matches and source-checkpoint advancement. Provider identities are deduplicated per inbox. Reads
-expose a committed prefix, not a sequence whose transactions can commit out of order.
+Provider payloads expire after 30 days while their event identities remain deduplicated.
+`expired_through` reports the resulting prefix gap without advancing acknowledgement. Retired
+inboxes are purged after 30 days. After purge, a new explicit subscription can establish a fresh
+inbox; there is no implicit routing to a successor Sandbox or Session.
 
-A dedicated PostgreSQL `LISTEN` connection per replica wakes workers on committed `NOTIFY`
-invalidations. Webhook acceptance schedules matching and delivery in the same transaction; payloads
-never travel in NOTIFY. Workers drain durable work at startup and after reconnect, so missing a wakeup
-does not lose an accepted delivery. Inbox leases and provider generations fence concurrent workers
-and webhooks arriving during matching. Idle GitHub subscriptions have no scheduled polling; timers
-are only for explicit retry/lease deadlines, Actions API reads and retention cleanup.
-Actions requires timed reads of its separate service's event history; this does not access the
-Actions database or create a cross-service database dependency. Listener loss fails readiness.
+Subscriptions default to seven days and can be renewed for up to 30 days at a time. Configured
+[quotas](../README.md#resource-quotas) bound retained inboxes, active subscriptions, source-event
+identities and unacknowledged messages. A full inbox stops source progress with an observable
+error. Lowering a quota blocks new allocations without deleting retained data. Cancelled and
+expired subscriptions remain inspectable and idempotently replayable without consuming active
+capacity. Renewing an expired subscription needs an active slot; renewing an active one does not
+consume another slot. Replaying a creation key returns its retained subscription without
+reactivating it, even at the limit.
 
-Workers claim inboxes for 30 seconds, with a 20-second work budget and fenced commits. Network calls
-are outside transactions. They poll canonical Actions history (bounded pages of 128), including
-terminal requests; there is no second Action queue and no retry of Action execution. Errors of a
-source subscription and delivery errors are exposed separately. Polling rechecks source ownership.
+## Source authorization
 
-Before submitting a notice, persist its command ID, exact input, and coverage boundary. Before the
-first delivery attempt, checkpoint the current runner journal tail instead of replaying unrelated
-session history. Persist the exact boundary entry, then the attempt marker, before sending the command.
-A crash before that marker allows a newer initial checkpoint; after it, never skip entries. Runner
-entries are read from the Session's history in the History Service; a cursor missing there must be
-covered by a settled range of streamed deltas. A command is sent only once that history reaches the
-runner's journal end, so a lagging copy delays delivery rather than hiding an admission. Replays
-verify the last committed runner entry before advancing. A lost command response reuses the same ID;
-`CommandAdmitted` is not delivery. `HarnessUserMessageConfirmed.origin_command_ids` supplies causal
-confirmation, including coalesced inputs. Failed/no-op/unconfirmed commands are not confirmed receipts.
-Invalid runner history quarantines delivery until explicit retirement, rather than retargeting history.
-There is no exactly-once native execution claim. Coverage is independent of acknowledgement: no repeated
-reminders for unacknowledged entries, including after a worker restart. Only a running harness can receive
-input; this service never calls CreateSession, ResumeSession, or sandbox provisioning APIs.
+An Actions subscription must name a request owned by the authenticated subscriber; ownership is
+checked at creation and during processing. A subscription grants no ability to cancel, decide or
+execute that Action. Agent tokens are not retained or forwarded to source services.
 
-Default limits: 64 inboxes per account and Sandbox incarnation; 64 active (not cancelled and not expired)
-subscriptions per inbox; 10000 source-event identities per inbox lifetime; 128 unacknowledged messages per sender
-and inbox; 128 entries per read/poll/replay step; subscriptions last 7 days by default and can be renewed up to 30
-days at a time. A full inbox stops source progress with an observable error rather than dropping events. Provider
-payloads expire after 30 days, preserving identity tombstones to prevent replay duplicates. `expired_through`
-reports the resulting prefix gap without advancing acknowledgement. Explicitly retired inboxes are purged after 30
-days. After purge, a new explicit subscription can establish a fresh inbox epoch; there is no implicit successor
-routing.
-
-## Resource quotas
-
-The Notification Service settings accept these deployment-configurable defaults:
-
-```yaml
-quotas:
-  inboxes_per_account: 64
-  active_subscriptions_per_inbox: 64
-  entries_per_inbox: 10000
-  unacknowledged_messages_per_sender: 128
-```
-
-Each value must be positive. Environment overrides use the nested settings delimiter, for example
-`AGENTPLANE_NOTIFICATIONS_QUOTAS__ACTIVE_SUBSCRIPTIONS_PER_INBOX=128`. Configure the same
-quotas on all replicas. Lowering a quota does not delete retained data; it blocks new allocations
-when capacity is exhausted. The inbox quota counts retained inboxes, and the entry quota counts
-distinct source-event identities over an inbox's lifetime, including payload-expiry tombstones. The message quota
-counts one sender's messages past the inbox's acknowledged cursor.
-
-Cancelled and expired subscription records do not consume active capacity; they remain
-available for history and idempotent replay. Renewing an expired subscription consumes
-an active slot and is subject to the same limit as creating one. Renewing an already
-active subscription does not consume another slot. Replaying a creation idempotency
-key returns the retained subscription without reactivating it, even at the limit.
-
-## Authorization
-
-Actions allows the notification ServiceAccount to read all requests using the ordinary
-`ActionService.GetActionRequest` and `ActionService.ListActionRequestEvents` gRPC methods. The
-`reader_accounts` allowlist defaults to empty;
-ordinary callers remain restricted to their own requests. A service reader is not an operator or
-Action submitter and cannot cancel, decide, or execute Actions. There is no delegated-owner parameter
-or separate service endpoint. Notifications checks the request view's `caller` against the authenticated
-subscriber before accepting a subscription and on every source poll. Agent tokens are never retained or
-forwarded.
-
-The worker uses rotating, audience-specific projected service tokens. It is allowlisted at the Runner
-Gateway, which validates sandbox UID and account binding and serves read-only Session validation, and
-is a History Service reader. Notice delivery goes through the Session Dispatcher.
-Notification Kubernetes RBAC is TokenReview, `get` on Sandboxes in the Sandbox namespace, which
-resolves a destination's UID and owner, and `get`, `list` and `watch` on PolicySets and PolicyBindings with
-`patch` on PolicyBinding status there, for send grants. Cilium allows egress proxy/app → notifications, the
-staging GitHub webhook route → notifications, notifications → Actions/Runner Gateway/Session
-Dispatcher/History Service/PostgreSQL/API server/GitHub API, and no notifications → runner path.
+Any authenticated workload may subscribe to repositories accessible through the service's GitHub
+App, including private repositories. Inbox ownership still scopes reads and management. Access
+revocation or a changed installation/repository identity stops new matching; delivered entries
+remain readable. A changed identity requires explicit subscription recreation.
 
 ## GitHub webhook ingestion and matching
 
-`POST /v1/webhooks/github` uses the GitHub signature, not workload auth. It bounds streamed bodies and
-concurrent ingress operations through commit, verifies HMAC-SHA256 over exact bytes, validates provider payloads, and commits
-payload/metadata before returning 202. Identical App/delivery-ID retries are deduplicated; conflicting
-reuse returns 409. Ping is verified but does not create an event. Invalid signatures, unsupported/malformed
-events, oversized bodies and busy ingress are rejected. Upstream signatures and installation tokens are
-never returned to agents. Installation lifecycle payloads are retained internally, not delivered as PR activity.
-HTTP 400/401 rejection logs include a parsed delivery UUID (or null for a malformed/missing ID),
-a JSON-escaped event header capped at 64 characters, and a stable reason: `invalid_delivery_id`,
-`invalid_signature`, `unsupported_event`, `missing_repository`, `payload_validation`, or the
-fallback `invalid_delivery`. A payload validation log carries `problem`, which names the fields and array positions of the schema
-that failed and quotes nothing of the body. The raw payload, the signature and the secret are never logged. Event headers are untrusted labels,
-not evidence of signature verification. Rejections return generic HTTP responses and do not create durable receipts or inbox entries.
+`POST /v1/webhooks/github` authenticates GitHub deliveries with `X-Hub-Signature-256`, not a
+workload bearer. It requires a UUID `X-GitHub-Delivery`, `X-GitHub-Event`, and a signature over the
+exact request body. Successful acceptance returns HTTP 202 with `accepted: true` and `duplicate`.
+An identical retained App/delivery-ID retry returns `duplicate: true`; conflicting content under
+the same retained ID returns 409. A signed ping returns 202 without creating an activity event.
 
-GitHub does not automatically retry failed webhook requests: failures/timeouts require redelivery.
-Durable recovery starts at the committed receipt, not at the start of the HTTP request.
-If GitHub reports a failed delivery, an App operator should inspect the webhook's Recent Deliveries
-in GitHub App settings and redeliver that delivery (or use GitHub's App delivery-attempt API
-with App authority). A retry of an already committed receipt returns 202 with `duplicate: true`;
-a retry of an uncommitted receipt returns 202 with `duplicate: false` after commit. Then check
-subscription/inbox state separately: HTTP acceptance does not prove runner delivery or agent
-acknowledgement. Do not replay with a new delivery ID or assume GitHub retries automatically.
+Invalid signatures return 401; invalid delivery IDs, malformed or unsupported events return 400;
+oversized bodies return 413. Saturated ingress returns 503 with `Retry-After: 5`. Acceptance means
+the delivery is durably stored, not that it matched a subscription, reached a runner or was
+acknowledged. Rejected deliveries create no inbox entries. Installation lifecycle events are not
+PR activity. Upstream signatures and installation tokens are never returned to agents.
 
-An ordinary issue can be followed with `subject={"kind":"issue","number":123}`. Its defaults
+An ordinary issue can be followed with `subject={"issue":{"number":123}}`. Its defaults
 are all `issues` lifecycle actions and ordinary `issue_comment` events; explicit action filters
-can narrow these. Issue subjects do not accept CI events. The issue API also returns PRs, so
-subscription authorization and repair reject responses with a `pull_request` marker; comments
-with that marker remain PR events, not issue events. The installation token requires `issues:read`.
+can narrow these. Issue subjects do not accept CI events or PR numbers; PR comments remain PR
+events rather than ordinary issue events.
 
 `workflow_job` payloads contribute their repository-qualified `head_sha` and optional branch
 reference. They can match PR/branch/commit subscriptions that explicitly select `workflow_job`,
 including an action filter such as `completed`. A job has no authoritative PR-number list:
-PR matches reuse validated durable head associations, not a guessed PR from its branch name.
-The full accepted job payload (job/run IDs, steps, status and conclusion) remains in the receipt
-and delivered inbox entry. Ingress performs no extra GitHub job/run lookup.
+PR matches use observed head associations rather than inferring a PR from its branch name.
+Delivered job payloads contain the accepted job/run IDs, steps, status and conclusion.
 
-PostgreSQL is the durable ingress journal, with committed ordering serialized against subscription
-creation. Inbox workers asynchronously replay from each subscription boundary; they recheck current App
-access, stable repository/installation identity, cancellation/version and inbox fencing. Raw GitHub receipts are deleted in batches once older than `github_delivery_retention_days`
-(default seven days; `null` disables expiry), measured from local ingestion, including IDs, digests and subject links.
-This bounds catch-up and late PR/commit association matching even for active subscriptions;
-receipts that expire before matching cannot be recovered from this journal. Deduplication and
-conflicting-ID rejection last only while the receipt is retained. A redelivery after expiry is
-accepted as new; an inbox that already holds that event still deduplicates it by event identity.
-Inbox payload retention remains as documented above.
+GitHub subscriptions consider accepted deliveries after their creation boundary. Catch-up,
+late PR/commit association matching and delivery-ID deduplication are bounded by the configured
+[raw delivery retention](../README.md#raw-github-delivery-retention). A delivery that expires before
+matching is no longer available for catch-up. Redelivery after expiry is accepted as new, but an
+inbox already containing the event still deduplicates it. Delivered inbox payload copies have
+their own 30-day lifetime.
 
 PR, issue, exact branch and fixed-commit subjects use native GitHub event/action names. Default CI means completed
 `check_run` and `status`; `check_suite`, `workflow_run` and `workflow_job` require explicit selection. PR comments/reviews,
 branch push/create/delete, and immutable commit matching are distinct. Branch deletion does not cancel
 following that name. CI matching uses current heads, retained PR/branch-to-SHA associations, explicit
 upstream subject references, and currently accessible installed PR forks. Empty PR arrays are supported
-by SHA correlation. Indexed receipt metadata allows a later association to select an earlier CI receipt,
-even across restarts. The GitHub start boundary is immutable and separate from the advancing Actions sequence.
-Database constraints require the state belonging to each subscription's source. Only selected, accessible, unmatched receipts occupy each bounded page;
-unrelated receipts cannot block delivery. Existing inbox identities and subscription matches suppress
-replay, including after payload expiry. An ingress generation fence preserves wakeups during matching.
+by SHA correlation. A later observed association can make an earlier retained CI delivery eligible.
+Already delivered event identities remain deduplicated, including after inbox payload expiry.
 
 Association evidence may predate the subscription, but delivered receipts must follow its creation
 boundary. This is not complete reconstruction of uncaptured heads or events from an uninstalled fork.
 Payload SHA, not inbox order, identifies the revision involved.
 
 Event and action filters are unordered sets. Reordering or repeating identical selectors does not
-change subscription identity; JSON responses and stored creation specifications use canonical ordering.
+change subscription identity; responses use canonical ordering.
 An installation-lookup 404 leaves a PR fork uncovered until a subsequent subject repair discovers
 coverage. Authentication errors, suspended installations and refresh backoff are exposed through
 shared access/subject observations in subscription introspection.
 
-Any authenticated workload may subscribe to repositories accessible through this App, including private
-repositories; normal inbox ownership still applies. Revocation/suspension/identity changes stop new matching
-and expose shared access failures through subscription introspection; delivered entries stay available.
-Transient/rate-limit failures retry with backoff. Shared observations expose safe `error` and absolute
-`retry_at` values; these are not runner-delivery deadlines. A cancelled subscription can still show
-shared observations maintained for another active subscriber.
-Rate-limit retries respect both `Retry-After` and an exhausted primary quota's `X-RateLimit-Reset`,
-with a minimum 60-second delay when GitHub supplies no later deadline. Workers log the shared entity,
-safe failure category and retry delay, never upstream bodies or credentials.
+Transient/rate-limit failures retry with backoff. Access and subject observations expose `error`
+and absolute `retry_at` values; these are not runner-delivery deadlines. A cancelled subscription
+can still show shared observations maintained for another active subscriber.
 
 Accepted webhooks remain durable within the raw receipt retention window while a source is backing off. New ingress does not shorten that
 source's retry deadline; workers resume matching retained receipts after the deadline, including
@@ -292,108 +206,45 @@ guarantee. A changed installation/repository identity requires explicit subscrip
 
 ## Operator notification diagnostics
 
-The integration app (and only the configured `operator_reader_account` in the Notification Service's
-namespace) can read `GET /v1/operator/sandboxes/{namespace}/{name}/notifications/stream?uid=…` with a
-Pod-bound, audience-specific workload token. This endpoint does not delegate agent inbox authority:
-it returns no provider payloads, idempotency keys, notice text or mutation capability. The app verifies
-the browser's operator login and resolves the current Sandbox UID before calling it; a reused name
-cannot expose another incarnation. Workload `/v1` endpoints remain owner-scoped.
+`NotificationsOperator` is a gRPC-only, read-only API for the configured
+`operator_reader_account` in the service's namespace, using a Pod-bound token with the service's
+audience. The service exposes no HTTP routes for this API. It returns no provider
+payloads, idempotency keys or notice text and grants no agent inbox authority.
 
-The endpoint returns snapshot SSE frames. It subscribes to committed queue wakeups before its
-initial read; a reconnect always reads durable status anew, so PostgreSQL NOTIFY is only an
-invalidation, not a replay log. Debounce deadlines and subscription expiry also trigger snapshots
-when their displayed status changes. The app proxies this stream under the operator session
-lifetime; the drawer follows it only while open, retains the last snapshot during an outage, and
-marks it stale.
+- `WatchSandboxNotifications` takes namespace, Sandbox name and current UID. It reports inboxes
+  (including retired ones), subscriptions, source failures, entry counts and latest notice state.
+- `WatchSessionNotices` takes at most 200 Session IDs. It reports non-retired inboxes in the
+  caller's namespace: `queued` entries not yet covered by a notice, `unacknowledged` covered
+  entries, latest notice progress/error, wait reason and estimated `eligible_at` while debouncing.
 
-`GET /v1/operator/notices/stream?session_id=…` (at most 200 Sessions) streams the same kind of
-snapshot for the named Sessions' live inboxes in the operator's own namespace, reduced to what a
-Thread list shows: `queued` entries no notice covers yet, `unacknowledged` entries a notice covers
-that the agent has not acknowledged, the latest notice's stage and error, the wait reason, and while
-debouncing `eligible_at`, an estimate that a new entry can push back. Reading it acknowledges nothing.
+Streams open with a snapshot and send another when displayed state changes, including changes
+at debounce or subscription-expiry deadlines. A snapshot differing only in `observed_at` is not
+sent. Reconnecting starts from a fresh snapshot; streams do not replay historical updates.
+Reading acknowledges nothing. Planned renewal emits `reconnect_required`; bare EOF is a failure.
 
-The snapshot groups inboxes by session and reports cursor counts, subscriptions, source errors and
-the latest notice stage. `unannounced_count` counts retained entries beyond the maximum of covered,
-acknowledged and expired cursors; `pending_acknowledgement_count` counts retained, non-expired
-entries beyond acknowledgement (including entries already covered by a notice). A prepared or
-confirmed notice does not acknowledge an entry. `notice_due_at`, `quiet_until` and `max_wait_at`
-are exposed only when a new notice is waiting on the current quiet/max-wait debounce. When a
-previous notice awaits confirmation or a delivery error needs retry, the waiting reason replaces
-the debounce deadline. `next_work_at` is the worker's next scheduled inbox work, **not** a promise
-of notice delivery; `next_source_check_at` is only the individual subscription's reconciliation
-schedule. Offline runner states and event-dependent pacing have no guaranteed delivery time.
+Sandbox snapshots expose `unannounced_count` beyond covered, acknowledged and expired cursors;
+`pending_acknowledgement_count` includes covered entries still awaiting acknowledgement.
+`notice_due_at`, `quiet_until` and `max_wait_at` apply while waiting on debounce. Awaiting
+confirmation or retrying a delivery instead exposes that wait reason. `next_work_at` and
+`next_source_check_at` are scheduling observations, not promises of notice delivery.
 
 ## Current source-processing observations
 
-Subscription GET/list and the operator stream expose `last_success_at`, `error_kind`, `error`,
-`error_since`, and `error_observed_at`. Failure kinds identify a cause: `rate_limited`, `unavailable`,
-`access_denied`, `source_changed`, or `processing_error`. Typed exceptions and HTTP status codes
-supply the classification; message text is not parsed. A successful committed pass clears all error
-fields and advances `last_success_at`. Before the first success, that timestamp is null.
+Subscription reads and operator snapshots expose `last_success_at`, `error_kind`, `error`,
+`error_since`, and `error_observed_at`. Failure kinds are `rate_limited`, `unavailable`,
+`access_denied`, `source_changed`, and `processing_error`. Success clears the failure fields and
+advances `last_success_at`, which is null before the first successful processing pass.
 
-Repeated failures of the same kind preserve `error_since` and update diagnostic details, last
-observation and retry deadline. A different kind starts a new `error_since`. The database constrains the error vocabulary and requires all four error fields to be jointly null
-or non-null. There is no persisted summary health enum.
+Repeated failures of one kind preserve `error_since` and update their details and observation
+time. A different kind starts a new `error_since`. `retry_at` is populated only for a current
+failure on an active subscription. Cancelled and expired subscriptions retain their observations
+without an active retry. A successful pass does not prove complete webhook coverage, current
+remote authorization or runner delivery. Observation changes do not create inbox entries or
+acknowledge anything.
 
-`next_attempt` is the durable scheduler deadline for retries or normal source work. API `retry_at`
-is derived only for a current failure on an active subscription. Cancelled/expired subscriptions
-retain their last observations without an active retry. Last successful processing does not prove
-complete webhook coverage, current remote authorization, or successful runner delivery.
-
-These updates never append inbox entries, advance cursors or prepare agent notices. The frontend
-shows current source observations separately from subscription lifecycle and delivery status.
-Shared GitHub access/repair failures belong to their shared records, not duplicated subscription
-errors; subscription-owned observations describe that subscription's processing.
-
-## GitHub entity ownership
-
-GitHub subscription bindings reference shared repository-access and subject rows through composite
-foreign keys. An App/installation/repository grant is distinct from a repository/subject identity;
-the common repository ID prevents a subscription from binding a subject to an unrelated repository.
-The immutable creation JSON is the original request for idempotency, not a mutable repository cache.
-Repository names are observations, not primary keys. Matching installation IDs remain mandatory.
-
-`github_installation` owns the App/installation identity and access invalidation generation.
-`github_repository` owns the numeric repository identity and observed name.
-`github_repository_access` owns validation timestamps (`checked_at`, `valid_until`), validation
-failure facts, retry schedule and refresh lease for an App/installation/repository grant.
-`github_subject` owns repair observations and lease for a PR, branch or commit.
-`github_subject_revision` holds additive associations keyed by subject, head repository and SHA;
-an association cannot grant access to the head repository.
-`github_delivery_subject` links each receipt to its structured subject references through foreign
-keys, including comments and branch events without a SHA. The delivery journal has no encoded
-subject-string array; direct matching uses the indexed relation.
-
-Subscription `last_success_at` and current failure describe that subscription's processing. Shared
-access or repair failures belong on the grant or subject. GET/list and operator status expose them
-in `github.access` and `github.subject`, independently of the subscription's processing fields.
-The `github` response field is required: Actions subscriptions explicitly return `null`; GitHub
-subscriptions return the shared observations. Omission is not treated as `null`.
-Each observation includes current failure facts, retry deadline and refresh lease deadline. Access
-observations also expose validation time, expiry and `currently_valid` as of the read; this is not
-a promise about later delivery. No refresh failure or recovery creates an inbox entry.
-
-### Durable GitHub refresh and matching
-
-`github.freshness_seconds` bounds cached access validation and subject repair (default 600 seconds,
-configurable from 60 to 3600). Successful processing schedules the earliest access expiry or subject
-repair deadline, including when no webhook arrives. A missing webhook is repaired for current
-subject metadata, not replayed as an activity event.
-
-Workers claim shared access/subject refreshes through PostgreSQL leases. Other workers reuse the
-observation or defer until the persisted retry/lease deadline; no network call occurs under a database
-lock. A worker that loses its lease cannot overwrite a newer success or failure. Signed installation
-and installation-repository lifecycle events invalidate cached access and in-flight refreshes with
-generation fences. Ordinary activity webhooks add repository-qualified SHA associations; delayed
-observations cannot erase newer associations.
-
-Matching uses durable observations and makes no GitHub API calls while they remain fresh. Every
-inbox append rechecks the access generations and expiry under the same transaction lock used by
-invalidation. Stale access fails closed. Fork SHA associations alone never authorize a fork receipt:
-its repository and installation must also match a separately validated grant. A missing head
-repository in a PR payload does not infer fork identity. Shared failures remain queryable after a
-restart and never become per-subscription copies or inbox history.
-
-These are current-state tables, not temporal versions. `github_subject_revision` accumulates observed
-membership without ordering or a current-head marker. Retained webhook receipts remain the event
-journal; repository names, access observations, refresh failures and leases are updated in place.
+GitHub subscriptions additionally expose access and subject observations in `github.access` and
+`github.subject`, separately from subscription processing. Actions subscriptions return no
+GitHub status. Access observations include validation time, expiry and `currently_valid` at the
+time of the read; that is not a promise about later delivery. Observations include failure facts,
+retry and refresh-lease deadlines. A subject refresh repairs metadata; it does not synthesize a
+missing webhook activity event.

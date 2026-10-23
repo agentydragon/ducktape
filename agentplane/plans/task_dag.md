@@ -206,8 +206,11 @@ Use Kubernetes as a concrete design case: namespace/resource/UID scope, object/s
 content, name reuse and whether grants delegate the caller's existing read authority or explicitly
 allow additional observation. A privileged watcher must not expose arbitrary cluster data merely
 because the agent owns an inbox. Review argument examples that auto-allow narrow approved scopes,
-require operator approval for additional scopes, and reject requests nobody can delegate. See the
-[subscription authorization design](notifications.md#subscription-authorization-and-action-approval).
+require operator approval for additional scopes, and reject requests nobody can delegate.
+Define immutable normalized approval arguments, stable request keys and idempotent execution/recovery;
+waiting for approval must not create a subscription. Decide who administers policies, what the
+approver can delegate, and whether continuing authority uses a bounded grant or standing policy.
+Cancellation cannot recall retained entries. Avoid per-event approval unless explicitly required.
 This is independent of selecting a messaging transport or fixing existing GitHub delivery gaps.
 
 ### `SUBSCRIPTION_AUTHORIZATION` — creation gate and continuing enforcement
@@ -219,7 +222,8 @@ across the service boundary rather than substituting the executor's broad identi
 same access contract on direct APIs, renewals and updates; no approval bypass by another endpoint.
 
 Test auto-allow, pending approval, denial, restricted destinations, scope escalation and expiry/
-revocation with controlled identities. No entry may be delivered beyond the reviewed source scope;
+revocation with controlled identities, plus one bounded deployed identity/policy check for the
+selected integration. No entry may be delivered beyond the reviewed source scope;
 approval is not permission to wake a Sandbox or execute source content. Future Kubernetes sources
 must depend on this contract/enforcement when promoted from the freezer. Ordinary authorized
 subscription reads/cancellation and existing GitHub gap recovery need not wait for a broad redesign.
@@ -248,8 +252,14 @@ service-side reconciliation using existing durable shared GitHub refresh state w
 fallback checks, optionally scheduled reminders. Recommend the smallest reliable path with a stated
 staleness bound/cost. A webhook subscription is not proof no changes occurred when it stays silent.
 Snapshot polling cannot reconstruct all intermediate events, and a cron reminder alone is not
-recovery if no active agent checks state. Detailed alternatives and questions are in the
-[notification plan](notifications.md#missed-github-updates-and-shepherding-reliability).
+recovery if no active agent checks state. Define timer ownership, termination, unavailable-harness
+behavior and active-subscription eligibility; a reminder to poll without a runnable timer is not
+an eventual-delivery mechanism. Review service reconciliation, agent fallback or a combination
+with the operator before implementation. Persist observation coverage and inbox emission atomically
+or replay-safely; share normalization and refresh across overlapping subscriptions.
+A state that changes and reverts between snapshots may be invisible; historical comments/reviews
+may require paginated history. Preserve filters, creation boundaries and revocation, and state
+staleness targets and rate-limit/backoff visibility. Recovery has no inherent archive dependency.
 
 ### `GITHUB_NOTIFICATION_RECOVERY` — implement the reviewed recovery contract
 

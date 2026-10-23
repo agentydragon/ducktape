@@ -22,7 +22,8 @@ Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked subscription
 GitHub and messaging workflows served under `/docs/agents/`, and `/openapi.json` as the HTTP reference. Update the guides
 when those contracts change.
 
-- [API, authorization, persistence and delivery semantics](docs/api.md)
+- [API and caller-visible delivery semantics](docs/api.md)
+- [Storage, worker and delivery architecture](docs/architecture.md)
 - [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.
 - `/openapi.json`: the routes and their request and response schemas.
 
@@ -85,6 +86,25 @@ confirmation from History Service, and a Dispatcher error never falls back to a 
 
 The deployment mounts the settings from its ConfigMap. Roll the application image and configuration
 together because their structure is versioned with the code.
+
+### Resource quotas
+
+The Notification Service settings accept these deployment-configurable defaults:
+
+```yaml
+quotas:
+  inboxes_per_account: 64
+  active_subscriptions_per_inbox: 64
+  entries_per_inbox: 10000
+  unacknowledged_messages_per_sender: 128
+```
+
+Each value must be positive. Environment overrides use the nested settings delimiter, for example
+`AGENTPLANE_NOTIFICATIONS_QUOTAS__ACTIVE_SUBSCRIPTIONS_PER_INBOX=128`. Configure the same
+quotas on all replicas. Lowering a quota does not delete retained data; it blocks new allocations
+when capacity is exhausted. The inbox quota counts retained inboxes, and the entry quota counts
+distinct source-event identities over an inbox's lifetime, including payload-expiry tombstones. The message quota
+counts one sender's messages past the inbox's acknowledged cursor.
 
 ### Raw GitHub delivery retention
 
@@ -160,3 +180,21 @@ not subscription-controlled destinations, and do not alter egress authorization.
 typed REST resource methods. The notification provider owns webhook verification, durable access/subject
 observations, leases, backoff scheduling and matching. Client calls surface rate limits immediately; they do not
 sleep/retry inside a lease. `github.New` validates the settings and the App private key and makes no request.
+
+## GitHub webhook troubleshooting
+
+HTTP 400/401 rejection logs include a parsed delivery UUID (or null for a malformed/missing ID),
+a JSON-escaped event header capped at 64 characters, and a stable reason: `invalid_delivery_id`,
+`invalid_signature`, `unsupported_event`, `missing_repository`, `payload_validation`, or the
+fallback `invalid_delivery`. A payload validation log carries `problem`, which names the fields and array positions of the schema
+that failed and quotes nothing of the body. The raw payload, the signature and the secret are never logged. Event headers are untrusted labels,
+not evidence of signature verification. Rejections return generic HTTP responses and do not create durable receipts or inbox entries.
+
+GitHub does not automatically retry failed webhook requests: failures/timeouts require redelivery.
+Durable recovery starts at the committed receipt, not at the start of the HTTP request.
+If GitHub reports a failed delivery, an App operator should inspect the webhook's Recent Deliveries
+in GitHub App settings and redeliver that delivery (or use GitHub's App delivery-attempt API
+with App authority). Within the configured raw receipt retention window, a retry of an already committed receipt returns 202 with `duplicate: true`;
+a retry of an uncommitted receipt returns 202 with `duplicate: false` after commit. Then check
+subscription/inbox state separately: HTTP acceptance does not prove runner delivery or agent
+acknowledgement. Do not replay with a new delivery ID or assume GitHub retries automatically.
