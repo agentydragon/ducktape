@@ -268,7 +268,7 @@ def build_chart(
         ),
         control=control,
         migration=ContainerProps(
-            name="goose-migrate",
+            name="migrate",
             image=QUEUE_MIGRATOR_IMAGE,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             env_variables={"DATABASE_URL": dispatcher_database_url, **database_env},

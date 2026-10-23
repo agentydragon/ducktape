@@ -1,4 +1,4 @@
-// egress-history-migrate is an explicit job, not part of the proxy's startup.
+// egress-history-migrate runs as the egress proxy Pod's migration init container.
 package main
 
 import (

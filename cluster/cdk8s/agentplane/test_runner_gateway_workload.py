@@ -10,7 +10,6 @@ from cdk8s import Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.runner_gateway.settings import Settings
-from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
     app,
     notifications,
@@ -21,7 +20,6 @@ from cluster.cdk8s.agentplane import (
     staging,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
-from cluster.cdk8s.secret_ref import SecretRef
 from util.settings_contract import env_name
 
 
@@ -42,28 +40,7 @@ def _gateway_settings(documents: list[dict[str, Any]], container: dict[str, Any]
 
 
 def _gateway_objects() -> list[dict[str, Any]]:
-    env = staging.ENV
-    chart = Chart(Cdk8sTesting.app(), "candidate", disable_resource_name_hashes=True)
-    callers = {
-        ServiceAccountRef(namespace=env.namespace, name=app.NAME): app.service(env.namespace).pods,
-        ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods,
-    }
-    database_url = (
-        SecretRef(namespace=env.namespace, name="postgres-session-dispatcher").key("uri").env_value(chart, "database")
-    )
-    runner_gateway_workload.RunnerGateway(
-        chart,
-        "runner-gateway",
-        env,
-        dispatcher_callers=callers,
-        gateway_callers=callers,
-        wake_callers=frozenset(callers),
-        database_url=database_url,
-        sandbox_controller=(
-            ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
-            sandbox_controller.pods(env.namespace),
-        ),
-    ).add_platform_resources()
+    chart = runner_gateway_workload.serving_chart(Cdk8sTesting.app(), env=staging.ENV)
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
@@ -89,7 +66,12 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert set(settings["dispatcher_callers"]) == {f"{namespace}/{app.NAME}", f"{namespace}/{notifications.NAME}"}
     assert f"{namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
     assert f"{namespace}/{app.NAME}" in settings["wake_callers"]
-    assert "initContainers" not in pod
+    migration = one(pod["initContainers"])
+    assert migration["name"] == "migrate"
+    assert migration["image"] == "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
+    assert {entry["name"]: entry["valueFrom"] for entry in migration["env"]} == {
+        "DATABASE_URL": {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
+    }
     assert _resource(root_docs, "Service", runner_gateway.NAME)["spec"]["ports"] == [
         {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},
         {"name": "runner-control", "port": 8082, "protocol": "TCP", "targetPort": 8080},
@@ -160,27 +142,6 @@ def test_runner_platform_route_fences_name_the_gateway_listener_port(
     }
     assert admitted == listening
     assert ports(clients["egress"], "toEndpoints") == listening
-
-
-def test_migration_job_is_force_recreated_when_the_pinned_image_changes() -> None:
-    chart = Chart(Cdk8sTesting.app(), "migration", disable_resource_name_hashes=True)
-    database_url = (
-        SecretRef(namespace=staging.ENV.namespace, name="postgres-session-dispatcher")
-        .key("uri")
-        .env_value(chart, "database")
-    )
-    runner_gateway_workload.QueueMigration(chart, "migration", staging.ENV, database_url=database_url)
-    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    job = _resource(docs, "Job", runner_gateway_workload.MIGRATION_JOB)
-    # A Job's pod template is immutable; Flux recreates it only on this annotation.
-    assert job["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/force"] == "enabled"
-    pod = job["spec"]["template"]["spec"]
-    assert pod["restartPolicy"] == "Never"
-    assert pod["automountServiceAccountToken"] is False
-    assert pod["containers"][0].get("args", []) == []
-    assert {item["name"]: item["valueFrom"] for item in pod["containers"][0]["env"]} == {
-        "DATABASE_URL": {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
-    }
 
 
 if __name__ == "__main__":

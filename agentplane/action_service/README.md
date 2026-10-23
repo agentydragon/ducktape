@@ -418,8 +418,9 @@ authentication performs no Thread or Agent lookup.
 Operator/BFF calls use the separate `/v1/operator/...` surface, gated by the configured OIDC
 verifier. Without `operator_oidc`, operator requests are refused.
 
-Goose migrations run separately through `//agentplane/action_service/migrations:image`; the server
-checks schema compatibility at startup. `//agentplane/action_service:service_image` contains the Go service. Each deployed
+The Deployment runs Goose migrations in an init container using
+`//agentplane/action_service/migrations:image`; the server checks schema compatibility at startup.
+`//agentplane/action_service:service_image` contains the Go service. Each deployed
 environment gives the service its own `actions` database and login role on the namespace's shared
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.

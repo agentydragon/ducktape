@@ -80,6 +80,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         "history-service": "agentplane-history-migrate",
         "mcp-edge": "agentplane-mcp-edge-migrate",
         "notifications": "agentplane-notification-service-migrate",
+        "runner-gateway": "agentplane-runner-gateway-queue-migrate",
     }.items():
         pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
         init = next(container for container in pod_spec["initContainers"] if container["name"] == "migrate")

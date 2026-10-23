@@ -1,4 +1,4 @@
-// runner-gateway-queue-migrate is an explicit job, not part of the serving process startup.
+// runner-gateway-queue-migrate runs as the Runner Gateway Pod's migration init container.
 package main
 
 import (

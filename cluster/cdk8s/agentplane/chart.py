@@ -86,11 +86,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         .key("uri")
         .env_value(chart, "notifications-database-url")
     )
-    dispatcher_database_url = (
-        SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
-        .key("uri")
-        .env_value(chart, "session-dispatcher-database-url")
-    )
     electric.Electric(chart, "electric", env, placement=node_scheduling.HIL_OVH).add_platform_resources()
     llm_ingress.LlmIngress(
         chart, "llm-ingress", env, placement=node_scheduling.HIL_OVH, registry_secret_name=REGISTRY_SECRET_NAME
@@ -111,7 +106,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
     runner_gateway_workload.add_stable_services(chart, env)
-    runner_gateway_workload.QueueMigration(chart, "queue-migration", env, database_url=dispatcher_database_url)
     history_service.HistoryService(
         chart,
         "history-service",

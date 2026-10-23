@@ -1,4 +1,4 @@
-"""The Gateway workload and its queue migration, served only while the root-owned migration is Ready.
+"""The Gateway workload and its Goose migration init container.
 
 The stable addresses stay in `runner_gateway.py`: the app and Notification service import them, and this
 module imports both of those."""
@@ -14,19 +14,14 @@ from cdk8s_plus_34 import (
     ApiResource,
     ContainerProps,
     ContainerResources,
-    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     DeploymentStrategy,
     EnvFieldPaths,
     EnvValue,
     IApiResource,
-    ImagePullPolicy,
-    Job,
     MemoryResources,
     PercentOrAbsolute,
-    PodSecurityContextProps,
-    RestartPolicy,
     Role,
     RoleBinding,
     RolePolicyRule,
@@ -34,13 +29,12 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsOn
 
 from agentplane.crd_group import GROUP
 from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     app as app_component,
     database,
@@ -51,10 +45,10 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
 )
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -67,7 +61,6 @@ _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 _MIGRATION_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
 _RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
 _GRPC_PORT = 8080
-MIGRATION_JOB = "runner-gateway-queue-migrate"
 
 _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
 
@@ -150,12 +143,12 @@ class RunnerGateway(Construct):
         env: Environment,
         *,
         database_url: EnvValue,
+        migration: ContainerProps,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
         sandbox_controller: tuple[ServiceAccountRef, Pods],
         control: ServiceRef | None = None,
-        migration: ContainerProps | None = None,
         registry_secret_name: str | None = "forgejo-images-creds",
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         container_env: Mapping[str, EnvValue] | None = None,
@@ -326,80 +319,25 @@ class RunnerGateway(Construct):
         ).add_subjects(service_account)
 
 
-class QueueMigration(Construct):
-    """The Goose Job for the existing Agentplane root Kustomization.
-
-    The root owns PostgreSQL and its Secret, so it also owns this Job and checks
-    its completion. A separate serving Kustomization depends on that root.
-    Flux force-recreates the Job when image automation changes the migrator tag
-    (a Job's pod template is immutable). The migrator and serving images advance
-    independently: <agentplane/runner_gateway/README.md> § Schema changes.
-    """
-
-    def __init__(self, scope: Construct, id: str, env: Environment, *, database_url: EnvValue) -> None:
-        super().__init__(scope, id)
-        labels = {"app.kubernetes.io/name": "runner-gateway-queue-migrate"}
-        account = ServiceAccount(
-            self,
-            "account",
-            metadata=ApiObjectMetadata(name="runner-gateway-queue-migrate", namespace=env.namespace),
-            automount_token=False,
-        )
-        job = Job(
-            self,
-            "job",
-            metadata=ApiObjectMetadata(
-                name=MIGRATION_JOB,
-                namespace=env.namespace,
-                annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"},
-            ),
-            pod_metadata=ApiObjectMetadata(labels=labels),
-            select=False,
-            backoff_limit=3,
-            active_deadline=Duration.minutes(10),
-            restart_policy=RestartPolicy.NEVER,
-            service_account=account,
-            automount_service_account_token=False,
-            enable_service_links=False,
-            docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
-        )
-        job.add_container(
-            name="migrate",
-            image=_MIGRATION_IMAGE,
-            image_pull_policy=ImagePullPolicy.ALWAYS,
-            env_variables={"DATABASE_URL": database_url},
-            resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
-            ),
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
-        )
-        pod_policy.place(job, node_scheduling.HIL_OVH)
-        pod_policy.harden(job)
-        NetworkPolicy(
-            self,
-            "network-policy",
-            metadata=ApiObjectMetadata(name="runner-gateway-queue-migrate", namespace=env.namespace),
-            endpoint_selector=labels,
-            ingress=[],
-            egress=[cilium.dns_egress(), database.egress(env.namespace)],
-        )
-
-
 def serving_chart(app: App, *, env: Environment) -> Chart:
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     callers = {
         ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace).pods,
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods,
     }
+    dispatcher_database_url = (
+        SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
+        .key("uri")
+        .env_value(chart, "dispatcher-database-url")
+    )
     RunnerGateway(
         chart,
         "runner-gateway",
         env,
-        database_url=SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
-        .key("uri")
-        .env_value(chart, "dispatcher-database-url"),
+        database_url=dispatcher_database_url,
+        migration=migrate_init_container(
+            _MIGRATION_IMAGE, name="migrate", env_variables={"DATABASE_URL": dispatcher_database_url}
+        ),
         dispatcher_callers=callers,
         gateway_callers=callers,
         wake_callers=env.wake_caller_accounts,
@@ -413,22 +351,5 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
 
 def serving(chart: Chart, directory: RenderedDirectory, root: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart,
-        directory.artifact.name,
-        directory,
-        timeout="10m",
-        depends_on=[
-            KustomizationSpecDependsOn(
-                name=root.name,
-                namespace=root.metadata.namespace,
-                # Ready on the root means its migration Job completed, so admit serving only
-                # from an unsuspended root that health-checks that Job.
-                ready_expr=(
-                    "(!has(dep.spec.suspend) || !dep.spec.suspend) && "
-                    "dep.metadata.generation == dep.status.observedGeneration && "
-                    "dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && "
-                    f"dep.spec.healthChecks.exists(c, c.kind == 'Job' && c.name == '{MIGRATION_JOB}')"
-                ),
-            )
-        ],
+        chart, directory.artifact.name, directory, timeout="10m", depends_on=flux_kustomization_depends_on_many(root)
     )

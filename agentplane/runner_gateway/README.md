@@ -45,31 +45,31 @@ For Go parents, `exec.Cmd.ExtraFiles` assigns child descriptors `3+i`; Python's
 startup files or log parsing.
 
 Build `//agentplane/runner_gateway:runner-gateway` or `//agentplane/runner_gateway:image`.
-The migrator image is `//agentplane/runner_gateway/migrations:image`; serving never applies
-migrations. Integration tests exercise real PostgreSQL and queue-to-runner tunnels on RBE.
+The migration image is `//agentplane/runner_gateway/migrations:image`. Each new serving Pod
+runs it as an init container before the Gateway starts. Goose's PostgreSQL session lock
+serializes migrations when replicas start together. Restarting only the main container does
+not rerun the init container; another Pod creation is required to apply migrations after a
+database replacement. Integration tests exercise real PostgreSQL and queue-to-runner tunnels
+on RBE.
 The cross-language Notification acceptance runs a real Kubernetes API server and etcd through
 `envtest`, installs the Agentplane CRDs and issues Pod-bound ServiceAccount tokens. Narrow
 consumer tests continue using lightweight gRPC peers.
 
 ## Deployment
 
-The environment root owns the stable Services, Dispatcher database/Secret and the Goose Job.
-Its dependent delivery Kustomization owns the serving workload and admits it only from an
-unsuspended root that is Ready, which includes the Job, and that health-checks it. Serving
-never migrates on startup. Flux image automation advances the Gateway and migrator images
-independently, so neither can assume the other already runs the matching release.
+The environment root owns the stable Services, Dispatcher database and Secret. Its dependent
+delivery Kustomization owns the serving workload and waits for the environment root to become
+Ready. Each Gateway Pod runs the Goose migrator before its server starts. Flux image
+automation advances the Gateway and migrator images independently, so migrations must remain
+compatible with the version still serving during a rollout.
 
 ### Schema changes
 
-Each step merges only after the previous one is running in both environments:
-
-1. **Migration first.** Add the Goose migration alone, written so Gateway builds from before and
-   after it both work against the old and the new schema. Flux picks up the migrator and
-   force-recreates the root-owned Job; wait for it to complete and let it soak.
-2. **Code that uses it afterwards.** Merge the Gateway change that depends on the new schema only
-   once step 1 has soaked.
-3. **Removals go the other way.** Stop the Gateway using a column or table first; the migration
-   that drops it lands last.
+1. **Additions.** A new Pod migrates before its Gateway process starts, while old Pods may still
+   serve. Keep the migration compatible with both the old and new Gateway versions; the schema
+   addition and code that uses it can ship together when that holds.
+2. **Removals.** First stop serving code from using a column or table and let old Pods leave the
+   Deployment. Drop it in a later migration.
 
 `//agentplane/runner_gateway/migrations:test_migrations` covers fresh schema creation,
-idempotent application and concurrent migration jobs.
+idempotent application and concurrent migrations.

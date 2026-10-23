@@ -1,6 +1,5 @@
-"""The Alembic-style migrate initContainer shared by every Agentplane service (app,
-egress, actions): same resources and securityContext everywhere -- only the image and
-migration env vary.
+"""The shared migration init container for Agentplane services: resources and security
+context stay consistent while each service supplies its own image and migration environment.
 """
 
 from __future__ import annotations

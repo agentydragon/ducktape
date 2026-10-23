@@ -14,7 +14,7 @@ import (
 //go:embed dispatcher/*.sql
 var scripts embed.FS
 
-// Up applies authored SQL with Goose in a dedicated job, never while serving traffic.
+// Up applies authored SQL with Goose before the Gateway starts serving traffic.
 func Up(ctx context.Context, db *sql.DB) error {
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(0x4453_5043))
 	if err != nil {
