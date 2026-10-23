@@ -1,4 +1,4 @@
-"""agentplane-staging: two replicas of everything, operator login federated through the
+"""agentplane-staging: replicated services, operator login federated through the
 shared Authentik, and the reviewed GitHub/Kubernetes/Grocy SF/SSH/Home Assistant/Tana/Gmail/
 Google Calendar MCP action groups.
 """
@@ -332,6 +332,15 @@ ENV = Environment(
     egress=EgressProps(
         ca_secret_name=public_coder_egress.CA_BUNDLE_NAME,
         credentials_namespace=STAGING_CREDENTIALS_NAMESPACE,
+        replicas=ReplicaProfile(
+            count=3,
+            strategy=DeploymentStrategy.rolling_update(
+                max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
+            ),
+            min_ready=Duration.seconds(5),
+            pdb_min_available=2,
+        ),
+        traffic_distribution="PreferClose",
         zones=node_scheduling.HOME_AND_OVH_ZONES,
         external_workload_namespaces=(public_coder_egress.NAMESPACE,),
     ),
