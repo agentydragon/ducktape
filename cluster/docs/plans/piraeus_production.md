@@ -556,8 +556,12 @@ Choose the first HDD conversion from current consumer/evacuation evidence, then
 size its system partitions independently. Do not carry the old 1536 GiB legacy
 filesystem budgets forward into the whole-data-disk design.
 
-OptiPlex keeps its current system/local-path storage until an additional SSD or
-a separately reviewed replacement layout is available. Wyrm2 needs dedicated
+OptiPlex's proposed [single-SSD replacement layout](optiplex_piraeus.md) preserves
+all active and retained local PV data off-node before rebuilding bounded Talos
+system partitions and a raw partition for Piraeus. Its CPAP VM is stateless;
+Home Assistant's data claim and VolSync cache need an explicit storage handoff.
+The proposal needs separate review and execution; no additional SSD is assumed.
+Wyrm2 needs dedicated
 SSD/HDD virtual disks after Atlas capacity/slots are verified; existing OpenEBS
 VGs remain owned by OpenEBS. Inventory iguana/rugged online, including encryption
 and unlock behavior, before their later enrollment. Unmatched wyrm2 LVs and
