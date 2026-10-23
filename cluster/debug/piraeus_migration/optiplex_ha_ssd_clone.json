@@ -1,0 +1,115 @@
+{
+  "observedAt": "2026-10-23T09:49:25.428811+00:00",
+  "purpose": "Preflight restore only; HA is still running on its original local-path PVC. Final frozen backup and fresh restore are required before wipe.",
+  "replicationDestination": {
+    "namespace": "home-assistant",
+    "name": "optiplex-migration-ha-ssd-restore",
+    "uid": "faa0d1a6-6497-4203-a212-368f03e6e8c1",
+    "spec": {
+      "restic": {
+        "cacheCapacity": "1Gi",
+        "cacheStorageClassName": "seaweedfs-ovh-ssd",
+        "cleanupCachePVC": true,
+        "copyMethod": "Direct",
+        "destinationPVC": "optiplex-migration-ha-ssd",
+        "moverAffinity": {
+          "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+              "nodeSelectorTerms": [
+                {
+                  "matchExpressions": [
+                    {
+                      "key": "kubernetes.io/hostname",
+                      "operator": "In",
+                      "values": ["ovh-ns102453"]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "moverResources": {
+          "limits": {
+            "cpu": "1",
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "100m",
+            "memory": "256Mi"
+          }
+        },
+        "moverSecurityContext": {
+          "runAsGroup": 0,
+          "runAsUser": 0,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "repository": "home-assistant-config-restic-tenant",
+        "restoreAsOf": "2026-10-23T09:44:29.592619+00:00"
+      },
+      "trigger": {
+        "manual": "preflight-20261023"
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-10-23T09:46:02Z",
+          "message": "Waiting for manual trigger",
+          "reason": "WaitingForManual",
+          "status": "False",
+          "type": "Synchronizing"
+        }
+      ],
+      "lastManualSync": "preflight-20261023",
+      "lastSyncDuration": "1m32.501294175s",
+      "lastSyncTime": "2026-10-23T09:46:02Z",
+      "latestImage": {
+        "apiGroup": "",
+        "kind": "PersistentVolumeClaim",
+        "name": "optiplex-migration-ha-ssd"
+      },
+      "latestMoverStatus": {
+        "logs": "restoring snapshot 33239fa9 of [/data] at 2026-10-23 06:17:09.400394536 +0000 UTC by root@volsync to .\nRestic completed in 19s",
+        "result": "Successful"
+      }
+    }
+  },
+  "destinationPVC": {
+    "name": "optiplex-migration-ha-ssd",
+    "uid": "780f312c-8663-4035-80aa-0fd9c9fffc85",
+    "storageClass": "seaweedfs-ovh-ssd",
+    "volumeName": "pvc-780f312c-8663-4035-80aa-0fd9c9fffc85",
+    "phase": "Bound"
+  },
+  "destinationPV": {
+    "uid": "ce66a028-4692-4855-a1ce-9b630ee91c61",
+    "reclaimPolicy": "Retain",
+    "csi": {
+      "driver": "seaweedfs-csi-driver",
+      "volumeAttributes": {
+        "diskType": "ssd",
+        "parentDir": "/buckets",
+        "replication": "001",
+        "storage.kubernetes.io/csiProvisionerIdentity": "1792691030731-510-seaweedfs-csi-driver",
+        "volumeCapacity": "34359738368",
+        "volumeName": "pvc-780f312c-8663-4035-80aa-0fd9c9fffc85"
+      },
+      "volumeHandle": "/buckets/pvc-780f312c-8663-4035-80aa-0fd9c9fffc85"
+    }
+  },
+  "readOnlyVerification": {
+    "files": 465,
+    "bytes": 14182932,
+    "treeSha256": "3409a0009b74c56b0888a88c3b6fdeb634a491afec4af78bb6f8e83f45baf86c",
+    "requiredConfigFilesPresent": true,
+    "requiredStorageJsonValid": true
+  },
+  "maintenanceNetwork": {
+    "fixedLANAuthenticated": "192.168.1.10",
+    "currentDHCPAuthenticated": "192.168.1.103",
+    "note": "DHCP address may change at maintenance boot; re-observe MAC before reset."
+  }
+}

@@ -32,6 +32,12 @@ Inspection and the separately approved cleanup on 2026-10-23 established:
 - Home Assistant's latest observed VolSync backup succeeded at
   `2026-10-23T06:17:17Z`, Restic snapshot `33239fa9`. Its repository and
   credentials stay in place. Refresh this observation before the window.
+- A VolSync `ReplicationDestination` restored that snapshot to the independent
+  `home-assistant/optiplex-migration-ha-ssd` PVC on `seaweedfs-ovh-ssd` at
+  09:46 UTC. Its PV is Retain; a read-only helper verified 465 files,
+  14,182,932 bytes and required Home Assistant configuration/JSON. This is a
+  preflight copy while Home Assistant remains running, not the final frozen
+  recovery point. See [clone evidence](../../debug/piraeus_migration/optiplex_ha_ssd_clone.json).
 - Direct authenticated `talosctl` over **192.168.1.10** succeeds from the
   maintenance machine. No maintenance relay is needed. Maintenance-mode DHCP
   addressing must still be established; the configured secondary LAN address
@@ -188,17 +194,26 @@ Retain. Do not rename/delete the namespace or its Kustomization.
    onboarding Job. Stop the stateless CPAP VM with `runStrategy: Halted` and
    wait for its VMI to disappear. Preserve the existing Secret objects.
 3. With Home Assistant stopped, request one final manual VolSync backup and
-   require a new successful snapshot. Then set the ReplicationSource
-   `spec.paused: true`; wait for all backup/cache movers to exit. Keeping
-   Flux suspended alone does not stop VolSync, Deployments or CronJobs.
+   require a new successful snapshot. Restore it through a new, manually
+   triggered `ReplicationDestination` into a fresh 32Gi PVC on
+   `seaweedfs-ovh-ssd`, with `copyMethod: Direct` and the existing repository
+   Secret. Pin the mover to a healthy OVH worker and use the SSD class for
+   its cache too. Pre-create the destination claim, retain its PV, and record
+   the exact snapshot and successful restore. Validate its files read-only;
+   do not start a second Home Assistant instance. A fresh destination avoids
+   leaving files from the preflight snapshot that the final backup removed.
+   Then set the ReplicationSource `spec.paused: true`; wait for all movers
+   to exit. Keeping Flux suspended alone does not stop VolSync, Deployments
+   or CronJobs. The Restic mover's `Clone` option requires CSI cloning of the
+   source; use backup/restore for the existing local-path source.
 4. Capture **all four source directories** through a bounded read-only helper
    on OptiPlex. Produce one archive per old PV plus a private identity/content
    manifest. Preserve hidden files, numeric UID/GID, modes, symlinks, hardlinks,
    sparse files, ACLs and xattrs. Never print Home Assistant `.storage`, tokens
    or archive bytes in tool logs. Preserve SELinux metadata in the archive;
    let the target CSI/kubelet establish the required target labels on restore.
-5. Retain two verified copies outside OptiPlex: one on a **1Gi strict-local
-   Piraeus staging claim on a healthy converted OVH SSD node**, and one in a
+5. Retain two verified archive copies outside OptiPlex: one on a **1Gi
+   `seaweedfs-ovh-ssd` staging claim**, and one in a
    protected persistent directory on the maintenance machine. Do not use the
    space-tight HDD evacuation destination. Verify archive hashes, readable
    member lists, file counts and available space; encryption, if used, must
@@ -206,7 +221,8 @@ Retain. Do not rename/delete the namespace or its Kustomization.
    machine config separately mode 0600, outside Git.
 
 **Wipe gate:** every retained Home Assistant PV directory has a frozen capture
-and both off-node copies; no writer/mover remains; machine config and both
+and both off-node copies; the final active-volume VolSync restore is verified;
+no writer/mover remains; machine config and both
 normal/maintenance network paths are ready. An older scheduled Restic snapshot does not replace
 the cold capture of all four directories.
 
