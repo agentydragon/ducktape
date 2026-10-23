@@ -58,8 +58,7 @@ spec:
       - node: ovh-ns1001419
         paths: []
       - node: optiplex
-        paths:
-          - /var/local-path-provisioner
+        paths: []
     storageClass:
       create: false
 ---

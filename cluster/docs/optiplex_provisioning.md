@@ -153,6 +153,16 @@ Expected results:
 
 ## Ongoing machine configuration
 
+During the Piraeus reimage, `talos_storage_enabled` prepares the desired
+machine-config output, while `post_reimage_apply_enabled = false` keeps the
+managed Tofu apply resource on the original unsplit layout. A routine Tofu
+apply must not deliver the new partitions to the running OptiPlex. Upgrade
+the DRBD image with the legacy layout first; after the documented cold capture,
+reset STATE and EPHEMERAL and deliver the validated new config through the
+maintenance API. Review a separate post-reimage handoff before changing the
+managed apply input. Keep Piraeus readiness false until the raw partition's
+size and parent serial have been verified on the rejoined node.
+
 After the initial installation, Tofu owns subsequent OptiPlex machine-config changes through
 `talos_machine_configuration_apply.home_worker["optiplex"]`. This reaches the installed node
 over its Nebula address and uses `staged_if_needing_reboot`, which dry-runs the change and

@@ -13,11 +13,14 @@ locals {
       disk_serial  = "AS9CN54631CA0CT13"
       # Advance these independently during the maintenance window. The live
       # single-disk layout cannot be converted by an ordinary config apply.
-      drbd_installer_enabled = false
-      talos_storage_enabled  = false
+      drbd_installer_enabled = true
+      talos_storage_enabled  = true
       piraeus_ready_enabled  = false
-      region                 = "home"
-      zone                   = "home-lan"
+      # Keep the managed apply resource on the pre-reimage config. The desired
+      # config is materialized separately for maintenance-mode installation.
+      post_reimage_apply_enabled = false
+      region                     = "home"
+      zone                       = "home-lan"
       # A fixed LAN address beside the DHCP lease, below the AT&T gateway's DHCP pool
       # (docs/home_lan.md). The home switch and gateway send their syslog here. Keep in sync with
       # HOME_LAN.optiplex and .network in cluster/cdk8s/home_lan.py.
@@ -30,6 +33,19 @@ locals {
     for name, node in local.home_node_provisioning :
     name => merge(node, { hostname = name, nebula_ip = local.nebula_hosts[name].nebula_ip })
   }
+
+  # The existing managed resource must remain byte-for-byte on its legacy
+  # config until after the maintenance reset; otherwise a full Tofu apply
+  # could send a partitioning change to the running node. Both variants use
+  # the same cluster secrets, Nebula identity, hostname and network patches.
+  home_worker_config_variants = merge(
+    { for name, node in local.home_nodes : "${name}/desired" => node },
+    { for name, node in local.home_nodes : "${name}/live" => merge(node, {
+      drbd_installer_enabled = false
+      talos_storage_enabled  = false
+      piraeus_ready_enabled  = false
+    }) },
+  )
 
   optiplex_system_volume_sizes = {
     EPHEMERAL = "16GiB"
@@ -66,14 +82,14 @@ locals {
   }
 
   home_worker_machine_config_patches = {
-    for name, node in local.home_nodes :
+    for name, node in local.home_worker_config_variants :
     name => yamlencode({
       machine = merge(
         local.worker_machine_base,
         {
           install = {
             disk  = node.install_disk
-            image = node.drbd_installer_enabled ? local.drbd_canary_installer_image : "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${lookup(local.talos_installer_version_overrides, name, var.talos_version)}"
+            image = node.drbd_installer_enabled ? local.drbd_canary_installer_image : "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${lookup(local.talos_installer_version_overrides, node.hostname, var.talos_version)}"
           }
           # haku-ci's rootless dind needs user namespaces. Scoped to OptiPlex rather
           # than all Talos workers because it is the only home worker approved for CI.
@@ -135,7 +151,7 @@ data "talos_machine_configuration" "home_worker" {
 
   config_patches = concat(
     [
-      local.home_worker_machine_config_patches[each.key],
+      local.home_worker_machine_config_patches["${each.key}/desired"],
       yamlencode({
         apiVersion = "v1alpha1"
         kind       = "HostnameConfig"
@@ -149,6 +165,36 @@ data "talos_machine_configuration" "home_worker" {
   )
 }
 
+# This duplicates only the data-source wrapper, not the machine identity or
+# configuration builder. Keep it as the managed resource's input until the
+# post-reimage handoff gate is explicitly enabled in a later reviewed change.
+data "talos_machine_configuration" "home_worker_live" {
+  for_each = local.home_nodes
+
+  cluster_name       = var.cluster_name
+  cluster_endpoint   = local.cluster_endpoint
+  machine_secrets    = local.machine_secrets
+  machine_type       = "worker"
+  talos_version      = var.talos_version
+  kubernetes_version = var.kubernetes_version
+  examples           = false
+  docs               = false
+
+  config_patches = concat(
+    [
+      local.home_worker_machine_config_patches["${each.key}/live"],
+      yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "HostnameConfig"
+        auto       = "off"
+        hostname   = each.value.hostname
+      }),
+    ],
+    local.nebula_machine_patches[each.key],
+    [local.talos_node_logging_patch],
+  )
+}
+
 # The initial maintenance-mode installation is intentionally operator-driven, but once
 # installed each home worker must receive subsequent machine-config changes through the
 # same Tofu resource as the OVH nodes.  In particular, this applies the shared logging
@@ -157,7 +203,7 @@ resource "talos_machine_configuration_apply" "home_worker" {
   for_each = local.home_nodes
 
   client_configuration        = local.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.home_worker[each.key].machine_configuration
+  machine_configuration_input = each.value.post_reimage_apply_enabled ? data.talos_machine_configuration.home_worker[each.key].machine_configuration : data.talos_machine_configuration.home_worker_live[each.key].machine_configuration
   apply_mode                  = "staged_if_needing_reboot"
   node                        = each.value.nebula_ip
 
@@ -169,6 +215,10 @@ resource "talos_machine_configuration_apply" "home_worker" {
     precondition {
       condition     = !each.value.piraeus_ready_enabled || each.value.talos_storage_enabled
       error_message = "The OptiPlex storage layout must be enabled and verified before Piraeus readiness."
+    }
+    precondition {
+      condition     = !each.value.post_reimage_apply_enabled || each.value.talos_storage_enabled
+      error_message = "The OptiPlex post-reimage apply handoff requires the new storage layout."
     }
   }
 }

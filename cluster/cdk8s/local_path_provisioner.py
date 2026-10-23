@@ -32,7 +32,7 @@ _HOME_SSD = "local-path-home-ssd"
 # Flip only during the OptiPlex cutover, after writers are stopped and the old
 # PV directories have verified off-node copies. An empty nodePathMap entry then
 # denies new allocations from every local-path class, including legacy aliases.
-_OPTIPLEX_LOCAL_PATH_ENABLED = True
+_OPTIPLEX_LOCAL_PATH_ENABLED = False
 # OVH's tier=ssd nodes are exactly its control planes. CNPG callers that use the OVH SSD
 # profile explicitly select its control-plane tolerance along with this class.
 
