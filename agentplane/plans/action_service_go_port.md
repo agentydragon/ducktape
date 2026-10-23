@@ -31,19 +31,21 @@ Connection/OAuth authority and `/mcp` move to `mcp-edge`.
 
 ## Remaining work
 
-The edge Deployment, Service, migrator and scoped RBAC are staged with **zero replicas in both
-environments**. Testing initializes its empty edge schema through the Flux-managed
-`mcp-edge-schema-migrate` Job before data transfer; staging still has no edge migration Job.
-No serving Pod starts or route changes while scaled down: public MCP/OAuth paths
-and the app's Connection calls still target Actions. Actions-owned CIMD metadata and the app's
-upstream OAuth callbacks remain on their current routes. Activation is a separate change after the edge
-images are published, its database is populated from the preserved Action Service records, and the
-deployed Actions image accepts the edge's account-only tokens. Verify Connection and grant identities,
-request records and external MCP authorization before moving the public route and app target.
-Flux checks the schema Job for completion and recreates it when the automated migrator image
-changes. It only has the edge database credential; it cannot copy source records.
-That route change must add the edge's Gateway ingress policy; the staged policy admits only the app
-and metrics scrapers.
+Testing starts one edge replica against its initialized database; staging stays at zero.
+The testing schema Job completed with Goose versions 0 and 1 applied. All six source tables
+were empty at preflight, so testing needs no historical data copy. The app still targets
+Actions, and public routes are unchanged. The new edge has no OAuth issuer or mintable
+accounts in testing. Verify its health and ServiceAccount informer synchronization before
+switching any callers.
+
+The app first gains an independent Connection endpoint setting while both endpoints still
+point to Actions. The subsequent testing handoff redirects Connection calls and retires the
+integrated ConnectionService after its consumers have moved. Recheck source and destination
+state at handoff; do not discard any records created since the empty preflight. Staging's
+existing Connection/grant identities still need a separate preservation decision and cutover.
+The public route change must add the edge's Gateway ingress policy; the current policy admits
+only the app and metrics scrapers. Actions-owned CIMD metadata and app upstream OAuth callbacks
+stay on their existing routes.
 
 1. **Edge database and data copy (database before code).** The edge owns the independent `mcp_edge`
    database, with Goose migrations from `//agentplane/mcp_edge/migrations:image` and
