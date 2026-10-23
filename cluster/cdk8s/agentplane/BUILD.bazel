@@ -479,6 +479,34 @@ py_library(
 )
 
 py_library(
+    name = "mcp_edge",
+    srcs = ["mcp_edge.py"],
+    deps = [
+        ":actions",
+        ":app",
+        ":database",
+        ":environment",
+        ":migrate_container",
+        ":service_workload",
+        "//agentplane/mcp_edge:settings",
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:settings_file",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
+        "//util:settings_contract",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "egress_policies",
     srcs = ["egress_policies.py"],
     visibility = [
@@ -659,6 +687,7 @@ py_library(
         ":environment",
         ":history_service",
         ":llm_ingress",
+        ":mcp_edge",
         ":notifications",
         ":runner_gateway",
         ":runner_gateway_workload",

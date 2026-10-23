@@ -31,6 +31,16 @@ Connection/OAuth authority and `/mcp` move to `mcp-edge`.
 
 ## Remaining work
 
+The edge Deployment, Service, migrator and scoped RBAC are staged with **zero replicas in both
+environments**. No edge migration runs or route changes while scaled down: public MCP/OAuth paths
+and the app's Connection calls still target Actions. Actions-owned CIMD metadata and the app's
+upstream OAuth callbacks remain on their current routes. Activation is a separate change after the edge
+images are published, its database is populated from the preserved Action Service records, and the
+deployed Actions image accepts the edge's account-only tokens. Verify Connection and grant identities,
+request records and external MCP authorization before moving the public route and app target.
+That route change must add the edge's Gateway ingress policy; the staged policy admits only the app
+and metrics scrapers.
+
 1. **Edge database and data copy (database before code).** The edge owns the independent `mcp_edge`
    database, with Goose migrations from `//agentplane/mcp_edge/migrations:image` and
    `AGENTPLANE_MCP_EDGE_DATABASE_URL`. The operator copy command is

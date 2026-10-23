@@ -60,6 +60,7 @@ from cluster.cdk8s.agentplane.environment import (
     EgressProps,
     Environment,
     LlmIngressProps,
+    McpEdgeProps,
     ReplicaProfile,
 )
 from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
@@ -164,6 +165,16 @@ ENV = Environment(
             # The direct federation verifier fetches Dex's JWKS over the public-origin Gateway path.
             cilium.egress_via_gateway(_DEX_HOSTNAME)
         ],
+    ),
+    mcp_edge=McpEdgeProps(
+        replicas=ReplicaProfile(
+            count=0, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None
+        ),
+        operator_oidc=_FEDERATION_TARGET,
+        caller_service_account_namespaces=frozenset({TESTING_NAMESPACE}),
+        mintable_accounts=frozenset(),
+        oauth_secret_name=None,
+        extra_egress=(cilium.egress_via_gateway(_DEX_HOSTNAME),),
     ),
     vm_sandboxes=True,
     vm_console_autologin=True,

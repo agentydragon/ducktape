@@ -19,6 +19,7 @@ from cluster.cdk8s.agentplane import (
     electric,
     history_service,
     llm_ingress,
+    mcp_edge,
     notifications,
     runner_gateway,
     runner_gateway_workload,
@@ -64,6 +65,11 @@ def environment_chart(app: App, env: Environment) -> Chart:
     app_database_url = app_credentials.key("uri").env_value(chart, "postgres-app-database-url")
     actions_database_url = (
         SecretRef(namespace=env.namespace, name="postgres-actions").key("uri").env_value(chart, "actions-database-url")
+    )
+    edge_database_url = (
+        SecretRef(namespace=env.namespace, name="postgres-mcp-edge")
+        .key("uri")
+        .env_value(chart, "mcp-edge-database-url")
     )
     egress_database_url = (
         SecretRef(namespace=env.namespace, name="postgres-egress").key("uri").env_value(chart, "egress-database-url")
@@ -151,6 +157,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
+    mcp_edge.McpEdge(chart, "mcp-edge", env, database_url=edge_database_url).add_platform_resources()
     notifications.Notifications(
         chart,
         "notifications",

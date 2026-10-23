@@ -391,6 +391,10 @@ class Actions(Construct):
                 # egress.py and app.py import this module, so their Pods are named here.
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "egress"), ports=[self.service.pod_port]),
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.service.pod_port]),
+                # The staged edge has no Pods until the Connection/MCP traffic cutover.
+                IngressRule.from_endpoints(
+                    cilium.endpoint_labels(namespace, "mcp-edge"), ports=[self.service.pod_port]
+                ),
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),

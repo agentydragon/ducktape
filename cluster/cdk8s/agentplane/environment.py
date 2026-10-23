@@ -138,6 +138,18 @@ class ActionsProps:
 
 
 @dataclass(frozen=True)
+class McpEdgeProps:
+    """The independently staged MCP/Connection authority; no Actions settings imply its scope."""
+
+    replicas: ReplicaProfile
+    operator_oidc: OperatorOidcSettings
+    caller_service_account_namespaces: frozenset[str]
+    mintable_accounts: frozenset[ServiceAccountRef]
+    oauth_secret_name: str | None
+    extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
 class GitHubAppProps:
     app_id: int
     secret_name: str
@@ -167,6 +179,7 @@ class Environment:
     egress: EgressProps
     app: AppProps
     actions: ActionsProps
+    mcp_edge: McpEdgeProps
     # Whether this environment has VM Sandboxes: the runner VM template (runner_vm.py) and the egress
     # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool

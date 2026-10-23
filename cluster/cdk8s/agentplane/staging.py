@@ -70,6 +70,7 @@ from cluster.cdk8s.agentplane.environment import (
     Environment,
     GitHubAppProps,
     LlmIngressProps,
+    McpEdgeProps,
     ReplicaProfile,
     WebPushProps,
 )
@@ -404,6 +405,16 @@ ENV = Environment(
             cilium.egress_via_gateway("grocy-mcp-sf.allegedly.works"),
             EgressRule.to_endpoints(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
+    ),
+    mcp_edge=McpEdgeProps(
+        replicas=ReplicaProfile(
+            count=0, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None
+        ),
+        operator_oidc=_FEDERATION_TARGET,
+        caller_service_account_namespaces=frozenset({STAGING_NAMESPACE}),
+        mintable_accounts=frozenset({ServiceAccountRef(namespace=STAGING_NAMESPACE, name="claude-ai")}),
+        oauth_secret_name="agentplane-mcp-oauth",
+        extra_egress=(cilium.egress_via_gateway("auth.allegedly.works"), EgressRule.to_fqdns("claude.ai")),
     ),
     vm_sandboxes=True,
     wake_caller_accounts=frozenset(

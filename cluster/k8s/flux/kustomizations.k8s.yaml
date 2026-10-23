@@ -3905,6 +3905,10 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
+      name: mcp-edge
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
       name: notifications
       namespace: agentplane-testing
     - apiVersion: apps/v1
@@ -4096,6 +4100,10 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: actions
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: mcp-edge
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment

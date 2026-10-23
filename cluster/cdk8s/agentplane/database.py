@@ -26,7 +26,7 @@ _CLUSTER_NAME = "postgres"
 
 # The logical databases services own on the shared Cluster; the initdb-owned
 # "app"/trajectory database needs no Database/role of its own. `mcp_edge` is provisioned
-# ahead of its service per the Action Service Go port plan and has no workload consumer yet.
+# for the zero-replica edge workload, whose migration waits for the data transfer gate.
 # `sandbox_service` is the History Service database; renaming it moves the data.
 _ROLE_NAMES = ["actions", "egress", "mcp_edge", "notifications", "sandbox_service", "session_dispatcher"]
 _ELECTRIC_ROLE = "electric"
