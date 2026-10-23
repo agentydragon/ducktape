@@ -1036,12 +1036,250 @@
       }
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "Latest reported Netwatch batch, sent by the CRS310 itself: 200 pings at 137 ms intervals once per minute, with a 1 s reply timeout and no early termination. Unlike host smokeping, this is batch loss, not a rolling 5-minute ratio. Scraped every 30 seconds; gaps cannot reconstruct missed batches. No history until the home-switch Tofu plan is approved.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "id": 47,
+      "title": "Ping batch loss from MikroTik",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "max by (name) (mktxp_netwatch_icmp_loss_percent{routerboard_name=\"CRS310\",name=~\"att-gateway|optiplex-lan\",type=\"icmp\"}) / 100",
+          "legendFormat": "{{name}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "att-gateway"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "AT&T gateway (192.168.1.254)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "optiplex-lan"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "OptiPlex LAN (192.168.1.10)"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "Mean RTT of answered pings in the latest reported switch-originated Netwatch batch. 200 pings at 137 ms intervals, once per minute; scraped every 30 seconds. A zero RTT during 100% loss does not mean a fast response. No history until the home-switch Tofu plan is approved.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
+      "id": 48,
+      "title": "Ping batch RTT from MikroTik",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "max by (name) (mktxp_netwatch_icmp_rtt_avg_ms{routerboard_name=\"CRS310\",name=~\"att-gateway|optiplex-lan\",type=\"icmp\"}) / 1000",
+          "legendFormat": "{{name}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "att-gateway"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "AT&T gateway (192.168.1.254)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "optiplex-lan"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "OptiPlex LAN (192.168.1.10)"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "Estimated failed batches in the trailing hour, from reset-aware increase of RouterOS cumulative failed-tests (exported as a gauge by mktxp). Each batch tests 200 pings once per minute; a 5% loss threshold and 1 s RTT thresholds determine failure. This measures failed batches, not distinct outage episodes. Counts can survive missed scrapes unless a probe resets; increase may produce fractional estimates.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "id": 49,
+      "title": "Failed probe batches per hour from MikroTik",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "max by (name) (increase(mktxp_netwatch_failed_tests{routerboard_name=\"CRS310\",name=~\"att-gateway|optiplex-lan\",type=\"icmp\"}[1h]))",
+          "legendFormat": "{{name}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "att-gateway"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "AT&T gateway (192.168.1.254)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "optiplex-lan"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "OptiPlex LAN (192.168.1.10)"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 54
       },
       "id": 12,
       "panels": [],
@@ -1058,7 +1296,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 39
+        "y": 55
       },
       "id": 13,
       "title": "Fiber Rx power",
@@ -1146,7 +1384,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 39
+        "y": 55
       },
       "id": 14,
       "title": "Fiber Tx power",
@@ -1234,7 +1472,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 39
+        "y": 55
       },
       "id": 15,
       "title": "Optics temperature",
@@ -1322,7 +1560,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 47
+        "y": 63
       },
       "id": 16,
       "title": "Gateway WAN errors and drops",
@@ -1409,7 +1647,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 47
+        "y": 63
       },
       "id": 17,
       "title": "Gateway LAN port errors and drops",
@@ -1496,7 +1734,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 47
+        "y": 63
       },
       "id": 18,
       "title": "Gateway LAN ports",
@@ -1580,7 +1818,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 47
+        "y": 63
       },
       "id": 19,
       "title": "Gateway DHCP leases",
@@ -1645,7 +1883,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 55
+        "y": 71
       },
       "id": 20,
       "title": "Gateway NAT sessions",
@@ -1710,7 +1948,7 @@
         "h": 6,
         "w": 4,
         "x": 12,
-        "y": 55
+        "y": 71
       },
       "id": 21,
       "title": "Speed test throughput",
@@ -1756,7 +1994,7 @@
         "h": 6,
         "w": 4,
         "x": 16,
-        "y": 55
+        "y": 71
       },
       "id": 22,
       "title": "Speed test latency",
@@ -1802,7 +2040,7 @@
         "h": 6,
         "w": 4,
         "x": 20,
-        "y": 55
+        "y": 71
       },
       "id": 23,
       "title": "Speed test ran",
@@ -1844,7 +2082,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 61
+        "y": 77
       },
       "id": 24,
       "panels": [],
@@ -1861,7 +2099,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 62
+        "y": 78
       },
       "id": 25,
       "title": "Switch reachable",
@@ -1934,7 +2172,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 62
+        "y": 78
       },
       "id": 26,
       "title": "Switch uptime",
@@ -1996,7 +2234,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 62
+        "y": 78
       },
       "id": 27,
       "title": "Switch CPU load",
@@ -2058,7 +2296,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 62
+        "y": 78
       },
       "id": 28,
       "title": "Switch CPU temperature",
@@ -2120,7 +2358,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 66
+        "y": 82
       },
       "id": 29,
       "title": "Switch port traffic",
@@ -2205,7 +2443,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 66
+        "y": 82
       },
       "id": 30,
       "title": "Switch port errors and drops",
@@ -2259,7 +2497,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 66
+        "y": 82
       },
       "id": 31,
       "title": "Switch port link flaps",
@@ -2313,7 +2551,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 74
+        "y": 90
       },
       "id": 32,
       "title": "Switch port links",
@@ -2397,7 +2635,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 74
+        "y": 90
       },
       "id": 33,
       "title": "Switch temperatures",
@@ -2472,7 +2710,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 82
+        "y": 98
       },
       "id": 34,
       "title": "Switch log",
@@ -2506,7 +2744,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 92
+        "y": 108
       },
       "id": 35,
       "panels": [],
@@ -2523,7 +2761,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 93
+        "y": 109
       },
       "id": 36,
       "title": "Home node LAN throughput",
@@ -2608,7 +2846,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 93
+        "y": 109
       },
       "id": 37,
       "title": "Home node NIC errors and drops",
@@ -2662,7 +2900,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 93
+        "y": 109
       },
       "id": 38,
       "title": "Home node NIC link flaps",
@@ -2712,7 +2950,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 101
+        "y": 117
       },
       "id": 39,
       "panels": [],
@@ -2729,7 +2967,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 102
+        "y": 118
       },
       "id": 40,
       "title": "Remote-write delay per home node",
@@ -2783,7 +3021,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 102
+        "y": 118
       },
       "id": 41,
       "title": "Samples waiting to send",
@@ -2837,7 +3075,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 102
+        "y": 118
       },
       "id": 42,
       "title": "Series in WAL",

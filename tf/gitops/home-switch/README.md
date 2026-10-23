@@ -13,6 +13,17 @@ names. The provider's Ethernet resource selects an existing interface by
 connection through `/interface/bridge/host` and the endpoint's MAC before updating
 its label. Disconnected and unidentified ports have no managed label.
 
+`netwatch.tf` configures switch-originated ICMP probes to the AT&T gateway and
+OptiPlex's fixed LAN address. Each runs a full 200-packet batch at 137 ms intervals
+once per minute, independently of the Kubernetes smokeping probes. No scripts or
+network configuration changes run on probe failure. mktxp scrapes Netwatch every
+30 seconds; the Home network overview dashboard shows the latest batch's loss and
+RTT, plus failed batches per hour. A failed batch is a threshold failure, not a
+distinct outage episode: it uses a 5% loss threshold and one-second RTT thresholds.
+Scrapes sample the latest reported batch; collection outages can leave gaps and
+cannot reconstruct every batch's loss or RTT. The cumulative failed-test count
+preserves the failure total across missed scrapes unless the probe resets.
+
 tofu-controller plans it every 15 minutes, from a runner pod pinned to the home LAN node
 (`topology.kubernetes.io/zone: home-lan`), but unlike the other `tf/gitops` modules applies only a
 plan a person approves ([Approving a plan](#approving-a-plan)); the CR is generated in

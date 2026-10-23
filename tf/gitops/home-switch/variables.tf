@@ -24,3 +24,8 @@ variable "syslog_port" {
   type        = number
   description = "The UDP port at syslog_address."
 }
+
+variable "netwatch_targets" {
+  type        = map(string)
+  description = "Named LAN addresses probed by the switch itself."
+}

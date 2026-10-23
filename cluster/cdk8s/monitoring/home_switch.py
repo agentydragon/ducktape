@@ -66,6 +66,7 @@ class HomeSwitchVars(BaseModel):
     )
     syslog_address: str = Field(description="Where the switch sends its log as BSD syslog over UDP.")
     syslog_port: int = Field(description="The UDP port at `syslog_address`.")
+    netwatch_targets: dict[str, str] = Field(description="Named LAN addresses probed by the switch itself.")
 
 
 def _mint(chart: Chart, id: str, key: SecretKey, description: str) -> None:
@@ -111,6 +112,7 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_publi
             # Where alloy-syslog listens.
             syslog_address=str(HOME_LAN.optiplex),
             syslog_port=alloy.SYSLOG_HOST_PORT,
+            netwatch_targets={"att-gateway": str(HOME_LAN.gateway), "optiplex-lan": str(HOME_LAN.optiplex)},
         ),
         # Plans every interval and reports drift; a person approves each apply (README.md).
         auto_apply=False,
