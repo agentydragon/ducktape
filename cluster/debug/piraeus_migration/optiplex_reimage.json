@@ -1,5 +1,5 @@
 {
-  "observedAt": "2026-10-23T10:36:58.484977+00:00",
+  "observedAt": "2026-10-23T10:37:57.887987+00:00",
   "disk": {
     "bus_path": "/pci0000:00/0000:00:1b.0/0000:01:00.0/nvme",
     "cdrom": false,
@@ -126,19 +126,37 @@
       "namespace": "kube-system",
       "name": "cilium-envoy-6rr82",
       "phase": "Running",
-      "ready": false
+      "ready": true
     },
     {
       "namespace": "kube-system",
       "name": "cilium-fmjgp",
       "phase": "Running",
-      "ready": false
+      "ready": true
+    },
+    {
+      "namespace": "kubevirt",
+      "name": "virt-handler-h7xjg",
+      "phase": "Running",
+      "ready": true
+    },
+    {
+      "namespace": "loki",
+      "name": "loki-canary-xq2wq",
+      "phase": "Running",
+      "ready": true
     },
     {
       "namespace": "loki",
       "name": "promtail-xwrdb",
-      "phase": "Pending",
-      "ready": false
+      "phase": "Running",
+      "ready": true
+    },
+    {
+      "namespace": "monitoring",
+      "name": "alloy-node-k5grg",
+      "phase": "Running",
+      "ready": true
     },
     {
       "namespace": "monitoring",
@@ -149,8 +167,8 @@
     {
       "namespace": "node-feature-discovery",
       "name": "node-feature-discovery-worker-fqbkj",
-      "phase": "Pending",
-      "ready": false
+      "phase": "Running",
+      "ready": true
     },
     {
       "namespace": "vector-talos-logs",
