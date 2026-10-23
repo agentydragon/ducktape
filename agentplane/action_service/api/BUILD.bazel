@@ -20,6 +20,10 @@ go_library(
         "watch.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/api",
+    visibility = [
+        "//agentplane/action_service:__subpackages__",
+        "//agentplane/mcp_edge:__subpackages__",
+    ],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service:operator_action_service_go_proto",

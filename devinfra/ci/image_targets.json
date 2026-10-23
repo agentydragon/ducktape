@@ -223,6 +223,11 @@
       "target": "//agentplane/mcp_edge/migrations:image",
       "registry": "forgejo"
     },
+    "agentplane-mcp-edge": {
+      "target": "//agentplane/mcp_edge:service_image",
+      "test": "//agentplane/mcp_edge/...",
+      "registry": "forgejo"
+    },
     "ssh-mcp": {
       "target": "//ssh_mcp_server:image",
       "test": "//ssh_mcp_server/...",

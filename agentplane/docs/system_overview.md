@@ -129,6 +129,7 @@ flowchart LR
     github([GitHub / web-push])
     app[Integration app]
     actions[Action Service]
+    edge[MCP edge: staged runtime]
     k8s[Kubernetes API]
     subgraph box[Action box Pod]
         workload[Box workload]
@@ -152,6 +153,7 @@ flowchart LR
 
     mcp_client -->|MCP over OAuth| actions
     app -->|operator generated HTTP/JSON and NDJSON facade| actions
+    edge -.->|after cutover: account scoped gRPC| actions
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload
     workload --> box_sidecar --> egress
@@ -169,6 +171,9 @@ flowchart LR
 
 The egress proxy substitutes a configured credential only for the destination covered by its
 policy. LiteLLM is a separate hop behind LLM ingress; only that service holds the LiteLLM virtual key.
+The standalone [MCP edge](../mcp_edge/README.md) is a staged runtime. The solid external MCP and
+operator Connection paths still terminate in Actions. The dashed edge-to-Actions route becomes live
+only after the separate database, deployment, public route and app caller cutover.
 
 ## Service definitions
 

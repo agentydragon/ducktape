@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	sharedconfig "github.com/agentydragon/ducktape/agentplane/settings/go"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
@@ -64,9 +65,11 @@ type config struct {
 	// MCPClientMetadata is the client identity of the servers that use the shared Client ID Metadata Document.
 	MCPClientMetadata linkage.ClientMetadata `mapstructure:"mcp_client_metadata"`
 	// OAuth enables the external MCP edge. Its settings keep the Python deployment's keys until cutover.
-	OAuth             *oauthSettings `mapstructure:"oauth"`
-	MaxWaitSeconds    float64        `mapstructure:"max_wait_seconds"`
-	DirectWaitSeconds float64        `mapstructure:"direct_wait_seconds"`
+	OAuth *oauthSettings `mapstructure:"oauth"`
+	// IntegratedConnectionService keeps the legacy Connection API in this process until the edge cutover.
+	IntegratedConnectionService bool    `mapstructure:"integrated_connection_service"`
+	MaxWaitSeconds              float64 `mapstructure:"max_wait_seconds"`
+	DirectWaitSeconds           float64 `mapstructure:"direct_wait_seconds"`
 }
 
 // oauthSettings reads the existing Secret unchanged. The signing and encryption files and discovery
@@ -103,6 +106,7 @@ func defaultConfig() config {
 			APIBaseURL: policies.GitHubAPIBaseURL, CacheTTLSeconds: policies.VisibilityTTL.Seconds(),
 		},
 		ActionGroups: &catalog.Catalog{}, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
+		IntegratedConnectionService: true,
 	}
 }
 
@@ -143,24 +147,7 @@ func loadConfig() (config, error) {
 		if err := json.Unmarshal([]byte(raw), &oauth); err != nil || oauth == nil {
 			return config{}, errors.New("oauth must be a JSON object")
 		}
-		// Set the individual leaves so nested environment overrides retain Viper precedence.
-		var setLeaves func(string, map[string]any)
-		setLeaves = func(prefix string, values map[string]any) {
-			for key, value := range values {
-				path := prefix + "." + key
-				if nested, ok := value.(map[string]any); ok {
-					setLeaves(path, nested)
-				} else {
-					env := settingPrefix + strings.ToUpper(strings.ReplaceAll(path, ".", "__"))
-					if override, present := os.LookupEnv(env); present && override != "" {
-						value = override
-					}
-					settings.Set(path, value)
-				}
-			}
-		}
-		settings.Set("oauth", oauth)
-		setLeaves("oauth", oauth)
+		sharedconfig.SetJSONLeaves(settings, "oauth", oauth, settingPrefix)
 	}
 	// The deployed reader allowlist is a JSON environment value, as Pydantic reads it.
 	if raw := os.Getenv(settingPrefix + "READER_ACCOUNTS"); raw != "" {
@@ -237,6 +224,9 @@ func (c *config) validate() error {
 		}
 	}
 	if c.OAuth != nil {
+		if !c.IntegratedConnectionService {
+			return errors.New("oauth requires integrated_connection_service while Actions serves MCP")
+		}
 		o := c.OAuth
 		for _, value := range []string{o.UpstreamClientID, o.UpstreamClientSecretFile, o.UpstreamSubject, o.ApprovingOperator.Issuer, o.ApprovingOperator.Subject} {
 			if strings.TrimSpace(value) == "" {

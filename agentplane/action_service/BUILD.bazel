@@ -293,6 +293,7 @@ go_library(
         "//agentplane/policy/reader",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
+        "//agentplane/settings/go:config",
         "//agentplane/workload_auth/go/auth",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",

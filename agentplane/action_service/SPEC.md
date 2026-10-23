@@ -147,6 +147,12 @@ periodic state-query fallback.
 
 ## Actions MCP frontend
 
+The in-process ConnectionService and OAuth frontend remain enabled while Actions is the live
+external edge. At the standalone edge cutover, `integrated_connection_service=false` removes
+ConnectionService from gRPC and its HTTP facade; Actions also requires OAuth configuration to be
+absent in that state, so it cannot issue or resolve external Connection tokens. The default is
+`true` until the separate cutover changes deployment configuration.
+
 When OAuth is configured, the Action Service serves a generic MCP frontend in the same process, with the same catalog,
 admission, Decision, Execution, and receipt authority as its HTTP interface. Its fixed tools
 discover Actions, submit/cancel requests, read receipts and results, and page durable events. A result

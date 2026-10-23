@@ -83,6 +83,9 @@ class Settings(YamlFileSettings):
     github_visibility: GitHubVisibilitySettings = Field(default_factory=GitHubVisibilitySettings)
     operator_oidc: OperatorOidcSettings | None = None
     oauth: OAuthSettings | None = None
+    integrated_connection_service: bool = Field(
+        default=True, description="Keep the in-process Connection API until the standalone MCP edge takes ownership."
+    )
     action_groups: dict[Key, ActionGroup] = Field(
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
     )
@@ -95,4 +98,6 @@ class Settings(YamlFileSettings):
         uses_shared_cimd = any(server.use_shared_cimd for server in self.mcp_servers.values())
         if uses_shared_cimd != (self.mcp_client_metadata is not None):
             raise ValueError("configure mcp_client_metadata exactly when an MCP server uses the shared CIMD")
+        if self.oauth is not None and not self.integrated_connection_service:
+            raise ValueError("oauth requires integrated_connection_service while Actions serves MCP")
         return self

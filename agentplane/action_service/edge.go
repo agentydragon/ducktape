@@ -75,10 +75,7 @@ func mountMCPEdge(ctx context.Context, routes *http.ServeMux, c config, db *sql.
 		token, _ := auth.BearerToken(r.Header.Values("Authorization"))
 		mcp.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), edgeBearerKey{}, token)))
 	}))
-	// The authorization handler owns exactly these protocol routes; the core's /v1/ remains gated by workload/OIDC auth.
-	handler := authority.Handler()
-	for _, path := range []string{"/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource/mcp", "/authorize", "/token", "/revoke", "/register", "/auth/callback"} {
-		routes.Handle(path, handler)
-	}
+	// The authorization handler owns its protocol routes; the core's more specific /v1/ remains gated.
+	routes.Handle("/", authority.Handler())
 	return nil
 }

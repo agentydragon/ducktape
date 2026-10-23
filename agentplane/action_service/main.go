@@ -369,19 +369,23 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	action_servicepb.RegisterActionServiceServer(grpcServer, actionAPI)
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests, hub, admission, linkages))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, api.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
-	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connectionStore, admission, hub))
+	if c.IntegratedConnectionService {
+		connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connectionStore, admission, hub))
+	}
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
 	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish
 	// while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	httpFacade, err := facade.NewHandler(
-		facadeContext, listener.Addr().String(),
+	registrations := []facade.Registration{
 		action_servicepb.RegisterActionServiceHandlerFromEndpoint,
 		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
 		web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint,
-		connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint,
-	)
+	}
+	if c.IntegratedConnectionService {
+		registrations = append(registrations, connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
+	}
+	httpFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), registrations...)
 	if err != nil {
 		return err
 	}
