@@ -18,8 +18,7 @@ from agentplane.x.k3s_env.rendered_fixture import (
 from cluster.cdk8s.agentplane import dex
 
 
-def main() -> None:
-    output = Path(os.environ["K3S_FIXTURE_DIR"])
+def render(output: Path) -> None:
     mcp = MCP_PLACEHOLDERS
     models = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
     app_service = fixture_chart.APP_SERVICE
@@ -49,6 +48,10 @@ def main() -> None:
         ),
     )
     write_fixture(output / "local-model-mcp-fixtures.json", fixture, models=models, mcp=mcp)
+
+
+def main() -> None:
+    render(Path(os.environ["K3S_FIXTURE_DIR"]))
 
 
 if __name__ == "__main__":

@@ -67,9 +67,7 @@ def _render(output: Path, variant: FixtureVariant, backend: Backend, *, vm_sandb
     write_fixture(output / f"{variant}.json", fixture, models=models, mcp=None)
 
 
-def main() -> None:
-    output = Path(os.environ["K3S_FIXTURE_DIR"])
-    variant = FixtureVariant(os.environ["K3S_FIXTURE_VARIANT"])
+def render_variant(output: Path, variant: FixtureVariant) -> None:
     match variant:
         case FixtureVariant.NONE:
             _render(output, variant, Backend.NONE, vm_sandboxes=False)
@@ -79,6 +77,12 @@ def main() -> None:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True)
         case FixtureVariant.PUBLIC_LITELLM:
             _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False)
+
+
+def main() -> None:
+    output = Path(os.environ["K3S_FIXTURE_DIR"])
+    variant = FixtureVariant(os.environ["K3S_FIXTURE_VARIANT"])
+    render_variant(output, variant)
 
 
 if __name__ == "__main__":

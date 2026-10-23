@@ -504,14 +504,12 @@ py_test(
     size = "medium",
     srcs = ["test_render_determinism.py"],
     data = [
-        ":render_fixture_bin",
-        ":render_mcp_fixture_bin",
+        ":render_fixture_variants_for_test_bin",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
-        "K3S_RENDERER_RLOCATION": "$(rlocationpath :render_fixture_bin)",
-        "K3S_MCP_RENDERER_RLOCATION": "$(rlocationpath :render_mcp_fixture_bin)",
+        "K3S_RENDERER_RLOCATION": "$(rlocationpath :render_fixture_variants_for_test_bin)",
     },
     deps = [
         "//:conftest",
@@ -539,4 +537,22 @@ py_library(
 py_library(
     name = "service_routing_probe",
     srcs = ["service_routing_probe.py"],
+)
+
+py_library(
+    name = "render_fixture_variants_driver",
+    testonly = True,
+    srcs = ["render_fixture_variants_driver.py"],
+    deps = [
+        ":render_fixture",
+        ":render_mcp_fixture",
+    ],
+)
+
+py_binary(
+    name = "render_fixture_variants_for_test_bin",
+    testonly = True,
+    imports = ["../../.."],
+    main_module = "agentplane.x.k3s_env.render_fixture_variants_driver",
+    deps = [":render_fixture_variants_driver"],
 )
