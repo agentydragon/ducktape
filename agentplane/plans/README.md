@@ -48,6 +48,7 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   DAG node names; the design is [VM Sandboxes](../docs/vm_sandboxes.md)
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
 - [Input metadata](notification_presentation.md) — a sequenced follow-up to command admission
-- [Subscriptions and notifications](notifications.md) — standalone service design: SA-authorized session scope,
-  explicit inbox acknowledgement, shipped Actions/GitHub delivery, remaining reliability acceptance,
-  and deferred Kubernetes monitoring, automatic following and wake
+- Notification follow-ups: [subscription authorization](task_dag.md#subscription-authorization-before-broader-sources),
+  [missed-update reliability](task_dag.md#github-notice-reliability-after-missed-updates), and
+  [deferred Action feed](task_freezer.md#notification_action_feed--remove-idle-action-history-polling).
+  Current behavior belongs in the [service docs](../notification_service/README.md).

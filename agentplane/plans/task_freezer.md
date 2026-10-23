@@ -70,7 +70,40 @@ Only if worker deaths cause actual operational trouble. Keep workers in-process;
 
 ### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
 
-Only if idle polling cost matters. One authorized feed per replica plus canonical catch-up; see [remaining work](notifications.md#deferred-event-driven-actions-consumption).
+Only if idle Action-history polling cost matters. Add a read-authorized Action change feed without
+giving Notifications operator authority or cross-service database access. Use one shared feed per
+replica as an invalidation source; drain canonical events from persisted `actions_after_sequence`
+on startup, reconnect, subscription creation and invalidation. Register before catch-up reads,
+fence racing invalidations and commit progress with inbox entries. Waiting on the feed must not
+hold an inbox lease or occupy a delivery worker. Reconnect with rotating credentials and bounded
+backoff; preserve delivery retries and retention scheduling. Test missed signals, reconnect,
+concurrent events, subscription creation, ownership and idle-worker availability.
+
+### `NOTIFICATION_SOURCE_DISCOVERY` — discover App-accessible sources
+
+When selecting the next GitHub source UX improvement; tracked by
+[#8981](https://github.com/agentydragon/ducktape/issues/8981). Separate accessible repositories,
+active subscriptions and healthy delivery, without exposing another agent's subscriptions.
+
+### `NOTIFICATION_SUBSCRIPTION_LIFETIME` — reconsider automatic expiry
+
+When reviewing subscription lifecycle UX. Consider removing `lifetime_days`, or making expiry
+opt-in with warning/expiry-notification semantics rather than silently ending monitoring.
+
+### `NOTIFICATION_SOURCE_SCOPE` — additional source capabilities
+
+When an operator selects a concrete use case. Candidates: repository subjects, workflow filters,
+tags/releases and deployments/environments; narrower GitHub repository/event grants; automatic
+Action following backed by durable authorized intent rather than a best-effort second request.
+Do not promise complete historical replay. Broader source authorization needs
+`SUBSCRIPTION_AUTHORIZATION_DESIGN` and `SUBSCRIPTION_AUTHORIZATION` first.
+
+### `NOTIFICATION_DELIVERY_SCOPE` — additional destinations and offline behavior
+
+When an operator selects a concrete delivery use case, review notification-triggered provisioning,
+offline guarantees and wake budgets, runner-hosted MCP context, per-session identities,
+cross-account delivery or successor-session retargeting. These require explicit identity and
+lifecycle contracts; existing inbox ownership is not authority to provision, resume or retarget.
 
 ### `NOTIFICATION_NOTICE_PACING` — stage-aware batching before another notice
 
