@@ -1,0 +1,31 @@
+#
+# Injected by the nix-on-droid #495 reproduction harness.
+# Sourced by /init with cwd=/android, after ramdisk.img has been unpacked
+# there and before switch_root. Edits the about-to-become-root filesystem.
+#
+
+# /init silences the console ("echo 0 0 0 0 > printk") unless DEBUG is set,
+# which also hides Android init's own /dev/kmsg output and any panic. Turn it
+# back on -- DEBUG itself is unusable here because it stops for an
+# interactive shell and switches switch_root to chroot.
+echo 7 4 1 7 > /proc/sys/kernel/printk
+echo "=== 5-custom: printk restored, patching default.prop ===" > /dev/kmsg
+
+# adb over TCP: no USB gadget exists in QEMU, so adbd must be told to listen
+# on a socket. Port 5555 is forwarded to the host by qemu's usermode net.
+echo 'service.adb.tcp.port=5555' >> default.prop
+echo 'persist.adb.tcp.port=5555' >> default.prop
+
+# Skip the setup wizard: there is no display or input device to drive it.
+echo 'ro.setupwizard.mode=DISABLED' >> default.prop
+
+# adbd is 'disabled' in init.usb.rc and normally started by the USB config
+# trigger, which never fires here. Start it once the framework is up.
+cat >> init.android_x86_64.rc <<'EOF'
+
+on property:sys.boot_completed=1
+    start adbd
+
+on property:dev.bootcomplete=1
+    start adbd
+EOF
