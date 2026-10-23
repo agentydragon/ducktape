@@ -254,16 +254,79 @@ it("clamps pointer and keyboard resizing and restores the width after collapsing
   await act(async () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
   expect(separator.getAttribute("aria-valuenow")).toBe("272");
 
-  await act(async () => separator.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientX: 372 })));
-  await act(async () => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 1_000 })));
+  let capturedPointerId: number | null = null;
+  Object.defineProperties(separator, {
+    setPointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => {
+        capturedPointerId = pointerId;
+      },
+    },
+    hasPointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => capturedPointerId === pointerId,
+    },
+    releasePointerCapture: {
+      configurable: true,
+      value: (pointerId: number) => {
+        if (capturedPointerId === pointerId) capturedPointerId = null;
+      },
+    },
+  });
+  const pointerEvent = (type: string, clientX: number): MouseEvent => {
+    const event = new MouseEvent(type, { bubbles: true, button: 0, clientX });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    Object.defineProperty(event, "isPrimary", { value: true });
+    return event;
+  };
+  await act(async () => separator.dispatchEvent(pointerEvent("pointerdown", 372)));
+  await act(async () => separator.dispatchEvent(pointerEvent("pointermove", 1_000)));
   expect(separator.getAttribute("aria-valuenow")).toBe("272");
-  await act(async () => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 0 })));
+  await act(async () => separator.dispatchEvent(pointerEvent("pointermove", 0)));
   expect(separator.getAttribute("aria-valuenow")).toBe("220");
-  await act(async () => window.dispatchEvent(new MouseEvent("pointerup")));
+  await act(async () => separator.dispatchEvent(pointerEvent("pointerup", 0)));
+  expect(separator.hasPointerCapture(1)).toBe(false);
+
+  await act(async () => separator.dispatchEvent(pointerEvent("pointerdown", 220)));
+  await act(async () => separator.dispatchEvent(pointerEvent("pointermove", 248)));
+  expect(separator.getAttribute("aria-valuenow")).toBe("248");
+  expect(layout.style.userSelect).toBe("none");
+  await act(async () => separator.dispatchEvent(pointerEvent("pointercancel", 248)));
+  expect(separator.hasPointerCapture(1)).toBe(false);
+  expect(layout.style.userSelect).toBe("");
+  await act(async () => separator.dispatchEvent(pointerEvent("pointermove", 0)));
+  expect(separator.getAttribute("aria-valuenow")).toBe("248");
 
   await act(async () => container?.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')?.click());
   await act(async () => container?.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click());
-  expect(container.querySelector('[role="separator"]')?.getAttribute("aria-valuenow")).toBe("220");
+  expect(container.querySelector('[role="separator"]')?.getAttribute("aria-valuenow")).toBe("248");
+});
+
+it("keeps the preferred sidebar width when available layout space temporarily shrinks", async () => {
+  window.localStorage.setItem("claude-session-sidebar-width", "400");
+  vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
+  vi.mocked(listSessionEvents).mockResolvedValue({
+    data: [],
+    has_more: false,
+    first_id: null,
+    last_id: null,
+  });
+  container = await renderViewer();
+
+  const layout = container.querySelector<HTMLElement>("[data-session-viewer-layout]")!;
+  Object.defineProperty(layout, "clientWidth", { configurable: true, value: 700 });
+  await act(async () => window.dispatchEvent(new Event("resize")));
+
+  const separator = container.querySelector<HTMLElement>("[data-session-sidebar-resizer]")!;
+  expect(separator.getAttribute("aria-valuemax")).toBe("272");
+  expect(separator.getAttribute("aria-valuenow")).toBe("272");
+  expect(window.localStorage.getItem("claude-session-sidebar-width")).toBe("400");
+
+  Object.defineProperty(layout, "clientWidth", { configurable: true, value: 1_000 });
+  await act(async () => window.dispatchEvent(new Event("resize")));
+  expect(separator.getAttribute("aria-valuemax")).toBe("480");
+  expect(separator.getAttribute("aria-valuenow")).toBe("400");
+  expect(window.localStorage.getItem("claude-session-sidebar-width")).toBe("400");
 });
 
 it("opens the mobile session drawer and keeps the chosen session after it closes", async () => {

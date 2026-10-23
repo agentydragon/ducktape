@@ -20,7 +20,7 @@ import { archiveThread, displayableError, type SandboxView, type ThreadView } fr
 import { ActionsSidebarSection } from "./actions/sidebar";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing, type Live, type ThreadsSnapshot } from "./live";
 import { MarkGlyph } from "./mark_glyph";
-import { ResizeHandle, usePaneSize } from "./resize_handle";
+import { ResizeHandle, usePaneSize } from "../../../util/frontend/resizable_pane";
 import { sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import "./sidebar.css";

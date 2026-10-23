@@ -260,10 +260,20 @@ async def test_sidebar_collapsed(sidebar_view: VisualPage) -> None:
 async def test_sidebar_resized(sidebar_view: VisualPage) -> None:
     page = sidebar_view.page
     separator = page.locator("[data-session-sidebar-resizer]")
-    await separator.press("End")
-    maximum = await separator.get_attribute("aria-valuemax")
-    assert maximum is not None
-    await expect(separator).to_have_attribute("aria-valuenow", maximum)
+    box = await separator.bounding_box()
+    if box is None:
+        raise AssertionError("Session sidebar resize handle has no layout box")
+    initial_size = int(await separator.get_attribute("aria-valuenow") or "0")
+    start_x = box["x"] + box["width"] / 2
+    start_y = box["y"] + box["height"] / 2
+    await page.mouse.move(start_x, start_y)
+    await page.mouse.down()
+    await page.mouse.move(start_x + 64, start_y, steps=4)
+    await page.mouse.up()
+    await expect(separator).to_have_attribute("aria-valuenow", str(initial_size + 64))
+    maximum = int(await separator.get_attribute("aria-valuemax") or "0")
+    current_size = int(await separator.get_attribute("aria-valuenow") or "0")
+    assert current_size <= maximum
     # Capture the resized layout, not the keyboard focus outline on its drag handle.
     await separator.blur()
     await _capture(sidebar_view)

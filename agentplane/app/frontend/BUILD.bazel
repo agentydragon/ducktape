@@ -838,17 +838,6 @@ ts_library(
 )
 
 ts_library(
-    name = "resize_handle",
-    srcs = ["resize_handle.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/hooks",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "sidebar",
     srcs = [
         "sidebar.tsx",
@@ -864,7 +853,6 @@ ts_library(
         ":client",
         ":live",
         ":mark_glyph",
-        ":resize_handle",
         ":sandbox_status",
         ":sidebar_css",
         ":status_mark",
@@ -879,6 +867,7 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/threads:scroll_debug_tools",
+        "//util/frontend:resizable_pane",
     ],
 )
 

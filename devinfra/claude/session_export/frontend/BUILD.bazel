@@ -231,6 +231,7 @@ ts_library(
         "//:node_modules/@mantine/hooks",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:resizable_pane",
     ],
 )
 
