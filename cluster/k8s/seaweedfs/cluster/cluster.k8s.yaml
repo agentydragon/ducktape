@@ -136,6 +136,44 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
+    hdd-piraeus-103656:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: volume
+                  app.kubernetes.io/instance: seaweedfs
+                  app.kubernetes.io/name: seaweedfs
+              topologyKey: kubernetes.io/hostname
+      dataCenter: hil
+      env:
+        - name: GOMEMLIMIT
+          value: 1400MiB
+      extraArgs:
+        - -disk=hdd
+      limits:
+        memory: 1536Mi
+      maxVolumeCounts: 600
+      metricsPort: 9325
+      minFreeSpacePercent: 10
+      nodeSelector:
+        kubernetes.io/hostname: ovh-ns103656
+        storage.allegedly.works/piraeus-ready: "true"
+        storage.allegedly.works/tier: hdd
+        topology.kubernetes.io/zone: hil-ovh
+      priorityClassName: stateful-infra
+      rack: hil-ovh-h109b04
+      replicas: 1
+      requests:
+        cpu: 100m
+        memory: 512Mi
+        storage: 1700Gi
+      storageClassName: piraeus-hdd-local
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
     ssd:
       affinity:
         podAntiAffinity:

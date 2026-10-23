@@ -3,9 +3,9 @@ replication-repair `AdminScript`, the PodDisruptionBudgets the operator CRD has 
 field for, and the `tenants` grant letting the `TENANTS` namespaces' S3 objects reference it.
 
 Replication "001" (1 copy on a different node, same rack) survives a single node loss.
-Volume server PVCs use `local-path-ovh-*`, plus `piraeus-ssd-local` on rebuilt SSD
-nodes. The SSD topology groups share one Seaweed placement domain. S3 runs as a standalone
-deployment (`spec.s3`, not `filer.s3`); the filer stays because S3 needs it for metadata.
+Volume server PVCs use `local-path-ovh-*` on existing nodes and Piraeus classes on converted
+nodes. The SSD and HDD Piraeus groups keep their Seaweed placement domains. S3 runs as a
+standalone deployment (`spec.s3`, not `filer.s3`); the filer stays because S3 needs it for metadata.
 Every component is pinned to OVH nodes: the operator default would let pods land anywhere.
 
 The unit also carries the filer DB (`filer_db.py`), the s3 gateway's config Secret
@@ -306,15 +306,15 @@ def seaweed(scope: Construct) -> Seaweed:
                     )
                 ),
             ),
-            # SSD tiering -- cluster/docs/plans/ovh_storage_tiering.md. volumeTopology is the
+            # SSD and HDD tiering -- cluster/docs/plans/ovh_storage_tiering.md. volumeTopology is the
             # sole volume-server source: the operator reconciles ONLY these groups
             # (all-or-nothing -- it does NOT also honor a flat spec.volume, which we
             # deliberately omit). Each group requires dataCenter + rack and is fully
             # self-contained (no inheritance from a base spec.volume; topology-only deployment
             # needs the operator's nil-safe BaseVolumeSpec fallback, added in 1.0.20).
             volume_topology={
-                # 2 servers remain after evacuating hdd-2 on ovh-ns103656. Its Piraeus-backed
-                # replacement is a separate change after the host is reimaged.
+                # Keep the two existing local-path HDD servers and add the converted 103656
+                # worker as a separate Piraeus storage group below.
                 # -disk=hdd matches the flat servers' default disk type ("" == hdd, verified
                 # in seaweedfs 4.29 ToDiskType).
                 #
@@ -344,6 +344,22 @@ def seaweed(scope: Construct) -> Seaweed:
                     disk="hdd",
                     replicas=2,
                     max_volume_counts=600,
+                ),
+                # The readiness label gates this PVC consumer until the HDD pool passes acceptance.
+                "hdd-piraeus-103656": _volume_topology(
+                    rack="hil-ovh-h109b04",
+                    storage="1700Gi",
+                    storage_class="piraeus-hdd-local",
+                    disk="hdd",
+                    replicas=1,
+                    max_volume_counts=600,
+                    additional_node_selector={
+                        **node_scheduling.HIL_OVH_NODE_SELECTOR,
+                        _HOSTNAME: "ovh-ns103656",
+                        "storage.allegedly.works/piraeus-ready": "true",
+                    },
+                    # Keep this server separate from every other Seaweed volume server on its node.
+                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
                 # The usual 3-server OVH NVMe group serves Forgejo git via the
                 # seaweedfs-ovh-ssd StorageClass (diskType=ssd -> -disk=ssd).
