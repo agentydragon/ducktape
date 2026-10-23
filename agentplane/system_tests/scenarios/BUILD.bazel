@@ -83,7 +83,6 @@ py_library(
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:sandbox",
         "//agentplane/system_tests:tracing",
-        "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
