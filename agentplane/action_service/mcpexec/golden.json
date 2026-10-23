@@ -213,7 +213,7 @@
     "url": "https:///mcp"
    },
    "name": "http with an empty authority",
-   "valid": true
+   "valid": false
   },
   {
    "config": {
@@ -374,8 +374,7 @@
       "text": "test text",
       "type": "text"
      }
-    ],
-    "isError": false
+    ]
    },
    "unknown": false
   },
@@ -475,8 +474,7 @@
       },
       "type": "resource"
      }
-    ],
-    "isError": false
+    ]
    },
    "unknown": false
   },
@@ -504,7 +502,6 @@
       "type": "text"
      }
     ],
-    "isError": false,
     "structuredContent": {
      "test": [
       1,
@@ -537,8 +534,7 @@
       "text": "test text",
       "type": "text"
      }
-    ],
-    "isError": false
+    ]
    },
    "unknown": false
   },
@@ -548,8 +544,7 @@
     "content": []
    },
    "stored": {
-    "content": [],
-    "isError": false
+    "content": []
    },
    "unknown": false
   },
@@ -592,8 +587,7 @@
       "text": "test text",
       "type": "text"
      }
-    ],
-    "isError": false
+    ]
    },
    "unknown": false
   },
@@ -735,8 +729,7 @@
       "text": "{\"kind\": \"execution_unknown\"}",
       "type": "text"
      }
-    ],
-    "isError": false
+    ]
    },
    "unknown": false
   }
@@ -886,9 +879,9 @@
     "test_tool": {
      "annotations": {
       "destructive_hint": null,
-      "idempotent_hint": false,
+      "idempotent_hint": null,
       "open_world_hint": null,
-      "read_only_hint": false,
+      "read_only_hint": null,
       "title": null
      },
      "description": "MCP tool test_tool",

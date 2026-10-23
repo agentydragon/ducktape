@@ -11,9 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// golden.json holds MCP bindings' configs and whether the Python service accepts each, tool lists and the Actions it
-// mirrors from each, and tool results and what an Execution keeps of each. `generate_mcp_executor_golden.py` writes
-// it and `test_mcp_executor_golden.py` checks it is current.
+// golden.json holds MCP binding configs, tool lists, and tool results with their expected Go behavior.
 //
 //go:embed golden.json
 var goldenJSON []byte
@@ -47,23 +45,12 @@ func readGolden(t *testing.T) golden {
 	return vectors
 }
 
-// pythonAcceptsOnly are the configs only the Python service accepts, with why.
-var pythonAcceptsOnly = map[string]string{
-	"http with an empty authority": "Pydantic reads `https:///mcp` as the host `mcp`; net/url reads an empty host",
-}
-
-func TestBindingsAreAcceptedAsPythonAcceptsThem(t *testing.T) {
+func TestBindingsMatchExpectedAcceptance(t *testing.T) {
 	for _, vector := range readGolden(t).Configs {
 		t.Run(vector.Name, func(t *testing.T) {
 			_, err := parseServer(vector.Config)
-			if reason, ok := pythonAcceptsOnly[vector.Name]; ok {
-				if !vector.Valid || err == nil {
-					t.Errorf("Python accepts it: %v; parseServer: %v; only Python accepts it because %s", vector.Valid, err, reason)
-				}
-				return
-			}
 			if (err == nil) != vector.Valid {
-				t.Fatalf("Python accepts it: %v; parseServer: %v", vector.Valid, err)
+				t.Fatalf("valid = %v; parseServer error = %v", vector.Valid, err)
 			}
 			// A config can hold a credential, so a refusal names fields, never a value but the words of the
 			// transport and auth vocabularies.
@@ -105,21 +92,7 @@ func stringValues(t *testing.T, document json.RawMessage) []string {
 	return values
 }
 
-// falseHintsAbsent is a mirrored tool list as this executor holds it: go-sdk reads an absent read-only or idempotent
-// hint as false, which the protocol defines it to mean, so a false one is held as absent.
-func falseHintsAbsent(actions map[string]any) {
-	for _, action := range actions {
-		if annotations, given := action.(map[string]any)["annotations"].(map[string]any); given {
-			for _, hint := range []string{"read_only_hint", "idempotent_hint"} {
-				if annotations[hint] == false {
-					annotations[hint] = nil
-				}
-			}
-		}
-	}
-}
-
-func TestToolsAreMirroredAsPythonMirrorsThem(t *testing.T) {
+func TestToolsAreMirroredAsActions(t *testing.T) {
 	for _, vector := range readGolden(t).Tools {
 		t.Run(vector.Name, func(t *testing.T) {
 			listed := make([]*mcp.Tool, len(vector.Tools))
@@ -131,27 +104,26 @@ func TestToolsAreMirroredAsPythonMirrorsThem(t *testing.T) {
 			tools, err := mirror(listed)
 			if vector.Invalid {
 				if _, refused := err.(*invalidCatalogError); !refused {
-					t.Fatalf("mirror() = %v, %v; Python refuses the list", tools, err)
+					t.Fatalf("mirror() = %v, %v; expected invalid catalog", tools, err)
 				}
 				return
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			falseHintsAbsent(vector.Actions)
 			got := map[string]any{}
 			for name, tool := range tools {
-				got[name] = pythonAction(t, tool)
+				got[name] = actionView(t, tool)
 			}
 			if !reflect.DeepEqual(got, vector.Actions) {
-				t.Errorf("mirrors %v\nPython  %v", got, vector.Actions)
+				t.Errorf("mirrors %v\nwant    %v", got, vector.Actions)
 			}
 		})
 	}
 }
 
-// pythonAction is a tool's Action in the fields of the Python service's ActionDefinition, as JSON reads them.
-func pythonAction(t *testing.T, tool tool) any {
+// actionView is the JSON view of a mirrored tool's ActionDefinition.
+func actionView(t *testing.T, tool tool) any {
 	t.Helper()
 	d := tool.definition
 	var annotations map[string]any
@@ -179,7 +151,7 @@ func roundTrip(t *testing.T, value any) any {
 	return decoded
 }
 
-func TestResultsAreKeptAsPythonKeepsThem(t *testing.T) {
+func TestResultsAreKeptAsStored(t *testing.T) {
 	for _, vector := range readGolden(t).Results {
 		t.Run(vector.Name, func(t *testing.T) {
 			var result mcp.CallToolResult
@@ -190,20 +162,16 @@ func TestResultsAreKeptAsPythonKeepsThem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// go-sdk leaves out an `isError` that is false, which the protocol defines its absence to mean.
 			want := vector.Stored
-			if want["isError"] == false {
-				delete(want, "isError")
-			}
 			var got map[string]any
 			if err := json.Unmarshal(stored, &got); err != nil {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(got, want) {
-				t.Errorf("keeps %s\nPython %v", stored, want)
+				t.Errorf("keeps %s\nwant   %v", stored, want)
 			}
 			if unknown := reportsUnknownOutcome(&result); unknown != vector.Unknown {
-				t.Errorf("reports an unknown outcome: %t; Python: %t", unknown, vector.Unknown)
+				t.Errorf("reports an unknown outcome: got %t, want %t", unknown, vector.Unknown)
 			}
 		})
 	}
