@@ -21,32 +21,32 @@ func TestVocabulariesAreThoseOfTheStoredColumns(t *testing.T) {
 		"policy_source":   {PolicySourceRules},
 	} {
 		if got := enums[column]; !slices.Equal(got, want) {
-			t.Errorf("%s: Python has %v, the store %v", column, got, want)
+			t.Errorf("%s: stored vocabulary has %v, the store %v", column, got, want)
 		}
 	}
 }
 
-func TestTheUnknownOutcomeReasonsAreAmongThoseOfPython(t *testing.T) {
-	python := loadGolden(t).Enums["unknown_outcome_reason"]
+func TestUnknownOutcomeReasonsBelongToStoredVocabulary(t *testing.T) {
+	stored := loadGolden(t).Enums["unknown_outcome_reason"]
 	for _, reason := range []UnknownOutcomeReason{UnknownExecutorLost, UnknownLeaseExpired, UnknownAdapterOutcome, UnknownCoordinatorStopped} {
-		if !slices.Contains(python, string(reason)) {
-			t.Errorf("Python has no reason %s among %v", reason, python)
+		if !slices.Contains(stored, string(reason)) {
+			t.Errorf("stored vocabulary has no reason %s among %v", reason, stored)
 		}
 	}
 }
 
-func TestTerminalStatesGiveTheirRequestsThePythonState(t *testing.T) {
+func TestTerminalStatesMapToStoredRequestStates(t *testing.T) {
 	vectors := loadGolden(t).TerminalStates
 	got := map[ExecutionState]ActionState{}
 	for _, vector := range vectors {
 		got[ExecutionState(vector.ExecutionState)] = ActionState(vector.ActionState)
 	}
 	if !reflect.DeepEqual(got, terminalActionStates) || len(vectors) != len(terminalActionStates) {
-		t.Errorf("Python maps %v, the store %v", got, terminalActionStates)
+		t.Errorf("stored mapping is %v, the store %v", got, terminalActionStates)
 	}
 }
 
-func TestEndedExecutionsHoldTheErrorsPythonWrites(t *testing.T) {
+func TestEndedExecutionsHoldStoredErrors(t *testing.T) {
 	for _, vector := range loadGolden(t).UnknownOutcomes {
 		t.Run(vector.Reason, func(t *testing.T) {
 			sameJSON(t, []byte(unknownOutcomeError(UnknownOutcomeReason(vector.Reason))), vector.Error)
@@ -62,7 +62,7 @@ func toStrings[T ~string](values []T) []string {
 	return strings
 }
 
-func TestRequestsAreValidatedAndStoredAsPythonDoes(t *testing.T) {
+func TestRequestsSatisfyStoredContract(t *testing.T) {
 	for _, vector := range loadGolden(t).Requests {
 		t.Run(vector.Name, func(t *testing.T) {
 			input := requestInput(t, vector.Input)
@@ -94,7 +94,7 @@ func TestRequestsAreValidatedAndStoredAsPythonDoes(t *testing.T) {
 	}
 }
 
-func TestDecisionInputsAreValidatedAsPythonDoes(t *testing.T) {
+func TestDecisionInputsSatisfyValidationContract(t *testing.T) {
 	for _, vector := range loadGolden(t).DecisionInputs {
 		t.Run(vector.Name, func(t *testing.T) {
 			var wire struct {
@@ -108,13 +108,13 @@ func TestDecisionInputsAreValidatedAsPythonDoes(t *testing.T) {
 			}
 			err := DecisionInput(wire).Validate()
 			if vector.Valid != (err == nil) || err != nil && !errors.Is(err, ErrInvalid) {
-				t.Errorf("Python accepts it = %v, Validate = %v", vector.Valid, err)
+				t.Errorf("valid input = %v, Validate = %v", vector.Valid, err)
 			}
 		})
 	}
 }
 
-func TestVotesAreValidatedAsPythonValidatesOutcomes(t *testing.T) {
+func TestVotesRequireDecisiveOutcomes(t *testing.T) {
 	for _, vector := range loadGolden(t).ProviderOutcomes {
 		t.Run(vector.Name, func(t *testing.T) {
 			var wire struct {
@@ -123,7 +123,7 @@ func TestVotesAreValidatedAsPythonValidatesOutcomes(t *testing.T) {
 				ReasonDescription *string         `json:"reason_description"`
 				Evidence          *PolicyEvidence `json:"evidence"`
 			}
-			// A vote is an outcome that decides: Python's ProviderVerdict adds `no_opinion`, which defers to a human.
+			// A vote must decide; `no_opinion` defers to a human.
 			err := json.Unmarshal(vector.Input, &wire)
 			if err == nil {
 				err = ProviderVote{
@@ -138,7 +138,7 @@ func TestVotesAreValidatedAsPythonValidatesOutcomes(t *testing.T) {
 	}
 }
 
-func TestPolicyEvidenceIsReadAndWrittenAsPythonDoes(t *testing.T) {
+func TestPolicyEvidenceRoundTripsStoredForms(t *testing.T) {
 	for _, vector := range loadGolden(t).PolicyEvidence {
 		t.Run(vector.Name, func(t *testing.T) {
 			var sent, stored PolicyEvidence
@@ -164,7 +164,7 @@ func TestPolicyEvidenceIsReadAndWrittenAsPythonDoes(t *testing.T) {
 	}
 }
 
-func TestActorsAreReadAndWrittenAsPythonDoes(t *testing.T) {
+func TestActorsRoundTripStoredForms(t *testing.T) {
 	for _, vector := range loadGolden(t).Actors {
 		t.Run(vector.Name, func(t *testing.T) {
 			actor, err := decodeActor(vector.Input)
@@ -189,7 +189,7 @@ func TestActorsAreReadAndWrittenAsPythonDoes(t *testing.T) {
 	}
 }
 
-func TestHistoryCursorsAreThoseOfPython(t *testing.T) {
+func TestHistoryCursorsSatisfyStoredContract(t *testing.T) {
 	cursors := loadGolden(t).HistoryCursors
 	for _, vector := range cursors.Encoded {
 		t.Run("encode "+vector.Name, func(t *testing.T) {

@@ -5,7 +5,7 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
@@ -793,39 +793,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_binary(
-    name = "generate_golden_bin",
-    main_module = "agentplane.action_service.generate_golden",
-    deps = [":generate_golden"],
-)
-
-py_library(
-    name = "generate_golden",
-    srcs = ["generate_golden.py"],
-    deps = [
-        ":db",
-        ":models",
-        ":store",
-        "//util:sqlalchemy_types",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_golden",
-    srcs = ["test_golden.py"],
-    # Pure synchronous test; no conftest fixture is needed.
-    args = ["--noconftest"],
-    data = ["//agentplane/action_service/store:golden.json"],
-    deps = [
-        ":conftest",
-        ":generate_golden",
-        "//:conftest",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )
