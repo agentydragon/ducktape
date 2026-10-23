@@ -1,0 +1,161 @@
+/* The Sandbox-grouped thread list (`thread_list.tsx`), in the sidebar and on the landing page.
+   Mantine's own CSS variables, so colors follow the same light/dark scheme as the rest of the app. */
+
+.agentplane-thread-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agentplane-thread-list-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--mantine-font-size-xs);
+  line-height: var(--mantine-line-height-xs);
+  font-weight: 700;
+  color: var(--mantine-color-dimmed);
+  padding: 10px 8px 4px;
+  overflow: hidden;
+}
+
+/* Sandbox details select the group header, not the threads beneath it. Keep status colors
+ * (notably suspended) on the icon and link while giving the active group a clear surface. */
+.agentplane-thread-list-group-label.current {
+  background: var(--mantine-primary-color-light);
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-primary-color-filled);
+}
+
+.agentplane-thread-list-group-label .agentplane-thread-list-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentplane-thread-list-group-link {
+  color: var(--mantine-color-anchor);
+  text-decoration: none;
+  width: 100%;
+}
+
+.agentplane-thread-list-group-link:hover:not(.current) {
+  background: var(--mantine-color-default-hover);
+}
+
+.agentplane-thread-list-group-count {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--mantine-color-dimmed);
+}
+
+.agentplane-thread-list-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.agentplane-thread-list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-sm);
+  color: var(--mantine-color-text);
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+
+.agentplane-thread-list-row:hover {
+  background: var(--mantine-color-default-hover);
+}
+
+/* Before `.current`, so a selected stopped thread still shows the selection. */
+.agentplane-thread-list-row.stopped {
+  color: var(--mantine-color-dimmed);
+}
+
+.agentplane-thread-list-row.current {
+  background: var(--mantine-primary-color-light);
+  color: var(--mantine-primary-color-filled);
+  font-weight: 600;
+}
+
+.agentplane-thread-list-row.archived {
+  opacity: 0.6;
+}
+
+/* The detail sits beside the name while the name keeps at least 12rem, and wraps under it on a
+   narrower pane. */
+.agentplane-thread-list-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+}
+
+.agentplane-thread-list-row-name {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentplane-thread-list-row-detail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+}
+
+.agentplane-thread-list-row-mark {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/* The unprocessed count tucks under the status mark's lower-right corner, like a count on an
+   avatar; the ring in the row's background keeps the two apart where they overlap. */
+.agentplane-thread-list-row-mark .agentplane-thread-list-row-notices {
+  position: absolute;
+  right: -0.375rem;
+  bottom: -0.375rem;
+  height: 0.5875rem;
+  min-width: 0.5875rem;
+  padding: 0 0.1rem;
+  font-size: 0.425rem;
+  line-height: 0.5375rem;
+  letter-spacing: 0;
+  box-shadow: 0 0 0 1px var(--mantine-color-body);
+}
+
+.agentplane-thread-list-row-action {
+  opacity: 0;
+}
+
+.agentplane-thread-list-row:hover .agentplane-thread-list-row-action,
+.agentplane-thread-list-row:focus-within .agentplane-thread-list-row-action {
+  opacity: 1;
+}
+
+.agentplane-thread-list-archived-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 6px 4px;
+  margin-top: 4px;
+  border-top: 1px solid var(--mantine-color-default-border);
+}

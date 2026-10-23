@@ -813,6 +813,11 @@ js_library(
     srcs = ["sidebar.css"],
 )
 
+js_library(
+    name = "thread_list_css",
+    srcs = ["thread_list.css"],
+)
+
 # app.tsx imports this stylesheet for the bundler.
 js_library(
     name = "shell_css",
@@ -861,17 +866,9 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
-        ":live",
-        ":mark_glyph",
         ":resize_handle",
-        ":sandbox_status",
         ":sidebar_css",
-        ":status_mark",
-        ":thread_groups",
-        ":thread_notices",
-        ":thread_status",
-        ":thread_status_indicator",
+        ":thread_list",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -879,6 +876,76 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/threads:scroll_debug_tools",
+    ],
+)
+
+ts_library(
+    name = "thread_list",
+    srcs = [
+        "thread_list.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":live",
+        ":mark_glyph",
+        ":sandbox_status",
+        ":status_mark",
+        ":thread_groups",
+        ":thread_list_css",
+        ":thread_notices",
+        ":thread_status",
+        ":thread_status_indicator",
+        ":time_ago",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "home_test",
+    srcs = ["home.test.tsx"],
+    deps = [
+        ":client",
+        ":home",
+        ":live",
+        ":notification_types",
+        ":sidebar",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "home",
+    srcs = [
+        "home.tsx",
+        # The ambient declaration for the @tabler/icons-react subpath this file imports.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_list",
+        ":topbar",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
     ],
 )
 
@@ -1221,6 +1288,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":consent",
+        ":home",
         ":live",
         ":sandbox_page",
         ":sandboxes",

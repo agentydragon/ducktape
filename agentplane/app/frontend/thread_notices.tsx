@@ -80,7 +80,7 @@ export function ThreadNoticeBadge({
   return (
     <Tooltip label={lines.join("\n")} multiline style={{ whiteSpace: "pre-line" }} withArrow>
       <Badge
-        className="agentplane-sidebar-row-notices"
+        className="agentplane-thread-list-row-notices"
         data-state={error === undefined ? "pending" : "error"}
         variant="filled"
         // Muted: the count is the agent's backlog, not a call on the operator's attention.

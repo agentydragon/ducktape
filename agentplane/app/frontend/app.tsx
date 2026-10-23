@@ -1,4 +1,4 @@
-import { ActionIcon, Anchor, Stack, Text, Title } from "@mantine/core";
+import { ActionIcon, Stack, Text, Title } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
 import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
@@ -9,6 +9,7 @@ import { ActionHistory } from "./actions/history";
 import { ActionRequests, ActionRequestsProvider } from "./actions/requests";
 import { ActionsAttentionBar } from "./actions/sidebar";
 import { ConnectionConsent } from "./consent";
+import { Home } from "./home";
 import { SandboxPage } from "./sandbox_page";
 import { RoutedThreadsLiveProvider, SandboxesLiveProvider } from "./live";
 import { SandboxList } from "./sandboxes";
@@ -31,23 +32,6 @@ function sandboxPath(name: string): string {
 function required(value: string | undefined, name: string): string {
   if (value === undefined) throw new Error(`route parameter ${name} is missing`);
   return value;
-}
-
-/** Nothing selected: the sidebar carries the Threads list, so the landing pane just points at it. */
-function ThreadsLanding(): JSX.Element {
-  const navigate = useNavigate();
-  // TODO: Give the "open Sandboxes" link an href so it is keyboard focusable.
-  return (
-    <Stack align="center" justify="center" h="100%">
-      <Text c="dimmed">
-        Select a thread from the sidebar, or{" "}
-        <Anchor size="sm" onClick={() => void navigate("/sandboxes")}>
-          open Sandboxes
-        </Anchor>{" "}
-        to start one.
-      </Text>
-    </Stack>
-  );
 }
 
 function SandboxListRoute(): JSX.Element {
@@ -143,7 +127,7 @@ function AppRoutes(): JSX.Element {
   const fullBleed = threadRoute !== null;
   const routes = (
     <Routes>
-      <Route path="/" element={<ThreadsLanding />} />
+      <Route path="/" element={<Home />} />
       <Route path="/sandboxes" element={<SandboxListRoute />} />
       <Route path="/system" element={<SystemStatus />} />
       <Route path="/actions" element={<ActionsPage />} />
@@ -151,7 +135,7 @@ function AppRoutes(): JSX.Element {
       <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
       <Route path="/sandboxes/:name" element={<SandboxRoute />} />
       <Route path="/threads/:threadId" element={<ThreadRoute settingsOpen={settingsTab !== null} />} />
-      <Route path="*" element={<ThreadsLanding />} />
+      <Route path="*" element={<Home />} />
     </Routes>
   );
   return (

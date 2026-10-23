@@ -93,7 +93,7 @@ async def test_session_thread_setup(view: VisualPage, app: AgentplaneFixture) ->
 async def test_threads(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.page.wait_for_selector(
-        "a.agentplane-sidebar-group-link .agentplane-sidebar-group-name", state="attached"
+        "a.agentplane-thread-list-group-link .agentplane-thread-list-group-name", state="attached"
     )
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
@@ -101,7 +101,10 @@ async def test_threads(view: VisualPage, app: AgentplaneFixture) -> None:
 
 @MOBILE_ONLY
 async def test_threads_phone(view: VisualPage, app: AgentplaneFixture) -> None:
+    """A phone opens on the landing page's Sandboxes and Threads, not behind the drawer."""
     await app.mount_app("/")
+    home = view.page.get_by_role("region", name="Sandboxes and threads")
+    await expect(home.locator(".agentplane-thread-list-row-detail time").first).to_be_visible()
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 

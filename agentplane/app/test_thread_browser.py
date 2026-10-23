@@ -261,7 +261,9 @@ async def test_switching_threads_starts_at_each_threads_tail(
         await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
         for number in (1, 0):
             async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
-                await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
+                await page.locator(
+                    ".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}"
+                ).click()
             await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
                 f"Test navigation thread {number}"
             )
@@ -296,7 +298,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
         await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible(timeout=30_000)
         for number in (1, 0):
-            await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
+            await page.locator(".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}").click()
             await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible(timeout=30_000)
         remembered = [entry.error for entry in await thread_view_marks.estimate_errors(page) if entry.remembered]
         assert remembered, "no row on the return was laid out from what the first visit read"
@@ -367,7 +369,9 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
 
         async def open_thread(number: int) -> None:
             async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
-                await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
+                await page.locator(
+                    ".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}"
+                ).click()
 
         region = page.get_by_role("region", name="Thread history", exact=True)
         # A short viewport mounts few of the window's rows, whose bodies a reader's view reads on mounting.

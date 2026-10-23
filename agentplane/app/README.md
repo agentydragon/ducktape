@@ -326,6 +326,10 @@ the existing PostgreSQL thread notifications both refresh that snapshot. A liste
 rereads PostgreSQL, including writes whose notifications were missed while disconnected. There
 is no sidebar polling loop or new notification service.
 
+The landing route (`/`) is the same Thread list as a whole page, with each Thread's harness, model
+and last activity, so a phone opens on its Sandboxes and Threads rather than behind the drawer. The
+sidebar and the landing page share the one `/live/threads` stream and its search.
+
 The retained snapshot stays navigable during an outage, and the browser connection, stale
 Kubernetes watch, and disconnected database listener all show in the topbar's one connection
 indicator rather than as page banners. A Thread's live dot

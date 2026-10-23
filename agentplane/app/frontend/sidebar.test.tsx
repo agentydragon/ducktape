@@ -239,7 +239,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   );
   expect(container.textContent).not.toContain("Before rename");
   expect(row(renamed.name).className).toContain("current");
-  expect(container.querySelector(".agentplane-sidebar-state-icon[data-status='suspended']")).not.toBeNull();
+  expect(container.querySelector(".agentplane-thread-list-state-icon[data-status='suspended']")).not.toBeNull();
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
   expect(container.textContent).toContain("test-threadless");
   expect(container.textContent).toContain("0 threads");
@@ -343,13 +343,13 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
 it("opens retained Thread history even when its Sandbox is gone", async () => {
   await render([thread({ id: "t-1", sandbox: "old-debug-3f9c", name: "Why did the migration hang" })], {});
 
-  const label = [...container.querySelectorAll(".agentplane-sidebar-group-name")].find(
+  const label = [...container.querySelectorAll(".agentplane-thread-list-group-name")].find(
     (node) => node.textContent === "old-debug-3f9c"
   );
   expect(label).toBeDefined();
   expect(container.querySelector('a[href="/sandboxes/old-debug-3f9c"]')).toBeNull();
 
-  const readonlyRow = [...container.querySelectorAll(".agentplane-sidebar-row.readonly")].find((node) =>
+  const readonlyRow = [...container.querySelectorAll(".agentplane-thread-list-row.readonly")].find((node) =>
     node.textContent?.includes("Why did the migration hang")
   );
   expect(readonlyRow).toBeDefined();
@@ -366,7 +366,7 @@ it.each([
 ] as const)("marks a group's Sandbox by its status: %s", async (_name, overrides, status) => {
   const box = sandbox("test-marked", overrides);
   await render([], { [box.name]: box });
-  expect(container.querySelector(`.agentplane-sidebar-state-icon[data-status='${status}']`)).not.toBeNull();
+  expect(container.querySelector(`.agentplane-thread-list-state-icon[data-status='${status}']`)).not.toBeNull();
 });
 
 it("renders only a suspended Sandbox's name in its icon's gray, not the link blue", async () => {
@@ -379,7 +379,7 @@ it("renders only a suspended Sandbox's name in its icon's gray, not the link blu
     return node;
   };
   const icon = container.querySelector<HTMLElement>(
-    ".agentplane-sidebar-state-icon[data-status='suspended'] .agentplane-mark"
+    ".agentplane-thread-list-state-icon[data-status='suspended'] .agentplane-mark"
   );
   expect(icon?.style.color).toBeTruthy();
   expect(link("test-suspended").style.color).toBe(icon?.style.color);
@@ -403,7 +403,7 @@ it("opens the details of a provisioning Sandbox with no Threads", async () => {
   const pending = sandbox("test-provisioning", { pod: null });
   await render([], { [pending.name]: pending });
   expect(container.textContent).toContain("0 threads");
-  expect(container.querySelector(".agentplane-sidebar-state-icon[data-status='pending']")).not.toBeNull();
+  expect(container.querySelector(".agentplane-thread-list-state-icon[data-status='pending']")).not.toBeNull();
   const link = container.querySelector('a[href="/sandboxes/test-provisioning"]');
   if (!(link instanceof HTMLAnchorElement)) throw new Error("missing provisioning Sandbox link");
   await act(async () => link.click());
@@ -418,7 +418,7 @@ it("links a Sandbox name to its details without changing Thread navigation", asy
   );
   const link = container.querySelector('a[href="/sandboxes/demo-a1b2"]');
   if (!(link instanceof HTMLAnchorElement)) throw new Error("missing Sandbox details link");
-  expect(link.querySelector(".agentplane-sidebar-group-name")?.textContent).toBe("demo-a1b2");
+  expect(link.querySelector(".agentplane-thread-list-group-name")?.textContent).toBe("demo-a1b2");
 
   await act(async () => link.click());
   expect(location()).toBe("/sandboxes/demo-a1b2");
@@ -437,14 +437,14 @@ it("highlights only the current Sandbox group on its details route", async () =>
   const selected = container.querySelector<HTMLAnchorElement>('a[href="/sandboxes/demo%20a1b2"]');
   const other = container.querySelector<HTMLAnchorElement>('a[href="/sandboxes/other"]');
   expect(selected?.getAttribute("aria-current")).toBe("page");
-  expect(selected?.closest(".agentplane-sidebar-group-label")?.classList.contains("current")).toBe(true);
+  expect(selected?.closest(".agentplane-thread-list-group-label")?.classList.contains("current")).toBe(true);
   expect(other?.hasAttribute("aria-current")).toBe(false);
-  expect(other?.closest(".agentplane-sidebar-group-label")?.classList.contains("current")).toBe(false);
+  expect(other?.closest(".agentplane-thread-list-group-label")?.classList.contains("current")).toBe(false);
   expect(row("First thread").classList.contains("current")).toBe(false);
 
   await act(async () => row("First thread").click());
   expect(selected?.hasAttribute("aria-current")).toBe(false);
-  expect(selected?.closest(".agentplane-sidebar-group-label")?.classList.contains("current")).toBe(false);
+  expect(selected?.closest(".agentplane-thread-list-group-label")?.classList.contains("current")).toBe(false);
   expect(row("First thread").classList.contains("current")).toBe(true);
 });
 
@@ -822,7 +822,7 @@ it("counts each listed thread's unprocessed notifications and flags failed deliv
   await act(async () => {});
   expect(new URL(noticeUrls[0], "http://test").searchParams.getAll("thread_id")).toEqual(threads.map(({ id }) => id));
   const badge = (name: string): [string | null, string | null] | undefined => {
-    const element = row(name).querySelector(".agentplane-sidebar-row-notices");
+    const element = row(name).querySelector(".agentplane-thread-list-row-notices");
     return element === null ? undefined : [element.getAttribute("data-state"), element.textContent];
   };
   // Queued and delivered-but-unacknowledged entries count alike: both still wait on the agent.

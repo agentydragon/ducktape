@@ -25,18 +25,19 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
-    await page.locator(".agentplane-sidebar-archived-toggle label").click()
-    await expect(page.get_by_role("switch", name="Show archived threads")).to_be_checked()
-    await expect(page.locator('.agentplane-thread-status-indicator[data-status="archived"]')).to_be_visible()
+    sidebar = page.get_by_role("navigation", name="Threads")
+    await sidebar.locator(".agentplane-thread-list-archived-toggle label").click()
+    await expect(sidebar.get_by_role("switch", name="Show archived threads")).to_be_checked()
+    await expect(sidebar.locator('.agentplane-thread-status-indicator[data-status="archived"]')).to_be_visible()
     await page.mouse.move(0, 0)
     await expect(page.get_by_role("tooltip")).to_have_count(0)
     await view.capture(target=view.page.locator("#app"))
 
 
 async def expect_notice_badges(page: Page, *, stale: bool) -> None:
-    """The fixture's two unprocessed-count badges and one failed-delivery badge, all painted, and
-    faded exactly when the notice stream is down."""
-    badges = page.locator(".agentplane-sidebar-row-notices")
+    """The fixture's two unprocessed-count badges and one failed-delivery badge in the sidebar, all
+    painted, and faded exactly when the notice stream is down."""
+    badges = page.get_by_role("navigation", name="Threads").locator(".agentplane-thread-list-row-notices")
     for state, count in [("pending", 2), ("error", 1)]:
         await expect(badges.and_(page.locator(f'[data-state="{state}"]'))).to_have_count(count)
     for badge in await badges.all():
@@ -59,8 +60,8 @@ async def test_current_sandbox_highlight(view: VisualPage, app: AgentplaneFixtur
     await view.check(context="fixture ready")
     page = view.page
     await _open_phone_navigation(page)
-    current = page.locator('.agentplane-sidebar-group-link[aria-current="page"]')
-    await expect(current.locator(".agentplane-sidebar-group-name")).to_have_text("ready-sandbox")
+    current = page.locator('.agentplane-thread-list-group-link[aria-current="page"]')
+    await expect(current.locator(".agentplane-thread-list-group-name")).to_have_text("ready-sandbox")
     await expect(current).to_have_class(re.compile(r"\bcurrent\b"))
     await view.capture(target=page.locator("#app"))
 
@@ -113,14 +114,16 @@ async def test_queued_session_open_follows_live_projection_and_survives_return(
 
     await app.project_queued_session()
     await expect(page).to_have_url(re.compile(re.escape(session_id)))
-    sidebar_thread = page.locator(".agentplane-sidebar-row-name").filter(has_text="Queued opening session")
+    sidebar_thread = page.locator(".agentplane-thread-list-row-name").filter(has_text="Queued opening session")
     await expect(sidebar_thread).to_be_visible()
 
-    await page.locator("a.agentplane-sidebar-group-link").filter(has_text="ready-sandbox").click()
+    await page.locator("a.agentplane-thread-list-group-link").filter(has_text="ready-sandbox").click()
     await page.get_by_role("tab", name="Sessions").click()
     row = page.get_by_role("row", name=re.compile("Queued opening session"))
     await expect(row).to_be_visible()
-    await expect(page.locator(".agentplane-sidebar-row-name").filter(has_text="Queued opening session")).to_be_visible()
+    await expect(
+        page.locator(".agentplane-thread-list-row-name").filter(has_text="Queued opening session")
+    ).to_be_visible()
     await view.check(context="queued Session projected and listed after returning to its Sandbox")
     await view.capture(target=page.locator("#app"))
 
@@ -169,7 +172,9 @@ async def open_phone_drawer(view: VisualPage, app: AgentplaneFixture) -> Page:
 @MOBILE_ONLY
 async def test_mobile_navigation_drawer_threads_phone_drawer(view: VisualPage, app: AgentplaneFixture) -> None:
     page = await open_phone_drawer(view, app)
-    await expect(page.locator("a.agentplane-sidebar-group-link .agentplane-sidebar-group-name").first).to_be_visible()
+    drawer = page.locator(".agentplane-sidebar-open")
+    group_names = drawer.locator("a.agentplane-thread-list-group-link .agentplane-thread-list-group-name")
+    await expect(group_names.first).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 
@@ -187,7 +192,7 @@ async def test_mobile_navigation_drawer_threads_failed_turn_phone_drawer(
 async def test_mobile_navigation_drawer_threads_provisioning_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.ADD_PROVISIONING_SANDBOX)
     page = await open_phone_drawer(view, app)
-    await expect(page.locator('a[href="#/sandboxes/test-provisioning"]').first).to_be_visible()
+    await expect(page.locator('.agentplane-sidebar-open a[href="#/sandboxes/test-provisioning"]')).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 
