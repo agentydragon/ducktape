@@ -30,6 +30,7 @@ from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests import scripted_upstream
 from agentplane.system_tests.ollama_warmup import warm_ollama
+from util.net import Listener
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -169,12 +170,11 @@ async def model(offered_model: str) -> str:
 
 
 @pytest.fixture
-async def scripted() -> AsyncIterator[scripted_upstream.ScriptedUpstream]:
+async def scripted(scripted_listener: Listener) -> AsyncIterator[scripted_upstream.ScriptedUpstream]:
     """The model behind this target's LLM ingress, played by the scenario. One per test, so a request
     a scenario leaves unanswered fails that scenario."""
-    host, port = os.environ[scripted_upstream.ADDRESS].rsplit(":", 1)
     upstream = scripted_upstream.ScriptedUpstream()
-    async with upstream.serving(host=host, port=int(port)):
+    async with upstream.serving(listener=scripted_listener.socket):
         yield upstream
 
 

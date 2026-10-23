@@ -11,18 +11,18 @@ import took.
 """
 
 import os
-import socket
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from agentplane.system_tests import operator_login, scripted_upstream
+from agentplane.system_tests import operator_login
 from agentplane.system_tests.conftest import ACTIONS_MCP_URL, BASE_URL, NAMESPACE, TOKEN
 from agentplane.x.k3s_env import rendered_fixture
 from agentplane.x.k3s_env.stack import Timeline, node_ip, running_stack
 from util.bazel.runfiles import get_required_path
+from util.net import Listener, listen_tcp
 
 TIMELINE = pytest.StashKey[Timeline]()
 
@@ -43,16 +43,21 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, config: p
         terminalreporter.write_line(timeline.summary())
 
 
+@pytest.fixture(scope="session")
+def scripted_listener() -> Iterator[Listener]:
+    """Retain the scripted model's binding until the deployment and all scenarios stop."""
+    with listen_tcp(host=node_ip()) as listener:
+        yield listener
+
+
 @pytest.fixture(scope="session", autouse=True)
-def k3s_deployment(pytestconfig: pytest.Config) -> Iterator[None]:
-    host = node_ip()
-    # A free port now; each scenario listens on it while it runs. Nothing else binds ports in this action.
-    with socket.socket() as probe:
-        probe.bind((host, 0))
-        port = probe.getsockname()[1]
+def k3s_deployment(pytestconfig: pytest.Config, scripted_listener: Listener) -> Iterator[None]:
     timeline = pytestconfig.stash[TIMELINE] = Timeline()
     with (
-        running_stack(models=rendered_fixture.LocalModel(url=f"http://{host}:{port}"), timeline=timeline) as stack,
+        running_stack(
+            models=rendered_fixture.LocalModel(url=f"http://{scripted_listener.host}:{scripted_listener.port}"),
+            timeline=timeline,
+        ) as stack,
         tempfile.TemporaryDirectory() as tools,
         pytest.MonkeyPatch.context() as environment,
     ):
@@ -63,7 +68,6 @@ def k3s_deployment(pytestconfig: pytest.Config) -> Iterator[None]:
         environment.setenv(BASE_URL, stack.base_url)
         environment.setenv(TOKEN, stack.token)
         environment.setenv(NAMESPACE, stack.namespace)
-        environment.setenv(scripted_upstream.ADDRESS, f"{host}:{port}")
         if stack.mcp_fixtures is not None:
             environment.setenv("SSL_CERT_FILE", str(stack.mcp_fixtures.ca_bundle))
             environment.setenv(

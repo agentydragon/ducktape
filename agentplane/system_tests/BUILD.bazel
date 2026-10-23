@@ -47,6 +47,7 @@ py_library(
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
+        "//util:net",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//tenacity",
@@ -579,4 +580,18 @@ py_library(
 py_library(
     name = "send_grant",
     srcs = ["send_grant.py"],
+)
+
+py_test(
+    name = "test_scripted_upstream",
+    srcs = ["test_scripted_upstream.py"],
+    deps = [
+        ":conftest",
+        ":scripted_upstream",
+        "//:conftest",
+        "//util:net",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

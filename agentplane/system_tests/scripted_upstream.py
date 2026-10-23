@@ -1,7 +1,7 @@
 """The model behind LLM ingress in scripted scenarios: the scenario answers each request itself.
 
-A target whose LLM ingress forwards to this process in place of LiteLLM publishes where to listen
-(`ADDRESS`). Requests queue per Sandbox Pod, named by the identity header the ingress stamps, and
+A target whose LLM ingress forwards to this process in place of LiteLLM supplies a held listening
+socket. Requests queue per Sandbox Pod, named by the identity header the ingress stamps, and
 per dialect, so a scenario scripts only its own Sandbox's model. Every request body is kept in the
 test's undeclared outputs, so a failure shows what the harness actually sent.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import socket
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -27,9 +28,6 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
-
-# `host:port`; set only on a target whose LLM ingress forwards here.
-ADDRESS = "AGENTPLANE_SYSTEM_TEST_SCRIPTED_UPSTREAM"
 
 # LLM ingress replaces any caller's value with the verified Pod's (agentplane/llm_ingress/README.md).
 _IDENTITY_HEADER = "x-litellm-spend-logs-metadata"
@@ -52,7 +50,7 @@ class ScriptedUpstream:
         raise ValueError(f"unsupported {harness=}")
 
     @asynccontextmanager
-    async def serving(self, *, host: str, port: int) -> AsyncIterator[None]:
+    async def serving(self, *, listener: socket.socket) -> AsyncIterator[None]:
         """Listen until the scope ends, then fail on any request the scenario left unanswered."""
         app = web.Application()
         # Prefixes, like the runner tests' catch-all endpoint: a harness's side calls reach the same queue.
@@ -60,11 +58,12 @@ class ScriptedUpstream:
         app.router.add_post("/v1/responses{tail:.*}", self._serve_responses)
         runner = web.AppRunner(app, handler_cancellation=True)
         await runner.setup()
-        try:
-            await web.TCPSite(runner, host, port).start()
-            yield
-        finally:
-            await runner.cleanup()
+        with listener.dup() as serving:
+            try:
+                await web.SockSite(runner, serving).start()
+                yield
+            finally:
+                await runner.cleanup()
         endpoints: list[AnthropicMessages | OpenAIResponses] = [*self._messages.values(), *self._responses.values()]
         for endpoint in endpoints:
             await endpoint.stop()
