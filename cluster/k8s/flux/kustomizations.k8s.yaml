@@ -3861,6 +3861,10 @@ spec:
       namespace: agentplane-testing
     - apiVersion: postgresql.cnpg.io/v1
       kind: Database
+      name: mcp-edge
+      namespace: agentplane-testing
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
       name: notifications
       namespace: agentplane-testing
     - apiVersion: postgresql.cnpg.io/v1
@@ -4048,6 +4052,10 @@ spec:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Database
       name: egress
+      namespace: agentplane-staging
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: mcp-edge
       namespace: agentplane-staging
     - apiVersion: postgresql.cnpg.io/v1
       kind: Database

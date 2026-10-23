@@ -1,7 +1,5 @@
-"""The shared CNPG Postgres Cluster, the per-service Databases, and the ESO
-Password+ExternalSecret pairs for the actions/egress managed roles' credentials.
-
-Both environments are non-production; data loss in either's Postgres is acceptable.
+"""The shared CNPG Postgres Cluster, per-service Databases, and ESO-generated
+credentials for managed roles.
 """
 
 from __future__ import annotations
@@ -27,9 +25,10 @@ from cluster.cdk8s.providers.cnpg.database import Database
 _CLUSTER_NAME = "postgres"
 
 # The logical databases services own on the shared Cluster; the initdb-owned
-# "app"/trajectory database needs no Database/role of its own.
+# "app"/trajectory database needs no Database/role of its own. `mcp_edge` is provisioned
+# ahead of its service per the Action Service Go port plan and has no workload consumer yet.
 # `sandbox_service` is the History Service database; renaming it moves the data.
-_ROLE_NAMES = ["actions", "egress", "notifications", "sandbox_service", "session_dispatcher"]
+_ROLE_NAMES = ["actions", "egress", "mcp_edge", "notifications", "sandbox_service", "session_dispatcher"]
 _ELECTRIC_ROLE = "electric"
 
 
@@ -55,7 +54,7 @@ def _role_credentials(
 ) -> None:
     """The ESO Password generator + ExternalSecret pair minting one managed role's
     login credentials, in the shape the Cluster's `managed.roles[].passwordSecret` and
-    the role's own consumers (litellm, the actions/egress services) expect.
+    the role's own consumers expect.
     """
     mint_db_role_secret(
         scope,
@@ -72,7 +71,7 @@ def _role_credentials(
 
 class Db(Construct):
     """Shared CNPG Postgres Cluster, its per-service Databases, and the ESO-generated
-    credentials for the actions/egress managed roles.
+    credentials for managed roles.
     """
 
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:

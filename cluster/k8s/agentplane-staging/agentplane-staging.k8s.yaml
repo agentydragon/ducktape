@@ -93,6 +93,46 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
+  name: postgres-mcp-edge-generator
+  namespace: agentplane-staging
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-mcp-edge
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: postgres-mcp-edge-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-mcp-edge
+    template:
+      data:
+        dbname: mcp_edge
+        host: postgres-rw.agentplane-staging.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://mcp_edge:{{ .password }}@postgres-rw.agentplane-staging.svc:5432/mcp_edge
+        username: mcp_edge
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
   name: postgres-notifications-generator
   namespace: agentplane-staging
 spec:
@@ -285,6 +325,11 @@ spec:
           name: postgres-egress
       - ensure: present
         login: true
+        name: mcp_edge
+        passwordSecret:
+          name: postgres-mcp-edge
+      - ensure: present
+        login: true
         name: notifications
         passwordSecret:
           name: postgres-notifications
@@ -347,6 +392,18 @@ spec:
   databaseReclaimPolicy: delete
   name: egress
   owner: egress
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: mcp-edge
+  namespace: agentplane-staging
+spec:
+  cluster:
+    name: postgres
+  databaseReclaimPolicy: delete
+  name: mcp_edge
+  owner: mcp_edge
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
