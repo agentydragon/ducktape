@@ -1414,9 +1414,12 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
 export function ProjectedSession({
   threadId,
   settingsOpen = false,
+  embedded = false,
 }: {
   threadId: string;
   settingsOpen?: boolean;
+  /** Several sessions share the page in a docked workspace, which owns the document title. */
+  embedded?: boolean;
 }): JSX.Element {
   const sync = useThreadSync();
   const threadsLive = useRequiredThreadsLive();
@@ -1456,10 +1459,11 @@ export function ProjectedSession({
     };
   }, [snapshotThread, threadId]);
   useEffect(() => {
+    if (embedded) return;
     document.title = settingsOpen
       ? appDocumentTitle("/", true)
       : threadDocumentTitle(thread?.name, threadId, tabStatus);
-  }, [thread?.name, tabStatus, threadId, settingsOpen]);
+  }, [embedded, thread?.name, tabStatus, threadId, settingsOpen]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
