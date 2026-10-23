@@ -143,12 +143,13 @@
       "type": "object"
      },
      "annotations": {
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "idempotentHint": false
      }
     },
     {
      "name": "test-sandbox__exec",
-     "title": "Test Sandbox  Exec",
+     "title": "Test sandbox: exec",
      "description": "test-exec\n\nRuns as an Agentplane Action under your policy: a call it does not approve automatically is refused without running, and one still running after 2.5s answers with a request id to wait on with get_action_result.",
      "inputSchema": {
       "type": "object"
@@ -201,12 +202,13 @@
       "type": "object"
      },
      "annotations": {
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "idempotentHint": false
      }
     },
     {
      "name": "test-sandbox__exec",
-     "title": "Test Sandbox  Exec",
+     "title": "Test sandbox: exec",
      "description": "test-exec\n\nRuns as an Agentplane Action under your policy: a call it does not approve automatically is refused without running, and one still running after 30s answers with a request id to wait on with get_action_result.",
      "inputSchema": {
       "type": "object"
@@ -304,7 +306,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000001\",\"state\":\"decision_pending\",\"version\":1,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-1\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{\"message\":\"line one\\nline two\\ttabbed \\\"quoted\\\" back\\\\slash </script> & é 名 🚀    \\u0001\",\"int\":42,\"negative\":-7,\"zero\":0,\"fraction\":1.5,\"negative fraction\":-0.25,\"small\":1.5e-7,\"tiny\":0.0001,\"large\":1e+20,\"precise\":123.456789012345,\"true\":true,\"false\":false,\"null\":null,\"empty object\":{},\"empty list\":[],\"list\":[1,\"two\",null,{\"three\":[3.5]}],\"nested\":{\"b\":{\"aa\":[{\"c\":\"d\"}],\"a\":1}},\"\":\"empty key\"},\"title\":\"test title 1\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":null,\"execution\":null}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000001\",\"state\":\"decision_pending\",\"version\":1,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-1\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{\"message\":\"line one\\nline two\\ttabbed \\\"quoted\\\" back\\\\slash </script> & é 名 🚀    \\u0001\",\"int\":42,\"negative\":-7,\"zero\":0,\"fraction\":1.5,\"negative fraction\":-0.25,\"small\":1.5e-07,\"tiny\":0.0001,\"large\":1e+20,\"precise\":123.456789012345,\"true\":true,\"false\":false,\"null\":null,\"empty object\":{},\"empty list\":[],\"list\":[1,\"two\",null,{\"three\":[3.5]}],\"nested\":{\"b\":{\"aa\":[{\"c\":\"d\"}],\"a\":1}},\"\":\"empty key\"},\"title\":\"test title 1\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":null,\"execution\":null}"
      }
     ],
     "structuredContent": {
@@ -312,7 +314,7 @@
      "state": "decision_pending",
      "version": 1,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z",
+     "updated_at": "2026-01-02T03:04:06.12Z",
      "input": {
       "idempotency_key": "test-key-1",
       "action": {
@@ -367,8 +369,7 @@
      "decision": null,
      "execution": null
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -448,15 +449,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000001 is waiting for the operator's decision; nothing has run yet. This is not its result: call get_action_result(request_id='00000000-0000-0000-0000-000000000001', wait={'wait_seconds': 30}) to keep waiting."
+      "text": "Action request 00000000-0000-0000-0000-000000000001 is waiting for the operator's decision; nothing has run yet. This is not its result: call get_action_result(request_id=\"00000000-0000-0000-0000-000000000001\", wait={\"wait_seconds\": 30}) to keep waiting."
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000001",
      "state": "decision_pending"
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -530,7 +530,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000002\",\"state\":\"allowed\",\"version\":2,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-2\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{\"message\":\"test\"},\"title\":\"test title 2\",\"description\":\"test description 🚀\"},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"pending_dispatch\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":null,\"completed_at\":null,\"reconciled_at\":null}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000002\",\"state\":\"allowed\",\"version\":2,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-2\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{\"message\":\"test\"},\"title\":\"test title 2\",\"description\":\"test description 🚀\"},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"pending_dispatch\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":null,\"completed_at\":null,\"reconciled_at\":null}}"
      }
     ],
     "structuredContent": {
@@ -538,7 +538,7 @@
      "state": "allowed",
      "version": 2,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z",
+     "updated_at": "2026-01-02T03:04:06.12Z",
      "input": {
       "idempotency_key": "test-key-2",
       "action": {
@@ -568,20 +568,19 @@
       "reason_description": null,
       "policy_evidence": null,
       "idempotency_key": "test-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      },
      "execution": {
       "id": "00000000-0000-0000-0000-0000000000e1",
       "state": "pending_dispatch",
       "error": null,
-      "created_at": "2026-01-02T03:04:06.120000Z",
+      "created_at": "2026-01-02T03:04:06.12Z",
       "started_at": null,
       "completed_at": null,
       "reconciled_at": null
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -644,15 +643,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000002 was approved and has not finished (allowed). This is not its result: call get_action_result(request_id='00000000-0000-0000-0000-000000000002', wait={'wait_seconds': 30}) to keep waiting."
+      "text": "Action request 00000000-0000-0000-0000-000000000002 was approved and has not finished (allowed). This is not its result: call get_action_result(request_id=\"00000000-0000-0000-0000-000000000002\", wait={\"wait_seconds\": 30}) to keep waiting."
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000002",
      "state": "allowed"
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -723,7 +721,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000003\",\"state\":\"dispatching\",\"version\":3,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-3\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 3\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"dispatching\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":null,\"completed_at\":null,\"reconciled_at\":null}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000003\",\"state\":\"dispatching\",\"version\":3,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-3\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 3\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"dispatching\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":null,\"completed_at\":null,\"reconciled_at\":null}}"
      }
     ],
     "structuredContent": {
@@ -731,7 +729,7 @@
      "state": "dispatching",
      "version": 3,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z",
+     "updated_at": "2026-01-02T03:04:06.12Z",
      "input": {
       "idempotency_key": "test-key-3",
       "action": {
@@ -759,20 +757,19 @@
       "reason_description": null,
       "policy_evidence": null,
       "idempotency_key": "test-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      },
      "execution": {
       "id": "00000000-0000-0000-0000-0000000000e1",
       "state": "dispatching",
       "error": null,
-      "created_at": "2026-01-02T03:04:06.120000Z",
+      "created_at": "2026-01-02T03:04:06.12Z",
       "started_at": null,
       "completed_at": null,
       "reconciled_at": null
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -832,15 +829,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000003 was approved and has not finished (dispatching). This is not its result: call get_action_result(request_id='00000000-0000-0000-0000-000000000003', wait={'wait_seconds': 30}) to keep waiting."
+      "text": "Action request 00000000-0000-0000-0000-000000000003 was approved and has not finished (dispatching). This is not its result: call get_action_result(request_id=\"00000000-0000-0000-0000-000000000003\", wait={\"wait_seconds\": 30}) to keep waiting."
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000003",
      "state": "dispatching"
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -932,7 +928,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000004\",\"state\":\"running\",\"version\":4,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-4\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 4\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"allow\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test allowed\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"exact_actions\",\"repository\":null}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"running\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":null,\"reconciled_at\":null}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000004\",\"state\":\"running\",\"version\":4,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-4\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 4\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"allow\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test allowed\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"exact_actions\",\"repository\":null}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"running\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":null,\"reconciled_at\":null}}"
      }
     ],
     "structuredContent": {
@@ -940,7 +936,7 @@
      "state": "running",
      "version": 4,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z",
+     "updated_at": "2026-01-02T03:04:06.12Z",
      "input": {
       "idempotency_key": "test-key-4",
       "action": {
@@ -988,20 +984,19 @@
        }
       },
       "idempotency_key": "test-policy-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      },
      "execution": {
       "id": "00000000-0000-0000-0000-0000000000e1",
       "state": "running",
       "error": null,
-      "created_at": "2026-01-02T03:04:06.120000Z",
+      "created_at": "2026-01-02T03:04:06.12Z",
       "started_at": "2026-01-02T03:04:07.000005Z",
       "completed_at": null,
       "reconciled_at": null
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -1082,15 +1077,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000004 was approved and has not finished (running). This is not its result: call get_action_result(request_id='00000000-0000-0000-0000-000000000004', wait={'wait_seconds': 30}) to keep waiting."
+      "text": "Action request 00000000-0000-0000-0000-000000000004 was approved and has not finished (running). This is not its result: call get_action_result(request_id=\"00000000-0000-0000-0000-000000000004\", wait={\"wait_seconds\": 30}) to keep waiting."
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000004",
      "state": "running"
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -1207,7 +1201,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000005\",\"state\":\"succeeded\",\"version\":5,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-5\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 5\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"allow\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test allowed\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"github_repository\",\"repository\":{\"owner\":\"test-owner\",\"repository\":\"test-repo\",\"confirmed_public\":false}}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"succeeded\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000005\",\"state\":\"succeeded\",\"version\":5,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-5\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 5\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"allow\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test allowed\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"github_repository\",\"repository\":{\"owner\":\"test-owner\",\"repository\":\"test-repo\",\"confirmed_public\":false}}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"succeeded\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
      }
     ],
     "structuredContent": {
@@ -1267,20 +1261,19 @@
        }
       },
       "idempotency_key": "test-policy-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      },
      "execution": {
       "id": "00000000-0000-0000-0000-0000000000e1",
       "state": "succeeded",
       "error": null,
-      "created_at": "2026-01-02T03:04:06.120000Z",
+      "created_at": "2026-01-02T03:04:06.12Z",
       "started_at": "2026-01-02T03:04:07.000005Z",
       "completed_at": "2026-01-02T03:05:00.999999Z",
       "reconciled_at": null
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -1398,8 +1391,7 @@
      "width": 1,
      "height": 2.5
     },
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -1481,7 +1473,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000006\",\"state\":\"succeeded\",\"version\":6,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-6\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 6\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"succeeded\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000006\",\"state\":\"succeeded\",\"version\":6,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-6\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 6\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"succeeded\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
      }
     ],
     "structuredContent": {
@@ -1517,20 +1509,19 @@
       "reason_description": null,
       "policy_evidence": null,
       "idempotency_key": "test-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      },
      "execution": {
       "id": "00000000-0000-0000-0000-0000000000e1",
       "state": "succeeded",
       "error": null,
-      "created_at": "2026-01-02T03:04:06.120000Z",
+      "created_at": "2026-01-02T03:04:06.12Z",
       "started_at": "2026-01-02T03:04:07.000005Z",
       "completed_at": "2026-01-02T03:05:00.999999Z",
       "reconciled_at": null
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -1613,8 +1604,7 @@
      "stderr": "test-missing-file",
      "duration_seconds": 0.5
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -1692,7 +1682,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000007\",\"state\":\"failed\",\"version\":7,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-7\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 7\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"failed\",\"error\":{\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\",\"retry\":1.5},\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000007\",\"state\":\"failed\",\"version\":7,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-7\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 7\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"failed\",\"error\":{\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\",\"retry\":1.5},\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
      }
     ],
     "structuredContent": {
@@ -1728,7 +1718,7 @@
       "reason_description": null,
       "policy_evidence": null,
       "idempotency_key": "test-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      },
      "execution": {
       "id": "00000000-0000-0000-0000-0000000000e1",
@@ -1738,14 +1728,13 @@
        "message": "test box é 🚀 \"not\" ready\n",
        "retry": 1.5
       },
-      "created_at": "2026-01-02T03:04:06.120000Z",
+      "created_at": "2026-01-02T03:04:06.12Z",
       "started_at": "2026-01-02T03:04:07.000005Z",
       "completed_at": "2026-01-02T03:05:00.999999Z",
       "reconciled_at": null
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -1812,15 +1801,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\": \"sandbox_unavailable\", \"message\": \"test box \\u00e9 \\ud83d\\ude80 \\\"not\\\" ready\\n\", \"retry\": 1.5}"
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\",\"retry\":1.5}"
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000007",
      "state": "failed"
     },
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -1898,7 +1886,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000008\",\"state\":\"execution_unknown\",\"version\":8,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-8\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 8\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"execution_unknown\",\"error\":{\"kind\":\"execution_outcome_unknown\",\"message\":\"test lost\"},\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":\"2026-01-02T03:05:00.999999Z\"}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000008\",\"state\":\"execution_unknown\",\"version\":8,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-8\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 8\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"execution_unknown\",\"error\":{\"kind\":\"execution_outcome_unknown\",\"message\":\"test lost\"},\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":\"2026-01-02T03:05:00.999999Z\"}}"
      }
     ],
     "structuredContent": {
@@ -1934,7 +1922,7 @@
       "reason_description": null,
       "policy_evidence": null,
       "idempotency_key": "test-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      },
      "execution": {
       "id": "00000000-0000-0000-0000-0000000000e1",
@@ -1943,14 +1931,13 @@
        "kind": "execution_outcome_unknown",
        "message": "test lost"
       },
-      "created_at": "2026-01-02T03:04:06.120000Z",
+      "created_at": "2026-01-02T03:04:06.12Z",
       "started_at": "2026-01-02T03:04:07.000005Z",
       "completed_at": "2026-01-02T03:05:00.999999Z",
       "reconciled_at": "2026-01-02T03:05:00.999999Z"
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -2017,15 +2004,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000008 has an unknown outcome: it may or may not have run, and it is never retried. Check its effects before asking for it again. {\"kind\": \"execution_outcome_unknown\", \"message\": \"test lost\"}"
+      "text": "Action request 00000000-0000-0000-0000-000000000008 has an unknown outcome: it may or may not have run, and it is never retried. Check its effects before asking for it again. {\"kind\":\"execution_outcome_unknown\",\"message\":\"test lost\"}"
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000008",
      "state": "execution_unknown"
     },
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -2091,7 +2077,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000009\",\"state\":\"denied\",\"version\":9,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-9\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 9\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"deny\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test denial note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":null}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000009\",\"state\":\"denied\",\"version\":9,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-9\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 9\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"deny\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test denial note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":null}"
      }
     ],
     "structuredContent": {
@@ -2099,7 +2085,7 @@
      "state": "denied",
      "version": 9,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z",
+     "updated_at": "2026-01-02T03:04:06.12Z",
      "input": {
       "idempotency_key": "test-key-9",
       "action": {
@@ -2127,12 +2113,11 @@
       "reason_description": null,
       "policy_evidence": null,
       "idempotency_key": "test-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      },
      "execution": null
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -2194,8 +2179,7 @@
      "request_id": "00000000-0000-0000-0000-000000000009",
      "state": "denied"
     },
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -2281,7 +2265,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-00000000000a\",\"state\":\"denied\",\"version\":10,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-10\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 10\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"deny\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test policy reason\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"exact_actions\",\"repository\":null}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":null}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-00000000000a\",\"state\":\"denied\",\"version\":10,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-10\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 10\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"deny\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test policy reason\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"exact_actions\",\"repository\":null}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":null}"
      }
     ],
     "structuredContent": {
@@ -2289,7 +2273,7 @@
      "state": "denied",
      "version": 10,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z",
+     "updated_at": "2026-01-02T03:04:06.12Z",
      "input": {
       "idempotency_key": "test-key-10",
       "action": {
@@ -2337,12 +2321,11 @@
        }
       },
       "idempotency_key": "test-policy-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      },
      "execution": null
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -2424,8 +2407,7 @@
      "request_id": "00000000-0000-0000-0000-00000000000a",
      "state": "denied"
     },
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -2490,7 +2472,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-00000000000b\",\"state\":\"denied\",\"version\":11,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-11\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 11\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"deny\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":null,\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":null}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-00000000000b\",\"state\":\"denied\",\"version\":11,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-11\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 11\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"deny\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":null,\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":null}"
      }
     ],
     "structuredContent": {
@@ -2498,7 +2480,7 @@
      "state": "denied",
      "version": 11,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z",
+     "updated_at": "2026-01-02T03:04:06.12Z",
      "input": {
       "idempotency_key": "test-key-11",
       "action": {
@@ -2526,12 +2508,11 @@
       "reason_description": null,
       "policy_evidence": null,
       "idempotency_key": "test-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      },
      "execution": null
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -2592,8 +2573,7 @@
      "request_id": "00000000-0000-0000-0000-00000000000b",
      "state": "denied"
     },
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -2647,7 +2627,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-00000000000c\",\"state\":\"cancelled\",\"version\":12,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-12\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 12\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":null,\"execution\":null}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-00000000000c\",\"state\":\"cancelled\",\"version\":12,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-12\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 12\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":null,\"execution\":null}"
      }
     ],
     "structuredContent": {
@@ -2655,7 +2635,7 @@
      "state": "cancelled",
      "version": 12,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z",
+     "updated_at": "2026-01-02T03:04:06.12Z",
      "input": {
       "idempotency_key": "test-key-12",
       "action": {
@@ -2673,8 +2653,7 @@
      "decision": null,
      "execution": null
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -2724,8 +2703,7 @@
      "request_id": "00000000-0000-0000-0000-00000000000c",
      "state": "cancelled"
     },
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -2805,7 +2783,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000001\",\"state\":\"decision_pending\",\"version\":1,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\"}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000001\",\"state\":\"decision_pending\",\"version\":1,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\"}"
      }
     ],
     "structuredContent": {
@@ -2813,10 +2791,9 @@
      "state": "decision_pending",
      "version": 1,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z"
+     "updated_at": "2026-01-02T03:04:06.12Z"
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -2883,7 +2860,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"input\":{\"idempotency_key\":\"test-key-2\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{\"message\":\"test\"},\"title\":\"test title 2\",\"description\":\"test description 🚀\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"pending_dispatch\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":null,\"completed_at\":null,\"reconciled_at\":null}}"
+      "text": "{\"input\":{\"idempotency_key\":\"test-key-2\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{\"message\":\"test\"},\"title\":\"test title 2\",\"description\":\"test description 🚀\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"pending_dispatch\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":null,\"completed_at\":null,\"reconciled_at\":null}}"
      }
     ],
     "structuredContent": {
@@ -2903,14 +2880,13 @@
       "id": "00000000-0000-0000-0000-0000000000e1",
       "state": "pending_dispatch",
       "error": null,
-      "created_at": "2026-01-02T03:04:06.120000Z",
+      "created_at": "2026-01-02T03:04:06.12Z",
       "started_at": null,
       "completed_at": null,
       "reconciled_at": null
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -3021,8 +2997,7 @@
      }
     ],
     "structuredContent": {},
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -3100,7 +3075,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"deny\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test policy reason\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"exact_actions\",\"repository\":null}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"}}"
+      "text": "{\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"deny\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test policy reason\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"exact_actions\",\"repository\":null}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"}}"
      }
     ],
     "structuredContent": {
@@ -3137,11 +3112,10 @@
        }
       },
       "idempotency_key": "test-policy-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -3288,7 +3262,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000004\",\"state\":\"running\",\"version\":4,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\"}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000004\",\"state\":\"running\",\"version\":4,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\"}"
      }
     ],
     "structuredContent": {
@@ -3296,10 +3270,9 @@
      "state": "running",
      "version": 4,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z"
+     "updated_at": "2026-01-02T03:04:06.12Z"
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -3418,15 +3391,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\": \"sandbox_unavailable\", \"message\": \"test box \\u00e9 \\ud83d\\ude80 \\\"not\\\" ready\\n\", \"retry\": 1.5}"
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\",\"retry\":1.5}"
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000007",
      "state": "failed"
     },
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -3453,8 +3425,7 @@
       "text": "Action request not found for this caller; use a request ID or idempotency key this caller submitted."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -3483,8 +3454,7 @@
       "text": "Action request not found for this caller; use a request ID or idempotency key this caller submitted."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -3511,8 +3481,7 @@
       "text": "Action request not found for this caller; use a request ID or idempotency key this caller submitted."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -3529,8 +3498,7 @@
       "text": "Name the request by exactly one of request_id or idempotency_key."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -3550,8 +3518,7 @@
       "text": "Name the request by exactly one of request_id or idempotency_key."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -3604,8 +3571,7 @@
       "text": "This Action's group is no longer configured; read the request with get_action_request."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -3686,15 +3652,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000004 was approved and has not finished (running). This is not its result: call get_action_result(request_id='00000000-0000-0000-0000-000000000004', wait={'wait_seconds': 2.5}) to keep waiting."
+      "text": "Action request 00000000-0000-0000-0000-000000000004 was approved and has not finished (running). This is not its result: call get_action_result(request_id=\"00000000-0000-0000-0000-000000000004\", wait={\"wait_seconds\": 2.5}) to keep waiting."
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000004",
      "state": "running"
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -3716,8 +3681,7 @@
       "text": "wait.wait_seconds must be at most 2.5 seconds for this instance."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -3772,7 +3736,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"outcome\":\"cancelled\",\"request\":{\"id\":\"00000000-0000-0000-0000-00000000000c\",\"state\":\"cancelled\",\"version\":12,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-12\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 12\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":null,\"execution\":null}}"
+      "text": "{\"outcome\":\"cancelled\",\"request\":{\"id\":\"00000000-0000-0000-0000-00000000000c\",\"state\":\"cancelled\",\"version\":12,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-12\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 12\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":null,\"execution\":null}}"
      }
     ],
     "structuredContent": {
@@ -3782,7 +3746,7 @@
       "state": "cancelled",
       "version": 12,
       "created_at": "2026-01-02T03:04:05Z",
-      "updated_at": "2026-01-02T03:04:06.120000Z",
+      "updated_at": "2026-01-02T03:04:06.12Z",
       "input": {
        "idempotency_key": "test-key-12",
        "action": {
@@ -3801,8 +3765,7 @@
       "execution": null
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -3857,7 +3820,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"outcome\":\"already_cancelled\",\"request\":{\"id\":\"00000000-0000-0000-0000-00000000000c\",\"state\":\"cancelled\",\"version\":12,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-12\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 12\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":null,\"execution\":null}}"
+      "text": "{\"outcome\":\"already_cancelled\",\"request\":{\"id\":\"00000000-0000-0000-0000-00000000000c\",\"state\":\"cancelled\",\"version\":12,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-12\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 12\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":null,\"execution\":null}}"
      }
     ],
     "structuredContent": {
@@ -3867,7 +3830,7 @@
       "state": "cancelled",
       "version": 12,
       "created_at": "2026-01-02T03:04:05Z",
-      "updated_at": "2026-01-02T03:04:06.120000Z",
+      "updated_at": "2026-01-02T03:04:06.12Z",
       "input": {
        "idempotency_key": "test-key-12",
        "action": {
@@ -3886,8 +3849,7 @@
       "execution": null
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -3974,7 +3936,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"outcome\":\"already_finished\",\"request\":{\"id\":\"00000000-0000-0000-0000-00000000000a\",\"state\":\"denied\",\"version\":10,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-10\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 10\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"deny\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test policy reason\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"exact_actions\",\"repository\":null}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":null}}"
+      "text": "{\"outcome\":\"already_finished\",\"request\":{\"id\":\"00000000-0000-0000-0000-00000000000a\",\"state\":\"denied\",\"version\":10,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-10\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 10\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d2\",\"verdict\":\"deny\",\"provider\":\"action_policy_set\",\"operator\":null,\"decision_note\":null,\"reason_code\":\"test_reason_code\",\"reason_description\":\"test policy reason\",\"policy_evidence\":{\"bindings\":[{\"namespace\":\"test-namespace\",\"name\":\"test-binding\",\"resource_version\":\"7\"}],\"policy_sets\":[{\"namespace\":\"test-namespace\",\"name\":\"test-set\",\"generation\":4}],\"matched\":{\"namespace\":\"test-namespace\",\"policy_set\":\"test-set\",\"source\":\"rules\",\"index\":2,\"type\":\"exact_actions\",\"repository\":null}},\"idempotency_key\":\"test-policy-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":null}}"
      }
     ],
     "structuredContent": {
@@ -3984,7 +3946,7 @@
       "state": "denied",
       "version": 10,
       "created_at": "2026-01-02T03:04:05Z",
-      "updated_at": "2026-01-02T03:04:06.120000Z",
+      "updated_at": "2026-01-02T03:04:06.12Z",
       "input": {
        "idempotency_key": "test-key-10",
        "action": {
@@ -4032,13 +3994,12 @@
         }
        },
        "idempotency_key": "test-policy-decision-key",
-       "decided_at": "2026-01-02T03:04:06.120000Z"
+       "decided_at": "2026-01-02T03:04:06.12Z"
       },
       "execution": null
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -4110,7 +4071,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"outcome\":\"too_late\",\"request\":{\"id\":\"00000000-0000-0000-0000-000000000003\",\"state\":\"dispatching\",\"version\":3,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-3\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 3\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"dispatching\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":null,\"completed_at\":null,\"reconciled_at\":null}}}"
+      "text": "{\"outcome\":\"too_late\",\"request\":{\"id\":\"00000000-0000-0000-0000-000000000003\",\"state\":\"dispatching\",\"version\":3,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-3\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 3\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"dispatching\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":null,\"completed_at\":null,\"reconciled_at\":null}}}"
      }
     ],
     "structuredContent": {
@@ -4120,7 +4081,7 @@
       "state": "dispatching",
       "version": 3,
       "created_at": "2026-01-02T03:04:05Z",
-      "updated_at": "2026-01-02T03:04:06.120000Z",
+      "updated_at": "2026-01-02T03:04:06.12Z",
       "input": {
        "idempotency_key": "test-key-3",
        "action": {
@@ -4148,21 +4109,20 @@
        "reason_description": null,
        "policy_evidence": null,
        "idempotency_key": "test-decision-key",
-       "decided_at": "2026-01-02T03:04:06.120000Z"
+       "decided_at": "2026-01-02T03:04:06.12Z"
       },
       "execution": {
        "id": "00000000-0000-0000-0000-0000000000e1",
        "state": "dispatching",
        "error": null,
-       "created_at": "2026-01-02T03:04:06.120000Z",
+       "created_at": "2026-01-02T03:04:06.12Z",
        "started_at": null,
        "completed_at": null,
        "reconciled_at": null
       }
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -4206,7 +4166,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"outcome\":\"cancelled\",\"request\":{\"id\":\"00000000-0000-0000-0000-00000000000c\",\"state\":\"cancelled\",\"version\":12,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\"}}"
+      "text": "{\"outcome\":\"cancelled\",\"request\":{\"id\":\"00000000-0000-0000-0000-00000000000c\",\"state\":\"cancelled\",\"version\":12,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\"}}"
      }
     ],
     "structuredContent": {
@@ -4216,11 +4176,10 @@
       "state": "cancelled",
       "version": 12,
       "created_at": "2026-01-02T03:04:05Z",
-      "updated_at": "2026-01-02T03:04:06.120000Z"
+      "updated_at": "2026-01-02T03:04:06.12Z"
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -4247,8 +4206,7 @@
       "text": "Action request not found for this caller; use a request ID or idempotency key this caller submitted."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -4308,7 +4266,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"events\":[{\"sequence\":1,\"state\":\"decision_pending\",\"at\":\"2026-01-02T03:04:05Z\"},{\"sequence\":2,\"state\":\"allowed\",\"at\":\"2026-01-02T03:04:06.120000Z\"},{\"sequence\":3,\"state\":\"cancelled\",\"at\":\"2026-01-02T03:05:00.999999Z\",\"actor\":{\"account\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"}}},{\"sequence\":4,\"state\":\"denied\",\"at\":\"2026-01-02T03:05:00.999999Z\",\"actor\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"}}]}"
+      "text": "{\"events\":[{\"sequence\":1,\"state\":\"decision_pending\",\"at\":\"2026-01-02T03:04:05Z\"},{\"sequence\":2,\"state\":\"allowed\",\"at\":\"2026-01-02T03:04:06.12Z\"},{\"sequence\":3,\"state\":\"cancelled\",\"at\":\"2026-01-02T03:05:00.999999Z\",\"actor\":{\"account\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"}}},{\"sequence\":4,\"state\":\"denied\",\"at\":\"2026-01-02T03:05:00.999999Z\",\"actor\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"}}]}"
      }
     ],
     "structuredContent": {
@@ -4321,7 +4279,7 @@
       {
        "sequence": 2,
        "state": "allowed",
-       "at": "2026-01-02T03:04:06.120000Z"
+       "at": "2026-01-02T03:04:06.12Z"
       },
       {
        "sequence": 3,
@@ -4345,8 +4303,7 @@
       }
      ]
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -4396,7 +4353,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"events\":[{\"sequence\":1,\"state\":\"decision_pending\",\"at\":\"2026-01-02T03:04:05Z\"},{\"sequence\":2,\"state\":\"allowed\",\"at\":\"2026-01-02T03:04:06.120000Z\"}],\"next_after_sequence\":2}"
+      "text": "{\"events\":[{\"sequence\":1,\"state\":\"decision_pending\",\"at\":\"2026-01-02T03:04:05Z\"},{\"sequence\":2,\"state\":\"allowed\",\"at\":\"2026-01-02T03:04:06.12Z\"}],\"next_after_sequence\":2}"
      }
     ],
     "structuredContent": {
@@ -4409,13 +4366,12 @@
       {
        "sequence": 2,
        "state": "allowed",
-       "at": "2026-01-02T03:04:06.120000Z"
+       "at": "2026-01-02T03:04:06.12Z"
       }
      ],
      "next_after_sequence": 2
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -4495,8 +4451,7 @@
       }
      ]
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -4524,8 +4479,7 @@
       "text": "Action request not found for this caller; use a request ID or idempotency key this caller submitted."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -4693,15 +4647,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000001 is waiting for the operator's decision; nothing has run yet. This is not its result: call get_action_result(request_id='00000000-0000-0000-0000-000000000001', wait={'wait_seconds': 30}) to keep waiting."
+      "text": "Action request 00000000-0000-0000-0000-000000000001 is waiting for the operator's decision; nothing has run yet. This is not its result: call get_action_result(request_id=\"00000000-0000-0000-0000-000000000001\", wait={\"wait_seconds\": 30}) to keep waiting."
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000001",
      "state": "decision_pending"
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -4874,8 +4827,7 @@
      "stderr": "test-missing-file",
      "duration_seconds": 0.5
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -5044,7 +4996,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000001\",\"state\":\"decision_pending\",\"version\":1,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\"}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000001\",\"state\":\"decision_pending\",\"version\":1,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\"}"
      }
     ],
     "structuredContent": {
@@ -5052,10 +5004,9 @@
      "state": "decision_pending",
      "version": 1,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z"
+     "updated_at": "2026-01-02T03:04:06.12Z"
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -5218,7 +5169,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000002\",\"state\":\"allowed\",\"version\":2,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.120000Z\",\"input\":{\"idempotency_key\":\"test-key-2\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{\"message\":\"test\"},\"title\":\"test title 2\",\"description\":\"test description 🚀\"},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.120000Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"pending_dispatch\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.120000Z\",\"started_at\":null,\"completed_at\":null,\"reconciled_at\":null}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000002\",\"state\":\"allowed\",\"version\":2,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:04:06.12Z\",\"input\":{\"idempotency_key\":\"test-key-2\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{\"message\":\"test\"},\"title\":\"test title 2\",\"description\":\"test description 🚀\"},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"provider\":\"human_operator\",\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\",\"reason_code\":null,\"reason_description\":null,\"policy_evidence\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"pending_dispatch\",\"error\":null,\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":null,\"completed_at\":null,\"reconciled_at\":null}}"
      }
     ],
     "structuredContent": {
@@ -5226,7 +5177,7 @@
      "state": "allowed",
      "version": 2,
      "created_at": "2026-01-02T03:04:05Z",
-     "updated_at": "2026-01-02T03:04:06.120000Z",
+     "updated_at": "2026-01-02T03:04:06.12Z",
      "input": {
       "idempotency_key": "test-key-2",
       "action": {
@@ -5256,20 +5207,19 @@
       "reason_description": null,
       "policy_evidence": null,
       "idempotency_key": "test-decision-key",
-      "decided_at": "2026-01-02T03:04:06.120000Z"
+      "decided_at": "2026-01-02T03:04:06.12Z"
      },
      "execution": {
       "id": "00000000-0000-0000-0000-0000000000e1",
       "state": "pending_dispatch",
       "error": null,
-      "created_at": "2026-01-02T03:04:06.120000Z",
+      "created_at": "2026-01-02T03:04:06.12Z",
       "started_at": null,
       "completed_at": null,
       "reconciled_at": null
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -5336,8 +5286,7 @@
       "text": "include_fields shapes a receipt; pass respond_with=\"receipt\" to get one."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -5404,8 +5353,7 @@
       "text": "wait.wait_seconds must be at most 30 seconds for this instance."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -5521,8 +5469,7 @@
       "text": "idempotency key already used by this caller; read that request by key instead of resubmitting"
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -5638,8 +5585,7 @@
       "text": "Action is unknown or unavailable; use list_actions/get_action to check the catalog."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -5755,8 +5701,7 @@
       "text": "arguments do not match the advertised Action schema"
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -5872,8 +5817,7 @@
       "text": "ActionGroup is temporarily unavailable"
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -6159,8 +6103,7 @@
      "width": 1,
      "height": 2.5
     },
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -6302,8 +6245,7 @@
      "stderr": "test-missing-file",
      "duration_seconds": 0.5
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -6453,15 +6395,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000004 was approved and has not finished (running). This is not its result: call get_action_result(request_id='00000000-0000-0000-0000-000000000004', wait={'wait_seconds': 30}) to keep waiting."
+      "text": "Action request 00000000-0000-0000-0000-000000000004 was approved and has not finished (running). This is not its result: call get_action_result(request_id=\"00000000-0000-0000-0000-000000000004\", wait={\"wait_seconds\": 30}) to keep waiting."
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000004",
      "state": "running"
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -6583,15 +6524,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\": \"sandbox_unavailable\", \"message\": \"test box \\u00e9 \\ud83d\\ude80 \\\"not\\\" ready\\n\", \"retry\": 1.5}"
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\",\"retry\":1.5}"
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000007",
      "state": "failed"
     },
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -6621,11 +6561,10 @@
     "content": [
      {
       "type": "text",
-      "text": "Not run, and nothing was submitted: no policy of yours approves this call automatically (test-binding: lists test-mcp/alpha only; test reason é). To ask the operator instead, call request_action with action {\"group\": \"test-mcp\", \"name\": \"beta\"}, these arguments, a title and a fresh idempotency_key."
+      "text": "Not run, and nothing was submitted: no policy of yours approves this call automatically (test-binding: lists test-mcp/alpha only; test reason é). To ask the operator instead, call request_action with action {\"group\":\"test-mcp\",\"name\":\"beta\"}, these arguments, a title and a fresh idempotency_key."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -6662,8 +6601,7 @@
       "text": "arguments do not match the advertised Action schema"
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -6700,8 +6638,7 @@
       "text": "ActionGroup is temporarily unavailable"
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -6737,8 +6674,7 @@
       }
      ]
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -6770,8 +6706,7 @@
       "name": "alpha"
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -6807,8 +6742,7 @@
       "name": "beta"
      }
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -6836,8 +6770,7 @@
       }
      ]
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -6859,8 +6792,7 @@
     "structuredContent": {
      "actions": []
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -6927,8 +6859,7 @@
       }
      ]
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -6947,8 +6878,7 @@
       "text": "Unknown group; omit group to discover configured Action identifiers."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -6971,8 +6901,7 @@
       "text": "after.group must match the selected group; use the previous page's next_after."
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -6997,8 +6926,7 @@
      "name": "alpha",
      "available": true
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -7047,8 +6975,7 @@
      },
      "description": "test-alpha-description é 🚀"
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -7077,8 +7004,7 @@
      "available": true,
      "input_schema": {}
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -7095,11 +7021,10 @@
     "content": [
      {
       "type": "text",
-      "text": "unknown group/action ('test-mcp', 'test-unknown')"
+      "text": "unknown group/action (\"test-mcp\", \"test-unknown\")"
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -7119,8 +7044,7 @@
       "text": "ActionGroup is temporarily unavailable"
      }
     ],
-    "isError": true,
-    "resultType": "complete"
+    "isError": true
    }
   },
   {
@@ -7310,8 +7234,7 @@
       }
      ]
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -7604,8 +7527,7 @@
       }
      ]
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -7876,8 +7798,7 @@
       }
      ]
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   },
   {
@@ -8181,8 +8102,7 @@
       }
      ]
     },
-    "isError": false,
-    "resultType": "complete"
+    "isError": false
    }
   }
  ]
