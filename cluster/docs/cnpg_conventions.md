@@ -162,7 +162,8 @@ deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   current class and size; replacement claims use `piraeus-ssd-local` with
   `resizeInUseVolumes: false`. New sizes are at least 1Gi above measured
   PGDATA including WAL, rounded up to whole GiB; larger existing requests are
-  retained.
+  retained. Apply the primary Pod UID preservation rule above before replacing
+  each standby.
 - `postgres` (`generated/agentplane-testing/`): 1 instance pinned
   `zone: hil-ovh` on `local-path-ovh-ssd`, shared by testing's three disposable
   logical databases. This experimental environment deliberately accepts no

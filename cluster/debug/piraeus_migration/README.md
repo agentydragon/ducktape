@@ -92,6 +92,18 @@ stayed unchanged through Flux reconciliation. The old HDD claims remain bound
 with `Retain`, and temporary helpers are removed. Flux is resumed and `Ready`;
 the live Keeper spec matches the merged generated manifest, and no holds remain.
 
+Seven CNPG clusters were restored to `2/2` with native, caught-up Piraeus SSD
+secondaries off `ovh-ns103711`; all primary PVCs are unchanged, and six primary
+Pod UIDs were preserved. Each secondary streamed and replayed the observed
+primary LSN with zero current lag. Gatus's primary auto-rolled once
+(14:21:44–14:24:58) after the merged control-plane toleration triggered an
+unsupervised CNPG primary rollout. Before replacing the remaining six standby
+PVCs, each Cluster was briefly held while the toleration was added to its live
+primary Pod and stored `cnpg.io/podSpec`. The old secondary files remain on
+`103711`, excluded from archives for eventual wipe, and their old `Retain` PV
+metadata remains. This work did not authorize a wipe; all temporary Cluster
+holds were removed after acceptance.
+
 ## Evidence map
 
 | Folder                                    | Contents                                                                                 |
