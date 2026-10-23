@@ -241,15 +241,16 @@
     <main>
       <header>
         <div class="eyebrow">Ducktape · CI latency refresh · 22–23 October 2026</div>
-        <h1>The artifact gate now sets<br />the common-case floor.</h1>
+        <h1>The costly workstation check<br />has been removed.</h1>
         <p class="lede">
-          A new full-workstation Home Manager evaluation is the largest newly identified cost on fast PRs. Cold k3s
-          tests still dominate the long tail. Prioritize selecting the host evaluation by verified inputs, then cut the
-          SPA dependency from the API fixture image.
+          The added Wyrm2 Home Manager activation evaluation explains the common-case regression in this sample. PR
+          #11737 removed it at 14:31 UTC on October 23. Existing PR package/policy checks and post-merge host builds
+          remain. Cold k3s tests are the next large opportunity.
         </p>
         <p class="small">
           New window: 22 October 05:30 → 23 October 13:40 UTC (32h 10m), contiguous with the previous report’s
-          population window. Analysis-only: no production workflow, scanning policy or deployed setting changed.
+          population window. Measurement ends 13:40 UTC; removal merged at 14:31 UTC. No post-removal population speedup
+          is measured.
         </p>
       </header>
       <div class="cards">
@@ -267,13 +268,14 @@
         </div>
       </div>
       <div class="callout">
-        <strong>Recommended next change: preserve the pinned-host check, select when it runs.</strong>
+        <strong>Landed: the added workstation evaluation was removed in PR #11737.</strong>
         <p>
-          Keep the new regression coverage for missing released pins. Run full evaluation for its Nix, registry, script
-          and encrypted-config inputs; reuse a proven base verdict only when those inputs are unchanged. Keep the
-          required check context and fail closed on uncertain selection. Forecast
-          <strong>40–90s less feedback on eligible artifact-last PRs</strong>; zero when another gate wins. A local
-          unchanged-derivation probe passed; the full selector and a hosted before/after remain to implement.
+          The PR artifact/import job already checks source-built Nix packages and generated command policies. The
+          existing Attic workflow evaluates/builds pinned packages and NixOS/Home Manager closures after devel pushes.
+          The extra Wyrm2 evaluation added in #11510 is removed; missing-pin/host-integration discovery returns to that
+          post-merge lane. Forecast <strong>40–90s less feedback on eligible artifact-last PRs</strong>; zero when
+          another gate wins. All three required checks passed on its exact PR head. The 14:31 merge is outside this
+          measurement window, so its hosted effect is not measured here.
         </p>
       </div>
       <nav aria-label="Report navigation">
@@ -296,15 +298,14 @@
             <tbody>
               <tr>
                 <td>
-                  <a href="https://github.com/agentydragon/ducktape/pull/11454">#11454</a>
-                  · Actions callers / Go fixture
+                  <a href="https://github.com/agentydragon/ducktape/pull/11454">#11454</a> · Actions callers / Go
+                  fixture
                 </td>
                 <td>
                   Fixture now imports the Go Action service and Goose migrations.
-                  <a href="https://github.com/agentydragon/ducktape/pull/11602">#11602</a>
-                  records staging cutover; Python HTTP/MCP/policy/store and golden paths are retired through
-                  <a href="https://github.com/agentydragon/ducktape/pull/11716">#11716</a>
-                  /
+                  <a href="https://github.com/agentydragon/ducktape/pull/11602">#11602</a> records staging cutover;
+                  Python HTTP/MCP/policy/store and golden paths are retired through
+                  <a href="https://github.com/agentydragon/ducktape/pull/11716">#11716</a> /
                   <a href="https://github.com/agentydragon/ducktape/pull/11728">#11728</a>.
                 </td>
                 <td>
@@ -314,8 +315,7 @@
               </tr>
               <tr>
                 <td>
-                  <a href="https://github.com/agentydragon/ducktape/pull/11504">#11504</a>
-                  · independent static frontend
+                  <a href="https://github.com/agentydragon/ducktape/pull/11504">#11504</a> · independent static frontend
                 </td>
                 <td>
                   The nginx image and deployment landed. The API image binary still includes
@@ -327,29 +327,25 @@
                 </td>
               </tr>
               <tr>
-                <td>
-                  <a href="https://github.com/agentydragon/ducktape/pull/11510">#11510</a>
-                  · pinned CLI wheels
-                </td>
+                <td><a href="https://github.com/agentydragon/ducktape/pull/11510">#11510</a> · pinned CLI wheels</td>
                 <td>
                   Adds <code>Evaluate pinned Wyrm2 Home Manager</code> at 07:24 UTC on October 22. Per-tool release
                   expansion also increases source artifact checks to 17 assets / 15 groups.
                 </td>
                 <td>
-                  The guard catches real pinned-consumer failures that source overrides can hide. Preserve that
-                  coverage.
+                  The guard catches pinned-consumer failures before merge. Existing post-merge package/host builds
+                  provide that validation later; PR #11737 removed this extra pre-merge requirement at 14:31 UTC, after
+                  the sample ends.
                 </td>
               </tr>
               <tr>
                 <td>
-                  <a href="https://github.com/agentydragon/ducktape/pull/11648">#11648</a>
-                  /
-                  <a href="https://github.com/agentydragon/ducktape/pull/11649">#11649</a>
-                  · publication verdict reuse
+                  <a href="https://github.com/agentydragon/ducktape/pull/11648">#11648</a> /
+                  <a href="https://github.com/agentydragon/ducktape/pull/11649">#11649</a> · publication verdict reuse
                 </td>
                 <td>
-                  A current successful push planner reuses the verified literal
-                  <code>bbr</code> test verdict; a suite without a matching summary retains its gate.
+                  A current successful push planner reuses the verified literal <code>bbr</code> test verdict; a suite
+                  without a matching summary retains its gate.
                 </td>
                 <td>
                   One planner decision is operational proof, not a measured population saving. In this example bbr was
@@ -358,16 +354,12 @@
               </tr>
               <tr>
                 <td>
-                  <a href="https://github.com/agentydragon/ducktape/pull/11713">#11713</a>
-                  /
-                  <a href="https://github.com/agentydragon/ducktape/pull/11721">#11721</a>
-                  /
-                  <a href="https://github.com/agentydragon/ducktape/pull/11727">#11727</a>
-                  · MCP edge staging
+                  <a href="https://github.com/agentydragon/ducktape/pull/11713">#11713</a> /
+                  <a href="https://github.com/agentydragon/ducktape/pull/11721">#11721</a> /
+                  <a href="https://github.com/agentydragon/ducktape/pull/11727">#11727</a> · MCP edge staging
                 </td>
                 <td>
-                  Current task DAG has
-                  <code>ACTION_MCP_EDGE_SPLIT</code> active; schema/runtime stages have landed.
+                  Current task DAG has <code>ACTION_MCP_EDGE_SPLIT</code> active; schema/runtime stages have landed.
                 </td>
                 <td>
                   An in-flight ownership migration; no CI image-removal saving assigned. Preserve app-owned
@@ -404,9 +396,9 @@
       <section id="feedback">
         <h2>What PR authors actually wait for</h2>
         <p>
-          80 systematically spaced PR numbers from 267 PRs updated since the previous window began; 77 latest heads have
-          exact in-window workflow/check matches. Three unmatched heads are excluded. All 77 usable heads eventually
-          reach a reconstructed successful required-check state:
+          80 systematically spaced PR numbers from 267 PRs updated since this window began; 77 latest heads have exact
+          in-window workflow/check matches. Three unmatched heads are excluded. All 77 usable heads eventually reach a
+          reconstructed successful required-check state:
           <strong>this is a latest-head survivor sample, not 100% CI reliability</strong>. Superseded heads and failed
           attempts remain in the job census below.
         </p>
@@ -508,41 +500,31 @@
               </thead>
               <tbody>
                 <tr>
-                  <td>
-                    <a href="https://github.com/agentydragon/ducktape/pull/11529">#11529</a>
-                  </td>
+                  <td><a href="https://github.com/agentydragon/ducktape/pull/11529">#11529</a></td>
                   <td>other code/config</td>
                   <td>passing</td>
                   <td>181</td>
                 </tr>
                 <tr>
-                  <td>
-                    <a href="https://github.com/agentydragon/ducktape/pull/11544">#11544</a>
-                  </td>
+                  <td><a href="https://github.com/agentydragon/ducktape/pull/11544">#11544</a></td>
                   <td>build/CI/tooling</td>
                   <td>passing</td>
                   <td>667</td>
                 </tr>
                 <tr>
-                  <td>
-                    <a href="https://github.com/agentydragon/ducktape/pull/11545">#11545</a>
-                  </td>
+                  <td><a href="https://github.com/agentydragon/ducktape/pull/11545">#11545</a></td>
                   <td>other code/config</td>
                   <td>passing</td>
                   <td>177</td>
                 </tr>
                 <tr>
-                  <td>
-                    <a href="https://github.com/agentydragon/ducktape/pull/11547">#11547</a>
-                  </td>
+                  <td><a href="https://github.com/agentydragon/ducktape/pull/11547">#11547</a></td>
                   <td>frontend/UI</td>
                   <td>passing</td>
                   <td>666</td>
                 </tr>
                 <tr>
-                  <td>
-                    <a href="https://github.com/agentydragon/ducktape/pull/11581">#11581</a>
-                  </td>
+                  <td><a href="https://github.com/agentydragon/ducktape/pull/11581">#11581</a></td>
                   <td>build/CI/tooling</td>
                   <td>failed</td>
                   <td>—</td>
@@ -593,11 +575,11 @@
           </table>
         </div>
         <p>
-          Compared with October 20–22: Bazel runtime p90 rises
-          <strong>609 → 699s</strong>, queue p90 <strong>36 → 70s</strong>; the sampled head proxy changes
-          <strong>173 / 618 → 228 / 708s</strong>. Artifacts runtime rises <strong>104 / 154 → 164 / 252s</strong>.
-          Windows, PR composition, cache state and latest-head samples differ; these are descriptive changes, not causal
-          effects of cdk8s, Go retirement or the frontend split.
+          Compared with October 20–22: Bazel runtime p90 rises <strong>609 → 699s</strong>, queue p90
+          <strong>36 → 70s</strong>; the sampled head proxy changes <strong>173 / 618 → 228 / 708s</strong>. Artifacts
+          runtime rises <strong>104 / 154 → 164 / 252s</strong>. Windows, PR composition, cache state and latest-head
+          samples differ; these are descriptive changes, not causal effects of cdk8s, Go retirement or the frontend
+          split.
         </p>
         <h3>Exact-head required-check timelines</h3>
         <div class="scroll">
@@ -710,9 +692,7 @@
         >
           <div class="bar-row">
             <span>No host evaluation · n=95</span>
-            <div class="track">
-              <div class="bar old" style="width: 60.23%"></div>
-            </div>
+            <div class="track"><div class="bar old" style="width: 60.23%"></div></div>
             <strong>103s median</strong>
           </div>
           <div class="bar-row">
@@ -766,9 +746,7 @@
         </div>
         <h3>It downloads workstation packages during evaluation</h3>
         <p>
-          In
-          <a href="https://github.com/agentydragon/ducktape/pull/11728">#11728</a>
-          (docs only),
+          In <a href="https://github.com/agentydragon/ducktape/pull/11728">#11728</a> (docs only),
           <a href="https://github.com/agentydragon/ducktape/actions/runs/39960325050/job/120436409309"
             >the artifact job</a
           >
@@ -794,33 +772,61 @@
           encrypted-input filenames remain local.
         </p>
         <div class="callout">
-          <strong>Bounded experiment: an unrelated plan edit leaves the full host derivation unchanged.</strong>
+          <strong
+            >Bounded experiment: an unrelated plan edit leaves the Home Manager activation derivation unchanged.</strong
+          >
           <p>
             At source <code>6f85f6f18d09</code>, evaluate with <code>eval-cache=false</code>, append a comment to
             <code>agentplane/plans/task_dag.md</code>, then evaluate again. Both evaluations succeed and return the
-            identical derivation. The temporary edit was restored. This proves that one input is irrelevant; it does not
-            validate a complete selector or measure fresh-host savings.
+            identical derivation. The temporary edit was restored. This proves that one unrelated input is irrelevant;
+            it does not measure fresh-host savings. Input-based selection is superseded by the decision to remove this
+            added guard.
           </p>
         </div>
         <p>
           <strong
-            >Implement in
+            >Change in
             <a
               href="https://github.com/agentydragon/ducktape/blob/6f85f6f18d092084e914e6351192991b8faf54f8/.github/workflows/nix-wheel-check.yml"
               >.github/workflows/nix-wheel-check.yml</a
             >:</strong
           >
-          preserve the required job and the pin-regression guard. Add a conservative input manifest/selector for that
-          host evaluation, including enumerated directories and non-Nix files; require a successful trusted base verdict
-          before reuse. Nix/flake changes or unknown dependencies run the full path. Do not use “Nix-only paths” or
-          “docs-only” as a shortcut: commands in Markdown and external scripts are real evaluated inputs.
+          the added five-line host-evaluation block was removed; the required artifact/import job, source-package checks
+          and generated-policy checks remain. Existing
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/80f60cb731e2c8c51e4b890aea87612ce12d1556/.github/workflows/nix-attic-push.yml"
+            >Nix Attic push</a
+          >
+          runs after devel pushes and calls
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/80f60cb731e2c8c51e4b890aea87612ce12d1556/devinfra/ci/nix_attic_build_and_push.sh"
+            >nix-fast-build</a
+          >
+          over
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/80f60cb731e2c8c51e4b890aea87612ce12d1556/devinfra/ci/nix_attic_targets.nix"
+            >package, NixOS and Home Manager targets</a
+          >. Retained runs coalesce during merge bursts. Host cache variants intentionally disable private Google Drive
+          packages; they are not byte-identical to the unmodified Wyrm2 evaluation. Dedicated image workflows also build
+          their selected Nix images. This confirms existing declared coverage, not that the current full-fleet build is
+          green.
+        </p>
+        <p>
+          The original addition was a deliberate regression guard for first-release pins masked by source overrides; it
+          was not merely an uncommitted one-off verification command. The operator chose to return this failure class to
+          post-merge validation instead of making every unrelated PR evaluate the workstation.
+          <a href="https://github.com/agentydragon/ducktape/pull/11737">PR #11737</a> landed as
+          <code>816acea8885b779226fd0d574166f5012c198920</code> at 14:31:05 UTC. All three required checks passed on
+          head <code>f3a7d0ca4e8a</code>. This supersedes the initial proposal to build a dependency selector for this
+          step.
         </p>
         <p>
           <strong>Saving model:</strong> skipping the 92s host step in the docs example restores some cold source/policy
           preparation that it currently warms. The next gate is at +79s. Budget 40–90s less end-to-end feedback on
-          eligible Nix-last PRs, not 88s guaranteed on every PR. Validate with missing-pin, command-file, registry,
-          encrypted-config and unchanged-source replays, then alternating clean hosted runs. Current all-17 artifact
-          selection is a separate follow-up.
+          eligible Nix-last PRs, not 88s guaranteed on every PR. The removal PR passed all three required checks.
+          Compare matched clean hosted jobs after the merge to measure its effect. Current all-17 artifact selection is
+          a separate follow-up. The expected policy tradeoff is later discovery of released-pin/host integration
+          failures.
         </p>
       </section>
       <section id="cases">
@@ -994,12 +1000,11 @@
           <summary>API-image dependency cut: graph and runtime spike passed</summary>
           <p>
             Current query
-            <a href="https://app.buildbuddy.io/invocation/38db1293-9e96-4472-82a9-cd4d32b2b039">38db1293</a>
-            finds 14 k3s test targets reverse-dependent on the SPA bundle (11 automatic). Remove only the
-            bundle/service-worker data from
-            <code>app_image_bin</code> in an isolated source worktree; query
-            <a href="https://app.buildbuddy.io/invocation/63a6214d-28ae-46b1-84a0-84cda4a46d4a">63a6214d</a>
-            then returns zero.
+            <a href="https://app.buildbuddy.io/invocation/38db1293-9e96-4472-82a9-cd4d32b2b039">38db1293</a> finds 14
+            k3s test targets reverse-dependent on the SPA bundle (11 automatic). Remove only the bundle/service-worker
+            data from <code>app_image_bin</code> in an isolated source worktree; query
+            <a href="https://app.buildbuddy.io/invocation/63a6214d-28ae-46b1-84a0-84cda4a46d4a">63a6214d</a> then
+            returns zero.
           </p>
           <p>
             Real RBE test invocation
@@ -1018,12 +1023,11 @@
         </details>
         <h3>The longest sampled head includes a real failed attempt</h3>
         <p>
-          <a href="https://github.com/agentydragon/ducktape/pull/11645">#11645</a>
-          needs 1,924s from its workflow proxy to first green. Its VM test fails after 1,074s with “session stream ended
-          before the turn completed”; setup alone reaches stack Ready at 738.3s, including app import 94.3s and
-          runner-disk import 98s. The failure is an assertion, not a Bazel timeout. The test log does not identify why
-          the stream closed; the smallest missing evidence is the runner/gateway/guest diagnostic bundle for that failed
-          session.
+          <a href="https://github.com/agentydragon/ducktape/pull/11645">#11645</a> needs 1,924s from its workflow proxy
+          to first green. Its VM test fails after 1,074s with “session stream ended before the turn completed”; setup
+          alone reaches stack Ready at 738.3s, including app import 94.3s and runner-disk import 98s. The failure is an
+          assertion, not a Bazel timeout. The test log does not identify why the stream closed; the smallest missing
+          evidence is the runner/gateway/guest diagnostic bundle for that failed session.
         </p>
         <p>
           Attempt 1 finishes at 06:48:51; attempt 2 records run start at 06:51:30 and its assigned job starts at
@@ -1224,7 +1228,8 @@
         <h2>Next interventions, ranked for the current evidence</h2>
         <p>
           Conditional engineering forecasts, not treatment effects. Savings overlap, depend on cache/selection and can
-          be erased by the next required gate. No production policy changed.
+          be erased by the next required gate. The host-evaluation removal is landed separately and is not ranked as
+          remaining work.
         </p>
         <div class="scroll">
           <table class="">
@@ -1237,16 +1242,7 @@
             </thead>
             <tbody>
               <tr>
-                <td>1. Select the new pinned-host evaluation</td>
-                <td>40–90s on artifact-last unaffected heads; 0 elsewhere</td>
-                <td>
-                  Medium; high observed cost, medium selector confidence. Use actual evaluation inputs + trusted
-                  successful base proof, conservative fallback, and replay missing-pin/registry/command regressions.
-                  Compare clean hosted head feedback.
-                </td>
-              </tr>
-              <tr>
-                <td>2. Add a fixture-only API image without SPA assets</td>
+                <td>1. Add a fixture-only API image without SPA assets</td>
                 <td>Historical planning range 2–6min on cold production-UI edits; 0 cached/overlap</td>
                 <td>
                   Small–medium; current graph cut and two runtime tests pass. Preserve production image and full
@@ -1254,7 +1250,7 @@
                 </td>
               </tr>
               <tr>
-                <td>3. Make fixture renders deterministic and feature-scoped</td>
+                <td>2. Make fixture renders deterministic and feature-scoped</td>
                 <td>Historical forecast 1–5min on semantically unchanged variants; 0 real config changes</td>
                 <td>
                   Small–medium; prior controlled experiment confirmed randomness; mechanism unchanged. Generate
@@ -1262,15 +1258,15 @@
                 </td>
               </tr>
               <tr>
-                <td>4. Select the 17 source artifact checks by verified dependencies</td>
-                <td>Prior forecast 30–70s when artifact remainder gates; 0 if host/Bazel wins</td>
+                <td>3. Select the 17 source artifact checks by verified dependencies</td>
+                <td>Prior forecast 30–70s when artifact remainder gates; 0 if Bazel wins</td>
                 <td>
                   Medium; expanded roster is current, savings unmeasured. Preserve all selected consumers/assets and
-                  full fallback; pair with, but do not add blindly to, #1.
+                  full fallback; do not add savings blindly to the already-landed host-step removal.
                 </td>
               </tr>
               <tr>
-                <td>5. Split stable Python bytecode / consumed image layers</td>
+                <td>4. Split stable Python bytecode / consumed image layers</td>
                 <td>Historical 30–90s on rebuilding chains; current mixed-UI bytecode component 23s</td>
                 <td>
                   Medium; high dependency evidence, variable worker timing. Compare UI-only and Python-only edits;
@@ -1278,7 +1274,7 @@
                 </td>
               </tr>
               <tr>
-                <td>6. Prove remote-origin stop and quiescence on supersession</td>
+                <td>5. Prove remote-origin stop and quiescence on supersession</td>
                 <td>No guaranteed PR seconds; avoid obsolete worker work if exclusive</td>
                 <td>
                   Medium–large; prior three continuations unresolved, wrapper unchanged. Stop origin plus bounded child
@@ -1287,7 +1283,7 @@
                 </td>
               </tr>
               <tr>
-                <td>7. Isolate nonrequired publication capacity if capacity separates</td>
+                <td>6. Isolate nonrequired publication capacity if capacity separates</td>
                 <td>0–160s plausible burst queue opportunity; near 0 when quiet</td>
                 <td>
                   Medium–large; current burst observed, pool economics/capacity unproved. Re-measure after verdict
@@ -1295,7 +1291,7 @@
                 </td>
               </tr>
               <tr>
-                <td>8. Prototype immutable image seeds / suitable VM workers</td>
+                <td>7. Prototype immutable image seeds / suitable VM workers</td>
                 <td>Historical cold-stack forecasts 30–100s / 40–140s; unmeasured</td>
                 <td>
                   Large; do not combine ranges. Fresh MCP/VM imports and recurring pause retry justify bounded trials.
@@ -1373,9 +1369,10 @@
                   <td>4 · Incremental source-artifact gate</td>
                   <td>Updated</td>
                   <td>
-                    Roster grew 13/11 -&gt; 17/15 assets/groups; full checks remain. New pinned Wyrm2 evaluation is an
-                    independent larger common-case cost. Prioritize selecting that evaluation, then source-artifact
-                    closure selection.
+                    Roster grew 13/11 -&gt; 17/15 assets/groups; source checks remain. New pinned Wyrm2 evaluation is
+                    the larger common-case cost. Operator decision: added evaluation removed in merged PR #11737, retain
+                    existing PR package/policy and post-merge package/host coverage; full artifact closure selection
+                    remains separate.
                   </td>
                 </tr>
                 <tr>
@@ -1480,9 +1477,10 @@
                   <td>16 · Pinned Nix source cache</td>
                   <td>Updated</td>
                   <td>
-                    New full-host evaluation adds several flake inputs, skills realization and fetchClosure package
-                    downloads. Source-only cache cannot remove all of this; selection comes first. Prepared containers
-                    and combined evaluation remain rejected pending a different mechanism.
+                    New host evaluation adds flake inputs, skills realization and eager fetchClosure downloads. Merged
+                    PR #11737 removes this added guard rather than building a selector or cache for it. Historical
+                    source-preparation cache idea remains lower priority for the remaining artifact job;
+                    prepared-container/combined-evaluation rejection retained.
                   </td>
                 </tr>
                 <tr>
