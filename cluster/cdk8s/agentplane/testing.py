@@ -79,6 +79,7 @@ from model_catalog.catalog import GPT6_LUNA_RESPONSES
 _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
+_CONNECTION_SERVICE = mcp_edge.service(TESTING_NAMESPACE)
 # The Crossplane-owned key, replicated into this namespace by `litellm/credentials.py`'s
 # ExternalSecret.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
@@ -136,7 +137,7 @@ ENV = Environment(
         namespace=TESTING_NAMESPACE,
         models=TESTING_APP_MODELS,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
-        connection_service_url=AnyHttpUrl(actions.service(TESTING_NAMESPACE).url),
+        connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
         action_federation=action_federation(_FEDERATION_TARGET),
         public_coder_policy_sets=[],
         default_policy_sets=set(egress.DEFAULT_POLICIES),
@@ -405,6 +406,13 @@ def chart(app: App) -> Chart:
         ),
         endpoint_selector=app_service.pods.selector,
         ingress=[egress.proxy("agentplane-staging").pods.admit(app_service.pod_port)],
+    )
+    NetworkPolicy(
+        chart,
+        "networkpolicy-app-to-mcp-edge",
+        metadata=ApiObjectMetadata(name="app-to-mcp-edge", namespace=ENV.namespace),
+        endpoint_selector=app_service.pods.selector,
+        egress=[_CONNECTION_SERVICE.egress()],
     )
     dex.Dex(chart, "dex").add_platform_resources()
     # Testing composes and materializes only the tool-config set; its controller workload and RBAC

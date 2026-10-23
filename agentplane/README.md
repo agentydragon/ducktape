@@ -11,8 +11,8 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   and an MCP endpoint over OAuth.
-- [MCP edge](mcp_edge/README.md): standalone runtime staged for external Connections, OAuth and
-  `/mcp`; the Action Service still serves the live endpoint until the separate traffic cutover.
+- [MCP edge](mcp_edge/README.md): standalone Connection authority used by testing, staged for external OAuth and
+  `/mcp`; external MCP/OAuth and staging Connection calls still use Actions.
 - [Runner Gateway](runner_gateway/README.md): one process serving the runner control stream,
   authorized live Runner proxy and [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue.
   Serving waits for a root-owned queue migration ([deployment](runner_gateway/README.md#deployment)).
@@ -60,7 +60,7 @@ flowchart LR
         hs[History Service]
         notif[Notification service]
         actions[Action Service]
-        edge[MCP edge: staged runtime]
+        edge[MCP edge]
         egress[Egress proxy]
         llm[LLM ingress]
         electric[Electric]
@@ -90,8 +90,9 @@ flowchart LR
     app --> hs
     app -->|gRPC operator watches + health| notif
     app -->|Action generated HTTP/JSON and NDJSON facade + MCP linkage| actions
-    app -->|separately configured ConnectionService facade| actions
-    edge -.->|after cutover: authenticated ActionService gRPC| actions
+    app -->|staging ConnectionService facade| actions
+    app -->|testing ConnectionService facade + gRPC health| edge
+    edge -.->|after external MCP cutover: authenticated ActionService gRPC| actions
     notif -->|Action history: gRPC| actions
     app -->|gRPC| egress
     app --> electric
