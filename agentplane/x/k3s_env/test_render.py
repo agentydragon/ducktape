@@ -151,7 +151,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     database_env = next(
         entry for entry in container["env"] if entry["name"] == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     )
-    migrator = next(entry for entry in pod["initContainers"] if entry["name"] == "goose-migrate")
+    migrator = next(entry for entry in pod["initContainers"] if entry["name"] == "migrate")
     assert migrator["image"] == fixture_chart.QUEUE_MIGRATOR_IMAGE
     assert (
         next(entry for entry in migrator["env"] if entry["name"] == "DATABASE_URL")["valueFrom"]
