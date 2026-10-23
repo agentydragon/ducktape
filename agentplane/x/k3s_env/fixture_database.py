@@ -34,7 +34,6 @@ SERVICE = "postgres-primary"
 PORT = 5432
 IMAGE = "git.allegedly.works/ducktape-ci/agentplane-postgres:unset"
 
-_ROLES = ("actions", "egress", "mcp_edge", "notifications", "sandbox_service", "session_dispatcher")
 _LABELS = {"app.kubernetes.io/name": NAME}
 
 
@@ -70,14 +69,15 @@ def add_database(scope: Construct, env: Environment, credentials: Credentials) -
         string_data={"password": credentials.postgres_bootstrap},
     )
     _database_secret(db_scope, env, role="app", database="app", password=credentials.postgres_app, async_uri=True)
-    for role, password in (
-        ("actions", credentials.postgres_actions),
-        ("egress", credentials.postgres_egress),
-        ("mcp_edge", credentials.postgres_mcp_edge),
-        ("notifications", credentials.postgres_notifications),
-        ("sandbox_service", credentials.postgres_sandbox_service),
-        ("session_dispatcher", credentials.postgres_session_dispatcher),
-    ):
+    passwords = {
+        "actions": credentials.postgres_actions,
+        "egress": credentials.postgres_egress,
+        "mcp_edge": credentials.postgres_mcp_edge,
+        "notifications": credentials.postgres_notifications,
+        "sandbox_service": credentials.postgres_sandbox_service,
+        "session_dispatcher": credentials.postgres_session_dispatcher,
+    }
+    for role, password in passwords.items():
         _database_secret(db_scope, env, role=role, database=role, password=password)
 
     bootstrap = ConfigMap(
@@ -107,7 +107,7 @@ def add_database(scope: Construct, env: Environment, credentials: Credentials) -
         .key("password")
         .env_value(db_scope, "postgres-bootstrap-password"),
     }
-    for role in ("app", *_ROLES):
+    for role in ("app", *passwords):
         env_variables[f"AGENTPLANE_DB_PASSWORD_{role.upper()}"] = (
             SecretRef(namespace=env.namespace, name=f"postgres-{role.replace('_', '-')}")
             .key("password")
