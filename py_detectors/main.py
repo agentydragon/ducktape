@@ -35,20 +35,35 @@ DETECTORS: dict[str, FileDetector] = {
     "walrus_suggest": walrus_suggest,
 }
 
+CUSTOM_EXCLUDED_DETECTORS = frozenset({"broad_except_order", "trivial_passthrough"})
+
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Run properties detectors (standalone)")
+    ap = argparse.ArgumentParser(
+        description="Run standalone Python property detectors; run Ruff, Vulture, and Mypy separately."
+    )
     ap.add_argument("--root", required=True, type=Path, help="Repo root or path to scan")
     ap.add_argument("--out", type=Path, help="Write JSON to this file (default: stdout)")
     ap.add_argument("--workers", type=int, default=None, help="Detector worker threads (None=auto; 1=sequential)")
     ap.add_argument("--only", action="append", help="Detector name(s) to run (repeatable); default is all")
+    ap.add_argument(
+        "--preset",
+        choices=("all", "custom"),
+        default="all",
+        help="Detector set; custom omits broad_except_order and trivial_passthrough",
+    )
     args = ap.parse_args(argv)
 
     root = args.root.resolve()
     only = set(args.only) if args.only else None
+    detectors = {
+        name: detector
+        for name, detector in DETECTORS.items()
+        if args.preset == "all" or name not in CUSTOM_EXCLUDED_DETECTORS
+    }
 
     # Per-file detectors
-    dets = run_all(DETECTORS, root, detector_names=only, workers=args.workers)
+    dets = run_all(detectors, root, detector_names=only, workers=args.workers)
 
     # Root-level detectors (need full repo context)
     if only is None or "imports_inside_def" in only:
@@ -60,7 +75,10 @@ def main(argv: list[str] | None = None) -> int:
         args.out.write_text(s, encoding="utf-8")
     else:
         print(s)
-    print(f"[detectors] ran {len(DETECTORS) + 1} detectors; findings: {len(dets)}")
+    if args.preset == "custom":
+        print(f"[detectors-custom] findings: {len(dets)}")
+    else:
+        print(f"[detectors] ran {len(DETECTORS) + 1} detectors; findings: {len(dets)}")
     return 0
 
 

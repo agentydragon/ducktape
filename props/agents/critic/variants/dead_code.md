@@ -73,10 +73,9 @@ mypy --hide-error-context --show-error-codes /workspace > /tmp/mypy.txt
 # Vulture (dead code detection)
 vulture /workspace --min-confidence 60 --sort-by-size > /tmp/vulture.txt
 # Or JSON if available
-
-# Custom detectors
-adgn-detectors-custom --root /workspace --out /tmp/custom-findings.json
 ```
+
+The `py_detectors` CLI is not packaged in the critic image. Use direct source inspection for these checks.
 
 ### Code Navigation
 
