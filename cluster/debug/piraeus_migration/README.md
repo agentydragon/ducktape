@@ -67,8 +67,13 @@ passed on the whole HDD: `piraeus_hdd/data` is 1851.02GiB with 4GiB metadata, a
 discard returned pool allocation to 0.01%. Filesystem/block canary hashes and
 claim identities survived a controlled reboot without Pod replacement, all
 three etcd services remained healthy, and the worker's 32/512/1024/32GiB system
-volumes and both disk identities remained intact. The node is still cordoned;
-Seaweed replacement PR #11720 and the Terraform readiness handoff are pending.
+volumes and both disk identities remained intact. The node was admitted and
+uncordoned at 12:56 UTC after shared gates passed, local-path aliases were
+confirmed to deny new allocations, metrics were fresh, and canaries were removed.
+Seaweed replacement PR #11720 is merged, but
+`seaweedfs-volume-hdd-piraeus-103656-0` is assigned to this node and Seaweed join
+acceptance is in progress. Piraeus timeout PR #11722 is merged and Flux-ready;
+Terraform readiness handoff PR #11723 remains pending.
 The accepted overcommit policy and issue trigger remain in the
 [runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
 
