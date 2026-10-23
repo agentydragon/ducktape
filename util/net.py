@@ -19,9 +19,9 @@ class Listener:
     port: int
 
 
-def _bind_tcp_socket(host: str, *, listen: bool) -> tuple[socket.socket, str, int]:
-    """Bind an OS-assigned TCP port without reuse options."""
-    addresses = socket.getaddrinfo(host, 0, type=socket.SOCK_STREAM, flags=socket.AI_PASSIVE)
+def _bind_tcp_socket(host: str, *, port: int = 0, listen: bool) -> tuple[socket.socket, str, int]:
+    """Bind a TCP port without reuse options; zero selects an OS-assigned port."""
+    addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM, flags=socket.AI_PASSIVE)
     last_error: OSError | None = None
     for family, socktype, proto, _, address in addresses:
         sock = socket.socket(family, socktype, proto)
@@ -41,15 +41,15 @@ def _bind_tcp_socket(host: str, *, listen: bool) -> tuple[socket.socket, str, in
 
 
 @contextmanager
-def listen_tcp(host: str = "127.0.0.1") -> Iterator[Listener]:
-    """Bind and listen on an OS-assigned port, retaining ownership until context exit.
+def listen_tcp(host: str = "127.0.0.1", *, port: int = 0) -> Iterator[Listener]:
+    """Bind and listen, retaining ownership until context exit; zero selects an OS-assigned port.
 
     The socket has no ``SO_REUSEADDR`` or ``SO_REUSEPORT`` option. The caller may hand
     ``listener.socket`` directly to a server without releasing the port in between.
     """
-    sock, bound_host, port = _bind_tcp_socket(host, listen=True)
+    sock, bound_host, bound_port = _bind_tcp_socket(host, port=port, listen=True)
     try:
-        yield Listener(socket=sock, host=bound_host, port=port)
+        yield Listener(socket=sock, host=bound_host, port=bound_port)
     finally:
         sock.close()
 

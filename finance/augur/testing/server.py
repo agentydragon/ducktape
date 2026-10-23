@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
+from util.net import listen_tcp
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -18,16 +18,14 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 def run_server(
     *, binary: Path, tmp_path: Path, args: Sequence[str] = (), env: Mapping[str, str] | None = None
 ) -> Iterator[str]:
-    port = pick_free_port("127.0.0.1")
     with (
+        listen_tcp() as listener,
         (undeclared_outputs_dir() / "augur-server.log").open("w") as server_log,
         subprocess.Popen(
             [
                 str(binary),
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(port),
+                "--fd",
+                str(listener.socket.fileno()),
                 "--config",
                 str(get_required_path("_main/finance/augur/api/testdata/config.yaml")),
                 *args,
@@ -44,9 +42,11 @@ def run_server(
             },
             stdout=server_log,
             stderr=server_log,
+            pass_fds=[listener.socket.fileno()],
         ) as server,
     ):
-        origin = f"http://127.0.0.1:{port}"
+        listener.socket.close()
+        origin = f"http://{listener.host}:{listener.port}"
         deadline = time.monotonic() + 30
         try:
             while time.monotonic() < deadline:
