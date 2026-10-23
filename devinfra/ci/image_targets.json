@@ -1,8 +1,5 @@
 {
   "images": {
-    "forgejo-key-migration": {
-      "target": "//cluster/forgejo_key_migration:image"
-    },
     "agentplane-index": {
       "target": "//agentplane/indexing:image",
       "test": "//agentplane/indexing/...",

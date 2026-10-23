@@ -284,15 +284,6 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
         ],
         "extraContainerVolumeMounts": [_CLUSTER_CA_MOUNT, _SECRET_KEY_MOUNT],
         "extraInitVolumeMounts": [_CLUSTER_CA_MOUNT, _SECRET_KEY_MOUNT],
-        # Chart 17.1.6 preserves an existing inline SECRET_KEY. Forgejo rejects
-        # having both forms. Replace it atomically with the URI so git/SSH
-        # subprocesses on the other replica never see a config without a key.
-        "initPreScript": (
-            'if [ -f "$GITEA_APP_INI" ]; then\n'
-            "  sed -i '/^\\[security\\]/,/^\\[/{s|^[[:space:]]*SECRET_KEY[[:space:]]*=.*|"
-            'SECRET_KEY_URI = file:/etc/forgejo-key/secret-key|;}\' "$GITEA_APP_INI"\n'
-            "fi\n"  # Chart appends its END comment directly after this value.
-        ),
         "service": {
             "http": {"type": "ClusterIP", "port": HTTP.port.number},
             "ssh": {"type": "ClusterIP", "port": _SSH.port.number},

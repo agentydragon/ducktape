@@ -33,6 +33,7 @@ provider "forgejo" {
 resource "random_password" "haku" {
   length  = 48
   special = false
+  # Changing or removing this keeper rotates the live account password.
   keepers = {
     recovery = "2026-10-23-forgejo-secret-key"
   }
