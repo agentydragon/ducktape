@@ -838,7 +838,7 @@
     "service": "turn_on"
    },
    "outcome": {
-    "not_matched": "domain 'switch' does not match the entity's own domain"
+    "not_matched": "domain \"switch\" does not match the entity's own domain"
    },
    "rule": {
     "policy": {
@@ -918,7 +918,7 @@
     "service": "toggle"
    },
    "outcome": {
-    "not_matched": "service 'toggle' is not allowed on light.kitchen"
+    "not_matched": "service \"toggle\" is not allowed on light.kitchen"
    },
    "rule": {
     "policy": {
@@ -1051,7 +1051,7 @@
     "service": "turn_on"
    },
    "outcome": {
-    "not_matched": "domain None does not match the entity's own domain"
+    "not_matched": "domain null does not match the entity's own domain"
    },
    "rule": {
     "policy": {
@@ -1353,14 +1353,7 @@
     "repo": "../public-owner/public-repo"
    },
    "outcome": {
-    "matched": {
-     "explanation": "reviewed read targets confirmed-public repository x/../public-owner/public-repo",
-     "repository": {
-      "confirmed_public": true,
-      "owner": "x",
-      "repository": "../public-owner/public-repo"
-     }
-    }
+    "not_matched": "repository x/../public-owner/public-repo is not confirmed public"
    },
    "rule": {
     "policy": {
@@ -2889,7 +2882,10 @@
     "a": 0.3
    },
    "outcome": {
-    "not_matched": "arguments do not satisfy the schema: 0.3 is not a multiple of 0.1"
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
    },
    "rule": {
     "policy": {
@@ -2970,7 +2966,10 @@
     "a": 1.0
    },
    "outcome": {
-    "not_matched": "arguments do not satisfy the schema: 1.0 is not of type 'integer'"
+    "matched": {
+     "explanation": "arguments of test-group/test-action satisfy the schema",
+     "repository": null
+    }
    },
    "rule": {
     "policy": {
@@ -3135,10 +3134,7 @@
     "a": "abc\n"
    },
    "outcome": {
-    "matched": {
-     "explanation": "arguments of test-group/test-action satisfy the schema",
-     "repository": null
-    }
+    "not_matched": "(schema validation reason)"
    },
    "rule": {
     "policy": {
@@ -3177,10 +3173,7 @@
     "a": "\u0663"
    },
    "outcome": {
-    "matched": {
-     "explanation": "arguments of test-group/test-action satisfy the schema",
-     "repository": null
-    }
+    "not_matched": "(schema validation reason)"
    },
    "rule": {
     "policy": {
@@ -3217,7 +3210,7 @@
    },
    "arguments": {},
    "outcome": {
-    "raised": "Unresolvable"
+    "raised": "argument schema refused during parsing"
    },
    "rule": {
     "policy": {
@@ -3403,10 +3396,7 @@
     "a": 1
    },
    "outcome": {
-    "matched": {
-     "explanation": "arguments of test-group/test-action satisfy the schema",
-     "repository": null
-    }
+    "not_matched": "(schema validation reason)"
    },
    "rule": {
     "policy": {
@@ -4111,7 +4101,7 @@
    }
   },
   "argument schema, a file $ref": {
-   "outcome": "accepted",
+   "outcome": "refused",
    "rule": {
     "policy": {
      "actions": {
@@ -4128,7 +4118,7 @@
    }
   },
   "argument schema, a local $ref to nowhere": {
-   "outcome": "accepted",
+   "outcome": "refused",
    "rule": {
     "policy": {
      "actions": {
@@ -4145,7 +4135,7 @@
    }
   },
   "argument schema, a lookahead pattern": {
-   "outcome": "accepted",
+   "outcome": "refused",
    "rule": {
     "policy": {
      "actions": {
@@ -4187,7 +4177,7 @@
    }
   },
   "argument schema, a numeric $schema": {
-   "outcome": "raised",
+   "outcome": "refused",
    "rule": {
     "policy": {
      "actions": {
@@ -4225,7 +4215,7 @@
    }
   },
   "argument schema, a remote $ref": {
-   "outcome": "accepted",
+   "outcome": "refused",
    "rule": {
     "policy": {
      "actions": {
@@ -4259,7 +4249,7 @@
    }
   },
   "argument schema, an $id that is not a URI": {
-   "outcome": "accepted",
+   "outcome": "refused",
    "rule": {
     "policy": {
      "actions": {
@@ -4276,7 +4266,7 @@
    }
   },
   "argument schema, an unknown $schema": {
-   "outcome": "accepted",
+   "outcome": "refused",
    "rule": {
     "policy": {
      "actions": {
@@ -4313,7 +4303,7 @@
    }
   },
   "argument schema, draft-03": {
-   "outcome": "accepted",
+   "outcome": "refused",
    "rule": {
     "policy": {
      "actions": {

@@ -19,42 +19,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
-// golden.json is what the Python service decides for each vector: `generate_golden.py` beside it writes it, and
-// `test_golden.py` holds it to the Python code.
+// golden.json contains the policy package's Go-owned parsing and evaluation contract vectors.
 //
 //go:embed golden.json
 var goldenJSON []byte
-
-// The vectors on which this package deliberately decides otherwise, and why. Each must still differ, so the list
-// cannot outlive what it excuses.
-var (
-	ruleDifferences = map[string]string{
-		"argument schema, a numeric $schema":        "Python's validator_for raises, failing the whole PolicySet list; only this set is refused",
-		"argument schema, draft-03":                 "the library has no draft 3",
-		"argument schema, an unknown $schema":       "Python validates as draft 2020-12; the unknown metaschema is not loaded, so the set is refused",
-		"argument schema, a remote $ref":            "Python raises at evaluation; no document is loaded, so the set is refused",
-		"argument schema, a file $ref":              "Python raises at evaluation; no document is loaded, so the set is refused",
-		"argument schema, a local $ref to nowhere":  "Python raises at evaluation; the set is refused",
-		"argument schema, an $id that is not a URI": "Python checks uri-reference only with rfc3987 installed",
-		"argument schema, a lookahead pattern":      "RE2 has no lookaround",
-	}
-	evaluationDifferences = map[string]string{
-		"schema, 0.3 as a multiple of 0.1":                      "exact decimal arithmetic; Python divides in binary floating point",
-		"schema, 1.0 as an integer in draft-04":                 "the library reads 1.0 as an integer in every draft",
-		"schema, a pattern's $ before a trailing newline":       "RE2's $ is the end of text",
-		"schema, a pattern's \\d against an Arabic-Indic digit": "RE2's \\d is ASCII",
-		"schema, dependencies in 2020-12":                       "the library honours draft 7's dependencies in every draft",
-		"schema, a remote $ref":                                 "refused when the set is read, where Python raises at evaluation",
-		"public, a dot segment in the repo":                     "Python's HTTP client resolves the dot segment to another repository's path",
-	}
-	// Reasons that quote a Python repr.
-	reasonDifferences = sets.New(
-		"Home Assistant, another domain",
-		"Home Assistant, no domain",
-		"Home Assistant, another service",
-		"Home Assistant, a numeric service",
-	)
-)
 
 type golden struct {
 	Rules map[string]struct {
@@ -118,7 +86,7 @@ func loadGolden(t *testing.T) golden {
 	return vectors
 }
 
-func TestRulesParseAsPythonParsesThem(t *testing.T) {
+func TestRulesParseAccordingToFixture(t *testing.T) {
 	vectors := loadGolden(t).Rules
 	for name, vector := range vectors {
 		t.Run(name, func(t *testing.T) {
@@ -126,13 +94,14 @@ func TestRulesParseAsPythonParsesThem(t *testing.T) {
 			if _, err := ParseRule(vector.Rule); err != nil {
 				got = "refused"
 			}
-			agrees(t, ruleDifferences, name, vector.Outcome, got)
+			if got != vector.Outcome {
+				t.Errorf("fixture says %s; Go got %s", vector.Outcome, got)
+			}
 		})
 	}
-	stillListed(t, ruleDifferences, vectors)
 }
 
-func TestPoliciesDecideAsPythonDecides(t *testing.T) {
+func TestPoliciesEvaluateAccordingToFixture(t *testing.T) {
 	vectors := loadGolden(t).Evaluations
 	for name, vector := range vectors {
 		t.Run(name, func(t *testing.T) {
@@ -144,22 +113,19 @@ func TestPoliciesDecideAsPythonDecides(t *testing.T) {
 				got = outcomeOf(policy.evaluate(t.Context(), vector.Action, arguments(t, vector.Arguments), fakeGitHub(t, vector.Visibility)))
 			}
 			want := vector.Outcome
-			if vector.Rule.Policy.Type == string(store.PolicyArgumentSchema) || reasonDifferences.Has(name) {
-				// The reason is the validator's own text, or quotes a Python repr: only that it did not match counts.
+			if vector.Rule.Policy.Type == string(store.PolicyArgumentSchema) {
+				// Validator prose can change between versions; the fixture still requires the same outcome kind.
 				want.NotMatched, got.NotMatched = nonEmpty(want.NotMatched), nonEmpty(got.NotMatched)
+				want.Raised, got.Raised = nonEmpty(want.Raised), nonEmpty(got.Raised)
 			}
-			agrees(t, evaluationDifferences, name, want, got)
+			if !reflect.DeepEqual(want, got) {
+				t.Errorf("fixture says\n%s\nGo got\n%s", asJSON(t, want), asJSON(t, got))
+			}
 		})
-	}
-	stillListed(t, evaluationDifferences, vectors)
-	for name := range reasonDifferences {
-		if vector, ok := vectors[name]; !ok || vector.Outcome.NotMatched == nil {
-			t.Errorf("%s: no vector of that name whose policy did not match", name)
-		}
 	}
 }
 
-func TestTheProviderDecidesAsPythonDecides(t *testing.T) {
+func TestProviderDecidesAccordingToFixture(t *testing.T) {
 	for name, vector := range loadGolden(t).Decisions {
 		t.Run(name, func(t *testing.T) {
 			var bindings []Binding
@@ -201,7 +167,7 @@ func TestTheProviderDecidesAsPythonDecides(t *testing.T) {
 				got = decisionOutcome{Verdict: "no_opinion", ReasonCode: NoMatchReason, ReasonDescription: &decision.ReasonDescription}
 			}
 			if !reflect.DeepEqual(got, vector.Outcome) {
-				t.Errorf("Python decides\n%s\nGo\n%s", asJSON(t, vector.Outcome), asJSON(t, got))
+				t.Errorf("fixture says\n%s\nGo got\n%s", asJSON(t, vector.Outcome), asJSON(t, got))
 			}
 		})
 	}
@@ -216,30 +182,6 @@ func outcomeOf(outcome Outcome) evaluationOutcome {
 		got.NotMatched = &outcome.Reason
 	}
 	return got
-}
-
-// agrees checks one vector's outcome is Python's, unless differences lists the vector, when it must differ.
-func agrees[T any](t *testing.T, differences map[string]string, name string, python, golang T) {
-	t.Helper()
-	same := reflect.DeepEqual(python, golang)
-	if why, listed := differences[name]; listed {
-		if same {
-			t.Errorf("listed as a difference (%s), but decides as Python does: %s", why, asJSON(t, golang))
-		}
-		return
-	}
-	if !same {
-		t.Errorf("Python decides\n%s\nGo\n%s", asJSON(t, python), asJSON(t, golang))
-	}
-}
-
-func stillListed[V any](t *testing.T, differences map[string]string, vectors map[string]V) {
-	t.Helper()
-	for name := range differences {
-		if _, ok := vectors[name]; !ok {
-			t.Errorf("difference %q names no vector", name)
-		}
-	}
 }
 
 func nonEmpty(reason *string) *string {
@@ -268,7 +210,7 @@ func asJSON(t *testing.T, value any) string {
 	return string(text)
 }
 
-// fakeGitHub stands in for GitHub's unauthenticated repository endpoint as the vectors' Python stand-in does.
+// fakeGitHub stands in for GitHub's unauthenticated repository endpoint, confirming only named fixture repositories.
 func fakeGitHub(t *testing.T, visibility visibilityVector) *Visibility {
 	t.Helper()
 	confirmed := sets.New[[2]string]()
