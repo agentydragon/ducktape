@@ -35,8 +35,7 @@ flowchart LR
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
     end
     subgraph K3S_TRACK[System tests on k3s, retiring agentplane-testing]
-        K3S_MODEL_CREDENTIALS[Decision: when real-model targets run]
-        K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
+        K3S_MODEL_SCENARIOS[Candidate: the real-model set on k3s]
         LIVE_TARGETS_OFF_TESTING[Candidate: live targets off testing]
         STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
         AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
@@ -1932,33 +1931,24 @@ changes.
 
 ```mermaid
 flowchart LR
-    K3S_MODEL_CREDENTIALS[Decision: when real-model targets run]
-    K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s]
+    K3S_MODEL_SCENARIOS[Candidate: the real-model set on k3s]
     LIVE_TARGETS_OFF_TESTING[Candidate: live targets off testing]
     STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
     AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
     TESTING_ENVIRONMENT_RETIRE[Blocked: delete agentplane-testing]
-    K3S_MODEL_CREDENTIALS --> K3S_MODEL_SCENARIOS
     K3S_MODEL_SCENARIOS --> TESTING_ENVIRONMENT_RETIRE
     LIVE_TARGETS_OFF_TESTING --> TESTING_ENVIRONMENT_RETIRE
     STAGING_FIRST_ROLLOUT --> TESTING_ENVIRONMENT_RETIRE
     AGENT_TESTING_ACCESS_RETIRE --> TESTING_ENVIRONMENT_RETIRE
 ```
 
-### `K3S_MODEL_CREDENTIALS` — a real-model key on RBE
-
-**Decision: when the `_real_model` targets run; the mechanism is
-[settled](testing_retirement.md#the-model-key-on-rbe).** A Terraform-minted, budget-capped LiteLLM key on the
-`cheap_experiments_models` lane, which the operator copies once into the BuildBuddy org secret
-`AGENTPLANE_SYSTEM_TEST_MODEL_KEY`. `system_test(real_model = True)` generates `<scenario>_real_model`, whose
-`exec_properties` name that secret in `test.env-secrets`, so only that test action decrypts it.
-
-Recommended: they run after merge on `devel`, a signal rather than a gate on a code change.
-
 ### `K3S_MODEL_SCENARIOS` — the real-model set on k3s
 
-**Blocked on `K3S_MODEL_CREDENTIALS`.** Only scenarios where the model's behavior is under test have a real-model
-version. Their `_real_model` targets pass on both harnesses, and their `_live` targets are deleted:
+**Candidate.** `system_test(real_model = True)` generates `<scenario>_real_model`: a k3s target tagged
+`live_openai_api` that decrypts the BuildBuddy secret `OPENAI_API_KEY` through `test.env-secrets` and hands it to
+LLM ingress, as [the plan](testing_retirement.md#the-model-key-on-rbe) says. Only scenarios where the model's behavior
+is under test get one. Their `_real_model` targets pass on both harnesses under `--config=live-openai`, and their
+`_live` targets are deleted:
 
 - `test_session_instructions`
 - The `test_egress` probe, binding a fixture-only credential PolicySet, not staging's `github-agentydragon-agent`

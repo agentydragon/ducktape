@@ -24,37 +24,31 @@ gone, staging is the first cluster such a change reaches.
 
 ## The model key on RBE
 
-Resolves `K3S_MODEL_CREDENTIALS`. Today the spike's Qwen-only key reaches `x/k3s_env`'s `test_env` through
-`--test_env`, which BuildBuddy records on the command line.
+The key exists: Crossplane's `buildbuddy-live-tests` LiteLLM key
+([`crossplane_keys.py`](../../cluster/cdk8s/litellm/crossplane_keys.py): the `cheap_experiments_models` lane, so
+Haiku for Claude Code and luna for Codex; `max_budget = 50` over 30 days), which
+[`buildbuddy_sync.py`](../../cluster/cdk8s/litellm/buildbuddy_sync.py) publishes as the BuildBuddy org secret
+`OPENAI_API_KEY`. `live_openai_py_test` already decrypts it into its `.live` test actions alone through
+`test.env-secrets`; those carry the `live_openai_api` tag, which `test:ci` filters out and `--config=live-openai`
+selects.
 
-- Terraform mints a LiteLLM key `system-tests-real-model` in [`litellm-keys`](../../tf/gitops/litellm-keys/main.tf):
-  the `cheap_experiments_models` lane (Haiku for Claude Code, luna for Codex), `max_budget = 50` over
-  `budget_duration = "30d"`, and the usual Kubernetes Secret.
-- The operator copies it once into a BuildBuddy org secret, `AGENTPLANE_SYSTEM_TEST_MODEL_KEY`. BuildBuddy secrets
-  are set only in the org settings UI.
-- `system_test(real_model = True)` generates `<scenario>_real_model`, a k3s target whose `exec_properties` add
-  `"test.env-secrets": "AGENTPLANE_SYSTEM_TEST_MODEL_KEY"`. BuildBuddy decrypts that one secret into that test
-  action only; no other action, command line or log sees it. The fixture hands it to LLM ingress as its upstream
-  Secret, so the Sandboxes never hold it.
-- Fork PRs get no BuildBuddy key, so they never run these targets.
-
-Open: when the `_real_model` targets run. They judge Agentplane's instructions against a model, so they are a
-signal to watch rather than a gate on a code change. Recommended: after merge on `devel`.
+`<scenario>_real_model` follows the same convention: a k3s target tagged `live_openai_api` whose `exec_properties`
+add `"test.env-secrets": "OPENAI_API_KEY"`. No other action, command line or log sees the key; the fixture hands it to
+LLM ingress as its upstream Secret, so the Sandboxes never hold it. PR CI builds the targets and runs none of them;
+`bbr test --config=live-openai` runs them on demand. Fork PRs get no BuildBuddy key.
 
 ## Steps
 
-1. **`K3S_MODEL_CREDENTIALS`**: the key, the secret and the `real_model` macro option, once the operator picks when
-   the targets run.
-2. **`K3S_MODEL_SCENARIOS`**: `_real_model` targets for `test_egress` and `test_session_instructions` pass on both
+1. **`K3S_MODEL_SCENARIOS`**: the `real_model` macro option; `_real_model` targets for `test_egress` and `test_session_instructions` pass on both
    harnesses; their `_live` targets go. The egress probe binds a fixture-only credential PolicySet. Then
    `K3S_SPIKE_TARGETS_RETIRE` deletes `test_env`.
-3. **`LIVE_TARGETS_OFF_TESTING`**, any time: delete the `_live` targets k3s covers; point `test_thread_latency` and
-   `test_ollama_routes` at staging. Whichever of steps 2 and 3 lands second deletes the `live` variant.
-4. **`STAGING_FIRST_ROLLOUT`**: the docs and recipes that send risky config to testing first say staging, after the
+2. **`LIVE_TARGETS_OFF_TESTING`**, any time: delete the `_live` targets k3s covers; point `test_thread_latency` and
+   `test_ollama_routes` at staging. Whichever of steps 1 and 2 lands second deletes the `live` variant.
+3. **`STAGING_FIRST_ROLLOUT`**: the docs and recipes that send risky config to testing first say staging, after the
    system tests, with a rollback plan in the PR.
-5. **`AGENT_TESTING_ACCESS_RETIRE`**: the managed presets stop selecting `agentplane-testing-operator` and the testing
+4. **`AGENT_TESTING_ACCESS_RETIRE`**: the managed presets stop selecting `agentplane-testing-operator` and the testing
    egress policy; the recipes that used them point at `bbr` system tests and staging reads.
-6. **`TESTING_ENVIRONMENT_RETIRE`**, three PRs: the Flux kustomization, image pins, manifests, DNS and routes; the
+5. **`TESTING_ENVIRONMENT_RETIRE`**, three PRs: the Flux kustomization, image pins, manifests, DNS and routes; the
    Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and volumes,
    a data drop that lands only on the operator's word.
 
