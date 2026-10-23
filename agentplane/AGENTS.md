@@ -53,6 +53,14 @@ backup/restore and the cutover before changing staging. Never drop/recreate stag
 sandboxes, volumes or session state as a shortcut; unavoidable loss needs the exact loss stated and
 operator approval first. Procedure: [staging data preservation](docs/staging_data_preservation.md).
 
+## Changes that can break staging
+
+Staging runs the operator's agents. A change that can take it down (a CRD, policy, egress, RBAC or wire cutover, a
+Sandbox template, a database change) merges once the [system tests](system_tests/README.md) that exercise it pass,
+and its PR states the rollback: what to revert, and what to check once Flux applies it. Agentplane's Flux, Cilium,
+CNPG, External Secrets, cert-manager, Gateway API and Kyverno objects have no system test, so staging is the first
+cluster they reach; the PR says so.
+
 ## Task DAG maintenance
 
 Before editing `plans/task_dag.md` or `plans/task_freezer.md`, read

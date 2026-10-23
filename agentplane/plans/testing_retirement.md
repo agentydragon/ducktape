@@ -8,24 +8,21 @@ targets and backends in the [system tests README](../system_tests/README.md). No
 
 ## What uses testing today
 
-| Workflow                                                                                                           | Moves to                                                  | Node                         |
-| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- | ---------------------------- |
-| Risky config rolled out on testing first                                                                           | staging after the system tests pass, with a rollback plan | `STAGING_FIRST_ROLLOUT`      |
-| Testing-only pieces: Flux kustomization and image pins, Dex MCP client, Action groups, LiteLLM key, DNS and routes | deleted                                                   | `TESTING_ENVIRONMENT_RETIRE` |
+| Workflow                                                                                                           | Moves to | Node                         |
+| ------------------------------------------------------------------------------------------------------------------ | -------- | ---------------------------- |
+| Testing-only pieces: Flux kustomization and image pins, Dex MCP client, Action groups, LiteLLM key, DNS and routes | deleted  | `TESTING_ENVIRONMENT_RETIRE` |
 
-Image pins already roll to staging without waiting on testing; testing gates nothing but the operator's habit of
-trying risky config there first (2026-10-12: testing down is better than staging down). No test covers what only a
-real cluster exercises (Flux, Cilium, CNPG, External Secrets, cert-manager, Gateway API, Kyverno); once testing is
-gone, staging is the first cluster such a change reaches.
+Image pins roll to staging without waiting on testing, and a change that can break staging lands there once the
+system tests pass, with a rollback plan in its PR ([AGENTS.md](../AGENTS.md#changes-that-can-break-staging)).
 
 ## Steps
 
-1. **`STAGING_FIRST_ROLLOUT`**: the docs and recipes that send risky config to testing first say staging, after the
-   system tests, with a rollback plan in the PR.
-2. **`TESTING_ENVIRONMENT_RETIRE`**, three PRs: the Flux kustomization, image pins, manifests, DNS and routes; the
+1. **`TESTING_ENVIRONMENT_RETIRE`**, three PRs: the Flux kustomization, image pins, manifests, DNS and routes; the
    Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and volumes,
    a data drop the operator cleared for any time (2026-10-23: nothing there is kept). The k3s fixture builds on
    testing's cdk8s environment, so the first PR moves what the fixture reads into it.
+   The MCP edge handoff rehearses on testing ([MCP edge extraction](mcp_edge_extraction.md)); the PR deleting the
+   Flux kustomization waits for that step, or for the operator to drop it.
 
 Speed, in parallel:
 

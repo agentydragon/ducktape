@@ -35,8 +35,7 @@ flowchart LR
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
     end
     subgraph K3S_TRACK[System tests on k3s, retiring agentplane-testing]
-        STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
-            TESTING_ENVIRONMENT_RETIRE[Blocked: delete agentplane-testing]
+            TESTING_ENVIRONMENT_RETIRE[Candidate: delete agentplane-testing]
     end
     subgraph TIER_TRACK[Test tiers: envtest and the bridge split]
         FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
@@ -1928,25 +1927,18 @@ changes.
 
 ```mermaid
 flowchart LR
-    STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
-    TESTING_ENVIRONMENT_RETIRE[Blocked: delete agentplane-testing]
-    STAGING_FIRST_ROLLOUT --> TESTING_ENVIRONMENT_RETIRE
+    TESTING_ENVIRONMENT_RETIRE[Candidate: delete agentplane-testing]
 ```
-
-### `STAGING_FIRST_ROLLOUT` — risky config goes to staging
-
-**Candidate.** Testing gates no image pins; it is where risky config lands first (operator, 2026-10-12: testing down
-is better than staging down). Rewrite the docs and recipes that send a change to testing first: such a change lands
-on staging after the system tests pass, with a rollback plan in the PR. Flux, Cilium, CNPG, External Secrets,
-cert-manager, Gateway API and Kyverno changes have no test, so staging is the first cluster they reach.
 
 ### `TESTING_ENVIRONMENT_RETIRE` — delete `agentplane-testing`
 
-**Blocked on `STAGING_FIRST_ROLLOUT`.** Three PRs: the Flux kustomization, image pins, generated manifests, DNS and
+**Candidate.** Three PRs: the Flux kustomization, image pins, generated manifests, DNS and
 routes; the Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and
 volumes, a data drop the operator cleared for any time (2026-10-23: nothing there is kept). Preserve staging. The k3s
 fixture builds on testing's environment (`cluster/cdk8s/agentplane/testing.py`'s `ENV`, operator OIDC and Action
 federation), so the first PR moves what the fixture reads into it rather than deleting it.
+`ACTION_MCP_EDGE_SPLIT` rehearses its handoff on testing first ([MCP edge extraction](mcp_edge_extraction.md)), so
+the PR deleting the Flux kustomization waits for that step, or for the operator to drop it.
 
 ## 15. Cleanups after the current tracks
 
