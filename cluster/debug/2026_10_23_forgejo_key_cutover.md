@@ -131,10 +131,58 @@ unsuspended, and KEDA's temporary pause annotation is removed.
 Fresh CNPG backup `forgejo-key-post-recovery`, ID `20261023T040545`, completed
 04:06:37 UTC. Begin/end LSN: `8E/6F013AC8` / `8E/7000F8B8`. It contains the
 replacement-key ciphertexts and recovered credentials; the pre-cutover backup
-remains available for historical recovery.
+was available at that point; the final audit below found it missing.
 
-Existing Haku workflow dispatched as run `10029` (internal ID `40416`) at
+## Native CI verification
+
+Existing Haku workflow dispatched as [run `10029`](https://git.allegedly.works/haku/haku-state/actions/runs/10029) (internal ID `40416`) at
 `edc8200388ae0d1b627d561567ab720203a2fc8b`, event `workflow_dispatch`. Both
 runners fetched their tasks and started Docker job containers, but setup
 stalled cloning the public `https://data.forgejo.org/actions/checkout` at `v4`.
-A running task is not evidence that validation/build/publish completed.
+
+Both original runner connections used proxy `10.244.8.236`. From the same
+runner, a bounded shallow fetch through that proxy hit the 20-second limit;
+through OVH proxy `10.244.1.10` it completed in three seconds. The original
+verification attempt was cancelled through Forgejo's supported UI route at
+04:45:05 UTC. Its temporary runner Jobs were removed. Attempt 2 ran the same
+workflow and commit on two one-off OVH runners, with runner/daemon proxy
+variables selecting the working replica. Inner Docker job containers retain
+the configured proxy Service hostname. The normal KEDA pause was removed
+after both jobs were assigned. The proxy-path defect remains a separate
+follow-up; this does not prove default scheduling/egress is healthy.
+
+The second attempt succeeded. Validation completed at 04:53:57 UTC; the image
+job completed at 05:07:43 UTC. Test, build, registry authentication and all
+three image pushes (UI, Anki, Jupyter) passed. Profile upload also passed;
+publishing failure logs was correctly skipped. Forgejo recorded both jobs
+and the overall workflow as successful. This was a manual dispatch of the
+existing workflow, not a PR status check.
+
+## Final audit: backup catalog loss
+
+Both temporary CI Jobs and the API observer Pod were UID-checked and deleted.
+The earlier migration/rotator Jobs, probes and configuration-backup Secret were
+also removed. Final controller-state and application-rollout checks passed.
+
+The final backup check found a separate failure: all 13 previous completed
+Backup resources were gone. Barman's physical base-backup catalog was empty;
+HEAD requests for `backup.info` of `20261023T025219` and `20261023T040545`
+returned 404. The `base/` prefix was empty while the server/WAL prefix remained.
+Do not treat either earlier completion record above as a retained restore point.
+
+The primary's plugin applied retention policy `30d` at 04:53:09.935 UTC and
+logged `Deleting backup not in the catalog` for all 13 resources at
+04:53:10.821–10.879 UTC. In [plugin v0.15.0](https://github.com/cloudnative-pg/plugin-barman-cloud/blob/v0.15.0/internal/cnpgi/instance/retention.go#L142), this message is Kubernetes garbage
+collection after Barman's retention command and a catalog read; it does not
+identify who removed physical objects. Filers subsequently logged empty-folder
+cleanup. The bucket has its original Oct 12 identity, `Retain`, versioning off,
+and no S3 lifecycle configuration. Available S3 logs contain no requests for
+this bucket, so the cause of physical catalog loss is not established.
+
+Requested `forgejo-key-recovery-final` rather than relying on the missing
+restore points. Backup ID `20261023T051355` completed at 05:14:46 UTC; begin/end
+LSN `8E/7C3FEF78` / `8E/7D088168`. A direct Barman catalog check confirmed `DONE`
+afterward and again after a later retention cycle. This establishes a fresh
+physical backup, not a restore drill or a fix for the unexplained earlier loss.
+The backup-retention/storage investigation and slow default CI proxy route
+remain follow-ups; neither invalidates the live key and credential checks.
