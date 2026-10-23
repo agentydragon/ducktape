@@ -1,13 +1,14 @@
 {
  "action_groups": [
   {
+   "accepted_by_go": true,
    "held": {},
    "input": {},
    "name": "no groups",
-   "valid": true,
    "views": []
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -33,7 +34,6 @@
     }
    },
    "name": "MCP group with its defaults",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -48,6 +48,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -82,7 +83,6 @@
     }
    },
    "name": "pod group with its defaults",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -97,6 +97,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-mcp": {
      "actions": {
@@ -231,7 +232,6 @@
     }
    },
    "name": "every field of an MCP group",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -246,6 +246,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -293,7 +294,6 @@
     }
    },
    "name": "every field of a pod group",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -308,6 +308,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "first": {
      "actions": {},
@@ -362,7 +363,6 @@
     }
    },
    "name": "two groups",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -387,6 +387,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "a-b_c9": {
      "actions": {
@@ -424,7 +425,6 @@
     }
    },
    "name": "keys with every allowed character",
-   "valid": true,
    "views": [
     {
      "actions": [
@@ -446,6 +446,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg": {
      "actions": {
@@ -483,7 +484,6 @@
     }
    },
    "name": "longest keys",
-   "valid": true,
    "views": [
     {
      "actions": [
@@ -505,6 +505,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {
@@ -542,7 +543,6 @@
     }
    },
    "name": "longest strings",
-   "valid": true,
    "views": [
     {
      "actions": [
@@ -564,6 +564,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {
@@ -611,7 +612,6 @@
     }
    },
    "name": "multibyte strings at the limits",
-   "valid": true,
    "views": [
     {
      "actions": [
@@ -633,6 +633,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -669,7 +670,6 @@
     }
    },
    "name": "smallest pod limits",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -684,6 +684,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -714,7 +715,6 @@
     }
    },
    "name": "a server_id equal to the key",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -729,6 +729,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -759,7 +760,6 @@
     }
    },
    "name": "a null server_id",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -774,6 +774,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test__group": {
      "actions": {},
@@ -799,7 +800,6 @@
     }
    },
    "name": "the separator in a key without direct tools",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -814,6 +814,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -845,7 +846,6 @@
     }
    },
    "name": "a direct tool listed twice",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -860,6 +860,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -890,7 +891,6 @@
     }
    },
    "name": "direct tools the group does not list",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -905,6 +905,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {
@@ -945,7 +946,6 @@
     }
    },
    "name": "explicit nulls",
-   "valid": true,
    "views": [
     {
      "actions": [
@@ -967,6 +967,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -996,7 +997,6 @@
     }
    },
    "name": "explicit defaults",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -1011,6 +1011,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {
@@ -1056,7 +1057,6 @@
     }
    },
    "name": "an action with an empty input schema and annotations",
-   "valid": true,
    "views": [
     {
      "actions": [
@@ -1078,6 +1078,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {
@@ -1125,7 +1126,6 @@
     }
    },
    "name": "annotations by field name",
-   "valid": true,
    "views": [
     {
      "actions": [
@@ -1147,6 +1147,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {
@@ -1194,7 +1195,6 @@
     }
    },
    "name": "annotations by both names",
-   "valid": true,
    "views": [
     {
      "actions": [
@@ -1216,6 +1216,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {
@@ -1263,7 +1264,6 @@
     }
    },
    "name": "annotations with an unknown key",
-   "valid": true,
    "views": [
     {
      "actions": [
@@ -1285,6 +1285,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {
@@ -1332,7 +1333,6 @@
     }
    },
    "name": "annotations with null hints",
-   "valid": true,
    "views": [
     {
      "actions": [
@@ -1354,6 +1354,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -1380,7 +1381,6 @@
     }
    },
    "name": "available as a word",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -1395,6 +1395,7 @@
    ]
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -1421,7 +1422,6 @@
     }
    },
    "name": "available as an uppercase word",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -1436,20 +1436,7 @@
    ]
   },
   {
-   "held": {
-    "test-group": {
-     "actions": {},
-     "available": false,
-     "description": "test group description",
-     "direct_tools": null,
-     "executor": {
-      "config": {},
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "available": "0",
@@ -1462,35 +1449,10 @@
     }
    },
    "name": "available as a digit",
-   "valid": true,
-   "views": [
-    {
-     "actions": [],
-     "available": false,
-     "description": "test group description",
-     "executor_description": "test MCP executor",
-     "executor_kind": "mcp",
-     "health": null,
-     "key": "test-group",
-     "title": "test group"
-    }
-   ]
+   "views": null
   },
   {
-   "held": {
-    "test-group": {
-     "actions": {},
-     "available": true,
-     "description": "test group description",
-     "direct_tools": null,
-     "executor": {
-      "config": {},
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "available": 1,
@@ -1503,35 +1465,10 @@
     }
    },
    "name": "available as a number",
-   "valid": true,
-   "views": [
-    {
-     "actions": [],
-     "available": true,
-     "description": "test group description",
-     "executor_description": "test MCP executor",
-     "executor_kind": "mcp",
-     "health": null,
-     "key": "test-group",
-     "title": "test group"
-    }
-   ]
+   "views": null
   },
   {
-   "held": {
-    "test-group": {
-     "actions": {},
-     "available": false,
-     "description": "test group description",
-     "direct_tools": null,
-     "executor": {
-      "config": {},
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "available": 0.0,
@@ -1544,21 +1481,10 @@
     }
    },
    "name": "available as a float",
-   "valid": true,
-   "views": [
-    {
-     "actions": [],
-     "available": false,
-     "description": "test group description",
-     "executor_description": "test MCP executor",
-     "executor_kind": "mcp",
-     "health": null,
-     "key": "test-group",
-     "title": "test group"
-    }
-   ]
+   "views": null
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {
@@ -1605,7 +1531,6 @@
     }
    },
    "name": "annotation hint as a word",
-   "valid": true,
    "views": [
     {
      "actions": [
@@ -1627,25 +1552,7 @@
    ]
   },
   {
-   "held": {
-    "test-group": {
-     "actions": {},
-     "available": true,
-     "description": "test group description",
-     "direct_tools": null,
-     "executor": {
-      "description": "test pod executor",
-      "kind": "pod",
-      "max_output_bytes": 1000,
-      "max_timeout_seconds": 60,
-      "namespace": "test-namespace",
-      "templates": {
-       "test-template": "a test box"
-      }
-     },
-     "title": "test group"
-    }
-   },
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -1663,40 +1570,10 @@
     }
    },
    "name": "limits as integer text",
-   "valid": true,
-   "views": [
-    {
-     "actions": [],
-     "available": true,
-     "description": "test group description",
-     "executor_description": "test pod executor",
-     "executor_kind": "pod",
-     "health": null,
-     "key": "test-group",
-     "title": "test group"
-    }
-   ]
+   "views": null
   },
   {
-   "held": {
-    "test-group": {
-     "actions": {},
-     "available": true,
-     "description": "test group description",
-     "direct_tools": null,
-     "executor": {
-      "description": "test pod executor",
-      "kind": "pod",
-      "max_output_bytes": 200000,
-      "max_timeout_seconds": 60,
-      "namespace": "test-namespace",
-      "templates": {
-       "test-template": "a test box"
-      }
-     },
-     "title": "test group"
-    }
-   },
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -1713,21 +1590,10 @@
     }
    },
    "name": "a limit as integer text with a zero fraction",
-   "valid": true,
-   "views": [
-    {
-     "actions": [],
-     "available": true,
-     "description": "test group description",
-     "executor_description": "test pod executor",
-     "executor_kind": "pod",
-     "health": null,
-     "key": "test-group",
-     "title": "test group"
-    }
-   ]
+   "views": null
   },
   {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -1764,7 +1630,6 @@
     }
    },
    "name": "limits as integral floats",
-   "valid": true,
    "views": [
     {
      "actions": [],
@@ -1779,25 +1644,7 @@
    ]
   },
   {
-   "held": {
-    "test-group": {
-     "actions": {},
-     "available": true,
-     "description": "test group description",
-     "direct_tools": null,
-     "executor": {
-      "description": "test pod executor",
-      "kind": "pod",
-      "max_output_bytes": 0,
-      "max_timeout_seconds": 1,
-      "namespace": "test-namespace",
-      "templates": {
-       "test-template": "a test box"
-      }
-     },
-     "title": "test group"
-    }
-   },
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -1815,21 +1662,539 @@
     }
    },
    "name": "limits as booleans",
-   "valid": true,
-   "views": [
-    {
-     "actions": [],
-     "available": true,
-     "description": "test group description",
-     "executor_description": "test pod executor",
-     "executor_kind": "pod",
-     "health": null,
-     "key": "test-group",
-     "title": "test group"
-    }
-   ]
+   "views": null
   },
   {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "health": {
+      "state": "available"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "configured health",
+   "views": null
+  },
+  {
+   "accepted_by_go": true,
+   "held": {},
+   "input": null,
+   "name": "null",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": [],
+   "name": "a list",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": "test"
+   },
+   "name": "a group that is not an object",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": null
+   },
+   "name": "a null group",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "Test": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "uppercase group key",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test.group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "group key with a dot",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "1group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "group key starting with a digit",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "group key starting with a hyphen",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "empty group key",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "group key above 200 characters",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "group\n": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "group key ending in a newline",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "actions": {
+      "Test": {
+       "description": "test action"
+      }
+     },
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "uppercase action key",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "actions": {
+      "test action": {
+       "description": "test action"
+      }
+     },
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "action key with a space",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "actions": {
+      "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn": {
+       "description": "test action"
+      }
+     },
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "action key above 200 characters",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "extra": 1,
+     "title": "test group"
+    }
+   },
+   "name": "unknown group field",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     }
+    }
+   },
+   "name": "missing title",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": ""
+    }
+   },
+   "name": "empty title",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
+    }
+   },
+   "name": "title above 200 characters",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80"
+    }
+   },
+   "name": "multibyte title above 200 characters",
+   "views": null
+  },
+  {
+   "accepted_by_go": true,
+   "held": {
+    "test-group": {
+     "actions": {},
+     "available": true,
+     "description": "test group description",
+     "direct_tools": null,
+     "executor": {
+      "config": {},
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "1"
+    }
+   },
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": 1
+    }
+   },
+   "name": "title as a number",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": null
+    }
+   },
+   "name": "null title",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "missing description",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "empty description",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "description above 2000 characters",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "title": "test group"
+    }
+   },
+   "name": "missing executor",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": null,
+     "title": "test group"
+    }
+   },
+   "name": "null executor",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": "mcp",
+     "title": "test group"
+    }
+   },
+   "name": "executor that is not an object",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "executor without a kind",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "http"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "unknown executor kind",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "MCP"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "uppercase executor kind",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": null
+     },
+     "title": "test group"
+    }
+   },
+   "name": "null executor kind",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "MCP executor without a description",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "MCP executor with an empty description",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "MCP executor description above 2000 characters",
+   "views": null
+  },
+  {
+   "accepted_by_go": false,
+   "input": {
+    "test-group": {
+     "description": "test group description",
+     "executor": {
+      "description": "test MCP executor",
+      "kind": "mcp",
+      "namespace": "test-namespace"
+     },
+     "title": "test group"
+    }
+   },
+   "name": "MCP executor with a pod field",
+   "views": null
+  },
+  {
+   "accepted_by_go": true,
    "held": {
     "test-group": {
      "actions": {},
@@ -1848,503 +2213,6 @@
     "test-group": {
      "description": "test group description",
      "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "health": {
-      "state": "available"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "configured health",
-   "valid": true,
-   "views": [
-    {
-     "actions": [],
-     "available": true,
-     "description": "test group description",
-     "executor_description": "test MCP executor",
-     "executor_kind": "mcp",
-     "health": {
-      "detail": null,
-      "failures": 0,
-      "last_discovery_at": null,
-      "reason": null,
-      "retry_at": null,
-      "state": "available"
-     },
-     "key": "test-group",
-     "title": "test group"
-    }
-   ]
-  },
-  {
-   "input": null,
-   "name": "null",
-   "valid": false
-  },
-  {
-   "input": [],
-   "name": "a list",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": "test"
-   },
-   "name": "a group that is not an object",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": null
-   },
-   "name": "a null group",
-   "valid": false
-  },
-  {
-   "input": {
-    "Test": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "uppercase group key",
-   "valid": false
-  },
-  {
-   "input": {
-    "test.group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "group key with a dot",
-   "valid": false
-  },
-  {
-   "input": {
-    "1group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "group key starting with a digit",
-   "valid": false
-  },
-  {
-   "input": {
-    "-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "group key starting with a hyphen",
-   "valid": false
-  },
-  {
-   "input": {
-    "": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "empty group key",
-   "valid": false
-  },
-  {
-   "input": {
-    "ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "group key above 200 characters",
-   "valid": false
-  },
-  {
-   "input": {
-    "group\n": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "group key ending in a newline",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "actions": {
-      "Test": {
-       "description": "test action"
-      }
-     },
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "uppercase action key",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "actions": {
-      "test action": {
-       "description": "test action"
-      }
-     },
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "action key with a space",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "actions": {
-      "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn": {
-       "description": "test action"
-      }
-     },
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "action key above 200 characters",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "extra": 1,
-     "title": "test group"
-    }
-   },
-   "name": "unknown group field",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     }
-    }
-   },
-   "name": "missing title",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": ""
-    }
-   },
-   "name": "empty title",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
-    }
-   },
-   "name": "title above 200 characters",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80"
-    }
-   },
-   "name": "multibyte title above 200 characters",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": 1
-    }
-   },
-   "name": "title as a number",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": null
-    }
-   },
-   "name": "null title",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "missing description",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "empty description",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "description above 2000 characters",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "title": "test group"
-    }
-   },
-   "name": "missing executor",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": null,
-     "title": "test group"
-    }
-   },
-   "name": "null executor",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": "mcp",
-     "title": "test group"
-    }
-   },
-   "name": "executor that is not an object",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "executor without a kind",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "http"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "unknown executor kind",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "MCP"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "uppercase executor kind",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": null
-     },
-     "title": "test group"
-    }
-   },
-   "name": "null executor kind",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "MCP executor without a description",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "MCP executor with an empty description",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-      "kind": "mcp"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "MCP executor description above 2000 characters",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
-      "description": "test MCP executor",
-      "kind": "mcp",
-      "namespace": "test-namespace"
-     },
-     "title": "test group"
-    }
-   },
-   "name": "MCP executor with a pod field",
-   "valid": false
-  },
-  {
-   "input": {
-    "test-group": {
-     "description": "test group description",
-     "executor": {
       "config": null,
       "description": "test MCP executor",
       "kind": "mcp"
@@ -2353,9 +2221,10 @@
     }
    },
    "name": "null MCP config",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2368,9 +2237,10 @@
     }
    },
    "name": "MCP config that is a list",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2385,9 +2255,10 @@
     }
    },
    "name": "server_id other than the key",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2402,9 +2273,10 @@
     }
    },
    "name": "server_id as a number",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2419,9 +2291,10 @@
     }
    },
    "name": "pod executor without a description",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2438,9 +2311,10 @@
     }
    },
    "name": "pod executor with an MCP field",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2455,9 +2329,10 @@
     }
    },
    "name": "pod executor without a namespace",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2473,9 +2348,10 @@
     }
    },
    "name": "pod executor with an empty namespace",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2488,9 +2364,10 @@
     }
    },
    "name": "pod executor without templates",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2504,9 +2381,29 @@
     }
    },
    "name": "pod executor with no templates",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": true,
+   "held": {
+    "test-group": {
+     "actions": {},
+     "available": true,
+     "description": "test group description",
+     "direct_tools": null,
+     "executor": {
+      "description": "test pod executor",
+      "kind": "pod",
+      "max_output_bytes": 200000,
+      "max_timeout_seconds": 1800,
+      "namespace": "test-namespace",
+      "templates": {
+       "test-template": "1"
+      }
+     },
+     "title": "test group"
+    }
+   },
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2522,9 +2419,29 @@
     }
    },
    "name": "template description that is not a string",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": true,
+   "held": {
+    "test-group": {
+     "actions": {},
+     "available": true,
+     "description": "test group description",
+     "direct_tools": null,
+     "executor": {
+      "description": "test pod executor",
+      "kind": "pod",
+      "max_output_bytes": 200000,
+      "max_timeout_seconds": 1800,
+      "namespace": "test-namespace",
+      "templates": {
+       "test-template": ""
+      }
+     },
+     "title": "test group"
+    }
+   },
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2540,9 +2457,10 @@
     }
    },
    "name": "null template description",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2559,9 +2477,10 @@
     }
    },
    "name": "max_timeout_seconds of 0",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2578,9 +2497,10 @@
     }
    },
    "name": "max_timeout_seconds above 3600",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2597,9 +2517,10 @@
     }
    },
    "name": "fractional max_timeout_seconds",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2616,9 +2537,10 @@
     }
    },
    "name": "max_timeout_seconds as a word",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2635,9 +2557,10 @@
     }
    },
    "name": "max_timeout_seconds as text with a fraction",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2654,9 +2577,10 @@
     }
    },
    "name": "max_timeout_seconds as text with an exponent",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2673,9 +2597,10 @@
     }
    },
    "name": "max_timeout_seconds as text with a doubled underscore",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2692,9 +2617,29 @@
     }
    },
    "name": "max_timeout_seconds as text with a trailing point",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": true,
+   "held": {
+    "test-group": {
+     "actions": {},
+     "available": true,
+     "description": "test group description",
+     "direct_tools": null,
+     "executor": {
+      "description": "test pod executor",
+      "kind": "pod",
+      "max_output_bytes": 200000,
+      "max_timeout_seconds": 1800,
+      "namespace": "test-namespace",
+      "templates": {
+       "test-template": "a test box"
+      }
+     },
+     "title": "test group"
+    }
+   },
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2711,9 +2656,10 @@
     }
    },
    "name": "null max_timeout_seconds",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2730,9 +2676,10 @@
     }
    },
    "name": "max_timeout_seconds as false",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2749,9 +2696,10 @@
     }
    },
    "name": "negative max_output_bytes",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2768,9 +2716,10 @@
     }
    },
    "name": "max_output_bytes above 1000000",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -2787,9 +2736,24 @@
     }
    },
    "name": "max_output_bytes far above its limit",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": true,
+   "held": {
+    "test-group": {
+     "actions": {},
+     "available": true,
+     "description": "test group description",
+     "direct_tools": null,
+     "executor": {
+      "config": {},
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
    "input": {
     "test-group": {
      "available": null,
@@ -2802,9 +2766,10 @@
     }
    },
    "name": "null available",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "available": 2,
@@ -2817,9 +2782,10 @@
     }
    },
    "name": "available as 2",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "available": 0.5,
@@ -2832,9 +2798,10 @@
     }
    },
    "name": "available as a fraction",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "available": "maybe",
@@ -2847,9 +2814,10 @@
     }
    },
    "name": "available as an unknown word",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "available": " true",
@@ -2862,9 +2830,10 @@
     }
    },
    "name": "available as a padded word",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "available": "",
@@ -2877,9 +2846,24 @@
     }
    },
    "name": "available as an empty string",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": true,
+   "held": {
+    "test-group": {
+     "actions": {},
+     "available": true,
+     "description": "test group description",
+     "direct_tools": null,
+     "executor": {
+      "config": {},
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
    "input": {
     "test-group": {
      "actions": null,
@@ -2892,9 +2876,10 @@
     }
    },
    "name": "null actions",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "actions": [],
@@ -2907,9 +2892,10 @@
     }
    },
    "name": "actions as a list",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "actions": {
@@ -2924,9 +2910,10 @@
     }
    },
    "name": "null action",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "actions": {
@@ -2941,9 +2928,10 @@
     }
    },
    "name": "action without a description",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "actions": {
@@ -2960,9 +2948,10 @@
     }
    },
    "name": "action with an empty description",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "actions": {
@@ -2979,9 +2968,10 @@
     }
    },
    "name": "action description above 20000 characters",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "actions": {
@@ -2999,9 +2989,31 @@
     }
    },
    "name": "unknown action field",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": true,
+   "held": {
+    "test-group": {
+     "actions": {
+      "test-action": {
+       "annotations": null,
+       "description": "test action",
+       "input_schema": {},
+       "title": null
+      }
+     },
+     "available": true,
+     "description": "test group description",
+     "direct_tools": null,
+     "executor": {
+      "config": {},
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
    "input": {
     "test-group": {
      "actions": {
@@ -3019,9 +3031,10 @@
     }
    },
    "name": "null input schema",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "actions": {
@@ -3039,9 +3052,10 @@
     }
    },
    "name": "input schema that is a list",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "actions": {
@@ -3059,9 +3073,31 @@
     }
    },
    "name": "input schema that is true",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": true,
+   "held": {
+    "test-group": {
+     "actions": {
+      "test-action": {
+       "annotations": null,
+       "description": "test action",
+       "input_schema": {},
+       "title": "1"
+      }
+     },
+     "available": true,
+     "description": "test group description",
+     "direct_tools": null,
+     "executor": {
+      "config": {},
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
    "input": {
     "test-group": {
      "actions": {
@@ -3079,9 +3115,10 @@
     }
    },
    "name": "action title as a number",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "actions": {
@@ -3099,9 +3136,10 @@
     }
    },
    "name": "annotations that are a string",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "actions": {
@@ -3119,9 +3157,10 @@
     }
    },
    "name": "annotations that are a list",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "actions": {
@@ -3141,9 +3180,37 @@
     }
    },
    "name": "annotation hint as an unknown word",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": true,
+   "held": {
+    "test-group": {
+     "actions": {
+      "test-action": {
+       "annotations": {
+        "destructive_hint": null,
+        "idempotent_hint": null,
+        "open_world_hint": null,
+        "read_only_hint": null,
+        "title": "1"
+       },
+       "description": "test action",
+       "input_schema": {},
+       "title": null
+      }
+     },
+     "available": true,
+     "description": "test group description",
+     "direct_tools": null,
+     "executor": {
+      "config": {},
+      "description": "test MCP executor",
+      "kind": "mcp"
+     },
+     "title": "test group"
+    }
+   },
    "input": {
     "test-group": {
      "actions": {
@@ -3163,9 +3230,10 @@
     }
    },
    "name": "annotation title as a number",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -3178,9 +3246,10 @@
     }
    },
    "name": "empty direct_tools",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -3193,9 +3262,10 @@
     }
    },
    "name": "direct_tools as a string",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -3210,9 +3280,10 @@
     }
    },
    "name": "direct_tools as an object",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -3227,9 +3298,10 @@
     }
    },
    "name": "direct tool that is not a key",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test-group": {
      "description": "test group description",
@@ -3244,9 +3316,10 @@
     }
    },
    "name": "direct tool that is a number",
-   "valid": false
+   "views": null
   },
   {
+   "accepted_by_go": false,
    "input": {
     "test__group": {
      "description": "test group description",
@@ -3261,7 +3334,7 @@
     }
    },
    "name": "direct tools in a group whose key holds the separator",
-   "valid": false
+   "views": null
   }
  ],
  "arguments": [
@@ -3270,8 +3343,8 @@
     "count": 2,
     "owner": "test-owner"
    },
+   "go_outcome": "satisfied",
    "name": "an object that satisfies its schema",
-   "outcome": "satisfied",
    "schema": {
     "additionalProperties": false,
     "properties": {
@@ -3294,8 +3367,8 @@
    "arguments": {
     "count": 2
    },
+   "go_outcome": "not_satisfied",
    "name": "a missing required property",
-   "outcome": "not_satisfied",
    "schema": {
     "additionalProperties": false,
     "properties": {
@@ -3318,8 +3391,8 @@
    "arguments": {
     "owner": 5
    },
+   "go_outcome": "not_satisfied",
    "name": "a property of the wrong type",
-   "outcome": "not_satisfied",
    "schema": {
     "additionalProperties": false,
     "properties": {
@@ -3343,8 +3416,8 @@
     "extra": true,
     "owner": "test-owner"
    },
+   "go_outcome": "not_satisfied",
    "name": "an additional property",
-   "outcome": "not_satisfied",
    "schema": {
     "additionalProperties": false,
     "properties": {
@@ -3367,8 +3440,8 @@
    "arguments": {
     "owner": "\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d\u540d"
    },
+   "go_outcome": "satisfied",
    "name": "a string at its maximum length in code points",
-   "outcome": "satisfied",
    "schema": {
     "additionalProperties": false,
     "properties": {
@@ -3391,8 +3464,8 @@
    "arguments": {
     "owner": "oooooooooooooooooooooooooooooooooooooooo"
    },
+   "go_outcome": "not_satisfied",
    "name": "a string over its maximum length",
-   "outcome": "not_satisfied",
    "schema": {
     "additionalProperties": false,
     "properties": {
@@ -3416,8 +3489,8 @@
     "count": 0,
     "owner": "test-owner"
    },
+   "go_outcome": "not_satisfied",
    "name": "an integer below its minimum",
-   "outcome": "not_satisfied",
    "schema": {
     "additionalProperties": false,
     "properties": {
@@ -3441,8 +3514,8 @@
     "count": 2.0,
     "owner": "test-owner"
    },
+   "go_outcome": "satisfied",
    "name": "an integral float as an integer",
-   "outcome": "satisfied",
    "schema": {
     "additionalProperties": false,
     "properties": {
@@ -3466,8 +3539,8 @@
     "count": 2.5,
     "owner": "test-owner"
    },
+   "go_outcome": "not_satisfied",
    "name": "a fraction as an integer",
-   "outcome": "not_satisfied",
    "schema": {
     "additionalProperties": false,
     "properties": {
@@ -3495,14 +3568,14 @@
      }
     ]
    },
+   "go_outcome": "satisfied",
    "name": "the empty schema",
-   "outcome": "satisfied",
    "schema": {}
   },
   {
    "arguments": {},
+   "go_outcome": "satisfied",
    "name": "no arguments where none is required",
-   "outcome": "satisfied",
    "schema": {
     "properties": {
      "a": {
@@ -3516,8 +3589,8 @@
    "arguments": {
     "state": "open"
    },
+   "go_outcome": "satisfied",
    "name": "an enum member",
-   "outcome": "satisfied",
    "schema": {
     "properties": {
      "state": {
@@ -3534,8 +3607,8 @@
    "arguments": {
     "state": "merged"
    },
+   "go_outcome": "not_satisfied",
    "name": "not an enum member",
-   "outcome": "not_satisfied",
    "schema": {
     "properties": {
      "state": {
@@ -3552,8 +3625,8 @@
    "arguments": {
     "note": null
    },
+   "go_outcome": "satisfied",
    "name": "a null where null is allowed",
-   "outcome": "satisfied",
    "schema": {
     "properties": {
      "note": {
@@ -3570,8 +3643,8 @@
    "arguments": {
     "note": null
    },
+   "go_outcome": "not_satisfied",
    "name": "a null where it is not",
-   "outcome": "not_satisfied",
    "schema": {
     "properties": {
      "note": {
@@ -3585,8 +3658,8 @@
    "arguments": {
     "a": "x"
    },
+   "go_outcome": "satisfied",
    "name": "a local $ref, satisfied",
-   "outcome": "satisfied",
    "schema": {
     "$defs": {
      "name": {
@@ -3605,8 +3678,8 @@
    "arguments": {
     "a": ""
    },
+   "go_outcome": "not_satisfied",
    "name": "a local $ref, not satisfied",
-   "outcome": "not_satisfied",
    "schema": {
     "$defs": {
      "name": {
@@ -3625,8 +3698,8 @@
    "arguments": {
     "a": 1
    },
+   "go_outcome": "not_satisfied",
    "name": "a draft-07 definitions $ref",
-   "outcome": "not_satisfied",
    "schema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "definitions": {
@@ -3645,8 +3718,8 @@
    "arguments": {
     "a": "x"
    },
+   "go_outcome": "fault",
    "name": "a remote $ref",
-   "outcome": "fault",
    "schema": {
     "properties": {
      "a": {
@@ -3660,8 +3733,8 @@
    "arguments": {
     "a": "x"
    },
+   "go_outcome": "fault",
    "name": "a file $ref",
-   "outcome": "fault",
    "schema": {
     "properties": {
      "a": {
@@ -3675,8 +3748,8 @@
    "arguments": {
     "a": "x"
    },
+   "go_outcome": "fault",
    "name": "a local $ref to nowhere",
-   "outcome": "fault",
    "schema": {
     "properties": {
      "a": {
@@ -3688,8 +3761,8 @@
   },
   {
    "arguments": {},
+   "go_outcome": "fault",
    "name": "a schema that is not a JSON Schema",
-   "outcome": "fault",
    "schema": {
     "type": 5
    }
@@ -3698,8 +3771,8 @@
    "arguments": {
     "a": "x"
    },
+   "go_outcome": "fault",
    "name": "a negative minLength",
-   "outcome": "fault",
    "schema": {
     "properties": {
      "a": {
@@ -3714,8 +3787,8 @@
    "arguments": {
     "url": "not a uri"
    },
+   "go_outcome": "satisfied",
    "name": "a uri format in draft-07, not a URI",
-   "outcome": "satisfied",
    "schema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "properties": {
@@ -3731,8 +3804,8 @@
    "arguments": {
     "email": "nobody"
    },
+   "go_outcome": "satisfied",
    "name": "an email format in draft-07, not an address",
-   "outcome": "satisfied",
    "schema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "properties": {
@@ -3748,8 +3821,8 @@
    "arguments": {
     "id": "x"
    },
+   "go_outcome": "satisfied",
    "name": "a uuid format in draft-04, not a UUID",
-   "outcome": "satisfied",
    "schema": {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "properties": {
@@ -3765,8 +3838,8 @@
    "arguments": {
     "at": "soon"
    },
+   "go_outcome": "satisfied",
    "name": "a date-time format in 2020-12, not a time",
-   "outcome": "satisfied",
    "schema": {
     "properties": {
      "at": {
@@ -3781,8 +3854,8 @@
    "arguments": {
     "p": "("
    },
+   "go_outcome": "not_satisfied",
    "name": "a regex format in draft-07, not a regex",
-   "outcome": "satisfied",
    "schema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "properties": {
@@ -3798,8 +3871,8 @@
    "arguments": {
     "n": 5
    },
+   "go_outcome": "not_satisfied",
    "name": "a draft-04 exclusiveMaximum as a boolean",
-   "outcome": "not_satisfied",
    "schema": {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "properties": {
@@ -3816,8 +3889,8 @@
    "arguments": {
     "a": 1
    },
+   "go_outcome": "not_satisfied",
    "name": "draft-07 dependencies",
-   "outcome": "not_satisfied",
    "schema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "dependencies": {
@@ -3831,8 +3904,8 @@
    "arguments": {
     "a": 1
    },
+   "go_outcome": "not_satisfied",
    "name": "dependentRequired in 2020-12",
-   "outcome": "not_satisfied",
    "schema": {
     "dependentRequired": {
      "a": [
@@ -3845,8 +3918,8 @@
    "arguments": {
     "a": 1
    },
+   "go_outcome": "not_satisfied",
    "name": "dependencies in 2020-12",
-   "outcome": "satisfied",
    "schema": {
     "dependencies": {
      "a": [
@@ -3859,8 +3932,8 @@
    "arguments": {
     "a": 1
    },
+   "go_outcome": "satisfied",
    "name": "draft 2019-09",
-   "outcome": "satisfied",
    "schema": {
     "$schema": "https://json-schema.org/draft/2019-09/schema",
     "required": [
@@ -3870,8 +3943,8 @@
   },
   {
    "arguments": {},
+   "go_outcome": "fault",
    "name": "an unknown $schema",
-   "outcome": "not_satisfied",
    "schema": {
     "$schema": "https://schema.test/unknown",
     "required": [
@@ -3883,8 +3956,8 @@
    "arguments": {
     "n": 0.3
    },
+   "go_outcome": "satisfied",
    "name": "0.3 as a multiple of 0.1",
-   "outcome": "not_satisfied",
    "schema": {
     "properties": {
      "n": {
@@ -3898,8 +3971,8 @@
    "arguments": {
     "n": 9007199254740991
    },
+   "go_outcome": "satisfied",
    "name": "the largest exact integer",
-   "outcome": "satisfied",
    "schema": {
     "properties": {
      "n": {
@@ -3914,8 +3987,8 @@
    "arguments": {
     "name": "abc"
    },
+   "go_outcome": "satisfied",
    "name": "a pattern that matches",
-   "outcome": "satisfied",
    "schema": {
     "properties": {
      "name": {
@@ -3929,8 +4002,8 @@
    "arguments": {
     "name": "ABC"
    },
+   "go_outcome": "not_satisfied",
    "name": "a pattern that does not match",
-   "outcome": "not_satisfied",
    "schema": {
     "properties": {
      "name": {
@@ -3944,8 +4017,8 @@
    "arguments": {
     "name": "user"
    },
+   "go_outcome": "fault",
    "name": "a lookahead pattern",
-   "outcome": "satisfied",
    "schema": {
     "properties": {
      "name": {
@@ -3963,8 +4036,8 @@
      true
     ]
    },
+   "go_outcome": "satisfied",
    "name": "uniqueItems with 1 and true",
-   "outcome": "satisfied",
    "schema": {
     "properties": {
      "xs": {
@@ -3982,8 +4055,8 @@
      1.0
     ]
    },
+   "go_outcome": "not_satisfied",
    "name": "uniqueItems with 1 and 1.0",
-   "outcome": "not_satisfied",
    "schema": {
     "properties": {
      "xs": {
@@ -4001,8 +4074,8 @@
     "repo": "r",
     "since": "today"
    },
+   "go_outcome": "satisfied",
    "name": "an MCP tool's schema, satisfied",
-   "outcome": "satisfied",
    "schema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "additionalProperties": false,
@@ -4037,8 +4110,8 @@
     "perPage": 0,
     "repo": "r"
    },
+   "go_outcome": "not_satisfied",
    "name": "an MCP tool's schema, a number out of range",
-   "outcome": "not_satisfied",
    "schema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "additionalProperties": false,

@@ -79,10 +79,9 @@ Delete Python runtime modules and their obsolete tests, Alembic and Python migra
 changes are new migrations. Audit all callers before removing shared Python models, config types
 or packages; the Go protos, generated clients and current deployment contracts remain.
 
-Remove Python-parity golden generators/tests (`generate_golden.py`, `generate_mcp_golden.py`,
-`generate_catalog_golden.py`, `policies/generate_golden.py` and
-corresponding Python tests), and replace the Go golden tests' lists of deliberate Python
-compatibility differences with direct contract assertions. Keep a golden only where it still
+Remove remaining Python-parity golden generators/tests (`generate_golden.py`, `generate_mcp_golden.py`,
+`policies/generate_golden.py` and corresponding Python tests), and replace the remaining Go golden tests' lists of
+deliberate Python compatibility differences with direct contract assertions. Keep a golden only where it still
 provides coverage without the Python reference. Update the actual image roster instead of
 removing the published Go service/migrator entries.
 

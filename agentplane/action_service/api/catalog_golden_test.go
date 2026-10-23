@@ -11,17 +11,14 @@ import (
 	"github.com/bazelbuild/rules_go/go/runfiles"
 )
 
-// pythonExecutorKinds are the executor kinds as the Python service's ActionGroupView names them.
-var pythonExecutorKinds = map[action_servicepb.ExecutorKind]string{
+// executorKindNames are the stable values used in the catalog view contract.
+var executorKindNames = map[action_servicepb.ExecutorKind]string{
 	action_servicepb.ExecutorKind_EXECUTOR_KIND_MCP: "mcp",
 	action_servicepb.ExecutorKind_EXECUTOR_KIND_POD: "pod",
 }
 
-// The catalog vectors (`generate_catalog_golden.py`) hold, for each `action_groups` value the Python service accepts,
-// the ActionGroupViews a workload reads of it there. Each catalog this service also accepts must read the same in the
-// fields Python's views have, but in order: Python lists the groups and their Actions in the order of the settings
-// file, which the decoded settings do not keep, and this service in key order. So both are compared by key.
-func TestTheCatalogReadsAsThePythonServicesDoes(t *testing.T) {
+// The explicit view expectations cover settings accepted by both catalog construction and the API projection.
+func TestCatalogViewsMatchTheirContractFixtures(t *testing.T) {
 	path, err := runfiles.Rlocation("_main/agentplane/action_service/catalog/golden.json")
 	if err != nil {
 		t.Fatal(err)
@@ -32,10 +29,10 @@ func TestTheCatalogReadsAsThePythonServicesDoes(t *testing.T) {
 	}
 	var golden struct {
 		ActionGroups []struct {
-			Name  string           `json:"name"`
-			Input json.RawMessage  `json:"input"`
-			Valid bool             `json:"valid"`
-			Views []map[string]any `json:"views"`
+			Name     string           `json:"name"`
+			Input    json.RawMessage  `json:"input"`
+			Accepted bool             `json:"accepted_by_go"`
+			Views    []map[string]any `json:"views"`
 		} `json:"action_groups"`
 	}
 	if err := json.Unmarshal(document, &golden); err != nil {
@@ -43,13 +40,15 @@ func TestTheCatalogReadsAsThePythonServicesDoes(t *testing.T) {
 	}
 	var compared int
 	for _, vector := range golden.ActionGroups {
-		if !vector.Valid {
+		if vector.Views == nil {
 			continue
 		}
-		// The catalog's own vector test pins which values only Python accepts.
+		if !vector.Accepted {
+			t.Fatalf("%q has view expectations but is not accepted by Go", vector.Name)
+		}
 		groups, err := parseCatalog(asYAML(t, vector.Input))
 		if err != nil {
-			continue
+			t.Fatalf("%q is marked accepted by Go but does not parse: %v", vector.Name, err)
 		}
 		compared++
 		t.Run(vector.Name, func(t *testing.T) {
@@ -59,7 +58,7 @@ func TestTheCatalogReadsAsThePythonServicesDoes(t *testing.T) {
 			}
 			got := map[string]any{}
 			for _, view := range views {
-				got[view.GetKey()] = pythonView(view)
+				got[view.GetKey()] = viewContract(view)
 			}
 			want := map[string]any{}
 			for _, view := range vector.Views {
@@ -68,23 +67,22 @@ func TestTheCatalogReadsAsThePythonServicesDoes(t *testing.T) {
 					actions[action.(map[string]any)["name"].(string)] = action
 				}
 				view["actions"] = actions
-				// Health is the MCP executor's report, which no setting both services accept configures.
+				// Health is reported by an MCP executor at runtime, not configured in this fixture.
 				view["health"] = view["health"] != nil
 				want[view["key"].(string)] = view
 			}
 			if got, want := normalized(t, got), normalized(t, want); !reflect.DeepEqual(got, want) {
-				t.Errorf("reads  %v\nPython %v", got, want)
+				t.Errorf("reads  %v\nwant %v", got, want)
 			}
 		})
 	}
 	if compared == 0 {
-		t.Fatal("no catalog both services accept")
+		t.Fatal("no catalog view has an explicit contract fixture")
 	}
 }
 
-// pythonView is a view in the fields of the Python service's ActionGroupView, with its Actions by name and whether it
-// carries health.
-func pythonView(view *action_servicepb.ActionGroup) map[string]any {
+// viewContract represents an ActionGroup in the stable catalog view fields, with Actions by name.
+func viewContract(view *action_servicepb.ActionGroup) map[string]any {
 	actions := map[string]any{}
 	for _, action := range view.GetActions() {
 		actions[action.GetName()] = map[string]any{
@@ -94,7 +92,7 @@ func pythonView(view *action_servicepb.ActionGroup) map[string]any {
 	}
 	return map[string]any{
 		"key": view.GetKey(), "title": view.GetTitle(), "description": view.GetDescription(),
-		"executor_kind": pythonExecutorKinds[view.GetExecutorKind()], "executor_description": view.GetExecutorDescription(),
+		"executor_kind": executorKindNames[view.GetExecutorKind()], "executor_description": view.GetExecutorDescription(),
 		"available": view.GetAvailable(), "health": view.GetHealth() != nil, "actions": actions,
 	}
 }
@@ -113,8 +111,7 @@ func normalized(t *testing.T, value any) any {
 	return decoded
 }
 
-// asYAML is a JSON document as YAML: the same JSON, with each character written out. Python's json.dumps escapes a
-// character beyond the Basic Multilingual Plane as a surrogate pair, which yaml.v3 refuses.
+// asYAML decodes and re-encodes a JSON document so yaml.v3 receives Unicode code points rather than surrogate pairs.
 func asYAML(t *testing.T, document json.RawMessage) string {
 	t.Helper()
 	decoder := json.NewDecoder(bytes.NewReader(document))

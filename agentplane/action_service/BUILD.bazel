@@ -1134,40 +1134,6 @@ py_test(
 )
 
 py_binary(
-    name = "generate_catalog_golden_bin",
-    main_module = "agentplane.action_service.generate_catalog_golden",
-    deps = [":generate_catalog_golden"],
-)
-
-py_library(
-    name = "generate_catalog_golden",
-    srcs = ["generate_catalog_golden.py"],
-    deps = [
-        ":catalog",
-        ":generate_golden",
-        "@pypi//jsonschema",
-        "@pypi//pydantic",
-        "@pypi//referencing",
-    ],
-)
-
-py_test(
-    name = "test_catalog_golden",
-    srcs = ["test_catalog_golden.py"],
-    # Pure synchronous test; no conftest fixture is needed.
-    args = ["--noconftest"],
-    data = ["//agentplane/action_service/catalog:golden.json"],
-    deps = [
-        ":conftest",
-        ":generate_catalog_golden",
-        ":generate_golden",
-        "//:conftest",
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_binary(
     name = "generate_mcp_golden_bin",
     main_module = "agentplane.action_service.generate_mcp_golden",
     deps = [":generate_mcp_golden"],
