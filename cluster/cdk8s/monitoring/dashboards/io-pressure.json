@@ -25,7 +25,7 @@
       "type": "text",
       "options": {
         "mode": "markdown",
-        "content": "IO pressure is Linux PSI: the share of wall time in which tasks were stalled waiting for block IO. **Some** means at least one task was stalled; **full** means every non-idle task was stalled at once, so the workload made no progress; **full** is never above **some**. The **IO stall** picker switches the node and pod graphs between the two; the pod table shows both. Node PSI comes from node-exporter (`node_pressure_io_*`); pod PSI comes from cAdvisor's pod-level cgroup (`container_pressure_io_*{container=\"\"}`). Pod values are not additive: two pods stalled at the same instant each show 100%.\n\nThe node list is the nodes whose node-exporter reports PSI; the disk rows at the bottom repeat once per selected node. Disk panels come from node-exporter `node_disk_*`, mapped to the Kubernetes node via the node-exporter pod. `hdd`/`ssd` is the kernel's per-device rotational flag from `node_disk_info`; virtual disks (`vd*`) usually report rotational regardless of what backs them. Device-mapper, loop and optical devices are left out. Latency is the mean service time per completed request over 5 minutes, empty when nothing completed; utilization is the fraction of time the device had IO in flight, which saturates at 100% on a spinning disk but not reliably on SSDs with deep queues."
+        "content": "IO pressure is Linux PSI: the share of wall time in which tasks were stalled waiting for block IO. **Some** means at least one task was stalled; **full** means every non-idle task was stalled at once, so the workload made no progress; **full** is never above **some**. The **IO stall** picker switches the node and pod graphs between the two; the pod table shows both. Node PSI comes from node-exporter (`node_pressure_io_*`); pod PSI comes from cAdvisor's pod-level cgroup (`container_pressure_io_*{container=\"\"}`). Pod values are not additive: two pods stalled at the same instant each show 100%.\n\nThe node list is the nodes whose node-exporter reports PSI; the disk rows at the bottom repeat once per selected node. Disk panels come from node-exporter `node_disk_*`, mapped to the Kubernetes node via the node-exporter pod. `hdd`/`ssd` is the kernel's per-device rotational flag from `node_disk_info`; virtual disks (`vd*`) usually report rotational regardless of what backs them. Device-mapper, DRBD, loop and optical devices are left out of physical-device panels. The separate DRBD logical throughput panel overlaps backing-device I/O and must not be added to physical throughput. Latency is the mean service time per completed request over 5 minutes, empty when nothing completed; utilization is the fraction of time the device had IO in flight, which saturates at 100% on a spinning disk but not reliably on SSDs with deep queues."
       },
       "id": 1,
       "gridPos": {
@@ -317,25 +317,25 @@
       },
       "targets": [
         {
-          "expr": "max by (node, media, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node, media, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "format": "table",
           "instant": true,
           "refId": "A"
         },
         {
-          "expr": "max by (node, media, device) (((rate(node_disk_read_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) / rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node, media, device) (((rate(node_disk_read_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m]) / rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "format": "table",
           "instant": true,
           "refId": "B"
         },
         {
-          "expr": "max by (node, media, device) (((rate(node_disk_write_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) / rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node, media, device) (((rate(node_disk_write_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m]) / rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "format": "table",
           "instant": true,
           "refId": "C"
         },
         {
-          "expr": "max by (node, media, device) (((rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) + rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node, media, device) (((rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m]) + rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "format": "table",
           "instant": true,
           "refId": "D"
@@ -432,7 +432,7 @@
       },
       "targets": [
         {
-          "expr": "max by (node, media, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node, media, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "instant": true,
           "legendFormat": "{{device}} {{media}}",
           "refId": "A"
@@ -478,7 +478,7 @@
       },
       "targets": [
         {
-          "expr": "max by (node, media, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node, media, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "legendFormat": "{{device}} ({{media}})",
           "refId": "A"
         }
@@ -522,7 +522,7 @@
       },
       "targets": [
         {
-          "expr": "max by (node, media, device) (((rate(node_disk_read_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) / rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node, media, device) (((rate(node_disk_read_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m]) / rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "legendFormat": "{{device}} ({{media}})",
           "refId": "A"
         }
@@ -566,7 +566,7 @@
       },
       "targets": [
         {
-          "expr": "max by (node, media, device) (((rate(node_disk_write_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) / rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node, media, device) (((rate(node_disk_write_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m]) / rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "legendFormat": "{{device}} ({{media}})",
           "refId": "A"
         }
@@ -610,7 +610,7 @@
       },
       "targets": [
         {
-          "expr": "max by (node, media, device) (((rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) + rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node, media, device) (((rate(node_disk_reads_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m]) + rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "legendFormat": "{{device}} ({{media}})",
           "refId": "A"
         }
@@ -654,7 +654,7 @@
       },
       "targets": [
         {
-          "expr": "max by (node, media, device) (((rate(node_disk_read_bytes_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m]) + rate(node_disk_written_bytes_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node, media, device) (((rate(node_disk_read_bytes_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m]) + rate(node_disk_written_bytes_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "legendFormat": "{{device}} ({{media}})",
           "refId": "A"
         }
@@ -698,7 +698,7 @@
       },
       "targets": [
         {
-          "expr": "max by (node, media, device) (((rate(node_disk_io_time_weighted_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "expr": "max by (node, media, device) (((rate(node_disk_io_time_weighted_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|nbd|drbd).*\"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), \"media\", \"hdd\", \"rotational\", \"1\"), \"media\", \"ssd\", \"rotational\", \"0\")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
           "legendFormat": "{{device}} ({{media}})",
           "refId": "A"
         }
@@ -709,6 +709,62 @@
         "w": 8,
         "x": 16,
         "y": 64
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 73
+      },
+      "id": 17,
+      "title": "DRBD logical I/O",
+      "type": "row"
+    },
+    {
+      "title": "Logical throughput by node and device",
+      "description": "Read plus written bytes per second by DRBD device. This is logical block-device I/O and overlaps the backing physical devices; do not add it to physical throughput.",
+      "type": "timeseries",
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (node, device) ((rate(node_disk_read_bytes_total{device=~\"^drbd.*\"}[5m]) + rate(node_disk_written_bytes_total{device=~\"^drbd.*\"}[5m])) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))",
+          "legendFormat": "{{node}} {{device}}",
+          "refId": "A"
+        }
+      ],
+      "id": 18,
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 74
       }
     }
   ],

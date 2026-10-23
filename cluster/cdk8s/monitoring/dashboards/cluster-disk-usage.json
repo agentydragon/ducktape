@@ -32,13 +32,13 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "This dashboard shows **current size and growth over time** from existing collectors. It covers scraped ext4/XFS filesystems on nodes running node-exporter, each node/device counted once.\n\n**Per-disk attribution** comes from the `disk_usage:*` recording rules (`cluster/cdk8s/monitoring/rules.py`). Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available). Media is the kernel's rotational flag; virtual disks report rotational whatever backs them, so they show as `virtual`.\n\nLower sections are per-collector detail. SeaweedFS bucket logical bytes omit replicas; physical bucket bytes and collection bytes mostly measure the same replicated data. Do not add the detailed charts together. Missing samples do not imply zero use."
+        "content": "This dashboard shows **current size and growth over time** from existing collectors. It covers scraped ext4/XFS filesystems on nodes running node-exporter, each node/device counted once.\n\n**Per-disk attribution** comes from the `disk_usage:*` recording rules (`cluster/cdk8s/monitoring/rules.py`). Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available). Media is the kernel's rotational flag; virtual disks report rotational whatever backs them, so they show as `virtual`.\n\nLower sections are per-collector detail. SeaweedFS bucket logical bytes omit replicas; physical bucket bytes and collection bytes mostly measure the same replicated data. Do not add the detailed charts together. Missing samples do not imply zero use.\n\n**Machine selector:** Filters node-owned filesystem panels and collector details. SeaweedFS S3 bucket panels are cluster-wide because the metrics do not identify storage-node ownership, so the selector does not apply to them. Piraeus thin-pool accounting and per-volume allocation are not supported in this dashboard yet; they will be added with the native accounting rules."
       }
     },
     {
       "id": 2,
-      "title": "Scraped node filesystems: used",
-      "description": "Used bytes across ext4/XFS filesystems, deduplicated by node and device. Excludes unscraped or offline nodes.",
+      "title": "Selected node filesystems: data used",
+      "description": "Sum of ext4/XFS size minus free bytes across selected machines, deduplicated by node and device. This excludes ext4 root-reserved blocks.",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -49,7 +49,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(max by (node, device) (max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_avail_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"}))))",
+          "expr": "sum(max by (node, device) (max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_free_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))))",
           "instant": true,
           "refId": "A"
         }
@@ -72,8 +72,8 @@
     },
     {
       "id": 3,
-      "title": "Scraped node filesystems: capacity",
-      "description": "Total ext4/XFS filesystem capacity, deduplicated by node and device.",
+      "title": "Selected node filesystem capacity",
+      "description": "Total ext4/XFS filesystem capacity across selected machines, deduplicated by node and device.",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -84,7 +84,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(max by (node, device) (max by (node, device, mountpoint) (node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"}))))",
+          "expr": "sum(max by (node, device) (max by (node, device, mountpoint) (node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))))",
           "instant": true,
           "refId": "A"
         }
@@ -107,8 +107,8 @@
     },
     {
       "id": 18,
-      "title": "Scraped disk capacity by use",
-      "description": "All scraped filesystem capacity, summed per category across disks. Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available).",
+      "title": "Scraped disk capacity by use on selected machines",
+      "description": "Existing ext4/XFS filesystem attribution for selected machines. Reserved is ext4 root-only reserve; Piraeus pool and per-volume accounting are not included yet.",
       "type": "piechart",
       "gridPos": {
         "h": 9,
@@ -119,25 +119,25 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum by (category) (disk_usage:component_used_bytes)",
+          "expr": "sum by (category) (disk_usage:component_used_bytes{node=~\"$node\"})",
           "instant": true,
           "legendFormat": "{{category}}",
           "refId": "A"
         },
         {
-          "expr": "sum(disk_usage:unattributed_bytes)",
+          "expr": "sum(disk_usage:unattributed_bytes{node=~\"$node\"})",
           "instant": true,
           "legendFormat": "Unattributed",
           "refId": "B"
         },
         {
-          "expr": "sum(disk_usage:filesystem_free_bytes - disk_usage:filesystem_avail_bytes)",
+          "expr": "sum(disk_usage:filesystem_free_bytes{node=~\"$node\"} - on (node, device) disk_usage:filesystem_avail_bytes{node=~\"$node\"})",
           "instant": true,
           "legendFormat": "Reserved (root only)",
           "refId": "C"
         },
         {
-          "expr": "sum(disk_usage:filesystem_avail_bytes)",
+          "expr": "sum(disk_usage:filesystem_avail_bytes{node=~\"$node\"})",
           "instant": true,
           "legendFormat": "Free",
           "refId": "D"
@@ -213,8 +213,7 @@
     {
       "id": 23,
       "type": "row",
-      "title": "$node",
-      "repeat": "node",
+      "title": "Selected machines · ext4/XFS filesystem attribution",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -226,8 +225,8 @@
     },
     {
       "id": 19,
-      "title": "Disks by component",
-      "description": "One bar per scraped filesystem on this machine, labelled device · mountpoint · media (HDD, SSD or virtual); bar length is the filesystem size, and every machine's chart shares one scale (the largest disk in the cluster), so bars compare across machines. Hover a bar for every component's bytes on that disk. Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available).",
+      "title": "Node filesystems by component",
+      "description": "One bar per node and filesystem device; disk labels include node, device, mountpoint, and media.",
       "type": "barchart",
       "gridPos": {
         "h": 8,
@@ -238,13 +237,13 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "label_join((sum by (node, device, component) (disk_usage:component_used_bytes{node=\"$node\"}) or label_replace(disk_usage:unattributed_bytes{node=\"$node\"}, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes{node=\"$node\"} - disk_usage:filesystem_avail_bytes{node=\"$node\"}, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes{node=\"$node\"}, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=\"$node\"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=\"$node\"}), \"disk\", \" · \", \"device\", \"mountpoint\", \"media\")",
+          "expr": "label_join((sum by (node, device, component) (disk_usage:component_used_bytes{node=~\"$node\"}) or label_replace(disk_usage:unattributed_bytes{node=~\"$node\"}, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes{node=~\"$node\"} - disk_usage:filesystem_avail_bytes{node=~\"$node\"}, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes{node=~\"$node\"}, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~\"$node\"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~\"$node\"}), \"disk\", \" · \", \"node\", \"device\", \"mountpoint\", \"media\")",
           "format": "table",
           "instant": true,
           "refId": "A"
         },
         {
-          "expr": "max(disk_usage:filesystem_size_bytes)",
+          "expr": "max(disk_usage:filesystem_size_bytes{node=~\"$node\"})",
           "format": "table",
           "instant": true,
           "refId": "MaxDisk"
@@ -401,8 +400,8 @@
     },
     {
       "id": 20,
-      "title": "Per-disk attribution",
-      "description": "Every component on every disk, with its share of that filesystem's size. Filter or sort a column to answer, for example, which disks hold a given SeaweedFS bucket. Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available).",
+      "title": "Per-disk attribution across selected machines",
+      "description": "Filesystem component, unattributed, reserved, and free bytes per node and disk. Values are attributed through the existing component rules.",
       "type": "table",
       "gridPos": {
         "h": 12,
@@ -413,13 +412,13 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sort_desc((sum by (node, device, component) (disk_usage:component_used_bytes) or label_replace(disk_usage:unattributed_bytes, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes - disk_usage:filesystem_avail_bytes, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info) * on (node, device) group_left (media) disk_usage:filesystem:info))",
+          "expr": "sort_desc((sum by (node, device, component) (disk_usage:component_used_bytes{node=~\"$node\"}) or label_replace(disk_usage:unattributed_bytes{node=~\"$node\"}, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes{node=~\"$node\"} - disk_usage:filesystem_avail_bytes{node=~\"$node\"}, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes{node=~\"$node\"}, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~\"$node\"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~\"$node\"}))",
           "format": "table",
           "instant": true,
           "refId": "A"
         },
         {
-          "expr": "(sum by (node, device, component) (disk_usage:component_used_bytes) or label_replace(disk_usage:unattributed_bytes, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes - disk_usage:filesystem_avail_bytes, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info) * on (node, device) group_left (media) disk_usage:filesystem:info) / on (node, device) group_left () disk_usage:filesystem_size_bytes",
+          "expr": "(sum by (node, device, component) (disk_usage:component_used_bytes{node=~\"$node\"}) or label_replace(disk_usage:unattributed_bytes{node=~\"$node\"}, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes{node=~\"$node\"} - disk_usage:filesystem_avail_bytes{node=~\"$node\"}, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes{node=~\"$node\"}, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~\"$node\"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~\"$node\"}) / on (node, device) group_left () disk_usage:filesystem_size_bytes{node=~\"$node\"}",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -502,7 +501,7 @@
     },
     {
       "id": 21,
-      "title": "Unattributed bytes per disk",
+      "title": "Unattributed bytes per disk on selected machines",
       "description": "Filesystem used (size minus free) minus every attributed component. On system disks (/var, /) this is mostly container images, emptyDir volumes, logs and etcd, which no scraped metric breaks down; on data disks, see the PVC list beside it.",
       "type": "bargauge",
       "gridPos": {
@@ -514,7 +513,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sort_desc(label_join(disk_usage:unattributed_bytes * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info) * on (node, device) group_left (media) disk_usage:filesystem:info), \"disk\", \" · \", \"node\", \"device\", \"mountpoint\", \"media\"))",
+          "expr": "sort_desc(label_join(disk_usage:unattributed_bytes{node=~\"$node\"} * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~\"$node\"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~\"$node\"}), \"disk\", \" · \", \"node\", \"device\", \"mountpoint\", \"media\"))",
           "instant": true,
           "legendFormat": "{{disk}}",
           "refId": "A"
@@ -546,8 +545,8 @@
     },
     {
       "id": 22,
-      "title": "Node-local PVCs with no usage metric",
-      "description": "PVCs whose host path is on each disk but whose bytes no component reports, so they fall into Unattributed. The size is the PVC's requested capacity, not its use: local-path does not enforce it.",
+      "title": "Node-local PVCs without usage metrics on selected machines",
+      "description": "PVCs visible in the existing node-local filesystem mapping but without a matching component-size sample. This is an ext4/XFS mapping detail, separate from Piraeus copy allocation and kubelet PVC use below.",
       "type": "table",
       "gridPos": {
         "h": 11,
@@ -558,7 +557,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sort_desc(max by (node, device, namespace, persistentvolumeclaim) (disk_usage:pvc_filesystem:info unless on (namespace, persistentvolumeclaim) disk_usage:component_used_bytes) * on (namespace, persistentvolumeclaim) group_left () max by (namespace, persistentvolumeclaim) (kube_persistentvolumeclaim_resource_requests_storage_bytes))",
+          "expr": "sort_desc(max by (node, device, namespace, persistentvolumeclaim) (disk_usage:pvc_filesystem:info{node=~\"$node\"} unless on (namespace, persistentvolumeclaim) disk_usage:component_used_bytes{node=~\"$node\"}) * on (namespace, persistentvolumeclaim) group_left () max by (namespace, persistentvolumeclaim) (kube_persistentvolumeclaim_resource_requests_storage_bytes))",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -605,7 +604,7 @@
     {
       "id": 4,
       "title": "Node filesystem used now",
-      "description": "Used bytes per filesystem mount; repeated mounts are visible here but counted once per device in the totals.",
+      "description": "Ext4/XFS size minus filesystem free bytes on selected machines. Free includes root-reserved blocks, so used bytes exclude that reserve.",
       "type": "table",
       "gridPos": {
         "h": 9,
@@ -629,7 +628,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_avail_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"})))",
+          "expr": "sort_desc(max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_free_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
           "format": "table",
           "instant": true,
           "legendFormat": "{{node}} {{device}} {{mountpoint}}",
@@ -652,7 +651,7 @@
     {
       "id": 5,
       "title": "Largest node filesystems over time",
-      "description": "Top ten filesystem mounts by used bytes at each point in time.",
+      "description": "Top ten ext4/XFS mounts by size minus free bytes across selected machines. Free includes root-reserved blocks, so used bytes exclude that reserve.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -681,7 +680,7 @@
       },
       "targets": [
         {
-          "expr": "topk(10, max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_avail_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"})))",
+          "expr": "topk(10, max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_free_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
           "legendFormat": "{{node}} {{mountpoint}}",
           "refId": "A"
         }
@@ -689,8 +688,8 @@
     },
     {
       "id": 6,
-      "title": "CNPG database size now",
-      "description": "One size per namespace, cluster job, and database; replica reports are deduplicated.",
+      "title": "CNPG database size by machine now",
+      "description": "CNPG exporter database-size values from pods on the selected machine. This database metric is not total PGDATA filesystem use; replicas report their own copies and must not be added across machines as unique data.",
       "type": "table",
       "gridPos": {
         "h": 9,
@@ -714,10 +713,10 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(max by (namespace, job, datname) (cnpg_pg_database_size_bytes{datname!~\"template0|template1\"}))",
+          "expr": "sort_desc(max by (node, namespace, job, datname) (cnpg_pg_database_size_bytes{datname!~\"template0|template1\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{node=~\"$node\"})))",
           "format": "table",
           "instant": true,
-          "legendFormat": "{{namespace}} {{job}} {{datname}}",
+          "legendFormat": "{{node}} {{namespace}} {{job}} {{datname}}",
           "refId": "A"
         }
       ],
@@ -736,8 +735,8 @@
     },
     {
       "id": 7,
-      "title": "Largest CNPG databases over time",
-      "description": "Top ten logical databases by size at each point in time.",
+      "title": "Largest CNPG databases by machine over time",
+      "description": "CNPG exporter database-size values from pods on the selected machine. This database metric is not total PGDATA filesystem use; replicas report their own copies and must not be added across machines as unique data.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -766,16 +765,16 @@
       },
       "targets": [
         {
-          "expr": "topk(10, max by (namespace, job, datname) (cnpg_pg_database_size_bytes{datname!~\"template0|template1\"}))",
-          "legendFormat": "{{namespace}} {{job}} {{datname}}",
+          "expr": "topk(10, max by (node, namespace, job, datname) (cnpg_pg_database_size_bytes{datname!~\"template0|template1\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{node=~\"$node\"})))",
+          "legendFormat": "{{node}} {{namespace}} {{job}} {{datname}}",
           "refId": "A"
         }
       ]
     },
     {
       "id": 8,
-      "title": "SeaweedFS volume-server disks now",
-      "description": "Capacity, used, and write-available bytes per volume-server disk; see the type column.",
+      "title": "SeaweedFS volume-server disks by machine now",
+      "description": "Volume-server all/available/used resource gauges from pods on the selected machine. These per-server values are collector detail and are not additive to the filesystem or Piraeus pool totals.",
       "type": "table",
       "gridPos": {
         "h": 9,
@@ -799,10 +798,10 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(max by (pod, name, type) (SeaweedFS_volumeServer_resource{namespace=\"seaweedfs\",type=~\"all|avail|used\"}))",
+          "expr": "sort_desc(max by (node, pod, name, type) (SeaweedFS_volumeServer_resource{namespace=\"seaweedfs\",type=~\"all|avail|used\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"seaweedfs\",node=~\"$node\"})))",
           "format": "table",
           "instant": true,
-          "legendFormat": "{{pod}} {{name}} {{type}}",
+          "legendFormat": "{{node}} {{pod}} {{name}} {{type}}",
           "refId": "A"
         }
       ],
@@ -821,8 +820,8 @@
     },
     {
       "id": 9,
-      "title": "SeaweedFS volume-server disk use over time",
-      "description": "Physical disk use on each volume server.",
+      "title": "SeaweedFS volume-server disk use by machine over time",
+      "description": "Volume-server reported used bytes per selected storage node and server disk. This is a per-collector view; do not add it to the independent pool and filesystem accounting layers.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -851,16 +850,16 @@
       },
       "targets": [
         {
-          "expr": "max by (pod, name) (SeaweedFS_volumeServer_resource{namespace=\"seaweedfs\",type=\"used\"})",
-          "legendFormat": "{{pod}} {{name}}",
+          "expr": "max by (node, pod, name) (SeaweedFS_volumeServer_resource{namespace=\"seaweedfs\",type=\"used\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"seaweedfs\",node=~\"$node\"}))",
+          "legendFormat": "{{node}} {{pod}} {{name}}",
           "refId": "A"
         }
       ]
     },
     {
       "id": 10,
-      "title": "SeaweedFS S3 logical bucket size now",
-      "description": "Object bytes by bucket before replication.",
+      "title": "SeaweedFS S3 logical bucket size now (cluster-wide)",
+      "description": "Logical object bytes by bucket across the cluster. The Machine selector does not apply because this metric has no storage-node ownership.",
       "type": "table",
       "gridPos": {
         "h": 9,
@@ -906,8 +905,8 @@
     },
     {
       "id": 11,
-      "title": "Largest S3 logical buckets over time",
-      "description": "Top ten buckets by logical bytes at each point in time.",
+      "title": "Largest SeaweedFS S3 logical buckets over time (cluster-wide)",
+      "description": "Top ten logical object buckets across the cluster. The Machine selector does not apply because this metric has no storage-node ownership.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -944,8 +943,8 @@
     },
     {
       "id": 12,
-      "title": "SeaweedFS S3 physical bucket size now",
-      "description": "Bucket physical size reported by SeaweedFS; overlaps collection and volume-server views.",
+      "title": "SeaweedFS S3 physical bucket size now (cluster-wide)",
+      "description": "S3-reported physical bucket bytes across the cluster. The Machine selector does not apply because this metric has no storage-node ownership.",
       "type": "table",
       "gridPos": {
         "h": 9,
@@ -991,8 +990,8 @@
     },
     {
       "id": 13,
-      "title": "Largest S3 physical buckets over time",
-      "description": "Top ten buckets by physical bytes at each point in time.",
+      "title": "Largest SeaweedFS S3 physical buckets over time (cluster-wide)",
+      "description": "Top ten S3-reported physical buckets across the cluster. The Machine selector does not apply because this metric has no storage-node ownership; these bytes overlap collection-level replica bytes.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -1029,8 +1028,8 @@
     },
     {
       "id": 14,
-      "title": "SeaweedFS collection bytes now",
-      "description": "Normal stored bytes summed across volume-server copies for each collection.",
+      "title": "SeaweedFS collection bytes by machine now",
+      "description": "Collection bytes reported by volume-server pods on the selected machine. Each replica is counted on its storage node; these collector values overlap physical bucket bytes.",
       "type": "table",
       "gridPos": {
         "h": 9,
@@ -1054,10 +1053,10 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (collection) (max by (collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace=\"seaweedfs\",type=\"normal\",collection!=\"\"})))",
+          "expr": "sort_desc(sum by (node, collection) (max by (node, collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace=\"seaweedfs\",type=\"normal\",collection!=\"\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"seaweedfs\",node=~\"$node\"}))))",
           "format": "table",
           "instant": true,
-          "legendFormat": "{{collection}}",
+          "legendFormat": "{{node}} {{collection}}",
           "refId": "A"
         }
       ],
@@ -1076,8 +1075,8 @@
     },
     {
       "id": 15,
-      "title": "Largest SeaweedFS collections over time",
-      "description": "Top ten collections by stored replica bytes at each point in time.",
+      "title": "Largest SeaweedFS collections by machine over time",
+      "description": "Collection bytes reported by volume-server pods on the selected machine over time. Each replica is counted on its storage node; these collector values overlap physical bucket bytes.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -1106,16 +1105,16 @@
       },
       "targets": [
         {
-          "expr": "topk(10, sum by (collection) (max by (collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace=\"seaweedfs\",type=\"normal\",collection!=\"\"})))",
-          "legendFormat": "{{collection}}",
+          "expr": "topk(10, sum by (node, collection) (max by (node, collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace=\"seaweedfs\",type=\"normal\",collection!=\"\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"seaweedfs\",node=~\"$node\"}))))",
+          "legendFormat": "{{node}} {{collection}}",
           "refId": "A"
         }
       ]
     },
     {
       "id": 16,
-      "title": "ClickHouse MergeTree bytes now",
-      "description": "MergeTree part bytes per ClickHouse server, user and system tables; replicas are separate physical copies.",
+      "title": "ClickHouse MergeTree bytes by machine now",
+      "description": "MergeTree bytes reported by ClickHouse pods on the selected machine, including the existing system-table metric. This per-pod collector detail is separate from host filesystem and Piraeus pool use.",
       "type": "table",
       "gridPos": {
         "h": 9,
@@ -1139,10 +1138,10 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace=\"clickhouse\"}) + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace=\"clickhouse\"}))",
+          "expr": "sort_desc((max by (node, namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace=\"clickhouse\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"clickhouse\",node=~\"$node\"})) + max by (node, namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace=\"clickhouse\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"clickhouse\",node=~\"$node\"}))))",
           "format": "table",
           "instant": true,
-          "legendFormat": "{{pod}}",
+          "legendFormat": "{{node}} {{pod}}",
           "refId": "A"
         }
       ],
@@ -1161,8 +1160,8 @@
     },
     {
       "id": 17,
-      "title": "ClickHouse MergeTree bytes over time",
-      "description": "MergeTree part bytes history per ClickHouse server, user and system tables.",
+      "title": "ClickHouse MergeTree bytes by machine over time",
+      "description": "MergeTree bytes reported by ClickHouse pods on the selected machine, including the existing system-table metric. This per-pod collector detail is separate from host filesystem and Piraeus pool use.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -1191,8 +1190,8 @@
       },
       "targets": [
         {
-          "expr": "max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace=\"clickhouse\"}) + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace=\"clickhouse\"})",
-          "legendFormat": "{{pod}}",
+          "expr": "(max by (node, namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace=\"clickhouse\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"clickhouse\",node=~\"$node\"})) + max by (node, namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace=\"clickhouse\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"clickhouse\",node=~\"$node\"})))",
+          "legendFormat": "{{node}} {{pod}}",
           "refId": "A"
         }
       ]

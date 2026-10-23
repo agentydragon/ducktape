@@ -13,6 +13,12 @@ NAME = "monitoring-rules"
 NAMESPACE = "monitoring"
 
 _CONTROL_PLANE_IO = [
+    Rule.record(
+        "cluster:talos_system_disk_device_info",
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/control-plane-system-disk-device-info.promql")
+        ).read_text(),
+    ),
     Rule.alert(
         "ControlPlaneSystemDiskBusy",
         get_required_path(
@@ -20,10 +26,10 @@ _CONTROL_PLANE_IO = [
         ).read_text(),
         for_="15m",
         labels={"severity": "warning"},
-        summary="Control-plane system disk is busy on {{ $labels.node }}",
+        summary="Control-plane system disk {{ $labels.device_path }} is busy on {{ $labels.node }}",
         description=(
-            "/dev/sda on control-plane node {{ $labels.node }} has been busy for more than 50% of wall time over 15 "
-            "minutes. This disk also carries Talos EPHEMERAL and etcd."
+            "Device {{ $labels.device_path }} backing Talos /var on control-plane node {{ $labels.node }} has been "
+            "busy for more than 50% of wall time over 15 minutes. Talos EPHEMERAL and etcd use this system disk."
         ),
     ),
     Rule.alert(
@@ -33,10 +39,11 @@ _CONTROL_PLANE_IO = [
         ).read_text(),
         for_="10m",
         labels={"severity": "warning"},
-        summary="Pod {{ $labels.namespace }}/{{ $labels.pod }} is writing heavily to control-plane /dev/sda",
+        summary="Pod {{ $labels.namespace }}/{{ $labels.pod }} is writing heavily to {{ $labels.device_path }}",
         description=(
             "Pod {{ $labels.namespace }}/{{ $labels.pod }} on {{ $labels.node }} is writing "
-            "{{ $value | humanize1024 }}B/s to /dev/sda for more than 10 minutes, which can contend with etcd."
+            "{{ $value | humanize1024 }}B/s to {{ $labels.device_path }}, the device backing Talos /var, for more "
+            "than 10 minutes, which can contend with etcd."
         ),
     ),
     # Both tiers share one alertname and are separated by severity alone. The cluster's stock
