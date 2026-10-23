@@ -18,8 +18,6 @@ from model_catalog.catalog import (
     MISTRAL_ROUTES,
     OLLAMA_CHAT_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
-    OLLAMA_QWEN_IQ4XS_128K,
-    OLLAMA_QWEN_IQ4XS_256K,
     RUGGED_LOCAL_CANDIDATE_ROUTES,
     RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     SERVED_ROUTES,
@@ -77,12 +75,4 @@ KEY_MODEL_LANES = {
     "antigravity_client_models": ModelLaneRoutes(allowed=ANTIGRAVITY_ROUTES),
     "ollama_chat_client_models": ModelLaneRoutes(allowed=OLLAMA_CHAT_ROUTES),
     "cheap_experiments_models": ModelLaneRoutes(allowed=CHEAP_EXPERIMENTS_ROUTES),
-    "qwen_client_models": ModelLaneRoutes(
-        allowed=(
-            OLLAMA_QWEN_IQ4XS_128K.openai,
-            OLLAMA_QWEN_IQ4XS_128K.native,
-            OLLAMA_QWEN_IQ4XS_256K.openai,
-            OLLAMA_QWEN_IQ4XS_256K.native,
-        )
-    ),
 }

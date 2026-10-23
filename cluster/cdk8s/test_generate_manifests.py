@@ -480,7 +480,6 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
     assert set(keys) == {
         "cheap-experiments",
         "buildbuddy-live-tests",
-        "disposable-env",
         "agentplane-staging",
         "codex-pod",
         "public-coder-agent",

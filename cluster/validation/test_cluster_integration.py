@@ -555,7 +555,6 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
             ("Role", "agent-clickhouse-diagnostics-reader", "clickhouse"),
             ("Role", "public-coder-agent-reader", "public-coder-agent"),
             ("Role", "agent-public-coder-extended-diagnostics-reader", "public-coder-agent"),
-            ("Role", "claude-ai-disposable-env-key-reader", "litellm"),
         ):
             expected.update(
                 agent_rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", kind=kind, name=name), namespace)

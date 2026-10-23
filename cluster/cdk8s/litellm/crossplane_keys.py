@@ -239,14 +239,6 @@ def chart(app: App) -> Chart:
             budget_duration="30d",
         ),
         _DynamicKey(
-            name="disposable-env",
-            models=_lane_models("qwen_client_models"),
-            consumer="agentplane-disposable-env",
-            annotations={
-                "description": "LiteLLM virtual key for the disposable k3s test environment; local Ollama Qwen routes only"
-            },
-        ),
-        _DynamicKey(
             name="agentplane-staging",
             models=_lane_models(
                 "gpt6_oai_lane_models", "claude_client_models", "antigravity_client_models", "ollama_chat_client_models"
