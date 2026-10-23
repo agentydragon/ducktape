@@ -2,8 +2,10 @@
 
 Temporary, explicitly applied diagnostic manifests for #9605. These are outside
 Flux's paths. `node-config.yaml` enables topology only on `ovh-ns103711` (`hil-ovh`)
-and `optiplex` (`home-lan`). The Helm default stays disabled. `sample.yaml` creates
-three disposable HTTP backends/clients; `ovh-ns102453` is the unmodified control.
+and `optiplex` (`home-lan`). The initial canary ran with the global setting
+disabled; the subsequent cluster-wide Helm setting is managed in
+`cluster/terraform/main/cilium-values.yaml`. `sample.yaml` creates three disposable
+HTTP backends/clients; `ovh-ns102453` is the unmodified control.
 No application Service or CoreDNS placement changes.
 
 Cilium 1.19.8 recognizes `trafficDistribution: PreferClose`. Node-config changes
@@ -31,13 +33,15 @@ or undo the override. See [Cilium's versioned per-node configuration](https://gi
 
 ## Rollback and cleanup
 
-Delete `node-config.yaml`, recreate each canary agent sequentially and confirm
-`enable-service-topology` returns to false. Delete `sample.yaml` after probes.
-The sample namespace has no persistent storage or application data.
+Before global enablement, delete `node-config.yaml`, recreate each canary agent
+sequentially and confirm `enable-service-topology` returns to false. Once the
+global setting is enabled, follow the rollback procedure in
+`cluster/docs/network.md` instead. Delete `sample.yaml` after probes; the sample
+namespace has no persistent storage or application data.
 
-After canary acceptance, enable `loadBalancer.serviceTopology: true` in the
-Terraform-owned Helm values, roll remaining connected agents, and remove this
-node override once they all use the global value. Opt production Services in
+After canary acceptance, apply the Terraform-owned Helm values and follow
+`cluster/docs/network.md` to roll remaining connected agents. Remove this node
+override once they all use the global value. Opt production Services in
 individually. Retain the OVH CoreDNS restriction until a separate DNS design
 satisfies OVH-only resilience. Remove these diagnostic manifests when that rollout
 is complete; retain durable operating instructions in `cluster/docs/network.md`.

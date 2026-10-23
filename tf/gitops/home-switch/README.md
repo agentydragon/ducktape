@@ -14,7 +14,7 @@ connection through `/interface/bridge/host` and the endpoint's MAC before updati
 its label. Disconnected and unidentified ports have no managed label.
 
 `netwatch.tf` configures switch-originated ICMP probes to the AT&T gateway and
-OptiPlex's fixed LAN address. Each runs a full 200-packet batch at 137 ms intervals
+OptiPlex's fixed LAN address. Each runs a full 200-packet batch at 150 ms intervals
 once per minute, independently of the Kubernetes smokeping probes. No scripts or
 network configuration changes run on probe failure. mktxp scrapes Netwatch every
 30 seconds; the Home network overview dashboard shows the latest batch's loss and

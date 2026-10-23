@@ -1040,7 +1040,7 @@
         "type": "prometheus",
         "uid": "mimir"
       },
-      "description": "Latest reported Netwatch batch, sent by the CRS310 itself: 200 pings at 137 ms intervals once per minute, with a 1 s reply timeout and no early termination. Unlike host smokeping, this is batch loss, not a rolling 5-minute ratio. Scraped every 30 seconds; gaps cannot reconstruct missed batches. No history until the home-switch Tofu plan is approved.",
+      "description": "Latest reported Netwatch batch, sent by the CRS310 itself: 200 pings at 150 ms intervals once per minute, with a 1 s reply timeout and no early termination. Unlike host smokeping, this is batch loss, not a rolling 5-minute ratio. Scraped every 30 seconds; gaps cannot reconstruct missed batches. No history until the home-switch Tofu plan is approved.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1119,7 +1119,7 @@
         "type": "prometheus",
         "uid": "mimir"
       },
-      "description": "Mean RTT of answered pings in the latest reported switch-originated Netwatch batch. 200 pings at 137 ms intervals, once per minute; scraped every 30 seconds. A zero RTT during 100% loss does not mean a fast response. No history until the home-switch Tofu plan is approved.",
+      "description": "Mean RTT of answered pings in the latest reported switch-originated Netwatch batch. 200 pings at 150 ms intervals, once per minute; scraped every 30 seconds. A zero RTT during 100% loss does not mean a fast response. No history until the home-switch Tofu plan is approved.",
       "gridPos": {
         "h": 8,
         "w": 12,
