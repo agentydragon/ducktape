@@ -1507,7 +1507,7 @@ the log. Verify the History Service and Electric reconnect with no data movement
 **Unscheduled; operator, 2026-10-11 PDT.** A small controller deletes Action box Pods with no
 `exec` for a configured time. The Action Service stamps a last-exec time on the box at each `exec`;
 a plain Pod delete is enough, since boxes have no seal. It takes over `TODO(sandbox-lifetime)` in
-`action_service/sandbox/inventory.py`; draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
+`action_service/sandbox/inventory.go`; draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
 expired agent-sandbox boxes the same way.
 
 ### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes

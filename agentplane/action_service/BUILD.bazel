@@ -263,16 +263,13 @@ py_test(
 
 py_library(
     name = "runtime",
+    testonly = True,
     srcs = ["runtime.py"],
     deps = [
         ":catalog",
         ":mcp_executor",
         ":mcp_linkage",
         ":service",
-        "//agentplane/action_service/sandbox:actions",
-        "//agentplane/action_service/sandbox:binding",
-        "//agentplane/action_service/sandbox:executor",
-        "//agentplane/action_service/sandbox:inventory",
         "@pypi//pydantic",
     ],
 )
