@@ -87,6 +87,16 @@ spec:
       name: crossplane-provider-litellm
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/crossplane-provider-opentofu/**"
+          to: "@artifact/cluster/generated/crossplane-provider-opentofu/"
+      name: crossplane-provider-opentofu
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/crossplane-forgejo-agentydragon/**"
+          to: "@artifact/cluster/generated/crossplane-forgejo-agentydragon/"
+      name: crossplane-forgejo-agentydragon
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/external-secrets/config/**"
           to: "@artifact/cluster/generated/external-secrets/config/"
       name: external-secrets-config
@@ -867,11 +877,6 @@ spec:
         - from: "@repo/tf/gitops/forgejo-agentydragon-repos/**"
           to: "@artifact/tf/gitops/forgejo-agentydragon-repos/"
       name: tf-gitops-forgejo-agentydragon-repos
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/forgejo-agentydragon/**"
-          to: "@artifact/tf/gitops/forgejo-agentydragon/"
-      name: tf-gitops-forgejo-agentydragon
       originRevision: "@repo"
     - copy:
         - from: "@repo/tf/gitops/finance-agent/**"

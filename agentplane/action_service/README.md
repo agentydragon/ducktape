@@ -294,7 +294,7 @@ no owner-scoping, since the catalog is the same for every caller.
 
 Group bindings are reviewed runtime configuration, not a dynamic registry: `action_groups` is read
 from the Action Service settings file and applied at startup ([configuration](config.go)). Both
-environments use `Recreate` to avoid overlapping Python and Go workers during cutover.
+environments deploy the service with `Recreate`.
 `catalog.MCPBinding.config` is never exposed by discovery; only the human-authored executor description is.
 
 The catalog is also the admission and routing authority: `ActionService` resolves the submitted

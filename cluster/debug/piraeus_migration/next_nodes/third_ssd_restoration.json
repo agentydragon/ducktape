@@ -1,0 +1,241 @@
+{
+  "accepted_at": "2026-10-23T04:19:35.442232+00:00",
+  "node": "ovh-ns104963",
+  "system": {
+    "system_serial": "BTPF8256002V450RGN",
+    "data_serial": "BTPF8256009U450RGN",
+    "system_volumes": {
+      "ETCD": {
+        "size_bytes": 17179869184,
+        "location": "/dev/nvme0n1p5"
+      },
+      "EPHEMERAL": {
+        "size_bytes": 34359738368,
+        "location": "/dev/nvme0n1p7"
+      },
+      "CRI": {
+        "size_bytes": 206158430208,
+        "location": "/dev/nvme0n1p9"
+      },
+      "KUBELET": {
+        "size_bytes": 137438953472,
+        "location": "/dev/nvme0n1p8"
+      },
+      "LOG": {
+        "size_bytes": 17179869184,
+        "location": "/dev/nvme0n1p6"
+      }
+    },
+    "legacy_user_volume_absent": true,
+    "required_kernel_modules_available": true,
+    "dm_snapshot_built_into_kernel": true,
+    "all_three_etcd_services_healthy": true
+  },
+  "pool": {
+    "pool_bytes": 441505021952,
+    "pool_gib": 411.18359375,
+    "metadata_bytes": 4294967296,
+    "spare_bytes": 4294967296,
+    "chunk_bytes": 65536,
+    "both_write_read_hashes_match": true,
+    "reboot_verified": true,
+    "pvc_pv_identities_unchanged_after_reboot": true,
+    "both_hashes_unchanged_after_reboot": true,
+    "all_three_etcd_services_healthy_after_reboot": true
+  },
+  "restored_cnpg": [
+    {
+      "namespace": "nix-cache",
+      "cluster": "attic-db",
+      "accepted_at": "2026-10-23T03:36:59.031355+00:00",
+      "new_member": {
+        "claim": "attic-db-3",
+        "claim_uid": "27f513b9-7e5f-4462-aa4a-e1bfd55dbed0",
+        "node": "ovh-ns104963",
+        "pod": "attic-db-3",
+        "pod_uid": "3dc5a7e0-badc-472b-8b27-7e7fcd922ea6",
+        "pv": "pvc-27f513b9-7e5f-4462-aa4a-e1bfd55dbed0",
+        "pv_uid": "4dd0f44f-2958-492a-8f38-b99f09c036ce",
+        "retain": true,
+        "size": "8Gi",
+        "storage_class": "piraeus-ssd-local",
+        "strict_local_affinity": true
+      },
+      "original_desired_restored": 3,
+      "ready_members": 3,
+      "size": "8Gi",
+      "observed_primary_lsn_replayed": "24/FD0323E0",
+      "flux_and_cnpg_holds_removed": true,
+      "existing_member_claim_pv_identities_preserved": true,
+      "retired_old_claim": {
+        "files_preserved_in_approved_history_archive": true,
+        "name": "attic-db-3",
+        "pv": "pvc-9077ecdb-0e87-48a8-ae4d-dc43656beb91",
+        "pv_retained": true,
+        "pv_uid": "e46db50e-d116-4c77-bf36-bf75a9324866",
+        "uid": "9077ecdb-0e87-48a8-ae4d-dc43656beb91"
+      }
+    },
+    {
+      "namespace": "study-casino",
+      "cluster": "study-casino-db",
+      "accepted_at": "2026-10-23T03:39:06.436229+00:00",
+      "new_member": {
+        "claim": "study-casino-db-1",
+        "claim_uid": "f32cf4ee-9534-49ba-ad3e-12a4a9252656",
+        "node": "ovh-ns104963",
+        "pod": "study-casino-db-1",
+        "pod_uid": "54967052-4528-4949-91fb-bb3fcb8fc74a",
+        "pv": "pvc-f32cf4ee-9534-49ba-ad3e-12a4a9252656",
+        "pv_uid": "a66e8ea7-9857-4c32-979a-d1506cdb6834",
+        "retain": true,
+        "size": "1Gi",
+        "storage_class": "piraeus-ssd-local",
+        "strict_local_affinity": true
+      },
+      "original_desired_restored": 3,
+      "ready_members": 3,
+      "size": "1Gi",
+      "observed_primary_lsn_replayed": "A/66000060",
+      "flux_and_cnpg_holds_removed": true,
+      "existing_member_claim_pv_identities_preserved": true,
+      "retired_old_claim": {
+        "files_preserved_in_approved_history_archive": true,
+        "name": "study-casino-db-1",
+        "pv": "pvc-e34c4c96-68e4-4b66-aea9-a4b80ce78f27",
+        "pv_retained": true,
+        "pv_uid": "b7d59dc2-3f98-4f4b-88a6-1917dfd018ed",
+        "uid": "e34c4c96-68e4-4b66-aea9-a4b80ce78f27"
+      }
+    }
+  ],
+  "seaweed_ssd": {
+    "time": "2026-10-23T04:08:49.353357+00:00",
+    "pod": "seaweedfs-volume-ssd-piraeus-104963-0",
+    "pod_uid": "d4bb2edf-f9ec-49c8-a835-acb615c4289d",
+    "node": "ovh-ns104963",
+    "claim": "mount0-seaweedfs-volume-ssd-piraeus-104963-0",
+    "claim_uid": "5c33769c-8d26-4949-b3db-ff20ff18829d",
+    "pv": "pvc-5c33769c-8d26-4949-b3db-ff20ff18829d",
+    "size": "250Gi",
+    "class": "piraeus-ssd-local",
+    "retained": true,
+    "strict_local_affinity_verified": true,
+    "canary_volume_id": 871,
+    "canary_bytes_before": 219294472,
+    "canary_move_limit_bytes_per_second": 20971520,
+    "ssd_logical_volumes": 38,
+    "all_ssd_volumes_have_two_copies": true,
+    "old_pods_and_claims_unchanged": true,
+    "s3_before_after_fresh_hashes_match": true,
+    "bulk_rebalance_performed": false
+  },
+  "master0": {
+    "time": "2026-10-23T04:13:31.224739+00:00",
+    "master0_node": "ovh-ns104963",
+    "master0_pod_uid": "8ecd0580-2429-4ca6-b613-aa4d7686b2fd",
+    "new_claim_uid": "f8016115-3e09-43f5-ad58-23b6530445f0",
+    "new_pv": "pvc-f8016115-3e09-43f5-ad58-23b6530445f0",
+    "new_pv_uid": "2448a0bd-1d41-421d-8e77-e00259fb4385",
+    "storage_class": "piraeus-ssd-local",
+    "size": "4Gi",
+    "strict_local_piraeus_affinity": true,
+    "retained_hdd_source_pv": "pvc-3a0d5dfe-e21a-4e78-a6b1-f42153a30072",
+    "retained_hdd_source_pv_uid": "42fa9b15-13a7-4ccd-8c2e-5b9322694ac6",
+    "topology_id": "44018856-e2c1-48e4-bbda-b26b90bd801e",
+    "cold_archive_sha256": "2ac647fbd598c6a42e6ce0f2d7b1bc0a1e581c4e23b9532b803c10b2278c27c3",
+    "survivor_pod_uids_unchanged": true,
+    "master_template_unchanged": true,
+    "statuses": [
+      {
+        "Leader": "seaweedfs-master-2.seaweedfs-master-peer.seaweedfs:9333.19333",
+        "Peers": [
+          "seaweedfs-master-1.seaweedfs-master-peer.seaweedfs:9333.19333",
+          "seaweedfs-master-2.seaweedfs-master-peer.seaweedfs:9333.19333"
+        ],
+        "MaxVolumeId": 1128
+      },
+      {
+        "Leader": "seaweedfs-master-2.seaweedfs-master-peer.seaweedfs:9333.19333",
+        "Peers": [
+          "seaweedfs-master-0.seaweedfs-master-peer.seaweedfs:9333.19333",
+          "seaweedfs-master-2.seaweedfs-master-peer.seaweedfs:9333.19333"
+        ],
+        "MaxVolumeId": 1128
+      },
+      {
+        "IsLeader": true,
+        "Leader": "seaweedfs-master-2.seaweedfs-master-peer.seaweedfs:9333.19333",
+        "Peers": [
+          "seaweedfs-master-0.seaweedfs-master-peer.seaweedfs:9333.19333",
+          "seaweedfs-master-1.seaweedfs-master-peer.seaweedfs:9333.19333"
+        ],
+        "MaxVolumeId": 1128
+      }
+    ],
+    "s3_retained_and_fresh_hashes_match": true,
+    "holds_removed": true
+  },
+  "terraform": {
+    "started_at": "2026-10-23T04:14:52.269685+00:00",
+    "source_pr": 11626,
+    "source_head": "fccf8fd0feba1b2caa202017b84ae3af2e9aead4",
+    "target": "talos_machine_configuration_apply.kimsufi[\"ovh-ns104963\"]",
+    "actions": [["update"]],
+    "live_configuration_semantically_equal_to_desired": true,
+    "saved_plan_sha256": "ab990cb8d097ac9f2b302992c8ee0d032b337e3ea9fed0d940aa087487b01379",
+    "boot_id_before": "5df1d02d-f7f9-48ea-9b6b-0a72c43a0b91",
+    "checked_at": "2026-10-23T04:16:48.757421+00:00",
+    "apply_complete_marker": true,
+    "node_did_not_reboot": true,
+    "all_three_etcd_services_healthy": true,
+    "residual_plan_pending": false,
+    "accepted_at": "2026-10-23T04:19:35.383452+00:00",
+    "apply_performed": true,
+    "residual_targeted_plan_changes": [],
+    "residual_plan_refreshed": false,
+    "temporary_process_dns_resolver": "GODEBUG=netdns=cgo",
+    "system_dns_configuration_changed": false
+  },
+  "canary_pvcs_pvs_and_namespace_removed": true,
+  "owned_s3_probes_removed": true,
+  "temporary_holds_and_copy_helpers_removed": true,
+  "node_uncordoned": true,
+  "application_pvc_capacity_gib": 263.0,
+  "thin_data_capacity_gib": 411.18359375,
+  "thin_overcommit_issue_triggered": false,
+  "remaining_recovery_configuration_debt": [
+    "The shared Seaweed master claim template and Forgejo Valkey claim template still select local-path. Existing per-member Piraeus claims are required recovery inputs until a separately reviewed immutable-template handoff.",
+    "Retained source PV metadata does not restore erased files. Use the retained historical archive; scratch restore and comparison were explicitly waived."
+  ],
+  "application_claim_capacity_inventory": [
+    {
+      "namespace": "nix-cache",
+      "claim": "attic-db-3",
+      "uid": "27f513b9-7e5f-4462-aa4a-e1bfd55dbed0",
+      "pv": "pvc-27f513b9-7e5f-4462-aa4a-e1bfd55dbed0",
+      "capacity_gib": 8.0
+    },
+    {
+      "namespace": "seaweedfs",
+      "claim": "mount0-seaweedfs-volume-ssd-piraeus-104963-0",
+      "uid": "5c33769c-8d26-4949-b3db-ff20ff18829d",
+      "pv": "pvc-5c33769c-8d26-4949-b3db-ff20ff18829d",
+      "capacity_gib": 250.0
+    },
+    {
+      "namespace": "study-casino",
+      "claim": "study-casino-db-1",
+      "uid": "f32cf4ee-9534-49ba-ad3e-12a4a9252656",
+      "pv": "pvc-f32cf4ee-9534-49ba-ad3e-12a4a9252656",
+      "capacity_gib": 1.0
+    },
+    {
+      "namespace": "seaweedfs",
+      "claim": "seaweedfs-master-seaweedfs-master-0",
+      "uid": "f8016115-3e09-43f5-ad58-23b6530445f0",
+      "pv": "pvc-f8016115-3e09-43f5-ad58-23b6530445f0",
+      "capacity_gib": 4.0
+    }
+  ]
+}

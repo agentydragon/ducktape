@@ -10,6 +10,8 @@
 # gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
 # gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py crossplane_pkg_provider_crds //cluster/cdk8s/providers/crossplane:provider
+# gazelle:resolve py opentofu_providerconfig_crds //cluster/cdk8s/providers/crossplane:opentofu_providerconfig
+# gazelle:resolve py opentofu_workspace_crds //cluster/cdk8s/providers/crossplane:opentofu_workspace
 # gazelle:resolve py flux_helm //cluster/cdk8s/providers/flux:helmrelease
 # gazelle:resolve py flux_source //cluster/cdk8s/providers/flux:helmrepository
 # gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
@@ -1254,6 +1256,19 @@ py_library(
 )
 
 py_library(
+    name = "crossplane_forgejo_agentydragon",
+    srcs = ["crossplane_forgejo_agentydragon.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":flux",
+        ":terraform",
+        "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
+        "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "valkey",
     srcs = ["valkey.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -1481,6 +1496,7 @@ py_library(
         ":artifact_generators",
         ":claude_sandbox_secrets",
         ":crossplane",
+        ":crossplane_forgejo_agentydragon",
         ":descheduler",
         ":dns_automation",
         ":etcd",

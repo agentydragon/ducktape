@@ -210,7 +210,7 @@ class Actions(Construct):
         # The sandbox ActionGroup creates its boxes as plain Pods from its PodTemplates, running as
         # their callers and owned by the caller's ServiceAccount, and runs commands in them. This is namespace-wide and cannot
         # say "only the boxes this Action made": that boundary is the executor's own label check
-        # (agentplane/action_service/sandbox/inventory.py), which is why it is an application rule
+        # (agentplane/action_service/sandbox/inventory.go), which is why it is an application rule
         # tested as one rather than something RBAC states.
         rules_by_namespace.setdefault(namespace, []).extend(
             [

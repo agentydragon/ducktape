@@ -88,7 +88,7 @@ _ROUTERS: Mapping[str, Mapping[str, str]] = {
         "pool": "False",
         "firewall": "False",
         "public_ip": "False",
-        "netwatch": "False",
+        "netwatch": "True",
         "poe": "False",
         "wireless": "False",
         "wireless_clients": "False",
@@ -251,7 +251,7 @@ def chart(app: App) -> Chart:
                 port=_HTTP.name,
                 path="/metrics",
                 scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
-                interval="60s",
+                interval="30s",
                 # mktxp queries the switch during the scrape.
                 scrape_timeout="30s",
             )
