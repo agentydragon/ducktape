@@ -92,6 +92,7 @@ def prune(dry_run: DryRunOption = None, token_file: TokenFileOption = None):
     used_label_ids: set[str] = set()
     for f in filters:
         used_label_ids.update(f.action.add_label_ids)
+        used_label_ids.update(f.action.remove_label_ids)
 
     unused_labels = [label for label in labels if label.type != "system" and label.id not in used_label_ids]
 
