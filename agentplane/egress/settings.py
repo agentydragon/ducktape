@@ -33,12 +33,10 @@ class Settings(BaseModel):
         "An agent this cluster does not host runs where it runs, so naming its namespace is what lets it present a "
         "token at all; it grants nothing on its own, since a subject no binding names still reaches no rule.",
     )
-    listen_host: str = Field(default="0.0.0.0", description="Proxy listener bind address.")
-    listen_port: int = Field(default=8888, description="Proxy listener port the sidecars relay to.")
-    admin_host: str = Field(default="0.0.0.0", description="Admin listener bind address.")
-    admin_port: int = Field(
-        default=8081,
-        description="Admin port serving the gRPC health service and, when configured, the EgressAdmin API.",
+    listen_address: str = Field(default="0.0.0.0:8888", description="Proxy listener address the sidecars relay to.")
+    admin_listen_address: str = Field(
+        default="0.0.0.0:8081",
+        description="Admin listener address serving gRPC health and, when configured, the EgressAdmin API.",
     )
     admin_grpc_audience: str | None = Field(
         default=None,
@@ -50,8 +48,9 @@ class Settings(BaseModel):
         min_length=1,
         description="ServiceAccounts admitted by the admin gRPC API as namespace/name entries; unset disables it.",
     )
-    agent_api_host: str = Field(default="0.0.0.0", description="Agent-facing rules API bind address.")
-    agent_api_port: int = Field(default=8082, description="Agent-facing HTTP port serving /v1/rules.")
+    agent_api_listen_address: str = Field(
+        default="0.0.0.0:8082", description="Agent-facing listener address serving /v1/rules."
+    )
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")
     ca_key: Path = Field(description="PEM private key of the interception CA.")
     upstream_ca_file: Path | None = Field(
