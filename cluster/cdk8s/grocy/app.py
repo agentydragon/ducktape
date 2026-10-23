@@ -1,8 +1,8 @@
 """Grocy itself, one directory per household (`<household>/app`, the household's Flux
 Kustomization directory): its Namespace, the Deployment, Service, settings overrides and
-ingress NetworkPolicy, the config PVC, and the VolSync backup, migration and verification
-objects around it. The directory's `kustomization.yaml` also includes the household's MCP
-server (`../mcp`, cluster/cdk8s/grocy/mcp.py).
+ingress NetworkPolicy, the config PVCs and VolSync backup, and the verification job around
+them. The directory's `kustomization.yaml` also includes the household's MCP server
+(`../mcp`, cluster/cdk8s/grocy/mcp.py).
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ from volsync_replicationdestination_crds.backube.volsync import (
     ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
     ReplicationDestinationSpecRsyncTlsMoverSecurityContext,
     ReplicationDestinationSpecRsyncTlsMoverSecurityContextSeccompProfile,
-    ReplicationDestinationSpecTrigger,
 )
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecRsyncTls,
@@ -51,7 +50,8 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
-_CONFIG_CLAIM = "grocy-config-ovh"
+_CONFIG_CLAIM = "grocy-config-piraeus"
+_LEGACY_CONFIG_CLAIM = "grocy-config-ovh"
 _BACKUP = "grocy-config-ovh-backup"
 _HTTP = Port(name="http", number=80)
 # grocy/mcp.py and grocy/user_perms.py render one of theirs per household too.
@@ -274,6 +274,24 @@ def household_chart(app: App, *, household: str) -> Chart:
         metadata=k8s.ObjectMeta(name=_CONFIG_CLAIM, namespace=namespace),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
+            storage_class_name="piraeus-hdd-local",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
+        ),
+    )
+    # Retain the original local-path PVC through data acceptance and until the source node
+    # is ready to wipe. It is intentionally no longer mounted by the application.
+    k8s.KubePersistentVolumeClaim(
+        chart,
+        "legacy-config-claim",
+        metadata=k8s.ObjectMeta(
+            name=_LEGACY_CONFIG_CLAIM,
+            namespace=namespace,
+            annotations={
+                "description": "Original Grocy config on ovh-ns103711; retain until Piraeus data is accepted and the node is ready to wipe."
+            },
+        ),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
             storage_class_name="local-path-ovh",
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
         ),
@@ -282,7 +300,7 @@ def household_chart(app: App, *, household: str) -> Chart:
         chart,
         "verify-job",
         metadata=k8s.ObjectMeta(
-            name="grocy-config-ovh-verify-20260520",
+            name="grocy-config-piraeus-verify-20261023",
             namespace=namespace,
             # A read-only integrity check, so recreating it on a template change is safe.
             annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"},
@@ -326,27 +344,14 @@ def household_chart(app: App, *, household: str) -> Chart:
             ),
         ),
     )
-    ReplicationDestination(
-        chart,
-        "migration",
-        metadata=ApiObjectMetadata(name="grocy-config-ovh-migration", namespace=namespace),
-        trigger=ReplicationDestinationSpecTrigger(manual="prep-20260520"),
-        rsync_tls=ReplicationDestinationSpecRsyncTls(
-            destination_pvc=_CONFIG_CLAIM,
-            copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
-            service_type="ClusterIP",
-            mover_security_context=_destination_mover_security_context(),
-        ),
-    )
-    # Periodic backup of the grocy-config-ovh PVC into a SeaweedFS-backed PVC.
+    # Periodic backup of the Piraeus-backed primary into a SeaweedFS-backed PVC.
     #
-    # Direction: OVH local-path (primary, hot) → seaweedfs-ovh (cold, SeaweedFS replicates
-    # across kimsufi nodes). The backup PVC is a restore point before any node-rename
-    # operation that touches grocy-config-ovh's pinned hostname.
+    # Direction: Piraeus HDD (primary, hot) → seaweedfs-ovh (cold, SeaweedFS replicates
+    # across kimsufi nodes).
     #
     # copyMethod: Direct (no VolumeSnapshotClass installed). Mover and live grocy pod both
-    # bind-mount the same host path; backups may catch torn SQLite writes occasionally —
-    # acceptable for crash-consistent restore.
+    # access the live primary; backups may catch torn SQLite writes occasionally — acceptable
+    # for crash-consistent restore.
     k8s.KubePersistentVolumeClaim(
         chart,
         "backup-claim",

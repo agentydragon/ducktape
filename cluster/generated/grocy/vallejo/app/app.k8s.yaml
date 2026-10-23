@@ -81,7 +81,7 @@ spec:
       volumes:
         - name: config
           persistentVolumeClaim:
-            claimName: grocy-config-ovh
+            claimName: grocy-config-piraeus
         - configMap:
             name: grocy-settingoverrides
           name: settingoverrides
@@ -148,6 +148,21 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: grocy-config-piraeus
+  namespace: grocy-vallejo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-hdd-local
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    description: Original Grocy config on ovh-ns103711; retain until Piraeus data is accepted and the node is ready to wipe.
   name: grocy-config-ovh
   namespace: grocy-vallejo
 spec:
@@ -163,7 +178,7 @@ kind: Job
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
-  name: grocy-config-ovh-verify-20260520
+  name: grocy-config-piraeus-verify-20261023
   namespace: grocy-vallejo
 spec:
   backoffLimit: 0
@@ -198,26 +213,7 @@ spec:
       volumes:
         - name: config
           persistentVolumeClaim:
-            claimName: grocy-config-ovh
----
-apiVersion: volsync.backube/v1alpha1
-kind: ReplicationDestination
-metadata:
-  name: grocy-config-ovh-migration
-  namespace: grocy-vallejo
-spec:
-  rsyncTLS:
-    copyMethod: Direct
-    destinationPVC: grocy-config-ovh
-    moverSecurityContext:
-      fsGroup: 1000
-      runAsGroup: 1000
-      runAsUser: 1000
-      seccompProfile:
-        type: RuntimeDefault
-    serviceType: ClusterIP
-  trigger:
-    manual: prep-20260520
+            claimName: grocy-config-piraeus
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -284,6 +280,6 @@ spec:
       seccompProfile:
         type: RuntimeDefault
     port: 8000
-  sourcePVC: grocy-config-ovh
+  sourcePVC: grocy-config-piraeus
   trigger:
     schedule: 23 */6 * * *

@@ -106,11 +106,19 @@ holds were removed after acceptance.
 
 `ovh-ns103711` remains cordoned for reimage. The user waived preservation of
 SeaweedFS source copies on its old HDD volume after verifying healthy survivors,
-and the Anki claim. Grocy must be preserved via VolSync, and ClickHouse may
-temporarily run with its healthy off-node data
-replica. The new Piraeus HDD selector requires `piraeus-ready=true`; keep that
-label absent and leave the disk uninitialized until the wipe and physical
-layout are accepted.
+and the Anki claim. Grocy has been preserved via VolSync, and ClickHouse may
+temporarily run with its healthy off-node data replica. The new Piraeus HDD
+selector requires `piraeus-ready=true`; keep that label absent and leave the disk
+uninitialized until the wipe and physical layout are accepted.
+
+Grocy SF and Vallejo were cold-copied from local-path claims on `ovh-ns103711`
+to retained 1Gi `piraeus-hdd-local` claims on `ovh-ns103656` using Rsync-TLS
+while both apps were stopped. Source and destination file hashes, permissions,
+ownership, and symlink targets matched, and SQLite integrity checks returned
+`ok` before and after startup. The existing SeaweedFS backup sources were
+retargeted to the Piraeus claims and completed a cold refresh. Both deployments
+are Ready on `103656`; the old source PVCs/PVs remain Bound with `Retain`. Their
+Flux Kustomizations remain held until the source change is published and merged.
 
 ## Evidence map
 
