@@ -165,8 +165,9 @@ def _db_chart(app: App) -> Chart:
         ref=DATABASE,
         annotations={"description": "Shared OVH-HA CNPG cluster for MCP OAuth state."},
         placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh-hdd",
+        storage_class="piraeus-ssd-local",
         size="5Gi",
+        resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb("app"),
         wal_archive=True,
         managed=ClusterSpecManaged(

@@ -30,10 +30,11 @@ existing two PVCs keep their current StorageClass and size; CNPG applies the
 Piraeus class and configured size only to a newly-created claim.
 
 **OVH-HA with Piraeus migration template**: A bounded preparation profile for
-the seven clusters preparing for the `ovh-ns104952` SSD evacuation, listed
-under Current Compliance below. Git keeps their desired count at two and their
-existing claims unchanged; the new-claim template uses `piraeus-ssd-local`,
-sized for measured PGDATA plus headroom, with `resizeInUseVolumes: false`. During the serial roll, a
+clusters moving a replica off a local-storage node during the `ovh-ns104952`
+SSD or `ovh-ns103656` HDD evacuation, listed under Current Compliance below.
+Git keeps their desired count at two and their existing claims unchanged; the
+new-claim template uses `piraeus-ssd-local`, sized for measured PGDATA plus
+headroom, with `resizeInUseVolumes: false`. During the serial roll, a
 resource-specific Flux hold permits one temporary third member at a time. The
 operator procedure and restoration to two members before releasing each hold
 are in the [Piraeus node roll runbook](runbooks/piraeus_node_roll.md#postgresql).
@@ -121,14 +122,15 @@ deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   new claim uses `piraeus-ssd-local`. This restores its deliberate profile for
   tolerating one-node loss without quorum or primary impact.
 - `agentplane-staging/postgres`, `atuin-db`, `authentik-db-ovh`,
-  `forgejo-db-ssd`, `langfuse-db`, `seaweedfs-filer-db-ssd`, and
+  `claude-session-sync-db`, `forgejo-db-ssd`, `langfuse-db`,
+  `mcp-oauth-state-db`, `ntfy-db`, `seaweedfs-filer-db-ssd`, and
   `tofu-state-db-ovh`: 2 desired instances using the Piraeus migration-template
-  profile while preparing the `ovh-ns104952` SSD evacuation. Existing PVCs
+  profile for the `ovh-ns104952` SSD and `ovh-ns103656` HDD evacuations. Existing PVCs
   keep their current StorageClass and size; a new claim uses
   `piraeus-ssd-local` sized for measured data and headroom, with
   `resizeInUseVolumes: false`. Create the temporary third member one cluster
   at a time under a resource-specific Flux hold. After switchover, keep the
-  Piraeus-seeded member and retire only the exact old member on `ovh-ns104952`;
+  Piraeus-seeded member and retire only the exact old member on the evacuated node;
   restore/verify two desired members before releasing the hold.
 - `postgres` (`generated/agentplane-testing/`): 1 instance pinned
   `zone: hil-ovh` on `local-path-ovh-ssd`, shared by testing's three disposable

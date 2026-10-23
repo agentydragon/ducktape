@@ -77,8 +77,9 @@ def _database(chart: Chart) -> None:
             )
         },
         placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh-hdd",
+        storage_class="piraeus-ssd-local",
         size="40Gi",
+        resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb("claude_sessions"),
         wal_archive=True,
         # Most of this Cluster's WAL is full-page images of the append-only events table.

@@ -151,8 +151,9 @@ def _database(scope: Construct) -> None:
         "database",
         ref=DATABASE,
         placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh-hdd",
+        storage_class="piraeus-ssd-local",
         size="2Gi",
+        resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb(NAME),
         wal_archive=True,
     )
