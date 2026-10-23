@@ -1,0 +1,25 @@
+max by (namespace, pod, volume, persistentvolumeclaim, node, device) (
+  label_replace(
+    disk_usage:pvc_path:info,
+    "mountpoint", "$1", "path", "(/[^/]+/[^/]+/[^/]+)(/.*)?"
+  )
+  * on (node, mountpoint) group_left (device) disk_usage:mount:info
+  or on (namespace, pod, volume)
+  label_replace(
+    disk_usage:pvc_path:info,
+    "mountpoint", "$1", "path", "(/[^/]+/[^/]+)(/.*)?"
+  )
+  * on (node, mountpoint) group_left (device) disk_usage:mount:info
+  or on (namespace, pod, volume)
+  label_replace(
+    disk_usage:pvc_path:info,
+    "mountpoint", "$1", "path", "(/[^/]+)(/.*)?"
+  )
+  * on (node, mountpoint) group_left (device) disk_usage:mount:info
+  or on (namespace, pod, volume)
+  label_replace(
+    disk_usage:pvc_path:info,
+    "mountpoint", "/", "path", "/.*"
+  )
+  * on (node, mountpoint) group_left (device) disk_usage:mount:info
+)

@@ -1,0 +1,4 @@
+disk_usage:seaweedfs_volume_server_used_bytes
+or disk_usage:seaweedfs_deleted_volume_server_used_bytes
+or disk_usage:clickhouse_merge_tree_used_bytes
+or disk_usage:cnpg_database_used_bytes

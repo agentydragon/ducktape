@@ -283,21 +283,32 @@ spec:
           record: disk_usage:pvc_path:info
         - expr: |
             max by (namespace, pod, volume, persistentvolumeclaim, node, device) (
-            label_replace(disk_usage:pvc_path:info, "mountpoint", "$1", "path", "(/[^/]+/[^/]+/[^/]+)(/.*)?")
+              label_replace(
+                disk_usage:pvc_path:info,
+                "mountpoint", "$1", "path", "(/[^/]+/[^/]+/[^/]+)(/.*)?"
+              )
               * on (node, mountpoint) group_left (device) disk_usage:mount:info
-            or on (namespace, pod, volume)
-            label_replace(disk_usage:pvc_path:info, "mountpoint", "$1", "path", "(/[^/]+/[^/]+)(/.*)?")
+              or on (namespace, pod, volume)
+              label_replace(
+                disk_usage:pvc_path:info,
+                "mountpoint", "$1", "path", "(/[^/]+/[^/]+)(/.*)?"
+              )
               * on (node, mountpoint) group_left (device) disk_usage:mount:info
-            or on (namespace, pod, volume)
-            label_replace(disk_usage:pvc_path:info, "mountpoint", "$1", "path", "(/[^/]+)(/.*)?")
+              or on (namespace, pod, volume)
+              label_replace(
+                disk_usage:pvc_path:info,
+                "mountpoint", "$1", "path", "(/[^/]+)(/.*)?"
+              )
               * on (node, mountpoint) group_left (device) disk_usage:mount:info
-            or on (namespace, pod, volume)
-            label_replace(disk_usage:pvc_path:info, "mountpoint", "/", "path", "/.*")
+              or on (namespace, pod, volume)
+              label_replace(
+                disk_usage:pvc_path:info,
+                "mountpoint", "/", "path", "/.*"
+              )
               * on (node, mountpoint) group_left (device) disk_usage:mount:info
             )
           record: disk_usage:pvc_filesystem:info
         - expr: |
-            label_replace(
             sum by (node, device, namespace, persistentvolumeclaim, component) (
               label_replace(
                 label_replace(
@@ -310,40 +321,36 @@ spec:
               )
               * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
                 disk_usage:pvc_filesystem:info{namespace="seaweedfs"}
-            ),
-              "category", "SeaweedFS", "", ""
             )
-            or
-            label_replace(
-            label_replace(
-              sum by (node, device, namespace, persistentvolumeclaim) (
-                max by (namespace, pod) (
-                  SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="deleted_bytes"}
-                )
-                * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                  disk_usage:pvc_filesystem:info{namespace="seaweedfs"}
-              ),
-              "component", "SeaweedFS deleted, awaiting vacuum", "", ""
-            ),
-              "category", "SeaweedFS deleted, awaiting vacuum", "", ""
+          labels:
+            category: SeaweedFS
+          record: disk_usage:seaweedfs_volume_server_used_bytes
+        - expr: |
+            sum by (node, device, namespace, persistentvolumeclaim) (
+              max by (namespace, pod) (
+                SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="deleted_bytes"}
+              )
+              * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
+                disk_usage:pvc_filesystem:info{namespace="seaweedfs"}
             )
-            or
-            label_replace(
-            label_replace(
-              sum by (node, device, namespace, persistentvolumeclaim) (
-                (
-                  max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace="clickhouse"})
-                  + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse"})
-                )
-                * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-                  disk_usage:pvc_filesystem:info{namespace="clickhouse"}
-              ),
-              "component", "ClickHouse", "", ""
-            ),
-              "category", "ClickHouse", "", ""
+          labels:
+            category: SeaweedFS deleted, awaiting vacuum
+            component: SeaweedFS deleted, awaiting vacuum
+          record: disk_usage:seaweedfs_deleted_volume_server_used_bytes
+        - expr: |
+            sum by (node, device, namespace, persistentvolumeclaim) (
+              (
+                max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace="clickhouse"})
+                + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse"})
+              )
+              * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
+                disk_usage:pvc_filesystem:info{namespace="clickhouse"}
             )
-            or
-            label_replace(
+          labels:
+            category: ClickHouse
+            component: ClickHouse
+          record: disk_usage:clickhouse_merge_tree_used_bytes
+        - expr: |
             sum by (node, device, namespace, persistentvolumeclaim, component) (
               label_replace(
                 max by (namespace, pod, datname) (cnpg_pg_database_size_bytes{datname!~"template0|template1"}),
@@ -351,15 +358,17 @@ spec:
               )
               * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
                 disk_usage:pvc_filesystem:info{volume="pgdata"}
-            ),
-              "category", "Postgres (CNPG)", "", ""
             )
+          labels:
+            category: Postgres (CNPG)
+          record: disk_usage:cnpg_database_used_bytes
+        - expr: |
+            disk_usage:seaweedfs_volume_server_used_bytes
+            or disk_usage:seaweedfs_deleted_volume_server_used_bytes
+            or disk_usage:clickhouse_merge_tree_used_bytes
+            or disk_usage:cnpg_database_used_bytes
           record: disk_usage:application_used_bytes
         - expr: |
-            disk_usage:application_used_bytes
-            or
-            (
-            label_replace(
             label_replace(
               label_join(
                 max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes)
@@ -368,9 +377,14 @@ spec:
                 "component", "/", "namespace", "persistentvolumeclaim"
               ),
               "component", "PVC: $1", "component", "(.+)"
-            ),
-              "category", "Kubelet-measured PVCs", "", ""
             )
+          labels:
+            category: Kubelet-measured PVCs
+          record: disk_usage:kubelet_pvc_fallback_used_bytes
+        - expr: |
+            disk_usage:application_used_bytes
+            or (
+              disk_usage:kubelet_pvc_fallback_used_bytes
               unless on (namespace, persistentvolumeclaim) disk_usage:application_used_bytes
             )
           record: disk_usage:component_used_bytes

@@ -1,11 +1,8 @@
-label_replace(
-  sum by (node, device, namespace, persistentvolumeclaim) (
-    (
-      max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace="clickhouse"})
-      + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse"})
-    )
-    * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
-      disk_usage:pvc_filesystem:info{namespace="clickhouse"}
-  ),
-  "component", "ClickHouse", "", ""
+sum by (node, device, namespace, persistentvolumeclaim) (
+  (
+    max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace="clickhouse"})
+    + max by (namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse"})
+  )
+  * on (namespace, pod) group_left (node, device, persistentvolumeclaim)
+    disk_usage:pvc_filesystem:info{namespace="clickhouse"}
 )

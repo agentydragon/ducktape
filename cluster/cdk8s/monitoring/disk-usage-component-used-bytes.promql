@@ -1,0 +1,5 @@
+disk_usage:application_used_bytes
+or (
+  disk_usage:kubelet_pvc_fallback_used_bytes
+  unless on (namespace, persistentvolumeclaim) disk_usage:application_used_bytes
+)

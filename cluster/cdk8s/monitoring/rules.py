@@ -387,19 +387,6 @@ def _filesystem_bytes(metric: str) -> str:
     return f"max by (node, device) ({metric}{{{_FILESYSTEMS}}} * {_NODE_EXPORTER_NODE})"
 
 
-def _pvc_on_mount_prefix(segments: int) -> str:
-    """PVCs whose backing path starts with a `segments`-component mountpoint on their pod's node."""
-    mountpoint = f'"$1", "path", "({"/[^/]+" * segments})(/.*)?"' if segments else '"/", "path", "/.*"'
-    return (
-        f'label_replace(disk_usage:pvc_path:info, "mountpoint", {mountpoint})\n'
-        "  * on (node, mountpoint) group_left (device) disk_usage:mount:info"
-    )
-
-
-def _component(category: str, expr: str) -> str:
-    return f'label_replace(\n{expr},\n  "category", "{category}", "", ""\n)'
-
-
 _DISK_USAGE = [
     Rule.record(
         "disk_usage:mount:info",
@@ -446,63 +433,55 @@ _DISK_USAGE = [
     # matched and fall through to a shorter enclosing mount.
     Rule.record(
         "disk_usage:pvc_filesystem:info",
-        "max by (namespace, pod, volume, persistentvolumeclaim, node, device) (\n"
-        + "\nor on (namespace, pod, volume)\n".join(_pvc_on_mount_prefix(n) for n in (3, 2, 1, 0))
-        + "\n)\n",
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/disk-usage-pvc-filesystem-info.promql")
+        ).read_text(),
+    ),
+    # Workload-scoped pod-to-PVC joins avoid duplicate matches from unrelated pods; Seaweed volume-server
+    # replicas are separate physical copies and are counted once on each backing filesystem.
+    Rule.record(
+        "disk_usage:seaweedfs_volume_server_used_bytes",
+        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/seaweedfs-disk-usage.promql")).read_text(),
+        labels={"category": "SeaweedFS"},
+    ),
+    Rule.record(
+        "disk_usage:seaweedfs_deleted_volume_server_used_bytes",
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/seaweedfs-deleted-disk-usage.promql")
+        ).read_text(),
+        labels={"category": "SeaweedFS deleted, awaiting vacuum", "component": "SeaweedFS deleted, awaiting vacuum"},
+    ),
+    # MergeTree parts only. ClickHouse's DiskUsed is the whole filesystem's used bytes, shared
+    # with everything else on the disk.
+    Rule.record(
+        "disk_usage:clickhouse_merge_tree_used_bytes",
+        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/clickhouse-disk-usage.promql")).read_text(),
+        labels={"category": "ClickHouse", "component": "ClickHouse"},
+    ),
+    # Database files on each instance's PGDATA volume; WAL and other PostgreSQL files are not counted.
+    Rule.record(
+        "disk_usage:cnpg_database_used_bytes",
+        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/postgres-disk-usage.promql")).read_text(),
+        labels={"category": "Postgres (CNPG)"},
     ),
     Rule.record(
         "disk_usage:application_used_bytes",
-        "\nor\n".join(
-            [
-                # Each pod-joining branch narrows the right side to its own pods: a pod elsewhere with two
-                # node-local PVCs would otherwise be a duplicate match group and fail the whole rule.
-                # One copy per volume server: replicas are separate physical bytes on separate disks.
-                _component(
-                    "SeaweedFS",
-                    get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/seaweedfs-disk-usage.promql"))
-                    .read_text()
-                    .removesuffix("\n"),
-                ),
-                _component(
-                    "SeaweedFS deleted, awaiting vacuum",
-                    get_required_path(
-                        own_repo_rlocation("cluster/cdk8s/monitoring/seaweedfs-deleted-disk-usage.promql")
-                    )
-                    .read_text()
-                    .removesuffix("\n"),
-                ),
-                # MergeTree parts only. ClickHouse's DiskUsed is the whole filesystem's used bytes, shared
-                # with everything else on the disk.
-                _component(
-                    "ClickHouse",
-                    get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/clickhouse-disk-usage.promql"))
-                    .read_text()
-                    .removesuffix("\n"),
-                ),
-                # Database files on each instance's PGDATA volume; WAL and other PostgreSQL files are not
-                # counted.
-                _component(
-                    "Postgres (CNPG)",
-                    get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/postgres-disk-usage.promql"))
-                    .read_text()
-                    .removesuffix("\n"),
-                ),
-            ]
-        )
-        + "\n",
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/disk-usage-application-used-bytes.promql")
+        ).read_text(),
     ),
     # The filesystem total and application detail overlap. Use kubelet only as a fallback for a PVC
     # without application attribution; otherwise adding CSI joins would count its bytes twice.
     Rule.record(
+        "disk_usage:kubelet_pvc_fallback_used_bytes",
+        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/pvc-disk-usage.promql")).read_text(),
+        labels={"category": "Kubelet-measured PVCs"},
+    ),
+    Rule.record(
         "disk_usage:component_used_bytes",
-        "disk_usage:application_used_bytes\nor\n(\n"
-        + _component(
-            "Kubelet-measured PVCs",
-            get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/pvc-disk-usage.promql"))
-            .read_text()
-            .removesuffix("\n"),
-        )
-        + "\n  unless on (namespace, persistentvolumeclaim) disk_usage:application_used_bytes\n)\n",
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/disk-usage-component-used-bytes.promql")
+        ).read_text(),
     ),
     Rule.record(
         "disk_usage:unattributed_bytes",
