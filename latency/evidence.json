@@ -11751,7 +11751,7 @@
         4,
         "Incremental source-artifact gate",
         "Updated",
-        "Roster grew 13/11 -> 17/15 assets/groups; full checks remain. New pinned Wyrm2 evaluation is an independent larger common-case cost. Prioritize selecting that evaluation, then source-artifact closure selection."
+        "Roster grew 13/11 -> 17/15 assets/groups; source checks remain. New pinned Wyrm2 evaluation is the larger common-case cost. Operator decision: added evaluation removed in merged PR #11737, retain existing PR package/policy and post-merge package/host coverage; full artifact closure selection remains separate."
       ],
       [
         5,
@@ -11823,7 +11823,7 @@
         16,
         "Pinned Nix source cache",
         "Updated",
-        "New full-host evaluation adds several flake inputs, skills realization and fetchClosure package downloads. Source-only cache cannot remove all of this; selection comes first. Prepared containers and combined evaluation remain rejected pending a different mechanism."
+        "New host evaluation adds flake inputs, skills realization and eager fetchClosure downloads. Merged PR #11737 removes this added guard rather than building a selector or cache for it. Historical source-preparation cache idea remains lower priority for the remaining artifact job; prepared-container/combined-evaluation rejection retained."
       ],
       [
         17,
@@ -31557,9 +31557,9 @@
       }
     ]
   },
-  "report_sha256": "eb1df346a1a85db089eb4bb821d4c6c111f167b7f00ad90af153989358237009",
+  "report_sha256": "4a028023681d5d1a1a119fb941098f55b0dc9af871420e2cedd1870ee5bac36f",
   "validation": {
-    "browser_invocation": "e4a6f1f8-18db-46ba-b6b6-a6caa2d1d899",
+    "browser_invocation": "5ff29793-e54f-4c49-b5b1-e51ac687a18c",
     "browser_cases_passed": 2,
     "viewports": [
       {
@@ -31572,22 +31572,70 @@
       }
     ],
     "captures": 14,
-    "reviewed_captures": [
-      "desktop-overview",
-      "mobile-overview",
-      "desktop-nix",
-      "mobile-continuity",
-      "desktop-feedback",
-      "mobile-cases",
-      "desktop-ranking"
-    ],
+    "reviewed_captures": ["desktop-overview", "mobile-overview", "desktop-ranking"],
     "checks": [
       "no document horizontal overflow",
       "expand/collapse all previous-work details",
       "real pinned Chromium through deterministic_browser_context and VisualPage.capture"
     ],
     "first_browser_attempt": "b65fbd0e-c7e1-43c2-975f-d45895b236d0 stopped at Ruff lint; fixed temporary review test and retried",
-    "limits": "No production workflow changed; browser tests cover report behavior/layout, not CI policy validity. One prose correction changed previous window began to this window began while the retry was being submitted; no layout/metric change.",
-    "post_render_formatting": "Applied source Prettier config; normalized visible text equality verified against rendered input. Formatting only."
+    "limits": "Removal merged after the measurement window; no matched post-removal speedup measured. Browser tests cover report behavior/layout.",
+    "previous_browser_invocation": "dac57053-69ed-4ff3-9e4e-d78b1c3136da",
+    "revision": "Record merged #11737 and remove it from remaining intervention ranking."
+  },
+  "recommendation_revision": {
+    "reviewed_at_utc": "2026-10-23T14:31:05.920408+00:00",
+    "coverage_source_devel_commit": "80f60cb731e2c8c51e4b890aea87612ce12d1556",
+    "decision": "Added per-PR Wyrm2 Home Manager evaluation removed in merged #11737. Existing PR source-package/policy checks and post-merge package/host coverage remain. The landed removal is no longer ranked as remaining work.",
+    "source_pr": "https://github.com/agentydragon/ducktape/pull/11737",
+    "source_head": "f3a7d0ca4e8ac33aa636a35064fbebecc03417d9",
+    "status": "merged",
+    "existing_coverage": [
+      {
+        "path": ".github/workflows/nix-wheel-check.yml",
+        "scope": "PR source artifacts through Nix package/import markers plus three generated-command policy checks"
+      },
+      {
+        "path": ".github/workflows/nix-attic-push.yml",
+        "scope": "post-merge devel/main push; retained pending runs coalesce; main/public independent matrix jobs"
+      },
+      {
+        "path": "devinfra/ci/nix_attic_targets.nix",
+        "scope": "public package set, eligible NixOS toplevels, Home Manager activations, bootstrap and policy checks",
+        "limits": "Host variants disable private Google Drive; home variants disable nixGL. This is declared validation, not a claim that the current full-fleet run passed."
+      },
+      {
+        "path": ".github/workflows/nix-image.yml",
+        "scope": "dedicated selected image builds; no general per-PR host-evaluation equivalence"
+      }
+    ],
+    "original_pr_rationale": "#11510 deliberately added a pre-override pure consumer guard against missing first-release pins. The operator chooses post-merge discovery for this class instead of broad PR gating.",
+    "forecast_savings_s": [40, 90],
+    "limits": "Removal merge is after the measurement window; no post-removal population speedup measured.",
+    "exact_head_validation": {
+      "head": "f3a7d0ca4e8ac33aa636a35064fbebecc03417d9",
+      "all_three_required_checks": "success",
+      "checks": [
+        {
+          "name": "bazel-ci / Test & Build",
+          "completed_at": "2026-10-23T14:30:22Z",
+          "job": 120469838851
+        },
+        {
+          "name": "Build artifacts + imports check",
+          "completed_at": "2026-10-23T14:30:58Z",
+          "job": 120469837839
+        },
+        {
+          "name": "Pre-commit checks",
+          "completed_at": "2026-10-23T14:30:04Z",
+          "job": 120469837657
+        }
+      ],
+      "host_step_absent_in_source": true,
+      "limits": "Check states verified via GitHub. Follow-up REST job-detail read hit the API rate limit, so no step-duration/availability or matched-speedup claim follows."
+    },
+    "merge_commit": "816acea8885b779226fd0d574166f5012c198920",
+    "merged_at_utc": "2026-10-23T14:31:05Z"
   }
 }
