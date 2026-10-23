@@ -1,7 +1,6 @@
 """The forgejo-token-rotation CronJob (cluster/generated/agents/forgejo-token-rotation): mints
 Forgejo API tokens for agent service accounts. Source: cluster/rotators/forgejo_token_rotation.
-Also the copy of the `haku` and `claude` accounts' passwords that it mints their tokens with,
-and `ROTATIONS`, the roster it runs.
+Also the credential sources it mounts and `ROTATIONS`, the roster it runs.
 
 `ROTATIONS` is the rotator's own `Config`, rendered into the hash-suffixed ConfigMap the job
 mounts. It only names each output: the rotator alone writes the SOPS files and the tea config
@@ -13,6 +12,7 @@ Component, which the kustomization includes across the roots, overrides it at
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from cdk8s import App, Chart
@@ -26,10 +26,11 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
-from cluster.cdk8s.forgejo import secret_copy
+from cluster.cdk8s.forgejo import namespace, secret_copy
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.reflector import mirror_annotations
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.rotators.forgejo_token_rotation.config import Config, Rotation, TeaSecretOutput
 
 NAME = "forgejo-token-rotation"
@@ -42,14 +43,39 @@ _CONFIG_DIR = "/config"
 _CONFIG_FILE = "tokens.yaml"
 
 
+@dataclass(frozen=True)
+class _MountedCredential:
+    secret: SecretRef
+    mount_directory: Path
+    volume_name: str
+
+
+_HAKU_CREDENTIAL = _MountedCredential(
+    secret=SecretRef(namespace=namespace.NAMESPACE, name="forgejo-token-mint-haku"),
+    mount_directory=Path("/var/run/secrets/forgejo/haku"),
+    volume_name="haku-forgejo",
+)
+_CLAUDE_CREDENTIAL = _MountedCredential(
+    secret=SecretRef(namespace=namespace.NAMESPACE, name="forgejo-token-mint-claude"),
+    mount_directory=Path("/var/run/secrets/forgejo/claude"),
+    volume_name="claude-forgejo",
+)
+_AGENT_BOX_CODEX_CREDENTIAL = _MountedCredential(
+    secret=SecretRef(namespace=_NAMESPACE, name="forgejo-token-mint-agent-box-codex"),
+    mount_directory=Path("/var/run/secrets/forgejo/agent-box-codex"),
+    volume_name="agent-box-codex-forgejo",
+)
+
+
 # Forgejo API tokens for agent service accounts. Omitted `repositories` means full-account
 # repository access in Forgejo 15's token API; account-level grants still constrain what each
 # agent can do.
-ROTATIONS = Config(
-    rotations=[
+_ROTATION_CREDENTIALS: tuple[tuple[_MountedCredential, Rotation], ...] = (
+    (
+        _HAKU_CREDENTIAL,
         Rotation(
             name="haku",
-            credentials_dir=Path("/var/run/secrets/forgejo/haku"),
+            credentials_dir=_HAKU_CREDENTIAL.mount_directory,
             sops_file=Path("secrets/haku-forgejo-tea-token.yaml"),
             token_prefix="forgejo-tea-haku",
             tea_secret=TeaSecretOutput(
@@ -61,9 +87,12 @@ ROTATIONS = Config(
                 annotations=mirror_annotations(["haku-ci"]),
             ),
         ),
+    ),
+    (
+        _CLAUDE_CREDENTIAL,
         Rotation(
             name="claude",
-            credentials_dir=Path("/var/run/secrets/forgejo/claude"),
+            credentials_dir=_CLAUDE_CREDENTIAL.mount_directory,
             sops_file=Path("secrets/claude-forgejo-tea-token.yaml"),
             token_prefix="forgejo-tea-claude",
             tea_secret=TeaSecretOutput(
@@ -72,38 +101,28 @@ ROTATIONS = Config(
                 namespace="claude-sandbox",
             ),
         ),
+    ),
+    (
+        _AGENT_BOX_CODEX_CREDENTIAL,
         Rotation(
             name="agent-box-codex",
-            credentials_dir=Path("/var/run/secrets/forgejo/agent-box-codex"),
+            credentials_dir=_AGENT_BOX_CODEX_CREDENTIAL.mount_directory,
             sops_file=Path("secrets/agent-box-codex-forgejo-tea-token.yaml"),
             token_prefix="forgejo-tea-agent-box-codex",
         ),
-    ]
+    ),
 )
-
-# These two source Secrets live in the forgejo namespace and need ESO copies into
-# agents-infra. The agent-box-codex source is already created in agents-infra by
-# tf/gitops/forgejo-agentydragon-repos. Rotation has no Secret namespace field because
-# this is deployment wiring, not input read by the rotator; keep only that namespace
-# exception here, keyed by credentials_dir.name, and derive copied Secret names from the
-# model entries below.
-_FORGEJO_NAMESPACE_CREDENTIALS = {"haku", "claude"}
+ROTATIONS = Config(rotations=[rotation for _, rotation in _ROTATION_CREDENTIALS])
 
 
-def _unique_credentials(rotations: list[Rotation]) -> tuple[Rotation, ...]:
-    """One rotation per mounted credential directory, retaining first-use order."""
-    credentials: dict[Path, Rotation] = {}
-    for rotation in rotations:
-        credentials.setdefault(rotation.credentials_dir, rotation)
+def _unique_credentials() -> tuple[_MountedCredential, ...]:
+    """Return mounted credentials in rotation order, once per mount directory."""
+    credentials: dict[Path, _MountedCredential] = {}
+    for credential, _ in _ROTATION_CREDENTIALS:
+        previous = credentials.setdefault(credential.mount_directory, credential)
+        if previous != credential:
+            raise ValueError(f"conflicting Forgejo credentials for {credential.mount_directory}")
     return tuple(credentials.values())
-
-
-def _credentials_secret(rotation: Rotation) -> str:
-    return f"forgejo-token-mint-{rotation.credentials_dir.name}"
-
-
-def _credentials_volume(rotation: Rotation) -> str:
-    return f"{rotation.credentials_dir.name}-forgejo"
 
 
 # The content hash in the ConfigMap's name rolls the CronJob's template on a roster change.
@@ -125,10 +144,12 @@ def _mount(name: str, path: str) -> k8s.VolumeMount:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     reader = secret_copy.reader(chart, _NAMESPACE)
-    credentials = _unique_credentials(ROTATIONS.rotations)
-    for rotation in credentials:
-        if rotation.credentials_dir.name in _FORGEJO_NAMESPACE_CREDENTIALS:
-            secret_copy.secret_copy(chart, _credentials_secret(rotation), reader=reader)
+    credentials = _unique_credentials()
+    for credential in credentials:
+        if credential.secret.namespace == namespace.NAMESPACE:
+            secret_copy.secret_copy(chart, credential.secret.name, reader=reader)
+        elif credential.secret.namespace != _NAMESPACE:
+            raise ValueError(f"unsupported Forgejo credential source namespace: {credential.secret.namespace}")
     k8s.KubeCronJob(
         chart,
         "cronjob",
@@ -169,8 +190,8 @@ def chart(app: App) -> Chart:
                                 ),
                                 _secret_volume("github-pat", _GITHUB_PAT),
                                 *(
-                                    _secret_volume(_credentials_volume(rotation), _credentials_secret(rotation))
-                                    for rotation in credentials
+                                    _secret_volume(credential.volume_name, credential.secret.name)
+                                    for credential in credentials
                                 ),
                             ],
                             security_context=k8s.PodSecurityContext(
@@ -190,8 +211,8 @@ def chart(app: App) -> Chart:
                                         _mount("rotations-config", _CONFIG_DIR),
                                         _mount("github-pat", "/var/run/secrets/github-pat"),
                                         *(
-                                            _mount(_credentials_volume(rotation), str(rotation.credentials_dir))
-                                            for rotation in credentials
+                                            _mount(credential.volume_name, str(credential.mount_directory))
+                                            for credential in credentials
                                         ),
                                     ],
                                     resources=k8s.ResourceRequirements(
