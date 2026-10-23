@@ -1,0 +1,9 @@
+max by (resource, volume) (
+  label_replace(
+    label_replace(
+      linstor_volume_definition_size_bytes,
+      "resource", "$1", "name", "(.+)"
+    ),
+    "volume", "$1", "volume_number", "(.+)"
+  )
+)

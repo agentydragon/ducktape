@@ -1,0 +1,7 @@
+(
+  group by (node, storage_pool, resource) (disk_usage:diskful_volume:info)
+  * on (resource) group_left (persistentvolume, namespace, persistentvolumeclaim, phase)
+    disk_usage:piraeus_volume:info
+)
+or on (node, storage_pool, resource)
+  group by (node, storage_pool, resource) (disk_usage:diskful_volume:info)

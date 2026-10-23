@@ -12,5 +12,5 @@ max by (node, disk, device_path) (
     ),
     "device_path", "/dev/$1", "disk", "^(.+)$"
   )
-  * on (node) group_left () kube_node_role{role="control-plane"}
+  * on (node) group_left () max by (node) (kube_node_role{role="control-plane"} == 1)
 ) > bool 0
