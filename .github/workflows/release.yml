@@ -8,9 +8,8 @@
 #             custom-configuration targets stay in the matrix for their own job.
 #             See devinfra/ci/plan_releases.py.
 #
-#   release — per changed release: run its tests, rebuild stamped, `gh release
-#             create`. Unchanged; the planner is purely a filter in front of it, and
-#             .github/actions/release-artifact still makes the same check itself.
+#   release — per changed release: reuse exact verified push-CI test verdicts when
+#             available, otherwise run its tests, rebuild stamped, and publish.
 #
 # When no artifact changed, the empty matrix avoids starting a per-artifact job.
 #
@@ -34,6 +33,16 @@ on:
           Comma-separated BuildBuddy invocation ids from bazel-ci, whose build
           event stream says what this commit produced. Empty means the planner
           can prove nothing and releases everything.
+        required: false
+        type: string
+        default: ""
+      bazel_test_invocation_id:
+        description: Deterministic test invocation id from a successful bazel-ci push.
+        required: false
+        type: string
+        default: ""
+      bazel_test_source_commit:
+        description: Verified source SHA of that bazel-ci invocation.
         required: false
         type: string
         default: ""
@@ -81,10 +90,16 @@ jobs:
         env:
           GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
           INVOCATIONS: ${{ inputs.bazel_invocation_ids }}
+          TEST_INVOCATION_ID: ${{ inputs.bazel_test_invocation_id }}
+          TEST_SOURCE_COMMIT: ${{ inputs.bazel_test_source_commit }}
+          RBE_CONTAINER_IMAGE: ${{ inputs.rbe_container_image }}
         run: |
           set -euo pipefail
           python3 -m devinfra.ci.plan_releases \
             --invocations "$INVOCATIONS" \
+            --test-invocation-id "$TEST_INVOCATION_ID" \
+            --test-source-commit "$TEST_SOURCE_COMMIT" \
+            --rbe-container-image "$RBE_CONTAINER_IMAGE" \
             --commit-subject "$(git log -1 --format=%s)"
 
   release:
@@ -113,7 +128,7 @@ jobs:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Run tests for ${{ matrix.pkg }}
-        if: matrix.tests != ''
+        if: matrix.tests != '' && matrix.reuse_test_verdict != 'true'
         uses: ./.github/actions/bb-remote
         with:
           args: test ${{ matrix.tests }}

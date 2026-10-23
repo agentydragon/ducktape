@@ -27,8 +27,9 @@ an image costs one job; wrongly excluding one silently skips a deployment.
 Runs as bare `python3 -m` on a GitHub Actions runner, so it stays on the standard
 library. `crane` comes from the workflow's setup-crane step.
 
-TODO (devinfra/ci/TODO.md): gate each push on the image's `testSummary` verdict
-from the same stream, instead of the push job re-running its tests.
+Publication jobs may reuse the test verdict for a literal workspace test label
+only when the same successful push-CI invocation proves its source, configuration
+and one-attempt test result. Suites and patterns keep the publication test gate.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from pathlib import Path
 
 from devinfra.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob, merge, read
 from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
+from devinfra.ci.publication_test_verdicts import effective_rbe_image, selector_is_covered, verified_test_summaries
 from util.crane import Crane
 
 
@@ -169,17 +171,22 @@ def plan(images: list[Image], decider: Callable[[Image], Decision], workers: int
         return list(pool.map(decider, images))
 
 
-def matrix_include(decisions: list[Decision]) -> list[dict[str, str]]:
-    return [
-        {
-            "image_name": d.image.name,
-            "image": d.image.target,
-            "test_target": d.image.test or "",
-            "registry": d.image.registry,
+def matrix_include(decisions: list[Decision], reusable_tests: set[str] | None = None) -> list[dict[str, str]]:
+    reusable_tests = reusable_tests or set()
+    rows = []
+    for decision in decisions:
+        if not decision.needs_push:
+            continue
+        row = {
+            "image_name": decision.image.name,
+            "image": decision.image.target,
+            "test_target": decision.image.test or "",
+            "registry": decision.image.registry,
         }
-        for d in decisions
-        if d.needs_push
-    ]
+        if decision.image.test in reusable_tests:
+            row["reuse_test_verdict"] = "true"
+        rows.append(row)
+    return rows
 
 
 def _write_github_output(**values: str) -> None:
@@ -189,17 +196,17 @@ def _write_github_output(**values: str) -> None:
         f.writelines(f"{key}={value}\n" for key, value in values.items())
 
 
-def _read_invocations(ids: list[str]) -> Invocation | None:
-    """Merge the invocations bazel-ci reported, or None if none can be read."""
-    readable = []
+def _read_invocations(ids: list[str], test_invocation_id: str) -> tuple[Invocation | None, Invocation | None]:
+    """Merge output evidence and retain the original test invocation separately."""
+    readable = {}
     for invocation_id in ids:
         try:
-            readable.append(read(invocation_id))
-        except BuildBuddyError as e:
+            readable[invocation_id] = read(invocation_id)
+        except (BuildBuddyError, KeyError, TypeError, ValueError, IndexError) as e:
             print(
                 f"::warning::could not read invocation {invocation_id} ({e}); pushing more than needed", file=sys.stderr
             )
-    return merge(readable)
+    return merge(readable.values()), readable.get(test_invocation_id) if test_invocation_id in ids else None
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -213,6 +220,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--invocations", default="", help="comma-separated bazel-ci invocation ids; empty pushes everything (fail open)"
     )
+    parser.add_argument("--test-invocation-id", default="", help="exact bazel-ci test invocation id")
+    parser.add_argument("--test-source-commit", default="", help="source SHA verified by bazel-ci checkout")
+    parser.add_argument("--rbe-container-image", default="", help="publication test RBE image override, if any")
     parser.add_argument("--crane", type=Path, default=None, help="crane binary (default: the one on PATH)")
     parser.add_argument("--workers", type=int, default=8, help="concurrent registry queries")
 
@@ -224,11 +234,36 @@ def main(argv: list[str] | None = None) -> None:
     invocation_ids = [i for i in args.invocations.split(",") if i]
     if not invocation_ids:
         print("::warning::no bazel-ci invocation to read; pushing everything", file=sys.stderr)
-    digests = local_digests(images, _read_invocations(invocation_ids), fetch_blob)
+    merged, test_invocation = _read_invocations(invocation_ids, args.test_invocation_id)
+    digests = local_digests(images, merged, fetch_blob)
+
+    summaries, evidence_problem = verified_test_summaries(
+        test_invocation,
+        invocation_id_value=args.test_invocation_id,
+        source_commit=args.test_source_commit,
+        current_commit=os.environ.get("GITHUB_SHA", ""),
+        run_id=os.environ.get("GITHUB_RUN_ID", ""),
+        run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+        event_name=os.environ.get("GITHUB_EVENT_NAME", ""),
+        rbe_image=effective_rbe_image(args.rbe_container_image),
+    )
 
     crane = Crane(args.crane)
     decisions = plan(images, lambda image: decide(image, digests, crane), args.workers)
-    include = matrix_include(decisions)
+    reusable_tests = set()
+    for decision in decisions:
+        selector = decision.image.test
+        if not decision.needs_push or not selector:
+            continue
+        covered, reason = (
+            selector_is_covered(selector, summaries) if evidence_problem is None else (False, evidence_problem)
+        )
+        if covered:
+            reusable_tests.add(selector)
+            print(f"::notice::{decision.image.name}: reusing the verified bazel-ci test verdict", file=sys.stderr)
+        else:
+            print(f"::notice::{decision.image.name}: retaining its test gate ({reason})", file=sys.stderr)
+    include = matrix_include(decisions, reusable_tests)
 
     for d in sorted(decisions, key=lambda d: d.image.name):
         marker = "PUSH" if d.needs_push else "skip"

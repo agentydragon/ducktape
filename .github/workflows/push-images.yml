@@ -10,11 +10,10 @@
 #           absent or ambiguous digest stays in the matrix. See
 #           devinfra/ci/plan_image_pushes.py.
 #
-#   push  — per changed image: run its tests, `bb remote build` the OCI layout, and
-#           push a new pinned tag unless the digest it just built is already the
-#           newest published one — the planner fails open, so "in the matrix" means
-#           unproven, not changed. A failing test fails that image loudly and skips
-#           its push; other images are unaffected (`fail-fast: false`).
+#   push  — per changed image: reuse an exact verified push-CI test verdict when
+#           available, otherwise run the configured tests, then `bb remote build`
+#           the OCI layout and push a new pinned tag unless its digest is already
+#           the newest published one. A failing test skips only that image's push.
 #
 # When no image changed, the empty matrix avoids starting a per-image push job.
 #
@@ -38,6 +37,16 @@ on:
           Comma-separated BuildBuddy invocation ids from bazel-ci, whose build event
           stream says what this commit produced. Empty means the planner can prove
           nothing and pushes everything.
+        required: false
+        type: string
+        default: ""
+      bazel_test_invocation_id:
+        description: Deterministic test invocation id from a successful bazel-ci push.
+        required: false
+        type: string
+        default: ""
+      bazel_test_source_commit:
+        description: Verified source SHA of that bazel-ci invocation.
         required: false
         type: string
         default: ""
@@ -115,6 +124,9 @@ jobs:
         shell: bash
         env:
           INVOCATIONS: ${{ inputs.bazel_invocation_ids }}
+          TEST_INVOCATION_ID: ${{ inputs.bazel_test_invocation_id }}
+          TEST_SOURCE_COMMIT: ${{ inputs.bazel_test_source_commit }}
+          RBE_CONTAINER_IMAGE: ${{ inputs.rbe_container_image }}
         run: |
           set -euo pipefail
           if [ "$PUBLISH" != "true" ]; then
@@ -122,7 +134,11 @@ jobs:
             { echo 'matrix={"include":[]}'; echo "count=0"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          python3 -m devinfra.ci.plan_image_pushes --invocations "$INVOCATIONS"
+          python3 -m devinfra.ci.plan_image_pushes \
+            --invocations "$INVOCATIONS" \
+            --test-invocation-id "$TEST_INVOCATION_ID" \
+            --test-source-commit "$TEST_SOURCE_COMMIT" \
+            --rbe-container-image "$RBE_CONTAINER_IMAGE"
 
   push:
     needs: [plan]
@@ -151,7 +167,7 @@ jobs:
 
       - name: Test (gate for push)
         id: test
-        if: matrix.test_target != ''
+        if: matrix.test_target != '' && matrix.reuse_test_verdict != 'true'
         uses: ./.github/actions/bb-remote
         with:
           args: test ${{ matrix.test_target }}

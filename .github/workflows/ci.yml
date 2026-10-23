@@ -67,6 +67,10 @@ jobs:
       # What bazel-ci already built. Empty if it was skipped or died before Bazel
       # ran, which release.yml turns into "publish everything" rather than "nothing".
       bazel_invocation_ids: ${{ needs.bazel-ci.outputs.bazel_invocation_ids }}
+      # Reuse test results only after the full bazel-ci job succeeds; failed CI
+      # keeps each publication job's own test gate enabled.
+      bazel_test_invocation_id: ${{ needs.bazel-ci.result == 'success' && needs.bazel-ci.outputs.test_invocation_id || '' }}
+      bazel_test_source_commit: ${{ needs.bazel-ci.result == 'success' && needs.bazel-ci.outputs.test_source_commit || '' }}
     secrets: inherit
 
   # push-images also pushes the props agent images (props-agents job) to the
@@ -77,4 +81,6 @@ jobs:
     uses: ./.github/workflows/push-images.yml
     with:
       bazel_invocation_ids: ${{ needs.bazel-ci.outputs.bazel_invocation_ids }}
+      bazel_test_invocation_id: ${{ needs.bazel-ci.result == 'success' && needs.bazel-ci.outputs.test_invocation_id || '' }}
+      bazel_test_source_commit: ${{ needs.bazel-ci.result == 'success' && needs.bazel-ci.outputs.test_source_commit || '' }}
     secrets: inherit

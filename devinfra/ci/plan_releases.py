@@ -31,8 +31,9 @@ matrix — their own job checks and skips exactly as before.
 Runs as bare `python3 -m` on a GitHub Actions runner, so it stays on the standard
 library. `gh` is preinstalled there.
 
-TODO: gate each release on its own `testSummary` verdict from the same stream,
-instead of the per-release job re-running its tests.
+Publication jobs may reuse verdicts for literal workspace test labels only when
+the same successful push-CI invocation proves source, configuration and one
+passing attempt. Suites, patterns and custom-flag rows keep their test gates.
 """
 
 from __future__ import annotations
@@ -48,7 +49,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from urllib.parse import quote
 
-from devinfra.ci.bes import BuildBuddyError, Output, artifact_output, merge, read
+from devinfra.ci.bes import BuildBuddyError, Invocation, Output, artifact_output, merge, read
+from devinfra.ci.publication_test_verdicts import effective_rbe_image, selector_is_covered, verified_test_summaries
 from devinfra.ci.release_content_hash import release_content_hash_from_digests
 
 TAG_HASH_LENGTH = 12
@@ -194,8 +196,17 @@ def plan(
     return list(zip(releases, published, strict=True))
 
 
-def matrix_include(decided: list[tuple[Release, bool]]) -> list[dict[str, str]]:
-    return [release.as_matrix_row() for release, published in decided if not published]
+def matrix_include(decided: list[tuple[Release, bool]], reusable_tests: set[str] | None = None) -> list[dict[str, str]]:
+    reusable_tests = reusable_tests or set()
+    rows = []
+    for release, published in decided:
+        if published:
+            continue
+        row = release.as_matrix_row()
+        if release.uses_default_config and release.tests and release.tests in reusable_tests:
+            row["reuse_test_verdict"] = "true"
+        rows.append(row)
+    return rows
 
 
 def _write_github_output(**values: str) -> None:
@@ -215,6 +226,9 @@ def main(argv: list[str] | None = None) -> None:
         help="comma-separated bazel-ci invocation ids; empty releases everything (fail open)",
     )
     parser.add_argument("--workers", type=int, default=8, help="concurrent tag lookups")
+    parser.add_argument("--test-invocation-id", default="", help="exact bazel-ci test invocation id")
+    parser.add_argument("--test-source-commit", default="", help="source SHA verified by bazel-ci checkout")
+    parser.add_argument("--rbe-container-image", default="", help="publication test RBE image override, if any")
     parser.add_argument(
         "--commit-subject",
         default="",
@@ -234,20 +248,43 @@ def main(argv: list[str] | None = None) -> None:
     invocation_ids = [i for i in args.invocations.split(",") if i]
     if not invocation_ids:
         print("::warning::no bazel-ci invocation to read; releasing everything", file=sys.stderr)
-    readable = []
+    readable: dict[str, Invocation] = {}
     for invocation_id in invocation_ids:
         try:
-            readable.append(read(invocation_id))
-        except BuildBuddyError as e:
+            readable[invocation_id] = read(invocation_id)
+        except (BuildBuddyError, KeyError, TypeError, ValueError, IndexError) as e:
             print(
                 f"::warning::could not read invocation {invocation_id} ({e}); releasing more than needed",
                 file=sys.stderr,
             )
-    merged = merge(readable)
+    merged = merge(readable.values())
     by_label = merged.by_label() if merged is not None else {}
+    test_invocation = readable.get(args.test_invocation_id) if args.test_invocation_id in invocation_ids else None
+    summaries, evidence_problem = verified_test_summaries(
+        test_invocation,
+        invocation_id_value=args.test_invocation_id,
+        source_commit=args.test_source_commit,
+        current_commit=os.environ.get("GITHUB_SHA", ""),
+        run_id=os.environ.get("GITHUB_RUN_ID", ""),
+        run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+        event_name=os.environ.get("GITHUB_EVENT_NAME", ""),
+        rbe_image=effective_rbe_image(args.rbe_container_image),
+    )
 
     decided = plan(releases, by_label, gh_tag_exists, args.workers)
-    include = matrix_include(decided)
+    reusable_tests = set()
+    for release, _published in decided:
+        if not release.uses_default_config or not release.tests:
+            continue
+        covered, reason = (
+            selector_is_covered(release.tests, summaries) if evidence_problem is None else (False, evidence_problem)
+        )
+        if covered:
+            reusable_tests.add(release.tests)
+            print(f"::notice::{release.pkg}: reusing the verified bazel-ci test verdict", file=sys.stderr)
+        else:
+            print(f"::notice::{release.pkg}: retaining its test gate ({reason})", file=sys.stderr)
+    include = matrix_include(decided, reusable_tests)
 
     for release, published in sorted(decided, key=lambda d: d[0].pkg):
         print(f"{'skip' if published else 'RELEASE':>7}  {release.pkg}", file=sys.stderr)

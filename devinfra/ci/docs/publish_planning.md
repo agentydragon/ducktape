@@ -7,9 +7,11 @@ This is how CI identifies the release artifacts and images whose content changed
 **Use the devel build to plan, then build only what a publish job needs.**
 `bazel-ci` runs `bazel test //...` and `bazel build //...` on each devel push.
 The planners read those invocation streams to skip items already published. A
-release job still runs its configured tests and rebuilds changed release assets;
-an image job builds its image before pushing. The stream also records test
-verdicts, but the publish jobs do not currently reuse them.
+release job rebuilds changed release assets; an image job builds its image
+before pushing. For a literal workspace test label, the publish job can reuse
+the `testSummary` from that same successful push-CI test invocation when its
+source, Bazel configuration, RBE image, terminal status, and one-attempt result
+all match. Otherwise the publication job runs its own tests as before.
 
 BuildBuddy keeps that invocation's Build Event Protocol stream and serves it as
 JSON. Each stream carries three things at once:
@@ -20,7 +22,20 @@ JSON. Each stream carries three things at once:
 
 `devinfra/ci/bes.py` reads it. `plan_releases.py` and `plan_image_pushes.py`
 consume it. `bazel-ci` publishes its invocation ids as a workflow output and
-`ci.yml` passes them down.
+`ci.yml` passes them down. The test invocation also retains its lossless per-
+configuration summaries and provenance; the merged output view is never used as
+test-gate authority.
+
+The reuse boundary is deliberately small. Only literal `//package:test` labels
+with exactly one `PASSED` summary, a configuration id, and one attempt are
+eligible. The CI stream must be the current push's deterministic test
+invocation, carry the current checkout's `COMMIT_SHA`, request `//...`, finish
+successfully, and match the publication job's `--config=rbe`, `--config=ci`
+and RBE image. A cached one-attempt pass is accepted because Bazel keys test
+results by source and configuration. Missing or unreadable evidence, custom
+release flags, retries, multiple configurations, failed summaries, suites,
+external labels, wildcards, PR runs and dispatch runs preserve the publication
+test step.
 
 ## Identity
 
@@ -101,6 +116,12 @@ Some rows are outside the sweep, and no amount of care here brings them in:
 **Rows in that table are slow paths:** the default devel sweep cannot prove
 their identity. They stay in the publish matrix, where their own jobs build and
 check the required artifact before publishing.
+
+Test selectors have a separate boundary: exact test labels may reuse verdicts;
+suite selectors (including current `:all` and `:tests` rows), patterns, and
+external labels stay on the publication test path because they have no matching
+test summary of their own. A passing child label is not evidence that a selected
+suite or pattern had complete coverage.
 
 ## Alternatives, and why not
 

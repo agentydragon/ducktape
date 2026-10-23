@@ -46,6 +46,12 @@ on:
           rebuilding the same targets. Empty when the job did not run, which
           callers must treat as "prove nothing", not "nothing changed".
         value: ${{ jobs.bazel-ci.outputs.bazel_invocation_ids }}
+      test_invocation_id:
+        description: Deterministic ID of this run's test invocation.
+        value: ${{ jobs.bazel-ci.outputs.test_invocation_id }}
+      test_source_commit:
+        description: Verified source SHA used by bazel-ci.
+        value: ${{ jobs.bazel-ci.outputs.test_source_commit }}
   workflow_dispatch:
 
 # A PR run is superseded by the next push to that PR, so it is cancelled. A push run is
@@ -70,6 +76,8 @@ jobs:
     name: Test & Build
     outputs:
       bazel_invocation_ids: ${{ steps.bb-remote.outputs.bazel_invocation_ids }}
+      test_invocation_id: ${{ steps.invocation-ids.outputs.test }}
+      test_source_commit: ${{ steps.source.outputs.sha }}
     environment: ${{ inputs.environment || null }}
     runs-on: ubuntu-latest
     env:

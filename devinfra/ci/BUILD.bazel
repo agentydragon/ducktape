@@ -74,7 +74,18 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":bes",
+        ":publication_test_verdicts",
         ":release_content_hash",
+    ],
+)
+
+py_library(
+    name = "publication_test_verdicts",
+    srcs = ["publication_test_verdicts.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":bes",
+        ":invocation_ids",
     ],
 )
 
@@ -151,6 +162,7 @@ py_library(
     deps = [
         ":bes",
         ":image_registry",
+        ":publication_test_verdicts",
         "//util:crane",
     ],
 )

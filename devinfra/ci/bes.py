@@ -76,10 +76,30 @@ class Output:
 
 
 @dataclasses.dataclass(frozen=True)
+class TestSummary:
+    """One configuration's terminal summary for a test target."""
+
+    label: str
+    configuration_id: str
+    status: str
+    attempt_count: int | None
+    cached_count: int | None
+
+
+@dataclasses.dataclass(frozen=True)
 class Invocation:
     outputs: list[Output]
     #: Target label to Bazel's `overallStatus` (PASSED, FAILED, TIMEOUT, ...).
     test_status: dict[str, str]
+    #: Lossless summaries for callers that need to reject ambiguity across configs.
+    test_summaries: list[TestSummary] = dataclasses.field(default_factory=list)
+    #: Extra provenance from the test invocation; merged output views do not carry it.
+    finished: bool = False
+    successful: bool = False
+    command: str | None = None
+    requested_patterns: tuple[str, ...] | None = None
+    explicit_cmd_line: tuple[str, ...] | None = None
+    commit_sha: str | None = None
 
     def by_path(self) -> dict[str, Output]:
         """Outputs keyed by their full path. A later duplicate wins, as in Bazel."""
@@ -192,10 +212,59 @@ def parse(raw: bytes) -> Invocation:
 
     outputs: list[Output] = []
     test_status: dict[str, str] = {}
+    test_summaries: list[TestSummary] = []
+    finished_count = 0
+    successful_count = 0
+    commands: list[str] = []
+    requested_patterns: list[str] = []
+    explicit_cmd_lines: list[tuple[str, ...] | None] = []
+    commit_shas: list[str] = []
     for event in events:
-        if summary := event.get("testSummary"):
-            test_status[event["id"]["testSummary"]["label"]] = summary.get("overallStatus", "")
+        if "testSummary" in event:
+            summary = event["testSummary"]
+            summary_id = event["id"]["testSummary"]
+            label = summary_id["label"]
+            configuration = summary_id.get("configuration") or {}
+            attempt_count = summary.get("attemptCount")
+            cached_count = summary.get("totalNumCached")
+            test_status[label] = summary.get("overallStatus", "")
+            test_summaries.append(
+                TestSummary(
+                    label=label,
+                    configuration_id=configuration.get("id", ""),
+                    status=summary.get("overallStatus", ""),
+                    attempt_count=attempt_count
+                    if isinstance(attempt_count, int) and not isinstance(attempt_count, bool)
+                    else None,
+                    cached_count=cached_count
+                    if isinstance(cached_count, int) and not isinstance(cached_count, bool)
+                    else None,
+                )
+            )
             continue
+        if "buildFinished" in event:
+            finished_count += 1
+            exit_code = event["buildFinished"].get("exitCode") or {}
+            if exit_code.get("name") == "SUCCESS":
+                successful_count += 1
+        if started := event.get("started"):
+            command = started.get("command")
+            if isinstance(command, str):
+                commands.append(command)
+        if options := event.get("optionsParsed"):
+            explicit = options.get("explicitCmdLine")
+            if isinstance(explicit, list) and all(isinstance(arg, str) for arg in explicit):
+                explicit_cmd_lines.append(tuple(explicit))
+            else:
+                explicit_cmd_lines.append(None)
+        if pattern := event.get("id", {}).get("pattern"):
+            requested_patterns.extend(value for value in pattern.get("pattern", []) if isinstance(value, str))
+        if workspace_status := event.get("workspaceStatus"):
+            commit_shas.extend(
+                item.get("value", "")
+                for item in workspace_status.get("item", [])
+                if item.get("key") == "COMMIT_SHA" and isinstance(item.get("value"), str)
+            )
         completed = event.get("completed")
         if completed is None:
             continue
@@ -215,7 +284,23 @@ def parse(raw: bytes) -> Invocation:
                 for file in files_in(group.get("fileSets") or [])
             )
     # The file-set DAG can list the same output through multiple branches.
-    return Invocation(outputs=list(dict.fromkeys(outputs)), test_status=test_status)
+    command = commands[0] if len(commands) == 1 else None
+    explicit_cmd_line = explicit_cmd_lines[0] if len(explicit_cmd_lines) == 1 else None
+    commit_sha_values = set(commit_shas)
+    commit_sha = (
+        next(iter(commit_sha_values)) if len(commit_sha_values) == 1 and next(iter(commit_sha_values)) else None
+    )
+    return Invocation(
+        outputs=list(dict.fromkeys(outputs)),
+        test_status=test_status,
+        test_summaries=test_summaries,
+        finished=finished_count == 1,
+        successful=finished_count == 1 and successful_count == 1,
+        command=command,
+        requested_patterns=tuple(requested_patterns) if requested_patterns else None,
+        explicit_cmd_line=explicit_cmd_line,
+        commit_sha=commit_sha,
+    )
 
 
 def artifact_output(by_label: Mapping[str, list[Output]], label: str) -> Output | str:
