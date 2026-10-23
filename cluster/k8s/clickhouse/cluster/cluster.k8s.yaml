@@ -111,6 +111,9 @@ spec:
         layout:
           replicas:
             - name: "0"
+              templates:
+                podTemplate: keeper-ssd
+                dataVolumeClaimTemplate: keeper-data-ssd
             - name: "1"
             - name: "2"
               templates:
@@ -163,6 +166,52 @@ spec:
             - effect: NoSchedule
               key: node-role.kubernetes.io/control-plane
               operator: Exists
+      - name: keeper-ssd
+        metadata:
+          labels:
+            app.kubernetes.io/instance: clickhouse-keeper
+            app.kubernetes.io/name: clickhouse-keeper
+        spec:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/instance: clickhouse-keeper
+                      app.kubernetes.io/name: clickhouse-keeper
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - image: clickhouse/clickhouse-keeper:26.8.3.105@sha256:d9aced52deafda7ca716983bc80766641bcde30c23f3f7abdf6cacc9f244bd74
+              imagePullPolicy: IfNotPresent
+              name: clickhouse-keeper
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                runAsGroup: 101
+                runAsNonRoot: true
+                runAsUser: 101
+                seccompProfile:
+                  type: RuntimeDefault
+          nodeSelector:
+            storage.allegedly.works/tier: ssd
+            topology.kubernetes.io/zone: hil-ovh
+          securityContext:
+            fsGroup: 101
+            seccompProfile:
+              type: RuntimeDefault
+          tolerations:
+            - effect: NoSchedule
+              key: node-role.kubernetes.io/control-plane
+              operator: Exists
     volumeClaimTemplates:
       - name: keeper-data
         reclaimPolicy: Retain
@@ -182,6 +231,15 @@ spec:
             requests:
               storage: 2Gi
           storageClassName: local-path-ovh-hdd-retain
+      - name: keeper-data-ssd
+        reclaimPolicy: Retain
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 2Gi
+          storageClassName: piraeus-ssd-local
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password

@@ -78,8 +78,10 @@ _METRICS = Port(name="metrics", number=9363)
 _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
 _STORAGE_CLASS = "local-path-ovh-hdd-retain"
+_PIRAEUS_SSD_STORAGE_CLASS = "piraeus-ssd-local"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
 _HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
+_SSD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "ssd"}
 _RUNTIME_DEFAULT_SECCOMP = {"type": "RuntimeDefault"}
 _CONTAINER_SECURITY_CONTEXT = {
     "allowPrivilegeEscalation": False,
@@ -106,12 +108,42 @@ def _one_per_host(labels: dict[str, str]) -> dict[str, object]:
     }
 
 
-def _claim_spec(storage: str) -> dict[str, object]:
+def _claim_spec(storage: str, storage_class: str = _STORAGE_CLASS) -> dict[str, object]:
     return {
         "accessModes": ["ReadWriteOnce"],
-        "storageClassName": _STORAGE_CLASS,
+        "storageClassName": storage_class,
         "resources": {"requests": {"storage": storage}},
     }
+
+
+def _keeper_pod_template(
+    name: str, node_selector: dict[str, str]
+) -> ClickHouseKeeperInstallationSpecTemplatesPodTemplates:
+    return ClickHouseKeeperInstallationSpecTemplatesPodTemplates(
+        name=name,
+        metadata={"labels": _KEEPER.pods.selector},
+        spec={
+            "nodeSelector": node_selector,
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+            "affinity": _one_per_host(_KEEPER.pods.selector),
+            "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
+            "containers": [
+                {
+                    "name": "clickhouse-keeper",
+                    "image": (
+                        "clickhouse/clickhouse-keeper:26.8.3.105"
+                        "@sha256:d9aced52deafda7ca716983bc80766641bcde30c23f3f7abdf6cacc9f244bd74"
+                    ),
+                    "imagePullPolicy": "IfNotPresent",
+                    "resources": {
+                        "requests": {"cpu": "100m", "memory": "256Mi"},
+                        "limits": {"cpu": "1", "memory": "1Gi"},
+                    },
+                    "securityContext": _CONTAINER_SECURITY_CONTEXT,
+                }
+            ],
+        },
+    )
 
 
 def _users() -> dict[str, object]:
@@ -354,6 +386,8 @@ def keeper_chart(app: App) -> Chart:
     pod_template = "keeper"
     data_claim = "keeper-data"
     control_plane_data_claim = "keeper-data-control-plane"
+    ssd_pod_template = "keeper-ssd"
+    ssd_data_claim = "keeper-data-ssd"
     ClickHouseKeeperInstallation(
         chart,
         "installation",
@@ -365,15 +399,19 @@ def keeper_chart(app: App) -> Chart:
                         name="keeper",
                         layout=ClickHouseKeeperInstallationSpecConfigurationClustersLayout(
                             replicas=[
-                                ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicas(name="0"),
+                                ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicas(
+                                    name="0",
+                                    # Stage a cold copy of replica 0's existing Raft data into this claim
+                                    # before allowing the operator to replace its current pod.
+                                    templates=ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicasTemplates(
+                                        pod_template=ssd_pod_template, data_volume_claim_template=ssd_data_claim
+                                    ),
+                                ),
                                 ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicas(name="1"),
                                 ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicas(
                                     name="2",
-                                    # Replica 2's original local PV was bound to ovh-ns102453 before
-                                    # the control-plane toleration existed, where replica 0 already
-                                    # satisfies the required hostname anti-affinity. Give only this
-                                    # replica a fresh claim so WaitForFirstConsumer can place it on
-                                    # the third HDD-tier node, ovh-ns103656.
+                                    # Keep replica 2's existing retained claim identity and storage
+                                    # placement independent of the shared default template.
                                     templates=ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicasTemplates(
                                         data_volume_claim_template=control_plane_data_claim
                                     ),
@@ -396,32 +434,8 @@ def keeper_chart(app: App) -> Chart:
             ),
             templates=ClickHouseKeeperInstallationSpecTemplates(
                 pod_templates=[
-                    ClickHouseKeeperInstallationSpecTemplatesPodTemplates(
-                        name=pod_template,
-                        metadata={"labels": _KEEPER.pods.selector},
-                        spec={
-                            "nodeSelector": _HDD_NODE_SELECTOR,
-                            # Three-member Keeper quorum needs distinct HDD-tier hosts; use all workers.
-                            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
-                            "affinity": _one_per_host(_KEEPER.pods.selector),
-                            "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
-                            "containers": [
-                                {
-                                    "name": "clickhouse-keeper",
-                                    "image": (
-                                        "clickhouse/clickhouse-keeper:26.8.3.105"
-                                        "@sha256:d9aced52deafda7ca716983bc80766641bcde30c23f3f7abdf6cacc9f244bd74"
-                                    ),
-                                    "imagePullPolicy": "IfNotPresent",
-                                    "resources": {
-                                        "requests": {"cpu": "100m", "memory": "256Mi"},
-                                        "limits": {"cpu": "1", "memory": "1Gi"},
-                                    },
-                                    "securityContext": _CONTAINER_SECURITY_CONTEXT,
-                                }
-                            ],
-                        },
-                    )
+                    _keeper_pod_template(pod_template, _HDD_NODE_SELECTOR),
+                    _keeper_pod_template(ssd_pod_template, _SSD_NODE_SELECTOR),
                 ],
                 volume_claim_templates=[
                     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplates(
@@ -430,6 +444,13 @@ def keeper_chart(app: App) -> Chart:
                         spec=_claim_spec("2Gi"),
                     )
                     for claim in (data_claim, control_plane_data_claim)
+                ]
+                + [
+                    ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplates(
+                        name=ssd_data_claim,
+                        reclaim_policy=ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
+                        spec=_claim_spec("2Gi", storage_class=_PIRAEUS_SSD_STORAGE_CLASS),
+                    )
                 ],
             ),
         ),
