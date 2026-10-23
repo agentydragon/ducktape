@@ -4260,6 +4260,7 @@ data:
     host: 0.0.0.0
     port: 8080
     token_audience: agentplane-egress
+    integrated_connection_service: false
     operator_oidc:
       issuer: https://agentplane-dex-testing.allegedly.works/dex
       audience: agentplane-testing

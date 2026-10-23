@@ -151,11 +151,10 @@ flowchart LR
     other((Other endpoints))
     mcp_servers((MCP servers))
 
-    mcp_client -->|MCP over OAuth| actions
+    mcp_client -->|MCP over OAuth| edge
     app -->|Action HTTP/JSON, NDJSON and MCP linkage| actions
-    app -->|staging ConnectionService facade| actions
-    app -->|testing ConnectionService facade + gRPC health| edge
-    edge -.->|after external MCP cutover: account scoped gRPC| actions
+    app -->|ConnectionService facade + gRPC health| edge
+    edge -->|account scoped gRPC| actions
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload
     workload --> box_sidecar --> egress
@@ -174,10 +173,11 @@ flowchart LR
 The egress proxy substitutes a configured credential only for the destination covered by its
 policy. LiteLLM is a separate hop behind LLM ingress; only that service holds the LiteLLM virtual key.
 The app has independent `action_federation.service_url` and `connection_service_url` settings.
-Testing sends ConnectionService calls and its gRPC health probe to the [MCP edge](../mcp_edge/README.md);
-staging still sends both facades to Actions. External MCP/OAuth routes remain on Actions. The
-edge-to-Actions route carries account-scoped calls after the external MCP handoff; operator
-Connection calls retain their separate OIDC verification.
+Both tiers send operator Connection calls and gRPC health probes to the [MCP edge](../mcp_edge/README.md).
+Staging's external MCP/OAuth routes terminate there too, preserving the public issuer/resource URLs.
+Actions retains upstream MCP linkage and its public client metadata; it no longer serves staging's
+integrated ConnectionService or OAuth issuer. The edge verifies operator OIDC separately from
+external MCP bearers and forwards workload calls under the bound ServiceAccount's token.
 
 ## Service definitions
 

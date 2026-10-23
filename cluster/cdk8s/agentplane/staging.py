@@ -42,6 +42,7 @@ from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
     command_sandbox,
+    mcp_edge,
     notifications,
     policy_controller,
     policy_controller_rbac,
@@ -125,6 +126,7 @@ _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
 _LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
 _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
+_CONNECTION_SERVICE = mcp_edge.service(STAGING_NAMESPACE)
 
 # The token the app exchanges its login for, and the one the Action Service accepts
 # from operators: the same Authentik application.
@@ -320,7 +322,7 @@ ENV = Environment(
         namespace=STAGING_NAMESPACE,
         models=STAGING_APP_MODELS,
         action_federation=_ACTION_FEDERATION,
-        connection_service_url=AnyHttpUrl(actions.service(STAGING_NAMESPACE).url),
+        connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
     ),
     settle_deltas=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
@@ -355,6 +357,7 @@ ENV = Environment(
         oidc_session_secret_name=_OIDC_SESSION_SECRET,
     ),
     actions=ActionsProps(
+        integrated_connection_service=False,
         hostname=_ACTIONS_HOSTNAME,
         operator_oidc=_FEDERATION_TARGET,
         caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, public_coder_egress.NAMESPACE}),
@@ -369,8 +372,7 @@ ENV = Environment(
             allowed_push_hosts=_WEB_PUSH_ALLOWED_HOSTS,
             secret_name=_WEB_PUSH_SECRET,
         ),
-        # The full OAuth linkage triad.
-        oauth_secret_items=("client-secret", "jwt-signing-key", "encryption-key"),
+        oauth_secret_items=(),
         github_mcp_client_secret_name=_GITHUB_MCP_CLIENT_SECRET,
         bearer_mcp_mounts=[
             BearerMcpMount(name="ssh-mcp", secret_name=_SSH_MCP_BEARER_SECRET, secret_key=BEARER_SECRET_KEY),
@@ -417,6 +419,7 @@ ENV = Environment(
         caller_service_account_namespaces=frozenset({STAGING_NAMESPACE}),
         mintable_accounts=frozenset({ServiceAccountRef(namespace=STAGING_NAMESPACE, name="claude-ai")}),
         oauth_secret_name="agentplane-mcp-oauth",
+        hostname=_ACTIONS_HOSTNAME,
         extra_egress=(cilium.egress_via_gateway("auth.allegedly.works"), EgressRule.to_fqdns("claude.ai")),
     ),
     vm_sandboxes=True,
@@ -443,6 +446,13 @@ def assignable_grants() -> tuple[KubernetesGrant, ...]:
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    NetworkPolicy(
+        chart,
+        "networkpolicy-app-to-mcp-edge",
+        metadata=ApiObjectMetadata(name="app-to-mcp-edge", namespace=ENV.namespace),
+        endpoint_selector=app_component.service(ENV.namespace).pods.selector,
+        egress=[_CONNECTION_SERVICE.egress()],
+    )
     # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC.
     credential_external_secret(
         chart,

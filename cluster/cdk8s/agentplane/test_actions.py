@@ -1,4 +1,4 @@
-"""The Actions service's public HTTPRoute exposes MCP/OAuth protocol paths and nothing private."""
+"""The MCP authority's public HTTPRoute exposes protocol paths and nothing private."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def test_public_route_exposes_protocol_paths_only(agentplane_manifests: dict[str
     route = one(
         doc
         for doc in agentplane_manifests["agentplane-staging"]
-        if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "actions-mcp"
+        if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "mcp-edge-mcp"
     )
     paths = set()
     for rule in route["spec"]["rules"]:

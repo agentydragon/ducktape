@@ -3209,7 +3209,7 @@ spec:
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
             - name: AGENTPLANE_CONNECTION_SERVICE_URL
-              value: http://actions.agentplane-staging.svc:8080/
+              value: http://mcp-edge.agentplane-staging.svc:8080/
             - name: AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET
               value: "{sandbox}-control.{namespace}.svc:8080"
             - name: AGENTPLANE_CONFIG_FILE
@@ -3305,7 +3305,7 @@ spec:
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
             - name: AGENTPLANE_CONNECTION_SERVICE_URL
-              value: http://actions.agentplane-staging.svc:8080/
+              value: http://mcp-edge.agentplane-staging.svc:8080/
           image: git.allegedly.works/ducktape-ci/agentplane-app-migrate:unset
           imagePullPolicy: Always
           name: migrate
@@ -4971,6 +4971,7 @@ data:
     host: 0.0.0.0
     port: 8080
     token_audience: agentplane-egress
+    integrated_connection_service: false
     operator_oidc:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
       audience: agentplane-staging-actions
@@ -5129,7 +5130,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: actions-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,agentplane-staging-web-push-vapid,google-mcp-bearer,ha-mcp-client-bearer,haku-console-github-mcp-client-credentials,ssh-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat
+    secret.reloader.stakater.com/reload: agentplane-staging-web-push-vapid,google-mcp-bearer,ha-mcp-client-bearer,haku-console-github-mcp-client-credentials,ssh-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat
   labels:
     app.kubernetes.io/name: actions
   name: actions
@@ -5165,11 +5166,6 @@ spec:
                 secretKeyRef:
                   key: private-key-pem
                   name: agentplane-staging-web-push-vapid
-            - name: AGENTPLANE_ACTIONS_OAUTH
-              valueFrom:
-                secretKeyRef:
-                  key: oauth
-                  name: agentplane-mcp-oauth
             - name: AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -5212,9 +5208,6 @@ spec:
             readOnlyRootFilesystem: false
             runAsNonRoot: true
           volumeMounts:
-            - mountPath: /etc/agentplane-mcp
-              name: secret-agentplane-mcp-oauth
-              readOnly: true
             - mountPath: /etc/agentplane-actions
               name: configmap-actions-settings
               readOnly: true
@@ -5277,17 +5270,6 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
       volumes:
-        - name: secret-agentplane-mcp-oauth
-          secret:
-            defaultMode: 288
-            items:
-              - key: client-secret
-                path: client-secret
-              - key: encryption-key
-                path: encryption-key
-              - key: jwt-signing-key
-                path: jwt-signing-key
-            secretName: agentplane-mcp-oauth
         - configMap:
             name: actions-settings
           name: configmap-actions-settings
@@ -5508,30 +5490,6 @@ spec:
                 value: max-age=31536000
           type: ResponseHeaderModifier
       matches:
-        - path:
-            type: Exact
-            value: /mcp
-        - path:
-            type: Exact
-            value: /.well-known/oauth-authorization-server
-        - path:
-            type: Exact
-            value: /.well-known/oauth-protected-resource/mcp
-        - path:
-            type: Exact
-            value: /register
-        - path:
-            type: Exact
-            value: /authorize
-        - path:
-            type: Exact
-            value: /token
-        - path:
-            type: Exact
-            value: /revoke
-        - path:
-            type: Exact
-            value: /auth/callback
         - path:
             type: Exact
             value: /oauth/client-metadata.json
@@ -5976,6 +5934,57 @@ subjects:
     name: mcp-edge
     namespace: agentplane-staging
 ---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-edge-mcp
+  namespace: agentplane-staging
+spec:
+  hostnames:
+    - agentplane-actions-staging.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: mcp-edge
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+      matches:
+        - path:
+            type: Exact
+            value: /mcp
+        - path:
+            type: Exact
+            value: /.well-known/oauth-authorization-server
+        - path:
+            type: Exact
+            value: /.well-known/oauth-protected-resource/mcp
+        - path:
+            type: Exact
+            value: /register
+        - path:
+            type: Exact
+            value: /authorize
+        - path:
+            type: Exact
+            value: /token
+        - path:
+            type: Exact
+            value: /revoke
+        - path:
+            type: Exact
+            value: /auth/callback
+      timeouts:
+        backendRequest: 3600s
+        request: 3600s
+---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -6035,6 +6044,12 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mcp-edge
   ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: app
@@ -6449,6 +6464,25 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: app-to-mcp-edge
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: mcp-edge
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: app
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

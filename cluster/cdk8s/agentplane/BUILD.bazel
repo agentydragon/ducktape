@@ -452,6 +452,7 @@ py_library(
     deps = [
         ":database",
         ":environment",
+        ":mcp_routes",
         ":migrate_container",
         ":notifications",
         ":service_workload",
@@ -479,6 +480,18 @@ py_library(
 )
 
 py_library(
+    name = "mcp_routes",
+    srcs = ["mcp_routes.py"],
+    deps = [
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/providers/gateway_api:http_route",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "mcp_edge",
     srcs = ["mcp_edge.py"],
     deps = [
@@ -486,6 +499,7 @@ py_library(
         ":app",
         ":database",
         ":environment",
+        ":mcp_routes",
         ":migrate_container",
         ":service_workload",
         "//agentplane/mcp_edge:settings",
@@ -721,6 +735,7 @@ py_library(
         ":egress_staging_credentials",
         ":environment",
         ":generation",
+        ":mcp_edge",
         ":namespaces",
         ":notifications",
         ":policy_controller",

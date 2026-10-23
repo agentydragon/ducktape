@@ -168,6 +168,8 @@ def objects(
         # The scenarios' own MCP server and Action groups in place of the deployment's.
         actions=replace(
             testing.ENV.actions,
+            # This isolated fixture deploys Actions without the standalone edge.
+            integrated_connection_service=True,
             operator_oidc=operator_oidc,
             mcp_servers={
                 mcp_servers.OAUTH: actions_testing_fixtures.oauth_fixture_server(

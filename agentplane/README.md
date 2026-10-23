@@ -11,8 +11,7 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   and an MCP endpoint over OAuth.
-- [MCP edge](mcp_edge/README.md): standalone Connection authority used by testing, staged for external OAuth and
-  `/mcp`; external MCP/OAuth and staging Connection calls still use Actions.
+- [MCP edge](mcp_edge/README.md): external Connection/OAuth authority and `/mcp`; forwards authenticated Actions calls over gRPC.
 - [Runner Gateway](runner_gateway/README.md): one process serving the runner control stream,
   authorized live Runner proxy and [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue.
   Serving waits for a root-owned queue migration ([deployment](runner_gateway/README.md#deployment)).
@@ -90,9 +89,8 @@ flowchart LR
     app --> hs
     app -->|gRPC operator watches + health| notif
     app -->|Action generated HTTP/JSON and NDJSON facade + MCP linkage| actions
-    app -->|staging ConnectionService facade| actions
-    app -->|testing ConnectionService facade + gRPC health| edge
-    edge -.->|after external MCP cutover: authenticated ActionService gRPC| actions
+    app -->|ConnectionService facade + gRPC health| edge
+    edge -->|authenticated ActionService gRPC| actions
     notif -->|Action history: gRPC| actions
     app -->|gRPC| egress
     app --> electric

@@ -119,11 +119,12 @@ class ActionsProps:
     """This environment's Actions settings and secret wiring."""
 
     operator_oidc: OperatorOidcSettings
+    integrated_connection_service: bool
     # Its own namespace included; the Action Service watches policies in its own.
     caller_service_account_namespaces: frozenset[str]
     mcp_servers: Mapping[Key, McpOAuthServer]
     action_groups: Mapping[Key, ActionGroup]
-    # The public origin of its MCP and OAuth surface; None gives it no HTTPRoute and no Gateway ingress.
+    # Public origin for integrated MCP/OAuth or upstream client metadata; None omits public exposure.
     hostname: str | None = None
     mcp_client_metadata: McpClientMetadataSettings | None = None
     web_push: WebPushProps | None = None
@@ -146,6 +147,7 @@ class McpEdgeProps:
     caller_service_account_namespaces: frozenset[str]
     mintable_accounts: frozenset[ServiceAccountRef]
     oauth_secret_name: str | None
+    hostname: str | None
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
 
 

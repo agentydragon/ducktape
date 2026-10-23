@@ -28,12 +28,13 @@ from agentplane.mcp_edge.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, app as app_component, database
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.mcp_routes import add_public_route
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import grpc_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -162,12 +163,16 @@ class McpEdge(Construct):
     def add_platform_resources(self) -> None:
         namespace = self.env.namespace
         endpoint = self.endpoint
+        hostname = self.env.mcp_edge.hostname
+        if hostname is not None:
+            add_public_route(self, endpoint=endpoint, hostname=hostname)
         NetworkPolicy(
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[
+                *([IngressRule.from_gateway(endpoint.pod_port)] if hostname is not None else []),
                 app_component.service(namespace).pods.admit(endpoint.pod_port),
                 cilium.SCRAPERS.admit(endpoint.pod_port),
             ],

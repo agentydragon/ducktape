@@ -3,8 +3,8 @@
 The standalone `mcp-edge` binary is the next caller of the Action Service's gRPC API. It owns
 external Connections, grants and OAuth tokens in its PostgreSQL database, serves the operator
 [`ConnectionService`](connection_service.proto) over gRPC and HTTP/JSON, and, when OAuth is
-configured, serves `/mcp` and the OAuth protocol routes. Testing sends operator Connection calls to the standalone edge. Staging Connection calls and
-external MCP/OAuth still use the integrated edge in Actions until their separate handoff.
+configured, serves `/mcp` and the OAuth protocol routes. Both tiers send operator Connection calls to the standalone edge. Staging
+external MCP/OAuth routes also terminate here; Actions retains upstream MCP linkage and CIMD.
 The cutover sets Actions' `integrated_connection_service` to false and removes its OAuth
 configuration before transferring Connection and OAuth table ownership. Actions then registers
 neither the Connection gRPC service nor its generated HTTP facade.
@@ -63,3 +63,17 @@ retain source tables until a later verified cleanup migration. An empty-source c
 copy, but recheck state at handoff rather than relying on an earlier inventory.
 
 Rollout and remaining cleanup: [MCP edge extraction](../plans/mcp_edge_extraction.md).
+
+## Staging rollout ordering
+
+The operator approved an Actions/MCP maintenance window for the preserved-state handoff.
+Keep the cutover PR draft until the edge readiness rollout and app endpoint image are ready.
+Before merging the cutover configuration, suspend staging Flux reconciliation; existing Actions
+continues serving while the merged source artifact is published. Once that artifact is ready,
+stop Actions and the staged edge, perform the transfer above, and resume Flux so it applies the
+new ownership and routes. This confines the service pause to copying and workload replacement,
+rather than waiting for source CI or operator review with writers already stopped.
+
+Verify the deployed Actions configuration disables integrated ownership, the edge is Ready,
+and public discovery/challenges use the preserved issuer/resource URL. External operator login
+and reconnect are separate behavior checks; a healthy Deployment alone does not establish them.

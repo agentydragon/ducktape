@@ -161,6 +161,7 @@ ENV = Environment(
         origin=f"https://{_HOSTNAME}", oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None
     ),
     actions=ActionsProps(
+        integrated_connection_service=False,
         operator_oidc=_FEDERATION_TARGET,
         caller_service_account_namespaces=frozenset({TESTING_NAMESPACE}),
         mcp_servers={},
@@ -178,6 +179,7 @@ ENV = Environment(
         caller_service_account_namespaces=frozenset({TESTING_NAMESPACE}),
         mintable_accounts=frozenset(),
         oauth_secret_name=None,
+        hostname=None,
         extra_egress=(cilium.egress_via_gateway(_DEX_HOSTNAME),),
     ),
     vm_sandboxes=True,

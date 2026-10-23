@@ -37,6 +37,7 @@ from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, notifications
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.mcp_routes import PUBLIC_PATHS
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -55,17 +56,6 @@ _NAME = "actions"
 _ACTIONS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service-migrate"
 _LABELS = {"app.kubernetes.io/name": _NAME}
-_MCP_PATHS = (
-    "/mcp",
-    "/.well-known/oauth-authorization-server",
-    "/.well-known/oauth-protected-resource/mcp",
-    "/register",
-    "/authorize",
-    "/token",
-    "/revoke",
-    "/auth/callback",
-)
-
 
 # Where the Action Service reads the `oauth_secret_items` of `mcp_oauth_secret`.
 MCP_OAUTH_DIR = "/etc/agentplane-mcp"
@@ -125,6 +115,7 @@ class Actions(Construct):
             "host": "0.0.0.0",
             "port": self.service.pod_port,
             "token_audience": WORKLOAD_TOKEN_AUDIENCE,
+            "integrated_connection_service": props.integrated_connection_service,
             "operator_oidc": props.operator_oidc.model_dump(mode="json", exclude_unset=True),
             "policy_namespace": env.namespace,
             "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
@@ -259,7 +250,6 @@ class Actions(Construct):
                 .env_value(self, "web-push-secret")
             )
         if self.env.actions.github_mcp_client_secret_name is not None:
-            env[env_name(Settings, "oauth")] = self.mcp_oauth.key("oauth").env_value(self, "mcp-oauth-secret-env")
             env[env_name(Settings, "mcp_servers", "github", "client_id")] = (
                 SecretRef(namespace=namespace, name=self.env.actions.github_mcp_client_secret_name)
                 .key("client_id")
@@ -274,7 +264,7 @@ class Actions(Construct):
         if props.web_push is not None:
             names.add(props.web_push.secret_name)
         if props.github_mcp_client_secret_name is not None:
-            names |= {self.mcp_oauth.name, props.github_mcp_client_secret_name}
+            names.add(props.github_mcp_client_secret_name)
         if props.oauth_secret_items:
             names.add(self.mcp_oauth.name)
         return sorted(names)
@@ -356,8 +346,7 @@ class Actions(Construct):
         return workload
 
     def _add_http_route(self, hostname: str) -> None:
-        # The Actions service owns OAuth and bearer verification; no browser forward-auth
-        # hop. Keep REST/operator endpoints off this public origin.
+        # Public MCP/OAuth follows integrated ownership; upstream CIMD remains on Actions.
         client_metadata_paths = []
         client_metadata = self.env.actions.mcp_client_metadata
         if client_metadata is not None:
@@ -366,13 +355,20 @@ class Actions(Construct):
                 raise ValueError("mcp_client_metadata.url must use this Action Service's HTTPS hostname")
             assert metadata_url.path is not None
             client_metadata_paths.append(metadata_url.path)
+        paths = (
+            (*PUBLIC_PATHS, *sorted(set(client_metadata_paths)))
+            if self.env.actions.integrated_connection_service
+            else tuple(sorted(set(client_metadata_paths)))
+        )
+        if not paths:
+            raise ValueError("Action Service hostname needs public MCP/OAuth or client metadata")
         https_route(
             self,
             "httproute",
             metadata=ApiObjectMetadata(name=f"{_NAME}-mcp", namespace=self.env.namespace),
             hostnames=[hostname],
             backend=self.service,
-            paths=(*_MCP_PATHS, *sorted(set(client_metadata_paths))),
+            paths=paths,
             timeout="3600s",
         )
 
