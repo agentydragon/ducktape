@@ -568,7 +568,10 @@ in
       # tray-based applications on every GNOME host.
       { package = pkgs.gnomeExtensions.appindicator; }
       { package = pkgs.gnomeExtensions.panel-date-format; }
-      { package = pkgs.gnomeExtensions.cronomix; }
+      # Disabled: Cronomix stores applet toggles in ~/.config/cronomix/global.json
+      # and rewrites that file on startup; it has no GSettings/Nix config, so a
+      # Nix-store-backed setting for its Todo applet is unsafe.
+      # { package = pkgs.gnomeExtensions.cronomix; }
       { package = popShellPackage; }
       { package = pkgs.gnomeExtensions.gsconnect; }
       { package = pkgsUnstable.gnomeExtensions.just-perfection; }
