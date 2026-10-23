@@ -84,7 +84,34 @@ a new migration. Other deployment contracts remain.
 
 ## After the flip: the edge split
 
-1. The edge's database and a copy of its tables (database before code).
+1. **Edge database and data copy (database before code).** The edge owns the independent `mcp_edge`
+   database, with Goose migrations from `//agentplane/mcp_edge/migrations:image` and
+   `AGENTPLANE_MCP_EDGE_DATABASE_URL`. The operator copy command is
+   `//agentplane/mcp_edge/schema_transfer/cmd:mcp-edge-transfer`; it is deliberately limited to
+   `external_connection`, `external_connection_grant`, `connection_enrollment`,
+   `oauth_registered_client`, `oauth_authorization`, and `oauth_token`. It preserves row identities,
+   grant history, and OAuth values. It rejects an unrecognized source schema/history, an unexpected
+   destination relation, or any row in the destination tables. The retired grant
+   `activation_deadline` column is omitted if it still exists in Actions; all other table columns
+   must match the edge schema. No ActionRequest, Decision, Execution, policy, or Push state moves.
+
+   Run it only as one cutover window: migrate the empty destination first; stop Actions and all
+   Actions-side migrators; confirm the edge has no destination writers; then run the command with
+   `AGENTPLANE_ACTIONS_DATABASE_URL` and `AGENTPLANE_MCP_EDGE_DATABASE_URL` set in the operator's
+   environment and `--confirm-single-writer-cutover`. The transfer holds source table `SHARE` locks
+   while reading, copies and compares every supported field inside one destination transaction,
+   and reports only per-table row counts. Lock waits fail after five seconds; SIGINT/SIGTERM cancels
+   the operation. Any pre-commit failure rolls the destination back. Keep the legacy Actions runtime
+   stopped until an Actions image with `integrated_connection_service=false` no longer registers or
+   serves the in-process ConnectionService and HTTP facade and cannot write these six tables. That
+   gate also rejects OAuth being enabled; unsetting OAuth configuration alone does not disable the
+   ConnectionService. The edge must be the only writer for the six tables; once that gate is verified,
+   Actions core may resume independently.
+   Database locks only fence writes during the copy and cannot prevent a process from restarting.
+   The source copy remains in place in this PR; do not start both old and new edge owners or clean
+   up the old tables here.
+   This preparation does not execute the transfer or change live data.
+
 2. Actions accepts ServiceAccount tokens without a Pod binding in source through the explicit account-only
    resolver. Verify that image has replaced deployed Actions before the edge starts minting such tokens.
    Caller namespace, audience, ServiceAccount UID and live label checks still apply. This is token acceptance
