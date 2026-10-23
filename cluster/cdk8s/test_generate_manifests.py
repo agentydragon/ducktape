@@ -125,7 +125,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert cluster["highAvailabilityController"] == {"enabled": False}
     assert cluster["nfsServer"] == {"enabled": False}
 
-    satellite, ssd_satellite, next_ssd_satellite = values["linstorSatelliteConfigurations"]
+    satellite, ssd_satellite, next_ssd_satellite, third_ssd_satellite = values["linstorSatelliteConfigurations"]
     assert satellite["nodeSelector"] == canary_selector
     assert satellite["deletionPolicy"] == "Retain"
     [pool] = satellite["storagePools"]
@@ -162,6 +162,25 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
             "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
         },
         "source": {"hostDevices": ["/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"]},
+    }
+
+    assert third_ssd_satellite["name"] == "ssd-ovh-ns104963"
+    assert third_ssd_satellite["nodeSelector"] == {
+        "storage.allegedly.works/piraeus-ready": "true",
+        "kubernetes.io/hostname": "ovh-ns104963",
+    }
+    assert third_ssd_satellite["deletionPolicy"] == "Retain"
+    assert third_ssd_satellite["podTemplate"] == ssd_satellite["podTemplate"]
+    assert third_ssd_satellite["patches"] == ssd_satellite["patches"]
+    [third_ssd_pool] = third_ssd_satellite["storagePools"]
+    assert third_ssd_pool == {
+        "name": "ssd",
+        "lvmThinPool": {
+            "volumeGroup": "piraeus_ssd",
+            "thinPool": "data",
+            "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+        },
+        "source": {"hostDevices": ["/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"]},
     }
 
     storage_class, ssd_class = values["storageClasses"]
