@@ -327,6 +327,93 @@ fn union_handles_different_rank_lengths_and_reports_new_values() {
     assert!(!empty.union_with(&high_values));
 }
 
+#[test]
+fn sparse_high_rank_sets_compose_reuse_and_union_in_any_order() {
+    // This table gives Function(12_416) semantic rank 12_416, matching a
+    // sparse source whose only occupied word is index 194 in a u64 wordset.
+    const HIGH_RANK: u32 = 12_416;
+    const INTERMEDIATE_RANK: u32 = 6_400;
+
+    let mut domain: Vec<_> = (0..=HIGH_RANK).map(ValueOrigin::Function).collect();
+    domain.extend([
+        ValueOrigin::Function(u32::MAX),
+        ValueOrigin::Class(u32::MAX),
+        ValueOrigin::Object(u32::MAX),
+        ValueOrigin::Unknown,
+    ]);
+    let origins = Arc::new(OriginTable::from_origins(domain.iter().copied()));
+
+    let source_value = ValueOrigin::Function(HIGH_RANK);
+    let source = values_from(&origins, [source_value]);
+    assert_eq!(source.iter().collect::<Vec<_>>(), [source_value]);
+
+    let sparse_source = values_from(&origins, [ValueOrigin::Function(0), source_value]);
+    assert_eq!(sparse_source.occupied_word_indices(), &[0, 194]);
+
+    let low = [
+        ValueOrigin::Function(0),
+        ValueOrigin::Function(64),
+        ValueOrigin::Function(128),
+        ValueOrigin::Function(192),
+    ];
+    let intermediate = ValueOrigin::Function(INTERMEDIATE_RANK);
+    let low_values = values_from(&origins, low);
+
+    let mut accumulated = Values::empty(origins.clone());
+    let mut accumulated_expected = BTreeSet::new();
+    assert!(assert_union_matches_oracle(
+        &mut accumulated,
+        &mut accumulated_expected,
+        &low_values,
+    ));
+    assert!(assert_union_matches_oracle(
+        &mut accumulated,
+        &mut accumulated_expected,
+        &sparse_source,
+    ));
+    assert_eq!(
+        accumulated.insert(intermediate),
+        accumulated_expected.insert(intermediate),
+    );
+    assert_matches_domain(&accumulated, &accumulated_expected, &domain);
+
+    // Reuse a composed set as the source for a third, initially empty set.
+    let mut copied = Values::empty(origins.clone());
+    let mut copied_expected = BTreeSet::new();
+    assert!(assert_union_matches_oracle(
+        &mut copied,
+        &mut copied_expected,
+        &accumulated,
+    ));
+    assert!(!assert_union_matches_oracle(
+        &mut copied,
+        &mut copied_expected,
+        &accumulated,
+    ));
+    assert_matches_domain(&copied, &copied_expected, &domain);
+
+    // Reversing source order produces the same full set and ordered iteration.
+    let mut reversed = Values::empty(origins);
+    let mut reversed_expected = BTreeSet::new();
+    assert!(assert_union_matches_oracle(
+        &mut reversed,
+        &mut reversed_expected,
+        &source,
+    ));
+    assert!(assert_union_matches_oracle(
+        &mut reversed,
+        &mut reversed_expected,
+        &low_values,
+    ));
+    assert_eq!(
+        reversed.insert(intermediate),
+        reversed_expected.insert(intermediate),
+    );
+    assert_matches_domain(&reversed, &reversed_expected, &domain);
+    assert_eq!(reversed, accumulated);
+    assert_eq!(reversed_expected, accumulated_expected);
+}
+
 #[derive(Default)]
 struct ArrowOrigins(BTreeSet<ValueOrigin>);
 

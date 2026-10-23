@@ -122,12 +122,24 @@ impl Default for OriginTable {
 
 /// A dense, ordered set of semantic origins. All sets in one flow analysis
 /// share its immutable origin table, so word positions have identical meaning.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub(crate) struct Values {
     bits: Vec<u64>,
+    /// Nonzero word indices, in sorted order. `bits` stays dense so rank
+    /// lookup is constant-time, while unions touch only words that can add
+    /// origins instead of scanning long zero prefixes.
+    occupied_words: Vec<u32>,
     unknown: bool,
     origins: Arc<OriginTable>,
 }
+
+impl PartialEq for Values {
+    fn eq(&self, other: &Self) -> bool {
+        self.bits == other.bits && self.unknown == other.unknown && self.origins == other.origins
+    }
+}
+
+impl Eq for Values {}
 
 impl std::fmt::Debug for Values {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -139,6 +151,7 @@ impl Values {
     pub(super) fn empty(origins: Arc<OriginTable>) -> Self {
         Self {
             bits: Vec::new(),
+            occupied_words: Vec::new(),
             unknown: false,
             origins,
         }
@@ -165,6 +178,11 @@ impl Values {
             + usize::from(self.unknown)
     }
 
+    #[cfg(test)]
+    pub(super) fn occupied_word_indices(&self) -> &[u32] {
+        &self.occupied_words
+    }
+
     pub(super) fn contains(&self, value: &ValueOrigin) -> bool {
         if *value == ValueOrigin::Unknown {
             return self.unknown;
@@ -189,6 +207,12 @@ impl Values {
             self.bits.resize(word_index + 1, 0);
         }
         let mask = 1_u64 << (id % u64::BITS);
+        let was_empty = self.bits[word_index] == 0;
+        if was_empty {
+            self.insert_occupied_word(
+                u32::try_from(word_index).expect("chunk origin word index exceeds u32"),
+            );
+        }
         let word = &mut self.bits[word_index];
         let changed = *word & mask == 0;
         *word |= mask;
@@ -207,15 +231,11 @@ impl Values {
     /// Merge another value set, returning whether it contributed new origins.
     pub(super) fn union_with(&mut self, other: &Self) -> bool {
         assert!(Arc::ptr_eq(&self.origins, &other.origins));
-        let mut changed = false;
-        if self.bits.len() < other.bits.len() {
-            self.bits.resize(other.bits.len(), 0);
-        }
-        for (into, from) in self.bits.iter_mut().zip(&other.bits) {
-            let merged = *into | *from;
-            changed |= merged != *into;
-            *into = merged;
-        }
+        let mut changed = if let Some(changed) = self.union_dense_words(other) {
+            changed
+        } else {
+            self.union_occupied_words(other)
+        };
         if other.unknown && !self.unknown {
             self.unknown = true;
             changed = true;
@@ -223,15 +243,116 @@ impl Values {
         changed
     }
 
-    fn union_without_change_tracking(&mut self, other: &Self) {
-        assert!(Arc::ptr_eq(&self.origins, &other.origins));
+    fn union_occupied_words(&mut self, other: &Self) -> bool {
+        let mut changed = false;
         if self.bits.len() < other.bits.len() {
             self.bits.resize(other.bits.len(), 0);
         }
-        for (into, from) in self.bits.iter_mut().zip(&other.bits) {
-            *into |= *from;
+        let mut added_words = Vec::new();
+        for word_index in &other.occupied_words {
+            let index = *word_index as usize;
+            let into = self.bits[index];
+            let from = other.bits[index];
+            let merged = into | from;
+            changed |= merged != into;
+            if into == 0 {
+                added_words.push(*word_index);
+            }
+            self.bits[index] = merged;
         }
+        self.merge_occupied_words(&added_words);
+        changed
+    }
+
+    fn union_without_change_tracking(&mut self, other: &Self) {
+        assert!(Arc::ptr_eq(&self.origins, &other.origins));
+        if self.union_dense_words(other).is_some() {
+            self.unknown |= other.unknown;
+            return;
+        }
+        if self.bits.len() < other.bits.len() {
+            self.bits.resize(other.bits.len(), 0);
+        }
+        let mut added_words = Vec::new();
+        for word_index in &other.occupied_words {
+            let index = *word_index as usize;
+            let into = self.bits[index];
+            if into == 0 {
+                added_words.push(*word_index);
+            }
+            self.bits[index] = into | other.bits[index];
+        }
+        self.merge_occupied_words(&added_words);
         self.unknown |= other.unknown;
+    }
+
+    /// Preserve the vectorized wordwise path when neither operand contains
+    /// zero words. Growing a dense destination adds the dense source's tail
+    /// ranks to the already sorted occupied-word index.
+    fn union_dense_words(&mut self, other: &Self) -> Option<bool> {
+        if self.occupied_words.len() != self.bits.len()
+            || other.occupied_words.len() != other.bits.len()
+        {
+            return None;
+        }
+
+        let old_len = self.bits.len();
+        if old_len < other.bits.len() {
+            self.bits.resize(other.bits.len(), 0);
+            self.occupied_words.extend(
+                (old_len..other.bits.len()).map(|index| {
+                    u32::try_from(index).expect("chunk origin word index exceeds u32")
+                }),
+            );
+        }
+
+        let mut changed = false;
+        for (into, from) in self.bits.iter_mut().zip(&other.bits) {
+            let merged = *into | *from;
+            changed |= merged != *into;
+            *into = merged;
+        }
+        Some(changed)
+    }
+
+    fn insert_occupied_word(&mut self, word: u32) {
+        let Err(index) = self.occupied_words.binary_search(&word) else {
+            unreachable!("an empty value word cannot already be marked occupied");
+        };
+        self.occupied_words.insert(index, word);
+    }
+
+    /// Merge a sorted, duplicate-free list of newly occupied words while
+    /// keeping iteration metadata ordered independently of insertion order.
+    fn merge_occupied_words(&mut self, added: &[u32]) {
+        if added.is_empty() {
+            return;
+        }
+        debug_assert!(added.windows(2).all(|pair| pair[0] < pair[1]));
+        let Some(&last_existing) = self.occupied_words.last() else {
+            self.occupied_words.extend_from_slice(added);
+            return;
+        };
+        if added[0] > last_existing {
+            self.occupied_words.extend_from_slice(added);
+            return;
+        }
+
+        let mut merged = Vec::with_capacity(self.occupied_words.len() + added.len());
+        let mut existing = self.occupied_words.iter().copied().peekable();
+        let mut additions = added.iter().copied().peekable();
+        while existing.peek().is_some() && additions.peek().is_some() {
+            if existing.peek() < additions.peek() {
+                merged.push(existing.next().expect("peeked existing word"));
+            } else if existing.peek() > additions.peek() {
+                merged.push(additions.next().expect("peeked added word"));
+            } else {
+                unreachable!("newly occupied words are disjoint from existing words");
+            }
+        }
+        merged.extend(existing);
+        merged.extend(additions);
+        self.occupied_words = merged;
     }
 
     fn union(mut self, other: Self) -> Self {
