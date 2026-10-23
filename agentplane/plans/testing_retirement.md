@@ -63,7 +63,7 @@ Speed, in parallel:
 - **Precompiled bytecode**: up to 10 s of the remaining imports
   ([executor constraints](../x/k3s_env/README.md#rbe-executor-constraints)). Measured here only; no
   node until the operator wants one.
-- **Python removal**: 43% of the bytes, 9–14% of the action. The Action Service port is in flight
-  (`ACTION_SERVICE_GO_PORT`), and the app has no port plan. This program schedules neither.
+- **Python removal**: the measurements above predate the completed Action Service Go port.
+  Remeasure before using those percentages to prioritize more ports; the app has no port plan.
 - **Go image bytes**: 313 MiB over eight images that share nothing. Measured here only; no node
   until the operator wants one.

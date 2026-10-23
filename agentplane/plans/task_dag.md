@@ -28,9 +28,8 @@ code-mode fixture) have no group. `REFACTOR_COHERENCE_AUDIT` sweeps what remains
 
 ```mermaid
 flowchart LR
-    subgraph ACTION_TRACK[Action Service Go port]
-        ACTION_SERVICE_GO_PORT[Active: stage O Python runtime and parity retirement; stage N accepted]
-        ACTION_MCP_EDGE_SPLIT[Unscheduled: approved edge split; stage N cutover accepted]
+    subgraph ACTION_TRACK[MCP edge extraction]
+        ACTION_MCP_EDGE_SPLIT[Active: testing and staging handoff]
     end
     subgraph MESSAGING_TRACK[Agent messaging]
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
@@ -51,7 +50,6 @@ flowchart LR
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
-    ACTION_SERVICE_GO_PORT -. Stage N cutover prerequisite accepted .-> ACTION_MCP_EDGE_SPLIT
     K3S_TRACK --> K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
     K3S_MODEL_SCENARIOS --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
     RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
@@ -1813,11 +1811,9 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 ```mermaid
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
-    ACTION_SERVICE_GO_PORT[Active: stage O Python runtime and parity retirement; stage N accepted]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
-    ACTION_SERVICE_GO_PORT -. related .-> WEB_PUSH_SERVICE
-    ACTION_SERVICE_GO_PORT -. Stage N cutover prerequisite accepted .-> ACTION_MCP_EDGE_SPLIT[Unscheduled: approved edge split]
+    ACTION_MCP_EDGE_SPLIT[Active: testing and staging handoff]
 ```
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
@@ -1828,26 +1824,22 @@ reads and replace the app's mirror models (`app/threads/view/content.py`,
 changed, so a browser-facing watch gets frames that carry state. Decide on purpose whether the app's Thread
 check on `thread_observations` (404 for a Session no Thread links) is kept or dropped.
 
-### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
+### `ACTION_MCP_EDGE_SPLIT` — finish the MCP edge handoff
 
-**Stage M and stage N accepted; stage O Python runtime and parity cleanup is active.**
-The Go service, generated CLI/app/Notification callers and Go-backed K3s acceptance are merged in
-#11454, including the cleanup in #11459 and #11460. Testing's Go deployment and disposable Sandbox
-CLI-through-egress probe passed; the staging image-pin file carries the selected tested tags. The
-staging source cutover coordinated the service, Goose migrator, generated callers, Go
-probes and runner-disk/Sandbox images. Preserve the staging database, Connection identities,
-Sandboxes and their storage; restoration testing is waived and unencrypted database secrets are
-accepted. The existing controller refreshes the runner-disk template on resume. Remaining stages
-and the later edge split:
-[Action Service Go rollout](action_service_go_port.md).
+**Active (Codex, 2026-10-23; merged preparation and live state checked).** The Go port,
+Python retirement and legacy schema cleanup are complete. Edge runtime, scoped TokenRequest
+permissions, transfer tooling, deployments and Flux image automation are merged. Both edge
+Deployments are configured for one testing replica (#11727 merged), zero in staging; testing's
+schema is initialized. Testing activation is awaiting reconciliation; callers have not moved.
+The app's endpoint split is being prepared separately.
 
-### `ACTION_MCP_EDGE_SPLIT` — split `mcp-edge` out of the Action Service
-
-**Unscheduled after the accepted Stage N Go cutover; destination approved by the operator, 2026-10-20 PDT.** The
-OAuth server, Connections, grants and enrollments move to their own `mcp-edge` deployment and database, which mints
-tokens for the bound ServiceAccounts with audience `actions`; `actions` then has one token admission path and stops
-being public. Steps, each its own PR: [after the flip](action_service_go_port.md#after-the-flip-the-edge-split).
-External MCP clients do not re-authorize again. The tables leave the `actions` database in a separate data change.
+Remaining outcomes: testing's Connection caller handoff, staging's preserved-state and public
+MCP/OAuth handoff, then deletion of integrated runtime and source tables. Detailed sequence and
+constraints: [MCP edge extraction](mcp_edge_extraction.md#remaining-work).
+The current token audience is `agentplane-egress`; a dedicated audience is a separate change.
+Actions retains its upstream CIMD endpoint and the app retains upstream OAuth callbacks.
+External-client reauthorization remains unverified; extraction preserves existing issuer URLs
+and copied token state rather than requiring another reauthorization.
 
 ### `WEB_PUSH_SERVICE` — Web Push as its own sender
 
@@ -1857,8 +1849,8 @@ can foresee wanting to send other web pushes").** Web Push delivery (operator su
 lives in the Action Service because an Action awaiting approval is the only message today. It does not belong to the
 Notification Service, which serves agent Session inboxes, a different system. If other messages come, a Web Push
 sender of its own would own the subscriptions and take messages from their producers. The sender touches only its
-own tables and the request event stream, so the move is clean. Not immediate: `ACTION_SERVICE_GO_PORT` keeps
-Web Push in the Action Service.
+own tables and the request event stream, so the move is clean. This remains a separate decision;
+the MCP edge extraction leaves Web Push in Actions.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 
@@ -2001,9 +1993,8 @@ volumes, a data drop that waits for the operator's word. Preserve staging.
 ## 15. Cleanups after the current tracks
 
 Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
-lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the Python Action Service, its
-parity harnesses and the workload `/mcp` egress path in
-[the Action port's stages and cutover](action_service_go_port.md#remaining-stages); testing's Dex MCP client and Action groups
+lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the integrated Connection/OAuth runtime
+and its old tables in [MCP edge extraction](mcp_edge_extraction.md#remaining-work); testing's Dex MCP client and Action groups
 in `TESTING_ENVIRONMENT_RETIRE`; the `TESTING_NAMESPACE` default in `LIVE_TARGETS_OFF_TESTING`. The overview's graph is in
 [Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
 produce are named at the fake and are not cleanups.

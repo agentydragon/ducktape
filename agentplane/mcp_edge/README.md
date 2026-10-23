@@ -39,6 +39,27 @@ The published image is `agentplane-mcp-edge`, built from `//agentplane/mcp_edge:
 The independent Goose migrator's image is `agentplane-mcp-edge-migrate`; both read
 `AGENTPLANE_MCP_EDGE_DATABASE_URL`.
 
-<!-- CLEANUP(added 2026-10-23): Remove the integrated Action Service edge after the public
-     route and app Connection callers have moved, source image has replaced every Actions Pod,
-     and the edge table transfer has been verified. -->
+## Schema and data handoff
+
+Initialize the destination with `//agentplane/mcp_edge/migrations:image` before copying or serving.
+The operator command `//agentplane/mcp_edge/schema_transfer/cmd:mcp-edge-transfer` copies only:
+
+- `external_connection`, `external_connection_grant`, `connection_enrollment`
+- `oauth_registered_client`, `oauth_authorization`, `oauth_token`
+
+Set `AGENTPLANE_ACTIONS_DATABASE_URL` and `AGENTPLANE_MCP_EDGE_DATABASE_URL` in the operator's
+environment and pass `--confirm-single-writer-cutover`. Stop legacy Actions and its migrators,
+and keep destination writers stopped throughout the copy. The command requires an empty destination
+and recognized schema histories, holds source table `SHARE` locks, copies and compares every
+supported field inside one destination transaction, and prints only row counts. Lock waits fail
+after five seconds; SIGINT/SIGTERM cancels the operation. Failures before commit roll back the
+destination. Action requests, decisions, executions, policies and Web Push state do not move.
+
+Locks fence writes only while copying; they cannot prevent a legacy process from restarting.
+Keep the legacy owner stopped until the deployed Actions image has
+`integrated_connection_service=false` and no OAuth configuration. Verify that its Connection gRPC
+service and HTTP facade are absent before resuming Actions core. The edge becomes the only writer;
+retain source tables until a later verified cleanup migration. An empty-source cutover needs no
+copy, but recheck state at handoff rather than relying on an earlier inventory.
+
+Rollout and remaining cleanup: [MCP edge extraction](../plans/mcp_edge_extraction.md).

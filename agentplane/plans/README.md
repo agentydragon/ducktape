@@ -35,8 +35,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 - [Generated HTTP facades](grpc_http_facade.md) — extension of the approved gRPC-Gateway direction
   to the browser, through the app first, with direct browser access as a later option; the
   per-service tracks are in the task DAG
-- [Action Service Go port](action_service_go_port.md) — in flight; stages, library choices, the OAuth authorization
-  server on `zitadel/oidc`, stored-data risks and cutover for porting the service as it is
+- [MCP edge extraction](mcp_edge_extraction.md) — remaining testing/staging handoff, caller and public-route
+  changes, then retirement of integrated Connection/OAuth ownership; the Go port is complete
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving
   agent-facing records through an extension apiserver, with RBAC via `SubjectAccessReview` as the
   cheaper route
