@@ -102,8 +102,7 @@ def _database(scope: Construct) -> None:
         # Preserve the existing mixed-class 1Gi PVCs; Piraeus applies to the new claim only.
         instances=3,
         image_name=None,
-        placement=node_scheduling.HIL_OVH,
-        storage_class="piraeus-ssd-local",
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="1Gi",
         resize_in_use_volumes=False,
         # CNPG creates the read-only role on first reconcile and sets its password from

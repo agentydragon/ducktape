@@ -108,8 +108,7 @@ def _database(scope: Construct) -> None:
         # shape this had before the namespace was parked: Synapse's media store is on
         # SeaweedFS now, whose CSI node plugin only runs on the OVH nodes, so the app
         # moved there and R5 requires the database to follow it.
-        placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh",
+        profile=cnpg.OVH_LOCAL_PATH,
         size="10Gi",
         initdb=cnpg.same_owner_initdb("synapse", locale_c_type="C", locale_collate="C"),
         wal_archive=True,

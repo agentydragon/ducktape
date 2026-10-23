@@ -31,7 +31,7 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecInstanceSelector,
 )
 
-from cluster.cdk8s import cnpg, cnpg_backup, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.grafana_dashboards import DashboardFile
@@ -101,8 +101,7 @@ def _database(chart: Chart) -> None:
         chart,
         "database",
         ref=DATABASE,
-        placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh",
+        profile=cnpg.OVH_LOCAL_PATH,
         size="2Gi",
         # Created by pg_basebackup from the retired grafana-db, so this never initializes
         # anything. It names the application database and role CNPG uses: the metrics

@@ -29,9 +29,8 @@ _REGION = "topology.kubernetes.io/region"
 _TIER = "storage.allegedly.works/tier"
 _OVH_SSD = "local-path-ovh-ssd"
 _HOME_SSD = "local-path-home-ssd"
-# Classes provisioning onto SSD. OVH's tier=ssd nodes are exactly its control planes, so
-# a Cluster on local-path-ovh-ssd must tolerate them (cnpg.py).
-SSD_STORAGE_CLASSES = {_OVH_SSD, _HOME_SSD}
+# OVH's tier=ssd nodes are exactly its control planes. CNPG callers that use the OVH SSD
+# profile explicitly select its control-plane tolerance along with this class.
 
 # OVH classes opt into these dedicated paths; unlisted nodes must not use the
 # provisioner's default system-disk path. Empty paths also deny provisioning.

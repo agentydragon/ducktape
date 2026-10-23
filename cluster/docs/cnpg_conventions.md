@@ -40,15 +40,25 @@ rebuild only the targeted standby while keeping two desired instances; the
 primary is briefly the only member. Keep a resource-specific Flux hold until
 the template change is merged and reconciled.
 
-**Placement** (`cnpg.cluster` derives it; no site builds its own): pod
+**Placement** (callers choose a `cnpg.ClusterPlacement` preset): pod
 anti-affinity is `required` on `kubernetes.io/hostname` for every OVH Cluster,
-and a Cluster tolerates the control-plane taint for local-path SSD classes
-(`SSD_STORAGE_CLASSES` in `cdk8s/local_path_provisioner.py`) and for
-`piraeus-ssd-local`, whose only pool is on an OVH control-plane. The Piraeus
-class adds the same control-plane tolerance as the previous local SSD class.
-**Gotcha:** a local PV pins a running instance to its node; before removing a
-class-specific toleration, check where its PV lives and rebuild the instance on
-a schedulable node if needed.
+and the selected `cnpg.ClusterPlacement` profile carries the node pin, storage
+class, and control-plane tolerance together. Callers select one of these named
+profiles rather than deriving scheduling eligibility from the storage-class
+string:
+
+- `cnpg.OVH_LOCAL_PATH`: `HIL_OVH`, `local-path-ovh`, no control-plane
+  toleration. This preserves the existing behavior for the legacy HDD alias.
+- `cnpg.OVH_LOCAL_PATH_SSD`: `HIL_OVH`, `local-path-ovh-ssd`, with a
+  control-plane toleration.
+- `cnpg.OVH_PIRAEUS_SSD`: `HIL_OVH`, `piraeus-ssd-local`, with a
+  control-plane toleration.
+
+The two SSD profiles allow scheduling onto the current OVH SSD pool nodes,
+which are control planes. This is an explicit pairing, not a property inferred
+from a class name. **Gotcha:** a local PV pins a running instance to its node;
+before changing a profile's tolerance, check where its PV lives and rebuild the
+instance on a schedulable node if needed.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
 app on Proxmox. Relies on ZFS for local reliability; off-site backups via
@@ -74,7 +84,9 @@ replicas stay on their bound volumes. Proxmox-single uses
 `local-path-proxmox`. OVH-HA gets
 replication at the CNPG level (2 instances on separate nodes);
 Proxmox-single gets replication at the storage level (ZFS on the Proxmox
-host).
+host). The selected `ClusterPlacement` keeps the node pin, storage class, and
+control-plane tolerance explicit as one choice; changing storage topology
+requires reviewing that profile and the bound PVs together.
 
 ### R4: `initdb.secret` must exist before the Cluster resource
 

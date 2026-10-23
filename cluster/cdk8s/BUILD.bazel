@@ -362,7 +362,6 @@ py_library(
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
-        ":local_path_provisioner",
         ":node_scheduling",
         ":secret_ref",
         ":service_ref",

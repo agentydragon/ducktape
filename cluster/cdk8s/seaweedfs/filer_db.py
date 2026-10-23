@@ -20,7 +20,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecResourcesRequests,
 )
 
-from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s import cnpg
 from cluster.cdk8s.seaweedfs import namespace
 from cluster.cdk8s.secret_ref import SecretRef
 
@@ -48,8 +48,7 @@ def chart(app: App) -> Chart:
         },
         # Existing local-path SSD replicas remain pinned by their PVs. A new Piraeus-local
         # replica uses the current pool on ovh-ns1001419.
-        placement=node_scheduling.HIL_OVH,
-        storage_class="piraeus-ssd-local",
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="12Gi",
         resize_in_use_volumes=False,
         # QoS / eviction protection. Without these the instance pods are BestEffort -- the

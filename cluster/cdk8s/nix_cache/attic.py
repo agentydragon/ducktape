@@ -107,10 +107,9 @@ def _database(scope: Construct) -> None:
         "db",
         ref=DATABASE,
         image_name=None,
-        placement=node_scheduling.HIL_OVH,
+        profile=cnpg.OVH_PIRAEUS_SSD,
         # Existing replicas keep their local-path PVCs and sizes; CNPG applies this Piraeus class and
         # the 8Gi template only when it creates another claim.
-        storage_class="piraeus-ssd-local",
         size="8Gi",
         resize_in_use_volumes=False,
         instances=3,

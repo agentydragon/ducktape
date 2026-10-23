@@ -26,8 +26,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 from constructs import Construct
 
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.local_path_provisioner import SSD_STORAGE_CLASSES
-from cluster.cdk8s.node_scheduling import Placement
 from cluster.cdk8s.providers.cnpg.cluster import Cluster
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -37,11 +35,36 @@ POSTGRES_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
 BARMAN_PLUGIN = "barman-cloud.cloudnative-pg.io"
 # The port of every Service CNPG creates for a Cluster.
 PORT = Port(name="postgres", number=5432)
-_PIRAEUS_SSD_STORAGE_CLASS = "piraeus-ssd-local"
-
 _CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
     key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
 )
+_OVH_WORKER_AFFINITY = ClusterSpecAffinity(
+    node_selector=node_scheduling.HIL_OVH.node_selector,
+    topology_key="kubernetes.io/hostname",
+    pod_anti_affinity_type="required",
+)
+_OVH_CONTROL_PLANE_AFFINITY = ClusterSpecAffinity(
+    node_selector=node_scheduling.HIL_OVH.node_selector,
+    tolerations=[_CONTROL_PLANE_TOLERATION],
+    topology_key="kubernetes.io/hostname",
+    pod_anti_affinity_type="required",
+)
+
+
+@dataclass(frozen=True)
+class ClusterPlacement:
+    """The explicit CNPG affinity and storage class, including node-role eligibility."""
+
+    storage_class: str
+    affinity: ClusterSpecAffinity | None
+
+
+# Choose the affinity and storage combination as a named profile at each callsite. OVH SSD classes
+# currently have local pools on control-plane nodes; the legacy local-path-ovh class keeps its
+# prior worker-only affinity behavior.
+OVH_LOCAL_PATH = ClusterPlacement(storage_class="local-path-ovh", affinity=_OVH_WORKER_AFFINITY)
+OVH_LOCAL_PATH_SSD = ClusterPlacement(storage_class="local-path-ovh-ssd", affinity=_OVH_CONTROL_PLANE_AFFINITY)
+OVH_PIRAEUS_SSD = ClusterPlacement(storage_class="piraeus-ssd-local", affinity=_OVH_CONTROL_PLANE_AFFINITY)
 
 
 @dataclass(frozen=True)
@@ -69,24 +92,6 @@ class PostgresRef:
         )
 
 
-def _affinity(*, placement: Placement, storage_class: str) -> ClusterSpecAffinity:
-    """One instance per node within `placement`, required: instances sharing a node share its
-    failure, and preferred anti-affinity lets the scheduler co-locate them. A Cluster tolerates
-    control-plane nodes for local-path SSD classes and the Piraeus SSD pilot, whose only pool is
-    currently on an OVH control-plane."""
-    tolerations = (
-        [_CONTROL_PLANE_TOLERATION]
-        if storage_class in SSD_STORAGE_CLASSES or storage_class == _PIRAEUS_SSD_STORAGE_CLASS
-        else None
-    )
-    return ClusterSpecAffinity(
-        node_selector=placement.node_selector,
-        tolerations=tolerations,
-        topology_key="kubernetes.io/hostname",
-        pod_anti_affinity_type="required",
-    )
-
-
 def same_owner_initdb(
     name: str, *, secret: SecretRef | None = None, locale_c_type: str | None = None, locale_collate: str | None = None
 ) -> ClusterSpecBootstrapInitdb:
@@ -107,8 +112,7 @@ def cluster(
     id: str,
     *,
     ref: PostgresRef,
-    placement: Placement | None,
-    storage_class: str,
+    profile: ClusterPlacement,
     size: str,
     initdb: ClusterSpecBootstrapInitdb | None,
     wal_archive: bool,
@@ -124,11 +128,10 @@ def cluster(
 ) -> Cluster:
     """`ref`'s CNPG `Cluster`. Keywords are `ClusterSpec` fields under the same names and types,
     except `initdb` (`bootstrap.initdb`; `None` leaves CNPG's default, an `app` database and
-    owner), `storage_class`/`size`/`resize_in_use_volumes` (`storage`; `None` leaves CNPG's
-    default, while `False` prevents resizing existing PVCs when the template size changes;
-    new claims still use `size`),
-    `placement` (the zone or region pin), from which `_affinity` derives placement, and
-    `wal_archive`, which makes the barman-cloud plugin archive WAL to the ObjectStore named
+    owner), `profile` (the explicit affinity and storage class, including node-role tolerations),
+    `size`/`resize_in_use_volumes` (`storage`; `None` leaves CNPG's default, while
+    `False` prevents resizing existing PVCs when the template size changes; new claims still use
+    `size`), and `wal_archive`, which makes the barman-cloud plugin archive WAL to the ObjectStore named
     `ref.name` (`cnpg_backup.CnpgBackup` builds it). Our policy: 2 instances
     (cluster/docs/cnpg_conventions.md R2) on `POSTGRES_IMAGE`; `image_name=None` runs the
     operator's default image. Every Cluster disables the liveness isolation check -- CNPG 1.27+
@@ -139,11 +142,13 @@ def cluster(
         scope,
         id,
         metadata=ApiObjectMetadata(name=ref.name, namespace=ref.namespace, annotations=annotations),
-        storage=ClusterSpecStorage(storage_class=storage_class, size=size, resize_in_use_volumes=resize_in_use_volumes),
+        storage=ClusterSpecStorage(
+            storage_class=profile.storage_class, size=size, resize_in_use_volumes=resize_in_use_volumes
+        ),
         instances=instances,
         image_name=image_name,
         bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
-        affinity=_affinity(placement=placement, storage_class=storage_class) if placement is not None else None,
+        affinity=profile.affinity,
         env=env,
         managed=managed,
         postgresql=postgresql,

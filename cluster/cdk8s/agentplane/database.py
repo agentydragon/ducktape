@@ -18,13 +18,12 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecCluster, DatabaseSpecDatabaseReclaimPolicy
 from constructs import Construct
 
-from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s import cnpg
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 from cluster.cdk8s.providers.cnpg.database import Database
 
-_STORAGE_CLASS = "local-path-ovh-ssd"
 _CLUSTER_NAME = "postgres"
 
 # The logical databases services own on the shared Cluster; the initdb-owned
@@ -89,8 +88,7 @@ class Db(Construct):
             "cluster",
             ref=cluster,
             instances=env.db.instances,
-            placement=node_scheduling.HIL_OVH,
-            storage_class=env.db.storage_class or _STORAGE_CLASS,
+            profile=env.db.profile,
             size=env.db.size,
             resize_in_use_volumes=env.db.resize_in_use_volumes,
             # Electric's WAL-loss recovery purges every shape, then stays unready while

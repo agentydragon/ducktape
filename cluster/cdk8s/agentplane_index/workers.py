@@ -23,7 +23,7 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
 
 from agentplane.indexing.settings import Settings
-from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s import cnpg, namespaces
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -102,8 +102,7 @@ def _database(chart: Chart) -> None:
         chart,
         "database-cluster",
         ref=DATABASE,
-        placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh-ssd",
+        profile=cnpg.OVH_LOCAL_PATH_SSD,
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),
         wal_archive=False,

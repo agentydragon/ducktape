@@ -76,8 +76,7 @@ def _database(chart: Chart) -> None:
                 "age out of Anthropic's API this may be the only copy."
             )
         },
-        placement=node_scheduling.HIL_OVH,
-        storage_class="piraeus-ssd-local",
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="40Gi",
         resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb("claude_sessions"),

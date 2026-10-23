@@ -33,7 +33,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg, cnpg_backup, namespaces, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, namespaces
 from cluster.cdk8s.external_secrets.kubernetes_store import cluster_secret_store
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import (
@@ -164,8 +164,7 @@ def _db_chart(app: App) -> Chart:
         "cluster",
         ref=DATABASE,
         annotations={"description": "Shared OVH-HA CNPG cluster for MCP OAuth state."},
-        placement=node_scheduling.HIL_OVH,
-        storage_class="piraeus-ssd-local",
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="5Gi",
         resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb("app"),

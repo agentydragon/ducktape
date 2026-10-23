@@ -33,8 +33,7 @@ def chart(app: App) -> Chart:
         chart,
         "cluster",
         ref=POSTGRES,
-        placement=PLACEMENT,
-        storage_class="piraeus-ssd-local",
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="8Gi",
         resize_in_use_volumes=False,
         # The cluster was created by pg_basebackup from the retired authentik-db, so this

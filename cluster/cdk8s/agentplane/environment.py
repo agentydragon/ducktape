@@ -20,6 +20,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.llm_ingress.models import ModelConfig
 from agentplane.subjects import ServiceAccountRef
+from cluster.cdk8s.cnpg import ClusterPlacement
 from model_catalog.catalog import Route
 
 
@@ -40,9 +41,9 @@ class DbProps:
     # Archive WAL and take base backups into the environment's SeaweedFS bucket
     # (agentplane/db_backups.py) through the barman-cloud plugin.
     wal_archive: bool
+    # Node selector, storage class, and control-plane tolerance are selected together.
+    profile: ClusterPlacement
     size: str = "5Gi"
-    # Optional overrides for the CNPG Cluster's new-instance storage template.
-    storage_class: str | None = None
     resize_in_use_volumes: bool | None = None
 
 

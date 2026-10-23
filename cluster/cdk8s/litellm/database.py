@@ -14,7 +14,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import cnpg, cnpg_backup, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
@@ -28,8 +28,7 @@ def _chart(app: App) -> Chart:
         chart,
         "cluster",
         ref=DATABASE,
-        placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh",
+        profile=cnpg.OVH_LOCAL_PATH,
         size="5Gi",
         initdb=cnpg.same_owner_initdb("litellm"),
         wal_archive=True,

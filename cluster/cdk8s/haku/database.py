@@ -16,7 +16,7 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cnpg, cnpg_backup, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup
 from cluster.cdk8s.providers.cnpg.database import Database
 
 NAMESPACE = "haku-console"
@@ -39,8 +39,7 @@ class Db(Construct):
             # while ownership moves between them. Removing this Cluster is a deliberate
             # `kubectl delete`, never a manifest edit.
             annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
-            placement=node_scheduling.HIL_OVH,
-            storage_class="local-path-ovh",
+            profile=cnpg.OVH_LOCAL_PATH,
             size="2Gi",
             initdb=cnpg.same_owner_initdb(DATABASE),
             wal_archive=True,

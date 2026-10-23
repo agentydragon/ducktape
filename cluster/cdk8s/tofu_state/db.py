@@ -25,7 +25,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg, cnpg_backup, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -72,8 +72,7 @@ def chart(app: App) -> Chart:
         postgresql=ClusterSpecPostgresql(
             parameters={"tcp_keepalives_idle": "60", "tcp_keepalives_interval": "10", "tcp_keepalives_count": "6"}
         ),
-        placement=node_scheduling.HIL_OVH,
-        storage_class="piraeus-ssd-local",
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="1Gi",
         resize_in_use_volumes=False,
         # CNPG's default bootstrap: an `app` database and owner. Terraform's `tfstate` role is

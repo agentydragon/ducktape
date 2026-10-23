@@ -36,7 +36,7 @@ from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import DirectFederationSettings
 from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling
+from cluster.cdk8s import agent_access_profiles as access, cilium, cnpg, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
@@ -138,7 +138,7 @@ ENV = Environment(
         default_policy_sets=set(egress.DEFAULT_POLICIES),
     ),
     settle_deltas=True,
-    db=DbProps(instances=1, wal_archive=False, storage_class="piraeus-ssd-local", resize_in_use_volumes=False),
+    db=DbProps(instances=1, wal_archive=False, profile=cnpg.OVH_PIRAEUS_SSD, resize_in_use_volumes=False),
     llm_ingress=LlmIngressProps(
         litellm_key_secret_name=_LITELLM_KEY_SECRET,
         models=model_configs(TESTING_APP_MODELS),

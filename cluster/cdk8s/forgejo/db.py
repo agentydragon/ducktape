@@ -7,7 +7,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import cnpg, cnpg_backup, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
@@ -37,8 +37,7 @@ def _chart(app: App) -> Chart:
         },
         # Existing SSD-local replicas remain pinned by their PVs; the node
         # affinity only steers placements no existing claim constrains.
-        placement=node_scheduling.HIL_OVH,
-        storage_class="piraeus-ssd-local",
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="10Gi",
         resize_in_use_volumes=False,
         # The cluster was created by pg_basebackup from the retired forgejo-db, so this

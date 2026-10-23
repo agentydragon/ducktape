@@ -34,7 +34,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cnpg, cnpg_backup, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s import cnpg, cnpg_backup, namespaces, pod_policy
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
@@ -150,8 +150,7 @@ def _database(scope: Construct) -> None:
         scope,
         "database",
         ref=DATABASE,
-        placement=node_scheduling.HIL_OVH,
-        storage_class="piraeus-ssd-local",
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="2Gi",
         resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb(NAME),
