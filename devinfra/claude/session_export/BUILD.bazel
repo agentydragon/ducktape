@@ -156,6 +156,7 @@ py_library(
     deps = [
         ":failures",
         "//devinfra/claude/claude_api:oauth_client",
+        "//util:net",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],

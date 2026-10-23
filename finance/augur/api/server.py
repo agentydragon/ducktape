@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
@@ -398,6 +399,9 @@ def create_app_from_augur_config(augur_config: Config, *, price_clients: PriceCl
 def _add_server_args(parser: argparse.ArgumentParser, *, api_only_help: str) -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8767)
+    parser.add_argument(
+        "--fd", type=int, help="Serve on this inherited listening socket instead of binding --host/--port."
+    )
     parser.add_argument("--api-only", action="store_true", help=api_only_help)
 
 
@@ -416,13 +420,17 @@ def build_configured_server_arg_parser(
 
 def _run_server_with_args(*, augur_config: Config, args: argparse.Namespace) -> int:
     app = create_app_from_augur_config(augur_config, price_clients=default_price_clients())
-    return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port)
+    return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port, fd=args.fd)
 
 
-def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int) -> int:
-    print(f"serving Augur API on http://{host}:{port}")
-    print(f"models: {sorted(augur_config.models)} (default: {augur_config.default_model_id})")
-    uvicorn.run(app, host=host, port=port)
+def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int, fd: int | None = None) -> int:
+    """Serve `app` on `host`:`port`, or on the inherited listening socket `fd` when supplied."""
+    config = uvicorn.Config(app, host=host, port=port)
+    with config.bind_socket() if fd is None else socket.socket(fileno=fd) as sock:
+        bound_host, bound_port = sock.getsockname()[:2]
+        print(f"serving Augur API on http://{bound_host}:{bound_port}")
+        print(f"models: {sorted(augur_config.models)} (default: {augur_config.default_model_id})")
+        uvicorn.Server(config).run(sockets=[sock])
     return 0
 
 

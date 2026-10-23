@@ -11,7 +11,7 @@ import os
 import secrets
 from collections.abc import AsyncIterator, Callable, Sequence, Set
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Self
@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer
 
 from devinfra.claude.claude_api.oauth_client import AUTHORIZE_URL, CLIENT_ID, TOKEN_URL
 from devinfra.claude.session_export.failures import raise_for_status_with_body
+from util.net import listen_tcp
 
 logger = logging.getLogger(__name__)
 
@@ -159,9 +160,15 @@ def authorization_url(*, state: str, challenge: str, scopes: Sequence[str], port
     return f"{AUTHORIZE_URL}?{urlencode(query)}"
 
 
+@dataclass(frozen=True)
+class CallbackListener:
+    port: int
+    code: asyncio.Future[str]
+
+
 @asynccontextmanager
-async def callback_listener(*, state: str, port: int) -> AsyncIterator[asyncio.Future[str]]:
-    """Serve loopback `/callback`; the future resolves to the authorization code once the browser delivers it.
+async def callback_listener(*, state: str, port: int) -> AsyncIterator[CallbackListener]:
+    """Serve loopback `/callback`; `code` resolves once the browser delivers the authorization code.
 
     A request with the wrong `state` is refused and ignored, so a stray tab cannot abort a pairing.
     """
@@ -190,9 +197,9 @@ async def callback_listener(*, state: str, port: int) -> AsyncIterator[asyncio.F
         else:
             await respond(writer, "400 Bad Request", "already paired")
 
-    server = await asyncio.start_server(handle, "127.0.0.1", port)
-    async with server:
-        yield outcome
+    with listen_tcp(port=port) as listener:
+        async with await asyncio.start_server(handle, sock=listener.socket):
+            yield CallbackListener(port=listener.port, code=outcome)
 
 
 @dataclass(frozen=True)
@@ -258,12 +265,14 @@ async def pair(
     """Run the authorization-code + PKCE flow once through a loopback listener and save the credential.
 
     `announce` receives the URL the human must open; the listener is already serving when it is called.
+    Port 0 uses the OS-assigned callback port in the announced redirect URI.
     Waits for the browser without limit: bound it with `asyncio.timeout`.
     """
     attempt = PairingAttempt.start(scopes=scopes, port=port)
-    async with callback_listener(state=attempt.state, port=port) as code_future:
+    async with callback_listener(state=attempt.state, port=port) as listener:
+        attempt = replace(attempt, port=listener.port)
         announce(attempt.url)
-        code = await code_future
+        code = await listener.code
     credential = await redeem(client, attempt, code)
     store.save(credential)
     logger.info(

@@ -27,16 +27,36 @@ from devinfra.claude.session_export.oauth import (
     PairedTokens,
     PairingAttempt,
     authorization_url,
+    callback_listener,
     pair,
     pkce_challenge,
     redeem,
 )
-from util.net import pick_free_port
+from util.net import listen_tcp
 
 
-async def browse(port: int, *targets: str) -> list[int]:
+async def browse(authorization: str, *targets: str) -> list[int]:
+    """Visit `targets` on the callback listener named by the announced authorization URL."""
+    redirect = dict(parse_qsl(urlsplit(authorization).query))["redirect_uri"]
+    port = urlsplit(redirect).port
+    assert port is not None
     async with httpx.AsyncClient() as browser:
         return [(await browser.get(f"http://127.0.0.1:{port}{target}")).status_code for target in targets]
+
+
+async def test_callback_listener_releases_its_port_on_exit() -> None:
+    async with callback_listener(state="test-state", port=0) as callback:
+        assert callback.port > 0
+        with pytest.raises(OSError, match="in use"), listen_tcp(port=callback.port):
+            pass
+    with listen_tcp(port=callback.port) as rebound:
+        assert rebound.port == callback.port
+
+
+async def test_callback_listener_refuses_an_occupied_requested_port() -> None:
+    with listen_tcp() as occupied, pytest.raises(OSError, match="in use"):
+        async with callback_listener(state="test-state", port=occupied.port):
+            pytest.fail("callback listener must not fall back to another port")
 
 
 def test_validation_errors_do_not_echo_tokens(tmp_path: Path) -> None:
@@ -75,17 +95,17 @@ def test_authorization_url_carries_what_claudes_authorize_endpoint_requires() ->
 
 
 async def test_pair_saves_a_private_credential_after_the_browser_callback(tmp_path: Path) -> None:
-    port, path, token_endpoint = pick_free_port(), tmp_path / "credential.json", FakeTokenEndpoint(PAIRED_RESPONSE)
+    path, token_endpoint = tmp_path / "credential.json", FakeTokenEndpoint(PAIRED_RESPONSE)
     announced: list[dict[str, str]] = []
 
     def announce(url: str) -> None:
         announced.append(dict(parse_qsl(urlsplit(url).query)))
-        browsing.append(asyncio.create_task(browse(port, f"/callback?code=test-code&state={announced[0]['state']}")))
+        browsing.append(asyncio.create_task(browse(url, f"/callback?code=test-code&state={announced[0]['state']}")))
 
     browsing: list[asyncio.Task[list[int]]] = []
     async with asyncio.timeout(5):
         credential = await pair(
-            token_endpoint.client, CredentialStore(path), scopes=DEFAULT_SCOPES, port=port, announce=announce
+            token_endpoint.client, CredentialStore(path), scopes=DEFAULT_SCOPES, port=0, announce=announce
         )
 
     assert await browsing[0] == [200]
@@ -93,6 +113,8 @@ async def test_pair_saves_a_private_credential_after_the_browser_callback(tmp_pa
     assert body["grant_type"] == "authorization_code"
     assert body["code"] == "test-code"
     assert body["state"] == announced[0]["state"]
+    assert body["redirect_uri"] == announced[0]["redirect_uri"]
+    assert urlsplit(body["redirect_uri"]).port not in (None, 0)
     assert pkce_challenge(body["code_verifier"]) == announced[0]["code_challenge"]
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert CredentialStore(path).load() == credential
@@ -138,14 +160,14 @@ def test_a_pasted_redirect_url_that_is_not_this_attempts_approval_is_refused(red
 
 
 async def test_pair_refuses_a_callback_with_the_wrong_state_and_completes_on_the_right_one(tmp_path: Path) -> None:
-    port, token_endpoint = pick_free_port(), FakeTokenEndpoint(PAIRED_RESPONSE)
+    token_endpoint = FakeTokenEndpoint(PAIRED_RESPONSE)
     browsing: list[asyncio.Task[list[int]]] = []
 
     def announce(url: str) -> None:
         state = authorization_state(url)
         browsing.append(
             asyncio.create_task(
-                browse(port, "/callback?code=stray&state=wrong", f"/callback?code=test-code&state={state}")
+                browse(url, "/callback?code=stray&state=wrong", f"/callback?code=test-code&state={state}")
             )
         )
 
@@ -154,7 +176,7 @@ async def test_pair_refuses_a_callback_with_the_wrong_state_and_completes_on_the
             token_endpoint.client,
             CredentialStore(tmp_path / "credential.json"),
             scopes=DEFAULT_SCOPES,
-            port=port,
+            port=0,
             announce=announce,
         )
 
@@ -163,19 +185,17 @@ async def test_pair_refuses_a_callback_with_the_wrong_state_and_completes_on_the
 
 
 async def test_pair_fails_when_authorization_is_refused_and_saves_nothing(tmp_path: Path) -> None:
-    port, path, token_endpoint = pick_free_port(), tmp_path / "credential.json", FakeTokenEndpoint(PAIRED_RESPONSE)
+    path, token_endpoint = tmp_path / "credential.json", FakeTokenEndpoint(PAIRED_RESPONSE)
 
     browsing: list[asyncio.Task[list[int]]] = []
 
     def announce(url: str) -> None:
         state = authorization_state(url)
-        browsing.append(asyncio.create_task(browse(port, f"/callback?error=access_denied&state={state}")))
+        browsing.append(asyncio.create_task(browse(url, f"/callback?error=access_denied&state={state}")))
 
     with pytest.raises(ValueError, match="access_denied"):
         async with asyncio.timeout(5):
-            await pair(
-                token_endpoint.client, CredentialStore(path), scopes=DEFAULT_SCOPES, port=port, announce=announce
-            )
+            await pair(token_endpoint.client, CredentialStore(path), scopes=DEFAULT_SCOPES, port=0, announce=announce)
     assert await browsing[0] == [400]
     assert not path.exists()
     assert not token_endpoint.bodies
@@ -186,11 +206,7 @@ async def test_pair_times_out_without_a_callback_and_saves_nothing(tmp_path: Pat
     with pytest.raises(TimeoutError):
         async with asyncio.timeout(0.2):
             await pair(
-                token_endpoint.client,
-                CredentialStore(path),
-                scopes=DEFAULT_SCOPES,
-                port=pick_free_port(),
-                announce=lambda _: None,
+                token_endpoint.client, CredentialStore(path), scopes=DEFAULT_SCOPES, port=0, announce=lambda _: None
             )
     assert not path.exists()
     assert not token_endpoint.bodies
