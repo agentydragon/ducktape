@@ -26,7 +26,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -107,7 +106,6 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
 	c.ReaderAccounts = []auth.Account{readerAccount}
 	c.PolicyNamespace = policyNamespace
-	c.PolicyResyncSeconds = int(reader.MinWatchPeriod / time.Second)
 	cluster := deps{Reviews: kube.TokenReviews(), Kube: kubeConfig}
 	configure(&c, &cluster)
 	db, err := sql.Open("postgres", c.DatabaseURL)
