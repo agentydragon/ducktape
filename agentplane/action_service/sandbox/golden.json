@@ -146,7 +146,7 @@
     "timeout_seconds": "60"
    },
    "name": "timeout as integer text",
-   "valid": true
+   "valid": false
   },
   {
    "action": "exec",
@@ -157,7 +157,7 @@
     "timeout_seconds": 60
    },
    "name": "max_output_bytes as true",
-   "valid": true
+   "valid": false
   },
   {
    "action": "exec",

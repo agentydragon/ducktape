@@ -11,7 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 )
 
-// golden holds what the Python sandbox Actions offer and accept, from generate_golden.py.
+// golden holds the Sandbox Action roster, argument validation, and object identity contracts.
 //
 //go:embed golden.json
 var golden []byte
@@ -51,7 +51,7 @@ func readVectors(t *testing.T) vectors {
 	return read
 }
 
-// annotations is catalog.ToolAnnotations under the names the Python roster gives its fields.
+// annotations is the catalog.ToolAnnotations fixture representation.
 type annotations struct {
 	Title           *string `json:"title"`
 	ReadOnlyHint    *bool   `json:"read_only_hint"`
@@ -60,9 +60,9 @@ type annotations struct {
 	OpenWorldHint   *bool   `json:"open_world_hint"`
 }
 
-// TestTheRosterIsPythons holds each Action's title, annotations and argument schema, caps included, to Python's.
+// TestActionRoster holds each Action's title, annotations and argument schema, caps included, to the fixture.
 // Descriptions are prose, and are not compared.
-func TestTheRosterIsPythons(t *testing.T) {
+func TestActionRoster(t *testing.T) {
 	for name, roster := range readVectors(t).Roster {
 		t.Run(name, func(t *testing.T) {
 			type action struct {
@@ -83,17 +83,10 @@ func TestTheRosterIsPythons(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(got, roster.Actions) {
-				t.Errorf("Go offers\n%s\nwhere Python offers\n%v", document, roster.Actions)
+				t.Errorf("offers\n%s\nwant\n%v", document, roster.Actions)
 			}
 		})
 	}
-}
-
-// pythonAcceptsOnly are arguments Pydantic's lax mode coerces, and the JSON Schema each Action advertises refuses.
-// The service checks a submission against that schema before any executor sees it, so neither reaches one.
-var pythonAcceptsOnly = map[[2]string]bool{
-	{actionExec, "timeout as integer text"}:  true,
-	{actionExec, "max_output_bytes as true"}: true,
 }
 
 // arguments are what dispatch decodes each Action's arguments into.
@@ -106,24 +99,22 @@ var arguments = map[string]func() any{
 	actionDispose:     func() any { return &nameArgs{} },
 }
 
-func TestArgumentsAreReadAsPythonReadsThem(t *testing.T) {
+func TestArgumentValidation(t *testing.T) {
 	executor, err := NewExecutor(catalog.PodBinding{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, vector := range readVectors(t).Arguments {
 		t.Run(vector.Action+"/"+vector.Name, func(t *testing.T) {
-			want := vector.Valid && !pythonAcceptsOnly[[2]string{vector.Action, vector.Name}]
-			if err := executor.decode(vector.Action, vector.Input, arguments[vector.Action]()); (err == nil) != want {
-				t.Errorf("decode(%s) = %v; Python accepts it: %t", vector.Input, err, vector.Valid)
+			if err := executor.decode(vector.Action, vector.Input, arguments[vector.Action]()); (err == nil) != vector.Valid {
+				t.Errorf("decode(%s) = %v; valid = %t", vector.Input, err, vector.Valid)
 			}
 		})
 	}
 }
 
-// TestBoxesAreNamedAndLabelledAsPythonNamesThem: a box either service made is found by its name and labels, so each
-// finds the other's.
-func TestBoxesAreNamedAndLabelledAsPythonNamesThem(t *testing.T) {
+// TestBoxIdentity pins the object name and labels used to find a caller's existing box.
+func TestBoxIdentity(t *testing.T) {
 	for _, vector := range readVectors(t).Boxes {
 		t.Run(vector.Name, func(t *testing.T) {
 			if got := objectName(vector.Caller, vector.Box); got != vector.ObjectName {

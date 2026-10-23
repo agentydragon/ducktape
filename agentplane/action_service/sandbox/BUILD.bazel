@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -204,41 +204,5 @@ go_test(
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_client_go//util/exec",
-    ],
-)
-
-py_binary(
-    name = "generate_golden_bin",
-    main_module = "agentplane.action_service.sandbox.generate_golden",
-    deps = [":generate_golden"],
-)
-
-py_library(
-    name = "generate_golden",
-    srcs = ["generate_golden.py"],
-    deps = [
-        ":actions",
-        ":binding",
-        ":inventory",
-        ":models",
-        "//agentplane:subjects",
-        "//agentplane/action_service:generate_golden",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_golden",
-    srcs = ["test_golden.py"],
-    # Pure synchronous test; no conftest fixture is needed.
-    args = ["--noconftest"],
-    data = ["golden.json"],
-    deps = [
-        ":generate_golden",
-        "//:conftest",
-        "//agentplane/action_service:conftest",
-        "//agentplane/action_service:generate_golden",
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )
