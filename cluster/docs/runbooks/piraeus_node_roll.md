@@ -242,7 +242,7 @@ Review emptyDir contents before allowing drain to delete them.
 
 Use CNPG's native streaming replication, one cluster at a time:
 
-1. For each cluster listed in
+1. For each of the seven SSD evacuation clusters listed in
    [CNPG conventions](../cnpg_conventions.md#current-compliance), work serially:
    finish and verify one before starting the next. Record its desired count
    (two), each Pod/PVC UID, size, StorageClass and primary. The prepared Git
@@ -267,9 +267,9 @@ Use CNPG's native streaming replication, one cluster at a time:
    healthy members remain outside the outage set.
 5. Restore the Cluster's desired count to two before removing its Flux hold.
    Verify Flux and CNPG agree on two members, then proceed to the next cluster.
-   Repeat until all clusters in the relevant evacuation have been evacuated.
+   Repeat until all seven have been evacuated.
 6. Attic and Study Casino are already at three members and are outside this
-   migration-template procedure. Move a target primary first and retain two healthy
+   seven-cluster procedure. Move a target primary first and retain two healthy
    off-target members. Study Casino stays **1Gi**.
 
 Use a brief, resource-specific Flux hold for each temporary member change. A

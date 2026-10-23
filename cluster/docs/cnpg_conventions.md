@@ -29,15 +29,16 @@ the `piraeus-ssd-local` class has a single local pool on `ovh-ns1001419`. Their
 existing two PVCs keep their current StorageClass and size; CNPG applies the
 Piraeus class and configured size only to a newly-created claim.
 
-**OVH-HA with Piraeus migration template**: A bounded preparation profile for
-clusters moving a replica off a local-storage node during the `ovh-ns104952`
-SSD or `ovh-ns103656` HDD evacuation, listed under Current Compliance below.
-Git keeps their desired count at two and their existing claims unchanged; the
-new-claim template uses `piraeus-ssd-local`, sized for measured PGDATA plus
-headroom, with `resizeInUseVolumes: false`. During the serial roll, a
-resource-specific Flux hold permits one temporary third member at a time. The
-operator procedure and restoration to two members before releasing each hold
-are in the [Piraeus node roll runbook](runbooks/piraeus_node_roll.md#postgresql).
+**OVH-HA with Piraeus migration template**: A bounded new-claim profile for
+local-storage node evacuations, including the `ovh-ns104952` SSD and
+`ovh-ns103656` HDD evacuations below. Git keeps the desired count at two and
+existing claims unchanged; a new claim uses `piraeus-ssd-local`, sized for
+measured PGDATA plus headroom, with `resizeInUseVolumes: false`. The SSD
+evacuation uses the temporary third-member procedure in the [Piraeus node roll
+runbook](runbooks/piraeus_node_roll.md#postgresql). For the HDD evacuation,
+rebuild only the targeted standby while keeping two desired instances; the
+primary is briefly the only member. Keep a resource-specific Flux hold until
+the template change is merged and reconciled.
 
 **Placement** (`cnpg.cluster` derives it; no site builds its own): pod
 anti-affinity is `required` on `kubernetes.io/hostname` for every OVH Cluster,
@@ -122,16 +123,26 @@ deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   new claim uses `piraeus-ssd-local`. This restores its deliberate profile for
   tolerating one-node loss without quorum or primary impact.
 - `agentplane-staging/postgres`, `atuin-db`, `authentik-db-ovh`,
-  `claude-session-sync-db`, `forgejo-db-ssd`, `langfuse-db`,
-  `mcp-oauth-state-db`, `ntfy-db`, `seaweedfs-filer-db-ssd`, and
+  `forgejo-db-ssd`, `langfuse-db`, `seaweedfs-filer-db-ssd`, and
   `tofu-state-db-ovh`: 2 desired instances using the Piraeus migration-template
-  profile for the `ovh-ns104952` SSD and `ovh-ns103656` HDD evacuations. Existing PVCs
-  keep their current StorageClass and size; a new claim uses
+  profile for the `ovh-ns104952` SSD evacuation. Existing PVCs keep their
+  current StorageClass and size; a new claim uses
   `piraeus-ssd-local` sized for measured data and headroom, with
   `resizeInUseVolumes: false`. Create the temporary third member one cluster
   at a time under a resource-specific Flux hold. After switchover, keep the
-  Piraeus-seeded member and retire only the exact old member on the evacuated node;
+  Piraeus-seeded member and retire only the exact old member on `ovh-ns104952`;
   restore/verify two desired members before releasing the hold.
+- `claude-session-sync-db` (40Gi), `mcp-oauth-state-db` (5Gi), and `ntfy-db`
+  (2Gi): 2 desired instances using the same new-claim profile for the
+  `ovh-ns103656` HDD evacuation. Rebuild only the targeted standby, briefly
+  leaving the primary alone, and verify two healthy members off the target
+  before disk wipe. Protect the old PV with reclaim policy `Retain`; remove
+  only the old standby PVC and claim metadata needed to force a fresh Piraeus
+  claim, leaving the retained PV unused.
+  Preserve the primary Pod UID by adding the control-plane toleration in place
+  to its Pod and stored `cnpg.io/podSpec` annotation while CNPG is paused.
+  Keep a resource-specific Flux hold on each Cluster until this template change
+  is merged and reconciled.
 - `postgres` (`generated/agentplane-testing/`): 1 instance pinned
   `zone: hil-ovh` on `local-path-ovh-ssd`, shared by testing's three disposable
   logical databases. This experimental environment deliberately accepts no
