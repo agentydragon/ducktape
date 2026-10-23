@@ -321,7 +321,7 @@ ENV = Environment(
     settle_deltas=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
-    db=DbProps(instances=2, wal_archive=True, profile=cnpg.OVH_PIRAEUS_SSD, size="12Gi", resize_in_use_volumes=False),
+    db=DbProps(instances=2, wal_archive=True, profile=cnpg.OVH_PIRAEUS_SSD, size="16Gi", resize_in_use_volumes=True),
     llm_ingress=LlmIngressProps(
         litellm_key_secret_name=_LITELLM_KEY_SECRET,
         models=model_configs(STAGING_APP_MODELS),

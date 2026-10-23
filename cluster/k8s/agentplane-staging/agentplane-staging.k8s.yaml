@@ -320,8 +320,8 @@ spec:
       isolationCheck:
         enabled: false
   storage:
-    resizeInUseVolumes: false
-    size: 12Gi
+    resizeInUseVolumes: true
+    size: 16Gi
     storageClass: piraeus-ssd-local
 ---
 apiVersion: postgresql.cnpg.io/v1
