@@ -47,7 +47,7 @@ locals {
     }
     "ovh-ns103656" = {
       talos_storage_enabled = true
-      piraeus_ready_enabled = false
+      piraeus_ready_enabled = true
       # Talos omits this disk's serial; pin the split system volumes by WWID.
       system_disk_match     = "disk.wwid == 'naa.5000cca25ed0aa31'"
       system_volume_profile = "worker"
