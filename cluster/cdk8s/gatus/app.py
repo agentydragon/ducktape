@@ -65,8 +65,9 @@ def _database(scope: Construct) -> None:
         scope,
         "database",
         ref=DATABASE,
-        profile=cnpg.OVH_LOCAL_PATH,
-        size="1Gi",
+        profile=cnpg.OVH_PIRAEUS_SSD,
+        size="2Gi",
+        resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb("gatus"),
         wal_archive=True,
     )

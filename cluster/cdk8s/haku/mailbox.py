@@ -113,8 +113,9 @@ def _add_store(chart: Chart) -> None:
         chart,
         "db",
         ref=DATABASE,
-        profile=cnpg.OVH_LOCAL_PATH,
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="10Gi",
+        resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb("stalwart"),
         wal_archive=True,
     )

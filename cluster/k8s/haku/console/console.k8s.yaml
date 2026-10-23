@@ -120,6 +120,10 @@ spec:
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
     podAntiAffinityType: required
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
     topologyKey: kubernetes.io/hostname
   bootstrap:
     initdb:
@@ -139,8 +143,9 @@ spec:
       isolationCheck:
         enabled: false
   storage:
-    size: 2Gi
-    storageClass: local-path-ovh
+    resizeInUseVolumes: false
+    size: 3Gi
+    storageClass: piraeus-ssd-local
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket

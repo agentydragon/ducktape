@@ -28,8 +28,9 @@ def _chart(app: App) -> Chart:
         chart,
         "cluster",
         ref=DATABASE,
-        profile=cnpg.OVH_LOCAL_PATH,
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="5Gi",
+        resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb("litellm"),
         wal_archive=True,
     )

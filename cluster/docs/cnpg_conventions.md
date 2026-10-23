@@ -31,7 +31,7 @@ Piraeus class and configured size only to a newly-created claim.
 
 **OVH-HA with Piraeus migration template**: A bounded new-claim profile for
 local-storage node evacuations, including the `ovh-ns104952` SSD and
-`ovh-ns103656` HDD evacuations below. Git keeps the desired count at two and
+`ovh-ns103656` and `ovh-ns103711` HDD evacuations below. Git keeps the desired count at two and
 existing claims unchanged; a new claim uses `piraeus-ssd-local`, sized for
 measured PGDATA plus headroom, with `resizeInUseVolumes: false`. The SSD
 evacuation uses the temporary third-member procedure in the [Piraeus node roll
@@ -155,6 +155,14 @@ deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   to its Pod and stored `cnpg.io/podSpec` annotation while CNPG is paused.
   Keep a resource-specific Flux hold on each Cluster until this template change
   is merged and reconciled.
+- `gatus-db` (2Gi), `grafana-db-ovh` (4Gi), `haku-console-db` (3Gi),
+  `haku-mailbox-db` (10Gi), `litellm-db` (5Gi), `matrix-db` (10Gi), and
+  `plaid-mcp-db` (5Gi): 2 desired instances using the Piraeus migration
+  template for the `ovh-ns103711` HDD evacuation. Existing claims keep their
+  current class and size; replacement claims use `piraeus-ssd-local` with
+  `resizeInUseVolumes: false`. New sizes are at least 1Gi above measured
+  PGDATA including WAL, rounded up to whole GiB; larger existing requests are
+  retained.
 - `postgres` (`generated/agentplane-testing/`): 1 instance pinned
   `zone: hil-ovh` on `local-path-ovh-ssd`, shared by testing's three disposable
   logical databases. This experimental environment deliberately accepts no

@@ -60,8 +60,9 @@ def _cluster(chart: Chart) -> None:
                 "CNPG Postgres mirror for Plaid link metadata, webhook queue state, and Plaid-shaped financial data."
             )
         },
-        profile=cnpg.OVH_LOCAL_PATH,
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="5Gi",
+        resize_in_use_volumes=False,
         managed=ClusterSpecManaged(
             roles=[
                 ClusterSpecManagedRoles(

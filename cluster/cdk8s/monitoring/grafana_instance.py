@@ -105,8 +105,9 @@ def _database(chart: Chart) -> None:
         chart,
         "database",
         ref=DATABASE,
-        profile=cnpg.OVH_LOCAL_PATH,
-        size="2Gi",
+        profile=cnpg.OVH_PIRAEUS_SSD,
+        size="4Gi",
+        resize_in_use_volumes=False,
         # Created by pg_basebackup from the retired grafana-db, so this never initializes
         # anything. It names the application database and role CNPG uses: the metrics
         # exporter's default queries run against the database, and CNPG keeps the role's
