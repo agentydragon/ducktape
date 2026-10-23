@@ -93,6 +93,7 @@ go_library(
         "//agentplane/history_service/storage",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/workload_auth/go/auth",
+        "//util/netlistener",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
         "@com_github_spf13_viper//:viper",

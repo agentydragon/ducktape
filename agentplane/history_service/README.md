@@ -26,7 +26,7 @@ not call it.
 
 `ingress/` serves `RunnerIngress.Push`, the
 [runner ingress contract](../docs/runner_control.md#event-ingress): runners push each Session's
-journal here, one call per Session. `main.go` serves it on its own listener (`ingress.port`), apart
+journal here, one call per Session. `main.go` serves it on its own listener (`ingress.listen_address`), apart
 from the read API, since it takes untrusted input: the network fence admits the egress proxy to that
 port alone. Its settings name the token audience and the namespaces whose ServiceAccounts may push.
 A Sandbox reaches it only through the egress proxy under the `runner-ingress` policy
@@ -122,4 +122,6 @@ the `ThreadEntityView` JSON browsers sync. A caller holding rows of a replaced e
 
 Bazel targets: `:history-service` and `:service_image`. Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
 variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`config.go`, `settings.py`).
-gRPC listens on `port`, where `grpc.health.v1.Health` reports process liveness only.
+The read API listens on `listen_address`, where `grpc.health.v1.Health` reports process liveness only.
+Both listener settings accept TCP addresses or inherited descriptors as documented by
+[`util/netlistener`](../../util/netlistener/README.md).

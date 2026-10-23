@@ -97,12 +97,12 @@ class HistoryService(Construct):
                     for reader in sorted(callers, key=lambda reader: (reader.namespace, reader.name))
                 ],
                 "token_audience": TOKEN_AUDIENCE,
-                "port": endpoint.port.number,
+                "listen_address": f"0.0.0.0:{endpoint.pod_port}",
                 "ingress": {
                     "token_audience": RUNNER_INGRESS_AUDIENCE,
                     # Sandboxes run in the environment's own namespace.
                     "writer_namespaces": [env.namespace],
-                    "port": ingress.port.number,
+                    "listen_address": f"0.0.0.0:{ingress.pod_port}",
                     "settle_deltas": env.settle_deltas,
                 },
             },

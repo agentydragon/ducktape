@@ -26,8 +26,7 @@ type config struct {
 	TokenAudience  string         `mapstructure:"token_audience"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
 	RequestTimeoutSeconds float64       `mapstructure:"request_timeout_s"`
-	Host                  string        `mapstructure:"host"`
-	Port                  int           `mapstructure:"port"`
+	ListenAddress         string        `mapstructure:"listen_address"`
 	Kubeconfig            string        `mapstructure:"kubeconfig"`
 	Ingress               ingressConfig `mapstructure:"ingress"`
 	FoldConcurrency       int           `mapstructure:"fold_concurrency"`
@@ -44,7 +43,7 @@ type ingressConfig struct {
 	TokenAudience string `mapstructure:"token_audience"`
 	// WriterNamespaces are the namespaces whose ServiceAccounts may push: the ones Sandboxes run in.
 	WriterNamespaces []string `mapstructure:"writer_namespaces"`
-	Port             int      `mapstructure:"port"`
+	ListenAddress    string   `mapstructure:"listen_address"`
 	// SettleDeltas removes an item's streamed delta entries from stored history once its retained completion
 	// provably holds their concatenation. Off keeps every entry, for debugging.
 	SettleDeltas bool `mapstructure:"settle_deltas"`
@@ -52,8 +51,8 @@ type ingressConfig struct {
 
 func defaultConfig() config {
 	return config{
-		RequestTimeoutSeconds: 15, Host: "0.0.0.0", Port: 8080,
-		Ingress:         ingressConfig{Port: 8081, SettleDeltas: true},
+		RequestTimeoutSeconds: 15, ListenAddress: "0.0.0.0:8080",
+		Ingress:         ingressConfig{ListenAddress: "0.0.0.0:8081", SettleDeltas: true},
 		FoldConcurrency: 4, FoldPageSize: 1000, FoldIntervalSeconds: 2, WatchLeaseSeconds: 300,
 	}
 }
@@ -85,7 +84,8 @@ func (c *config) validate() error {
 		{"database_url", c.DatabaseURL},
 		{"token_audience", c.TokenAudience},
 		{"ingress.token_audience", c.Ingress.TokenAudience},
-		{"host", c.Host},
+		{"listen_address", c.ListenAddress},
+		{"ingress.listen_address", c.Ingress.ListenAddress},
 	} {
 		if required.value == "" {
 			return fmt.Errorf("%s is required", required.name)
@@ -96,17 +96,6 @@ func (c *config) validate() error {
 	}
 	if len(c.Ingress.WriterNamespaces) == 0 {
 		return errors.New("ingress.writer_namespaces must list at least one namespace")
-	}
-	for _, port := range []struct {
-		name  string
-		value int
-	}{{"port", c.Port}, {"ingress.port", c.Ingress.Port}} {
-		if port.value < 1 || port.value > 65535 {
-			return fmt.Errorf("%s must be between 1 and 65535", port.name)
-		}
-	}
-	if c.Port == c.Ingress.Port {
-		return errors.New("port and ingress.port must differ")
 	}
 	if c.RequestTimeoutSeconds <= 0 || c.RequestTimeoutSeconds > 60 {
 		return errors.New("request_timeout_s must be above 0 and at most 60")

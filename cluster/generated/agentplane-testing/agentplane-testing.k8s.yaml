@@ -2021,12 +2021,12 @@ data:
       - namespace: agentplane-testing
         name: notifications
     token_audience: agentplane-history-service
-    port: 8080
+    listen_address: 0.0.0.0:8080
     ingress:
       token_audience: agentplane-runner-ingress
       writer_namespaces:
         - agentplane-testing
-      port: 8081
+      listen_address: 0.0.0.0:8081
       settle_deltas: true
 immutable: false
 ---

@@ -5,7 +5,7 @@ Session's entries and feed state here as a runner pushes them to the ingress, an
 returns once the service has folded it. `sessions` reads the fold's rows for assertions.
 """
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import TracebackType
@@ -194,12 +194,7 @@ class History:
 
 
 @asynccontextmanager
-async def scripted_history(
-    database_url: str, *, api: KubernetesApiServer, directory: Path, port_factory: Callable[[], int]
-) -> AsyncIterator[History]:
+async def scripted_history(database_url: str, *, api: KubernetesApiServer, directory: Path) -> AsyncIterator[History]:
     """The Go History Service on `database_url`, which the Go migrator has built, and a `History` scripting it."""
-    async with (
-        go_history_service(database_url, api=api, directory=directory, port_factory=port_factory) as service,
-        History(service) as history,
-    ):
+    async with go_history_service(database_url, api=api, directory=directory) as service, History(service) as history:
         yield history

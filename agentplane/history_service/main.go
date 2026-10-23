@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -25,6 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/util/netlistener"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -101,6 +101,19 @@ func readerNamespaces(accounts []auth.Account) []string {
 	return result
 }
 
+func openListeners(c config) (net.Listener, net.Listener, error) {
+	reader, err := netlistener.Open(c.ListenAddress)
+	if err != nil {
+		return nil, nil, err
+	}
+	ingress, err := netlistener.Open(c.Ingress.ListenAddress)
+	if err != nil {
+		reader.Close()
+		return nil, nil, err
+	}
+	return reader, ingress, nil
+}
+
 // run serves on the configured addresses, authenticating callers with the cluster's TokenReview API.
 func run(ctx context.Context, c config) error {
 	kubeConfig, err := kubernetesConfig(c)
@@ -111,18 +124,14 @@ func run(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
+	reader, ingressListener, err := openListeners(c)
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
+	defer reader.Close()
 	// A separate listener, so the network fence can admit the egress proxy to the ingress and nothing else.
-	ingressListener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.Ingress.Port)))
-	if err != nil {
-		return err
-	}
 	defer ingressListener.Close()
-	return serve(ctx, c, kube.AuthenticationV1().TokenReviews(), listener, ingressListener)
+	return serve(ctx, c, kube.AuthenticationV1().TokenReviews(), reader, ingressListener)
 }
 
 // serve answers the read API on listener and the runner ingress on ingressListener until ctx ends.
