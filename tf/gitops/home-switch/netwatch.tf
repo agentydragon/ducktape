@@ -8,11 +8,11 @@ resource "routeros_tool_netwatch" "lan" {
   disabled    = false
   comment     = "Switch-originated LAN probe; managed by tf/gitops/home-switch."
 
-  # A different cadence from smokeping's 200ms avoids sampling the same phase
-  # of a possible periodic interruption. The packet train fits within one minute.
+  # RouterOS reads 137ms back as 130ms, causing perpetual drift. Use the
+  # observed value, retaining a different cadence from smokeping's 200ms.
   interval        = "1m"
   packet_count    = 200
-  packet_interval = "137ms"
+  packet_interval = "130ms"
   packet_size     = 84
   timeout         = "1s"
   start_delay     = "3s"
