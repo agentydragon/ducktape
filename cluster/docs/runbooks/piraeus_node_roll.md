@@ -218,6 +218,17 @@ those 90Gi of other claims totals 1790Gi of logical capacity, 65Gi below the
 estimate. That difference is not 65Gi of reserved physical free space. Measure
 actual per-consumer usage: legacy local-path requests were not enforced limits.
 
+### First HDD pool initialization retry
+
+The first `ovh-ns103656` pool creation failed after about 45 seconds, and the
+retry obscured the original command failure. A LINSTOR external-command wait
+timeout while initializing the 4 GiB metadata LV and spare is the leading
+explanation, not a confirmed cause; the target satellite now sets
+`ExtCmd/WaitTimeout` to 180000 ms. Before removing partial LVM state or retrying,
+recheck that LINSTOR reports zero resources on this satellite and zero cluster
+snapshots. Keep the node cordoned and `piraeus-ready` absent until physical repair
+and pool acceptance are complete.
+
 ### Accepted thin-pool overcommit policy
 
 Approved policy (2026-10-22): aggregate logical PVC capacity may exceed the

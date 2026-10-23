@@ -2495,6 +2495,9 @@ spec:
                   path: /var/etc/lvm/archive
                   type: DirectoryOrCreate
                 name: etc-lvm-archive
+        properties:
+          - name: ExtCmd/WaitTimeout
+            value: "180000"
         storagePools:
           - lvmThinPool:
               logicalVolumeCreateArguments:

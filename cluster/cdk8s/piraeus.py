@@ -466,6 +466,8 @@ def cluster_chart(app: App) -> Chart:
                     # This remains inert until the operator enables piraeus-ready after
                     # the worker's HDD has been wiped and its physical acceptance is complete.
                     "nodeSelector": _HDD_FIRST_NODE_SELECTOR,
+                    # Keep the longer external-command wait scoped to this HDD satellite.
+                    "properties": [{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
                     "patches": _TALOS_SATELLITE_PATCHES,
                     "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
                     "deletionPolicy": "Retain",
