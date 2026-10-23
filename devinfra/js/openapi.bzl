@@ -65,7 +65,7 @@ def js_openapi_schema(name, generator, out = "api/schema.d.ts", visibility = Non
         visibility = visibility,
     )
 
-def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None, isolated_typecheck = False, visibility = None):
+def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None, isolated_typecheck = False, visibility = None, config_file = None):
     """Generate a js_library with runtime Zod 4 schemas from an OpenAPI schema.
 
     Pipeline:
@@ -81,7 +81,7 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None,
 
     Hey-api's Zod 4 plugin handles ``"const"`` discriminators, two-arg
     ``z.record``, and ``.extend({ <key>: z.literal(...) })`` overrides for
-    ``z.discriminatedUnion`` directly — no post-codegen rewrites needed.
+    ``z.discriminatedUnion`` directly.
 
     Args:
         name:       Name of the output ``js_library`` target.
@@ -93,6 +93,11 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None,
                     against. Required for a TypeScript *out* and rejected for a
                     JavaScript one, since only the former is compiled.
         visibility: Visibility of the output ``js_library``.
+        config_file: Optional package-relative Hey API config file. Use this to
+                     configure a generator for one schema without changing
+                     the behavior of other ``js_openapi_zod`` callers. It
+                     defines the plugins used for that generation; without it,
+                     the macro uses the Zod plugin.
     """
     emits_typescript = out.endswith(".ts") or out.endswith(".mts")
     if emits_typescript and not tsconfig:
@@ -108,21 +113,30 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None,
         name = "_" + name + "_openapi_ts_bin",
     )
 
+    sources = [":_" + name + "_openapi_json"]
+    args = [
+        "--input",
+        json_out,
+        "--output",
+        gen_dir,
+    ]
+    if config_file:
+        sources.append(config_file)
+        args.extend(["--file", config_file])
+    else:
+        args.extend(["--plugins", "zod"])
+
     js_run_binary(
         name = "_" + name + "_generate_ts",
-        srcs = [":_" + name + "_openapi_json"],
+        srcs = sources,
         outs = [gen_ts],
-        args = [
-            "--input",
-            json_out,
-            "--output",
-            gen_dir,
-            "--plugins",
-            "zod",
-        ],
+        args = args,
         chdir = native.package_name(),
         tool = ":_" + name + "_openapi_ts_bin",
     )
+
+    generated_ts_target = ":_" + name + "_generate_ts"
+    generated_ts = gen_ts
 
     if emits_typescript:
         # A real content copy, not `copy_file`'s symlink: esbuild resolves imported modules to
@@ -131,7 +145,7 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None,
         # "Could not read from file .../zod.gen.ts".
         native.genrule(
             name = "_" + name + "_emit",
-            srcs = [":_" + name + "_generate_ts"],
+            srcs = [generated_ts_target],
             outs = [out],
             cmd = "cp $< $@",
         )
@@ -139,9 +153,9 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None,
     else:
         js_run_binary(
             name = "_" + name + "_strip_types",
-            srcs = [":_" + name + "_generate_ts"],
+            srcs = [generated_ts_target],
             outs = [out],
-            args = [gen_ts, out],
+            args = [generated_ts, out],
             chdir = native.package_name(),
             tool = "//devinfra/js:strip_ts_types",
         )

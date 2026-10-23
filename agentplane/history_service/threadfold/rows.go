@@ -17,7 +17,7 @@ import (
 // A synchronized entity row is what Thread readers see. Its columns are the fields of EntityRow; the
 // JSON shapes below are the contract of the `state` and reference columns, which the browser reads
 // through Electric, so they are written exactly as the readers expect them: snake_case keys, a null for
-// every absent value, and cursors beyond JavaScript's safe integers carried as decimal strings.
+// every absent value, and counters carried as decimal strings so readers never lose precision.
 
 // Reference locates a payload body and says how many of its generation's chunks the revision spans.
 type Reference struct {
@@ -104,8 +104,8 @@ type EntityRow struct {
 	ProjectionEpoch string          `json:"projection_epoch"`
 	EntityKind      EntityKind      `json:"entity_kind"`
 	EntityID        string          `json:"entity_id"`
-	Cursor          uint64          `json:"cursor"`
-	RevisionCursor  uint64          `json:"revision_cursor"`
+	Cursor          uint64          `json:"cursor,string"`
+	RevisionCursor  uint64          `json:"revision_cursor,string"`
 	Pending         bool            `json:"pending"`
 	TurnID          *string         `json:"turn_id"`
 	State           json.RawMessage `json:"state"`

@@ -6,7 +6,9 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
+
+DecimalCounter = Annotated[str, StringConstraints(pattern=r"^\d+$")]
 
 
 class PayloadField(StrEnum):
@@ -36,12 +38,12 @@ class ThreadPayloadReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     projection_epoch: str
-    owner_cursor: str
+    owner_cursor: DecimalCounter
     owner_id: str
     field: PayloadField
-    revision_cursor: str
-    generation: str
-    chunk_count: str = Field(
+    revision_cursor: DecimalCounter
+    generation: DecimalCounter
+    chunk_count: DecimalCounter = Field(
         description="How many of the generation's chunks this revision spans; a reader renders at most these."
     )
 
@@ -58,7 +60,7 @@ class ThreadControlsState(BaseModel):
 class ThreadFeedErrorState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    cursor: str | None
+    cursor: DecimalCounter | None
     message: str
 
 
@@ -68,7 +70,7 @@ class ThreadOperationalState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["active", "ended", "failed"]
-    last_verified_cursor: str
+    last_verified_cursor: DecimalCounter
     feed_error: ThreadFeedErrorState | None
 
 
@@ -109,7 +111,7 @@ class ThreadCommandState(BaseModel):
 
     operation: str
     outcome: CommandOutcome
-    outcome_cursor: str | None
+    outcome_cursor: DecimalCounter | None
     outcome_reason: str | None
     requested_value: str | None = None
 
@@ -120,8 +122,8 @@ class _ThreadEntityViewFields(BaseModel):
     thread_id: UUID
     projection_epoch: str
     entity_id: str
-    cursor: int
-    revision_cursor: int
+    cursor: DecimalCounter
+    revision_cursor: DecimalCounter
     pending: bool
     turn_id: str | None
     text_ref: ThreadPayloadReference | None

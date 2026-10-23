@@ -5,8 +5,11 @@
  */
 import { createContext, useContext, type Context, type JSX, type ReactNode } from "react";
 
-import type { ThreadEntityView } from "../client";
 import type { StreamConnection } from "../live_stream";
+import type { zThreadEntityView } from "./thread_entity_view.zod";
+import type { z } from "zod";
+
+type ThreadEntityView = z.infer<typeof zThreadEntityView>;
 
 export type Decimal = string | bigint;
 export function decimalBigInt(value: Decimal): bigint {
@@ -14,22 +17,29 @@ export function decimalBigInt(value: Decimal): bigint {
 }
 export type PayloadRef = NonNullable<ThreadEntityView["text_ref"]>;
 
-export interface ThreadEntity {
-  threadId: string;
-  projectionEpoch: string;
-  entityKind: "view_state" | "item" | "confirmed_input" | "lifecycle" | "command";
-  entityId: string;
+type ThreadEntityFor<View extends ThreadEntityView> = {
+  threadId: View["thread_id"];
+  projectionEpoch: View["projection_epoch"];
+  entityKind: View["entity_kind"];
+  entityId: View["entity_id"];
   entityIndex: Decimal;
-  cursor: Decimal;
-  revisionCursor: Decimal;
-  pending: boolean;
-  turnId: string | null;
-  state: ThreadEntityView["state"];
-  textRef: PayloadRef | null;
-  argumentsRef: PayloadRef | null;
-  outputRef: PayloadRef | null;
-  inputRef: PayloadRef | null;
-}
+  cursor: View["cursor"];
+  revisionCursor: View["revision_cursor"];
+  pending: View["pending"];
+  turnId: View["turn_id"];
+  state: View["state"];
+  textRef: View["text_ref"];
+  argumentsRef: View["arguments_ref"];
+  outputRef: View["output_ref"];
+  inputRef: View["input_ref"];
+};
+
+/** The entity discriminator and its state stay correlated after adapting the wire field names. */
+export type ThreadEntity = ThreadEntityView extends infer View
+  ? View extends ThreadEntityView
+    ? ThreadEntityFor<View>
+    : never
+  : never;
 
 /** The rows a reader holds of a thread: its tail, and as far back as it has loaded. */
 export interface ThreadWindow {

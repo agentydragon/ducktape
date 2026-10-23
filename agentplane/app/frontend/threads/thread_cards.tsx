@@ -365,10 +365,7 @@ function ReasoningPreview({
  * eventual bubble rather than as a command awaiting an outcome. */
 export function pendingSentMessage(entity: ThreadEntity): boolean {
   return (
-    entity.entityKind === "command" &&
-    "outcome" in entity.state &&
-    entity.state.operation === "submit_input" &&
-    entity.state.outcome === "pending"
+    entity.entityKind === "command" && entity.state.operation === "submit_input" && entity.state.outcome === "pending"
   );
 }
 
@@ -660,13 +657,14 @@ export function EntityCard({
 }): JSX.Element {
   // Computed unconditionally (hooks can't follow the entity-kind branches below): null, and so
   // always closed, for anything but a reasoning step with a body to disclose.
-  const reasoningTextRef = "kind" in entity.state && entity.state.kind === ItemKind.REASONING ? entity.textRef : null;
+  const reasoningTextRef =
+    entity.entityKind === "item" && entity.state.kind === ItemKind.REASONING ? entity.textRef : null;
   const [reasoningOpen, setReasoningOpen] = useRetainedDisclosure(
     reasoningTextRef && payloadDisclosureId(reasoningTextRef)
   );
   const [reasoningOverflows, setReasoningOverflows] = useState(false);
   const discardedId =
-    "kind" in entity.state && entity.state.recovery === RecoveryDisposition.ABSENT
+    entity.entityKind === "item" && entity.state.recovery === RecoveryDisposition.ABSENT
       ? `${entity.projectionEpoch}:${entity.entityId}:discarded`
       : null;
   if (entity.entityKind === "confirmed_input") {
@@ -693,7 +691,7 @@ export function EntityCard({
       />
     );
   }
-  if (entity.entityKind === "lifecycle" && "observation" in entity.state) {
+  if (entity.entityKind === "lifecycle") {
     const { label, prominent, diagnostic } = lifecyclePresentation(entity.state.observation, entity.state.event);
     const wrapped = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
     if (!prominent) {
@@ -732,7 +730,6 @@ export function EntityCard({
     );
   }
   if (entity.entityKind === "command" || entity.entityKind === "view_state") return <></>;
-  if (!("kind" in entity.state)) return <></>;
   if (entity.state.kind === ItemKind.TOOL_CALL) {
     return <ToolCard threadId={threadId} entity={entity} state={entity.state} live={live} discardedId={discardedId} />;
   }

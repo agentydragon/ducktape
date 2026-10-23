@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 
@@ -21,4 +21,20 @@ py_library(
     deps = [
         "@pypi//pydantic",
     ],
+)
+
+py_library(
+    name = "export_thread_entity_schema",
+    srcs = ["export_thread_entity_schema.py"],
+    deps = [
+        ":views",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "export_thread_entity_schema_bin",
+    main_module = "agentplane.history_service.fold.export_thread_entity_schema",
+    visibility = ["//agentplane/app:__subpackages__"],
+    deps = [":export_thread_entity_schema"],
 )
