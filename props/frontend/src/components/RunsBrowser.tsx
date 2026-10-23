@@ -16,6 +16,7 @@ import {
   type Split,
 } from "../lib/api/client";
 import { formatAge } from "../lib/formatters";
+import { RelativeTime } from "../../../../util/frontend/relative_time";
 import { formatStatus } from "../lib/status";
 import { toast } from "../lib/toast";
 import type { RunTrigger } from "../lib/types";
@@ -311,7 +312,7 @@ export default function RunsBrowser({
                       {grading ? grading.total_credit.toFixed(2) : "—"}
                     </Table.Td>
                     <Table.Td c="dimmed" className="text-xs">
-                      {formatAge(run.created_at)}
+                      <RelativeTime value={new Date(run.created_at)} format={(value) => ({ text: formatAge(value) })} />
                     </Table.Td>
                   </Table.Tr>
                 );

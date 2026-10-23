@@ -466,6 +466,7 @@ ts_library(
         ":time",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:relative_time",
     ],
 )
 
@@ -521,6 +522,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:relative_time",
     ],
 )
 

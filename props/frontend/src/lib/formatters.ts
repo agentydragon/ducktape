@@ -43,9 +43,9 @@ export function formatStatsWithCI(stats: StatsWithCI, options?: { showN?: boolea
 
 // --- Date formatting ---
 
-/** Format an ISO date as relative time (e.g., "2 hours ago"). */
-export function formatAge(isoDate: string, addSuffix = true): string {
-  return formatDistanceToNow(new Date(isoDate), { addSuffix });
+/** Format a date as relative time (e.g., "2 hours ago"). */
+export function formatAge(date: Date, addSuffix = true): string {
+  return formatDistanceToNow(date, { addSuffix });
 }
 
 // --- Snapshot/example formatting ---

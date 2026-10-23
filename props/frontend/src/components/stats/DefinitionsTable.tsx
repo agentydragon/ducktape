@@ -4,6 +4,7 @@ import type { DefinitionRow, SplitScopeStats, Split, ExampleKind } from "../../l
 import { formatStatsWithCI, formatAge } from "../../lib/formatters";
 import { recallColorClass } from "../../lib/colors";
 import DefinitionIdLink from "../../lib/DefinitionIdLink";
+import { RelativeTime } from "../../../../../util/frontend/relative_time";
 
 interface CellClickInfo {
   definitionId: string;
@@ -21,7 +22,7 @@ function getStats(definition: DefinitionRow, split: Split, kind: ExampleKind): S
   return definition.stats[split]?.[kind];
 }
 
-const formatTableAge = (isoDate: string) => formatAge(isoDate, false);
+const formatTableAge = (date: Date) => ({ text: formatAge(date, false) });
 const splits: Split[] = ["valid", "train"];
 const kinds: ExampleKind[] = ["whole_snapshot", "file_set"];
 const metricsPerKind = 5;
@@ -140,7 +141,7 @@ export default function DefinitionsTable({ definitions, exampleCounts, onCellCli
                 <DefinitionIdLink id={definition.image_digest} display_name={definition.display_name} />
               </Table.Td>
               <Table.Td className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
-                {formatTableAge(definition.created_at)}
+                <RelativeTime value={new Date(definition.created_at)} format={formatTableAge} />
               </Table.Td>
               {splits.map((split) =>
                 kinds.map((kind) => {
