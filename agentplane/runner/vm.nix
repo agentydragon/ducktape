@@ -97,6 +97,10 @@ in
   virtualisation.diskSize = 8 * 1024;
   # Nobody reads man pages, info or the NixOS manual in a guest whose only interface is the runner.
   documentation.enable = false;
+  # The nixpkgs flake registry entry and NIX_PATH reference a copy of the nixpkgs source; the guest
+  # evaluates no Nix, and every node would pull the copy.
+  nixpkgs.flake.setNixPath = false;
+  nixpkgs.flake.setFlakeRegistry = false;
   # disk-image.nix cannot pass copyChannel, whose default puts a second nixpkgs source in the image.
   image.modules.qemu-efi =
     { config, pkgs, ... }:
