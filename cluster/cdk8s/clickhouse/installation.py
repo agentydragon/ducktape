@@ -407,13 +407,16 @@ def keeper_chart(app: App) -> Chart:
                                         pod_template=ssd_pod_template, data_volume_claim_template=ssd_data_claim
                                     ),
                                 ),
-                                ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicas(name="1"),
+                                ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicas(
+                                    name="1",
+                                    templates=ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicasTemplates(
+                                        pod_template=ssd_pod_template, data_volume_claim_template=ssd_data_claim
+                                    ),
+                                ),
                                 ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicas(
                                     name="2",
-                                    # Keep replica 2's existing retained claim identity and storage
-                                    # placement independent of the shared default template.
                                     templates=ClickHouseKeeperInstallationSpecConfigurationClustersLayoutReplicasTemplates(
-                                        data_volume_claim_template=control_plane_data_claim
+                                        pod_template=ssd_pod_template, data_volume_claim_template=ssd_data_claim
                                     ),
                                 ),
                             ]

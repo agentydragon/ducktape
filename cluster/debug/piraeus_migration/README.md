@@ -82,6 +82,11 @@ have not started.
 The accepted overcommit policy and issue trigger remain in the
 [runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
 
+The next planned storage move is ClickHouse Keeper replicas 1 and 2 to retained
+`piraeus-ssd-local` claims. Hold the ClickHouse Flux owner during serial cold
+copies, preserve replica names and IDs, and verify quorum after each member.
+Replica 0 stays untouched; the copies have not started.
+
 ## Evidence map
 
 | Folder                                    | Contents                                                                                 |

@@ -115,9 +115,13 @@ spec:
                 podTemplate: keeper-ssd
                 dataVolumeClaimTemplate: keeper-data-ssd
             - name: "1"
+              templates:
+                podTemplate: keeper-ssd
+                dataVolumeClaimTemplate: keeper-data-ssd
             - name: "2"
               templates:
-                dataVolumeClaimTemplate: keeper-data-control-plane
+                podTemplate: keeper-ssd
+                dataVolumeClaimTemplate: keeper-data-ssd
   templates:
     podTemplates:
       - name: keeper
