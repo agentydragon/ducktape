@@ -620,6 +620,30 @@ preserved or explicitly waived, temporary holds/helpers are removed, and normal
 Flux/operator management agrees with the accepted application state. Later
 remote-access or extra Piraeus replicas remain separate opt-in work.
 
+### Reduce SeaweedFS dependencies after the local-path rollout
+
+Track this separately in [#11753](https://github.com/agentydragon/ducktape/issues/11753).
+The owner used Seaweed primarily to obtain replicated persistent storage; move
+suitable consumers to Piraeus once the required replication/remote-access policy
+and operational behavior are accepted. The current single-copy strict-local
+classes do not yet supply that service-level replacement.
+
+Start with small single-writer state (Claude session sync and CLIProxyAPI), then
+Haku UI WALs with their replay/preservation gates. Audit Matrix and GitHub API
+capture's RWX requirements before choosing RWO. Forgejo currently shares its Git
+PVC between two nodes and needs a separate shared-filesystem/deployment design;
+ordinary replicated ext4/XFS block storage does not provide safe concurrent RWX.
+Review Grocy's backup destinations independently, preserving verified recovery
+outside each primary's failure set. Inventory direct S3 consumers as well as
+PVCs; object data and backups need an explicit retained or replacement service.
+
+Pilot one app, verify copy/application/backup and controlled failover behavior,
+then migrate serially. Qualify the intended site, copy count, fencing, degraded
+availability, resync and capacity policy before changing defaults. Remove old
+claims only after acceptance and reclaim their Seaweed storage through the
+normal cleanup/vacuum procedure. Retiring local-path does not require this later
+Seaweed reduction to be complete.
+
 ### Capacity changes and later hardware
 
 Evacuating a Seaweed volume server relocates its data and does not reduce the
