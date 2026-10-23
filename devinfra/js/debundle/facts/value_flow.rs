@@ -603,7 +603,7 @@ pub(crate) struct ChunkValueFlow {
     origin_table: Arc<OriginTable>,
     declared_ids: BTreeSet<Id>,
     bindings: BTreeMap<Id, Values>,
-    properties: BTreeMap<(u32, String), Values>,
+    properties: BTreeMap<u32, HashMap<String, Values>>,
     /// Cached union of all known properties, used by dynamic property reads.
     property_unions: BTreeMap<u32, Values>,
     returns: BTreeMap<u32, Values>,
@@ -643,12 +643,16 @@ impl ChunkValueFlow {
                     .insert(ValueOrigin::Function(*function));
             }
         }
-        for ((object, _), values) in &self.properties {
-            for value in values {
-                reverse
-                    .entry(value)
-                    .or_default()
-                    .insert(ValueOrigin::Object(*object));
+        for (object, properties) in &self.properties {
+            // The reverse index is ordered, so the inner map's iteration order
+            // cannot affect the candidate graph or any later traversal.
+            for values in properties.values() {
+                for value in values {
+                    reverse
+                        .entry(value)
+                        .or_default()
+                        .insert(ValueOrigin::Object(*object));
+                }
             }
         }
         let mut reachable = BTreeMap::new();
@@ -755,7 +759,9 @@ impl ChunkValueFlow {
             let origin_table = self.origin_table.clone();
             let entry = self
                 .properties
-                .entry((object, prop))
+                .entry(object)
+                .or_default()
+                .entry(prop)
                 .or_insert_with(|| Values::empty(origin_table));
             entry.union_with(&values)
         };
@@ -812,18 +818,22 @@ impl ChunkValueFlow {
                 for origin in self.values_of_expr(&member.obj) {
                     if let ValueOrigin::Object(object) = origin {
                         if let Some(prop) = &prop {
-                            if let Some(values) = self.properties.get(&(object, prop.clone())) {
+                            if let Some(values) = self
+                                .properties
+                                .get(&object)
+                                .and_then(|properties| properties.get(prop))
+                            {
                                 out.union_with(values);
                             } else {
                                 out.insert(ValueOrigin::Unknown);
                             }
                         } else {
-                            for (_, values) in self
-                                .properties
-                                .range((object, String::new())..)
-                                .take_while(|((owner, _), _)| *owner == object)
-                            {
-                                out.union_with(values);
+                            if let Some(properties) = self.properties.get(&object) {
+                                // This path remains independent of the tracked solver's cached union.
+                                // Set union is commutative, so HashMap iteration cannot affect facts.
+                                for values in properties.values() {
+                                    out.union_with(values);
+                                }
                             }
                             out.insert(ValueOrigin::Unknown);
                         }
@@ -945,7 +955,11 @@ impl ChunkValueFlow {
                             // Keep watching absent properties. Their Unknown is durable, while a later
                             // write can add concrete values.
                             dependencies.insert(FlowDependency::Property(object, property.clone()));
-                            if let Some(found) = self.properties.get(&(object, property.clone())) {
+                            if let Some(found) = self
+                                .properties
+                                .get(&object)
+                                .and_then(|properties| properties.get(property))
+                            {
                                 values.extend(found);
                             } else {
                                 values.push(ValueOrigin::Unknown);
@@ -987,7 +1001,9 @@ impl ChunkValueFlow {
     }
 
     pub(crate) fn values_of_property(&self, object: u32, property: &str) -> Option<&Values> {
-        self.properties.get(&(object, property.to_owned()))
+        self.properties
+            .get(&object)
+            .and_then(|properties| properties.get(property))
     }
 
     pub(crate) fn aliases_by_object(
