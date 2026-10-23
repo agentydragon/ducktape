@@ -249,8 +249,15 @@ which BuildBuddy decrypts into that test action alone as `OPENAI_API_KEY`
 skips it, and `--config=live-openai` runs it:
 
 ```bash
-bbr test --config=live-openai //agentplane/system_tests:test_session_instructions_real_model
+bbr test --config=live-openai //agentplane/system_tests:test_egress_real_model
 ```
+
+That target runs the egress probe, whose evidence is what a real model works out. The probe's
+Sandbox discovers and presents the fixture's own credential ([`probe_credential.py`](probe_credential.py)),
+a token for a ServiceAccount holding no RBAC, which the Kubernetes API names back only if the proxy
+substituted it. `test_egress` runs the other egress cases with the scripted model: the model call goes
+through the proxy, and a PolicySet bound to a running Sandbox takes effect. The latter binds the
+fixture's own PolicySet ([`runtime_grant.py`](runtime_grant.py)), not one a deployment's Sandboxes use.
 
 ## Running live
 
@@ -258,19 +265,11 @@ A `_live` target is not in CI and not on RBE: it is `manual`, so `//...` never s
 needs a kubeconfig and a route to the cluster.
 
 Bazel excludes `manual` targets from package patterns, so `:all` runs the fast offline driver
-tests and the k3s targets, not any live run. Name the live target explicitly. Start with the egress
-vertical slice:
+tests and the k3s targets, not any live run. Name the live target explicitly:
 
 ```bash
-bazelisk test //agentplane/system_tests:test_egress_live --test_output=streamed --test_arg=-s
+bazelisk test //agentplane/system_tests:test_thread_latency --test_output=streamed --test_arg=-s
 ```
-
-That target runs the egress probe, whose evidence is what a real model works out. `test_egress`
-runs the other egress cases with the scripted model: the model call goes through the proxy, and a
-PolicySet bound to a running Sandbox takes effect. The latter binds the fixture's own PolicySet
-([`runtime_grant.py`](runtime_grant.py)), not one a deployment's Sandboxes use.
-
-Run the other live scenario by its explicit target, `:test_thread_latency`.
 
 `//agentplane/system_tests:test_ollama_routes` exercises every configured Ollama chat
 route offered by the committed testing app ConfigMap, on each harness that offers it,

@@ -10,7 +10,6 @@ targets and backends in the [system tests README](../system_tests/README.md). No
 
 | Workflow                                                                                                                   | Moves to                                                  | Node                          |
 | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------- |
-| The `test_egress` probe (`_live`)                                                                                          | `test_egress_real_model` on k3s                           | `K3S_MODEL_SCENARIOS`         |
 | `_live` targets k3s already covers: `test_dispatcher`, `test_storage`, `test_thread_stream`, `test_vm_workspace_ownership` | deleted                                                   | `LIVE_TARGETS_OFF_TESTING`    |
 | Live-only checks: `test_thread_latency`, `test_ollama_routes`                                                              | staging                                                   | `LIVE_TARGETS_OFF_TESTING`    |
 | Risky config rolled out on testing first                                                                                   | staging after the system tests pass, with a rollback plan | `STAGING_FIRST_ROLLOUT`       |
@@ -24,15 +23,13 @@ gone, staging is the first cluster such a change reaches.
 
 ## Steps
 
-1. **`K3S_MODEL_SCENARIOS`**: a `_real_model` target for the `test_egress` probe, binding a fixture-only credential
-   PolicySet, passes on both harnesses; its `_live` target goes.
-2. **`LIVE_TARGETS_OFF_TESTING`**, any time: delete the `_live` targets k3s covers; point `test_thread_latency` and
-   `test_ollama_routes` at staging. Whichever of steps 1 and 2 lands second deletes the `live` variant.
-3. **`STAGING_FIRST_ROLLOUT`**: the docs and recipes that send risky config to testing first say staging, after the
+1. **`LIVE_TARGETS_OFF_TESTING`**, any time: delete the `_live` targets k3s covers and the `live` variant; point
+   `test_thread_latency` and `test_ollama_routes` at staging.
+2. **`STAGING_FIRST_ROLLOUT`**: the docs and recipes that send risky config to testing first say staging, after the
    system tests, with a rollback plan in the PR.
-4. **`AGENT_TESTING_ACCESS_RETIRE`**: the managed presets stop selecting `agentplane-testing-operator` and the testing
+3. **`AGENT_TESTING_ACCESS_RETIRE`**: the managed presets stop selecting `agentplane-testing-operator` and the testing
    egress policy; the recipes that used them point at `bbr` system tests and staging reads.
-5. **`TESTING_ENVIRONMENT_RETIRE`**, three PRs: the Flux kustomization, image pins, manifests, DNS and routes; the
+4. **`TESTING_ENVIRONMENT_RETIRE`**, three PRs: the Flux kustomization, image pins, manifests, DNS and routes; the
    Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and volumes,
    a data drop that lands only on the operator's word.
 

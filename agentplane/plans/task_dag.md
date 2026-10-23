@@ -35,7 +35,6 @@ flowchart LR
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
     end
     subgraph K3S_TRACK[System tests on k3s, retiring agentplane-testing]
-        K3S_MODEL_SCENARIOS[Candidate: the egress probe with a real model on k3s]
         LIVE_TARGETS_OFF_TESTING[Candidate: live targets off testing]
         STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
         AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
@@ -1931,31 +1930,21 @@ changes.
 
 ```mermaid
 flowchart LR
-    K3S_MODEL_SCENARIOS[Candidate: the egress probe with a real model on k3s]
     LIVE_TARGETS_OFF_TESTING[Candidate: live targets off testing]
     STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
     AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
     TESTING_ENVIRONMENT_RETIRE[Blocked: delete agentplane-testing]
-    K3S_MODEL_SCENARIOS --> TESTING_ENVIRONMENT_RETIRE
     LIVE_TARGETS_OFF_TESTING --> TESTING_ENVIRONMENT_RETIRE
     STAGING_FIRST_ROLLOUT --> TESTING_ENVIRONMENT_RETIRE
     AGENT_TESTING_ACCESS_RETIRE --> TESTING_ENVIRONMENT_RETIRE
 ```
-
-### `K3S_MODEL_SCENARIOS` — the egress probe with a real model on k3s
-
-**Candidate.** `system_test(real_model = True)` generates `<scenario>_real_model` (system tests README § Real model
-on k3s); `test_session_instructions` has one. The `test_egress` probe gets one next, passing on both harnesses under
-`--config=live-openai`, and its `_live` target is deleted. On k3s it binds a fixture-only credential PolicySet, not
-staging's `github-agentydragon-agent`.
 
 ### `LIVE_TARGETS_OFF_TESTING` — no live target points at testing
 
 **Candidate.** Delete the `_live` targets of `test_dispatcher`, `test_storage`, `test_thread_stream` and
 `test_vm_workspace_ownership`, which their k3s and `_vm` targets cover. `test_thread_latency` and
 `test_ollama_routes`, which need Electric and the GPU Ollama, run against staging and read staging's app ConfigMap.
-Whichever of this and `K3S_MODEL_SCENARIOS` lands second deletes the `live` variant from `system_test` and the
-`TESTING_NAMESPACE` default.
+The same change deletes the `live` variant from `system_test` and the `TESTING_NAMESPACE` default.
 
 ### `STAGING_FIRST_ROLLOUT` — risky config goes to staging
 
@@ -1972,7 +1961,7 @@ through `bbr` and at staging reads.
 
 ### `TESTING_ENVIRONMENT_RETIRE` — delete `agentplane-testing`
 
-**Blocked on the four nodes above.** Three PRs: the Flux kustomization, image pins, generated manifests, DNS and
+**Blocked on the three nodes above.** Three PRs: the Flux kustomization, image pins, generated manifests, DNS and
 routes; the Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and
 volumes, a data drop that waits for the operator's word. Preserve staging.
 
