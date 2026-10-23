@@ -24,6 +24,24 @@ The sections below retain older preparation snapshots; use the
 [node-roll runbook](../../../docs/runbooks/piraeus_node_roll.md) and refresh all
 gates before further operations.
 
+## 103711 maintenance and SeaweedFS slot exhaustion — 2026-10-23
+
+While source `ovh-ns103711` was in maintenance, its stable peer was full at
+600/600 SeaweedFS volume slots. Slot exhaustion blocked `001` growth and Mimir
+bucket-index writes even though collections can be tiny or partial: slot demand
+is independent of occupied bytes. This source change raises both HDD templates
+to 2,000 slots; `minFreeSpacePercent=10` remains the physical-space guard.
+
+Before reconciling the raised cap, set `RollingUpdate.partition=1` on both HDD
+StatefulSets. The two-replica legacy group then rolls ordinal 1 alone, protecting
+source ordinal 0. The one-replica `hdd-piraeus-103656` group stays at partition 1
+to protect target ordinal 0; roll that target explicitly only under the two-copy
+acceptance gates.
+
+The accepted ClickHouse sequence keeps one data replica on `102453` while
+`103711` is rebuilt, then restores the second replica. Do not stage a third
+500Gi claim.
+
 ## Completed early SSD evacuation
 
 The operator authorized starting Seaweed evacuation before the node roll.

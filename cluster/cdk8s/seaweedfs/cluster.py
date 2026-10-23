@@ -329,21 +329,16 @@ def seaweed(scope: Construct) -> Seaweed:
                 # defaultReplication above; the split + repl 010 sketch stays in
                 # cluster/docs/plans/ovh_storage_tiering.md as an option, not a plan.
                 #
-                # 600 slots: -max=0 gave only 112/113 on the 1.8 TiB servers, which sat at
-                # 112/112 (full) while volumes were ~5% full (~0.85 GB of a 16 GB cap). As of
-                # 2026-10-22, the 2-copy set uses 992 placements (496 logical volumes). During
-                # a one-server evacuation, each of the two survivors must hold 496 placements;
-                # 600 leaves 104 slots per survivor for evacuation and growth. This raises the
-                # slot limit only; verify actual free space and the minFreeSpacePercent reserve
-                # before evacuation. 600 also exceeds the 3.6 TB node's auto-derived 232 slots,
-                # so no server is capped below its prior count.
+                # Slots are independent of bytes: tiny or partial collection volumes still
+                # consume slots. 2000 leaves room for growth; minFreeSpacePercent remains the
+                # physical-space guard.
                 "hdd": _volume_topology(
                     rack="hil-ovh-h109b04",
                     storage="1800Gi",
                     storage_class="local-path-ovh-hdd",
                     disk="hdd",
                     replicas=2,
-                    max_volume_counts=600,
+                    max_volume_counts=2000,
                 ),
                 # The readiness label gates this PVC consumer until the HDD pool passes acceptance.
                 "hdd-piraeus-103656": _volume_topology(
@@ -352,7 +347,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     storage_class="piraeus-hdd-local",
                     disk="hdd",
                     replicas=1,
-                    max_volume_counts=600,
+                    max_volume_counts=2000,
                     additional_node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
                         _HOSTNAME: "ovh-ns103656",
