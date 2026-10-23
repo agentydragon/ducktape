@@ -104,7 +104,12 @@ the expected numbers to make the guard pass.
 1. Pause new CI work and credential writers. Suspend the `haku-state` Terraform
    resource in `flux-system` and the `agents-infra/forgejo-token-rotation` CronJob; wait for their
    existing jobs to finish. Preserve their original suspension states.
-2. Suspend Flux Kustomization `ducktape-flux/forgejo`, then HelmRelease
+2. Preserve suspension states and temporarily suspend the parent
+   `flux-system/flux-system` Kustomization, followed by the relevant child
+   Kustomizations (`forgejo`, `forgejo-gitops`, `forgejo-token-rotation`, `haku-ci`
+   in `ducktape-flux`). Use `--field-manager=forgejo-cutover` for maintenance
+   patches; Flux clears ordinary `kubectl` edits. Confirm writer suspensions
+   remain set. Suspend HelmRelease
    `forgejo/forgejo`. Scale Deployment `forgejo/forgejo` to zero and wait until
    **all** its pods, including init containers and terminating pods, are gone.
    Do not delete its PVCs, database or other persistent resources.
@@ -126,8 +131,10 @@ the expected numbers to make the guard pass.
 5. Merge this activation PR. Resume the Forgejo Kustomization so it
    applies the new Helm values **and the explicitly suspended HelmRelease**.
    Verify the source revision, key selection `replacement`, and suspended state;
-   suspend that Kustomization again, then resume the HelmRelease. Its chart
-   restores the configured replicas.
+   suspend that Kustomization again, then resume the HelmRelease with `upgrade.remediation.retries: 0` and
+   `remediateLastFailure: false` for this upgrade. An automatic Helm rollback
+   would restore the old key against the migrated database. Its chart restores
+   the configured replicas.
    A mounted Secret changing does not reload the key in an existing process.
 6. Verify both replicas use `SECRET_KEY_URI`, have no populated inline key or
    environment override, and match the replacement key without printing it.
@@ -139,7 +146,8 @@ the expected numbers to make the guard pass.
    Replace/revoke Haku PATs through their owners; password changes do not revoke
    them. Resume the token rotator only after its source credentials converge.
 8. Remove the temporary declarative HelmRelease suspension in a cleanup commit,
-   resume its Kustomization, restore remaining paused work and take a fresh
+   restore normal Helm remediation, resume its Kustomization and the parent,
+   restore remaining paused work and take a fresh
    backup. Clean up the one-off Jobs after retaining their sanitized evidence.
 
 The activation commit's explicit suspension prevents Flux from dropping a live

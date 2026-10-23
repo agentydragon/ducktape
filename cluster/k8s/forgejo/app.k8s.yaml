@@ -213,7 +213,7 @@ spec:
           scopes: email profile
     global:
       imageRegistry: ""
-    initPreScript: |-
+    initPreScript: |
       if [ -f "$GITEA_APP_INI" ]; then
         sed -i '/^\[security\]/,/^\[/{s|^[[:space:]]*SECRET_KEY[[:space:]]*=.*|SECRET_KEY_URI = file:/etc/forgejo-key/secret-key|;}' "$GITEA_APP_INI"
       fi

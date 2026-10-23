@@ -291,7 +291,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
             'if [ -f "$GITEA_APP_INI" ]; then\n'
             "  sed -i '/^\\[security\\]/,/^\\[/{s|^[[:space:]]*SECRET_KEY[[:space:]]*=.*|"
             'SECRET_KEY_URI = file:/etc/forgejo-key/secret-key|;}\' "$GITEA_APP_INI"\n'
-            "fi"
+            "fi\n"  # Chart appends its END comment directly after this value.
         ),
         "service": {
             "http": {"type": "ClusterIP", "port": HTTP.port.number},
