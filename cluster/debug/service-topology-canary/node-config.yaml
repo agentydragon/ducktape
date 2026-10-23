@@ -1,0 +1,17 @@
+# CLEANUP(added 2026-10-22): Remove after loadBalancer.serviceTopology is enabled
+# cluster-wide and every connected agent reports it enabled; tracked in #9605.
+apiVersion: cilium.io/v2
+kind: CiliumNodeConfig
+metadata:
+  name: service-topology-canary
+  namespace: kube-system
+spec:
+  nodeSelector:
+    matchExpressions:
+      - key: kubernetes.io/hostname
+        operator: In
+        values:
+          - ovh-ns103711
+          - optiplex
+  defaults:
+    enable-service-topology: "true"
