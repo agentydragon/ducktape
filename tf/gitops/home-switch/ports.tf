@@ -12,6 +12,10 @@ resource "routeros_interface_ethernet" "connected" {
   name         = each.key
   comment      = each.value
 
+  # CLEANUP(#9604): restore 2.5G advertisement for the replacement-cable comparison.
+  advertise        = each.key == "ether1" ? "1G-baseT-full" : null
+  auto_negotiation = each.key == "ether1" ? true : null
+
   lifecycle {
     prevent_destroy = true
   }

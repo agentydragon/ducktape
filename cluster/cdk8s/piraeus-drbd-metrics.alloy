@@ -1,0 +1,28 @@
+// This runs in a narrowly scheduled host-network Piraeus monitoring Pod, where
+// loopback is shared with DRBD Reactor. Reactor listens only on 9942 and Alloy's
+// admin listener stays on loopback. Only remote-write traffic leaves the Pod.
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = sys.env("MIMIR_PUSH_URL")
+  }
+
+  wal {
+    // This collector has one 60s target per Piraeus node. A short WAL retention is
+    // enough for brief gateway outages. The pod bounds WAL storage at 512Mi.
+    max_keepalive_time = "2h"
+  }
+}
+
+prometheus.scrape "drbd_reactor" {
+  targets = [{
+    "__address__" = "127.0.0.1:9942",
+    "instance"    = sys.env("NODE_NAME"),
+    "node"        = sys.env("NODE_NAME"),
+  }]
+
+  job_name        = "piraeus-datastore/linstor-satellite"
+  metrics_path    = "/metrics"
+  scrape_interval = "60s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+}

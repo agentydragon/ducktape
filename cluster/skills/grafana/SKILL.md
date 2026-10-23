@@ -79,7 +79,14 @@ The verifier fails on any of these conditions:
   `--allow-all-zero-panel` exception and an explanation in the handoff;
 - the browser sees datasource request failures, page errors, PromQL/LogQL parse
   errors, or Grafana's `No data` state;
-- a panel title is absent from the rendered dashboard.
+- a panel title is absent from the rendered dashboard. Known dashboard-variable
+  placeholders in titles must expand to visible text; structural row titles are
+  not panel titles and are skipped.
+
+The browser verifier scrolls to the end of the dashboard so repeated rows and
+their panels are rendered even when the dashboard expands beyond a fixed number
+of viewports. It waits for datasource query requests to finish after each scroll
+before capturing that viewport, and fails if a request remains pending for 45s.
 
 The verifier writes a full-page PNG. The agent must open representative
 screenshots with `view_image` and inspect them visually, including at least one

@@ -24,12 +24,14 @@ AT&T fiber
   -> in-wall cable
   -> living-room wall jack
   -> patch cord
-  -> CRS310 switch ether1 (negotiates 2.5G)
+  -> CRS310 switch ether1 (2.5G-capable; configured to advertise 1G for the loss trial)
   -> atlas (wyrm2 bridged on it as a Proxmox VM), optiplex
 ```
 
 Everything home-hosted reaches the gateway, and so the internet, over the single gateway-to-`ether1`
-run: the panel and the in-wall cable are part of that 2.5G link.
+run: the panel and the in-wall cable are part of that link. `tf/gitops/home-switch/ports.tf`
+limits it to `1G-baseT-full` for the sustained comparison in
+[#9604](https://github.com/agentydragon/ducktape/issues/9604).
 
 The switch's syslog goes to `192.168.1.10:514/udp` (`alloy-syslog`, `cluster/cdk8s/monitoring/alloy.py`).
 

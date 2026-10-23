@@ -1797,7 +1797,10 @@ py_library(
 py_library(
     name = "piraeus",
     srcs = ["piraeus.py"],
-    data = ["piraeus-reactor-patch.yaml"],
+    data = [
+        "piraeus-drbd-metrics.alloy",
+        "piraeus-reactor-patch.yaml",
+    ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":flux",
@@ -1805,6 +1808,8 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":piraeus_metrics",
+        "//cluster/cdk8s/monitoring:mimir",
+        "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",

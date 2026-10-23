@@ -1,0 +1,16 @@
+max by (node, disk, device_path) (
+  label_replace(
+    label_replace(
+      max by (node, device) (
+        node_filesystem_size_bytes{mountpoint="/var", device=~"^/dev/.+"}
+        * on (namespace, pod) group_left (node)
+          max by (namespace, pod, node) (
+            kube_pod_info{namespace="monitoring", pod=~"prometheus-node-exporter-.+"}
+          )
+      ),
+      "disk", "$1", "device", "^/dev/(nvme[0-9]+n[0-9]+|mmcblk[0-9]+|[a-z]+)(p?[0-9]+)?$"
+    ),
+    "device_path", "/dev/$1", "disk", "^(.+)$"
+  )
+  * on (node) group_left () kube_node_role{role="control-plane"}
+) > bool 0

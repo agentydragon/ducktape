@@ -35,6 +35,7 @@ def add_thin_pool_monitoring(
     node_selector: dict[str, str],
     volume_group: str,
     thin_pool: str,
+    storage_pool: str,
     name: str = _NAME,
 ) -> None:
     """Build a scoped reader/exporter pair and its Alloy scrape and alert resources.
@@ -45,6 +46,7 @@ def add_thin_pool_monitoring(
     """
     _validate_lvm_name(volume_group, field="volume_group")
     _validate_lvm_name(thin_pool, field="thin_pool")
+    _validate_lvm_name(storage_pool, field="storage_pool")
     if not namespace:
         raise ValueError("namespace must be non-empty")
     if not node_selector:
@@ -92,6 +94,13 @@ def add_thin_pool_monitoring(
                             image_pull_policy="IfNotPresent",
                             command=["/bin/sh", "/collector/collect.sh"],
                             env=[
+                                k8s.EnvVar(
+                                    name="LVM_NODE",
+                                    value_from=k8s.EnvVarSource(
+                                        field_ref=k8s.ObjectFieldSelector(field_path="spec.nodeName")
+                                    ),
+                                ),
+                                k8s.EnvVar(name="LVM_STORAGE_POOL", value=storage_pool),
                                 k8s.EnvVar(name="LVM_VOLUME_GROUP", value=volume_group),
                                 k8s.EnvVar(name="LVM_THIN_POOL", value=thin_pool),
                             ],

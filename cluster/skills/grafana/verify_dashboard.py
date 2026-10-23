@@ -40,7 +40,11 @@ DEFAULT_SECRET = "monitoring/grafana-admin-password"
 DATASOURCE_PLACEHOLDERS = {"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}
 UNRESOLVED_MACRO = re.compile(r"\$__[_a-zA-Z0-9]+")
 UNRESOLVED_VARIABLE = re.compile(r"\$(?:__[_a-zA-Z0-9]+|[_a-zA-Z][_a-zA-Z0-9]*)")
+PANEL_TITLE_VARIABLE = re.compile(
+    r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::[A-Za-z_][A-Za-z0-9_]*)?\}|\$([A-Za-z_][A-Za-z0-9_]*)"
+)
 TIME_RANGE = re.compile(r"^now(?:-(?P<amount>[0-9]+)(?P<unit>[smhd]))?$")
+BROWSER_QUERY_TIMEOUT_SECONDS = 45.0
 BAD_BROWSER_TEXT = re.compile(
     r"(?:PromQL query has parsing errors|not a valid duration|data source error|"
     r"failed to load resource.*(?:/api/ds/query|api/ds/query))",
@@ -144,6 +148,33 @@ def panels_in(value: dict[str, Any]) -> list[dict[str, Any]]:
 
 def panel_name(panel: dict[str, Any]) -> str:
     return f"{panel.get('id', '?')}:{panel.get('title', '<untitled>')}"
+
+
+def panel_title_pattern(title: str, variable_names: set[str]) -> re.Pattern[str]:
+    """Match rendered panel titles while requiring every static part to match exactly."""
+    parts = ["^"]
+    cursor = 0
+    for match in PANEL_TITLE_VARIABLE.finditer(title):
+        variable = match.group(1) or match.group(2)
+        if variable not in variable_names:
+            raise VerificationError(f"unknown dashboard variable in panel title: {match.group(0)}")
+        parts.append(re.escape(title[cursor : match.start()]))
+        parts.append(".+?")
+        cursor = match.end()
+    parts.append(re.escape(title[cursor:]))
+    parts.append("$")
+    return re.compile("".join(parts))
+
+
+async def wait_for_datasource_queries(page: Page, pending: set[int]) -> None:
+    deadline = asyncio.get_running_loop().time() + BROWSER_QUERY_TIMEOUT_SECONDS
+    while pending and asyncio.get_running_loop().time() < deadline:
+        await page.wait_for_timeout(250)
+    if pending:
+        raise VerificationError(
+            f"{len(pending)} browser datasource query request(s) remained pending "
+            f"after {BROWSER_QUERY_TIMEOUT_SECONDS:g}s"
+        )
 
 
 def matches_panel(panel: dict[str, Any], allow_list: list[str]) -> bool:
@@ -381,6 +412,12 @@ async def browser_verify(
     failed_requests: list[str] = []
     bad_responses: list[str] = []
     bad_query_payloads: list[str] = []
+    pending_datasource_queries: set[int] = set()
+    variable_names = {
+        variable["name"]
+        for variable in dashboard.get("templating", {}).get("list", [])
+        if isinstance(variable, dict) and variable.get("name")
+    }
 
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(
@@ -396,10 +433,21 @@ async def browser_verify(
         page: Page = await context.new_page()
         page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
         page.on("pageerror", lambda error: page_errors.append(str(error)))
-        page.on(
-            "requestfailed",
-            lambda request: failed_requests.append(f"{request.method} {request.url}: {request.failure}"),
-        )
+
+        def track_datasource_request(request: Any) -> None:
+            if "/api/ds/query" in request.url:
+                pending_datasource_queries.add(id(request))
+
+        def finish_datasource_request(request: Any) -> None:
+            pending_datasource_queries.discard(id(request))
+
+        def record_failed_request(request: Any) -> None:
+            failed_requests.append(f"{request.method} {request.url}: {request.failure}")
+            finish_datasource_request(request)
+
+        page.on("request", track_datasource_request)
+        page.on("requestfinished", finish_datasource_request)
+        page.on("requestfailed", record_failed_request)
         page.on(
             "response",
             lambda response: (
@@ -427,16 +475,18 @@ async def browser_verify(
         if "/login" in page.url:
             raise VerificationError("browser could not authenticate to Grafana")
         await page.wait_for_timeout(int(wait_seconds * 1000))
+        await wait_for_datasource_queries(page, pending_datasource_queries)
         # Grafana mounts panels as they enter the viewport. Scroll through the dashboard
         # so a long dashboard's lower panels are rendered and their queries are exercised.
         seen_titles: set[str] = set()
         visible_no_data = 0
-        for index in range(10):
+        for index in range(100):
             for panel in panels_in(dashboard):
-                if panel.get("type") == "text":
+                if panel.get("type") in {"text", "row"}:
                     continue
                 title = panel.get("title", "")
-                if await page.get_by_text(title, exact=True).count():
+                title_pattern = panel_title_pattern(title, variable_names)
+                if await page.get_by_text(title_pattern, exact=True).count():
                     seen_titles.add(title)
             visible_no_data += len(
                 [
@@ -446,15 +496,23 @@ async def browser_verify(
                 ]
             )
             await page.screenshot(path=str(screenshot_dir / f"{dashboard.get('uid', 'dashboard')}-{index:02}.png"))
+            at_bottom = await page.evaluate(
+                "window.scrollY >= document.documentElement.scrollHeight - window.innerHeight"
+            )
+            if at_bottom:
+                break
+            if index == 99:
+                raise VerificationError("browser did not reach the end of the dashboard while scrolling")
             await page.mouse.move(1200, 700)
             await page.mouse.wheel(0, 900)
             await page.mouse.move(310, 100)
             await page.wait_for_timeout(1000)
+            await wait_for_datasource_queries(page, pending_datasource_queries)
         body_text = await page.locator("body").inner_text()
         missing_titles = [
             panel_name(panel)
             for panel in panels_in(dashboard)
-            if panel.get("type") != "text" and panel.get("title", "") not in seen_titles
+            if panel.get("type") not in {"text", "row"} and panel.get("title", "") not in seen_titles
         ]
         await page.screenshot(path=str(screenshot), full_page=True)
         await browser.close()

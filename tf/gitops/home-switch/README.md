@@ -13,6 +13,18 @@ names. The provider's Ethernet resource selects an existing interface by
 connection through `/interface/bridge/host` and the endpoint's MAC before updating
 its label. Disconnected and unidentified ports have no managed label.
 
+The gateway uplink, `ether1`, advertises only `1G-baseT-full`, with auto-negotiation
+enabled, for the sustained loss comparison in [#9604](https://github.com/agentydragon/ducktape/issues/9604).
+When comparing the replacement cable at the original speed, explicitly set
+`ether1`'s `advertise` to the original value:
+
+```text
+10M-baseT-half,10M-baseT-full,100M-baseT-half,100M-baseT-full,1G-baseT-full,2.5G-baseT
+```
+
+Removing the attribute does not reset the switch: the provider preserves
+unconfigured Ethernet properties.
+
 `netwatch.tf` configures switch-originated ICMP probes to the AT&T gateway and
 OptiPlex's fixed LAN address. Each runs a full 200-packet batch at 150 ms intervals
 once per minute, independently of the Kubernetes smokeping probes. No scripts or

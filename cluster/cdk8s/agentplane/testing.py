@@ -145,7 +145,12 @@ ENV = Environment(
         codex_routes=TESTING_APP_MODELS.codex,
     ),
     egress=EgressProps(
-        ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_CREDENTIALS_NAMESPACE
+        ca_secret_name="agentplane-testing-egress-ca",
+        credentials_namespace=TESTING_CREDENTIALS_NAMESPACE,
+        replicas=ReplicaProfile(
+            count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None
+        ),
+        traffic_distribution=None,
     ),
     app=AppProps(
         origin=f"https://{_HOSTNAME}", oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None

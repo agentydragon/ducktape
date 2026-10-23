@@ -5,12 +5,19 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
+from flux_helm.io.fluxcd.toolkit.helm import (
+    HelmReleaseSpecPostRenderers,
+    HelmReleaseSpecPostRenderersKustomize,
+    HelmReleaseSpecPostRenderersKustomizePatches,
+    HelmReleaseSpecPostRenderersKustomizePatchesTarget,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import namespaces, piraeus_metrics
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.namespaces import Vpa
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
@@ -38,6 +45,20 @@ _THIRD_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": 
 _THIRD_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"
 _CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
 _REACTOR_CONFIG_PATCH = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-reactor-patch.yaml")).read_text()
+_DRBD_ALLOY_CONFIG = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-drbd-metrics.alloy")).read_text()
+_DRBD_ALLOY_CONFIG_MAP = "piraeus-drbd-alloy"
+_DRBD_ALLOY_IMAGE = "docker.io/grafana/alloy:v1.21.1"
+_DRBD_ALLOY_LABELS = {"app.kubernetes.io/name": "piraeus-drbd-metrics"}
+# Reactor is loopback-only while the chart's satellite PodMonitor targets pod IP. This
+# release is scoped to piraeus-datastore; chart output omits metadata.namespace, so
+# the post-render target selects this one named monitor in this release.
+_SATELLITE_POD_MONITOR_DELETE_PATCH = """\
+$patch: delete
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: linstor-satellite
+"""
 _TALOS_SATELLITE_PATCHES = [
     {"target": {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}, "patch": _REACTOR_CONFIG_PATCH}
 ]
@@ -108,6 +129,130 @@ def operator_chart(app: App) -> Chart:
 def cluster_chart(app: App) -> Chart:
     """Declare LINSTOR, the Talos satellite patch, and local canary and SSD classes."""
     chart = Chart(app, "piraeus-cluster", disable_resource_name_hashes=True)
+    k8s.KubeConfigMap(
+        chart,
+        "drbd-alloy-config",
+        metadata=k8s.ObjectMeta(
+            name=_DRBD_ALLOY_CONFIG_MAP,
+            namespace=NAMESPACE,
+            annotations={"description": "Alloy scrape of the loopback-only DRBD Reactor metrics endpoint."},
+        ),
+        data={"config.alloy": _DRBD_ALLOY_CONFIG},
+    )
+    k8s.KubeDaemonSet(
+        chart,
+        "drbd-metrics-daemonset",
+        metadata=k8s.ObjectMeta(name="piraeus-drbd-metrics", namespace=NAMESPACE, labels=_DRBD_ALLOY_LABELS),
+        spec=k8s.DaemonSetSpec(
+            selector=k8s.LabelSelector(match_labels=_DRBD_ALLOY_LABELS),
+            template=k8s.PodTemplateSpec(
+                metadata=k8s.ObjectMeta(labels=_DRBD_ALLOY_LABELS),
+                spec=k8s.PodSpec(
+                    automount_service_account_token=False,
+                    host_network=True,
+                    dns_policy="ClusterFirstWithHostNet",
+                    affinity=k8s.Affinity(
+                        node_affinity=k8s.NodeAffinity(
+                            required_during_scheduling_ignored_during_execution=k8s.NodeSelector(
+                                node_selector_terms=[
+                                    k8s.NodeSelectorTerm(
+                                        match_expressions=[
+                                            k8s.NodeSelectorRequirement(
+                                                key=_CANARY_LABEL, operator="In", values=["true"]
+                                            )
+                                        ]
+                                    ),
+                                    k8s.NodeSelectorTerm(
+                                        match_expressions=[
+                                            k8s.NodeSelectorRequirement(
+                                                key=_PIRAEUS_READY_LABEL, operator="In", values=["true"]
+                                            )
+                                        ]
+                                    ),
+                                ]
+                            )
+                        )
+                    ),
+                    tolerations=[
+                        k8s.Toleration(
+                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
+                        )
+                    ],
+                    security_context=k8s.PodSecurityContext(
+                        run_as_non_root=True,
+                        run_as_user=473,
+                        run_as_group=473,
+                        fs_group=473,
+                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
+                    ),
+                    termination_grace_period_seconds=30,
+                    volumes=[
+                        k8s.Volume(
+                            name="config",
+                            config_map=k8s.ConfigMapVolumeSource(name=_DRBD_ALLOY_CONFIG_MAP, default_mode=0o444),
+                        ),
+                        k8s.Volume(
+                            name="storage",
+                            empty_dir=k8s.EmptyDirVolumeSource(size_limit=k8s.Quantity.from_string("512Mi")),
+                        ),
+                        k8s.Volume(
+                            name="tmp", empty_dir=k8s.EmptyDirVolumeSource(size_limit=k8s.Quantity.from_string("16Mi"))
+                        ),
+                    ],
+                    containers=[
+                        k8s.Container(
+                            name="alloy",
+                            image=_DRBD_ALLOY_IMAGE,
+                            image_pull_policy="IfNotPresent",
+                            args=[
+                                "run",
+                                "/etc/alloy/config.alloy",
+                                "--storage.path=/var/lib/alloy",
+                                "--server.http.listen-addr=127.0.0.1:12346",
+                                "--stability.level=generally-available",
+                                "--disable-reporting",
+                            ],
+                            env=[
+                                k8s.EnvVar(name="MIMIR_PUSH_URL", value=mimir.PUSH_URL),
+                                k8s.EnvVar(
+                                    name="NODE_NAME",
+                                    value_from=k8s.EnvVarSource(
+                                        field_ref=k8s.ObjectFieldSelector(field_path="spec.nodeName")
+                                    ),
+                                ),
+                            ],
+                            security_context=k8s.SecurityContext(
+                                allow_privilege_escalation=False,
+                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                                read_only_root_filesystem=True,
+                                run_as_non_root=True,
+                                run_as_user=473,
+                                run_as_group=473,
+                                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
+                            ),
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("10m"),
+                                    "memory": k8s.Quantity.from_string("64Mi"),
+                                    "ephemeral-storage": k8s.Quantity.from_string("64Mi"),
+                                },
+                                limits={
+                                    "cpu": k8s.Quantity.from_string("250m"),
+                                    "memory": k8s.Quantity.from_string("128Mi"),
+                                    "ephemeral-storage": k8s.Quantity.from_string("640Mi"),
+                                },
+                            ),
+                            volume_mounts=[
+                                k8s.VolumeMount(name="config", mount_path="/etc/alloy", read_only=True),
+                                k8s.VolumeMount(name="storage", mount_path="/var/lib/alloy"),
+                                k8s.VolumeMount(name="tmp", mount_path="/tmp"),
+                            ],
+                        )
+                    ],
+                ),
+            ),
+        ),
+    )
     k8s.KubeNetworkPolicy(
         chart,
         "controller-api-ingress",
@@ -134,6 +279,7 @@ def cluster_chart(app: App) -> Chart:
         node_selector=_FIRST_NODE_SELECTOR,
         volume_group=_FIRST_NODE_VOLUME_GROUP,
         thin_pool=_FIRST_NODE_THIN_POOL,
+        storage_pool="ssd",
     )
     piraeus_metrics.add_thin_pool_monitoring(
         Construct(chart, "next-node-metrics"),
@@ -141,6 +287,7 @@ def cluster_chart(app: App) -> Chart:
         node_selector=_NEXT_NODE_SELECTOR,
         volume_group=_FIRST_NODE_VOLUME_GROUP,
         thin_pool=_FIRST_NODE_THIN_POOL,
+        storage_pool="ssd",
         name="piraeus-lvm-metrics-ovh-ns104952",
     )
     piraeus_metrics.add_thin_pool_monitoring(
@@ -149,6 +296,7 @@ def cluster_chart(app: App) -> Chart:
         node_selector=_THIRD_NODE_SELECTOR,
         volume_group=_FIRST_NODE_VOLUME_GROUP,
         thin_pool=_FIRST_NODE_THIN_POOL,
+        storage_pool="ssd",
         name="piraeus-lvm-metrics-ovh-ns104963",
     )
     repository = oci_helm_repository(
@@ -165,6 +313,7 @@ def cluster_chart(app: App) -> Chart:
         timeout="10m",
         install=RETRY_FAILED_INSTALL,
         values={
+            "monitoring": {"enabled": True, "dashboard": {"enabled": False}},
             # The chart and operator create cert-manager resources and private keys at
             # runtime; no certificate or key material is stored in Git.
             "createInternalTLS": "cert-manager",
@@ -295,6 +444,20 @@ def cluster_chart(app: App) -> Chart:
                 },
             ],
         },
+        post_renderers=[
+            HelmReleaseSpecPostRenderers(
+                kustomize=HelmReleaseSpecPostRenderersKustomize(
+                    patches=[
+                        HelmReleaseSpecPostRenderersKustomizePatches(
+                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
+                                group="monitoring.coreos.com", version="v1", kind="PodMonitor", name="linstor-satellite"
+                            ),
+                            patch=_SATELLITE_POD_MONITOR_DELETE_PATCH,
+                        )
+                    ]
+                )
+            )
+        ],
     )
     return chart
 
