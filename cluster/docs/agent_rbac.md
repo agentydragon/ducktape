@@ -139,7 +139,7 @@ Claude web or Haku: it is co-subjected only onto the secret-free
 `cluster-diagnostics-reader` binding. It does not receive a writable sandbox
 namespace or the separate `logs-configmaps-reader` class.
 
-### 6. claude-ai (OAuth Connections in agentplane-staging) — diagnostics, Coinbase key, testing operator
+### 6. claude-ai (OAuth Connections in agentplane-staging) — diagnostics, Coinbase key
 
 The `claude-ai` ServiceAccount in `agentplane-staging` is the principal for Connections
 enrolled from the Claude.ai MCP connector (`cluster/cdk8s/agentplane/actions_staging_policies.py`);
@@ -150,8 +150,6 @@ every sandbox it stamps through the sandbox Action group runs as it
   the `agent-readable-*` namespaces (section 4).
 - The same narrow console metadata, ClickHouse diagnostics, public-coder diagnostics,
   and public-coder VolSync status Roles used by public coder and Haku.
-- `agentplane-testing-operator` in **agentplane-testing**, including Sandbox lifecycle, read-only KubeVirt VM/VMI/DataVolume views,
-  pod exec, PolicySet and PolicyBinding writes, and testing app-token minting.
 - `get`/`list` on Agentplane `sandboxes`, `sandboxtemplates`, `policysets` and `policybindings` and read-only KubeVirt VM/VMI views, plus the VMI
   `console` subresource, in **agentplane-staging** (`claude-ai-sandbox-reader`), so a read-only
   check needs no approval.
@@ -163,8 +161,8 @@ The `coinbase` PolicySet combines GET egress to `api.coinbase.com` with the `get
 the named Coinbase Secret. The static `claude-ai` and `haku-agent` PolicyBindings both select it;
 the Haku and finance-agent presets select it for managed sandboxes. Static Haku identities keep
 their explicit RoleBinding to the same named Secret. These grants do not make `claude-ai` an alias
-for Haku: it has no Haku sandbox write authority or staging operator access. Its existing
-`AcceptanceToken` binding remains, and `haku-agent` still has no broader Haku profile grants.
+for Haku: it has no Haku sandbox write authority or staging operator access, and `haku-agent`
+has no Haku profile grants.
 
 The `kubernetes-inspection-reads` PolicySet auto-approves `kubernetes_admin`'s resource-usage reads
 (`nodes_stats_summary`, `nodes_top`, `pods_top`) for the static `claude-ai` and `haku-agent`
@@ -225,8 +223,8 @@ The logical profiles are distinct from the transport identities:
 | Managed `haku` preset              | Includes public coder; matches each static Haku path, including the exact Coinbase grant below      |
 | Managed `finance-agent` preset     | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied |
 
-| `agentplane-staging/claude-ai` ServiceAccount | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting |
-| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset |
+| `agentplane-staging/claude-ai` ServiceAccount | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, and Coinbase read |
+| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account, not the managed Haku preset |
 | `public-coder-agent/openclaw` ServiceAccount | Static OpenClaw Action caller; Action Service reads labeled ServiceAccount metadata here, while its policy binding and sets stay in `agentplane-staging` |
 
 The managed finance and Haku presets and the static `claude-ai` and `haku-agent` PolicyBindings
@@ -342,14 +340,13 @@ namespace-scoped diagnostics bundle in `cluster/cdk8s/agentplane/staging_config.
   explicit service-specific exception allowing logs in `public-coder-agent`, whose
   common namespace classification is metadata-only.
 
-Public coder and finance agent share diagnostics and testing grants. Finance also
+Public coder and finance agent share diagnostics grants. Finance also
 selects the explicit Coinbase credential grant; public coder does not. Both
 also select the existing `public-coder-agent-node-reader` and
 `public-coder-agent-cluster-metadata-reader` ClusterRoles, bound cluster-wide:
 node inventory, CRD schemas, and node metrics. They do **not** select Haku's broader
 `cluster-diagnostics-reader` or `haku-sandbox` writes.
-Testing operator/login access is a separate shared bundle below. Action policies
-remain separate from these Kubernetes grants.
+Action policies remain separate from these Kubernetes grants.
 
 These bundles are plain deployment-side grant lists, not a new API or a broad
 cluster-wide role. Metadata and log readers retain their separate namespaced
@@ -360,11 +357,22 @@ The testing environment's public-coder preset does not select these staging gran
 Preset changes affect **new Sandboxes only**. After deployment, launch a new Sandbox
 (or explicitly migrate through the operator workflow), then check its effective
 access with `kubectl auth can-i` and exercise the intended reads. In particular,
-verify Ducktape Flux access, approved logs, and testing operator/login access. Verify
+verify Ducktape Flux access and approved logs. Verify
 that staging operator login and staging Sandbox lifecycle/exec remain denied; every profile
 must also remain denied node proxy access, and public coder and finance Secrets/exec outside
 their explicit permissions. Namespace diagnostic reads in staging are distinct from operator access. Do not treat
 a configured catalog or preset as proof that existing Sandboxes received bindings.
+
+The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
+read selection. `namespace_access.py` is the single reviewed namespace classification.
+It generates namespace labels, static RoleBindings, and managed catalog entries.
+Log-approved namespaces receive metadata and pod-log grants; metadata-only
+namespaces receive metadata alone. An absent namespace grants nothing. Props stays
+excluded because its Namespace is absent and its Flux source is parked.
+The `flux-system` and `ducktape-flux` delegation Kustomizations have no `dependsOn`:
+they are bootstrap roots without generated owner Kustomizations. The cluster integration
+test derives active label opt-ins and checks their catalog grants, all three preset defaults, and
+target-owned delegation dependencies together.
 
 ### Managed Haku additional authority
 
@@ -385,43 +393,6 @@ the latter depends on the public-coder app Kustomization. Public-coder's wider
 reader observes Pods, logs, ConfigMaps, service and workload metadata, RBAC/Flux
 metadata, and Pod metrics. It grants no Secret read or Pod exec. Managed Haku's
 broader cluster reader already covers public coder's two narrow cluster readers.
-
-### Testing-only Agentplane operator access
-
-All three managed presets separately select `agentplane-testing-operator` and the
-`agentplane-testing` egress policy. Static Haku and public coder share the same testing
-role. No agent receives an operator login for testing or staging.
-
-The testing egress policy admits the testing app's internal API and its public
-**testing** origin, without credential substitution. It does not admit Dex, the staging
-app or Authentik login origins.
-
-The existing `agentplane-testing-operator` Role and its static Haku
-RoleBinding remain Flux-owned. This is a
-**testing-only write grant**: it can create, patch, and delete Sandboxes, create
-Pod exec and port-forward sessions, create/patch/delete PolicySets and
-PolicyBindings, and mint the `agentplane-agent` ServiceAccount token used
-by the testing app. It also reads testing SandboxTemplates, Pods, and Pod logs.
-For the Dispatcher acceptance probes it mints tokens for exactly the `app` and
-`notifications` ServiceAccounts (the Gateway's wake callers, so a token bound to a
-live Pod authenticates as that caller to the Dispatcher), patches and scales only the
-`runner-gateway` Deployment, and deletes Pods, which cannot be named ahead of time
-and so covers every testing Pod.
-It grants no write access in `agentplane-staging` and no direct Kubernetes
-Secret read. Pod exec can expose data mounted in testing Pods, and a holder can
-operate every Sandbox in the testing namespace and use that environment's
-credentialless MCP fixtures. Treat it as operator authority, not a diagnostics reader.
-
-The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
-read selection. `namespace_access.py` is the single reviewed namespace classification.
-It generates namespace labels, static RoleBindings, and managed catalog entries.
-Log-approved namespaces receive metadata and pod-log grants; metadata-only
-namespaces receive metadata alone. An absent namespace grants nothing. Props stays
-excluded because its Namespace is absent and its Flux source is parked.
-The `flux-system` and `ducktape-flux` delegation Kustomizations have no `dependsOn`:
-they are bootstrap roots without generated owner Kustomizations. The cluster integration
-test derives active label opt-ins and checks their catalog grants, all three preset defaults, and
-target-owned delegation dependencies together.
 
 ### Staging acceptance for managed Haku grants
 

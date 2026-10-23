@@ -22,7 +22,6 @@ from agentplane.action_service.policies.resources import CALLER_LABEL, parse_act
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, external_creds
-from cluster.cdk8s.agentplane import app as app_component, egress, testing
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -47,7 +46,6 @@ from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
-from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.public_coder.egress import NAMESPACE, SERVICE_ACCOUNT
 
@@ -67,12 +65,8 @@ _COINBASE_SECRET = "coinbase-api-credentials"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 MIMIR_READS_POLICY = "mimir-reads"
 
-# Staging-only PolicySets. `agentplane-testing` combines testing-instance egress with the
-# acceptance-test Kubernetes grants; its rules are assembled by the Policy Controller from the
-# access profile and `agentplane_testing_egress_rules`. The `coinbase` PolicySet combines GET
-# egress with the view-only Coinbase key's Secret grant. The two Action PolicySet reads every
-# preset binds by default live here too.
-AGENTPLANE_TESTING_POLICY = access.AGENTPLANE_TESTING_POLICY
+# Staging-only PolicySets. The `coinbase` PolicySet combines GET egress with the view-only Coinbase
+# key's Secret grant. The two Action PolicySet reads every preset binds by default live here too.
 GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 SSH_READS_SET = "ssh-reads"
 
@@ -80,17 +74,6 @@ SSH_READS_SET = "ssh-reads"
 def coinbase_egress_rules() -> list[PolicySetSpecRules]:
     """GET-only access to Coinbase; callers sign requests with the key held in Kubernetes."""
     return [Rule.egress(hosts=["api.coinbase.com"], methods=[PolicySetSpecRulesMethods.GET])]
-
-
-def agentplane_testing_egress_rules() -> list[PolicySetSpecRules]:
-    """The egress half of the acceptance-testing PolicySet."""
-    testing_app = app_component.service(testing.ENV.namespace)
-    # The proxy matches the exact host spelling. The app Service avoids hairpinning through the
-    # Gateway, which serves the public hostname.
-    return [
-        Rule.egress(hosts=[testing_app.fqdn], cluster_internal=True),
-        Rule.egress(hosts=[testing.ENV.app.hostname], cluster_internal=True),
-    ]
 
 
 # The Action PolicySets created below that the launch presets bind, named because a
@@ -615,31 +598,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             for index, subject in enumerate(access.profile_subjects("agentplane-sandbox-read"))
         )
     )
-    # The testing deployment's app, for the system tests' live harness scenarios run from a box
-    # (agentplane/system_tests/README.md): by its Service rather than its public name, which would
-    # hairpin out through the Gateway and back. Plain HTTP, so the proxy reads the request without
-    # bumping TLS. Nothing is substituted: the suite presents the app token it mints in
-    # agentplane-testing (testing.AcceptanceToken), so any method may pass.
-    testing_app = app_component.service(testing.ENV.namespace)
-    proxy = egress.proxy(_NAMESPACE)
-    # No `serverNames` on node:443 here, deliberately. This selector is the staging egress
-    # proxy's own Pods, and `egress.py` already gives them open `[world, remote-node, host]:443/80`.
-    # An SNI rule added on top of that is an L7 rule for the whole endpoint: it decides every
-    # node-IP HTTPS the proxy makes, resetting every `*.allegedly.works` name nobody typed into the
-    # list. That pair is what made Grocy, Forgejo, Haku's mailbox, ActivityWatch and aiquota
-    # unreachable from sandboxes for two weeks. `fleet_rules.https_egress_sni_conflicts` refuses it
-    # at synth now; the mechanism is cluster/docs/cilium_network_policy.md section "An SNI rule
-    # decides port 443 for every policy that selects the same Pod". The proxy fences those names
-    # where it is meant to: in its own egress PolicySets.
-    NetworkPolicy(
-        scope,
-        "networkpolicy-egress-to-testing-app",
-        metadata=ApiObjectMetadata(
-            name=f"{proxy.name.removeprefix('agentplane-')}-to-testing-app", namespace=_NAMESPACE
-        ),
-        endpoint_selector=proxy.pods.selector,
-        egress=[testing_app.egress()],
-    )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
     # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.
     add_egress_policy(
@@ -745,7 +703,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             HAKU_MAILBOX_POLICY,
             access.COINBASE_POLICY,
             access.PLAID_DIAGNOSTICS_POLICY,
-            AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -771,7 +728,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             HAKU_MAILBOX_POLICY,
             access.COINBASE_POLICY,
             access.PLAID_DIAGNOSTICS_POLICY,
-            AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,

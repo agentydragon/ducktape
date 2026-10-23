@@ -36,8 +36,7 @@ flowchart LR
     end
     subgraph K3S_TRACK[System tests on k3s, retiring agentplane-testing]
         STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
-        AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
-        TESTING_ENVIRONMENT_RETIRE[Blocked: delete agentplane-testing]
+            TESTING_ENVIRONMENT_RETIRE[Blocked: delete agentplane-testing]
     end
     subgraph TIER_TRACK[Test tiers: envtest and the bridge split]
         FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
@@ -1930,10 +1929,8 @@ changes.
 ```mermaid
 flowchart LR
     STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
-    AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
     TESTING_ENVIRONMENT_RETIRE[Blocked: delete agentplane-testing]
     STAGING_FIRST_ROLLOUT --> TESTING_ENVIRONMENT_RETIRE
-    AGENT_TESTING_ACCESS_RETIRE --> TESTING_ENVIRONMENT_RETIRE
 ```
 
 ### `STAGING_FIRST_ROLLOUT` — risky config goes to staging
@@ -1943,21 +1940,13 @@ is better than staging down). Rewrite the docs and recipes that send a change to
 on staging after the system tests pass, with a rollback plan in the PR. Flux, Cilium, CNPG, External Secrets,
 cert-manager, Gateway API and Kyverno changes have no test, so staging is the first cluster they reach.
 
-### `AGENT_TESTING_ACCESS_RETIRE` — agents lose their testing access
-
-**Candidate.** The managed presets stop selecting the `agentplane-testing-operator` Role and the `agentplane-testing`
-egress policy ([agent RBAC](../../cluster/docs/agent_rbac.md)); the recipes that used them point at system tests
-through `bbr` and at staging reads. The grants that served only the deleted `_live` targets go too: testing's
-`AcceptanceToken` and `_DISPATCHER_ACCEPTANCE_RULES` (`cluster/cdk8s/agentplane/testing.py`), and the Action policy
-admitting boxes to testing's app (`actions_staging_policies.py`).
-
 ### `TESTING_ENVIRONMENT_RETIRE` — delete `agentplane-testing`
 
-**Blocked on the two nodes above.** Three PRs: the Flux kustomization, image pins, generated manifests, DNS and
+**Blocked on `STAGING_FIRST_ROLLOUT`.** Three PRs: the Flux kustomization, image pins, generated manifests, DNS and
 routes; the Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and
-volumes, a data drop the operator cleared for any time (2026-10-23: nothing there is kept). Preserve staging. The k3s fixture builds on testing's
-environment (`cluster/cdk8s/agentplane/testing.py`'s `ENV`, operator OIDC and Action federation), so the first PR
-moves what the fixture reads into it rather than deleting it.
+volumes, a data drop the operator cleared for any time (2026-10-23: nothing there is kept). Preserve staging. The k3s
+fixture builds on testing's environment (`cluster/cdk8s/agentplane/testing.py`'s `ENV`, operator OIDC and Action
+federation), so the first PR moves what the fixture reads into it rather than deleting it.
 
 ## 15. Cleanups after the current tracks
 

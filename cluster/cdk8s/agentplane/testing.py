@@ -8,19 +8,8 @@ generated file, holding this chart and `litellm/credentials.py`'s, and the hand-
 
 from __future__ import annotations
 
-from typing import cast
-
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import (
-    ApiResource,
-    DeploymentStrategy,
-    IApiResource,
-    Role,
-    RoleBinding,
-    RolePolicyRule,
-    ServiceAccount,
-    k8s,
-)
+from cdk8s_plus_34 import DeploymentStrategy, k8s
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
@@ -34,7 +23,6 @@ from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import DirectFederationSettings
-from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles as access, cilium, cnpg, node_scheduling
 from cluster.cdk8s.agentplane import (
@@ -48,7 +36,6 @@ from cluster.cdk8s.agentplane import (
     notifications,
     policy_controller,
     policy_controller_rbac,
-    runner_gateway,
     sandbox_pod,
 )
 from cluster.cdk8s.agentplane.chart import environment_chart
@@ -65,7 +52,6 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
-from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
@@ -250,135 +236,6 @@ class TestingNamespaceResourceLimits(Construct):
         )
 
 
-TESTING_OPERATOR_ROLE_NAME = "agentplane-testing-operator"
-
-# Deliberately no `create` on pods: Cilium policies here select Pods by label, so an unlabeled Pod
-# a Sandbox creates has unrestricted egress, and the creator picks the labels.
-_SANDBOX_RULES = [
-    RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["get", "list", "watch"]),
-    RolePolicyRule(
-        resources=[custom_resource(GROUP, "sandboxes")], verbs=["create", "get", "list", "watch", "patch", "delete"]
-    ),
-    # Workspace volumes for test Sandboxes; reads of PVCs come from cluster-diagnostics-reader.
-    RolePolicyRule(resources=[custom_resource("", "persistentvolumeclaims")], verbs=["create", "delete"]),
-    RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
-    RolePolicyRule(
-        resources=[custom_resource("", "pods/exec"), custom_resource("", "pods/portforward")], verbs=["create"]
-    ),
-    RolePolicyRule(resources=[custom_resource("", "pods/log")], verbs=["get"]),
-    # Read-only view of a `kind: vm` Sandbox's guest and its disks, to diagnose one that never starts.
-    RolePolicyRule(
-        resources=[
-            custom_resource("kubevirt.io", "virtualmachines"),
-            custom_resource("kubevirt.io", "virtualmachineinstances"),
-            custom_resource("cdi.kubevirt.io", "datavolumes"),
-        ],
-        verbs=["get", "list", "watch"],
-    ),
-    # `virtctl console`: the only way into a guest whose runner never connected.
-    RolePolicyRule(
-        resources=[custom_resource("subresources.kubevirt.io", "virtualmachineinstances/console")], verbs=["get"]
-    ),
-]
-
-# Mints app-audience tokens for `agentplane-agent`, which has no RoleBindings: an identity for the
-# app only. The app admits that subject because its Deployment names it; the audience alone gates
-# nothing, since any account's token can carry it.
-_TOKEN_RULE = RolePolicyRule(
-    resources=[named_resource("", "serviceaccounts/token", "agentplane-agent")], verbs=["create"]
-)
-
-# `//agentplane/system_tests:test_dispatcher_live` calls the Dispatcher as the app and notifications
-# and fails the Runner Gateway over between replicas. A token bound to a live Pod is that Pod's account
-# toward the Gateway, so the token rule names exactly the Gateway's two wake callers rather than
-# `serviceaccounts/token` in general. Pod `delete` cannot name the Gateway's Pod ahead of time and covers
-# every Pod here; their owners recreate them.
-_DISPATCHER_ACCEPTANCE_RULES = [
-    RolePolicyRule(
-        resources=[
-            named_resource("", "serviceaccounts/token", app_component.NAME),
-            named_resource("", "serviceaccounts/token", notifications.NAME),
-        ],
-        verbs=["create"],
-    ),
-    RolePolicyRule(resources=[named_resource("apps", "deployments", runner_gateway.NAME)], verbs=["patch"]),
-    RolePolicyRule(
-        resources=[named_resource("apps", "deployments/scale", runner_gateway.NAME)], verbs=["get", "patch", "update"]
-    ),
-    RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["delete"]),
-]
-
-
-class AgentRbac(Construct):
-    """The operator Role/RoleBinding an agent needs to drive Agentplane **testing**
-    without a human: Sandbox lifecycle, exec/port-forward into runner Pods, the
-    token used to call the app's own API, and what the Dispatcher system test probes need.
-
-    **Testing only, deliberately.** `agentplane-testing` runs Dex-backed fake operator login
-    and no MCP group -- nothing here reaches a real account. `agentplane-staging`
-    is the opposite: real Authentik-federated operator login, real GitHub/Kubernetes MCP
-    OAuth linkage, and `claude-ai` Sandboxes carry the real read-only Google
-    `google-readonly` egress credential (`egress_staging_credentials.py`). An agent identity holding this
-    Role there could stamp a Sandbox under that ServiceAccount and reach the operator's
-    real external accounts with no human in the loop -- the opposite of what "testing"
-    fixtures are for. So only `testing.chart` instantiates this construct; `staging.chart`
-    (via the shared `chart.environment_chart`) must not.
-    """
-
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
-        super().__init__(scope, id)
-        Role(
-            self,
-            "role",
-            metadata=ApiObjectMetadata(name=TESTING_OPERATOR_ROLE_NAME, namespace=env.namespace),
-            rules=[*_SANDBOX_RULES, _TOKEN_RULE, *_DISPATCHER_ACCEPTANCE_RULES],
-        )
-
-        RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name="agent-agentplane-testing-operator", namespace=env.namespace),
-            role=Role.from_role_name(self, "role-ref", TESTING_OPERATOR_ROLE_NAME),
-        ).add_subjects(
-            *[
-                subject.imported(self, f"operator-subject-{index}")
-                for index, subject in enumerate(access.TESTING_OPERATOR_SUBJECTS)
-            ]
-        )
-
-
-class AcceptanceToken(Construct):
-    """Lets `agentplane-staging`'s `claude-ai` and `haku-agent` mint this namespace's app token,
-    so their sandboxes can run the system tests' live harness scenarios
-    (`agentplane/system_tests/README.md`), which ask the API server for nothing else. None of
-    `AgentRbac`'s Sandbox lifecycle or exec rights are granted by this Role:
-    the token is an identity for the app, as `_TOKEN_RULE` says. `claude-ai` separately
-    receives `AgentRbac` in testing; `haku-agent` does not.
-    """
-
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
-        super().__init__(scope, id)
-        role = Role(
-            self,
-            "role",
-            metadata=ApiObjectMetadata(name="agentplane-acceptance-token", namespace=env.namespace),
-            rules=[_TOKEN_RULE],
-        )
-        RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name="claude-ai-acceptance-token", namespace=env.namespace),
-            role=role,
-        ).add_subjects(
-            ServiceAccount.from_service_account_name(
-                self, "claude-ai-sa", "claude-ai", namespace_name="agentplane-staging"
-            ),
-            ServiceAccount.from_service_account_name(
-                self, "haku-agent-sa", "haku-agent", namespace_name="agentplane-staging"
-            ),
-        )
-
-
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     mcp_edge.SchemaMigration(
@@ -390,25 +247,10 @@ def chart(app: App) -> Chart:
         .env_value(chart, "mcp-edge-migration-database-url"),
     )
     TestingNamespaceResourceLimits(chart, "namespace-resource-limits", ENV.namespace)
-    # Only this environment's chart gets the agent-operator Role/RoleBinding -- see
-    # `AgentRbac`'s own docstring for why it must not be in staging's.
-    AgentRbac(chart, "rbac", ENV)
-    AcceptanceToken(chart, "acceptance-token", ENV)
     command_sandbox.CommandSandbox(
         chart, "command-sandbox", ENV, image_pull_secret_name=sandbox_pod.SECRET_NAME
     ).add_platform_resources()
-    # claude-ai's boxes reach this app through staging's egress proxy, by its Service rather than its
-    # public name, which would hairpin out through the Gateway and back.
     app_service = app_component.service(ENV.namespace)
-    NetworkPolicy(
-        chart,
-        "networkpolicy-app-from-staging-egress",
-        metadata=ApiObjectMetadata(
-            name=f"{app_service.name.removeprefix('agentplane-')}-from-staging-egress", namespace=ENV.namespace
-        ),
-        endpoint_selector=app_service.pods.selector,
-        ingress=[egress.proxy("agentplane-staging").pods.admit(app_service.pod_port)],
-    )
     NetworkPolicy(
         chart,
         "networkpolicy-app-to-mcp-edge",

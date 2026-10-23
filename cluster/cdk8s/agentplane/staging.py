@@ -49,11 +49,7 @@ from cluster.cdk8s.agentplane import (
     staging_config,
     staging_grants,
 )
-from cluster.cdk8s.agentplane.actions_staging_policies import (
-    add_staging_action_policies,
-    agentplane_testing_egress_rules,
-    coinbase_egress_rules,
-)
+from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies, coinbase_egress_rules
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
@@ -496,7 +492,6 @@ def chart(app: App) -> Chart:
     # rules before materializing them. The controller workload and its RBAC are separate constructs.
     assignable_sets = assignable_policy_sets()
     deployment_rules = {
-        agent_access_profiles.AGENTPLANE_TESTING_POLICY: agentplane_testing_egress_rules(),
         agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
         agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: agent_access_profiles.plaid_pgweb_egress_rules(
             credential=PLAID_PGWEB_CREDENTIAL

@@ -395,11 +395,6 @@ def staging_policy_sets(staging_manifest_docs: list[dict]) -> dict[str, list[dic
     }
 
 
-@pytest.fixture(scope="module")
-def staging_policy_bindings(staging_manifest_docs: list[dict]) -> list[dict]:
-    return [doc for doc in staging_manifest_docs if doc["kind"] == "PolicyBinding"]
-
-
 def test_no_legacy_agent_diagnostic_rbac(agent_permission_resources: list[K8sResource]) -> None:
     assert not any(
         r.kind == "ClusterPolicy" and r.name == "generate-agent-diagnostics-readers" for r in agent_permission_resources
@@ -438,29 +433,6 @@ def test_agent_diagnostic_binding_scopes(agent_permission_resources: list[K8sRes
             assert resource.role_ref.kind == "ClusterRole"
             actual.add((resource.namespace, resource.name, resource.role_ref.name))
     assert actual == expected
-
-
-def policy_bound_identity(
-    rbac: Rbac,
-    policy_sets: dict[str, list[dict]],
-    policy_bindings: list[dict],
-    kind: str,
-    name: str,
-    namespace: str,
-    policy_set_name: str,
-) -> set[Permission]:
-    """A static identity's RoleBindings plus a selected PolicySet bound to it."""
-    permissions = rbac.identity(kind, name, namespace)
-    for binding in policy_bindings:
-        subject = binding["spec"]["subject"]
-        if (
-            subject.get("kind", "ServiceAccount") == kind
-            and subject["name"] == name
-            and subject["namespace"] == namespace
-            and policy_set_name in binding["spec"]["policySets"]
-        ):
-            permissions.update(rbac.policy_set_permissions(policy_sets, [policy_set_name]))
-    return permissions
 
 
 # Distinct access paths, not a union that could hide a broken Console or OIDC path.
@@ -533,23 +505,15 @@ def test_agent_permission_superset_and_finance_parity(
 
 @pytest.mark.parametrize("account", ["claude-ai", "haku-agent"])
 def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
-    agent_rbac: Rbac,
-    agent_permission_resources: list[K8sResource],
-    staging_policy_sets: dict[str, list[dict]],
-    staging_policy_bindings: list[dict],
-    account: str,
+    agent_rbac: Rbac, agent_permission_resources: list[K8sResource], account: str
 ) -> None:
     # These OAuth/Actions accounts are NOT the Console profile or the managed
     # Haku preset. Preserve their independently scoped existing Kubernetes access.
-    expected = agent_rbac.rules(
-        RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name="agentplane-acceptance-token"),
-        "agentplane-testing",
-    )
+    expected: set[Permission] = set()
     if account == "claude-ai":
         for kind, name, namespace in (
             ("ClusterRole", "cluster-diagnostics-reader", None),
             ("Role", "claude-ai-coinbase-reader", "agentplane-staging"),
-            ("Role", "agentplane-testing-operator", "agentplane-testing"),
             ("Role", "claude-ai-sandbox-reader", "agentplane-staging"),
             ("Role", "agent-haku-console-metadata-reader", "haku-console"),
             ("Role", "agent-clickhouse-diagnostics-reader", "clickhouse"),
@@ -588,25 +552,13 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
                         resource.name,
                     )
                 )
-    expected.update(agent_rbac.policy_set_permissions(staging_policy_sets, ["agentplane-testing"]))
-    actual = policy_bound_identity(
-        agent_rbac,
-        staging_policy_sets,
-        staging_policy_bindings,
-        "ServiceAccount",
-        account,
-        "agentplane-staging",
-        "agentplane-testing",
-    )
+    actual = agent_rbac.identity("ServiceAccount", account, "agentplane-staging")
     assert not uncovered(actual, expected)
     assert not uncovered(expected, actual)
 
 
 def test_agent_permission_denials(
-    agent_rbac: Rbac,
-    staging_app_config: dict,
-    staging_policy_sets: dict[str, list[dict]],
-    staging_policy_bindings: list[dict],
+    agent_rbac: Rbac, staging_app_config: dict, staging_policy_sets: dict[str, list[dict]]
 ) -> None:
     profiles = {
         name: agent_rbac.managed(staging_app_config, staging_policy_sets, name, namespace="agentplane-staging")
@@ -614,15 +566,7 @@ def test_agent_permission_denials(
     }
     profiles.update(
         {
-            "claude-ai": policy_bound_identity(
-                agent_rbac,
-                staging_policy_sets,
-                staging_policy_bindings,
-                "ServiceAccount",
-                "claude-ai",
-                "agentplane-staging",
-                "agentplane-testing",
-            ),
+            "claude-ai": agent_rbac.identity("ServiceAccount", "claude-ai", "agentplane-staging"),
             "haku-console": agent_rbac.identity("Group", "haku:access-profile:haku"),
             "haku-oidc": agent_rbac.identity("Group", "oidc-ksbx-groups:haku"),
             "haku-sa": agent_rbac.identity("ServiceAccount", "haku", "haku-sandbox"),

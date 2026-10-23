@@ -2913,7 +2913,6 @@ data:
           - github-identity-reads
           - ssh-reads
           - shared-diagnostics
-          - agentplane-testing
           - public-inventory
           - ducktape-pr-failed-jobs
           - send-to-public-coder
@@ -2952,7 +2951,6 @@ data:
           - kubernetes-inspection-reads
           - ducktape-pr-failed-jobs
           - shared-diagnostics
-          - agentplane-testing
           - cluster-diagnostics
           - haku-sandbox-write
           - coinbase
@@ -2978,7 +2976,6 @@ data:
           - ssh-reads
           - gaffer-private-branch-and-pr-creation
           - shared-diagnostics
-          - agentplane-testing
           - public-inventory
           - coinbase
           - spend-policy-config
@@ -3003,7 +3000,6 @@ data:
           - github-identity-reads
           - ssh-reads
           - shared-diagnostics
-          - agentplane-testing
           - public-inventory
           - ducktape-pr-failed-jobs
           - send-to-public-coder
@@ -7309,28 +7305,6 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
-  name: agentplane-testing
-  namespace: agentplane-staging
-spec:
-  rules:
-    - namespaces:
-        - agentplane-testing
-      role:
-        kind: Role
-        name: agentplane-testing-operator
-      type: kubernetes_role_binding
-    - clusterInternal: true
-      hosts:
-        - app.agentplane-testing.svc.cluster.local
-      type: egress
-    - clusterInternal: true
-      hosts:
-        - agentplane-testing.allegedly.works
-      type: egress
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
   name: cluster-diagnostics
   namespace: agentplane-staging
 spec:
@@ -8829,25 +8803,6 @@ subjects:
     name: claude-ai
     namespace: agentplane-staging
 ---
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: egress-to-testing-app
-  namespace: agentplane-staging
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: app
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: egress
----
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
@@ -8901,7 +8856,6 @@ spec:
     - haku-mailbox
     - coinbase
     - plaid-diagnostics
-    - agentplane-testing
     - github-downloads
     - github-clone
     - github-agentydragon-agent
@@ -8941,7 +8895,6 @@ spec:
     - haku-mailbox
     - coinbase
     - plaid-diagnostics
-    - agentplane-testing
     - github-downloads
     - github-clone
     - github-agentydragon-agent

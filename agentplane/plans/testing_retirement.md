@@ -8,11 +8,10 @@ targets and backends in the [system tests README](../system_tests/README.md). No
 
 ## What uses testing today
 
-| Workflow                                                                                                           | Moves to                                                  | Node                          |
-| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- | ----------------------------- |
-| Risky config rolled out on testing first                                                                           | staging after the system tests pass, with a rollback plan | `STAGING_FIRST_ROLLOUT`       |
-| Agents' testing operator Role, testing egress policy and the recipes that use them                                 | system tests through `bbr`; staging reads                 | `AGENT_TESTING_ACCESS_RETIRE` |
-| Testing-only pieces: Flux kustomization and image pins, Dex MCP client, Action groups, LiteLLM key, DNS and routes | deleted                                                   | `TESTING_ENVIRONMENT_RETIRE`  |
+| Workflow                                                                                                           | Moves to                                                  | Node                         |
+| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- | ---------------------------- |
+| Risky config rolled out on testing first                                                                           | staging after the system tests pass, with a rollback plan | `STAGING_FIRST_ROLLOUT`      |
+| Testing-only pieces: Flux kustomization and image pins, Dex MCP client, Action groups, LiteLLM key, DNS and routes | deleted                                                   | `TESTING_ENVIRONMENT_RETIRE` |
 
 Image pins already roll to staging without waiting on testing; testing gates nothing but the operator's habit of
 trying risky config there first (2026-10-12: testing down is better than staging down). No test covers what only a
@@ -23,13 +22,10 @@ gone, staging is the first cluster such a change reaches.
 
 1. **`STAGING_FIRST_ROLLOUT`**: the docs and recipes that send risky config to testing first say staging, after the
    system tests, with a rollback plan in the PR.
-2. **`AGENT_TESTING_ACCESS_RETIRE`**: the managed presets stop selecting `agentplane-testing-operator` and the testing
-   egress policy; the recipes that used them point at `bbr` system tests and staging reads. The grants that served
-   only the deleted `_live` targets go with them.
-3. **`TESTING_ENVIRONMENT_RETIRE`**, three PRs: the Flux kustomization, image pins, manifests, DNS and routes; the
+2. **`TESTING_ENVIRONMENT_RETIRE`**, three PRs: the Flux kustomization, image pins, manifests, DNS and routes; the
    Dex MCP client, Action groups, LiteLLM key, `*-acceptance-*` Secrets and RBAC; the testing databases and volumes,
-   a data drop the operator cleared for any time (2026-10-23: nothing there is kept). The k3s fixture builds on testing's cdk8s environment, so the
-   first PR moves what the fixture reads into it.
+   a data drop the operator cleared for any time (2026-10-23: nothing there is kept). The k3s fixture builds on
+   testing's cdk8s environment, so the first PR moves what the fixture reads into it.
 
 Speed, in parallel:
 

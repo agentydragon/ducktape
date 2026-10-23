@@ -13,7 +13,6 @@ from more_itertools import one
 
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import binding_delegation, notifications, staging, staging_grants, testing
-from cluster.cdk8s.agentplane.actions_staging_policies import AGENTPLANE_TESTING_POLICY
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import (
     ADMIN_GRPC_AUDIENCE,
@@ -249,7 +248,6 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             GROCY_SF_READONLY_CREDENTIAL,
             HOME_ASSISTANT_READONLY_CREDENTIAL,
             ACTIVITYWATCH_READ_POLICY,
-            AGENTPLANE_TESTING_POLICY,
             AIQUOTA_READ_POLICY,
             client.AIQUOTA_HISTORY_CREDENTIALS,
             HAKU_MAILBOX_POLICY,
@@ -387,7 +385,6 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         "ducktape-flux-read",
         "public-coder-volsync-status",
         "public-coder-agent-reader",
-        "agentplane-testing-operator",
     } <= set(selected)
     # Only these two narrow ClusterRoles may be bound cluster-wide. In particular,
     # never bind the namespaced log/metadata readers or Haku's broader reader there.
@@ -416,7 +413,6 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         ("ducktape-flux", "ducktape-flux-reader"),
         ("public-coder-agent", "agent-public-coder-extended-diagnostics-reader"),
         ("public-coder-agent", "public-coder-agent-reader"),
-        ("agentplane-testing", "agentplane-testing-operator"),
     } | (
         {
             ("agentplane-staging", "claude-ai-coinbase-reader"),
