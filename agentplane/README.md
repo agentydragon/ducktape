@@ -89,7 +89,8 @@ flowchart LR
     app -->|Dispatcher API: gRPC and HTTP/JSON reads| gw
     app --> hs
     app -->|gRPC operator watches + health| notif
-    app -->|generated HTTP/JSON and NDJSON facade| actions
+    app -->|Action generated HTTP/JSON and NDJSON facade + MCP linkage| actions
+    app -->|separately configured ConnectionService facade| actions
     edge -.->|after cutover: authenticated ActionService gRPC| actions
     notif -->|Action history: gRPC| actions
     app -->|gRPC| egress

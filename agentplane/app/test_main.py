@@ -71,6 +71,7 @@ APP_ENVIRONMENT = {
         }
     ),
     "AGENTPLANE_EGRESS_ADMIN_URL": "http://egress.test.invalid:8081",
+    "AGENTPLANE_CONNECTION_SERVICE_URL": "http://connection-service.test.invalid:8080",
     "AGENTPLANE_NOTIFICATIONS_URL": "http://notifications.test.invalid:8080",
     "AGENTPLANE_NOTIFICATIONS_TOKEN_FILE": "/test/notifications-token",
     "AGENTPLANE_ELECTRIC_URL": "http://electric.test.invalid:3000",
@@ -185,7 +186,13 @@ def test_default_policy_sets_are_required_for_direct_lifecycle(
 
 
 @pytest.mark.parametrize(
-    "field", ["AGENTPLANE_EGRESS_ADMIN_URL", "AGENTPLANE_NOTIFICATIONS_URL", "AGENTPLANE_ELECTRIC_URL"]
+    "field",
+    [
+        "AGENTPLANE_EGRESS_ADMIN_URL",
+        "AGENTPLANE_CONNECTION_SERVICE_URL",
+        "AGENTPLANE_NOTIFICATIONS_URL",
+        "AGENTPLANE_ELECTRIC_URL",
+    ],
 )
 def test_endpoint_settings_reject_query_components(field: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     set_app_environment(monkeypatch, tmp_path)

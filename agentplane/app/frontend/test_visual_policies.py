@@ -805,7 +805,7 @@ async def test_oauth_clients_update_while_settings_stays_open(view: VisualPage, 
     await _open_settings(page)
     name = page.locator(f'[data-connection-id="{BOUND_CONNECTION}"]').get_by_role("textbox", name="Client name")
     await expect(name).to_have_value("Claude desktop")
-    await app.publish(Flag.CONNECTION_RENAMED, "/upstream/actions/v1/operator/connections:watch")
+    await app.publish(Flag.CONNECTION_RENAMED, "/upstream/connections/v1/operator/connections:watch")
     await expect(name).to_have_value("Updated OAuth client")
     await view.capture(name="oauth_clients_live_rename")
 

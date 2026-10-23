@@ -2536,6 +2536,8 @@ spec:
                   name: agentplane-oidc
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-testing:agentplane-agent"]'
+            - name: AGENTPLANE_CONNECTION_SERVICE_URL
+              value: http://actions.agentplane-testing.svc:8080/
             - name: AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET
               value: "{sandbox}-control.{namespace}.svc:8080"
             - name: AGENTPLANE_CONFIG_FILE
@@ -2630,6 +2632,8 @@ spec:
                   name: agentplane-oidc
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-testing:agentplane-agent"]'
+            - name: AGENTPLANE_CONNECTION_SERVICE_URL
+              value: http://actions.agentplane-testing.svc:8080/
           image: git.allegedly.works/ducktape-ci/agentplane-app-migrate:unset
           imagePullPolicy: Always
           name: migrate

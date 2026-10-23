@@ -2,9 +2,9 @@
 
 The browser keeps one origin and one credential, its operator session. A GET under
 `/upstream/dispatcher/` is forwarded to the Dispatcher with its projected ServiceAccount token.
-Calls under `/upstream/actions/` use the request-bound operator token and the Actions facade's
-versioned HTTP methods. The service's status and body come back as they are, including a stream.
-Browser credentials are never forwarded.
+Calls under `/upstream/actions/` and `/upstream/connections/` use the request-bound operator token
+and their service's generated versioned HTTP facade. The status and body come back as they are,
+including a stream. Browser credentials are never forwarded.
 """
 
 from __future__ import annotations

@@ -317,7 +317,10 @@ ENV = Environment(
         pdb_min_available=1,
     ),
     app_config=staging_config.config(
-        namespace=STAGING_NAMESPACE, models=STAGING_APP_MODELS, action_federation=_ACTION_FEDERATION
+        namespace=STAGING_NAMESPACE,
+        models=STAGING_APP_MODELS,
+        action_federation=_ACTION_FEDERATION,
+        connection_service_url=AnyHttpUrl(actions.service(STAGING_NAMESPACE).url),
     ),
     settle_deltas=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),

@@ -409,7 +409,7 @@ confirmation. A fresh authorization can reconnect to the same ServiceAccount or 
 policy editing is offered.
 
 The page calls the generated ConnectionService facade through
-`/upstream/actions/v1/operator/connection-enrollments/{handle}/preview` and `/decision`;
+`/upstream/connections/v1/operator/connection-enrollments/{handle}/preview` and `/decision`;
 the ConnectionService authorizes each request and keeps consent state. The decision carries the
 version the preview returned. The service pins the enrollment to the authenticated operator of the
 first preview, in whichever browser session, owns expiry, and records one decision: it refuses
@@ -485,7 +485,7 @@ Action Service does not hide bindings. The disclosure is read-only and does not 
 arbitrary Kubernetes RBAC. Existing Sandbox grant editing and live updates are unchanged.
 
 The browser reads and updates Connections through the generated facade under
-`/upstream/actions/v1/operator/`: list, watch, rename, rebind, unbind, caller accounts, and consent.
+`/upstream/connections/v1/operator/`: list, watch, rename, rebind, unbind, caller accounts, and consent.
 `WatchConnections` streams NDJSON, replacing the snapshot after reconnect and applying
 upserts by Connection ID. Protobuf int64 versions stay decimal strings in the UI adapter and are
 sent back as `expectedVersion`; an `ABORTED` response refreshes the inventory and asks for review,
@@ -493,6 +493,11 @@ never automatically retrying a destructive operation. The app owns no Connection
 requires fresh OAuth authorization from the external client; the management rebind is a separate
 operator-authorized retarget of an existing token. Policy editing and deployment are outside this
 surface.
+
+The app routes ConnectionService HTTP/JSON calls through the separately configured
+`connection_service_url`; Action Service requests and MCP linkage continue to use
+`action_federation.service_url`. Staging and testing currently configure both endpoints to Actions.
+The Connection endpoint also has its own gRPC health probe.
 
 The MCP servers tab lists the Action Service's OAuth-linked MCP server groups and links or
 disconnects each one. It follows independent generated facade watches for linkage and replica-local

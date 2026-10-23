@@ -136,6 +136,7 @@ ENV = Environment(
         namespace=TESTING_NAMESPACE,
         models=TESTING_APP_MODELS,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
+        connection_service_url=AnyHttpUrl(actions.service(TESTING_NAMESPACE).url),
         action_federation=action_federation(_FEDERATION_TARGET),
         public_coder_policy_sets=[],
         default_policy_sets=set(egress.DEFAULT_POLICIES),

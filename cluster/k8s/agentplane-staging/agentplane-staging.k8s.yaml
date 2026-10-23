@@ -3208,6 +3208,8 @@ spec:
                   name: agentplane-staging-session-secret
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
+            - name: AGENTPLANE_CONNECTION_SERVICE_URL
+              value: http://actions.agentplane-staging.svc:8080/
             - name: AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET
               value: "{sandbox}-control.{namespace}.svc:8080"
             - name: AGENTPLANE_CONFIG_FILE
@@ -3302,6 +3304,8 @@ spec:
                   name: agentplane-staging-session-secret
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
+            - name: AGENTPLANE_CONNECTION_SERVICE_URL
+              value: http://actions.agentplane-staging.svc:8080/
           image: git.allegedly.works/ducktape-ci/agentplane-app-migrate:unset
           imagePullPolicy: Always
           name: migrate

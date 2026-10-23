@@ -22,7 +22,7 @@ function preview(): ConsentPreview {
   };
 }
 
-const ROOT = "/upstream/actions/v1/operator";
+const ROOT = "/upstream/connections/v1/operator";
 const PREVIEW = `${ROOT}/connection-enrollments/opaque-handle/preview`;
 const DECISION = `${ROOT}/connection-enrollments/opaque-handle/decision`;
 const CALLERS = `${ROOT}/caller-service-accounts`;

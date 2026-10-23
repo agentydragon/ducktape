@@ -45,6 +45,9 @@ class AppSettingsConfig(YamlFileSettings):
     egress_admin_url: HttpEndpointUrl = Field(
         description="The egress proxy's admin endpoint; its host and port serve gRPC."
     )
+    connection_service_url: HttpEndpointUrl = Field(
+        description="The Connection Service's generated HTTP/JSON facade; its host and port also serve gRPC health."
+    )
     action_federation: ActionFederationSettings
 
     @field_serializer("default_policy_sets")

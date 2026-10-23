@@ -47,6 +47,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
 )
 from cluster.cdk8s.model_selections import HarnessRoutes
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
+from util.urls import HttpEndpointUrl
 
 _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
 _THREAD_PRESET_HAKU_CODEX = "haku-codex"
@@ -92,12 +93,19 @@ def send_to(group: str) -> str:
     return f"send-to-{group}"
 
 
-def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFederationSettings) -> AppSettingsConfig:
+def config(
+    *,
+    namespace: str,
+    models: HarnessRoutes,
+    action_federation: ActionFederationSettings,
+    connection_service_url: HttpEndpointUrl,
+) -> AppSettingsConfig:
     cfg = settings(
         namespace=namespace,
         models=models,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
+        connection_service_url=connection_service_url,
         public_coder_policy_sets=[
             COMMON_GITHUB_READ_SET,
             GITHUB_IDENTITY_READS_SET,

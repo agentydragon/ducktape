@@ -100,6 +100,7 @@ async def operator_actions(app: FastAPI, transport: httpx.AsyncBaseTransport) ->
     async with httpx.AsyncClient(base_url="https://test-actions.invalid", transport=transport) as http:
         app_services(app).operator_actions = StreamActions(Tokens())
         app_services(app).actions_http = UpstreamProxy(http, token_file=None)
+        app_services(app).connection_http = UpstreamProxy(http, token_file=None)
         yield
 
 
@@ -190,7 +191,7 @@ async def test_facade_forwards_session_token_path_body_and_bounded_user_agent(ap
         ) as browser,
     ):
         response = await browser.patch(
-            "/upstream/actions/v1/operator/connections/test-connection?filter=test",
+            "/upstream/connections/v1/operator/connections/test-connection?filter=test",
             json=body,
             headers={
                 "Authorization": "Bearer browser-secret",

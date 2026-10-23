@@ -2552,7 +2552,7 @@ routes.push(
   ],
   [
     "GET",
-    /^\/upstream\/actions\/v1\/operator\/connections$/,
+    /^\/upstream\/connections\/v1\/operator\/connections$/,
     () => ({ connections: [sampleConnection(), ...retiredConnectionRows()].map(connectionJson) }),
   ],
   [
@@ -2568,7 +2568,7 @@ routes.push(
   ],
   [
     "GET",
-    /^\/upstream\/actions\/v1\/operator\/caller-service-accounts$/,
+    /^\/upstream\/connections\/v1\/operator\/caller-service-accounts$/,
     () => ({ serviceAccounts: [{ namespace: "agentplane-visual", name: "operator-assistant" }] }),
   ],
   // The Settings modal mounts all three tabs at once (Mantine keepMounted), so MCP servers and
@@ -2605,7 +2605,7 @@ routes.push(
   ],
   [
     "POST",
-    /^\/upstream\/actions\/v1\/operator\/connection-enrollments\/[^/]+\/preview$/,
+    /^\/upstream\/connections\/v1\/operator\/connection-enrollments\/[^/]+\/preview$/,
     () => ({
       clientId: "test-client-registration-5d46c4f2",
       clientName: "Test external client",
@@ -2616,7 +2616,7 @@ routes.push(
   ],
   [
     "GET",
-    /^\/upstream\/actions\/v1\/operator\/connections:watch$/,
+    /^\/upstream\/connections\/v1\/operator\/connections:watch$/,
     (_match, _query, signal) =>
       liveNdjsonWatch(
         CONNECTIONS_WATCH,
@@ -2630,7 +2630,7 @@ routes.push(
   ],
   [
     "POST",
-    /^\/upstream\/actions\/v1\/operator\/connection-enrollments\/[^/]+\/decision$/,
+    /^\/upstream\/connections\/v1\/operator\/connection-enrollments\/[^/]+\/decision$/,
     () => ({ verdict: "VERDICT_ALLOW", redirectUrl: "https://idp.test/held-authorization" }),
   ],
   [
@@ -2834,7 +2834,7 @@ function observationPage(threadId: string) {
   };
 }
 
-const CONNECTIONS_WATCH = "/upstream/actions/v1/operator/connections:watch";
+const CONNECTIONS_WATCH = "/upstream/connections/v1/operator/connections:watch";
 
 function connectionJson(row: Connection): Record<string, unknown> {
   return {

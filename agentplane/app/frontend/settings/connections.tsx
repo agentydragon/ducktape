@@ -51,7 +51,7 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
   useEffect(() => {
     let snapshot: Connection[] = [];
     let readingSnapshot = false;
-    return followWatch("/upstream/actions/v1/operator/connections:watch", {
+    return followWatch("/upstream/connections/v1/operator/connections:watch", {
       onOpen: () => {
         snapshot = [];
         readingSnapshot = true;

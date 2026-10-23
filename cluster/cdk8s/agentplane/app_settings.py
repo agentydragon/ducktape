@@ -29,6 +29,7 @@ from cluster.cdk8s.agentplane.egress import (
 )
 from cluster.cdk8s.model_selections import HarnessRoutes
 from model_catalog.catalog import Provider, Route
+from util.urls import HttpEndpointUrl
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 _COMMON_HARNESS_REASONING_EFFORTS = frozenset(("low", "medium", "high"))
@@ -76,6 +77,7 @@ def settings(
     namespace: str,
     models: HarnessRoutes,
     thread_preset_codex_model: Route,
+    connection_service_url: HttpEndpointUrl,
     action_federation: ActionFederationSettings,
     public_coder_policy_sets: list[str],
     default_policy_sets: Set[str],
@@ -96,6 +98,7 @@ def settings(
             },
         ),
         default_policy_sets=default_policy_sets,
+        connection_service_url=connection_service_url,
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a
         # runner receives a preset name.

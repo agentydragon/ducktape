@@ -9,7 +9,7 @@ import { Connections } from "./connections";
 import { sampleConnection } from "../connections_fixture";
 
 const OTHER = { namespace: "agentplane-test", name: "other" };
-const ROOT = "/upstream/actions/v1/operator";
+const ROOT = "/upstream/connections/v1/operator";
 const CONNECTIONS = `${ROOT}/connections`;
 const CALLERS = `${ROOT}/caller-service-accounts`;
 const WATCH = `${ROOT}/connections:watch`;

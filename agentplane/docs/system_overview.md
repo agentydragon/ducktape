@@ -152,7 +152,8 @@ flowchart LR
     mcp_servers((MCP servers))
 
     mcp_client -->|MCP over OAuth| actions
-    app -->|operator generated HTTP/JSON and NDJSON facade| actions
+    app -->|Action HTTP/JSON, NDJSON and MCP linkage| actions
+    app -->|separately configured ConnectionService facade| actions
     edge -.->|after cutover: account scoped gRPC| actions
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload
@@ -171,9 +172,11 @@ flowchart LR
 
 The egress proxy substitutes a configured credential only for the destination covered by its
 policy. LiteLLM is a separate hop behind LLM ingress; only that service holds the LiteLLM virtual key.
-The standalone [MCP edge](../mcp_edge/README.md) is a staged runtime. The solid external MCP and
-operator Connection paths still terminate in Actions. The dashed edge-to-Actions route becomes live
-only after the separate database, deployment, public route and app caller cutover.
+The standalone [MCP edge](../mcp_edge/README.md) is a staged runtime. The app has separate
+`action_federation.service_url` and `connection_service_url` settings, but staging and testing
+currently configure both to Actions, so external MCP and operator Connection paths still terminate
+there. The dashed edge-to-Actions route becomes live only after the separate database, deployment,
+public route and app caller cutover.
 
 ## Service definitions
 

@@ -140,6 +140,7 @@ class AppServices:
     electric: ElectricProxy | None
     dispatcher_http: UpstreamProxy
     actions_http: UpstreamProxy | None
+    connection_http: UpstreamProxy | None
     oauth: OAuth | None = field(init=False)
     drain: Drain = field(default_factory=Drain)
 
@@ -277,8 +278,8 @@ def _operator_relay(
 upstream_router = APIRouter(prefix="/upstream", tags=["upstream"])
 
 
-def _action_facade_route_allowed(method: str, path: str) -> bool:
-    """Keep the proxy inside this service's versioned HTTP facade namespace."""
+def _generated_facade_route_allowed(method: str, path: str) -> bool:
+    """Keep the proxy inside a service's versioned HTTP facade namespace."""
     segments = path.split("/")
     return (
         method in {"GET", "POST", "PATCH", "DELETE"}
@@ -307,6 +308,64 @@ async def dispatcher_upstream(
     )
 
 
+async def _operator_facade_upstream(
+    request: Request,
+    client: UpstreamProxy | None,
+    label: str,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+    caller: Caller,
+    path: str,
+) -> StreamingResponse:
+    """Forward a generated facade call with this session's federated operator token.
+
+    Each service has its own explicitly configured client. Backend HTTP mappings and
+    authorization control which generated calls are available; browser credentials are never
+    forwarded.
+    """
+    if client is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"{label} is not configured")
+    if not _generated_facade_route_allowed(request.method, path):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"unknown {label} route")
+    try:
+        bearer = await operator_action_token(request, caller)
+        headers = {
+            key: value
+            for key in ("accept", "content-type", "user-agent")
+            if (value := request.headers.get(key)) is not None
+        }
+        upstream = await client.open_request(
+            request.method,
+            path,
+            request.url.query,
+            bearer=bearer,
+            headers=headers,
+            content=await request.body() if request.method != "GET" else None,
+        )
+    except OperatorFederationError as error:
+        raise HTTPException(error.status_code, {"code": str(error)}) from None
+    except (httpx.HTTPStatusError, httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError) as error:
+        raise upstream_http_error(error) from error
+    if 300 <= upstream.status_code < 400:
+        await upstream.aclose()
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{label} redirects are not accepted")
+    return StreamingResponse(
+        operator_relay(
+            request,
+            shutdown,
+            updates,
+            sessions,
+            response_body(upstream),
+            label,
+            (httpx.HTTPError, httpx2.TransportError, OperatorFederationError),
+        ),
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type"),
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
 @upstream_router.api_route(
     "/actions/{path:path}",
     methods=["GET", "POST", "PATCH", "DELETE"],
@@ -322,51 +381,30 @@ async def actions_upstream(
     caller: Caller,
     path: str,
 ) -> StreamingResponse:
-    """The Action Services' generated JSON facades, for as long as this operator session lasts.
+    """Relay the Action Service facade and MCP linkage callback calls from this operator session."""
+    return await _operator_facade_upstream(
+        request, services.actions_http, "Action facade", shutdown, updates, sessions, caller, path
+    )
 
-    The backend proto HTTP mappings and its operator authorization control which calls this generic
-    versioned facade can serve. The app forwards this session's freshly federated operator token; it
-    never accepts a browser supplied upstream credential.
-    """
-    if services.actions_http is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Action facade is not configured")
-    if not _action_facade_route_allowed(request.method, path):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown Action facade route")
-    try:
-        bearer = await operator_action_token(request, caller)
-        headers = {
-            key: value
-            for key in ("accept", "content-type", "user-agent")
-            if (value := request.headers.get(key)) is not None
-        }
-        upstream = await services.actions_http.open_request(
-            request.method,
-            path,
-            request.url.query,
-            bearer=bearer,
-            headers=headers,
-            content=await request.body() if request.method != "GET" else None,
-        )
-    except OperatorFederationError as error:
-        raise HTTPException(error.status_code, {"code": str(error)}) from None
-    except (httpx.HTTPStatusError, httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError) as error:
-        raise upstream_http_error(error) from error
-    if 300 <= upstream.status_code < 400:
-        await upstream.aclose()
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Action facade redirects are not accepted")
-    return StreamingResponse(
-        operator_relay(
-            request,
-            shutdown,
-            updates,
-            sessions,
-            response_body(upstream),
-            "Action facade",
-            (httpx.HTTPError, httpx2.TransportError, OperatorFederationError),
-        ),
-        status_code=upstream.status_code,
-        media_type=upstream.headers.get("content-type"),
-        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+
+@upstream_router.api_route(
+    "/connections/{path:path}",
+    methods=["GET", "POST", "PATCH", "DELETE"],
+    dependencies=[OperatorLogin],
+    include_in_schema=False,
+)
+async def connections_upstream(
+    request: Request,
+    services: Services,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+    caller: Caller,
+    path: str,
+) -> StreamingResponse:
+    """Relay generated ConnectionService calls to the explicitly configured Connection endpoint."""
+    return await _operator_facade_upstream(
+        request, services.connection_http, "Connection facade", shutdown, updates, sessions, caller, path
     )
 
 
@@ -1003,6 +1041,7 @@ def create_app(
     electric: ElectricProxy | None,
     dispatcher_http: UpstreamProxy,
     actions_http: UpstreamProxy | None = None,
+    connection_http: UpstreamProxy | None = None,
     event_logs: EventLogStore,
     content: ContentStore,
     database_updates: WakeupListener,
@@ -1075,6 +1114,7 @@ def create_app(
         electric=electric,
         dispatcher_http=dispatcher_http,
         actions_http=actions_http,
+        connection_http=connection_http,
     )
     app.state.services = services
     # Every operator route needs a caller. The provider callback has its single-use state/code

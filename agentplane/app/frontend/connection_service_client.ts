@@ -27,7 +27,7 @@ import {
 import { Verdict } from "../../action_service/action_service_pb";
 import { ServiceAccountSchema, type ServiceAccount } from "../../proto/sandboxes_pb";
 
-const OPERATOR = "/upstream/actions/v1/operator";
+const OPERATOR = "/upstream/connections/v1/operator";
 const MAX_INT64 = 9_223_372_036_854_775_807n;
 
 export interface ConsentPreview {
