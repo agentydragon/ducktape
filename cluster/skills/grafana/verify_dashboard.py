@@ -282,16 +282,20 @@ def apply_operator_datasources(value: Any, by_input_name: dict[str, str]) -> Any
     if not isinstance(value, str):
         return value
 
-    def replace(match: re.Match[str]) -> str:
-        input_name = match.group(1)
-        try:
-            return by_input_name[input_name]
-        except KeyError as exc:
-            raise VerificationError(
-                f"no generated GrafanaDashboard mapping for datasource input {input_name!r}"
-            ) from exc
+    # grafana-operator substitutes each configured input literally, in the
+    # order listed in spec.datasources. Input names are not limited to DS_*.
+    for input_name, datasource_name in by_input_name.items():
+        value = value.replace(f"${{{input_name}}}", datasource_name)
 
-    return DATASOURCE_PLACEHOLDER.sub(replace, value)
+    # Keep a useful error for datasource placeholders that should have been
+    # supplied by the generated resource, while allowing ordinary dashboard
+    # variables that have no matching operator input.
+    unresolved_datasource = DATASOURCE_PLACEHOLDER.search(value)
+    if unresolved_datasource:
+        raise VerificationError(
+            f"no generated GrafanaDashboard mapping for datasource input {unresolved_datasource.group(1)!r}"
+        )
+    return value
 
 
 def dashboard_from_file(path: Path) -> dict[str, Any]:
