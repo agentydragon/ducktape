@@ -46,6 +46,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
 HOSTNAME = "grafana.allegedly.works"
+LOKI_DATASOURCE_UID = "fc9a18f9-6955-4e40-95c1-66e32e7e8431"
 # The Service grafana-operator creates for the Grafana named `_NAME`.
 _SERVICE = ServiceRef(
     name=f"{_NAME}-service",
@@ -253,6 +254,7 @@ def _datasources(chart: Chart) -> None:
         "loki",
         GrafanaDatasourceSpecDatasource(
             name="Loki",
+            uid=LOKI_DATASOURCE_UID,
             type="loki",
             access="proxy",
             # SimpleScalable: reads go to the read Deployment's Service.
@@ -277,7 +279,7 @@ def _datasources(chart: Chart) -> None:
             json_data={
                 "httpMethod": "GET",
                 "tracesToLogsV2": {
-                    "datasourceUid": "loki",
+                    "datasourceUid": LOKI_DATASOURCE_UID,
                     "spanStartTimeShift": "-1h",
                     "spanEndTimeShift": "1h",
                     "filterByTraceID": True,

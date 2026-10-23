@@ -251,6 +251,7 @@ spec:
       maxLines: 1000
     name: Loki
     type: loki
+    uid: fc9a18f9-6955-4e40-95c1-66e32e7e8431
     url: http://loki-read.loki.svc.cluster.local:3100
   instanceSelector:
     matchLabels:
@@ -269,7 +270,7 @@ spec:
     jsonData:
       httpMethod: GET
       tracesToLogsV2:
-        datasourceUid: loki
+        datasourceUid: fc9a18f9-6955-4e40-95c1-66e32e7e8431
         filterBySpanID: false
         filterByTraceID: true
         spanEndTimeShift: 1h
