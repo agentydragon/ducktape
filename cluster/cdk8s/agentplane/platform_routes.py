@@ -53,11 +53,13 @@ def routes(namespace: str, *, control_service: ServiceRef | None = None) -> tupl
     return control(namespace, service=control_service), ingress(namespace)
 
 
-def sidecar_routes(namespace: str, *, control_service: ServiceRef | None = None) -> dict[str, PlatformRoute]:
+def sidecar_routes(
+    namespace: str, *, control_service: ServiceRef | None = None, listen_host: str = "127.0.0.1"
+) -> dict[str, PlatformRoute]:
     """The sidecar's `platform_routes` setting."""
     return {
         route.name: PlatformRoute(
-            listen_port=route.listen_port,
+            listen_address=f"{listen_host}:{route.listen_port}",
             upstream=f"{route.service.fqdn}:{route.service.pod_port}",
             token_file=Path(sandbox_pod.audience_token_file(route.audience)),
         )

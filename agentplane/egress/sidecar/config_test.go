@@ -34,10 +34,10 @@ audience_token_files:
   https://kubernetes.test/audience: /var/run/api/lower-token
 platform_routes:
   Control.Route:
-    listen_port: 0
+    listen_address: 127.0.0.1:3130
     upstream: gateway:80
     token_file: /var/run/control/token
-listen_port: 0
+listen_address: 127.0.0.1:0
 `)
 	config, err := loadConfig(settingsFileEnv(path))
 	if err != nil {
@@ -46,10 +46,10 @@ listen_port: 0
 	if config.ProxyHost != "egress.example" || config.ProxyPort != 9001 || config.TokenFile != "/var/run/egress/token" {
 		t.Fatalf("unexpected proxy settings: %+v", config)
 	}
-	if config.ListenPort != 0 {
-		t.Fatalf("listen_port = %d, want the file's value", config.ListenPort)
+	if config.ListenAddress != "127.0.0.1:0" {
+		t.Fatalf("listen_address = %q, want the file's value", config.ListenAddress)
 	}
-	if config.ListenHost != "127.0.0.1" || config.ReadinessHost != "0.0.0.0" || config.ReadinessPort != 3129 {
+	if config.ReadinessListenAddress != "0.0.0.0:3129" {
 		t.Fatalf("keys the file omits must keep their defaults: %+v", config)
 	}
 	if len(config.AudienceTokenFiles) != 2 ||
@@ -57,7 +57,7 @@ listen_port: 0
 		config.AudienceTokenFiles["https://kubernetes.test/audience"] != "/var/run/api/lower-token" {
 		t.Fatalf("audience token files = %#v", config.AudienceTokenFiles)
 	}
-	if route := config.PlatformRoutes["Control.Route"]; route.ListenPort == nil || *route.ListenPort != 0 || route.Upstream != "gateway:80" || route.TokenFile != "/var/run/control/token" {
+	if route := config.PlatformRoutes["Control.Route"]; route.ListenAddress != "127.0.0.1:3130" || route.Upstream != "gateway:80" || route.TokenFile != "/var/run/control/token" {
 		t.Fatalf("platform route = %+v", route)
 	}
 }
@@ -66,10 +66,10 @@ func TestLoadConfigRefusesWhatTheSettingsFileGetsWrong(t *testing.T) {
 	const required = "proxy_host: p.example\ntoken_file: /token\n"
 	for name, content := range map[string]string{
 		"unknown key":           required + "proxy_hots: typo\n",
-		"route unknown key":     required + "platform_routes: {control: {listen_port: 1, upstream: u, token_file: /t, extra: true}}\n",
-		"route missing port":    required + "platform_routes: {control: {upstream: u, token_file: /t}}\n",
-		"route null port":       required + "platform_routes: {control: {listen_port: null, upstream: u, token_file: /t}}\n",
-		"route missing key":     required + "platform_routes: {control: {listen_port: 1, upstream: u}}\n",
+		"route unknown key":     required + "platform_routes: {control: {listen_address: 127.0.0.1:3130, upstream: u, token_file: /t, extra: true}}\n",
+		"route missing address": required + "platform_routes: {control: {upstream: u, token_file: /t}}\n",
+		"route empty address":   required + "platform_routes: {control: {listen_address: '', upstream: u, token_file: /t}}\n",
+		"route missing key":     required + "platform_routes: {control: {listen_address: 127.0.0.1:3130, upstream: u}}\n",
 		"port not an integer":   required + "proxy_port: eight\n",
 		"not an object":         "- proxy_host\n",
 		"empty":                 "",

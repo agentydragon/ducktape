@@ -132,6 +132,7 @@ py_test(
         ":sidecar_config",
         "//:conftest",
         "//agentplane/egress/testing:sidecar_process",
+        "//util:net",
         "@pypi//aiohttp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

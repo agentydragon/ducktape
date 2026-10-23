@@ -13,6 +13,7 @@ PROJECTED_TOKEN_HEADER = "X-Agentplane-Workload-Token"
 READINESS_PATH = "/readyz"
 READINESS_HOST = "0.0.0.0"
 READINESS_PORT = 3129
+READINESS_LISTEN_ADDRESS = f"{READINESS_HOST}:{READINESS_PORT}"
 
 
 class Settings(BaseModel):
@@ -36,7 +37,7 @@ class Settings(BaseModel):
         description="Agentplane services this Pod calls directly, by name: each gets a loopback gRPC "
         "listener that forwards with the service's token, bypassing the central proxy.",
     )
-    listen_host: str = Field(default="127.0.0.1", description="Bind address; loopback, the runner's own Pod.")
-    listen_port: int = Field(default=3128, description="Port the runner container's HTTP(S)_PROXY names.")
-    readiness_host: str = Field(default=READINESS_HOST, description="Bind address for the kubelet readiness endpoint.")
-    readiness_port: int = Field(default=READINESS_PORT, description="HTTP port serving /readyz.")
+    listen_address: str = Field(
+        default="127.0.0.1:3128", description="Address the runner container's HTTP(S)_PROXY names."
+    )
+    readiness_listen_address: str = Field(default=READINESS_LISTEN_ADDRESS, description="HTTP address serving /readyz.")

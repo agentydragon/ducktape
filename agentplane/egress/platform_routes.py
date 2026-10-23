@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class PlatformRoute(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    listen_port: int = Field(description="Loopback port the workload dials for this service.")
+    listen_address: str = Field(description="Address the workload dials for this service.")
     upstream: str = Field(min_length=1, description="host:port of the service, dialled in plaintext in-cluster.")
     token_file: Path = Field(
         description="Projected token file with the service's audience, mounted into the sidecar only."

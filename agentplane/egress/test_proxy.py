@@ -624,7 +624,10 @@ async def test_interactive_grpc_before_eof(egress: Egress, monkeypatch: pytest.M
             proxy_host=egress.proxy_listener.host, proxy_port=egress.proxy_listener.port, token_file=token_file
         ) as sidecar,
     ):
-        monkeypatch.setenv("https_proxy" if tls else "grpc_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
+        monkeypatch.setenv(
+            "https_proxy" if tls else "grpc_proxy",
+            f"http://{sidecar.proxy_listener.host}:{sidecar.proxy_listener.port}",
+        )
         monkeypatch.setenv("no_proxy", "")
         channel = (
             grpc.aio.secure_channel(
