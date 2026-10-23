@@ -24,6 +24,7 @@ import (
 	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/startup"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -35,6 +36,7 @@ import (
 )
 
 const (
+	startupFileEnv = "AGENTPLANE_HISTORY_SERVICE_STARTUP_FILE"
 	// shutdownGrace bounds how long open calls may finish once the process is told to stop.
 	shutdownGrace = 5 * time.Second
 	// A runner heartbeats an idle call at the rate agentplane/docs/runner_control.md § Event ingress names, so the
@@ -42,6 +44,11 @@ const (
 	ingressIdleAck      = 10 * time.Second
 	ingressSilenceLimit = 30 * time.Second
 )
+
+type startupEndpoints struct {
+	Reader  string `json:"reader"`
+	Ingress string `json:"ingress"`
+}
 
 func kubernetesConfig(c config) (*rest.Config, error) {
 	var kubeConfig *rest.Config
@@ -122,6 +129,11 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer ingressListener.Close()
+	if err := startup.Publish(os.Getenv(startupFileEnv), startupEndpoints{
+		Reader: listener.Addr().String(), Ingress: ingressListener.Addr().String(),
+	}); err != nil {
+		return err
+	}
 	return serve(ctx, c, kube.AuthenticationV1().TokenReviews(), listener, ingressListener)
 }
 
