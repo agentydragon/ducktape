@@ -2,6 +2,7 @@
 
 The [production cutover](../debug/2026_10_23_forgejo_key_cutover.md) completed on
 2026-10-23. Both replicas use the replacement key; all five values were preserved.
+Haku credentials were subsequently rotated and all six old API tokens revoked.
 The [rehearsal](../debug/2026_10_22_forgejo_key_rehearsal.md) also covered reverse
 migration. The operator sequence below records the maintenance procedure; do not
 rerun forward `apply` against the migrated database.
@@ -28,8 +29,8 @@ cryptographic primitives.
 
 `cluster/k8s/forgejo/forgejo-secret-key.sops.yaml` contains:
 
-- `current`: the existing public placeholder, retained for a compatible staging rollout.
-- `replacement`: a newly generated random key; inactive until the maintenance cutover.
+- `current`: the former public placeholder, retained for recovery of older backups.
+- `replacement`: the active random production key.
 
 [PR #11588](https://github.com/agentydragon/ducktape/pull/11588) stages the
 `current` mount and retains the same inline key through Helm `valuesFrom`.
@@ -37,11 +38,11 @@ Before merging activation, wait for both replicas to finish that rollout and
 verify each mounts `current` and still uses it, without an environment override.
 Compare inside each pod without printing key material or stable hashes.
 
-This follow-up selects `replacement`, switches to `SECRET_KEY_URI`, converts
-the retained inline setting in `initPreScript`, and suppresses the chart's
-inline-key generation on a fresh install. PR #11597 explicitly suspended the HelmRelease for the offline migration.
-This completion change removes that declarative suspension after verification;
-normal Helm reconciliation can resume. Keep `current` for backup recovery.
+PR #11597 selected `replacement`, switched to `SECRET_KEY_URI`, converted
+the retained inline setting in `initPreScript`, and suppressed the chart's
+inline-key generation on a fresh install. It suspended the HelmRelease for the
+offline migration. PR #11622 removed that suspension after verification; normal
+Helm and Flux reconciliation are restored.
 
 ## Rehearsal prerequisites
 

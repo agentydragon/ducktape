@@ -2,8 +2,8 @@
 
 Activated the SOPS `replacement` key from PR #11588 using the maintenance
 configuration in PR #11597. The production migration implementation was unchanged.
-Haku credential/token recovery is a separate step: re-encryption preserves values
-and does not invalidate credentials recoverable from older backups.
+Re-encryption preserved values; the subsequent Haku credential recovery below
+invalidated credentials recoverable from older backups.
 
 ## Restore point and migration
 
@@ -66,3 +66,75 @@ The public HTTPS version endpoint also returned `15.0.8+gitea-1.22.0`.
 5. Disabled upgrade retries/remediation during activation so Helm could not
    automatically deploy the old-key release against the migrated database.
    Restore normal remediation only after the replacement-key upgrade succeeds.
+
+## Haku credential recovery
+
+PR #11625 made the password replacement and ownership of the two formerly
+unmanaged UI Actions secrets declarative. Reviewed pending plan
+`plan-latest-f4b41eb8ab`: the account updated in place; both repositories,
+branch protection, collaborator grants and webhook stayed unchanged. Only the
+password and opaque Actions-secret resources were replaced. The controller
+applied it at 03:51:17 UTC and subsequently reported no drift.
+
+Verified without emitting values:
+
+- The new password authenticated; the old password returned HTTP 401.
+- All four Actions secrets decrypted under `replacement` and matched the
+  managed username/password sources.
+- Forced ESO refresh rather than waiting its one-hour interval. All six
+  downstream copies, including Reflector destinations and the Agentplane
+  staging credential, matched their sources.
+- Both Flux Git sources fetched successfully and all three Haku registry
+  scanners completed authenticated scans after rotation. Reloader replaced
+  Haku UI, Anki and Jupyter pods; their containers became ready.
+- Both Forgejo replicas again passed native login and mirror-settings reads;
+  the original mirror plaintext still matched the pre-migration baseline.
+  Native pull-mirror synchronization completed at 04:07:15 UTC.
+- The new managed password authorized a registry blob-upload handshake (202);
+  the empty temporary upload was cancelled (204).
+
+PR #11623 added explicit recovery operations to the existing token owner.
+Published image, built from `47fb0775cea3801cc19b79cf353768cfc7a9c541`
+(successful CI run `39896381087`):
+
+```text
+git.allegedly.works/ducktape-ci/forgejo-token-rotation@sha256:59a02841715b22e57b6373faa770b6423c0dcfe5de4ad2448f5dec5810ad7422
+```
+
+The forced Haku-only rotation retained every old token and completed at
+03:54:21 UTC. Its SOPS outputs were pushed through the normal GitOps path.
+Fresh token ID `134` and its `haku-ci` Reflector copy matched; authentication
+and private-repository admin access passed before any revocation attempt.
+The operator approved revoking all six old IDs: `131`, `95`, `56`, `54`, `46`,
+`39`, including the four legacy registry tokens with unverified external consumers.
+
+The first revoke-only Job failed in inventory lookup because internal DNS
+returned `Name or service not known`; all six old IDs remained present. The
+retry used the same managed image and arguments, with Forgejo's verified
+Service IP in the temporary Pod's `hostAliases`.
+
+That retry also stopped before deletion, with a connection timeout on `wyrm2`.
+A second retry on `ovh-ns103656`, using the same Service-address mapping,
+completed at 04:04:35 UTC. All six old IDs were absent afterward; token `134`
+still authenticated and retained private-repository admin access. The temporary
+network workaround does not establish the cause of the intermittent DNS and
+connectivity failures.
+
+## Restored ownership and backup
+
+PR #11622's corrected startup script and removal of the temporary HelmRelease
+suspension reconciled successfully. Normal Helm remediation is restored.
+The Forgejo, GitOps, token-rotation and Haku CI Kustomizations are resumed;
+`haku-state` is back to automatic controller approval, the token CronJob is
+unsuspended, and KEDA's temporary pause annotation is removed.
+
+Fresh CNPG backup `forgejo-key-post-recovery`, ID `20261023T040545`, completed
+04:06:37 UTC. Begin/end LSN: `8E/6F013AC8` / `8E/7000F8B8`. It contains the
+replacement-key ciphertexts and recovered credentials; the pre-cutover backup
+remains available for historical recovery.
+
+Existing Haku workflow dispatched as run `10029` (internal ID `40416`) at
+`edc8200388ae0d1b627d561567ab720203a2fc8b`, event `workflow_dispatch`. Both
+runners fetched their tasks and started Docker job containers, but setup
+stalled cloning the public `https://data.forgejo.org/actions/checkout` at `v4`.
+A running task is not evidence that validation/build/publish completed.
