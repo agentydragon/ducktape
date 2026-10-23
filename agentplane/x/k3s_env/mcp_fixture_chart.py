@@ -40,13 +40,7 @@ _MCP_EDGE_LOGIN = dex.StaticClient(
 
 
 def objects(
-    *,
-    ca_cert: str,
-    ca_key: str,
-    system_roots: str,
-    cluster_ca: str,
-    models: Models,
-    mcp: McpInputs,
+    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, mcp: McpInputs
 ) -> list[dict[str, Any]]:
     env = fixture_chart.environment(vm_sandboxes=False, app_origin=mcp.app_origin)
     mcp_linkage = fixture_chart.linkage_client(mcp.app_origin)
@@ -71,12 +65,7 @@ def objects(
     )
     env = replace(env, actions=actions_config, mcp_edge=mcp_edge_config)
     fixture = fixture_chart.build_chart(
-        ca_cert=ca_cert,
-        ca_key=ca_key,
-        system_roots=system_roots,
-        cluster_ca=cluster_ca,
-        models=models,
-        env=env,
+        ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )
     mcp_edge_login = replace(_MCP_EDGE_LOGIN, redirect_uri=f"{mcp.mcp_edge_origin}/auth/callback")
     edge_oauth = _mcp_edge_oauth(mcp.mcp_edge_origin, mcp.app_origin, mcp_edge_login.id)

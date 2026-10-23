@@ -158,23 +158,12 @@ def environment(*, vm_sandboxes: bool, app_origin: str = APP_ORIGIN) -> Environm
 
 
 def objects(
-    *,
-    ca_cert: str,
-    ca_key: str,
-    system_roots: str,
-    cluster_ca: str,
-    models: Models,
-    vm_sandboxes: bool,
+    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, vm_sandboxes: bool
 ) -> list[dict[str, Any]]:
     """Synthesize the common one-node fixture, optionally replacing the production guest for VM tests."""
     env = environment(vm_sandboxes=vm_sandboxes)
     fixture = build_chart(
-        ca_cert=ca_cert,
-        ca_key=ca_key,
-        system_roots=system_roots,
-        cluster_ca=cluster_ca,
-        models=models,
-        env=env,
+        ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )
     synthesized = list(Testing.synth(fixture.chart))
     if vm_sandboxes:
@@ -183,13 +172,7 @@ def objects(
 
 
 def build_chart(
-    *,
-    ca_cert: str,
-    ca_key: str,
-    system_roots: str,
-    cluster_ca: str,
-    models: Models,
-    env: Environment,
+    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, env: Environment
 ) -> FixtureChart:
     """Construct the shared stack and return its chart before synthesis for fixture-specific additions."""
     app_origin = str(env.app.origin)

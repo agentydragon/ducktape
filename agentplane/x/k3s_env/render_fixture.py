@@ -58,11 +58,7 @@ def _render(output: Path, variant: FixtureVariant, backend: Backend, *, vm_sandb
             )
         ],
         mcp_fixtures=None,
-        objects=fixture_chart.objects(
-            **asdict(PLACEHOLDERS),
-            models=models,
-            vm_sandboxes=vm_sandboxes,
-        ),
+        objects=fixture_chart.objects(**asdict(PLACEHOLDERS), models=models, vm_sandboxes=vm_sandboxes),
     )
     write_fixture(output / f"{variant}.json", fixture, models=models, mcp=None)
 

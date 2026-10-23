@@ -41,11 +41,7 @@ def render(output: Path) -> None:
             app_service=app_service.name,
             app_port=app_service.port.number,
         ),
-        objects=mcp_fixture_chart.objects(
-            **asdict(PLACEHOLDERS),
-            models=models,
-            mcp=mcp,
-        ),
+        objects=mcp_fixture_chart.objects(**asdict(PLACEHOLDERS), models=models, mcp=mcp),
     )
     write_fixture(output / "local-model-mcp-fixtures.json", fixture, models=models, mcp=mcp)
 
