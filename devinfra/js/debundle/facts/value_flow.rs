@@ -231,6 +231,13 @@ impl Values {
     /// Merge another value set, returning whether it contributed new origins.
     pub(super) fn union_with(&mut self, other: &Self) -> bool {
         assert!(Arc::ptr_eq(&self.origins, &other.origins));
+        if self.bits.is_empty() {
+            let changed = !other.bits.is_empty() || (other.unknown && !self.unknown);
+            self.bits.clone_from(&other.bits);
+            self.occupied_words.clone_from(&other.occupied_words);
+            self.unknown |= other.unknown;
+            return changed;
+        }
         let mut changed = if let Some(changed) = self.union_dense_words(other) {
             changed
         } else {
@@ -266,6 +273,12 @@ impl Values {
 
     fn union_without_change_tracking(&mut self, other: &Self) {
         assert!(Arc::ptr_eq(&self.origins, &other.origins));
+        if self.bits.is_empty() {
+            self.bits.clone_from(&other.bits);
+            self.occupied_words.clone_from(&other.occupied_words);
+            self.unknown |= other.unknown;
+            return;
+        }
         if self.union_dense_words(other).is_some() {
             self.unknown |= other.unknown;
             return;
@@ -591,6 +604,8 @@ pub(crate) struct ChunkValueFlow {
     declared_ids: BTreeSet<Id>,
     bindings: BTreeMap<Id, Values>,
     properties: BTreeMap<(u32, String), Values>,
+    /// Cached union of all known properties, used by dynamic property reads.
+    property_unions: BTreeMap<u32, Values>,
     returns: BTreeMap<u32, Values>,
     params: BTreeMap<u32, Vec<Option<Id>>>,
     /// Callable identity to its chunk-top declaration binding, if any.
@@ -736,12 +751,23 @@ impl ChunkValueFlow {
         if values.is_empty() {
             return false;
         }
-        let origin_table = self.origin_table.clone();
-        let entry = self
-            .properties
-            .entry((object, prop))
-            .or_insert_with(|| Values::empty(origin_table));
-        entry.union_with(&values)
+        let changed = {
+            let origin_table = self.origin_table.clone();
+            let entry = self
+                .properties
+                .entry((object, prop))
+                .or_insert_with(|| Values::empty(origin_table));
+            entry.union_with(&values)
+        };
+        if changed {
+            // A wildcard-property read needs the exact union for this object.
+            let origin_table = self.origin_table.clone();
+            self.property_unions
+                .entry(object)
+                .or_insert_with(|| Values::empty(origin_table))
+                .union_with(&values);
+        }
+        changed
     }
 
     fn merge_return(&mut self, function: u32, values: Values) -> bool {
@@ -926,11 +952,7 @@ impl ChunkValueFlow {
                             }
                         } else {
                             dependencies.insert(FlowDependency::Properties(object));
-                            for (_, found) in self
-                                .properties
-                                .range((object, String::new())..)
-                                .take_while(|((owner, _), _)| *owner == object)
-                            {
+                            if let Some(found) = self.property_unions.get(&object) {
                                 values.extend(found);
                             }
                             values.push(ValueOrigin::Unknown);
@@ -1689,6 +1711,16 @@ impl FlowSolver {
                 let targets = self
                     .flow
                     .values_of_value_expr_tracking(&callee, &mut dependencies);
+                let written_params: BTreeSet<_> = targets
+                    .iter()
+                    .filter_map(|target| match target {
+                        ValueOrigin::Function(function) => self.flow.params.get(&function),
+                        _ => None,
+                    })
+                    .flat_map(|params| params.iter().flatten().cloned())
+                    .collect();
+                let mut cached_args: Vec<Option<Values>> = vec![None; args.len()];
+
                 for target in targets {
                     let ValueOrigin::Function(function) = target else {
                         continue;
@@ -1697,11 +1729,28 @@ impl FlowSolver {
                         dependencies.insert(FlowDependency::Parameters(function));
                         continue;
                     };
-                    for (param, arg) in params.into_iter().zip(&args) {
+                    for (arg_index, (param, arg)) in params.into_iter().zip(&args).enumerate() {
                         if let Some(param) = param {
-                            let values = self
-                                .flow
-                                .values_of_value_expr_tracking(arg, &mut dependencies);
+                            let values = if let Some(cached) = &cached_args[arg_index] {
+                                cached.clone()
+                            } else {
+                                let mut arg_dependencies = BTreeSet::new();
+                                let values = self
+                                    .flow
+                                    .values_of_value_expr_tracking(arg, &mut arg_dependencies);
+                                // This Invoke mutates only known parameter bindings. If this
+                                // argument reads none of them, the first-use result remains
+                                // exact for later targets; all other arguments keep legacy
+                                // evaluation timing and see every preceding parameter merge.
+                                let can_cache = arg_dependencies.iter().all(|dependency| {
+                                    !matches!(dependency, FlowDependency::Binding(id) if written_params.contains(id))
+                                });
+                                dependencies.extend(arg_dependencies);
+                                if can_cache {
+                                    cached_args[arg_index] = Some(values.clone());
+                                }
+                                values
+                            };
                             self.merge_binding(param, values, &mut changed);
                         }
                     }

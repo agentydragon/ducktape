@@ -172,6 +172,139 @@ fn worklist_matches_reference_when_only_function_metadata_is_discovered() {
 }
 
 #[test]
+fn polymorphic_invokes_reuse_complex_arguments_without_param_dependencies() {
+    let flow = assert_matches_reference(
+        r#"
+function primary_leaf() {}
+function returned_leaf() {}
+function factory() { return returned_leaf; }
+function target0(value0) {}
+function target1(value1) {}
+function target2(value2) {}
+function target3(value3) {}
+function target4(value4) {}
+function target5(value5) {}
+function target6(value6) {}
+function target7(value7) {}
+
+const box = { primary: primary_leaf, factory };
+const poly = target0 || target1 || target2 || target3 || target4 || target5 || target6 || target7;
+const before = poly(box.missing || box.primary || box.factory());
+box.missing = returned_leaf;
+const after = poly(box.missing || box.primary || box.factory());
+"#,
+    );
+
+    let primary = flow.values_of_binding(&id("primary_leaf"));
+    let returned = flow.values_of_binding(&id("returned_leaf"));
+    let mut expected = primary.iter().collect::<std::collections::BTreeSet<_>>();
+    expected.extend(returned.iter());
+    expected.insert(ValueOrigin::Unknown);
+
+    for parameter in [
+        "value0", "value1", "value2", "value3", "value4", "value5", "value6", "value7",
+    ] {
+        assert_eq!(
+            flow.values_of_binding(&id(parameter))
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>(),
+            expected,
+            "wrong argument facts for {parameter}",
+        );
+    }
+}
+
+#[test]
+fn arguments_reading_a_later_callees_params_see_earlier_param_writes() {
+    let flow = assert_matches_reference(
+        r#"
+function earlier(left, right) {}
+function feedback(seed, carry) {
+  (earlier || feedback)(carry, seed);
+}
+function initial_value() {}
+function introduced_value() {}
+feedback(initial_value, introduced_value);
+"#,
+    );
+
+    let initial = flow.values_of_binding(&id("initial_value"));
+    let introduced = flow.values_of_binding(&id("introduced_value"));
+    let mut expected = initial.iter().collect::<std::collections::BTreeSet<_>>();
+    expected.extend(introduced.iter());
+
+    // `seed` is first read for `earlier`, before the later `feedback` target
+    // receives `carry` into `seed`. Its value must be evaluated again for the
+    // second target after that parameter write.
+    for parameter in ["seed", "carry", "left", "right"] {
+        assert_eq!(
+            flow.values_of_binding(&id(parameter))
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>(),
+            expected,
+            "wrong feedback facts for {parameter}",
+        );
+    }
+}
+
+#[test]
+fn polymorphic_invokes_zip_only_to_declared_identifier_parameters() {
+    let flow = assert_matches_reference(
+        r#"
+function no_params() {}
+function one(callback) {}
+function destructured({ ignored }, secondary) {}
+function two(left, right) {}
+function leaf() {}
+function extra() {}
+const box = {};
+const poly = no_params || one || destructured || two;
+poly(box.missing || leaf, extra);
+"#,
+    );
+
+    let extra = flow.values_of_binding(&id("extra"));
+    let extra_values = extra.iter().collect::<Vec<_>>();
+    assert_eq!(
+        extra_values.len(),
+        1,
+        "extra should have one function identity"
+    );
+    let extra_origin = extra_values[0];
+    let callback = flow.values_of_binding(&id("callback"));
+    assert!(callback.contains(&ValueOrigin::Unknown));
+    let leaf = flow.values_of_binding(&id("leaf"));
+    let leaf_values = leaf.iter().collect::<Vec<_>>();
+    assert_eq!(
+        leaf_values.len(),
+        1,
+        "leaf should have one function identity"
+    );
+    assert!(callback.contains(&leaf_values[0]));
+    assert!(!callback.contains(&extra_origin));
+
+    assert_eq!(
+        flow.values_of_binding(&id("secondary"))
+            .iter()
+            .collect::<Vec<_>>(),
+        [extra_origin],
+    );
+    assert_eq!(
+        flow.values_of_binding(&id("right"))
+            .iter()
+            .collect::<Vec<_>>(),
+        [extra_origin],
+    );
+    assert!(
+        flow.values_of_binding(&id("ignored"))
+            .iter()
+            .next()
+            .is_none(),
+        "a destructured parameter should not receive a binding fact",
+    );
+}
+
+#[test]
 fn reverse_return_call_chain_has_bounded_worklist_growth() {
     let mut previous_executions = None;
     for depth in [64, 128, 256, 512] {
@@ -242,6 +375,134 @@ box = {};
                 .iter()
                 .any(|value| matches!(value, ValueOrigin::Function(_)))
         );
+    }
+}
+
+#[test]
+fn dynamic_property_unions_track_late_writes_per_object_alias() {
+    let flow = assert_matches_reference(
+        r#"
+function left_first() {}
+function left_second() {}
+function left_third() {}
+function right_first() {}
+function right_second() {}
+function right_third() {}
+
+const left = {};
+const right = {};
+function make_left() { return left; }
+function make_right() { return right; }
+const key = globalThis;
+
+const early_left = make_left()[key];
+const early_right = make_right()[key];
+make_left().unknown_value = make_left().missing;
+make_right().unknown_value = make_right().missing;
+
+let left_progress;
+left_progress = left_first;
+make_left().changing = left_progress;
+left_progress = left_second;
+make_left().changing = left_progress;
+make_left().another_property = left_third;
+
+let right_progress;
+right_progress = right_first;
+make_right().changing = right_progress;
+right_progress = right_second;
+make_right().changing = right_progress;
+make_right().another_property = right_third;
+
+const late_left = make_left()[key];
+const late_right = make_right()[key];
+"#,
+    );
+
+    let function_origin = |name: &str| {
+        let values = flow.values_of_binding(&id(name));
+        let functions = values
+            .iter()
+            .filter(|value| matches!(value, ValueOrigin::Function(_)))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            functions.len(),
+            1,
+            "{name} should have one function identity"
+        );
+        functions[0]
+    };
+    let left_functions = [
+        function_origin("left_first"),
+        function_origin("left_second"),
+        function_origin("left_third"),
+    ];
+    let right_functions = [
+        function_origin("right_first"),
+        function_origin("right_second"),
+        function_origin("right_third"),
+    ];
+    let object_origin = |name: &str| {
+        let values = flow.values_of_binding(&id(name));
+        let objects = values
+            .iter()
+            .filter_map(|value| match value {
+                ValueOrigin::Object(object) => Some(object),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(objects.len(), 1, "{name} should have one object identity");
+        objects[0]
+    };
+
+    for (binding, expected_functions) in [
+        ("left", &left_functions[..2]),
+        ("right", &right_functions[..2]),
+    ] {
+        let object = object_origin(binding);
+        let unknown = flow
+            .values_of_property(object, "unknown_value")
+            .expect("the missing-property write should create a property");
+        assert!(unknown.contains(&ValueOrigin::Unknown));
+        let changing = flow
+            .values_of_property(object, "changing")
+            .expect("the changing property should be written");
+        for expected in expected_functions {
+            assert!(changing.contains(expected));
+        }
+    }
+
+    for binding in ["early_left", "late_left"] {
+        let values = flow.values_of_binding(&id(binding));
+        assert!(
+            values.contains(&ValueOrigin::Unknown),
+            "{binding} lost Unknown"
+        );
+        for expected in left_functions {
+            assert!(values.contains(&expected), "{binding} lost {expected:?}");
+        }
+        for other_object in right_functions {
+            assert!(
+                !values.contains(&other_object),
+                "{binding} included another object's value {other_object:?}",
+            );
+        }
+    }
+    for binding in ["early_right", "late_right"] {
+        let values = flow.values_of_binding(&id(binding));
+        assert!(
+            values.contains(&ValueOrigin::Unknown),
+            "{binding} lost Unknown"
+        );
+        for expected in right_functions {
+            assert!(values.contains(&expected), "{binding} lost {expected:?}");
+        }
+        for other_object in left_functions {
+            assert!(
+                !values.contains(&other_object),
+                "{binding} included another object's value {other_object:?}",
+            );
+        }
     }
 }
 
