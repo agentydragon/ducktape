@@ -272,7 +272,8 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
 
     # Dex accepts the operator's password: its hash is bcrypt of the password the Secret hands the test,
     # at no less than the cost Dex requires.
-    operator = _resource(docs, "Secret", fixture_chart.OPERATOR_SECRET)["stringData"]
+    assert fixture.mcp_fixtures is not None
+    operator = _resource(docs, "Secret", fixture.mcp_fixtures.operator_secret)["stringData"]
     (user,) = yaml.safe_load(operator["config.yaml"])["staticPasswords"]
     assert bcrypt.checkpw(operator["password"].encode(), user["hash"].encode())
     assert int(user["hash"].split("$")[2]) >= 10
