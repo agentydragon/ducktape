@@ -37,7 +37,6 @@ py_library(
     name = "fixtures",
     srcs = ["fixtures.py"],
     deps = [
-        ":credentials",
         ":lifecycle",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:database_migrate",
@@ -47,8 +46,6 @@ py_library(
         "//agentplane/action_service:service",
         "//agentplane/action_service:store",
         "//agentplane/action_service/github_policy:visibility",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
         "//util/testing:postgres_fixtures",
         "//util/testing:sqlalchemy_engines",
         "@pypi//asyncpg",
@@ -135,18 +132,6 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/action_service:models",
         "//agentplane/action_service:policy_informer",
-    ],
-)
-
-py_library(
-    name = "credentials",
-    srcs = ["credentials.py"],
-    deps = [
-        "//agentplane/action_service:models",
-        "//agentplane/action_service:operator_oidc",
-        "//agentplane/action_service:operator_oidc_settings",
-        "//util/testing:mock_oidc",
-        "@pypi//cryptography",
     ],
 )
 

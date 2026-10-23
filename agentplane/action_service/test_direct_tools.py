@@ -1,8 +1,9 @@
 """Configured Actions as direct MCP tools of an external Connection, through the real MCP frontend.
 
 The bearer is the one external boundary faked here: `ConnectionBearers` resolves a test token to a real,
-activated Connection grant exactly as the OAuth adapter would resolve an issued one
-(`test_oauth.py` covers that half).
+activated Connection grant exactly as the OAuth adapter would resolve an issued one. The Go connection and OAuth
+flows are covered by `//agentplane/mcp_edge/connections:integration_test` and
+`//agentplane/mcp_edge/authserver:integration_test`.
 """
 
 from __future__ import annotations

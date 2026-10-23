@@ -7,7 +7,7 @@ without importing this package's conftest.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
@@ -31,10 +31,7 @@ from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import ExecutionRequest, ExecutionResult, ExecutionState
 from agentplane.action_service.service import ExecutionLease, Executor
 from agentplane.action_service.store import ActionStore
-from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.testing.lifecycle import wait_available
-from util.testing.asgi import bind_http_server
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from util.testing.postgres_fixtures import migrated_database_fixtures
 from util.testing.sqlalchemy_engines import managed_async_engine
 
@@ -57,17 +54,6 @@ async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
 @pytest.fixture
 def store(engine: AsyncEngine) -> ActionStore:
     return ActionStore(make_sessionmaker(engine))
-
-
-@pytest.fixture(scope="session")
-def operator_idp() -> Iterator[OperatorIdp]:
-    private_key, public_key = generate_rsa_keypair()
-    with bind_http_server() as endpoint:
-        issuer = endpoint.origin
-        with endpoint.serve_sync(
-            build_mock_oidc_app(issuer_url=issuer, private_key=private_key, public_key=public_key)
-        ):
-            yield OperatorIdp(issuer=issuer, signing_key=private_key)
 
 
 @pytest.fixture

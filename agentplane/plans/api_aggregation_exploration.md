@@ -4,6 +4,9 @@ Status: **design exploration, held by the operator, 2026-10-17.** It is not a de
 nothing is scheduled. It authorizes no extension apiserver, API group, `APIService` or deployment
 change. If the idea is revived, what survives graduates to a doc under `docs/`.
 
+The candidate table below is also a 2026-10-17 snapshot: the Action Service's Python HTTP API named
+there has since been replaced by the Go service and generated facade.
+
 An aggregated API is an extension apiserver that the kube-apiserver proxies one API group to,
 registered by an `APIService`. Clients get the cluster's authentication, RBAC, discovery, OpenAPI
 and list/watch conventions, so `kubectl`, `client-go` and informers work against it. There are two

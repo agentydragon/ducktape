@@ -9,7 +9,6 @@ from agentplane.action_service.testing.fixtures import (
     execution_lease,
     github_visibility,
     mcp_executor,
-    operator_idp,
     scripted,
     store,
 )

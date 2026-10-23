@@ -73,12 +73,6 @@ py_library(
 )
 
 py_library(
-    name = "auth",
-    srcs = ["auth.py"],
-    deps = [":operator_oidc"],
-)
-
-py_library(
     name = "db",
     srcs = ["db.py"],
     deps = [
@@ -145,39 +139,6 @@ py_library(
 )
 
 py_library(
-    name = "api",
-    srcs = ["api.py"],
-    data = glob(["docs/agents/**"]),
-    deps = [
-        ":auth",
-        ":caller_auth",
-        ":catalog",
-        ":connections",
-        ":enrollments",
-        ":mcp_frontend",
-        ":mcp_linkage",
-        ":models",
-        ":oauth",
-        ":operator_stream",
-        ":policy_informer",
-        ":policy_view",
-        ":push",
-        ":service",
-        ":store",
-        ":updates",
-        ":waits",
-        "//agentplane:agent_docs",
-        "//agentplane:subjects",
-        "//agentplane/workload_auth:http",
-        "//agentplane/workload_auth:principal",
-        "@pypi//fastapi",
-        "@pypi//prometheus_client",
-        "@pypi//pydantic",
-        "@pypi//starlette",
-    ],
-)
-
-py_library(
     name = "database_migrate",
     testonly = True,
     srcs = ["database_migrate.py"],
@@ -195,36 +156,6 @@ py_library(
     deps = [
         "//agentplane/action_service/testing:fixtures",
         "//util/testing:postgres_fixtures",
-    ],
-)
-
-py_test(
-    name = "test_acceptance",
-    size = "medium",
-    srcs = ["test_acceptance.py"],
-    requires_docker = True,
-    deps = [
-        ":api",
-        ":catalog",
-        ":conftest",
-        ":db",
-        ":models",
-        ":policy_view",
-        ":service",
-        ":store",
-        ":updates",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane:subjects",
-        "//agentplane/action_service/testing:callers",
-        "//agentplane/action_service/testing:credentials",
-        "//agentplane/action_service/testing:policies",
-        "//agentplane/testing:agent_docs",
-        "//agentplane/workload_auth:principal",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -279,30 +210,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_boundaries",
-    srcs = ["test_boundaries.py"],
-    deps = [
-        ":api",
-        ":auth",
-        ":catalog",
-        ":conftest",
-        ":models",
-        ":service",
-        ":updates",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/action_service/policies:resources",
-        "//agentplane/action_service/testing:callers",
-        "//agentplane/action_service/testing:credentials",
-        "//agentplane/workload_auth:principal",
-        "@pypi//httpx",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -398,36 +305,8 @@ py_library(
     name = "operator_oidc",
     srcs = ["operator_oidc.py"],
     deps = [
-        ":models",
         ":operator_oidc_settings",
         "//util:oidc_principal",
-    ],
-)
-
-py_test(
-    name = "test_operator_oidc",
-    size = "medium",
-    srcs = ["test_operator_oidc.py"],
-    deps = [
-        ":api",
-        ":catalog",
-        ":conftest",
-        ":db",
-        ":operator_oidc",
-        ":operator_oidc_settings",
-        ":service",
-        ":store",
-        ":updates",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane/action_service/testing:callers",
-        "//agentplane/workload_auth:principal",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -566,112 +445,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_connections",
-    # Starting the Postgres testcontainer takes ~28s of the first test's setup and importing the app
-    # ~30s, so uncached runs land at 56-64s (bbapi target history: 39s -> 48s across recent devel
-    # commits); too close to small's 60s.
-    size = "medium",
-    srcs = ["test_connections.py"],
-    requires_docker = True,
-    deps = [
-        ":api",
-        ":catalog",
-        ":conftest",
-        ":connections",
-        ":db",
-        ":models",
-        ":policy_informer",
-        ":service",
-        ":store",
-        ":updates",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:subjects",
-        "//agentplane/action_service/testing:callers",
-        "//agentplane/action_service/testing:credentials",
-        "//agentplane/workload_auth:principal",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_mcp_frontend",
-    size = "medium",
-    srcs = ["test_mcp_frontend.py"],
-    requires_docker = True,
-    deps = [
-        ":api",
-        ":auth",
-        ":catalog",
-        ":conftest",
-        ":db",
-        ":mcp_frontend",
-        ":models",
-        ":policy_informer",
-        ":policy_view",
-        ":service",
-        ":store",
-        ":updates",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane:subjects",
-        "//agentplane/action_service/sandbox:binding",
-        "//agentplane/action_service/sandbox:models",
-        "//agentplane/action_service/testing:callers",
-        "//agentplane/action_service/testing:credentials",
-        "//agentplane/action_service/testing:fixtures",
-        "//agentplane/action_service/testing:mcp_client",
-        "//agentplane/action_service/testing:policies",
-        "//agentplane/workload_auth:principal",
-        "//util/exec:models",
-        "@pypi//fastapi",
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx2",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-        "@pypi//starlette",
-    ],
-)
-
-py_test(
-    name = "test_enrollments",
-    size = "medium",
-    srcs = ["test_enrollments.py"],
-    requires_docker = True,
-    deps = [
-        ":api",
-        ":catalog",
-        ":conftest",
-        ":connections",
-        ":db",
-        ":enrollments",
-        ":models",
-        ":service",
-        ":store",
-        ":updates",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane:subjects",
-        "//agentplane/action_service/testing:callers",
-        "//agentplane/action_service/testing:credentials",
-        "//agentplane/workload_auth:principal",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 py_library(
     name = "enrollments",
     srcs = ["enrollments.py"],
@@ -728,50 +501,6 @@ py_library(
 )
 
 py_test(
-    name = "test_oauth",
-    size = "medium",
-    srcs = ["test_oauth.py"],
-    requires_docker = True,
-    deps = [
-        ":api",
-        ":auth",
-        ":catalog",
-        ":conftest",
-        ":connections",
-        ":db",
-        ":enrollments",
-        ":mcp_frontend",
-        ":models",
-        ":oauth",
-        ":oauth_settings",
-        ":policy_informer",
-        ":service",
-        ":store",
-        ":updates",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane:subjects",
-        "//agentplane/action_service/testing:callers",
-        "//agentplane/system_tests:dcr",
-        "//agentplane/workload_auth:principal",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
-        "@pypi//cryptography",
-        "@pypi//fastapi",
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//py_key_value_aio",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-        "@pypi//starlette",
-    ],
-)
-
-py_test(
     name = "test_push",
     size = "medium",
     srcs = ["test_push.py"],
@@ -810,38 +539,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx2",
         "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_mcp_linkage_callback",
-    # Postgres testcontainer + OAuth callback assertions genuinely take 37-47s
-    # (bbapi target history across ~30 recent devel commits); too close to small's 60s.
-    size = "medium",
-    srcs = ["test_mcp_linkage_callback.py"],
-    requires_docker = True,
-    deps = [
-        ":api",
-        ":auth",
-        ":catalog",
-        ":conftest",
-        ":db",
-        ":mcp_linkage",
-        ":mcp_settings",
-        ":models",
-        ":service",
-        ":store",
-        ":updates",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane/action_service/testing:callers",
-        "//agentplane/workload_auth:principal",
-        "@pypi//httpx",
-        "@pypi//httpx2",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
