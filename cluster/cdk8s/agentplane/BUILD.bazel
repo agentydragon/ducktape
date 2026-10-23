@@ -587,7 +587,10 @@ py_library(
         "ducktape_pr_instructions.md",
         "public_coder_instructions.md",
     ],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
+        "//cluster/cdk8s:__pkg__",
+    ],
     deps = [
         ":egress",
         "//agentplane/app:action_federation_settings",

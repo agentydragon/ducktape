@@ -5,8 +5,7 @@ model-free lifecycle target runs in the separate
 [`Agentplane k3s lifecycle` workflow](../../../.github/workflows/agentplane-k3s-lifecycle.yml), launched explicitly with
 `workflow_dispatch`. It does not run automatically on pull requests or pushes while its cost remains
 high. Agents can still run it
-directly with `bbr test //agentplane/x/k3s_env:test_lifecycle --test_output=all`. The separate
-`test_env` model smoke remains manual and requires `LITELLM_QWEN_KEY`.
+directly with `bbr test //agentplane/x/k3s_env:test_lifecycle --test_output=all`.
 
 System test scenarios run on the same stack as the k3s targets in
 [`agentplane/system_tests`](../../system_tests/README.md), which PR CI runs:
@@ -67,7 +66,7 @@ Secrets resources are omitted during construction. The chart instantiates the Go
 directly with one gRPC listener on port 8080; the stable `runner-gateway` and `session-dispatcher`
 Service names remain. A Goose init container runs before the Go server container and uses the
 Dispatcher database Secret. The
-model-free lifecycle and model smoke tests share [`stack.py`](stack.py), which starts k3s, streams
+model-free lifecycle test and the system test targets share [`stack.py`](stack.py), which starts k3s, streams
 the Bazel-built OCI image layouts into containerd, applies the rendered stack and reports Deployment
 readiness. It uses the pinned K3s binary from Bazel runfiles, so lifecycle actions do not download K3s
 at runtime.
@@ -80,15 +79,15 @@ The image list includes the Go Runner Gateway and Goose queue migration images. 
 [`test_render`](BUILD.bazel) check validates this fixture composition and its endpoint/Service wiring
 without starting Kubernetes. The `test_lifecycle` target exercises the full model-free stack and has
 no model credential dependency; the workflow only supplies the BuildBuddy credential needed to run
-Bazel remotely. The `test_env` target is the separate live model smoke and is not run by this workflow.
+Bazel remotely.
 The importer consumes the `oci_image` targets through `oci_layout_rloc`, combines their index
 descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
 Docker-format `oci_load` tarballs.
 
 The runner Pod is laid out as in production: the real runner comes from the production `//agentplane/runner:disk_image`
 image volume at `/run/agentplane/runner`, and the tools image holds the rest. The lifecycle target supplies
-`:runner_image`, with no native harnesses. The model smoke supplies `:runner_claude_image`, which adds only
-pinned Claude Code to the same base. Each target carries its own `runner_layout.rloc` through
+`:runner_image`, with no native harnesses. Targets that run a turn supply `:runner_harnesses_image`, which adds
+pinned Claude Code and Codex to the same base. Each target carries its own `runner_layout.rloc` through
 `K3S_RUNNER_LAYOUT_RLOCATION`; the shared stack library carries only service layouts, among them the runner
 disk image (`agentplane-runner-disk:unset`). Both variants import as the existing `runner:unset` tag, so
 templates, registration and lifecycle behavior stay the same. Image volumes need containerd 2.1 or later
@@ -804,16 +803,14 @@ result for the new Go composition. Breaks found on the way, in order:
   gomplate rejected it. The direct fixture writes Dex's config Secret itself, for targets with `mcp_fixtures`.
 
 - **Runner image:** the fixture builds the runner from source on a debian-slim base without the
-  deployed Nix toolbox or private registry credentials. The model smoke adds the pinned Claude
-  binary at `/bin/claude`; its link lives in `/usr/bin` because the base's `/bin` is a symlink there.
-  The test opens a Claude Session on the catalog's Qwen model and requires a completed turn; the
-  reply is retained as `answer.txt`. Lifecycle tests use the harness-free variant.
+  deployed Nix toolbox or private registry credentials. The harnesses variant adds the pinned Claude
+  and Codex binaries; their links live in `/usr/bin` because the base's `/bin` is a symlink there.
+  Lifecycle tests use the harness-free variant.
 - **Storage classes:** the manifest's `local-path-ovh-hdd` does not exist on k3s, so every `storageClassName`
   becomes `local-path`; without it the Sandbox's state PVC never binds and the Pod stays Pending.
-- **LiteLLM:** `LITELLM_QWEN_KEY` (the Qwen-only key Crossplane provisions as
-  `litellm/litellm-key-disposable-env`; pass it with `--test_env=LITELLM_QWEN_KEY=...`) is required. It replaces
-  `litellm-key-cheap-experiments`, and llm-ingress and the egress rules dial `https://litellm.allegedly.works`
-  instead of the cluster-internal Service.
+- **LiteLLM:** the public LiteLLM rendering, which the system tests' `_real_model` targets start, takes
+  BuildBuddy's live-test key (`OPENAI_API_KEY`) in place of `litellm-key-cheap-experiments`, and llm-ingress
+  and the egress rules dial `https://litellm.allegedly.works` instead of the cluster-internal Service.
 
 Not yet reached: Dex/OIDC public hostnames. The k3s lifecycle tests use stub KubeVirt CRDs and no
 Cilium, so they do not validate those integrations or real external identity.

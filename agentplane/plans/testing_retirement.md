@@ -10,7 +10,7 @@ targets and backends in the [system tests README](../system_tests/README.md). No
 
 | Workflow                                                                                                                   | Moves to                                                  | Node                          |
 | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------- |
-| Real-model cases: the `test_egress` probe, `test_session_instructions`' real-model case (`_live`)                          | `<scenario>_real_model` on k3s with the RBE key           | `K3S_MODEL_SCENARIOS`         |
+| The `test_egress` probe (`_live`)                                                                                          | `test_egress_real_model` on k3s                           | `K3S_MODEL_SCENARIOS`         |
 | `_live` targets k3s already covers: `test_dispatcher`, `test_storage`, `test_thread_stream`, `test_vm_workspace_ownership` | deleted                                                   | `LIVE_TARGETS_OFF_TESTING`    |
 | Live-only checks: `test_thread_latency`, `test_ollama_routes`                                                              | staging                                                   | `LIVE_TARGETS_OFF_TESTING`    |
 | Risky config rolled out on testing first                                                                                   | staging after the system tests pass, with a rollback plan | `STAGING_FIRST_ROLLOUT`       |
@@ -22,26 +22,10 @@ trying risky config there first (2026-10-12: testing down is better than staging
 real cluster exercises (Flux, Cilium, CNPG, External Secrets, cert-manager, Gateway API, Kyverno); once testing is
 gone, staging is the first cluster such a change reaches.
 
-## The model key on RBE
-
-The key exists: Crossplane's `buildbuddy-live-tests` LiteLLM key
-([`crossplane_keys.py`](../../cluster/cdk8s/litellm/crossplane_keys.py): the `cheap_experiments_models` lane, so
-Haiku for Claude Code and luna for Codex; `max_budget = 50` over 30 days), which
-[`buildbuddy_sync.py`](../../cluster/cdk8s/litellm/buildbuddy_sync.py) publishes as the BuildBuddy org secret
-`OPENAI_API_KEY`. `live_openai_py_test` already decrypts it into its `.live` test actions alone through
-`test.env-secrets`; those carry the `live_openai_api` tag, which `test:ci` filters out and `--config=live-openai`
-selects.
-
-`<scenario>_real_model` follows the same convention: a k3s target tagged `live_openai_api` whose `exec_properties`
-add `"test.env-secrets": "OPENAI_API_KEY"`. No other action, command line or log sees the key; the fixture hands it to
-LLM ingress as its upstream Secret, so the Sandboxes never hold it. PR CI builds the targets and runs none of them;
-`bbr test --config=live-openai` runs them on demand. Fork PRs get no BuildBuddy key.
-
 ## Steps
 
-1. **`K3S_MODEL_SCENARIOS`**: the `real_model` macro option; `_real_model` targets for `test_egress` and `test_session_instructions` pass on both
-   harnesses; their `_live` targets go. The egress probe binds a fixture-only credential PolicySet. Then
-   `K3S_SPIKE_TARGETS_RETIRE` deletes `test_env`.
+1. **`K3S_MODEL_SCENARIOS`**: a `_real_model` target for the `test_egress` probe, binding a fixture-only credential
+   PolicySet, passes on both harnesses; its `_live` target goes.
 2. **`LIVE_TARGETS_OFF_TESTING`**, any time: delete the `_live` targets k3s covers; point `test_thread_latency` and
    `test_ollama_routes` at staging. Whichever of steps 1 and 2 lands second deletes the `live` variant.
 3. **`STAGING_FIRST_ROLLOUT`**: the docs and recipes that send risky config to testing first say staging, after the

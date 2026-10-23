@@ -1,12 +1,13 @@
 """A pytest plugin that runs system test scenarios against a k3s stack of their own.
 
-A scenario's k3s and `_vm` targets load it by name (`PYTEST_PLUGINS`). Before any
+A scenario's k3s, `_vm` and `_real_model` targets load it by name (`PYTEST_PLUGINS`). Before any
 scenario fixture runs, it starts the stack and publishes it the way an operator names a deployment:
 the `AGENTPLANE_SYSTEM_TEST_*` variables the system tests' `conftest` reads, `KUBECONFIG`, and `kubectl`
 on `PATH`. LLM ingress forwards to the scenario's scripted model on the node, which the scenario starts
-on the published address (`scripted_upstream`). A stack with the MCP fixtures also publishes the
-operator's login Secret for `operator_login` and the standalone MCP edge endpoint, and trusts Dex's CA
-(`SSL_CERT_FILE`). The test log ends with the stack's setup timeline, how long each step and each image
+on the published address (`scripted_upstream`); on the public LiteLLM rendering, to the public LiteLLM with
+the key BuildBuddy decrypts into the action as `OPENAI_API_KEY`. A stack with the MCP fixtures also
+publishes the operator's login Secret for `operator_login` and the standalone MCP edge endpoint, and trusts
+Dex's CA (`SSL_CERT_FILE`). The test log ends with the stack's setup timeline, how long each step and each image
 import took.
 """
 
@@ -20,6 +21,7 @@ import pytest
 from agentplane.system_tests import operator_login
 from agentplane.system_tests.conftest import BASE_URL, MCP_EDGE_URL, NAMESPACE, TOKEN
 from agentplane.x.k3s_env import rendered_fixture
+from agentplane.x.k3s_env.rendered_fixture import Backend, LocalModel, PublicLiteLLM
 from agentplane.x.k3s_env.stack import Timeline, node_ip, running_stack
 from util.bazel.runfiles import get_required_path
 from util.net import Listener, listen_tcp
@@ -50,14 +52,21 @@ def scripted_listener() -> Iterator[Listener]:
         yield listener
 
 
+def _models(listener: Listener) -> rendered_fixture.Models:
+    match rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"])).backend:
+        case Backend.LOCAL_MODEL:
+            return LocalModel(url=f"http://{listener.host}:{listener.port}")
+        case Backend.PUBLIC_LITELLM:
+            return PublicLiteLLM(key=os.environ["OPENAI_API_KEY"])
+        case Backend.NONE:
+            return None
+
+
 @pytest.fixture(scope="session", autouse=True)
 def k3s_deployment(pytestconfig: pytest.Config, scripted_listener: Listener) -> Iterator[None]:
     timeline = pytestconfig.stash[TIMELINE] = Timeline()
     with (
-        running_stack(
-            models=rendered_fixture.LocalModel(url=f"http://{scripted_listener.host}:{scripted_listener.port}"),
-            timeline=timeline,
-        ) as stack,
+        running_stack(models=_models(scripted_listener), timeline=timeline) as stack,
         tempfile.TemporaryDirectory() as tools,
         pytest.MonkeyPatch.context() as environment,
     ):

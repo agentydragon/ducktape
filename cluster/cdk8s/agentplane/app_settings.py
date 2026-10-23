@@ -53,6 +53,7 @@ _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(
 )
 
 _PICKER_PROVIDER_NAMES = {
+    Provider.ANTHROPIC_API: "Anthropic API",
     Provider.CHATGPT: "ChatGPT",
     Provider.ANTIGRAVITY: "Google Antigravity",
     Provider.OLLAMA: "cluster Ollama",
@@ -72,6 +73,23 @@ def _reasoning_efforts(route: Route, models: HarnessRoutes) -> list[str]:
     return list(efforts)
 
 
+def model_catalog(models: HarnessRoutes) -> ModelCatalog:
+    return ModelCatalog(
+        models=[
+            ModelOption(
+                model=route.id,
+                display_name=_picker_model_name(route),
+                reasoning_efforts=_reasoning_efforts(route, models),
+            )
+            for route in models.all
+        ],
+        harnesses={
+            Harness.CLAUDE: [route.id for route in models.claude],
+            Harness.CODEX: [route.id for route in models.codex],
+        },
+    )
+
+
 def settings(
     *,
     namespace: str,
@@ -83,20 +101,7 @@ def settings(
     default_policy_sets: Set[str],
 ) -> AppSettingsConfig:
     return AppSettingsConfig(
-        models=ModelCatalog(
-            models=[
-                ModelOption(
-                    model=route.id,
-                    display_name=_picker_model_name(route),
-                    reasoning_efforts=_reasoning_efforts(route, models),
-                )
-                for route in models.all
-            ],
-            harnesses={
-                Harness.CLAUDE: [route.id for route in models.claude],
-                Harness.CODEX: [route.id for route in models.codex],
-            },
-        ),
+        models=model_catalog(models),
         default_policy_sets=default_policy_sets,
         connection_service_url=connection_service_url,
         # App-owned launch-form presets. The browser expands one into editable concrete

@@ -39,6 +39,7 @@ from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
+    app_settings,
     command_sandbox,
     dex,
     egress,
@@ -60,10 +61,11 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.chart import Namespace
 from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.model_selections import TESTING_APP_MODELS, HarnessRoutes, model_configs
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
-from model_catalog.catalog import GPT6_LUNA_RESPONSES
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API
 
 NAMESPACE = testing.ENV.namespace
 RUNNER_GATEWAY = "runner-gateway"
@@ -88,6 +90,9 @@ _VM_GUEST_BOOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot
 _VM_GUEST_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
 # The serial guest/initramfs_init mounts as the root.
 _VM_GUEST_ROOT_SERIAL = "guest-root"
+# What the app offers when LLM ingress forwards to the public LiteLLM: models the BuildBuddy live-test key's
+# lane admits (`cheap_experiments_models`), neither waiting on the shared GPU as testing's Claude model does.
+_PUBLIC_LITELLM_MODELS = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESPONSES,))
 
 
 def add_secret(
@@ -120,16 +125,19 @@ def linkage_client(app_origin: str) -> dex.StaticClient:
     return replace(_MCP_LINKAGE, redirect_uri=f"{app_origin}/mcp-linkage/callback")
 
 
-def environment(*, vm_sandboxes: bool, app_origin: str = APP_ORIGIN) -> Environment:
+def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORIGIN) -> Environment:
     """Build the common fixture settings; MCP renderers add their servers and Dex resources separately."""
     app_login = login_client(app_origin)
     operator_oidc = testing.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
+    routes = _PUBLIC_LITELLM_MODELS if isinstance(models, PublicLiteLLM) else TESTING_APP_MODELS
     return replace(
         testing.ENV,
         vm_sandboxes=vm_sandboxes,
+        llm_ingress=replace(testing.ENV.llm_ingress, models=model_configs(routes), codex_routes=routes.codex),
         # The scenarios' own preset in place of the deployment's, which an operator uses.
         app_config=testing.ENV.app_config.model_copy(
             update={
+                "models": app_settings.model_catalog(routes),
                 "connection_service_url": AnyHttpUrl(MCP_EDGE_SERVICE.url),
                 "thread_presets": {
                     launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)
@@ -161,7 +169,7 @@ def objects(
     *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, vm_sandboxes: bool
 ) -> list[dict[str, Any]]:
     """Synthesize the common one-node fixture, optionally replacing the production guest for VM tests."""
-    env = environment(vm_sandboxes=vm_sandboxes)
+    env = environment(vm_sandboxes=vm_sandboxes, models=models)
     fixture = build_chart(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )

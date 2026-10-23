@@ -99,7 +99,10 @@ py_library(
 py_library(
     name = "model_selections",
     srcs = ["model_selections.py"],
-    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
     deps = [
         "//agentplane/llm_ingress:models",
         "//model_catalog:catalog",

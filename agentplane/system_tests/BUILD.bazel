@@ -135,9 +135,10 @@ system_test(
 # scheduled and pulled, then turns that may each take TURN_SECONDS -- not the warm run's minutes.
 system_test(
     name = "test_session_instructions",
-    timeout = "eternal",
     srcs = ["test_session_instructions.py"],
     k3s = "scripted",
+    live = False,
+    real_model = True,
     deps = [
         ":agent",
         ":conftest",

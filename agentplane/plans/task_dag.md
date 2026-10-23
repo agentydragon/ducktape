@@ -35,7 +35,7 @@ flowchart LR
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
     end
     subgraph K3S_TRACK[System tests on k3s, retiring agentplane-testing]
-        K3S_MODEL_SCENARIOS[Candidate: the real-model set on k3s]
+        K3S_MODEL_SCENARIOS[Candidate: the egress probe with a real model on k3s]
         LIVE_TARGETS_OFF_TESTING[Candidate: live targets off testing]
         STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
         AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
@@ -50,7 +50,7 @@ flowchart LR
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
     K3S_TRACK --> K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
-    K3S_MODEL_SCENARIOS --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
+    K3S_TRACK --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s lifecycle spike]
     RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
     MESSAGING_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
@@ -1931,7 +1931,7 @@ changes.
 
 ```mermaid
 flowchart LR
-    K3S_MODEL_SCENARIOS[Candidate: the real-model set on k3s]
+    K3S_MODEL_SCENARIOS[Candidate: the egress probe with a real model on k3s]
     LIVE_TARGETS_OFF_TESTING[Candidate: live targets off testing]
     STAGING_FIRST_ROLLOUT[Candidate: risky config goes to staging]
     AGENT_TESTING_ACCESS_RETIRE[Candidate: agents' testing access]
@@ -1942,16 +1942,12 @@ flowchart LR
     AGENT_TESTING_ACCESS_RETIRE --> TESTING_ENVIRONMENT_RETIRE
 ```
 
-### `K3S_MODEL_SCENARIOS` — the real-model set on k3s
+### `K3S_MODEL_SCENARIOS` — the egress probe with a real model on k3s
 
-**Candidate.** `system_test(real_model = True)` generates `<scenario>_real_model`: a k3s target tagged
-`live_openai_api` that decrypts the BuildBuddy secret `OPENAI_API_KEY` through `test.env-secrets` and hands it to
-LLM ingress, as [the plan](testing_retirement.md#the-model-key-on-rbe) says. Only scenarios where the model's behavior
-is under test get one. Their `_real_model` targets pass on both harnesses under `--config=live-openai`, and their
-`_live` targets are deleted:
-
-- `test_session_instructions`
-- The `test_egress` probe, binding a fixture-only credential PolicySet, not staging's `github-agentydragon-agent`
+**Candidate.** `system_test(real_model = True)` generates `<scenario>_real_model` (system tests README § Real model
+on k3s); `test_session_instructions` has one. The `test_egress` probe gets one next, passing on both harnesses under
+`--config=live-openai`, and its `_live` target is deleted. On k3s it binds a fixture-only credential PolicySet, not
+staging's `github-agentydragon-agent`.
 
 ### `LIVE_TARGETS_OFF_TESTING` — no live target points at testing
 
@@ -1993,7 +1989,7 @@ produce are named at the fake and are not cleanups.
 flowchart LR
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
-    K3S_MODEL_SCENARIOS[Blocked: the real-model set on k3s, section 14] --> K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s spike targets]
+    K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s lifecycle spike]
     K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
     RUNNER_LAYERING_VM[In flight: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
 ```
@@ -2026,12 +2022,11 @@ keeps only a fault it injects, named at the fake.
 Exit: those users go through the Go Gateway's runner proxy (`sandbox_control` in `app/testing/runner_gateway.py`),
 the runner fixtures push straight to `GoHistoryService`'s ingress, and both stand-ins are deleted.
 
-### `K3S_SPIKE_TARGETS_RETIRE` — delete the k3s spike targets
+### `K3S_SPIKE_TARGETS_RETIRE` — delete the k3s lifecycle spike
 
-**Blocked on `K3S_MODEL_SCENARIOS` and the system test scenarios covering `test_lifecycle`'s cases.** Delete
-`x/k3s_env`'s `test_env` (the real-model smoke that needs `LITELLM_QWEN_KEY`) once the `_real_model` targets land, and
-`test_lifecycle` with `.github/workflows/agentplane-k3s-lifecycle.yml` once system test scenarios cover its four
-cases (check suspend/resume and storage).
+**Blocked on the system test scenarios covering `test_lifecycle`'s cases.** Delete `x/k3s_env`'s `test_lifecycle`
+with `.github/workflows/agentplane-k3s-lifecycle.yml` once system test scenarios cover its four cases (check
+suspend/resume and storage).
 
 ### `K3S_ENV_OUT_OF_X` — the k3s stack leaves `x/`
 

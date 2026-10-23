@@ -77,7 +77,7 @@ pkg_tar(
     symlinks = {"codex": "/opt/harnesses/external/+http_archive+agentplane_codex_cli_linux_x64/bin/codex"},
 )
 
-# Both harnesses, for scenarios whose model a test scripts.
+# Both harnesses, for scenarios that run a turn.
 oci_image(
     name = "runner_harnesses_image",
     base = ":runner_claude_image",
@@ -97,7 +97,6 @@ oci_image(
     )
     for variant, image in {
         "lifecycle": ":runner_image",
-        "claude": ":runner_claude_image",
         "harnesses": ":runner_harnesses_image",
     }.items()
 ]
@@ -236,41 +235,7 @@ py_library(
     ],
 )
 
-# Both tests run the whole stack, so each is its own k3s on one RBE action.
-py_test(
-    name = "test_env",
-    size = "enormous",
-    srcs = ["test_env.py"],
-    data = [
-        ":claude/runner_layout",
-        ":rendered/public-litellm.json",
-        K3S_BINARY,
-    ],
-    env = {
-        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/public-litellm.json)",
-        "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath :claude/runner_layout)",
-    },
-    env_inherit = ["LITELLM_QWEN_KEY"],
-    exec_properties = K3S_EXEC_PROPERTIES,
-    tags = _SPIKE_TAGS,
-    deps = [
-        ":rendered_fixture",
-        ":stack",
-        "//:conftest",
-        "//agentplane/app:sandbox_models",
-        "//agentplane/app/testing:client",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:harness",
-        "//agentplane/system_tests:agent",
-        "//agentplane/system_tests:conftest",
-        "@pypi//httpx",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
+# The whole stack, its own k3s on one RBE action.
 py_test(
     name = "test_lifecycle",
     size = "enormous",
@@ -316,10 +281,12 @@ py_library(
         "//agentplane/system_tests:runtime_grant",
         "//agentplane/system_tests:send_grant",
         "//cluster/cdk8s:agent_access_profiles",
+        "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/agentplane:actions",
         "//cluster/cdk8s/agentplane:app",
+        "//cluster/cdk8s/agentplane:app_settings",
         "//cluster/cdk8s/agentplane:chart",
         "//cluster/cdk8s/agentplane:command_sandbox",
         "//cluster/cdk8s/agentplane:dex",

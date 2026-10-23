@@ -15,8 +15,10 @@ marked `vm_sandboxes`. `system_test(vm_sandboxes = ...)` runs those cases, and o
 `<scenario>_vm`, on a stack with KubeVirt emulating the guest CPU and the k3s test guest
 ([VM Sandboxes](../x/k3s_env/README.md#vm-sandboxes)). PR CI runs only what a VM alone exercises:
 `test_vm_sandbox_vm` boots a VM Sandbox and runs a scripted turn on each harness through the
-launcher's egress relay. The other `_vm` targets are `manual`; name one to run it. `<scenario>_live` runs the scenario against the deployment those
-variables and the caller's kubeconfig name, testing by default ([Running live](#running-live)).
+launcher's egress relay. The other `_vm` targets are `manual`; name one to run it.
+`system_test(real_model = True)` runs the `real_model` cases as `<scenario>_real_model`
+([Real model on k3s](#real-model-on-k3s)). `<scenario>_live` runs the scenario against the deployment
+those variables and the caller's kubeconfig name, testing by default ([Running live](#running-live)).
 
 The model backend is the target's too (`AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND`). A deployment serves a
 real model. On the k3s stack, LLM ingress forwards to the scenario itself, which plays the model
@@ -238,6 +240,18 @@ requests. Its `404` must carry the BFF's structured upstream error for that exac
 operator Action request path, not an arbitrary ingress, signing-key, or login error.
 Malformed or unexpected responses fail without exposing their contents.
 
+## Real model on k3s
+
+A `_real_model` target starts the k3s stack with LLM ingress forwarding to the public LiteLLM. The
+app offers Haiku to Claude Code and luna to Codex, both on the lane of the BuildBuddy live-test key,
+which BuildBuddy decrypts into that test action alone as `OPENAI_API_KEY`
+(`test.env-secrets`, as for `live_openai_py_test`). It is tagged `live_openai_api`: PR CI builds it and
+skips it, and `--config=live-openai` runs it:
+
+```bash
+bbr test --config=live-openai //agentplane/system_tests:test_session_instructions_real_model
+```
+
 ## Running live
 
 A `_live` target is not in CI and not on RBE: it is `manual`, so `//...` never selects it, and it
@@ -256,8 +270,7 @@ runs the other egress cases with the scripted model: the model call goes through
 PolicySet bound to a running Sandbox takes effect. The latter binds the fixture's own PolicySet
 ([`runtime_grant.py`](runtime_grant.py)), not one a deployment's Sandboxes use.
 
-Run the other live scenarios by their explicit targets: `:test_session_instructions_live` and
-`:test_thread_latency`.
+Run the other live scenario by its explicit target, `:test_thread_latency`.
 
 `//agentplane/system_tests:test_ollama_routes` exercises every configured Ollama chat
 route offered by the committed testing app ConfigMap, on each harness that offers it,
