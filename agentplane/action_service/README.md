@@ -120,17 +120,11 @@ from submission to a terminal state without missing or duplicating a transition.
 The [Notification service](../notification_service/README.md) consumes this sequence directly,
 through the same `.../events` reads.
 
-`waits.ActionWaiter` provides bounded, notification-driven receipt reads for transports that offer
-waiting. `WaitOptions` defaults to immediate reads and caps waits at 30 seconds, with `decision`
-and `terminal` predicates. Each ORM insertion of a canonical Action event emits a UUID-only
-PostgreSQL `NOTIFY` in the same transaction. Each `updates.ActionUpdateBroker` owns one dedicated
-listener connection and coalesces wakeups per waiting request: the API holds one per service
-instance, and `push.ActionPushNotifier` opens a second when `web_push` is configured. It
-subscribes before rechecking durable state and releases registrations on every exit path. A lost
-listener fails existing bounded waits even if they resume after reconnection: each subscription
-is fenced to its connection generation, including across awaited receipt reads. New waits can
-subscribe after recovery; immediate reads do not require the listener. There is no timed-query
-fallback. Consumers use scoped listener ownership.
+`ActionService.GetActionRequest` reads a receipt once; `WatchActionRequest` sends its current
+receipt and follows committed changes until the requested Decision or terminal state, or the client
+deadline. MCP tools expose bounded waits through the Go MCP frontend. The Go watch subscribes to
+store notifications before reading, so a commit racing setup is observed; a reconnected listener
+wakes the watch to reread durable state. See [receipt reads and waits](SPEC.md#receipt-reads-and-waits).
 
 The dispatch coordinator re-reads every pending dispatch at startup and whenever the API's broker
 wakes it: inserting an Execution in `pending_dispatch` notifies a payload-free channel in the same

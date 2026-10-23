@@ -323,66 +323,11 @@ py_test(
 )
 
 py_library(
-    name = "operator_stream",
-    srcs = ["operator_stream.py"],
-    deps = [
-        ":updates",
-        "@pypi//fastapi",
-    ],
-)
-
-py_test(
-    name = "test_operator_stream",
-    srcs = ["test_operator_stream.py"],
-    deps = [
-        ":conftest",
-        ":operator_stream",
-        ":updates",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "updates",
     srcs = ["updates.py"],
     deps = [
         "//agentplane:changes",
         "//agentplane/postgres:listener",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "waits",
-    srcs = ["waits.py"],
-    deps = [
-        ":models",
-        ":service",
-        ":updates",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_waits",
-    size = "medium",
-    srcs = ["test_waits.py"],
-    requires_docker = True,
-    deps = [
-        ":catalog",
-        ":conftest",
-        ":db",
-        ":models",
-        ":service",
-        ":store",
-        ":updates",
-        ":waits",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane:subjects",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

@@ -18,8 +18,7 @@ import (
 const (
 	// snapshotChunk bounds the requests in one snapshot frame.
 	snapshotChunk = 64
-	// recheckInterval is how often a watch with nothing to send checks its bearer again, as Python's operator stream
-	// does between keepalives.
+	// recheckInterval is how often a watch with nothing to send checks its bearer again.
 	recheckInterval = 5 * time.Second
 )
 

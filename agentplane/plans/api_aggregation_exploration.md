@@ -41,7 +41,7 @@ presenting through the Kubernetes API.
   through the egress proxy as the Sandbox's own ServiceAccount, so no new reachability or credential.
 - **Standard list, watch and wait.** `resourceVersion` watches, `kubectl wait`, continue-token
   paging, OpenAPI and generated clients replace hand-written snapshot loops
-  (`action_service/operator_stream.py`) and per-service wait parameters.
+  (`action_service/api/watch.go`) and per-service wait parameters.
 - **Garbage collection by owner.** A record whose lifetime is a Sandbox's can carry an `ownerReference` to
   its UID and be garbage-collected with it. This does not apply to History, which must outlive the
   Sandbox.
