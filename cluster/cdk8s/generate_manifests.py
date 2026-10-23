@@ -20,7 +20,7 @@ from cluster.cdk8s import (
     claude_sandbox_secrets,
     cnpg_operator,
     crossplane,
-    crossplane_tofu_spike,
+    crossplane_forgejo_agentydragon,
     descheduler,
     dns_automation,
     ducktape_flux,
@@ -901,7 +901,6 @@ def generate_manifests(root: Path) -> None:
     budget_ledger_module = terraform.gitops_module("budget-ledger")
     cpap_data_module = terraform.gitops_module("cpap-data")
     forgejo_agentydragon_repos_module = terraform.gitops_module("forgejo-agentydragon-repos")
-    forgejo_agentydragon_module = terraform.gitops_module(crossplane_tofu_spike.TF_MODULE_NAME)
     finance_agent_module = terraform.gitops_module("finance-agent")
     forgejo_gitops_kustomization = forgejo_gitops_modules.forgejo_gitops(
         flux_chart,
@@ -915,16 +914,17 @@ def generate_manifests(root: Path) -> None:
                 budget_ledger=budget_ledger_module,
                 cpap_data=cpap_data_module,
                 agentydragon_repos=forgejo_agentydragon_repos_module,
-                agentydragon=forgejo_agentydragon_module,
                 finance_agent=finance_agent_module,
             ),
         ),
         tofu_controller_kustomization,
     )
-    crossplane_tofu_spike_artifact = artifact(crossplane_tofu_spike.NAME, crossplane_tofu_spike.OUTPUT_DIR)
-    crossplane_tofu_spike.resources(
+    crossplane_forgejo_agentydragon_artifact = artifact(
+        crossplane_forgejo_agentydragon.NAME, crossplane_forgejo_agentydragon.OUTPUT_DIR
+    )
+    crossplane_forgejo_agentydragon.resources(
         flux_chart,
-        write_directory(root, crossplane_tofu_spike_artifact, crossplane_tofu_spike.chart),
+        write_directory(root, crossplane_forgejo_agentydragon_artifact, crossplane_forgejo_agentydragon.chart),
         crossplane_opentofu_provider_kustomization,
         tofu_state_db_kustomization,
         forgejo_gitops_kustomization,
@@ -1764,7 +1764,7 @@ def generate_manifests(root: Path) -> None:
             crossplane_artifact,
             crossplane_litellm_provider_artifact,
             crossplane_opentofu_provider_artifact,
-            crossplane_tofu_spike_artifact,
+            crossplane_forgejo_agentydragon_artifact,
             external_secrets_config_artifact,
             external_secrets_operator_artifact,
             forgejo_artifact,
@@ -1913,7 +1913,6 @@ def generate_manifests(root: Path) -> None:
             budget_ledger_module,
             cpap_data_module,
             forgejo_agentydragon_repos_module,
-            forgejo_agentydragon_module,
             finance_agent_module,
             forgejo_images_module,
             litellm_keys_module,

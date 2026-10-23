@@ -1256,8 +1256,8 @@ py_library(
 )
 
 py_library(
-    name = "crossplane_tofu_spike",
-    srcs = ["crossplane_tofu_spike.py"],
+    name = "crossplane_forgejo_agentydragon",
+    srcs = ["crossplane_forgejo_agentydragon.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
@@ -1496,7 +1496,7 @@ py_library(
         ":artifact_generators",
         ":claude_sandbox_secrets",
         ":crossplane",
-        ":crossplane_tofu_spike",
+        ":crossplane_forgejo_agentydragon",
         ":descheduler",
         ":dns_automation",
         ":etcd",

@@ -326,7 +326,7 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
     ]
 
 
-def test_opentofu_provider_and_observe_only_workspace_are_ordered_and_state_safe(
+def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_state(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
@@ -343,7 +343,7 @@ def test_opentofu_provider_and_observe_only_workspace_are_ordered_and_state_safe
         for doc in documents
         if doc.get("apiVersion") == "opentofu.upbound.io/v1beta1"
         and doc.get("kind") == "ProviderConfig"
-        and doc.get("metadata", {}).get("name") == "crossplane-tofu-spike"
+        and doc.get("metadata", {}).get("name") == "crossplane-forgejo-agentydragon"
     )
     workspace = next(
         doc
@@ -355,7 +355,13 @@ def test_opentofu_provider_and_observe_only_workspace_are_ordered_and_state_safe
     resources_kustomization = next(
         doc
         for doc in documents
-        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "crossplane-tofu-spike"
+        if doc.get("kind", "").lower() == "kustomization"
+        and doc.get("metadata", {}).get("name") == "crossplane-forgejo-agentydragon"
+    )
+    forgejo_gitops_kustomization = next(
+        doc
+        for doc in documents
+        if doc.get("kind", "").lower() == "kustomization" and doc.get("metadata", {}).get("name") == "forgejo-gitops"
     )
 
     assert provider["spec"]["package"] == "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
@@ -374,8 +380,9 @@ def test_opentofu_provider_and_observe_only_workspace_are_ordered_and_state_safe
     assert 'schema_name = "forgejo_agentydragon"' in provider_config["spec"]["backendFile"]
     assert "PGPASSWORD" not in provider_config["spec"]["backendFile"]
     assert workspace["metadata"]["annotations"]["crossplane.io/external-name"] == "default"
-    assert workspace["spec"]["providerConfigRef"] == {"name": "crossplane-tofu-spike"}
-    assert workspace["spec"]["managementPolicies"] == ["Observe"]
+    assert workspace["spec"]["providerConfigRef"] == {"name": "crossplane-forgejo-agentydragon"}
+    assert workspace["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]
+    assert "Delete" not in workspace["spec"]["managementPolicies"]
     assert workspace["spec"]["deletionPolicy"] == "Orphan"
     assert workspace["spec"]["forProvider"]["source"] == "Remote"
     assert workspace["spec"]["forProvider"]["remotePullPolicy"] == "Always"
@@ -394,8 +401,16 @@ def test_opentofu_provider_and_observe_only_workspace_are_ordered_and_state_safe
         {"name": "tofu-state-db", "namespace": "ducktape-flux"},
         {"name": "forgejo-gitops", "namespace": "ducktape-flux"},
     ]
-    assert resources_kustomization["spec"]["wait"] is False
-    assert resources_kustomization["spec"]["prune"] is False
+    assert resources_kustomization["spec"]["wait"] is True
+    assert resources_kustomization["spec"]["prune"] is True
+    assert forgejo_gitops_kustomization["spec"]["wait"] is True
+    assert forgejo_gitops_kustomization["spec"]["prune"] is True
+    assert not any(
+        doc.get("apiVersion") == "infra.contrib.fluxcd.io/v1alpha2"
+        and doc.get("kind") == "Terraform"
+        and doc.get("metadata", {}).get("name") == "agentydragon"
+        for doc in documents
+    )
 
 
 def test_litellm_crossplane_cutover_waits_for_terraform_teardown(

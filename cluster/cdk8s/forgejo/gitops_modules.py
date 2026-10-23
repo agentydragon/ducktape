@@ -23,7 +23,6 @@ def chart(
     budget_ledger: ArtifactGeneratorSpecArtifacts,
     cpap_data: ArtifactGeneratorSpecArtifacts,
     agentydragon_repos: ArtifactGeneratorSpecArtifacts,
-    agentydragon: ArtifactGeneratorSpecArtifacts,
     finance_agent: ArtifactGeneratorSpecArtifacts,
 ) -> Chart:
     """One CR per module, each reading the artifact its keyword names (`terraform.gitops_module`)."""
@@ -53,7 +52,6 @@ def chart(
         # Rename only with an explicit tofu-state migration.
         schema="forgejo_codex",
     )
-    terraform.gitops_terraform(chart, "agentydragon", module=agentydragon, variables=None)
     # forgejo_collaborator.haku grants write to the haku agent account provisioned by
     # tf/gitops/haku-state.
     terraform.gitops_terraform(chart, "finance-agent", module=finance_agent, variables=None, depends_on=[haku_state_tf])

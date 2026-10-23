@@ -1,7 +1,7 @@
 apiVersion: opentofu.upbound.io/v1beta1
 kind: ProviderConfig
 metadata:
-  name: crossplane-tofu-spike
+  name: crossplane-forgejo-agentydragon
 spec:
   backendFile: |
     conn_str = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
@@ -33,5 +33,7 @@ spec:
     source: Remote
   managementPolicies:
     - Observe
+    - Create
+    - Update
   providerConfigRef:
-    name: crossplane-tofu-spike
+    name: crossplane-forgejo-agentydragon

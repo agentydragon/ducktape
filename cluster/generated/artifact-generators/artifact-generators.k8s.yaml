@@ -92,9 +92,9 @@ spec:
       name: crossplane-provider-opentofu
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/crossplane-tofu-spike/**"
-          to: "@artifact/cluster/generated/crossplane-tofu-spike/"
-      name: crossplane-tofu-spike
+        - from: "@repo/cluster/generated/crossplane-forgejo-agentydragon/**"
+          to: "@artifact/cluster/generated/crossplane-forgejo-agentydragon/"
+      name: crossplane-forgejo-agentydragon
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/external-secrets/config/**"
@@ -877,11 +877,6 @@ spec:
         - from: "@repo/tf/gitops/forgejo-agentydragon-repos/**"
           to: "@artifact/tf/gitops/forgejo-agentydragon-repos/"
       name: tf-gitops-forgejo-agentydragon-repos
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/forgejo-agentydragon/**"
-          to: "@artifact/tf/gitops/forgejo-agentydragon/"
-      name: tf-gitops-forgejo-agentydragon
       originRevision: "@repo"
     - copy:
         - from: "@repo/tf/gitops/finance-agent/**"

@@ -1991,8 +1991,8 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Observe the existing Forgejo Tofu state with Crossplane management policies limited to Observe. tofu-controller remains the writer.
-  name: crossplane-tofu-spike
+    description: Take over forgejo-agentydragon from tofu-controller using its existing PostgreSQL state; the dependency on forgejo-gitops serializes the controller handoff.
+  name: crossplane-forgejo-agentydragon
   namespace: ducktape-flux
 spec:
   dependsOn:
@@ -2003,15 +2003,15 @@ spec:
     - name: forgejo-gitops
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/generated/crossplane-tofu-spike
-  prune: false
+  path: ./cluster/generated/crossplane-forgejo-agentydragon
+  prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: crossplane-tofu-spike
+    name: crossplane-forgejo-agentydragon
     namespace: ducktape-flux
   timeout: 10m
-  wait: false
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
