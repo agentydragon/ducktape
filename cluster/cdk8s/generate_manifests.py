@@ -256,12 +256,12 @@ def generate_manifests(root: Path) -> None:
     write_generated_readme(root)
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(
-        root, staging.ENV, staging.chart
+        root, staging.LAYOUT, staging.chart
     )
     staging_assignable_grants = staging.assignable_grants()
     binding_delegation.write_manifests(root, staging.ENV, staging_assignable_grants)
     agentplane_testing_resource_chart = agentplane_generation.write_environment_manifests(
-        root, testing.ENV, testing.chart, litellm_credentials.agentplane_testing_chart
+        root, testing.LAYOUT, testing.chart, litellm_credentials.agentplane_testing_chart
     )
     agentplane_staging_health_checks = agentplane_generation.environment_health_checks(
         agentplane_staging_resource_chart, staging.ENV.namespace
@@ -1634,7 +1634,7 @@ def generate_manifests(root: Path) -> None:
         haku_egress_proxy_kustomization,
         external_secrets_operator_kustomization,
     )
-    agentplane_testing_artifact = artifact("agentplane-testing", testing.ENV.output_dir, testing.ENV.image_pins)
+    agentplane_testing_artifact = artifact("agentplane-testing", testing.LAYOUT.output_dir, testing.LAYOUT.image_pins)
     agentplane_testing_kustomization = testing.agentplane_testing(
         flux_chart,
         agentplane_testing_artifact,
@@ -1647,7 +1647,7 @@ def generate_manifests(root: Path) -> None:
         litellm_crossplane_keys_kustomization,
     )
     agentplane_testing_delivery_artifact = artifact(
-        "agentplane-testing-delivery", testing.ENV.delivery_output_dir, testing.ENV.image_pins
+        "agentplane-testing-delivery", testing.LAYOUT.delivery_output_dir, testing.LAYOUT.image_pins
     )
     runner_gateway_workload.serving(
         flux_chart,
@@ -1655,7 +1655,7 @@ def generate_manifests(root: Path) -> None:
             root,
             agentplane_testing_delivery_artifact,
             functools.partial(runner_gateway_workload.serving_chart, env=testing.ENV),
-            components=[posixpath.relpath(testing.ENV.image_pins, testing.ENV.delivery_output_dir)],
+            components=[posixpath.relpath(testing.LAYOUT.image_pins, testing.LAYOUT.delivery_output_dir)],
         ),
         agentplane_testing_kustomization,
     )
@@ -1674,7 +1674,7 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
         seaweedfs_operator_kustomization,
     )
-    agentplane_staging_artifact = artifact("agentplane-staging", staging.ENV.output_dir)
+    agentplane_staging_artifact = artifact("agentplane-staging", staging.LAYOUT.output_dir)
     agentplane_staging_kustomization = staging.agentplane_staging(
         flux_chart,
         agentplane_staging_artifact,
@@ -1687,7 +1687,7 @@ def generate_manifests(root: Path) -> None:
         litellm_crossplane_keys_kustomization,
     )
     agentplane_staging_delivery_artifact = artifact(
-        "agentplane-staging-delivery", staging.ENV.delivery_output_dir, staging.ENV.image_pins
+        "agentplane-staging-delivery", staging.LAYOUT.delivery_output_dir, staging.LAYOUT.image_pins
     )
     runner_gateway_workload.serving(
         flux_chart,
@@ -1695,7 +1695,7 @@ def generate_manifests(root: Path) -> None:
             root,
             agentplane_staging_delivery_artifact,
             functools.partial(runner_gateway_workload.serving_chart, env=staging.ENV),
-            components=[posixpath.relpath(staging.ENV.image_pins, staging.ENV.delivery_output_dir)],
+            components=[posixpath.relpath(staging.LAYOUT.image_pins, staging.LAYOUT.delivery_output_dir)],
         ),
         agentplane_staging_kustomization,
     )

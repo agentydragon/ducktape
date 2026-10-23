@@ -160,16 +160,8 @@ class GitHubAppProps:
 @dataclass(frozen=True)
 class Environment:
     namespace: str
-    # The Namespace's `description` annotation and the Flux Kustomization's.
+    # The Namespace's `description` annotation.
     description: str
-    flux_description: str
-    # The root Kustomization's directory and the hand-written image-pins Component it
-    # includes, repo-relative (manifest_roots.py).
-    output_dir: str
-    image_pins: str
-    delivery_output_dir: str
-    # Files the root Kustomization lists beside the generated one.
-    extra_resources: Sequence[str]
     replicas: ReplicaProfile
     # The ConfigMap-authored portion of agentplane/app/settings.py's `Settings`.
     app_config: AppSettingsConfig

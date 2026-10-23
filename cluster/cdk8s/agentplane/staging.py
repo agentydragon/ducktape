@@ -71,6 +71,7 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
     WebPushProps,
 )
+from cluster.cdk8s.agentplane.generation import ManifestLayout
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
@@ -293,11 +294,7 @@ _ACTION_GROUPS = {
     ),
 }
 
-ENV = Environment(
-    namespace=STAGING_NAMESPACE,
-    description=(
-        "Agentplane staging - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
-    ),
+LAYOUT = ManifestLayout(
     flux_description=(
         "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
         "Actions, app, runner template, and operator RBAC."
@@ -306,6 +303,12 @@ ENV = Environment(
     image_pins=f"{HAND_WRITTEN_ROOT}/{STAGING_NAMESPACE}/image-pins",
     delivery_output_dir=f"{GENERATED_ROOT}/{STAGING_NAMESPACE}-delivery",
     extra_resources=(_WEB_PUSH_SECRET_FILE, "github-app.sops.yaml"),
+)
+ENV = Environment(
+    namespace=STAGING_NAMESPACE,
+    description=(
+        "Agentplane staging - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
+    ),
     replicas=ReplicaProfile(
         count=2,
         strategy=DeploymentStrategy.rolling_update(
@@ -652,7 +655,7 @@ def agentplane_staging(
         flux_chart,
         ENV.namespace,
         artifact,
-        description=ENV.flux_description,
+        description=LAYOUT.flux_description,
         suspend=False,
         wait=None,
         timeout="10m",
@@ -692,7 +695,7 @@ def agentplane_staging(
                 api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
             )
         ],
-        decryption=sops_decryption(ENV.extra_resources),
+        decryption=sops_decryption(LAYOUT.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
             agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator, kyverno, crossplane_keys
         ),

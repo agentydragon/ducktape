@@ -684,7 +684,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":egress",
-        ":environment",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/providers/flux:kustomization",

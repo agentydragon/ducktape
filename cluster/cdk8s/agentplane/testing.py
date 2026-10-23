@@ -47,6 +47,7 @@ from cluster.cdk8s.agentplane.environment import (
     McpEdgeProps,
     ReplicaProfile,
 )
+from cluster.cdk8s.agentplane.generation import ManifestLayout
 from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
@@ -101,11 +102,7 @@ _ACTION_GROUPS = {
 }
 
 
-ENV = Environment(
-    namespace=TESTING_NAMESPACE,
-    description=(
-        "Agentplane testing - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
-    ),
+LAYOUT = ManifestLayout(
     flux_description=(
         "Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, "
         "Actions, app, runner template, and operator RBAC."
@@ -114,6 +111,12 @@ ENV = Environment(
     image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
     delivery_output_dir=f"{GENERATED_ROOT}/{TESTING_NAMESPACE}-delivery",
     extra_resources=(),
+)
+ENV = Environment(
+    namespace=TESTING_NAMESPACE,
+    description=(
+        "Agentplane testing - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
+    ),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config=app_settings.settings(
         namespace=TESTING_NAMESPACE,
@@ -293,7 +296,7 @@ def agentplane_testing(
         flux_chart,
         ENV.namespace,
         artifact,
-        description=ENV.flux_description,
+        description=LAYOUT.flux_description,
         suspend=False,
         wait=None,
         timeout="10m",
