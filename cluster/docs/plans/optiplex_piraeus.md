@@ -93,12 +93,19 @@ domain. A worker needs no dedicated etcd partition.
 | Allocation                    |                              Size | Purpose                                         |
 | ----------------------------- | --------------------------------: | ----------------------------------------------- |
 | Talos EFI/META/STATE          |                 Installer-defined | Boot and machine identity                       |
-| `EPHEMERAL`                   |                             8 GiB | Remaining Talos `/var` state                    |
+| `EPHEMERAL`                   |                            16 GiB | Remaining Talos `/var` state                    |
 | `CRI`                         |                            64 GiB | Images, snapshots and container writable layers |
-| `KUBELET`                     |                            24 GiB | Pod state and disk-backed emptyDir              |
+| `KUBELET`                     |                            32 GiB | Pod state and disk-backed emptyDir              |
 | `LOG`                         |                             8 GiB | System and Pod logs                             |
-| Raw `piraeus` partition       |                           128 GiB | Exclusive Piraeus LVM physical volume           |
+| Raw `piraeus` partition       |                           112 GiB | Exclusive Piraeus LVM physical volume           |
 | Boot/alignment/free remainder | 6.475 GiB before boot allocations | Record actual geometry after provisioning       |
+
+Disk-backed `emptyDir` volumes live under `/var/lib/kubelet`, so their budget
+comes from the dedicated **32 GiB KUBELET** partition. Memory-backed
+`emptyDir` uses RAM. The **16 GiB EPHEMERAL** partition holds the remaining
+Talos `/var` state; enlarging it does not enlarge `emptyDir` capacity with
+this split. See [Talos dedicated system volumes](https://github.com/siderolabs/talos/discussions/14230)
+and [Kubernetes local ephemeral storage](https://kubernetes.io/docs/concepts/storage/ephemeral-storage/).
 
 The fixed allocations total **232 GiB**. Set exact min/max sizes with
 `grow: false`, selecting the verified disk serial for every volume. Talos
@@ -110,7 +117,7 @@ enabling Piraeus; do not assume document order determines partition order.
 Point Piraeus `source.hostDevices` only at
 `/dev/disk/by-partlabel/r-piraeus`, after checking its parent serial and size.
 Use pool `ssd`, VG `piraeus_ssd`, thin pool `data`, and the accepted **4 GiB
-metadata + 4 GiB spare / 64 KiB chunks** policy. Expect roughly **120 GiB**
+metadata + 4 GiB spare / 64 KiB chunks** policy. Expect roughly **104 GiB**
 of thin-data capacity; measure the actual result. Talos owns partitioning and
 Piraeus owns the VG/thin pool. Do not initialize the whole NVMe or add a second
 Talos-managed VG owner.
@@ -121,7 +128,7 @@ consumer to `optiplex` so initial allocation is local. Preserve region `home`
 and zone `home-lan`; this adds no automatic WAN replication or relocation.
 Verify controller/CSI connectivity to OVH over Nebula as a provisioning and
 restart dependency; the diskful copy and ordinary volume I/O remain local.
-The proposed 66Gi commitments fit the estimated 120Gi data pool without
+The proposed 66Gi commitments fit the estimated 104Gi data pool without
 logical overcommit. Alerting still protects actual data/metadata headroom.
 
 Bound the image cache with OptiPlex-only kubelet configuration: propose
@@ -129,7 +136,7 @@ Bound the image cache with OptiPlex-only kubelet configuration: propose
 `imageMaximumGCAge: 168h`. Before admitting workloads, prove the required
 current images fit with GC headroom and verify node ephemeral-storage
 accounting against the new mounts. Check CI emptyDir requests/limits against
-the 24Gi kubelet budget; change the budget before reimage if they cannot fit.
+the 32Gi kubelet budget; change the budget before reimage if they cannot fit.
 
 ## Prepare reviewable changes
 
@@ -229,7 +236,7 @@ the cold capture of all four directories.
 6. Inspect every partition's label, size and parent disk. Require all system
    volumes ready and enough boot/free remainder. Only then enable the
    node-specific Piraeus gate through the reviewed source/targeted apply.
-   Confirm that its only LVM PV is the 128Gi raw partition. Reconcile Terraform
+   Confirm that its only LVM PV is the 112Gi raw partition. Reconcile Terraform
    afterward and require no remaining target drift or unrelated changes.
 
 ### 3. Accept storage, restore files, switch consumers
