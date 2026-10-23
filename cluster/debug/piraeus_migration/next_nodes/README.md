@@ -12,8 +12,11 @@ PVC and controlled-reboot admission gates and is uncordoned. The
 [roll proof](third_ssd_roll.json) records its retained off-node historical archive,
 the explicit restore/comparison waiver and physical acceptance. Attic and Study Casino
 returned to three healthy members with fresh Piraeus claims and all holds removed.
-Seaweed restoration is a separate gate: master-0 remains on its temporary HDD
-claim and the new 250Gi SSD server is proposed in PR #11624. The earlier
+The new 250Gi Seaweed SSD server passed a native move and S3 acceptance, and
+master-0 returned from HDD to a fresh 4Gi Piraeus claim with Raft identity and
+peer Pod UIDs preserved. Terraform source and node-specific state are reconciled;
+the remaining targeted plan has zero changes (refresh disabled). See
+[the final restoration proof](third_ssd_restoration.json). The earlier
 [drain checkpoint](third_ssd_drain.json) and [retirement checkpoint](third_ssd_retirement.json)
 retain their original capture times. Valkey's two members and the recreated
 empty testing database already use Piraeus on the other converted nodes.

@@ -29,14 +29,22 @@ fresh, and disposable canaries were removed before uncordoning. See
 archived off-node before the wipe; the operator waived scratch restore and file
 comparison. Retained source PV metadata does not restore erased disk contents.
 
-The evacuated legacy Seaweed SSD Pod is retired. Every SSD volume retains two
-copies on the first two converted nodes; a new 250Gi server on `104963` is proposed
-in PR #11624. Master-0 remains healthy on its temporary HDD claim on `102453`.
+The evacuated legacy Seaweed SSD Pod is retired. PR #11624 deployed the new
+250Gi Piraeus server on `104963`; a bounded native move passed, with every SSD
+volume retaining two copies and existing server/claim identities unchanged.
+Master-0 returned to a fresh 4Gi Piraeus claim on `104963`: cold Raft file hashes
+and metadata matched, topology identity was preserved, peers kept their Pod UIDs,
+and all controllers resumed. Owned S3 probes passed and were removed.
 Attic and Study Casino are restored to three healthy members, with fresh 8Gi and
 1Gi Piraeus claims on `104963`, observed WAL replay and all temporary holds removed.
 The seven normally two-member PostgreSQL clusters remain healthy on the other
 converted nodes. Forgejo Valkey has two 2Gi Piraeus claims; the testing database
 was recreated empty on a fresh 5Gi Piraeus claim by agreement (PR #11604).
+PR #11626 matched Terraform's readiness source to the accepted live node. Its
+node-specific apply completed without reboot; the remaining targeted plan has
+zero changes (refresh disabled). See [the final restoration proof](next_nodes/third_ssd_restoration.json).
+The four application claims total 263Gi against 411.18Gi of thin-data capacity;
+the overcommit issue trigger is not met on this SSD node.
 
 The HDD copy leg from `103656` to the 4TB `102453` completed 150 native moves.
 The remaining 151-copy leg to the smaller `103711`
@@ -44,7 +52,7 @@ leg remains held for physical reclamation: deleting S3 objects does not itself
 free the volume files. Four initial backup scopes, three additional scopes and
 Agentplane staging's approved snapshot were cleared; future backups remain
 enabled. Survivor-only compaction targets volumes already on `hdd-0`/`hdd-1`,
-which are disjoint from the active `hdd-2` to `hdd-1` copy inputs. Volumes still
+leaving the maintenance source's copies unchanged. Volumes still
 on the source in maintenance reject compaction there; do not count their
 unreclaimed bytes. Refresh actual disk space, copy/index overhead and growth
 before releasing the smaller-destination wave. No HDD reset or ClickHouse

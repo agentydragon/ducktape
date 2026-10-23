@@ -13,14 +13,15 @@ its gates from live state before any operation.
 
 ## Next candidates and ordering
 
-The 2026-10-22 inventory suggests `ovh-ns104952` next, then `ovh-ns104963`.
-Refresh all placements before choosing a window.
+All three OVH SSD control planes are now converted and accepted. The HDD
+evacuation is the next active lane; refresh its capacity, placements and shared
+service gates before choosing a destructive window.
 
-| Node            | Reason / complication                                                                                                                                                                                                                                 |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ovh-ns1001419` | First converted SSD control plane. Attic and Study Casino replicas returned on Piraeus; Seaweed passed a bounded native SSD move and separate S3 checks. Master-2 also returned to its 4Gi Piraeus claim.                                             |
-| `ovh-ns104952`  | Converted and accepted. Dedicated system volumes, whole-disk SSD pool, reboot/PVC acceptance, Seaweed SSD server and master-1 restoration are complete. PostgreSQL claims on this node now receive the final SSD control plane's evacuated replicas.  |
-| `ovh-ns104963`  | Converted and admitted: dedicated system partitions, whole-disk SSD pool, filesystem/block PVC and reboot acceptance passed. Master-0 remains on its temporary HDD claim; the new Seaweed SSD server and application restoration have separate gates. |
+| Node            | Reason / complication                                                                                                                                                                                                                                |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ovh-ns1001419` | First converted SSD control plane. Attic and Study Casino replicas returned on Piraeus; Seaweed passed a bounded native SSD move and separate S3 checks. Master-2 also returned to its 4Gi Piraeus claim.                                            |
+| `ovh-ns104952`  | Converted and accepted. Dedicated system volumes, whole-disk SSD pool, reboot/PVC acceptance, Seaweed SSD server and master-1 restoration are complete. PostgreSQL claims on this node now receive the final SSD control plane's evacuated replicas. |
+| `ovh-ns104963`  | Converted and accepted. Dedicated system partitions, whole-disk pool, PVC/reboot checks, Attic/Study replicas, Seaweed SSD server and master-0 restoration passed. Terraform source/state are reconciled; the node is uncordoned.                    |
 
 Finish the control planes first by default. Before evacuating the last legacy
 SSD volume server on `104963`, accept a replacement server on the converted
@@ -75,17 +76,19 @@ before the next node or pair.
 
 ## 1. Prepare the node-specific changes
 
-Current configuration is deliberately scoped to the first node. A label alone
-does not prepare another pool. Review these changes before the maintenance
+Current configuration explicitly prepares the three converted SSD nodes. A label
+alone does not prepare another pool. Review these changes before the maintenance
 window; merge only with the operator's go-ahead:
 
-- Extend [Talos configuration](../../terraform/main/ovh-nodes.tf) from first-node
-  conditionals to an explicit converted-node map. Preserve the first node's
-  accepted configuration and leave unconverted nodes unchanged. Generate the
+- Add the target to the explicit converted-node map in
+  [Talos configuration](../../terraform/main/ovh-nodes.tf). Preserve the other
+  accepted nodes and leave unconverted nodes unchanged. Generate the
   private machine configuration from the same desired source.
 - Extend [Piraeus configuration](../../cdk8s/piraeus.py) with an inert, explicit
   per-node satellite selector and the target's actual data-disk by-id path.
-  Preserve the existing operator, LINSTOR cluster, pool name and StorageClass.
+  Preserve the existing operator and LINSTOR cluster. SSD nodes reuse their
+  accepted pool name and StorageClass; the first HDD pool and class need their
+  own reviewed media-specific configuration and acceptance.
   Enable raw-device initialization only after evacuation, old Talos data-volume
   removal and disk wipe have been verified.
 - Extend [pool monitoring](../../cdk8s/piraeus_metrics.py) to the new node.
@@ -151,7 +154,8 @@ the same layout; record the actual extent/alignment result after initialization.
 | Node                          | Physical data disk |         Thin-data LV | Thin metadata + spare | Seaweed volume-server PVC |
 | ----------------------------- | -----------------: | -------------------: | --------------------: | ------------------------: |
 | `ovh-ns1001419`, applied SSD  |         476.94 GiB | 468.94 GiB, measured |             4 + 4 GiB |                     250Gi |
-| `ovh-ns104952`, proposed SSD  |         419.19 GiB |     about 411.18 GiB |             4 + 4 GiB |                     250Gi |
+| `ovh-ns104952`, applied SSD   |         419.19 GiB | 411.18 GiB, measured |             4 + 4 GiB |                     250Gi |
+| `ovh-ns104963`, applied SSD   |         419.19 GiB | 411.18 GiB, measured |             4 + 4 GiB |                     250Gi |
 | `ovh-ns103656`, candidate HDD |        1863.02 GiB |    about 1855.02 GiB |             4 + 4 GiB |   1700Gi, sizing proposal |
 
 The HDD candidate's 2000398934016-byte HGST data disk has serial `K5H8UMLA`;
