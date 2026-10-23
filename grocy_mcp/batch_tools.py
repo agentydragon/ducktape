@@ -1400,12 +1400,18 @@ def register_batch_tools(
         all_items: list[dict[str, Any]] = r.json()
         items = [i for i in all_items if int(i.get("shopping_list_id", 1)) == sl.id]
 
-        async def _delete(item_id: int) -> httpx2.Response:
-            return await client.delete(f"/objects/shopping_list/{item_id}")
+        async def _delete(item_id: int) -> None:
+            r = await client.delete(f"/objects/shopping_list/{item_id}")
+            r.raise_for_status()
 
-        responses = await asyncio.gather(*[_retry(functools.partial(_delete, int(i["id"]))) for i in items])
-        for resp in responses:
-            resp.raise_for_status()
+        await asyncio.gather(
+            *(
+                _retry_mutation(
+                    functools.partial(_delete, int(i["id"])), describe=f"clear shopping-list item {i['id']}"
+                )
+                for i in items
+            )
+        )
 
         return {"kind": "ok", "cleared": len(items)}
 
