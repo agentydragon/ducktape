@@ -372,35 +372,18 @@ is accepted.
 
 ## Action policy sets and bindings
 
-`PolicySet` and `PolicyBinding` (CRDs in `agentplane/crds/`) go through `agentplane/policy_sets.py`,
-the resolver every rule type's reader shares: `policies/resources.parse_action_rule` keeps a set's
-`action_auto_approve` rules, parsed strictly (an unknown key or policy kind or an invalid JSON Schema
-refuses the set), and skips the others. `policy_informer` list-and-watches both kinds only in
-`policy_namespace` through the shared `agentplane/policy_watch.py`, and labeled caller
-ServiceAccounts only in `caller_service_account_namespaces`, into one `PolicyIndex`.
-`ConditionReporter` writes this service's `ActionsReady` on each binding by server-side apply under
-its own field manager, so the Policy Controller's `KubernetesReady` on the same binding stays; it is
-the informer's only write, and the rendered Roles grant these permissions independently in the
-namespaces that need them. `policy_evaluation.resolve_bindings` flattens the
-pairs into one `ResolvedBinding` shape, which admission, the evidence and the policy views all read.
+`PolicySet` and `PolicyBinding` (CRDs in `agentplane/crds/`) supply Action policies. The Go
+[`informer`](informer/informer.go) watches the policy namespace's sets and bindings and labeled
+caller ServiceAccounts, and writes `ActionsReady` on bindings. The Go
+[`policies.Provider`](policies/provider.go) evaluates valid `action_auto_approve` rules at admission;
+a matching allow records `PolicyEvidence`, including the matched rule and any resolved GitHub
+repository. A set has no deny form: no match leaves the request for a human. The Go
+[`api.SubmitActionRequest`](api/submit.go) validates arguments and decides before persistence.
 
-Each policy kind is one module under `policies/` holding its wire model and its evaluator
-(`exact_actions`; `argument_schema` over the `jsonschema` package; `github_repository` and
-`github_public_repository` over the `github_policy` package, which lives here and holds the search-qualifier
-boundaries and the unauthenticated visibility lookup; `home_assistant_entity_control`, an allow-list
-over the arguments of `ha_call_service`);
-`policies/registry` assembles the `type`-discriminated union and dispatches evaluation after the
-shared "is the Action listed" gate. `policy_evaluation` holds `resolve_bindings` (the caller's
-bindings and the valid sets they name, nothing before sync) and
-`PolicySetDecisionProvider`, the one production `DecisionProvider`, which `main` builds with the
-`RepositoryVisibilityService` the `github_visibility` settings describe (`api_base_url`,
-`cache_ttl_seconds`); staging's network policy admits `api.github.com:443` for that lookup.
-`ActionService` builds the `DecisionContext` at admission with the typed caller (`SandboxCaller`
-from the workload principal, `ServiceAccountCaller` from the grant) and those bindings; the
-provider's allow carries `PolicyEvidence`, persisted on the Decision and projected as `DecisionView.policy_evidence`, whose `matched.repository`
-names the repository a GitHub kind resolved and whether the public lookup confirmed it. A set has
-no deny form: `action_auto_approve` is the only rule, and what it does not match waits for a human.
-Dispatch re-checks caller authority, never policy.
+The integration app still uses the Python `policy_informer`, `policies/resources` parser and
+`policy_evaluation.resolve_bindings` to project caller and operator policy views. This shared view
+code does not dispatch Actions. Staging's network policy admits `api.github.com:443` for the Go
+provider's public-repository lookup.
 
 `policy_view` projects that same `resolve_bindings` for readers: `GET /v1/action-policy` answers
 the authenticated caller (the ServiceAccount its Pod runs as, on the workload route) and the

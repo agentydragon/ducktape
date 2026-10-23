@@ -1,29 +1,15 @@
-"""How a caller's bindings resolve from the index at one instant, what the caller and the operator
-read of that resolution, and the provider deciding the GitHub repository kinds and the Home
-Assistant kind over it: a match carries its policy in evidence, every miss is no opinion."""
+"""How a caller's bindings resolve and project to caller and operator policy views."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import uuid4
 
 import pytest
 import pytest_bazel
-from pydantic import JsonValue
 
-from agentplane.action_service.catalog import ActionIdentity
-from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
-from agentplane.action_service.models import (
-    MatchedPolicy,
-    MatchedRepository,
-    PolicyKind,
-    PolicySource,
-    ProviderVerdict,
-    service_account_key,
-)
-from agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PolicySetDecisionProvider, resolve_bindings
+from agentplane.action_service.models import PolicyKind, service_account_key
+from agentplane.action_service.policy_evaluation import resolve_bindings
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.policy_view import (
     ArgumentSchemaView,
@@ -34,7 +20,7 @@ from agentplane.action_service.policy_view import (
     caller_view,
     subject_view,
 )
-from agentplane.action_service.providers import BindingKind, DecisionContext
+from agentplane.action_service.providers import BindingKind
 from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set, add_rule_set
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
@@ -54,9 +40,6 @@ SCHEMA_POLICY: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
-
-
-type SetSpec = tuple[str, list[dict[str, Any]]]
 
 
 def index_of(*, synced: bool = True) -> PolicyIndex:
@@ -206,60 +189,19 @@ def test_both_views_say_nothing_auto_decides_before_sync(mixed_index: PolicyInde
         assert (view.bindings, view.auto_approve_if) == ([], [])
 
 
-async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(
-    mixed_index: PolicyIndex, github_visibility: Callable[..., RepositoryVisibilityService]
-) -> None:
-    """A caller reads a Decision's evidence and its own policy in one vocabulary: the entry the
-    provider records in `MatchedPolicy` is the first `auto_approve_if` entry that matches."""
-    view = caller_view(mixed_index, WORKLOAD)
-    outcome = await PolicySetDecisionProvider(visibility=github_visibility()).decide(
-        DecisionContext(
-            request_id=uuid4(),
-            action=ActionIdentity(group="everything", name="add"),
-            arguments={},
-            caller=WORKLOAD,
-            bindings=resolve_bindings(mixed_index, WORKLOAD),
-        )
-    )
-
-    assert outcome.evidence is not None
-    matched = outcome.evidence.matched
-    # `add` is not in set-echo's schema policy, so the second entry is the one that decided.
-    entry = view.auto_approve_if[1]
-    assert (matched.policy_set, matched.index, matched.type) == (entry.policy_set, entry.index, entry.policy.type)
-    assert entry.binding in {b.name for b in outcome.evidence.bindings}
-
-
-KUBERNETES_RULE: dict[str, Any] = {"type": "kubernetes_cluster_role_binding", "clusterRole": "test-reader"}
-ECHO_RULE: dict[str, Any] = {
-    "type": "action_auto_approve",
-    "policy": {"type": "exact_actions", "actions": {"everything": ["echo"]}},
-}
-
-
-async def test_a_policy_binding_auto_approves_by_its_sets_action_rules_alone(
-    github_visibility: Callable[..., RepositoryVisibilityService],
-) -> None:
+def test_policy_binding_view_resolves_only_valid_action_rules() -> None:
     index = index_of()
-    add_rule_set(index, "ps-mixed", [KUBERNETES_RULE, ECHO_RULE])
-    add_rule_set(index, "ps-kubernetes", [KUBERNETES_RULE])
+    add_rule_set(
+        index,
+        "ps-mixed",
+        [
+            {"type": "kubernetes_cluster_role_binding", "clusterRole": "test-reader"},
+            {"type": "action_auto_approve", "policy": {"type": "exact_actions", "actions": {"everything": ["echo"]}}},
+        ],
+    )
+    add_rule_set(index, "ps-kubernetes", [{"type": "kubernetes_cluster_role_binding", "clusterRole": "test-reader"}])
     add_rule_set(index, "ps-refused", [{"type": "action_auto_approve", "policy": {"type": "nope", "actions": {}}}])
     add_policy_binding(index, "pb-workload", WORKLOAD, ["ps-mixed", "ps-kubernetes", "ps-refused", "ps-missing"])
-    outcome = await PolicySetDecisionProvider(visibility=github_visibility()).decide(
-        DecisionContext(
-            request_id=uuid4(),
-            action=ActionIdentity(group="everything", name="echo"),
-            arguments={},
-            caller=WORKLOAD,
-            bindings=resolve_bindings(index, WORKLOAD),
-        )
-    )
-    assert outcome.verdict is ProviderVerdict.ALLOW
-    assert outcome.evidence is not None
-    # The index counts every rule of the set, so it points at the rule an operator reads in it.
-    assert outcome.evidence.matched == MatchedPolicy(
-        namespace=NAMESPACE, policy_set="ps-mixed", source=PolicySource.RULES, index=1, type=PolicyKind.EXACT_ACTIONS
-    )
 
     operator = subject_view(index, WORKLOAD)
     assert [(b.kind, b.name) for b in operator.bindings] == [(BindingKind.POLICY_BINDING, "pb-workload")]
@@ -272,172 +214,8 @@ async def test_a_policy_binding_auto_approves_by_its_sets_action_rules_alone(
     assert [b.policy_sets for b in caller_view(index, WORKLOAD).bindings] == [["ps-mixed", "ps-kubernetes"]]
 
 
-GITHUB_READ_ACTIONS = {"github": ["get_file_contents", "search_pull_requests", "search_code"]}
-GET_FILE = ActionIdentity(group="github", name="get_file_contents")
-REPOSITORY_SET: SetSpec = (
-    "set-repository",
-    [{"type": "github_repository", "actions": GITHUB_READ_ACTIONS, "owner": "test-owner", "repository": "test-repo"}],
-)
-PUBLIC_SET: SetSpec = ("set-public", [{"type": "github_public_repository", "actions": GITHUB_READ_ACTIONS}])
-
-
-def _context(action: ActionIdentity, arguments: dict[str, JsonValue], *sets: SetSpec) -> DecisionContext:
-    index = index_of()
-    for name, policies in sets:
-        add_policy_set(index, name, policies)
-    add_policy_binding(index, "b-github", WORKLOAD, [name for name, _ in sets])
-    return DecisionContext(
-        request_id=uuid4(),
-        action=action,
-        arguments=arguments,
-        caller=WORKLOAD,
-        bindings=resolve_bindings(index, WORKLOAD),
-    )
-
-
-async def test_github_repository_set_auto_approves_its_repository_with_the_repository_in_evidence(
-    github_visibility: Callable[..., RepositoryVisibilityService],
-) -> None:
-    provider = PolicySetDecisionProvider(visibility=github_visibility())
-    outcome = await provider.decide(
-        _context(GET_FILE, {"owner": "Test-Owner", "repo": "test-repo", "path": "README.md"}, REPOSITORY_SET)
-    )
-    assert outcome.verdict is ProviderVerdict.ALLOW
-    assert outcome.reason_code == AUTO_APPROVE_REASON
-    assert outcome.evidence is not None
-    assert outcome.evidence.matched == MatchedPolicy(
-        namespace=NAMESPACE,
-        policy_set="set-repository",
-        source=PolicySource.RULES,
-        index=0,
-        type=PolicyKind.GITHUB_REPOSITORY,
-        repository=MatchedRepository(owner="Test-Owner", repository="test-repo", confirmed_public=False),
-    )
-
-
-@pytest.mark.parametrize(
-    ("action", "arguments"),
-    [
-        pytest.param(GET_FILE, {"owner": "test-owner", "repo": "other", "path": "x"}, id="other-repository"),
-        pytest.param(GET_FILE, {"owner": "test-owner", "path": "x"}, id="no-repository"),
-        pytest.param(
-            ActionIdentity(group="github", name="search_pull_requests"),
-            {"owner": "test-owner", "repo": "test-repo", "query": "repo:someone/else is:open"},
-            id="smuggled-pull-request-qualifier",
-        ),
-        pytest.param(
-            ActionIdentity(group="github", name="search_code"),
-            {"query": "repo:test-owner/test-repo repo:someone/else x"},
-            id="two-code-search-qualifiers",
-        ),
-        pytest.param(
-            ActionIdentity(group="github", name="issue_read"),
-            {"owner": "test-owner", "repo": "test-repo", "issue_number": 1},
-            id="unlisted-action",
-        ),
-    ],
-)
-async def test_github_repository_set_misses_take_the_human_path(
-    action: ActionIdentity,
-    arguments: dict[str, JsonValue],
-    github_visibility: Callable[..., RepositoryVisibilityService],
-) -> None:
-    provider = PolicySetDecisionProvider(visibility=github_visibility())
-    outcome = await provider.decide(_context(action, arguments, REPOSITORY_SET))
-    assert outcome.verdict is ProviderVerdict.NO_OPINION
-    assert outcome.evidence is None
-
-
-async def test_github_public_repository_set_auto_approves_a_confirmed_public_repository(
-    github_visibility: Callable[..., RepositoryVisibilityService],
-) -> None:
-    provider = PolicySetDecisionProvider(visibility=github_visibility(("someone", "public-thing")))
-    outcome = await provider.decide(
-        _context(GET_FILE, {"owner": "someone", "repo": "public-thing", "path": "README.md"}, PUBLIC_SET)
-    )
-    assert outcome.verdict is ProviderVerdict.ALLOW
-    assert outcome.evidence is not None
-    assert outcome.evidence.matched.type is PolicyKind.GITHUB_PUBLIC_REPOSITORY
-    assert outcome.evidence.matched.repository == MatchedRepository(
-        owner="someone", repository="public-thing", confirmed_public=True
-    )
-    assert outcome.reason_description is not None
-    assert "confirmed-public repository someone/public-thing" in outcome.reason_description
-
-
-@pytest.mark.parametrize(
-    ("public", "unavailable"),
-    [
-        pytest.param((), False, id="not-public"),
-        pytest.param((("someone", "public-thing"),), True, id="lookup-unavailable"),
-    ],
-)
-async def test_github_public_repository_set_never_approves_without_a_confirmed_lookup(
-    public: tuple[tuple[str, str], ...],
-    unavailable: bool,
-    github_visibility: Callable[..., RepositoryVisibilityService],
-) -> None:
-    provider = PolicySetDecisionProvider(visibility=github_visibility(*public, unavailable=unavailable))
-    outcome = await provider.decide(
-        _context(GET_FILE, {"owner": "someone", "repo": "public-thing", "path": "README.md"}, PUBLIC_SET)
-    )
-    assert outcome.verdict is ProviderVerdict.NO_OPINION
-    assert outcome.evidence is None
-
-
-CALL_SERVICE = ActionIdentity(group="ha-test", name="ha_call_service")
-HOME_ASSISTANT_SET: SetSpec = (
-    "set-home-assistant",
-    [
-        {
-            "type": "home_assistant_entity_control",
-            "actions": {"ha-test": ["ha_call_service"]},
-            "entities": {"light.test_lamp": ["turn_on"]},
-        }
-    ],
-)
-LAMP_ON: dict[str, JsonValue] = {"domain": "light", "service": "turn_on", "entity_id": "light.test_lamp"}
-
-
-async def test_home_assistant_set_auto_approves_a_configured_service_call(
-    github_visibility: Callable[..., RepositoryVisibilityService],
-) -> None:
-    provider = PolicySetDecisionProvider(visibility=github_visibility())
-    outcome = await provider.decide(_context(CALL_SERVICE, LAMP_ON, HOME_ASSISTANT_SET))
-    assert outcome.verdict is ProviderVerdict.ALLOW
-    assert outcome.evidence is not None
-    assert outcome.evidence.matched == MatchedPolicy(
-        namespace=NAMESPACE,
-        policy_set="set-home-assistant",
-        source=PolicySource.RULES,
-        index=0,
-        type=PolicyKind.HOME_ASSISTANT_ENTITY_CONTROL,
-    )
-
-
-@pytest.mark.parametrize(
-    ("action", "arguments"),
-    [
-        pytest.param(CALL_SERVICE, {**LAMP_ON, "ws_command": {"type": "config/anything"}}, id="websocket-escape-hatch"),
-        pytest.param(CALL_SERVICE, {**LAMP_ON, "entity_id": "light.test_other"}, id="another-entity"),
-        pytest.param(ActionIdentity(group="ha-test", name="ha_bulk_control"), LAMP_ON, id="unlisted-action"),
-    ],
-)
-async def test_home_assistant_set_misses_take_the_human_path(
-    action: ActionIdentity,
-    arguments: dict[str, JsonValue],
-    github_visibility: Callable[..., RepositoryVisibilityService],
-) -> None:
-    provider = PolicySetDecisionProvider(visibility=github_visibility())
-    outcome = await provider.decide(_context(action, arguments, HOME_ASSISTANT_SET))
-    assert outcome.verdict is ProviderVerdict.NO_OPINION
-    assert outcome.evidence is None
-
-
 def test_a_watch_that_stopped_refreshing_stops_auto_deciding() -> None:
-    """The bug this guards: listing every kind once is a latch, so a replica whose watches wedged
-    went on auto-approving from the snapshot it took before they did -- against bindings an operator
-    may since have revoked, with nothing about the answers looking wrong."""
+    """A stale informer copy cannot expose a policy as effective."""
     index = index_of()
     add_policy_set(index, "set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}])
     add_policy_binding(index, "b-workload", WORKLOAD, ["set-reads"])

@@ -336,7 +336,6 @@ system_test(
         "//agentplane:policy_sets",
         "//agentplane/action_service:action_service_pb2",
         "//agentplane/action_service:operator_action_service_pb2",
-        "//agentplane/action_service:policy_evaluation",
         "//agentplane/action_service/policies:resources",
         "//agentplane/app:action_policy",
         "//agentplane/app:api",

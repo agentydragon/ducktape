@@ -30,19 +30,19 @@ the same way regardless of which process (or how many restarts of it) happens to
 - **Per-Execution lease** (`action_execution.lease_token` / `lease_expires_at`): granted at claim
   time with an unguessable `lease_token`, the authentication artifact for every later
   worker-originated call about that one `request_id` — the seam a future out-of-process worker
-  would present over the wire, called in-process for v0 via `ExecutionLease.heartbeat()`. Every
-  adapter renews it on a fixed interval while its own call is in flight (`hold_lease`), and the
+  would present over the wire, called in-process for v0 via `worker.Lease.Renew()`. Every
+  adapter renews it on a fixed interval while its own call is in flight (`worker.Hold`), and the
   coordinator keeps renewing while it persists the completion
   ([README § Shutdown budgets](../action_service/README.md#shutdown-budgets)). Renewal proves the
   local owner is alive, not that the backend is progressing, so each adapter carries its own bound
   on the call it renews across: the MCP adapter's execution deadline, and a sandbox command's own
-  `timeout_seconds`. Exceeding one raises `ExecutionOutcomeUnknownError`, while lease expiry
+  `timeout_seconds`. Exceeding one returns `worker.ErrOutcomeUnknown`, while lease expiry
   catches a dead or stalled owner.
 
-A periodic sweep (`ActionStore.expire_stale_leases`) — not process startup — marks a lease-holding
+A periodic sweep (`store.Store.ExpireStaleLeases`) — not process startup — marks a lease-holding
 Execution `execution_unknown` when its lease lapses. The owning coordinator also records
-uncertainty itself when it can: `execution_outcome_unknown` when the adapter raises
-`ExecutionOutcomeUnknownError`, and `coordinator_stopped` when a claimed dispatch is cancelled,
+uncertainty itself when it can: `execution_outcome_unknown` when the adapter returns
+`worker.ErrOutcomeUnknown`, and `coordinator_stopped` when a claimed dispatch is cancelled,
 whether `dispatching` or `running`. The sweep runs identically before and after any coordinator
 restart, so "the old process died" and "a separate worker died" are indistinguishable by design,
 and both get the same safe treatment. The sweep also distinguishes, for operator
@@ -71,9 +71,9 @@ stateDiagram-v2
 
     dispatching --> execution_unknown : expire_stale_leases\n(lease_expired / executor_lost)
     running --> execution_unknown : expire_stale_leases\n(lease_expired / executor_lost)
-    dispatching --> execution_unknown : coordinator CancelledError\n(coordinator_stopped)
-    running --> execution_unknown : coordinator CancelledError\n(coordinator_stopped)
-    running --> execution_unknown : adapter raises ExecutionOutcomeUnknownError\n(execution_outcome_unknown)
+    dispatching --> execution_unknown : coordinator stops\n(coordinator_stopped)
+    running --> execution_unknown : coordinator stops\n(coordinator_stopped)
+    running --> execution_unknown : adapter returns ErrOutcomeUnknown\n(execution_outcome_unknown)
 
     execution_unknown --> succeeded : finish_execution, same lease\n(reconciled: late_completion)
     execution_unknown --> failed : finish_execution, same lease\n(reconciled: late_completion)
@@ -93,7 +93,7 @@ has not yet been invoked. See [the cancellation API](../action_service/README.md
 
 | Code                        | Meaning                                                                    |
 | --------------------------- | -------------------------------------------------------------------------- |
-| `execution_outcome_unknown` | The adapter itself raised `ExecutionOutcomeUnknownError`.                  |
+| `execution_outcome_unknown` | The adapter returned `worker.ErrOutcomeUnknown`.                           |
 | `coordinator_stopped`       | Graceful shutdown mid-dispatch; the coordinator marked it unknown itself.  |
 | `lease_expired`             | The lease lapsed; the owning executor's own health heartbeat is fresh.     |
 | `executor_lost`             | The lease lapsed and the owning executor's health heartbeat is also stale. |
@@ -102,12 +102,11 @@ Late completion is recorded in `reconciled_at`. The Action Service no longer rec
 source code or executor identity for that transition; those legacy columns stay in the schema until
 writer-free images have replaced the current deployments and a follow-up migration removes them.
 
-None of these carry adapter/provider text; `FAILED` executions still classify by
-`type(error).__name__` as before, unrelated to this liveness mechanism.
+None of these carry adapter/provider text; `FAILED` executions retain their executor error classification, unrelated to this liveness mechanism.
 
 ## What this does not decide
 
-- Transport for a real out-of-process worker (still in-process; `ExecutionLease` is the contract a
+- Transport for a real out-of-process worker (still in-process; `worker.Lease` is the contract a
   network call would eventually carry).
 - Which credential a worker process may hold, or its Kubernetes ServiceAccount boundary.
 - Any authoritative status lookup that reconciles an `execution_unknown` outcome.

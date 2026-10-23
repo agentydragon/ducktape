@@ -1,16 +1,13 @@
-"""What a DecisionProvider is given at admission."""
+"""Resolved policy bindings shared by the app policy views."""
 
 from __future__ import annotations
 
 from enum import StrEnum
-from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
+from pydantic import AwareDatetime, BaseModel, ConfigDict
 
-from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.models import PolicySource
 from agentplane.action_service.policies.registry import Policy
-from agentplane.subjects import ServiceAccountRef
 
 
 class ResolvedPolicySet(BaseModel):
@@ -41,21 +38,3 @@ class ResolvedBinding(BaseModel):
     resource_version: str
     expires_at: AwareDatetime | None
     policy_sets: tuple[ResolvedPolicySet, ...]
-
-
-class DecisionContext(BaseModel):
-    """Trusted evaluation input for a DecisionProvider.
-
-    The caller is the authenticated Sandbox or the Connection's ServiceAccount, and the bindings
-    are the ones the policy informer held for it at admission — never anything the request claimed.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    request_id: UUID
-    action: ActionIdentity
-    arguments: dict[str, JsonValue]
-    caller: ServiceAccountRef
-    bindings: tuple[ResolvedBinding, ...] = Field(
-        description="Empty while the informer's copy is not in sync, and for a caller nothing names: human-only."
-    )

@@ -199,8 +199,7 @@ def _policy_view(policy: Policy) -> PolicyView:
 
 
 def _effective(bindings: tuple[ResolvedBinding, ...]) -> list[EffectivePolicyView]:
-    """Auto-approve policies in the order `PolicySetDecisionProvider` walks them: binding, then set,
-    then entry."""
+    """Auto-approve policies in binding, set, and rule order."""
     return [
         EffectivePolicyView(
             binding=resolved.name,

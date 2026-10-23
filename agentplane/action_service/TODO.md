@@ -39,7 +39,7 @@ that dispatch.
 
 An agent that would rather not spend the operator's attention has no way to ask `request_action`
 to run an Action only if a policy decides it, and to be told the refusal instead of queuing it for
-a human. `ActionService.submit_decided` already refuses that way for direct tools, before anything
+a human. `SubmitActionRequest` with `decided_only` already refuses that way for direct tools, before anything
 is persisted.
 
 ## Refuse an Action the caller's own permissions already cover

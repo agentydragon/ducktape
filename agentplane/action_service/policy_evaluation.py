@@ -1,37 +1,13 @@
-"""A caller's bindings as they stand at admission, and the provider that decides from them.
-
-The kinds themselves live in `policies/`. Evaluation happens once, at admission, against the
-objects the informer holds then; a later edit, expiry or deletion changes the next Action's
-Decision, not this one's, so the Decision records what it saw.
-"""
+"""Resolve a caller's current policy bindings for the app's policy views."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
-from agentplane.action_service.catalog import ActionIdentity
-from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
-from agentplane.action_service.models import (
-    BindingEvidence,
-    MatchedPolicy,
-    PolicyEvidence,
-    PolicySetEvidence,
-    PolicySource,
-    ProviderOutcome,
-    ProviderVerdict,
-)
-from agentplane.action_service.policies.kind import Matched, NotMatched
-from agentplane.action_service.policies.registry import Policy, evaluate, lists
+from agentplane.action_service.models import PolicySource
+from agentplane.action_service.policies.registry import Policy
 from agentplane.action_service.policy_informer import PolicyIndex
-from agentplane.action_service.providers import BindingKind, DecisionContext, ResolvedBinding, ResolvedPolicySet
+from agentplane.action_service.providers import BindingKind, ResolvedBinding, ResolvedPolicySet
 from agentplane.policy_sets import PolicyBinding, PolicySet, subject_bindings
 from agentplane.subjects import ServiceAccountRef
-
-PROVIDER_NAME = "action_policy_set"
-AUTO_APPROVE_REASON = "policy_set_auto_approve"
-NO_MATCH_REASON = "no_auto_approve_match"
-# ProviderOutcome bounds the explanation; object names alone can approach it.
-_DESCRIPTION_LIMIT = 500
 
 
 def resolve_bindings(index: PolicyIndex, caller: ServiceAccountRef) -> tuple[ResolvedBinding, ...]:
@@ -63,91 +39,3 @@ def _rule_set(binding: PolicyBinding, policy_set: PolicySet[Policy]) -> Resolved
         source=PolicySource.RULES,
         policies=tuple((numbered.number, numbered.rule) for numbered in policy_set.rules),
     )
-
-
-def auto_approvable(bindings: Sequence[ResolvedBinding]) -> set[ActionIdentity]:
-    """Every Action some auto-approve policy of these bindings names, whatever its arguments."""
-    return {
-        ActionIdentity(group=group, name=name)
-        for resolved in bindings
-        for policy_set in resolved.policy_sets
-        for _, policy in policy_set.policies
-        for group, names in policy.actions.items()
-        for name in names
-    }
-
-
-def _evidence(context: DecisionContext, matched: MatchedPolicy) -> PolicyEvidence:
-    sets = {
-        (policy_set.source, policy_set.namespace, policy_set.name): policy_set
-        for resolved in context.bindings
-        for policy_set in resolved.policy_sets
-    }
-    return PolicyEvidence(
-        bindings=[
-            BindingEvidence(namespace=binding.namespace, name=binding.name, resource_version=binding.resource_version)
-            for binding in context.bindings
-        ],
-        policy_sets=[
-            PolicySetEvidence(namespace=policy_set.namespace, name=policy_set.name, generation=policy_set.generation)
-            for policy_set in sets.values()
-        ],
-        matched=matched,
-    )
-
-
-class PolicySetDecisionProvider:
-    """Allows a request the caller's bindings auto-approve; anything else is no opinion.
-
-    Auto-approval is the only form an Action policy takes, a `PolicySet`'s `action_auto_approve`
-    rules; there is no deny form, so what does not match waits for a human.
-    """
-
-    name = PROVIDER_NAME
-
-    def __init__(self, *, visibility: RepositoryVisibilityService) -> None:
-        self._visibility = visibility
-
-    async def decide(self, context: DecisionContext) -> ProviderOutcome:
-        # Why each policy naming this Action did not match. No Decision records a no-opinion, so
-        # this reaches only a direct caller refused because nothing decided.
-        declined: list[str] = []
-        for resolved in context.bindings:
-            for policy_set in resolved.policy_sets:
-                for index, policy in policy_set.policies:
-                    match await evaluate(policy, context.action, context.arguments, self._visibility):
-                        case Matched(explanation=explanation, repository=repository):
-                            return ProviderOutcome(
-                                verdict=ProviderVerdict.ALLOW,
-                                reason_code=AUTO_APPROVE_REASON,
-                                reason_description=(
-                                    f"binding {resolved.namespace}/{resolved.name} set {policy_set.name} "
-                                    f"{policy_set.source}[{index}] {policy.type}: {explanation}"
-                                )[:_DESCRIPTION_LIMIT],
-                                evidence=_evidence(
-                                    context,
-                                    MatchedPolicy(
-                                        namespace=policy_set.namespace,
-                                        policy_set=policy_set.name,
-                                        source=policy_set.source,
-                                        index=index,
-                                        type=policy.type,
-                                        repository=repository,
-                                    ),
-                                ),
-                            )
-                        case NotMatched(reason=reason):
-                            if lists(policy, context.action):
-                                declined.append(
-                                    f"set {policy_set.name} {policy_set.source}[{index}] {policy.type}: {reason}"
-                                )
-        action = context.action
-        return ProviderOutcome(
-            verdict=ProviderVerdict.NO_OPINION,
-            reason_code=NO_MATCH_REASON,
-            reason_description=(
-                "; ".join(declined)
-                if declined
-                else f"no auto-approve policy bound to the caller lists {action.group}/{action.name}"
-            )[:_DESCRIPTION_LIMIT],
-        )

@@ -52,39 +52,6 @@ py_library(
 )
 
 py_library(
-    name = "store",
-    srcs = ["store.py"],
-    deps = [
-        ":catalog",
-        ":db",
-        ":models",
-        "//agentplane:subjects",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "service",
-    srcs = ["service.py"],
-    deps = [
-        ":catalog",
-        ":models",
-        ":policy_evaluation",
-        ":policy_informer",
-        ":policy_view",
-        ":providers",
-        ":store",
-        "//agentplane:changes",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:subjects",
-        "@pypi//jsonschema",
-        "@pypi//referencing",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
     name = "database_migrate",
     testonly = True,
     srcs = ["database_migrate.py"],
@@ -102,29 +69,6 @@ py_library(
     deps = [
         "//agentplane/action_service/testing:fixtures",
         "//util/testing:postgres_fixtures",
-    ],
-)
-
-py_test(
-    name = "test_executor_liveness",
-    size = "medium",
-    srcs = ["test_executor_liveness.py"],
-    requires_docker = True,
-    deps = [
-        ":catalog",
-        ":conftest",
-        ":db",
-        ":models",
-        ":service",
-        ":store",
-        ":updates",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane:subjects",
-        "//agentplane/action_service/testing:lifecycle",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -178,26 +122,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_cancellation",
-    size = "medium",
-    srcs = ["test_cancellation.py"],
-    requires_docker = True,
-    deps = [
-        ":catalog",
-        ":conftest",
-        ":db",
-        ":models",
-        ":service",
-        ":store",
-        "//:conftest",
-        "//agentplane:subjects",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 py_library(
     name = "policy_informer",
     srcs = ["policy_informer.py"],
@@ -241,14 +165,11 @@ py_library(
     name = "policy_evaluation",
     srcs = ["policy_evaluation.py"],
     deps = [
-        ":catalog",
         ":models",
         ":policy_informer",
         ":providers",
         "//agentplane:policy_sets",
         "//agentplane:subjects",
-        "//agentplane/action_service/github_policy:visibility",
-        "//agentplane/action_service/policies:kind",
         "//agentplane/action_service/policies:registry",
     ],
 )
@@ -257,9 +178,7 @@ py_library(
     name = "providers",
     srcs = ["providers.py"],
     deps = [
-        ":catalog",
         ":models",
-        "//agentplane:subjects",
         "//agentplane/action_service/policies:registry",
         "@pypi//pydantic",
     ],
@@ -269,7 +188,6 @@ py_test(
     name = "test_policy_evaluation",
     srcs = ["test_policy_evaluation.py"],
     deps = [
-        ":catalog",
         ":conftest",
         ":models",
         ":policy_evaluation",
@@ -279,9 +197,7 @@ py_test(
         "//:conftest",
         "//agentplane:kubernetes_watch",
         "//agentplane:subjects",
-        "//agentplane/action_service/github_policy:visibility",
         "//agentplane/action_service/testing:policies",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

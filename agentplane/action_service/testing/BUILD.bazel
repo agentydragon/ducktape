@@ -9,26 +9,11 @@ package(
 )
 
 py_library(
-    name = "lifecycle",
-    srcs = ["lifecycle.py"],
-    deps = [
-        "//agentplane/action_service:models",
-        "//agentplane/action_service:service",
-        "//agentplane/action_service:store",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
     name = "fixtures",
     srcs = ["fixtures.py"],
     deps = [
-        "//agentplane/action_service:catalog",
         "//agentplane/action_service:database_migrate",
         "//agentplane/action_service:db",
-        "//agentplane/action_service:models",
-        "//agentplane/action_service:service",
-        "//agentplane/action_service:store",
         "//agentplane/action_service/github_policy:visibility",
         "//util/testing:postgres_fixtures",
         "//util/testing:sqlalchemy_engines",

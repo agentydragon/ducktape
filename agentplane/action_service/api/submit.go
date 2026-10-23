@@ -20,8 +20,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// providerTimeout bounds the decision provider at admission, as Python's DEFAULT_PROVIDER_TIMEOUT_SECONDS does: a
-// GitHub lookup that has not answered by then confirms nothing, so the request waits for an operator.
+// providerTimeout bounds the decision provider at admission: a GitHub lookup that has not answered
+// by then confirms nothing, so the request waits for an operator.
 const providerTimeout = 5 * time.Second
 
 // Submissions is what SubmitActionRequest admits a request against, beside the catalog, which holds the Actions a

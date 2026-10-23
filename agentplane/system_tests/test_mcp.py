@@ -28,7 +28,6 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 
 from agentplane.action_service import action_service_pb2, operator_action_service_pb2
 from agentplane.action_service.policies.resources import ACTION_RULE_TYPE, ACTIONS_READY_CONDITION
-from agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from agentplane.app.action_policy import ActionPolicyView
 from agentplane.app.api import CallerGrantView
 from agentplane.app.sandbox_models import SandboxView
@@ -531,7 +530,7 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     receipt = _bff_request(await operator_bff.get(f"/upstream/actions/v1/action-requests/{approved.id}"))
     assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
     assert receipt.HasField("decision")
-    assert receipt.decision.provider == PROVIDER_NAME
+    assert receipt.decision.provider == "action_policy_set"
     assert receipt.decision.HasField("policy_evidence")
     evidence = receipt.decision.policy_evidence
     # Our Sandbox kind brings a PolicyBinding of its own, so the evidence may name more than ours.

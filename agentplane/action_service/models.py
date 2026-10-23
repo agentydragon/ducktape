@@ -358,35 +358,3 @@ class ExecutionClaim(BaseModel):
     executor_id: str
     lease_token: UUID
     lease_expires_at: datetime
-
-
-class ProviderVerdict(StrEnum):
-    """A synchronous provider's own disposition; distinct from the aggregated Decision Verdict."""
-
-    ALLOW = "allow"
-    DENY = "deny"
-    NO_OPINION = "no_opinion"
-
-
-class ProviderOutcome(BaseModel):
-    """One provider's authoritative outcome: bounded and safe for the Action audit/projection.
-
-    `reason_description` is a provider-authored explanation, never unrestricted chain of thought.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    verdict: ProviderVerdict
-    reason_code: str = Field(min_length=1, max_length=64)
-    reason_description: str | None = Field(default=None, max_length=500)
-    evidence: PolicyEvidence | None = Field(
-        default=None, description="Recorded on the Decision when the provider decided from policy objects."
-    )
-
-
-@dataclass(frozen=True)
-class ProviderVote:
-    """The decisive outcome of admission's provider evaluation and the provider that cast it."""
-
-    provider: str
-    outcome: ProviderOutcome
