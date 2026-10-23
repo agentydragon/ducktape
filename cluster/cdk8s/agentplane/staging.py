@@ -408,7 +408,7 @@ ENV = Environment(
     ),
     mcp_edge=McpEdgeProps(
         replicas=ReplicaProfile(
-            count=0, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None
+            count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None
         ),
         operator_oidc=_FEDERATION_TARGET,
         caller_service_account_namespaces=frozenset({STAGING_NAMESPACE}),
