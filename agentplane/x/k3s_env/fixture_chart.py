@@ -11,13 +11,10 @@ and standalone edge use loopback HTTP origins for OAuth callbacks, served by por
 
 from __future__ import annotations
 
-import secrets
-import string
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-import bcrypt
 from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRulesMethods
 from cdk8s import ApiObjectMetadata, Chart, Size, Testing
 from cdk8s_plus_34 import (
@@ -45,6 +42,7 @@ from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, mcp_servers, runtime_grant, send_grant
 from agentplane.x.k3s_env import fixture_database
+from agentplane.x.k3s_env.fixture_credentials import Credentials, McpCredentials
 from agentplane.x.k3s_env.rendered_fixture import LocalModel, McpInputs, Models, PublicLiteLLM
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
@@ -116,10 +114,6 @@ _VM_GUEST_ROOT_SERIAL = "guest-root"
 _MCP_EDGE_TEST_CALLER = "mcp-edge-test-caller"
 
 
-def _password(length: int = 40) -> str:
-    return "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(length))
-
-
 def _secret(
     chart: Chart, name: str, data: dict[str, str], *, namespace: str = NAMESPACE, kind: str = "Opaque"
 ) -> k8s.KubeSecret:
@@ -141,9 +135,13 @@ def objects(
     models: Models,
     mcp: McpInputs | None,
     vm_sandboxes: bool,
+    credentials: Credentials,
+    mcp_credentials: McpCredentials | None,
 ) -> list[dict[str, Any]]:
     """Synthesize the one-node, operator-light fixture; Dex and the MCP servers `test_mcp` calls only
     given `mcp`; the VM template, test guest and launcher relay only with `vm_sandboxes`."""
+    if (mcp is None) != (mcp_credentials is None):
+        raise ValueError("MCP inputs and credentials must be supplied together")
     app_origin = mcp.app_origin if mcp is not None else APP_ORIGIN
     app_login = replace(_APP_LOGIN, redirect_uri=f"{app_origin}/auth/callback")
     mcp_linkage = replace(_MCP_LINKAGE, redirect_uri=f"{app_origin}/mcp-linkage/callback")
@@ -205,7 +203,7 @@ def objects(
     app = Testing.app()
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
-    fixture_database.add_database(chart, env)
+    fixture_database.add_database(chart, env, credentials)
     app_database_url = (
         SecretRef(namespace=NAMESPACE, name="postgres-app").key("async-uri").env_value(chart, "app-database-url")
     )
@@ -411,17 +409,24 @@ def objects(
     _secret(
         chart,
         app_component.oidc_secret(NAMESPACE).name,
-        {"client-id": _APP_LOGIN.id, "client-secret": _password(), "session-secret": _password(64)},
+        {
+            "client-id": _APP_LOGIN.id,
+            "client-secret": credentials.app_client_secret,
+            "session-secret": credentials.app_session_secret,
+        },
     )
     _secret(
-        chart, actions.mcp_oauth_secret(NAMESPACE).name, {"client-id": _MCP_LINKAGE.id, "client-secret": _password()}
+        chart,
+        actions.mcp_oauth_secret(NAMESPACE).name,
+        {"client-id": _MCP_LINKAGE.id, "client-secret": credentials.actions_client_secret},
     )
-    if mcp is not None:
+    if mcp is not None and mcp_credentials is not None:
         mcp_edge_login = replace(_MCP_EDGE_LOGIN, redirect_uri=f"{mcp.mcp_edge_origin}/auth/callback")
-        edge_oauth_secret = _password()
         edge_oauth = _mcp_edge_oauth(mcp.mcp_edge_origin, app_origin, mcp_edge_login.id)
         _secret(
-            chart, _MCP_EDGE_OAUTH_SECRET, {"client-secret": edge_oauth_secret, "oauth": edge_oauth.model_dump_json()}
+            chart,
+            _MCP_EDGE_OAUTH_SECRET,
+            {"client-secret": mcp_credentials.edge_client_secret, "oauth": edge_oauth.model_dump_json()},
         )
         ServiceAccount(
             chart,
@@ -432,6 +437,7 @@ def objects(
         _add_mcp_fixtures(
             chart,
             mcp,
+            credentials=mcp_credentials,
             app_login=app_login,
             mcp_linkage=mcp_linkage,
             mcp_edge_login=mcp_edge_login,
@@ -536,6 +542,7 @@ def _add_mcp_fixtures(
     chart: Chart,
     mcp: McpInputs,
     *,
+    credentials: McpCredentials,
     app_login: dex.StaticClient,
     mcp_linkage: dex.StaticClient,
     mcp_edge_login: dex.StaticClient,
@@ -544,20 +551,18 @@ def _add_mcp_fixtures(
 ) -> None:
     """Dex with the operator's password login, trusted by `dex_clients`, and the MCP servers the Action
     groups call."""
-    password = _password()
-    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=10, prefix=b"2a")).decode()
     _secret(
         chart,
         OPERATOR_SECRET,
         {
-            **dex.operator_login_data(_OPERATOR, password=password, issuer=DEX_ISSUER),
+            **dex.operator_login_data(_OPERATOR, password=credentials.operator_password, issuer=DEX_ISSUER),
             dex.CONFIG_KEY: dex.config_yaml(
                 issuer=DEX_ISSUER,
                 app_login=app_login,
                 mcp_linkage=mcp_linkage,
                 mcp_edge_login=mcp_edge_login,
                 operator=_OPERATOR,
-                password_hash=password_hash,
+                password_hash=credentials.operator_password_hash,
                 serve_tls=True,
             ),
         },

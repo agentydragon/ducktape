@@ -9,7 +9,7 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 
-from agentplane.x.k3s_env import fixture_chart
+from agentplane.x.k3s_env import fixture_chart, fixture_credentials
 from agentplane.x.k3s_env.rendered_fixture import (
     MCP_PLACEHOLDERS,
     MODEL_PLACEHOLDERS,
@@ -47,15 +47,24 @@ def _render(output: Path, backend: Backend, mcp: McpInputs | None, *, vm_sandbox
             if mcp is not None
             else None
         ),
-        objects=fixture_chart.objects(**asdict(PLACEHOLDERS), models=models, mcp=mcp, vm_sandboxes=vm_sandboxes),
+        objects=fixture_chart.objects(
+            **asdict(PLACEHOLDERS),
+            models=models,
+            mcp=mcp,
+            vm_sandboxes=vm_sandboxes,
+            credentials=fixture_credentials.PLACEHOLDERS,
+            mcp_credentials=fixture_credentials.MCP_PLACEHOLDERS if mcp is not None else None,
+        ),
     )
     text = fixture.model_dump_json()
     placeholders = list(asdict(PLACEHOLDERS).values())
+    placeholders.extend(asdict(fixture_credentials.PLACEHOLDERS).values())
     match models:
         case LocalModel(url=model_placeholder) | PublicLiteLLM(key=model_placeholder):
             placeholders.append(model_placeholder)
     if mcp is not None:
         placeholders.extend(asdict(mcp).values())
+        placeholders.extend(asdict(fixture_credentials.MCP_PLACEHOLDERS).values())
     # The chart transformed a placeholder (encoded it, say), so filling it in would miss.
     if missing := [placeholder for placeholder in placeholders if placeholder not in text]:
         raise ValueError(f"{backend=} renders without {missing=}")

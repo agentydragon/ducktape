@@ -3,7 +3,7 @@
 Rendering imports the cdk8s chart code, which starts Node and compiles thousands of modules; at build time
 that runs once and is cached, instead of in every k3s test action. Each runtime value is rendered as a
 placeholder that is valid where it stands, so the chart's own checks accept it, and that occurs nowhere
-else; `load` replaces it in every string. A placeholder must stay a whole value or a plain substring:
+else; `fill` replaces it in every string. A placeholder must stay a whole value or a plain substring:
 a PEM placed inside serialized text (YAML in a ConfigMap) would not survive the replacement.
 """
 
@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
+
+from agentplane.x.k3s_env import fixture_credentials
 
 
 @dataclass(frozen=True)
@@ -133,12 +135,28 @@ def read(rendered: Path) -> RenderedFixture:
     return RenderedFixture.model_validate_json(rendered.read_text())
 
 
-def fill(fixture: RenderedFixture, inputs: RuntimeInputs, models: Models, mcp: McpInputs | None) -> RenderedFixture:
+def fill(
+    fixture: RenderedFixture,
+    inputs: RuntimeInputs,
+    models: Models,
+    mcp: McpInputs | None,
+    *,
+    credentials: fixture_credentials.Credentials,
+    mcp_credentials: fixture_credentials.McpCredentials | None,
+) -> RenderedFixture:
     replacements = dict(zip(asdict(PLACEHOLDERS).values(), asdict(inputs).values(), strict=True))
+    replacements |= dict(
+        zip(asdict(fixture_credentials.PLACEHOLDERS).values(), asdict(credentials).values(), strict=True)
+    )
     if (fixture.mcp_fixtures is None) != (mcp is None):
         raise ValueError(f"{fixture.mcp_fixtures=} does not match {mcp is None=}")
-    if mcp is not None:
+    if (mcp is None) != (mcp_credentials is None):
+        raise ValueError("MCP inputs and credentials must be supplied together")
+    if mcp is not None and mcp_credentials is not None:
         replacements |= dict(zip(asdict(MCP_PLACEHOLDERS).values(), asdict(mcp).values(), strict=True))
+        replacements |= dict(
+            zip(asdict(fixture_credentials.MCP_PLACEHOLDERS).values(), asdict(mcp_credentials).values(), strict=True)
+        )
     match MODEL_PLACEHOLDERS[fixture.backend], models:
         case None, None:
             pass

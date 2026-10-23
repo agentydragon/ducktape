@@ -1,5 +1,6 @@
 """The direct cdk8s fixture keeps the Go listeners and their authentication wired."""
 
+import os
 from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
@@ -16,8 +17,9 @@ from agentplane.action_service.settings import Settings as ActionsSettings
 from agentplane.app.settings import Settings as AppSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
-from agentplane.x.k3s_env import fixture_chart, fixture_database
-from agentplane.x.k3s_env.rendered_fixture import McpInputs
+from agentplane.x.k3s_env import fixture_chart, fixture_database, rendered_fixture, runtime_credentials
+from agentplane.x.k3s_env.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
+from util.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
 
 _MCP = McpInputs(
@@ -35,16 +37,34 @@ def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any
     return matches[0]
 
 
-def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
-    docs = fixture_chart.objects(
-        ca_cert="fixture-ca\n",
-        ca_key="fixture-key\n",
-        system_roots="system-roots\n",
-        cluster_ca="cluster-ca\n",
-        models=None,
-        mcp=_MCP,
-        vm_sandboxes=False,
+def _filled_fixture() -> rendered_fixture.RenderedFixture:
+    cached = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]))
+    return rendered_fixture.fill(
+        cached,
+        RuntimeInputs(
+            ca_cert="fixture-ca\n", ca_key="fixture-key\n", system_roots="system-roots\n", cluster_ca="cluster-ca\n"
+        ),
+        LocalModel(url="http://scripted-model.k3s-fixture.invalid:4000"),
+        _MCP,
+        credentials=runtime_credentials.credentials(),
+        mcp_credentials=runtime_credentials.mcp_credentials(),
     )
+
+
+def test_stacks_get_independent_credentials() -> None:
+    first = _filled_fixture().objects
+    second = _filled_fixture().objects
+    for name in ("postgres-app", fixture_chart.OPERATOR_SECRET):
+        assert (
+            _resource(first, "Secret", name)["stringData"]["password"]
+            != _resource(second, "Secret", name)["stringData"]["password"]
+        )
+
+
+def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
+    fixture = _filled_fixture()
+    assert "k3s-env-placeholder-" not in fixture.model_dump_json()
+    docs = fixture.objects
     assert all(
         doc["kind"]
         not in {

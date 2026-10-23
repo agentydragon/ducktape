@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
-import string
-
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ConfigMap,
@@ -27,6 +24,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from agentplane.x.k3s_env.fixture_credentials import Credentials
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.secret_ref import SecretRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -38,10 +36,6 @@ IMAGE = "git.allegedly.works/ducktape-ci/agentplane-postgres:unset"
 
 _ROLES = ("actions", "egress", "mcp_edge", "notifications", "sandbox_service", "session_dispatcher")
 _LABELS = {"app.kubernetes.io/name": NAME}
-
-
-def _password(length: int = 40) -> str:
-    return "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(length))
 
 
 def _fixture_file(name: str) -> str:
@@ -65,21 +59,26 @@ def _database_secret(
     )
 
 
-def add_database(scope: Construct, env: Environment) -> Construct:
+def add_database(scope: Construct, env: Environment, credentials: Credentials) -> Construct:
     """Build the fixture database and its connection Secrets."""
     db_scope = Construct(scope, "db")
 
-    bootstrap_password = _password()
     Secret(
         db_scope,
         "bootstrap-credentials",
         metadata=ApiObjectMetadata(name=f"{NAME}-bootstrap-credentials", namespace=env.namespace),
-        string_data={"password": bootstrap_password},
+        string_data={"password": credentials.postgres_bootstrap},
     )
-    app_password = _password()
-    _database_secret(db_scope, env, role="app", database="app", password=app_password, async_uri=True)
-    for role in _ROLES:
-        _database_secret(db_scope, env, role=role, database=role, password=_password())
+    _database_secret(db_scope, env, role="app", database="app", password=credentials.postgres_app, async_uri=True)
+    for role, password in (
+        ("actions", credentials.postgres_actions),
+        ("egress", credentials.postgres_egress),
+        ("mcp_edge", credentials.postgres_mcp_edge),
+        ("notifications", credentials.postgres_notifications),
+        ("sandbox_service", credentials.postgres_sandbox_service),
+        ("session_dispatcher", credentials.postgres_session_dispatcher),
+    ):
+        _database_secret(db_scope, env, role=role, database=role, password=password)
 
     bootstrap = ConfigMap(
         db_scope,

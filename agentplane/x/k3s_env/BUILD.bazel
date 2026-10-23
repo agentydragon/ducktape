@@ -168,12 +168,19 @@ py_test(
     # cdk8s/jsii startup dominates this one-case test on RBE; see debug/render_startup.md.
     size = "medium",
     srcs = ["test_render.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    data = [
+        ":rendered/local-model-mcp-fixtures.json",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-mcp-fixtures.json)",
+    },
     deps = [
         ":fixture_chart",
         ":fixture_database",
         ":rendered_fixture",
+        ":runtime_credentials",
         "//:conftest",
         "//agentplane/action_service:oauth_settings",
         "//agentplane/action_service:settings",
@@ -181,6 +188,7 @@ py_test(
         "//agentplane/mcp_edge:settings",
         "//agentplane/runner_gateway:settings",
         "//util:settings_contract",
+        "//util/bazel:runfiles",
         "@pypi//bcrypt",
         "@pypi//pydantic",
         "@pypi//pytest_bazel",
@@ -220,6 +228,7 @@ py_library(
     deps = [
         ":bootstrap",
         ":rendered_fixture",
+        ":runtime_credentials",
         ":vm_sandboxes",
         "//agentplane/system_tests:conftest",
         "//agentplane/testing:tls",
@@ -301,6 +310,7 @@ py_library(
     testonly = True,
     srcs = ["fixture_chart.py"],
     deps = [
+        ":fixture_credentials",
         ":fixture_database",
         ":rendered_fixture",
         "//agentplane:subjects",
@@ -339,7 +349,6 @@ py_library(
         "//cluster/cdk8s/agentplane:testing",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//model_catalog:catalog",
-        "@pypi//bcrypt",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -351,7 +360,10 @@ py_library(
 py_library(
     name = "rendered_fixture",
     srcs = ["rendered_fixture.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        ":fixture_credentials",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -360,6 +372,7 @@ py_library(
     srcs = ["render_fixture.py"],
     deps = [
         ":fixture_chart",
+        ":fixture_credentials",
         ":rendered_fixture",
     ],
 )
@@ -402,12 +415,47 @@ py_library(
         "postgres_entrypoint.sh",
     ],
     deps = [
+        ":fixture_credentials",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/agentplane:environment",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "fixture_credentials",
+    srcs = ["fixture_credentials.py"],
+)
+
+py_library(
+    name = "runtime_credentials",
+    srcs = ["runtime_credentials.py"],
+    deps = [
+        ":fixture_credentials",
+        "@pypi//bcrypt",
+    ],
+)
+
+py_test(
+    name = "test_render_determinism",
+    size = "medium",
+    srcs = ["test_render_determinism.py"],
+    data = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "K3S_RENDERER_RLOCATION": "$(rlocationpath :render_fixture_bin)",
+    },
+    deps = [
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
     ],
 )
 
