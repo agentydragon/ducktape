@@ -173,6 +173,14 @@ pub(crate) const PURE_BUILTIN_NEW_NO_ARGS: &[&str] = &[
 /// and an invalid label throws RangeError (see `PURE_BUILTIN_NEW_NO_ARGS`).
 pub(crate) const PURE_BUILTIN_NEW_STRING_LITERAL_ARG: &[&str] = &["URLSearchParams"];
 
+/// The native `Proxy` constructor is admitted only with two fresh
+/// object-literal arguments. Its `ProxyCreate` operation checks both
+/// arguments are Objects, creates a proxy, stores the target and handler,
+/// and does not invoke handler traps; see <docs/purity_soundness.md> §
+/// "Native Proxy construction". The classifier still evaluates both
+/// literals normally and requires the global `Proxy` binding to be unshadowed.
+pub(crate) const PURE_BUILTIN_NEW_OBJECT_LITERAL_ARGS: &[&str] = &["Proxy"];
+
 /// Built-in container constructors whose 1-arg form is pure when
 /// the argument is an Array literal with all-Pure elements (no holes;
 /// spreads only when the source is itself a fresh Array literal or a
@@ -295,6 +303,7 @@ pub(crate) static SHADOW_TRACKED_GLOBALS: LazyLock<BTreeSet<&'static str>> = Laz
     names.extend(PURE_GLOBAL_CALLS.iter().copied());
     names.extend(PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS.iter().copied());
     names.extend(PURE_BUILTIN_NEW_NO_ARGS.iter().copied());
+    names.extend(PURE_BUILTIN_NEW_OBJECT_LITERAL_ARGS.iter().copied());
     names.extend(PURE_BUILTIN_NEW_ARRAY_ITERABLE.iter().copied());
     names.extend(PURE_BUILTIN_NEW_STRING_LITERAL_ARG.iter().copied());
     // `String.raw` is a pure tagged-template intrinsic recognized by

@@ -880,10 +880,31 @@ fn classify_prop_purity(
                     ))
             }
             Prop::Assign(a) => Purity::from_reason(PurityRule::ObjectAssignProp, a.key.span),
-            // `{ get x() {}, set x(v) {}, m() {} }` — defining a
-            // method or accessor is pure; invoking it is not, and
-            // we don't invoke it during init.
-            Prop::Getter(_) | Prop::Setter(_) | Prop::Method(_) => Purity::Pure,
+            // Defining a method or accessor does not invoke its body,
+            // but a computed name is evaluated now and runs
+            // ToPropertyKey. Classify that eager key just like a
+            // computed data-property name.
+            Prop::Getter(getter) => classify_propname_purity(
+                &getter.key,
+                shadowed,
+                local_shadowed,
+                declared_pure,
+                graph,
+            ),
+            Prop::Setter(setter) => classify_propname_purity(
+                &setter.key,
+                shadowed,
+                local_shadowed,
+                declared_pure,
+                graph,
+            ),
+            Prop::Method(method) => classify_propname_purity(
+                &method.key,
+                shadowed,
+                local_shadowed,
+                declared_pure,
+                graph,
+            ),
         },
     }
 }

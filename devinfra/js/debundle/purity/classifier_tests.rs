@@ -553,6 +553,82 @@ fn url_search_params_non_literal_args_stay_unknown() {
 }
 
 #[test]
+fn fresh_proxy_object_literals_are_pure() {
+    assert!(classify("new Proxy({}, {})").is_pure());
+    assert!(
+        classify("new Proxy({ value: 1 }, { get(target, key) { return target[key]; } })").is_pure()
+    );
+    assert!(classify("new Proxy({ nested: { [1]() {} } }, {})").is_pure());
+}
+
+#[test]
+fn proxy_constructor_rejects_unproved_args() {
+    // ProxyCreate requires both arguments to be Objects. The narrow
+    // constructor rule accepts only two syntactically fresh literals,
+    // and argument evaluation remains subject to the ordinary checks.
+    for src in [
+        "new Proxy()",
+        "new Proxy({})",
+        "new Proxy(null, {})",
+        "new Proxy({}, null)",
+        "new Proxy(target, {})",
+        "new Proxy({}, {}, {})",
+        "new Proxy(...[{}, {}])",
+        "new Proxy({ value: effect() }, {})",
+        "new Proxy({}, { [effect()]() {} })",
+        "new Proxy({ nested: { [effect()]() {} } }, {})",
+        "new Proxy({ nested: { get [effect()]() {} } }, {})",
+        "new Proxy({ nested: { set [effect()](value) {} } }, {})",
+    ] {
+        assert!(!classify(src).is_pure(), "expected `{src}` to stay unknown");
+    }
+}
+
+#[test]
+fn computed_method_and_accessor_keys_are_evaluated() {
+    // Computed names run when the object literal is created, even though
+    // the method/accessor body is deferred until a later operation.
+    for src in [
+        "({ [effect()]() {} })",
+        "({ get [effect()]() {} })",
+        "({ set [effect()](value) {} })",
+    ] {
+        assert!(!classify(src).is_pure(), "expected `{src}` to stay unknown");
+    }
+}
+
+#[test]
+fn shadowed_proxy_constructor_falls_back_to_unknown() {
+    // Proxy is part of the derived whitelist-name census, so all
+    // chunk-top binding forms suppress the intrinsic rule.
+    for prefix in [
+        "const Proxy = userland;",
+        "function Proxy() {}",
+        r#"import Proxy from "userland";"#,
+    ] {
+        assert!(
+            !classify_with_module(prefix, "new Proxy({}, {})").is_pure(),
+            "expected a chunk-top Proxy binding in `{prefix}` to shadow the intrinsic"
+        );
+    }
+
+    let local_shadowed = BTreeSet::from(["Proxy".to_string()]);
+    let purity = classify_last_const("", "new Proxy({}, {})", |_, shadowed, init| {
+        classify_expr_purity(
+            init,
+            shadowed,
+            &local_shadowed,
+            &BTreeSet::new(),
+            &ChunkCodeGraph::default(),
+        )
+    });
+    assert!(
+        !purity.is_pure(),
+        "a body-local Proxy binding must shadow the intrinsic"
+    );
+}
+
+#[test]
 fn shadowed_whatwg_constructor_falls_back_to_unknown() {
     // The new tables join SHADOW_TRACKED_GLOBALS via the derived
     // union, so a chunk-top rebind disables the whitelist.

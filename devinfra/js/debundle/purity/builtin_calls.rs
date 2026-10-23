@@ -57,6 +57,8 @@ pub(crate) fn static_member_pair(member: &MemberExpr) -> Option<(&'static str, &
 
 /// Purity of a `new X(args…)` expression. Matches:
 ///   * No-arg form against `PURE_BUILTIN_NEW_NO_ARGS`.
+///   * Two-object-literal form against
+///     `PURE_BUILTIN_NEW_OBJECT_LITERAL_ARGS` (`Proxy`).
 ///   * 1-arg Array-literal-iterable form against
 ///     `PURE_BUILTIN_NEW_ARRAY_ITERABLE` (`Set` / `Map`).
 ///   * Spec-declared `purity: pure_new` bindings, with all args pure.
@@ -106,6 +108,26 @@ pub(crate) fn classify_new_expr_purity(
         && matches!(args[0].expr.as_ref(), Expr::Lit(Lit::Str(_)))
     {
         return Purity::Pure;
+    }
+    if PURE_BUILTIN_NEW_OBJECT_LITERAL_ARGS.contains(&callee.sym.as_ref())
+        && !shadowed.contains(callee.sym.as_ref())
+        && !local_shadowed.contains(callee.sym.as_ref())
+        && let Some(args) = new_expr.args.as_ref()
+        && args.len() == 2
+        && args
+            .iter()
+            .all(|arg| arg.spread.is_none() && matches!(arg.expr.unwrap_parens(), Expr::Object(_)))
+    {
+        let arg_purity = all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
+        if arg_purity.is_pure() {
+            return Purity::Pure;
+        }
+        return Purity::from_reason_with_detail(
+            PurityRule::UnknownNew,
+            new_expr.span,
+            "new Proxy(target, handler) has an impure object-literal argument".to_string(),
+        )
+        .worst(arg_purity);
     }
     if let Some(name) = PURE_BUILTIN_NEW_ARRAY_ITERABLE
         .iter()

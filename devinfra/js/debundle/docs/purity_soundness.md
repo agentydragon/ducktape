@@ -46,6 +46,38 @@ Prototype pollution — replacing `Set.prototype.add` or
 citation describes the standard built-in, and the analyzer cannot detect it
 because the pollution may live outside the analyzed chunk.
 
+## Native `Proxy` construction
+
+`new Proxy(target, handler)` is admitted only when the global `Proxy` name is
+unshadowed, there are exactly two arguments, neither is spread, both
+arguments are syntactically fresh object literals, and normal expression
+classification proves evaluating both literals pure. This uses the
+`PURE_BUILTIN_NEW_OBJECT_LITERAL_ARGS` table and the derived
+`SHADOW_TRACKED_GLOBALS` census. It does not admit arbitrary object-valued
+bindings, arrays, missing arguments, or extra arguments.
+
+ECMA-262 §28.2.1.1 delegates construction to `ProxyCreate`.
+`ProxyCreate` requires object target and handler values, creates the proxy,
+stores those values, and returns it without looking up or calling a handler
+trap. Fresh object literals satisfy the object checks, so the constructor's
+type-error path is excluded. Their own evaluation still runs normally: an
+effectful property initializer or spread keeps the whole expression
+non-pure. Computed method and accessor names also run during literal
+creation; their key expressions and `ToPropertyKey` coercion are classified
+at every object-literal depth. Effectful or possibly-object-valued keys stay
+non-pure, while a statically primitive key can be admitted.
+
+Trap execution remains observable when the proxy is later used. The rule
+classifies only construction; it does not make reads, writes, calls, or
+other operations through the resulting proxy pure. This boundary is pinned
+by `fresh_proxy_object_literals_are_pure`,
+`proxy_constructor_rejects_unproved_args`,
+`shadowed_proxy_constructor_falls_back_to_unknown`, and the E2E test
+`proxy_traps_run_only_after_property_access`.
+
+See the [Proxy constructor algorithm](https://tc39.es/ecma262/multipage/reflection.html#sec-proxy-constructor)
+and [ProxyCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxycreate).
+
 ## `String.raw` tagged templates
 
 `String.raw` tagged templates are admitted only when the tag is exactly the
