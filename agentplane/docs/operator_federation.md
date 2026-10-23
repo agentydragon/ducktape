@@ -296,7 +296,8 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 - `//cluster/validation:test_flux_build` and `:test_cluster_integration`: full offline Flux/Kustomize
   manifest rendering and dependency/health-check validation.
 - `//agentplane/app:test_main`: application Settings environment parsing and OIDC source coexistence.
-- `//agentplane/action_service:test_runtime`: Settings/catalog validation and production runtime composition.
+- `//agentplane/action_service:config_test`: Go service Settings and catalog validation.
+- `//agentplane/action_service:integration_test`: Go startup, workload and MCP execution, and OAuth edge composition.
 - `//agentplane/app:test_action_api` and `//agentplane/action_service:test_operator_oidc`: signed
   offline request/authorization seams, including distinct operator identities and rejected token claims.
 - `//util:test_oidc_principal` and `//agentplane/app:test_action_federation`: strict shared

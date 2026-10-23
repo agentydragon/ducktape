@@ -420,8 +420,8 @@ operator form.
 The end-to-end proof is `//agentplane/system_tests:test_mcp`, which creates the set and binding
 for the Sandbox it launches through the Kubernetes API (see [the system tests README](../system_tests/README.md))
 against the upstream `mcp-everything` image described in
-[the fixture guide](testing/README.md); `test_runtime` drives the same production
-composition against an envtest API server.
+[the fixture guide](testing/README.md). The Go service's startup, MCP execution recovery and OAuth
+edge composition are covered by `//agentplane/action_service:integration_test`.
 
 ## Authentication boundaries
 

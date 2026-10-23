@@ -29,7 +29,7 @@ code-mode fixture) have no group. `REFACTOR_COHERENCE_AUDIT` sweeps what remains
 ```mermaid
 flowchart LR
     subgraph ACTION_TRACK[Action Service Go port]
-        ACTION_SERVICE_GO_PORT[Active: stage O Python source cleanup; policyview oracle slice in review; stage N accepted]
+        ACTION_SERVICE_GO_PORT[Active: stage O Python runtime and parity retirement; stage N accepted]
         ACTION_MCP_EDGE_SPLIT[Unscheduled: approved edge split; stage N cutover accepted]
     end
     subgraph MESSAGING_TRACK[Agent messaging]
@@ -1803,7 +1803,7 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 ```mermaid
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
-    ACTION_SERVICE_GO_PORT[Active: stage O Python source cleanup; policyview oracle slice in review; stage N accepted]
+    ACTION_SERVICE_GO_PORT[Active: stage O Python runtime and parity retirement; stage N accepted]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
     ACTION_SERVICE_GO_PORT -. related .-> WEB_PUSH_SERVICE
@@ -1820,7 +1820,7 @@ check on `thread_observations` (404 for a Session no Thread links) is kept or dr
 
 ### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
 
-**Stage M and stage N accepted; stage O Python cleanup is active. This PR removes the policyview Python oracle; broader runtime retirement remains.**
+**Stage M and stage N accepted; stage O Python runtime and parity cleanup is active.**
 The Go service, generated CLI/app/Notification callers and Go-backed K3s acceptance are merged in
 #11454, including the cleanup in #11459 and #11460. Testing's Go deployment and disposable Sandbox
 CLI-through-egress probe passed; the staging image-pin file carries the selected tested tags. The

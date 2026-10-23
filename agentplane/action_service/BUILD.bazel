@@ -190,85 +190,10 @@ py_library(
     ],
 )
 
-py_library(
-    name = "main",
-    srcs = ["main.py"],
-    deps = [
-        ":api",
-        ":auth",
-        ":catalog",
-        ":connections",
-        ":db",
-        ":enrollments",
-        ":mcp_linkage",
-        ":oauth",
-        ":operator_oidc",
-        ":policy_evaluation",
-        ":policy_informer",
-        ":push",
-        ":runtime",
-        ":service",
-        ":settings",
-        ":store",
-        ":updates",
-        "//agentplane:background_task",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:service_process",
-        "//agentplane/action_service/github_policy:visibility",
-        "//agentplane/action_service/sandbox:inventory",
-        "//agentplane/action_service/sandbox:kubernetes",
-        "//agentplane/workload_auth:principal",
-        "//util:kubernetes",
-        "@pypi//httpx",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//uvicorn",
-    ],
-)
-
-py_binary(
-    name = "server",
-    main_module = "agentplane.action_service.main",
-    deps = [":main"],
-)
-
 py_binary(
     name = "migrate",
     main_module = "agentplane.action_service.database_migrate",
     deps = [":database_migrate"],
-)
-
-aspect_py_binary(
-    name = "server_image_bin",
-    main = "main.py",
-    deps = [":main"],
-)
-
-server_layers_oci_tars = shared_py_image_layers(
-    name = "server_layers",
-    binary = ":server_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("server_image_bin"),
-    # CA bundle (//third_party/debian_slim:cacerts): the OAuth/MCP-execution paths (oauth.py,
-    # mcp_executor.py, mcp_linkage.py) resolve to httpx2 via FastMCP 4's OIDCProxy. httpx2
-    # verifies TLS through truststore (OS-native trust store), not bundled certifi roots, so
-    # it needs the same system CA bundle a C git/curl client would. See
-    # docs/distroless_ca_certificates.md.
-    env = py_image_env(
-        binary_name = "server_image_bin",
-        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
-    ),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = server_layers_oci_tars + [
-        "//third_party/debian_slim:cacerts",
-    ],
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
 )
 
 aspect_py_binary(
@@ -478,92 +403,26 @@ py_library(
 )
 
 py_test(
-    name = "test_runtime",
-    size = "medium",
-    srcs = ["test_runtime.py"],
-    data = [
-        "testdata/remote_actions.yaml",
-        "//agentplane/action_service/testing:fake_mcp_server_bin",
-    ],
-    requires_docker = True,
-    deps = [
-        ":api",
-        ":auth",
-        ":catalog",
-        ":conftest",
-        ":db",
-        ":main",
-        ":mcp_executor",
-        ":models",
-        ":policy_evaluation",
-        ":policy_informer",
-        ":runtime",
-        ":service",
-        ":settings",
-        ":store",
-        ":updates",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane:crd_group",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:policy_sets",
-        "//agentplane:service_process",
-        "//agentplane:subjects",
-        "//agentplane/action_service/testing:callers",
-        "//agentplane/action_service/testing:lifecycle",
-        "//agentplane/testing:kubernetes_apiserver",
-        "//agentplane/workload_auth:principal",
-        "//util:kubernetes",
-        "//util/bazel:runfiles",
-        "@pypi//fastapi",
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-        "@pypi//uvicorn",
-    ],
-)
-
-py_test(
     name = "test_mcp_executor_http",
     size = "medium",
     srcs = ["test_mcp_executor_http.py"],
-    requires_docker = True,
     deps = [
         ":catalog",
         ":conftest",
-        ":db",
-        ":main",
         ":mcp_executor",
         ":mcp_linkage",
         ":models",
-        ":oauth_settings",
         ":runtime",
         ":service",
-        ":settings",
-        ":store",
         "//:conftest",
-        "//agentplane:changes",
         "//agentplane:subjects",
         "//agentplane/action_service/testing:lifecycle",
         "//util/testing:asgi",
-        "//util/testing:mock_oidc",
-        "@pypi//cryptography",
-        "@pypi//fastapi",
         "@pypi//httpx",
-        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@pypi//uvicorn",
     ],
 )
 

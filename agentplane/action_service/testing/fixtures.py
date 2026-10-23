@@ -33,7 +33,6 @@ from agentplane.action_service.service import ExecutionLease, Executor
 from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.testing.lifecycle import wait_available
-from mcp_infra.testing.remote_server import as_remote_server
 from util.testing.asgi import bind_http_server
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from util.testing.postgres_fixtures import migrated_database_fixtures
@@ -174,21 +173,6 @@ async def mcp_executor(echo_catalog: ActionCatalog) -> AsyncIterator[McpActionGr
     async with executor:
         await wait_available(echo_catalog.groups["agentplane"])
         yield executor
-
-
-@pytest.fixture
-async def echo_mcp_url() -> AsyncIterator[str]:
-    """A real streamable-HTTP MCP server for tests that need an actual network URL rather
-    than the in-memory transport `mcp_executor` uses -- exercises the same wire path
-    (`transport: streamable-http`) production Action Service settings use."""
-    server = FastMCP("echo-fixture")
-
-    @server.tool
-    def echo(message: str) -> str:
-        return f"Echo: {message}"
-
-    async with as_remote_server(server) as remote:
-        yield remote.url
 
 
 @pytest.fixture

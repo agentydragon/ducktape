@@ -14,7 +14,7 @@ from util.bazel.runfiles import get_required_path
 
 
 def _catalog() -> ActionCatalog:
-    # Mirrors `ActionCatalog(groups=settings.action_groups)` in main.async_main.
+    # Mirrors the deployment's configured action-group catalog.
     return ActionCatalog(
         groups=yaml.safe_load(
             get_required_path("_main/agentplane/action_service/testdata/configured_action_groups.yaml").read_text()

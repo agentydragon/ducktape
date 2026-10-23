@@ -47,7 +47,6 @@ py_library(
         "//agentplane/action_service:service",
         "//agentplane/action_service:store",
         "//agentplane/action_service/github_policy:visibility",
-        "//mcp_infra/testing:remote_server",
         "//util/testing:asgi",
         "//util/testing:mock_oidc",
         "//util/testing:postgres_fixtures",

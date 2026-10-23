@@ -32,7 +32,7 @@ in the one Go binary until that separate extraction.
 | Stage | Status   | Change                                                                                                                                                                                                                                                                               |
 | ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | N     | Accepted | Go Actions and Goose are live in staging and testing; existing Action/Connection/grant counts and Sandbox identities are preserved. The disposable Runner/egress catalog probe and public-route metadata/authentication checks passed. External-user reauthorization remains manual. |
-| O     | Active   | Retire Python parity generators/tests in small steps; retire the Python service, Alembic/migration image and dependencies after staging validation and the rollback window. Drop unused stored columns only with new migrations.                                                     |
+| O     | Active   | Retire unused Python entrypoints, runtime modules, parity tests, Alembic source and image targets in small steps. Preserve existing data and published rollback images. Drop unused stored columns only with new migrations after all readers are retired.                           |
 
 ## Cutover requirements
 
@@ -68,6 +68,10 @@ in the one Go binary until that separate extraction.
   reconnect behavior. No production outage or restoration drill is required.
 
 ## Python retirement
+
+The accepted Go cutover permits source retirement now. Removing reproducible source and build targets
+does not delete published rollback images, database history or Sandbox storage. Stored-schema cleanup
+follows separately after its remaining readers are retired.
 
 Delete Python runtime modules and their obsolete tests, Alembic and Python migration image,
 `agentplane_oauth_kv`, enrollment `decision_digest`/`browser_hash`, and grant
