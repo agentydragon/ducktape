@@ -1101,7 +1101,7 @@
         "type": "prometheus",
         "uid": "mimir"
       },
-      "description": "Latest reported Netwatch batch, sent by the CRS310 itself: 200 pings at 150 ms intervals once per minute, with a 1 s reply timeout and no early termination. Unlike host smokeping, this is batch loss, not a rolling 5-minute ratio. Scraped every 30 seconds; gaps cannot reconstruct missed batches. No history until the home-switch Tofu plan is approved.",
+      "description": "UNRELIABLE: captures at OptiPlex found invalid ICMP checksums in Netwatch requests; reported loss matched the malformed requests, and enabling a concurrent probe changed the pattern. These measurements cannot establish network delivery or outage frequency. Use the independent OptiPlex and wyrm2 host probes for reliability. Latest reported Netwatch batch, sent by the CRS310 itself: 200 pings at 150 ms intervals once per minute, with a 1 s reply timeout and no early termination. Unlike host smokeping, this is batch loss, not a rolling 5-minute ratio. Scraped every 30 seconds; gaps cannot reconstruct missed batches.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1109,7 +1109,7 @@
         "y": 38
       },
       "id": 47,
-      "title": "Ping batch loss from MikroTik",
+      "title": "UNRELIABLE: Ping batch loss from MikroTik",
       "type": "timeseries",
       "targets": [
         {
@@ -1180,7 +1180,7 @@
         "type": "prometheus",
         "uid": "mimir"
       },
-      "description": "Mean RTT of answered pings in the latest reported switch-originated Netwatch batch. 200 pings at 150 ms intervals, once per minute; scraped every 30 seconds. A zero RTT during 100% loss does not mean a fast response. No history until the home-switch Tofu plan is approved.",
+      "description": "UNRELIABLE: captures at OptiPlex found invalid ICMP checksums in Netwatch requests; reported loss matched the malformed requests, and enabling a concurrent probe changed the pattern. These measurements cannot establish network delivery or outage frequency. Use the independent OptiPlex and wyrm2 host probes for reliability. Mean RTT of answered pings in the latest reported switch-originated Netwatch batch. 200 pings at 150 ms intervals, once per minute; scraped every 30 seconds. A zero RTT during 100% loss does not mean a fast response.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1188,7 +1188,7 @@
         "y": 38
       },
       "id": 48,
-      "title": "Ping batch RTT from MikroTik",
+      "title": "UNRELIABLE: Ping batch RTT from MikroTik",
       "type": "timeseries",
       "targets": [
         {
@@ -1259,7 +1259,7 @@
         "type": "prometheus",
         "uid": "mimir"
       },
-      "description": "Estimated failed batches in the trailing hour, from reset-aware increase of RouterOS cumulative failed-tests (exported as a gauge by mktxp). Each batch tests 200 pings once per minute; a 5% loss threshold and 1 s RTT thresholds determine failure. This measures failed batches, not distinct outage episodes. Counts can survive missed scrapes unless a probe resets; increase may produce fractional estimates.",
+      "description": "UNRELIABLE: captures at OptiPlex found invalid ICMP checksums in Netwatch requests; reported loss matched the malformed requests, and enabling a concurrent probe changed the pattern. These measurements cannot establish network delivery or outage frequency. Use the independent OptiPlex and wyrm2 host probes for reliability. Estimated failed batches in the trailing hour, from reset-aware increase of RouterOS cumulative failed-tests (exported as a gauge by mktxp). Each batch tests 200 pings once per minute; a 5% loss threshold and 1 s RTT thresholds determine failure. This measures failed batches, not distinct outage episodes. Counts can survive missed scrapes unless a probe resets; increase may produce fractional estimates.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -1267,7 +1267,7 @@
         "y": 46
       },
       "id": 49,
-      "title": "Failed probe batches per hour from MikroTik",
+      "title": "UNRELIABLE: Failed probe batches per hour from MikroTik",
       "type": "timeseries",
       "targets": [
         {
