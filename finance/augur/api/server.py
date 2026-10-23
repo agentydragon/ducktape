@@ -425,20 +425,12 @@ def _run_server_with_args(*, augur_config: Config, args: argparse.Namespace) -> 
 
 def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int, fd: int | None = None) -> int:
     """Serve `app` on `host`:`port`, or on the inherited listening socket `fd` when supplied."""
-    if fd is None:
-        bound_host, bound_port = host, port
-        print(f"serving Augur API on http://{bound_host}:{bound_port}")
-        print(f"models: {sorted(augur_config.models)} (default: {augur_config.default_model_id})")
-        uvicorn.run(app, host=host, port=port)
-        return 0
-
-    # Own the inherited descriptor even if Uvicorn fails during startup. Uvicorn may close it on
-    # normal shutdown; socket.close() is idempotent.
-    with socket.socket(fileno=fd) as sock:
+    config = uvicorn.Config(app, host=host, port=port)
+    with config.bind_socket() if fd is None else socket.socket(fileno=fd) as sock:
         bound_host, bound_port = sock.getsockname()[:2]
         print(f"serving Augur API on http://{bound_host}:{bound_port}")
         print(f"models: {sorted(augur_config.models)} (default: {augur_config.default_model_id})")
-        uvicorn.Server(uvicorn.Config(app)).run(sockets=[sock])
+        uvicorn.Server(config).run(sockets=[sock])
     return 0
 
 
