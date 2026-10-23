@@ -98,9 +98,20 @@ verification.
 
 1. Inspect the actual Grafana datasource names and UIDs, the dashboard operator
    resource, and the current metrics/log labels before writing expressions.
-2. Keep datasource placeholders such as `${DS_MIMIR}` and `${DS_LOKI}` only when
-   the deployed dashboard mechanism resolves them. The verifier resolves them
-   for a temporary candidate using the live datasource map.
+2. Datasource names and types are not UIDs: a datasource named `Loki` with type
+   `loki` can have a generated UID, so do not guess `"uid": "loki"`. Use a
+   verified UID explicitly provisioned by the deployment, or an operator input.
+   For operator-managed file dashboards, use `"datasource": "${DS_LOKI}"` and
+   map it in `_FILE_DASHBOARDS` with `datasources={"DS_LOKI": "Loki"}`. Regenerate
+   and inspect `GrafanaDashboard.spec.datasources`. The operator substitutes
+   the datasource **name**, so `{"uid": "${DS_LOKI}"}` becomes `{"uid": "Loki"}`
+   and fails when that name differs from the UID. Update both
+   `panel.datasource` and each `target.datasource`; a target overrides its panel.
+   The candidate verifier resolves inputs to live UIDs itself, masking this
+   deployment error. Before merge, also verify a temporary copy with inputs
+   replaced by the operator's datasource names. After import, query and render
+   the live dashboard: `DashboardSynchronized=True` does not prove datasource
+   references work.
 3. Do not rely on Grafana macros unless the browser request proves that the
    installed datasource plugin expands them. Fixed windows such as `[5m]` are
    valid and predictable. In particular, never ship a literal
