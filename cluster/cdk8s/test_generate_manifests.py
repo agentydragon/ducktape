@@ -408,7 +408,7 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     assert not any(
         doc.get("apiVersion") == "infra.contrib.fluxcd.io/v1alpha2"
         and doc.get("kind") == "Terraform"
-        and doc.get("metadata", {}).get("name") == "agentydragon"
+        and doc.get("metadata", {}).get("name") == "forgejo-agentydragon"
         for doc in documents
     )
 
