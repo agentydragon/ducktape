@@ -78,8 +78,9 @@ cleanup makes no schema or data changes. Published rollback images, Goose SQL/hi
 storage remain. Stage O remains active.
 
 Remove `agentplane_oauth_kv`, enrollment `decision_digest`/`browser_hash`, and grant
-`request_digest`/`activation_deadline` only after their deployed readers are gone, through new
-migrations. The Go protos, generated clients and current deployment contracts remain.
+`request_digest` only after their deployed readers are gone, through new migrations. Keep
+`activation_deadline` until its deployed Go, proto and frontend readers are retired. The Go protos,
+generated clients and current deployment contracts remain.
 
 ## After the flip: the edge split
 

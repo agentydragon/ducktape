@@ -248,8 +248,8 @@ func (s *served) connect(t *testing.T, name string, createdAt time.Time, bound *
 		}
 		if _, err := s.db.ExecContext(t.Context(), `
 			INSERT INTO external_connection_grant (id, connection_id, revision, original_caller, issuer, client_id,
-				request_digest, activation_deadline, status, created_at, activated_at, revoked_at)
-			VALUES ($1, $2, $3, $4::jsonb, 'https://test-actions.example', $5, 'test-digest', $6, $7, $8, $9, $10)`,
+				activation_deadline, status, created_at, activated_at, revoked_at)
+			VALUES ($1, $2, $3, $4::jsonb, 'https://test-actions.example', $5, $6, $7, $8, $9, $10)`,
 			uuid.New(), id, i+1, accountJSON(g.caller), fmt.Sprintf("test-client-%d", i+1), createdAt.Add(10*time.Minute),
 			g.status, createdAt, activatedAt, revokedAt); err != nil {
 			t.Fatal(err)
