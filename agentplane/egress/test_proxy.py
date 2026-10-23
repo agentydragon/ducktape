@@ -9,7 +9,7 @@ assertion is on what the client and the upstream actually saw.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from ipaddress import ip_network
@@ -45,6 +45,7 @@ from agentplane.testing.tls import (
     write_ca,
 )
 from util.kubernetes import CustomObjectsClient
+from util.net import Listener
 
 # Three namespaces, all different, so that a proxy reading one from the wrong one fails.
 NAMESPACE = "agentplane-egress-test"
@@ -98,12 +99,7 @@ async def recording_upstream(cert_path: Path, key_path: Path) -> AsyncIterator[R
 
 
 def replica_settings(
-    *,
-    api_config: Path,
-    ca: tuple[Path, Path],
-    database_url: str,
-    port_factory: Callable[[], int],
-    upstream_ca_file: Path | None = None,
+    *, api_config: Path, ca: tuple[Path, Path], database_url: str, upstream_ca_file: Path | None = None
 ) -> Settings:
     cert, key = ca
     return Settings(
@@ -114,12 +110,6 @@ def replica_settings(
         log_levels={},
         ca_cert=cert,
         ca_key=key,
-        listen_host="127.0.0.1",
-        listen_port=port_factory(),
-        admin_host="127.0.0.1",
-        admin_port=port_factory(),
-        agent_api_host="127.0.0.1",
-        agent_api_port=port_factory(),
         token_audience=AUDIENCE,
         upstream_ca_file=upstream_ca_file,
         # The Go informer's watch period is whole seconds, two at the least.
@@ -219,17 +209,15 @@ class Egress:
     tmp_path: Path
 
     @property
-    def proxy_port(self) -> int:
-        return self.replica.proxy_port
+    def proxy_listener(self) -> Listener:
+        return self.replica.proxy_listener
 
     def url(self, path: str) -> str:
         return f"https://{UPSTREAM_HOST}:{self.upstream.port}{path}"
 
 
 @pytest.fixture
-async def egress(
-    tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
-) -> AsyncIterator[Egress]:
+async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
     interception_ca = make_ca("agentplane-egress-test-interception")
     upstream_ca = make_ca("agentplane-egress-test-upstream")
     async with (
@@ -241,7 +229,6 @@ async def egress(
             api_config=api.kubeconfig,
             ca=write_ca(interception_ca, tmp_path, "interception"),
             database_url=history_db_url,
-            port_factory=unused_tcp_port_factory,
             upstream_ca_file=write_ca(upstream_ca, tmp_path, "upstream")[0],
         )
         async with go_replica(settings, directory=tmp_path) as running:
@@ -304,7 +291,7 @@ def read_keypair(cert_path: Path, key_path: Path) -> tuple[bytes, bytes]:
 
 async def test_health_reports_ready_only_once_the_tunnel_accepts(egress: Egress) -> None:
     """Readiness gates every Service this Pod backs, and the tunnel is the one that carries traffic."""
-    _, writer = await asyncio.open_connection("127.0.0.1", egress.proxy_port)
+    _, writer = await asyncio.open_connection(egress.proxy_listener.host, egress.proxy_listener.port)
     writer.close()
     await writer.wait_closed()
 
@@ -382,7 +369,7 @@ async def revocable_kubeconfig(server: KubernetesApiServer, path: Path) -> Path:
 
 
 async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
-    tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
+    tmp_path: Path, history_db_url: str
 ) -> None:
     ca = make_ca("test-replica-ca")
     cert, key = write_ca(ca, tmp_path, "replica")
@@ -395,9 +382,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         first_token = await seed(first_api)
         second_token = await seed(second_api)
         settings = [
-            replica_settings(
-                api_config=api_config, ca=(cert, key), database_url=history_db_url, port_factory=unused_tcp_port_factory
-            )
+            replica_settings(api_config=api_config, ca=(cert, key), database_url=history_db_url)
             for api_config in (
                 first_api.kubeconfig,
                 await revocable_kubeconfig(second_api, tmp_path / "second-replica-kubeconfig.yaml"),
@@ -412,7 +397,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             async def get(replica: GoReplica, token: str, path: str, expected: int) -> None:
                 async with client.get(
                     f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/{path}",
-                    proxy=f"http://127.0.0.1:{replica.proxy_port}",
+                    proxy=f"http://{replica.proxy_listener.host}:{replica.proxy_listener.port}",
                     headers={"Proxy-Authorization": f"Bearer {token}"},
                 ) as response:
                     await response.read()
@@ -458,7 +443,7 @@ async def test_go_proxy_finishes_an_admitted_request_after_sigterm(egress: Egres
         async def slow_status() -> int:
             async with client.get(
                 f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/slow",
-                proxy=f"http://127.0.0.1:{egress.proxy_port}",
+                proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
                 headers={"Proxy-Authorization": f"Bearer {egress.token}"},
             ) as response:
                 await response.read()
@@ -472,7 +457,7 @@ async def test_go_proxy_finishes_an_admitted_request_after_sigterm(egress: Egres
         async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
             with attempt:
                 try:
-                    _, writer = await asyncio.open_connection("127.0.0.1", egress.proxy_port)
+                    _, writer = await asyncio.open_connection(egress.proxy_listener.host, egress.proxy_listener.port)
                 except ConnectionRefusedError:
                     break
                 writer.close()
@@ -489,7 +474,7 @@ async def test_header_substitution(egress: Egress) -> None:
         aiohttp.ClientSession() as client,
         client.get(
             egress.url("/contract"),
-            proxy=f"http://127.0.0.1:{egress.proxy_port}",
+            proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
             proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
             ssl=client_tls_context(egress.interception_ca),
             headers={"x-buildbuddy-api-key": placeholder_of(_CONTRACT_CREDENTIAL)},
@@ -508,7 +493,7 @@ async def test_real_binding_revocation_denies_the_next_connection(egress: Egress
             try:
                 async with client.get(
                     egress.url("/contract"),
-                    proxy=f"http://127.0.0.1:{egress.proxy_port}",
+                    proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
                     proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
                     ssl=client_tls_context(egress.interception_ca),
                     headers={"x-buildbuddy-api-key": placeholder_of(_CONTRACT_CREDENTIAL)},
@@ -564,7 +549,7 @@ async def test_incremental_sse_and_websocket(egress: Egress) -> None:
         async with aiohttp.ClientSession() as client:
             async with client.get(
                 f"https://{UPSTREAM_HOST}:{port}/contract-sse",
-                proxy=f"http://127.0.0.1:{egress.proxy_port}",
+                proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
                 proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
                 ssl=client_tls_context(egress.interception_ca),
             ) as response:
@@ -577,7 +562,7 @@ async def test_incremental_sse_and_websocket(egress: Egress) -> None:
                 await response.read()
             async with client.ws_connect(
                 f"https://{UPSTREAM_HOST}:{port}/contract-ws",
-                proxy=f"http://127.0.0.1:{egress.proxy_port}",
+                proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
                 proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
                 ssl=client_tls_context(egress.interception_ca),
             ) as websocket_client:
@@ -610,7 +595,7 @@ async def test_denial_has_zero_upstream_tcp_accepts(egress: Egress) -> None:
             aiohttp.ClientSession() as client,
             client.get(
                 f"https://{UPSTREAM_HOST}:{port}/not-admitted",
-                proxy=f"http://127.0.0.1:{egress.proxy_port}",
+                proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
                 proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
                 ssl=client_tls_context(egress.interception_ca),
             ) as response,
@@ -635,7 +620,9 @@ async def test_interactive_grpc_before_eof(egress: Egress, monkeypatch: pytest.M
     finished = asyncio.Event()
     async with (
         recording_grpc_upstream(keypair, finished=finished) as (port, requests),
-        SidecarProcess(proxy_host="127.0.0.1", proxy_port=egress.proxy_port, token_file=token_file) as sidecar,
+        SidecarProcess(
+            proxy_host=egress.proxy_listener.host, proxy_port=egress.proxy_listener.port, token_file=token_file
+        ) as sidecar,
     ):
         monkeypatch.setenv("https_proxy" if tls else "grpc_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
         monkeypatch.setenv("no_proxy", "")

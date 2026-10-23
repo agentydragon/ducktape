@@ -25,14 +25,11 @@ type config struct {
 	RulesNamespace                  string            `mapstructure:"rules_namespace"`
 	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
 	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
-	ListenHost                      string            `mapstructure:"listen_host"`
-	ListenPort                      int               `mapstructure:"listen_port"`
-	AdminHost                       string            `mapstructure:"admin_host"`
-	AdminPort                       int               `mapstructure:"admin_port"`
+	ListenAddress                   string            `mapstructure:"listen_address"`
+	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
 	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
 	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
-	AgentAPIHost                    string            `mapstructure:"agent_api_host"`
-	AgentAPIPort                    int               `mapstructure:"agent_api_port"`
+	AgentAPIListenAddress           string            `mapstructure:"agent_api_listen_address"`
 	CACert                          string            `mapstructure:"ca_cert"`
 	CAKey                           string            `mapstructure:"ca_key"`
 	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
@@ -51,8 +48,8 @@ type config struct {
 
 func defaultConfig() config {
 	return config{
-		ListenHost: "0.0.0.0", ListenPort: 8888, AdminHost: "0.0.0.0", AdminPort: 8081,
-		AgentAPIHost: "0.0.0.0", AgentAPIPort: 8082, ResyncSeconds: 300, DecisionHistorySize: 200,
+		ListenAddress: "0.0.0.0:8888", AdminListenAddress: "0.0.0.0:8081",
+		AgentAPIListenAddress: "0.0.0.0:8082", ResyncSeconds: 300, DecisionHistorySize: 200,
 		DecisionRetentionDays: 7, DecisionQueueSize: 2000, DecisionBatchSize: 100,
 	}
 }
@@ -64,13 +61,10 @@ func loadConfig() (config, error) {
 	for _, key := range []string{
 		"rules_namespace",
 		"credentials_namespace",
-		"listen_host",
-		"listen_port",
-		"admin_host",
-		"admin_port",
+		"listen_address",
+		"admin_listen_address",
 		"admin_grpc_audience",
-		"agent_api_host",
-		"agent_api_port",
+		"agent_api_listen_address",
 		"ca_cert",
 		"ca_key",
 		"upstream_ca_file",
@@ -127,9 +121,6 @@ func (c *config) validate() error {
 		return errors.New("projected_token_audiences must not contain an empty audience")
 	}
 	for _, limit := range []bounded{
-		{"listen_port", c.ListenPort, 0, 65535},
-		{"admin_port", c.AdminPort, 0, 65535},
-		{"agent_api_port", c.AgentAPIPort, 0, 65535},
 		// client-go relists a watch shorter than a second, so the informer takes two at the least.
 		{"resync_seconds", c.ResyncSeconds, 2, 86400},
 		{"decision_history_size", c.DecisionHistorySize, 1, history.MaxCapacity},

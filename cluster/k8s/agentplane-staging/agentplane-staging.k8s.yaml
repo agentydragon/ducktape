@@ -1267,12 +1267,12 @@ spec:
               value: agentplane-staging
             - name: AGENTPLANE_EGRESS_CREDENTIALS_NAMESPACE
               value: agentplane-staging-egress-credentials
-            - name: AGENTPLANE_EGRESS_LISTEN_PORT
-              value: "8888"
-            - name: AGENTPLANE_EGRESS_ADMIN_PORT
-              value: "8081"
-            - name: AGENTPLANE_EGRESS_AGENT_API_PORT
-              value: "8082"
+            - name: AGENTPLANE_EGRESS_LISTEN_ADDRESS
+              value: 0.0.0.0:8888
+            - name: AGENTPLANE_EGRESS_ADMIN_LISTEN_ADDRESS
+              value: 0.0.0.0:8081
+            - name: AGENTPLANE_EGRESS_AGENT_API_LISTEN_ADDRESS
+              value: 0.0.0.0:8082
             - name: AGENTPLANE_EGRESS_CA_CERT
               value: /etc/agentplane-egress/ca/tls.crt
             - name: AGENTPLANE_EGRESS_CA_KEY

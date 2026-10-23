@@ -76,6 +76,7 @@ py_test(
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",
         "//util:kubernetes",
+        "//util:net",
         "@pypi//aiohttp",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",

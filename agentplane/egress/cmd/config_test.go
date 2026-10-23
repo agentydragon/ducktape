@@ -51,18 +51,18 @@ func TestCollectionsLoadFromTheFileAndScalarsFromTheEnvironment(t *testing.T) {
 	path := writeSettings(t, `allowed_service_account_namespaces: [file-namespace]
 projected_token_audiences: [file-audience]
 exempt_networks: [127.0.0.0/8]
-admin_port: 1111
+admin_listen_address: 127.0.0.1:1111
 `)
 	c, err := loadTestConfig(t, []string{
 		settingPrefix + "CONFIG_FILE=" + path, settingPrefix + "RULES_NAMESPACE=rules",
 		settingPrefix + "CREDENTIALS_NAMESPACE=secrets", settingPrefix + "CA_CERT=/ca.crt",
 		settingPrefix + "CA_KEY=/ca.key", settingPrefix + "TOKEN_AUDIENCE=hop", databaseURLEnv,
-		settingPrefix + "LISTEN_PORT=5555",
+		settingPrefix + "LISTEN_ADDRESS=127.0.0.1:5555",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ListenPort != 5555 || c.AdminPort != 1111 || c.AgentAPIPort != 8082 ||
+	if c.ListenAddress != "127.0.0.1:5555" || c.AdminListenAddress != "127.0.0.1:1111" || c.AgentAPIListenAddress != "0.0.0.0:8082" ||
 		!slices.Equal(c.AllowedServiceAccountNamespaces, []string{"file-namespace"}) ||
 		!slices.Equal(c.ProjectedTokenAudiences, []string{"file-audience"}) ||
 		!slices.Equal(c.ExemptNetworks, []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}) {
@@ -73,7 +73,7 @@ admin_port: 1111
 func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 	for _, bad := range [][]string{
 		{settingPrefix + "DECISION_BATCH_SIZE=0"},
-		{settingPrefix + "LISTEN_PORT=not-a-number"},
+		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, "allowed_service_account_namespaces: [ns]\nlisten_port: 8888\n")},
 		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, "allowed_service_account_namespaces: [ns]\nlog_levels: {agentplane.other: INFO}\n")},
 		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, "allowed_service_account_namespaces: [ns]\nexempt_networks: [not-a-prefix]\n")},
 	} {

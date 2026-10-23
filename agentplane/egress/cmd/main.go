@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -28,6 +27,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/util/netlistener"
 	"golang.org/x/sync/errgroup"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
@@ -131,8 +131,8 @@ func upstreamRoots(path string) (*x509.CertPool, error) {
 	return roots, nil
 }
 
-func listen(name, host string, port int) (net.Listener, error) {
-	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+func openListener(name, address string) (net.Listener, error) {
+	listener, err := netlistener.Open(address)
 	if err != nil {
 		return nil, fmt.Errorf("%s listener: %w", name, err)
 	}
@@ -149,6 +149,25 @@ func serving(name string, err error) error {
 }
 
 func run(ctx context.Context, c config) error {
+	proxyListener, err := openListener("proxy", c.ListenAddress)
+	if err != nil {
+		return err
+	}
+	defer proxyListener.Close()
+	agentAPIListener, err := openListener("agent API", c.AgentAPIListenAddress)
+	if err != nil {
+		return err
+	}
+	defer agentAPIListener.Close()
+	adminListener, err := openListener("admin", c.AdminListenAddress)
+	if err != nil {
+		return err
+	}
+	defer adminListener.Close()
+	return serve(ctx, c, proxyListener, agentAPIListener, adminListener)
+}
+
+func serve(ctx context.Context, c config, proxyListener, agentAPIListener, adminListener net.Listener) error {
 	base, err := kubernetesConfig(c.Kubeconfig)
 	if err != nil {
 		return err
@@ -213,21 +232,6 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 
-	proxyListener, err := listen("proxy", c.ListenHost, c.ListenPort)
-	if err != nil {
-		return err
-	}
-	defer proxyListener.Close()
-	agentAPIListener, err := listen("agent API", c.AgentAPIHost, c.AgentAPIPort)
-	if err != nil {
-		return err
-	}
-	defer agentAPIListener.Close()
-	adminListener, err := listen("admin", c.AdminHost, c.AdminPort)
-	if err != nil {
-		return err
-	}
-	defer adminListener.Close()
 	// The facade outlives the termination signal so that reads admitted before it finish while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()

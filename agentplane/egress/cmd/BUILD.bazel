@@ -27,6 +27,7 @@ go_library(
         "//agentplane/grpc/facade",
         "//agentplane/policy/reader",
         "//agentplane/workload_auth/go/auth",
+        "//util/netlistener",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_spf13_viper//:viper",
         "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
