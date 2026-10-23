@@ -25,6 +25,9 @@ Deep reference goes in `docs/` behind links. A nested AGENTS.md states only what
 - **In-function imports** only to break a proven cycle, with a comment naming it.
 - **Nullability:** optional means a defined absent state; absence is `None`, never `""`/`[]`. Fields are required or `| None = None`.
 - **No footgun defaults:** require a parameter every correct production caller must supply; a default must be a valid omission.
+- **Explicit policy:** configure independent policy decisions at their owning callsite. Do not infer authentication, trust, retry, placement, or lifecycle policy from incidental names, paths, unrelated fields, or ambient environment. Hidden coupling makes routine edits and refactors hard to review safely: changing a path or setting can unexpectedly change another policy, and callers accumulate dependencies on those undocumented meanings. Helpers consume explicit decisions; mechanical derivation is fine. A deliberately named preset may bundle related decisions when its name and contract expose the bundle.
+- **Configuration consistency:** validate related settings together. Reject partial or contradictory configuration; do not silently discard supplied settings or interpret an incomplete feature configuration as disabled.
+- **Certificate trust:** proxy configuration selects routing, not certificate trust. Use the established CA/trust mechanism and keep certificate verification enabled.
 - **Every field needs a reader.** Delete write-only fields; provenance goes in `#` comments, not `note:` fields.
 - **No dead code:** delete what no live path (shipped binary, image entrypoint, workflow, deployed generator, API a dependent repo imports) can actually call, in the change that orphans it. Tests don't make code live; test support is live for its tests. Exceptions: code staged for a named caller landing next; spikes under `x/`. Non-atomic removals get a tombstone.
 - **No redundant derived fields** (a list plus its `len()`).
