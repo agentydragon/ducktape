@@ -67,6 +67,7 @@ _MCP_OAUTH = actions.mcp_oauth_secret(_NAMESPACE)
 # The environment variables the static clients' `secretEnv` name, set from those Secrets.
 _APP_LOGIN_SECRET_ENV = "DEX_CLIENT_SECRET"
 _MCP_LINKAGE_SECRET_ENV = "MCP_CLIENT_SECRET"
+_MCP_EDGE_LOGIN_SECRET_ENV = "MCP_EDGE_CLIENT_SECRET"
 _ACCEPTANCE_OPERATOR = SecretRef(namespace=_NAMESPACE, name="agentplane-testing-acceptance-operator")
 _ISSUER = "https://agentplane-dex-testing.allegedly.works/dex"
 _APP_ORIGIN = "https://agentplane-testing.allegedly.works"
@@ -137,6 +138,7 @@ def config_yaml(
     operator: Operator,
     password_hash: str,
     mcp_linkage: StaticClient | None = None,
+    mcp_edge_login: StaticClient | None = None,
     serve_tls: bool = False,
 ) -> str:
     """Dex's config: an in-memory store, the app's login client, whose secret comes from
@@ -153,6 +155,8 @@ def config_yaml(
     clients = [(app_login, _APP_LOGIN_SECRET_ENV)]
     if mcp_linkage is not None:
         clients.append((mcp_linkage, _MCP_LINKAGE_SECRET_ENV))
+    if mcp_edge_login is not None:
+        clients.append((mcp_edge_login, _MCP_EDGE_LOGIN_SECRET_ENV))
     return yaml_config(
         {
             "issuer": issuer,
@@ -292,9 +296,10 @@ def operator_login_data(operator: Operator, *, password: str, issuer: str) -> di
 class Dex(Construct):
     """Dex's Deployment and Service, serving the `config.yaml` of the Secret `config_secret` with the
     client secret of `app.oidc_secret`; given `mcp_linkage`, that of `actions.mcp_oauth_secret` too,
-    for a config with an `mcp_linkage` client; given the `kubernetes.io/tls` Secret `tls_secret`, its
-    certificate on `HTTPS_PORT` too, for a config that `serve_tls`. Testing's credentials, route and
-    network policy are added by `add_platform_resources`.
+    for a config with an `mcp_linkage` client; given `mcp_edge_login_secret_name`, that Secret's
+    `client-secret` key too, for a config with an `mcp_edge_login` client; given the `kubernetes.io/tls`
+    Secret `tls_secret`, its certificate on `HTTPS_PORT` too, for a config that `serve_tls`. Testing's
+    credentials, route and network policy are added by `add_platform_resources`.
     """
 
     def __init__(
@@ -308,6 +313,7 @@ class Dex(Construct):
         memory_limit: Size | None = _MEMORY_LIMIT,
         tls_secret: str | None = None,
         mcp_linkage: bool = False,
+        mcp_edge_login_secret_name: str | None = None,
     ) -> None:
         super().__init__(scope, id)
         env_variables = {
@@ -320,6 +326,13 @@ class Dex(Construct):
                 self, "mcp-oauth-client-secret-ref"
             )
             client_secrets.append(_MCP_OAUTH.name)
+        if mcp_edge_login_secret_name is not None:
+            env_variables[_MCP_EDGE_LOGIN_SECRET_ENV] = (
+                SecretRef(namespace=_NAMESPACE, name=mcp_edge_login_secret_name)
+                .key("client-secret")
+                .env_value(self, "mcp-edge-oauth-client-secret-ref")
+            )
+            client_secrets.append(mcp_edge_login_secret_name)
         deployment = Deployment(
             self,
             "deployment",

@@ -7,9 +7,14 @@ from urllib.parse import urlsplit
 import bcrypt
 import pytest_bazel
 import yaml
+from pydantic import AnyHttpUrl
 
 from agentplane.action_service.oauth_settings import OAuthSettings
-from agentplane.action_service.settings import Settings as ActionsSettings  # beside the runner gateway's
+from agentplane.action_service.settings import Settings as ActionsSettings
+
+# Each service module exports `Settings`; aliases keep their separate config contracts explicit.
+from agentplane.app.settings import Settings as AppSettings
+from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
 from agentplane.x.k3s_env import fixture_chart, fixture_database
 from agentplane.x.k3s_env.rendered_fixture import McpInputs
@@ -19,7 +24,7 @@ _MCP = McpInputs(
     dex_ca_cert="dex-ca\n",
     dex_cert="dex-cert\n",
     dex_key="dex-key\n",
-    actions_origin="http://127.0.0.1:1",
+    mcp_edge_origin="http://127.0.0.1:1",
     app_origin="http://127.0.0.1:2",
 )
 
@@ -65,6 +70,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         "app": "agentplane-app-migrate",
         "egress": "agentplane-egress-history-migrate",
         "history-service": "agentplane-history-migrate",
+        "mcp-edge": "agentplane-mcp-edge-migrate",
         "notifications": "agentplane-notification-service-migrate",
     }.items():
         pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
@@ -81,6 +87,26 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         "port": fixture_chart.ACTIONS_SERVICE.pod_port,
         "service": "livez",
     }
+    edge_pod = _resource(docs, "Deployment", "mcp-edge")["spec"]["template"]["spec"]
+    edge_container = edge_pod["containers"][0]
+    edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
+    assert edge_config["actions_target"] == (
+        f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
+    )
+    app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
+    app_env = {entry["name"]: entry for entry in app_container["env"]}
+    assert AnyHttpUrl(app_env[env_name(AppSettings, "connection_service_url")]["value"]) == AnyHttpUrl(
+        fixture_chart.MCP_EDGE_SERVICE.url
+    )
+    assert env_name(ActionsSettings, "oauth") not in {entry["name"] for entry in actions_container["env"]}
+    actions_config = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
+    assert actions_config["integrated_connection_service"] is False
+    edge_database_env_name = env_name(McpEdgeSettings, "database_url")
+    edge_database_env = {entry["name"]: entry for entry in edge_container["env"]}[edge_database_env_name]
+    edge_migrator = edge_pod["initContainers"][0]
+    edge_migrator_env = {entry["name"]: entry for entry in edge_migrator["env"]}[edge_database_env_name]
+    assert edge_database_env["valueFrom"] == edge_migrator_env["valueFrom"]
+    assert edge_database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-mcp-edge"
     egress_pod = _resource(docs, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = next(container for container in egress_pod["containers"] if container["name"] == "proxy")
     assert proxy["image"] == fixture_chart.EGRESS_IMAGE
@@ -188,6 +214,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         "actions": "actions",
         "egress": "egress",
         "notifications": "notifications",
+        "mcp_edge": "mcp_edge",
         "sandbox_service": "sandbox_service",
         "session_dispatcher": "session_dispatcher",
     }
@@ -243,7 +270,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert int(user["hash"].split("$")[2]) >= 10
 
     # The Dex clients' TLS verifies with a mounted bundle that holds the CA of Dex's certificate.
-    for workload in ("app", "actions"):
+    for workload in ("app", "actions", "mcp-edge"):
         pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
         (container,) = pod_spec["containers"]
         cert_file = PurePosixPath(
@@ -254,21 +281,43 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         bundle = _resource(docs, "ConfigMap", volume["configMap"]["name"])["data"][cert_file.name]
         assert bundle.endswith(_MCP.dex_ca_cert), workload
 
-    # The Action Service's OAuth server names itself by the forwarded origin and reads each of its files
-    # from a mounted key of a Secret the fixture writes.
-    actions_pod = _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]
-    (actions_container,) = actions_pod["containers"]
-    oauth = OAuthSettings.model_validate_json(
-        next(
-            entry["value"] for entry in actions_container["env"] if entry["name"] == env_name(ActionsSettings, "oauth")
-        )
+    # The standalone edge names itself by the forwarded origin and reads its upstream client secret
+    # from its own Dex client Secret. Actions retains only its distinct upstream MCP linkage client.
+    edge_oauth_env = next(
+        entry for entry in edge_container["env"] if entry["name"] == env_name(McpEdgeSettings, "oauth")
     )
-    assert oauth.base_url == _MCP.actions_origin
-    for path in (oauth.upstream_client_secret_file, oauth.jwt_signing_key_file, oauth.encryption_key_file):
-        mount = next(mount for mount in actions_container["volumeMounts"] if mount["mountPath"] == str(path.parent))
-        volume = next(volume for volume in actions_pod["volumes"] if volume["name"] == mount["name"])["secret"]
-        assert {"key": path.name, "path": path.name} in volume["items"], path
-        assert _resource(docs, "Secret", volume["secretName"])["stringData"][path.name], path
+    edge_oauth_secret_ref = edge_oauth_env["valueFrom"]["secretKeyRef"]
+    assert edge_oauth_secret_ref["key"] == "oauth"
+    edge_secret = _resource(docs, "Secret", edge_oauth_secret_ref["name"])["stringData"]
+    edge_oauth = OAuthSettings.model_validate_json(edge_secret["oauth"])
+    assert edge_oauth.base_url == _MCP.mcp_edge_origin
+    assert edge_secret["client-secret"]
+    edge_secret_mount = next(
+        mount for mount in edge_container["volumeMounts"] if mount["mountPath"] == "/etc/agentplane-mcp"
+    )
+    edge_secret_volume = next(volume for volume in edge_pod["volumes"] if volume["name"] == edge_secret_mount["name"])[
+        "secret"
+    ]
+    assert edge_secret_volume["secretName"] == edge_oauth_secret_ref["name"]
+    assert {"key": "client-secret", "path": "client-secret"} in edge_secret_volume["items"]
+    assert _resource(docs, "Secret", edge_secret_volume["secretName"])["stringData"]["client-secret"]
+    operator_config = yaml.safe_load(operator["config.yaml"])
+    clients = {client["id"]: client for client in operator_config["staticClients"]}
+    assert clients[edge_oauth.upstream_client_id]["redirectURIs"] == [f"{_MCP.mcp_edge_origin}/auth/callback"]
+    assert clients["test-mcp-linkage"]["redirectURIs"] == [f"{_MCP.app_origin}/mcp-linkage/callback"]
+    mintable_accounts = edge_config["mintable_accounts"]
+    assert mintable_accounts
+    for account in mintable_accounts:
+        namespace, name = account.split("/")
+        caller = _resource(docs, "ServiceAccount", name)
+        assert caller["metadata"]["namespace"] == namespace
+        assert caller["metadata"]["labels"]["agentplane.allegedly.works/use-action-service"] == "true"
+    token_rules = [
+        rule for rule in _resource(docs, "Role", "mcp-edge")["rules"] if "serviceaccounts/token" in rule["resources"]
+    ]
+    assert {name for rule in token_rules for name in rule["resourceNames"]} == {
+        account.split("/")[1] for account in mintable_accounts
+    }
 
 
 if __name__ == "__main__":

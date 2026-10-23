@@ -1,4 +1,4 @@
-"""Actions challenge -> SDK discovery -> RFC 7591 DCR, against the Action Service `ACTIONS_MCP_URL` names.
+"""MCP edge challenge -> SDK discovery -> RFC 7591 DCR, against the `MCP_EDGE_URL` endpoint.
 
 Registration only: no test operator credentials are read and no Action is executed.
 """
@@ -8,7 +8,7 @@ import os
 import pytest
 import pytest_bazel
 
-from agentplane.system_tests.conftest import ACTIONS_MCP_URL
+from agentplane.system_tests.conftest import MCP_EDGE_URL
 from agentplane.system_tests.dcr import DcrError, register_client
 
 
@@ -17,7 +17,7 @@ async def test_dynamic_client_registration(pytestconfig: pytest.Config, redirect
     if pytestconfig.option.showlocals:
         pytest.fail("Disable pytest local-variable dumps before DCR", pytrace=False)
     try:
-        await register_client(os.environ[ACTIONS_MCP_URL], redirect_uri)
+        await register_client(os.environ[MCP_EDGE_URL], redirect_uri)
     except DcrError as error:
         pytest.fail(str(error), pytrace=False)
 

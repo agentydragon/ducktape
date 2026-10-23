@@ -36,7 +36,7 @@ SERVICE = "postgres-primary"
 PORT = 5432
 IMAGE = "git.allegedly.works/ducktape-ci/agentplane-postgres:unset"
 
-_ROLES = ("actions", "egress", "notifications", "sandbox_service", "session_dispatcher")
+_ROLES = ("actions", "egress", "mcp_edge", "notifications", "sandbox_service", "session_dispatcher")
 _LABELS = {"app.kubernetes.io/name": NAME}
 
 

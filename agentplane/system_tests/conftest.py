@@ -40,8 +40,8 @@ TOKEN = "AGENTPLANE_SYSTEM_TEST_TOKEN"
 NAMESPACE = "AGENTPLANE_SYSTEM_TEST_NAMESPACE"
 SERVICE_ACCOUNT = "AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT"
 MODEL_BACKEND = "AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND"
-# The Action Service's MCP endpoint, which a k3s stack with the MCP fixtures publishes.
-ACTIONS_MCP_URL = "AGENTPLANE_SYSTEM_TEST_ACTIONS_MCP_URL"
+# The standalone MCP edge's endpoint, which a k3s stack with the MCP fixtures publishes.
+MCP_EDGE_URL = "AGENTPLANE_SYSTEM_TEST_MCP_EDGE_URL"
 
 
 class ModelBackend(StrEnum):

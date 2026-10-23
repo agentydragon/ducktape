@@ -75,7 +75,7 @@ class _Wire:
         _require(
             request.url.copy_with(path="/", query=None, fragment=None)
             == server.copy_with(path="/", query=None, fragment=None),
-            "Discovery attempted a request outside the Actions origin",
+            "Discovery attempted a request outside the MCP edge origin",
         )
         _require(not request.url.userinfo and not request.url.query, "Unexpected credential-bearing request URL")
         if request.method == "POST" and request.url != server:

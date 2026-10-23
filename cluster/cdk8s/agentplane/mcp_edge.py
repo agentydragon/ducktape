@@ -55,7 +55,18 @@ def service(namespace: str) -> ServiceRef:
 class McpEdge(Construct):
     """The workload and its scoped Kubernetes and network permissions."""
 
-    def __init__(self, scope: Construct, id: str, env: Environment, *, database_url: EnvValue) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        database_url: EnvValue,
+        placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
+        registry_secret_name: str | None = "forgejo-images-creds",
+        image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+    ) -> None:
         super().__init__(scope, id)
         self.env = env
         self.endpoint = service(env.namespace)
@@ -96,7 +107,7 @@ class McpEdge(Construct):
             serves=[self.endpoint],
             container=NAME,
             image=_IMAGE,
-            image_pull_policy=ImagePullPolicy.ALWAYS,
+            image_pull_policy=image_pull_policy,
             replica_profile=props.replicas,
             env_variables=variables,
             readiness=grpc_probe(port=self.endpoint.pod_port, initial_delay_seconds=3),
@@ -107,10 +118,13 @@ class McpEdge(Construct):
             ),
             termination_grace=Duration.seconds(30),
             migrate=migrate_init_container(
-                _MIGRATE_IMAGE, name="migrate", env_variables={env_name(Settings, "database_url"): database_url}
+                _MIGRATE_IMAGE,
+                name="migrate",
+                env_variables={env_name(Settings, "database_url"): database_url},
+                image_pull_policy=migrate_pull_policy,
             ),
-            placement=node_scheduling.HIL_OVH,
-            registry_secret_name="forgejo-images-creds",
+            placement=placement,
+            registry_secret_name=registry_secret_name,
             annotations={
                 "configmap.reloader.stakater.com/reload": settings.config_map.name,
                 **(

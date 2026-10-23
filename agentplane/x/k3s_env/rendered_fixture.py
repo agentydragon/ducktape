@@ -60,13 +60,13 @@ PLACEHOLDERS = RuntimeInputs(
 @dataclass(frozen=True)
 class McpInputs:
     """Dex's TLS for the MCP fixtures, as PEM: the CA its clients trust, and the certificate and key it
-    signs for `McpFixtures.dex_host`; and the loopback origins the test process reaches the app and Action
-    Service at. OAuth issuers and enrollment links allow HTTP only on loopback."""
+    signs for `McpFixtures.dex_host`; and the loopback origins the test process reaches the app and MCP edge
+    at. OAuth issuers and enrollment links allow HTTP only on loopback."""
 
     dex_ca_cert: str
     dex_cert: str
     dex_key: str
-    actions_origin: str
+    mcp_edge_origin: str
     app_origin: str
 
 
@@ -74,7 +74,7 @@ MCP_PLACEHOLDERS = McpInputs(
     dex_ca_cert="k3s-env-placeholder-dex-ca-cert",
     dex_cert="k3s-env-placeholder-dex-cert",
     dex_key="k3s-env-placeholder-dex-key",
-    actions_origin="http://k3s-env-placeholder-actions-origin.invalid",
+    mcp_edge_origin="http://k3s-env-placeholder-mcp-edge-origin.invalid",
     app_origin="http://k3s-env-placeholder-app-origin.invalid",
 )
 MODEL_PLACEHOLDERS: dict[Backend, Models] = {
@@ -94,13 +94,13 @@ class BrowserService(BaseModel):
 
 class McpFixtures(BaseModel):
     """Dex and the MCP servers, as rendered: the name Dex's certificate is for, the Secret with the
-    operator's login, and the app and Action Service names and ports, reached through
-    port-forwards from `McpInputs.actions_origin` and `McpInputs.app_origin`."""
+    operator's login, and the app and MCP edge names and ports, reached through port-forwards from
+    `McpInputs.app_origin` and `McpInputs.mcp_edge_origin`."""
 
     dex_host: str
     operator_secret: str
-    actions_service: str
-    actions_port: int
+    mcp_edge_service: str
+    mcp_edge_port: int
     app_service: str
     app_port: int
 

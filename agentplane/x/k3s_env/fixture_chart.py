@@ -5,10 +5,8 @@ It supplies bare-k3s dependencies (Secrets, local-path storage) as inputs
 and never reads or edits the production generated manifest.
 
 Browsers and services reach the app and Dex by their in-cluster Service names: Pods through the
-cluster DNS, the test process on the node through `/etc/hosts` (`stack.py`). The app answers over http;
-Dex over TLS, as the app and the Action Service accept a plain-http issuer only on loopback. The Action
-Service's own OAuth server is such an issuer, so it names itself by a loopback origin, which the test
-process forwards to it.
+cluster DNS, the test process on the node through `/etc/hosts` (`stack.py`). In MCP fixtures the app
+and standalone edge use loopback HTTP origins for OAuth callbacks, served by port-forwards.
 """
 
 from __future__ import annotations
@@ -33,17 +31,17 @@ from cdk8s_plus_34 import (
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
+    ServiceAccount,
     Volume,
     k8s,
 )
 from constructs import Construct
-from cryptography.fernet import Fernet
 from more_itertools import one
 from pydantic import AnyHttpUrl
 
 from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.oauth_settings import OAuthSettings
-from agentplane.action_service.settings import Settings
+from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, mcp_servers, runtime_grant, send_grant
 from agentplane.x.k3s_env import fixture_database
@@ -58,6 +56,7 @@ from cluster.cdk8s.agentplane import (
     egress,
     history_service,
     llm_ingress,
+    mcp_edge,
     notifications,
     policy_controller,
     policy_controller_rbac,
@@ -76,7 +75,6 @@ from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
-from util.settings_contract import env_name
 
 NAMESPACE = testing.ENV.namespace
 RUNNER_GATEWAY = "runner-gateway"
@@ -91,6 +89,7 @@ MCP_EVERYTHING_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-everythin
 APP_SERVICE = app_component.service(NAMESPACE)
 APP_ORIGIN = APP_SERVICE.url
 ACTIONS_SERVICE = actions.service(NAMESPACE)
+MCP_EDGE_SERVICE = mcp_edge.service(NAMESPACE)
 DEX_HOST = dex.service().host
 DEX_ISSUER = dex.issuer(f"https://{DEX_HOST}:{dex.HTTPS_PORT.number}")
 # Test-only Dex clients and operator in place of testing's, which an operator's deployment uses.
@@ -98,10 +97,14 @@ _APP_LOGIN = dex.StaticClient(id="test-app-login", name="Test app login", redire
 _MCP_LINKAGE = dex.StaticClient(
     id="test-mcp-linkage", name="Test MCP linkage", redirect_uri=f"{APP_ORIGIN}/mcp-linkage/callback"
 )
+_MCP_EDGE_LOGIN = dex.StaticClient(
+    id="test-mcp-edge-oauth", name="Test MCP edge OAuth", redirect_uri=f"{MCP_EDGE_SERVICE.url}/auth/callback"
+)
 _OPERATOR = dex.Operator(email="test-operator@k3s-fixture.invalid", username="test-operator", user_id="test-operator")
 # Dex's config and the operator's login, which `agentplane/system_tests/operator_login.py` reads.
 OPERATOR_SECRET = "test-operator-login"
 _DEX_TLS_SECRET = "test-dex-tls"
+_MCP_EDGE_OAUTH_SECRET = "agentplane-mcp-edge-oauth"
 # The system roots and the CA of Dex's certificate, for the Pods that call Dex.
 _TRUST_BUNDLE = "test-fixture-ca"
 _TRUST_BUNDLE_KEY = "ca-certificates.crt"
@@ -110,6 +113,7 @@ _VM_GUEST_BOOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot
 _VM_GUEST_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
 # The serial guest/initramfs_init mounts as the root.
 _VM_GUEST_ROOT_SERIAL = "guest-root"
+_MCP_EDGE_TEST_CALLER = "mcp-edge-test-caller"
 
 
 def _password(length: int = 40) -> str:
@@ -138,21 +142,24 @@ def objects(
     mcp: McpInputs | None,
     vm_sandboxes: bool,
 ) -> list[dict[str, Any]]:
-    """Synthesize only the objects the one-node, operator-light k3s fixture deploys; Dex, the MCP
-    servers `test_mcp` calls and the Action Service's OAuth server only given `mcp`, whose images then
-    need importing; the VM template, on the test guest, and its launcher relay only with `vm_sandboxes`."""
+    """Synthesize the one-node, operator-light fixture; Dex and the MCP servers `test_mcp` calls only
+    given `mcp`; the VM template, test guest and launcher relay only with `vm_sandboxes`."""
     app_origin = mcp.app_origin if mcp is not None else APP_ORIGIN
     app_login = replace(_APP_LOGIN, redirect_uri=f"{app_origin}/auth/callback")
     mcp_linkage = replace(_MCP_LINKAGE, redirect_uri=f"{app_origin}/mcp-linkage/callback")
     operator_oidc = testing.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
-    oauth, oauth_files = _actions_oauth(mcp.actions_origin, app_origin) if mcp is not None else (None, {})
+    mintable_accounts = (
+        frozenset({ServiceAccountRef(namespace=NAMESPACE, name=_MCP_EDGE_TEST_CALLER)})
+        if mcp is not None
+        else frozenset()
+    )
     env = replace(
         testing.ENV,
         vm_sandboxes=vm_sandboxes,
         # The scenarios' own preset in place of the deployment's, which an operator uses.
         app_config=testing.ENV.app_config.model_copy(
             update={
-                "connection_service_url": AnyHttpUrl(ACTIONS_SERVICE.url),
+                "connection_service_url": AnyHttpUrl(MCP_EDGE_SERVICE.url),
                 "thread_presets": {
                     launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)
                 },
@@ -168,8 +175,7 @@ def objects(
         # The scenarios' own MCP server and Action groups in place of the deployment's.
         actions=replace(
             testing.ENV.actions,
-            # This isolated fixture deploys Actions without the standalone edge.
-            integrated_connection_service=True,
+            integrated_connection_service=False,
             operator_oidc=operator_oidc,
             mcp_servers={
                 mcp_servers.OAUTH: actions_testing_fixtures.oauth_fixture_server(
@@ -181,7 +187,13 @@ def objects(
                 mcp_servers.OAUTH: actions_testing_fixtures.oauth_fixture_group(mcp_servers.OAUTH),
                 "sandbox": testing.ENV.actions.action_groups["sandbox"],
             },
-            oauth_secret_items=("client-secret", *oauth_files),
+            oauth_secret_items=("client-secret",),
+        ),
+        mcp_edge=replace(
+            testing.ENV.mcp_edge,
+            operator_oidc=operator_oidc,
+            mintable_accounts=mintable_accounts,
+            oauth_secret_name=_MCP_EDGE_OAUTH_SECRET if mcp is not None else None,
         ),
     )
     sandbox_sidecar_resources = k8s.ResourceRequirements(
@@ -217,6 +229,9 @@ def objects(
         SecretRef(namespace=NAMESPACE, name="postgres-session-dispatcher")
         .key("uri")
         .env_value(chart, "session-dispatcher-database-url")
+    )
+    mcp_edge_database_url = (
+        SecretRef(namespace=NAMESPACE, name="postgres-mcp-edge").key("uri").env_value(chart, "mcp-edge-database-url")
     )
     llm_ingress.LlmIngress(
         chart,
@@ -313,6 +328,16 @@ def objects(
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         migrate_memory_limit=None,
     )
+    mcp_edge_service = mcp_edge.McpEdge(
+        chart,
+        "mcp-edge",
+        env,
+        database_url=mcp_edge_database_url,
+        placement=None,
+        registry_secret_name=None,
+        image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+    )
     runner_sandbox.RunnerSandbox(
         chart,
         "runner-sandbox",
@@ -352,9 +377,6 @@ def objects(
         memory_limit=None,
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         migrate_memory_limit=None,
-        container_env=(
-            {env_name(Settings, "oauth"): EnvValue.from_value(oauth.model_dump_json())} if oauth is not None else None
-        ),
     )
     notifications.Notifications(
         chart,
@@ -385,25 +407,36 @@ def objects(
         image_pull_secret_name=None,
         trust_mounts=sandbox_pod.egress_proxy_mounts(),
     )
-    # The app, the Action Service and Dex read their normal Secret names.
+    # The app and the Actions MCP client read their normal Secret names.
     _secret(
         chart,
         app_component.oidc_secret(NAMESPACE).name,
         {"client-id": _APP_LOGIN.id, "client-secret": _password(), "session-secret": _password(64)},
     )
     _secret(
-        chart,
-        actions.mcp_oauth_secret(NAMESPACE).name,
-        {"client-id": _MCP_LINKAGE.id, "client-secret": _password(), **oauth_files},
+        chart, actions.mcp_oauth_secret(NAMESPACE).name, {"client-id": _MCP_LINKAGE.id, "client-secret": _password()}
     )
     if mcp is not None:
+        mcp_edge_login = replace(_MCP_EDGE_LOGIN, redirect_uri=f"{mcp.mcp_edge_origin}/auth/callback")
+        edge_oauth_secret = _password()
+        edge_oauth = _mcp_edge_oauth(mcp.mcp_edge_origin, app_origin, mcp_edge_login.id)
+        _secret(
+            chart, _MCP_EDGE_OAUTH_SECRET, {"client-secret": edge_oauth_secret, "oauth": edge_oauth.model_dump_json()}
+        )
+        ServiceAccount(
+            chart,
+            "mcp-edge-test-caller",
+            metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_CALLER, namespace=NAMESPACE, labels={CALLER_LABEL: "true"}),
+            automount_token=False,
+        )
         _add_mcp_fixtures(
             chart,
             mcp,
             app_login=app_login,
             mcp_linkage=mcp_linkage,
+            mcp_edge_login=mcp_edge_login,
             system_roots=system_roots,
-            dex_clients=[app_service, action_service],
+            dex_clients=[app_service, action_service, mcp_edge_service],
         )
     _secret(
         chart,
@@ -505,6 +538,7 @@ def _add_mcp_fixtures(
     *,
     app_login: dex.StaticClient,
     mcp_linkage: dex.StaticClient,
+    mcp_edge_login: dex.StaticClient,
     system_roots: str,
     dex_clients: list[Construct],
 ) -> None:
@@ -521,6 +555,7 @@ def _add_mcp_fixtures(
                 issuer=DEX_ISSUER,
                 app_login=app_login,
                 mcp_linkage=mcp_linkage,
+                mcp_edge_login=mcp_edge_login,
                 operator=_OPERATOR,
                 password_hash=password_hash,
                 serve_tls=True,
@@ -545,6 +580,7 @@ def _add_mcp_fixtures(
         memory_limit=None,
         tls_secret=_DEX_TLS_SECRET,
         mcp_linkage=True,
+        mcp_edge_login_secret_name=_MCP_EDGE_OAUTH_SECRET,
     )
     actions_testing_fixtures.add_mcp_everything(chart, image=MCP_EVERYTHING_IMAGE)
     actions_testing_fixtures.add_oauth_fixture(
@@ -556,28 +592,22 @@ def _add_mcp_fixtures(
     )
 
 
-def _actions_oauth(origin: str, app_origin: str) -> tuple[OAuthSettings, dict[str, str]]:
-    """The Action Service's OAuth server at `origin`, signing operators in at Dex, and the files it reads
-    from `actions.mcp_oauth_secret`. For registration only (`test_dcr`): no scenario signs in through
-    it, so Dex has no client for it."""
+def _mcp_edge_oauth(origin: str, app_origin: str, upstream_client_id: str) -> OAuthSettings:
+    """The standalone edge's OAuth server at `origin`, using its own registered client at Dex."""
     files = Path(actions.MCP_OAUTH_DIR)
-    settings = OAuthSettings(
+    return OAuthSettings(
         config_url=f"{DEX_ISSUER}/.well-known/openid-configuration",
-        upstream_client_id="test-actions-oauth",
-        upstream_client_secret_file=files / "oauth-client-secret",
+        upstream_client_id=upstream_client_id,
+        upstream_client_secret_file=files / "client-secret",
         base_url=origin,
         integration_app_url=app_origin,
-        jwt_signing_key_file=files / "jwt-signing-key",
-        encryption_key_file=files / "encryption-key",
+        # These legacy keys are still accepted by the shared OAuth settings model; the edge does not read them.
+        jwt_signing_key_file=files / "unused-jwt-signing-key",
+        encryption_key_file=files / "unused-encryption-key",
         upstream_issuer=DEX_ISSUER,
         upstream_subject=_OPERATOR.subject,
         approving_operator=OperatorPrincipal(issuer=DEX_ISSUER, subject=_OPERATOR.subject),
     )
-    return settings, {
-        "oauth-client-secret": _password(),
-        "jwt-signing-key": _password(64),
-        "encryption-key": Fernet.generate_key().decode(),
-    }
 
 
 def _trust(workload: Construct, bundle: ConfigMap) -> None:

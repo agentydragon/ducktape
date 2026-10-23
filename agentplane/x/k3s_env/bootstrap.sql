@@ -8,6 +8,9 @@ CREATE DATABASE actions OWNER actions;
 \getenv egress_password AGENTPLANE_DB_PASSWORD_EGRESS
 CREATE ROLE egress WITH LOGIN PASSWORD :'egress_password';
 CREATE DATABASE egress OWNER egress;
+\getenv mcp_edge_password AGENTPLANE_DB_PASSWORD_MCP_EDGE
+CREATE ROLE mcp_edge WITH LOGIN PASSWORD :'mcp_edge_password';
+CREATE DATABASE mcp_edge OWNER mcp_edge;
 \getenv notifications_password AGENTPLANE_DB_PASSWORD_NOTIFICATIONS
 CREATE ROLE notifications WITH LOGIN PASSWORD :'notifications_password';
 CREATE DATABASE notifications OWNER notifications;

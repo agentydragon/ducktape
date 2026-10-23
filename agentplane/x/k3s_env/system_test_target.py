@@ -5,7 +5,7 @@ scenario fixture runs, it starts the stack and publishes it the way an operator 
 the `AGENTPLANE_SYSTEM_TEST_*` variables the system tests' `conftest` reads, `KUBECONFIG`, and `kubectl`
 on `PATH`. LLM ingress forwards to the scenario's scripted model on the node, which the scenario starts
 on the published address (`scripted_upstream`). A stack with the MCP fixtures also publishes the
-operator's login Secret for `operator_login` and the Action Service's MCP endpoint, and trusts Dex's CA
+operator's login Secret for `operator_login` and the standalone MCP edge endpoint, and trusts Dex's CA
 (`SSL_CERT_FILE`). The test log ends with the stack's setup timeline, how long each step and each image
 import took.
 """
@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from agentplane.system_tests import operator_login
-from agentplane.system_tests.conftest import ACTIONS_MCP_URL, BASE_URL, NAMESPACE, TOKEN
+from agentplane.system_tests.conftest import BASE_URL, MCP_EDGE_URL, NAMESPACE, TOKEN
 from agentplane.x.k3s_env import rendered_fixture
 from agentplane.x.k3s_env.stack import Timeline, node_ip, running_stack
 from util.bazel.runfiles import get_required_path
@@ -74,5 +74,5 @@ def k3s_deployment(pytestconfig: pytest.Config, scripted_listener: Listener) -> 
                 operator_login.SECRET_PATH_ENV,
                 f"/api/v1/namespaces/{stack.namespace}/secrets/{stack.mcp_fixtures.operator_secret}",
             )
-            environment.setenv(ACTIONS_MCP_URL, stack.mcp_fixtures.actions_mcp_url)
+            environment.setenv(MCP_EDGE_URL, stack.mcp_fixtures.mcp_edge_url)
         yield

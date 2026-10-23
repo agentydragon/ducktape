@@ -7,8 +7,8 @@ first Deployment that does not, with the Pod states and logs of whatever did not
 The test process reaches the app (and Dex) by their in-cluster Service names, which it resolves
 through `/etc/hosts`: OIDC redirects name them, and the action is discarded after the test. Dex's
 certificate comes from a CA made per stack, which `McpFixtureAccess.ca_bundle` adds to the system roots.
-In MCP fixtures the app and the Action Service's OAuth server use loopback origins, served by
-port-forwards, so their plain HTTP URLs satisfy the OAuth endpoint contract.
+In MCP fixtures the app and standalone MCP edge use loopback origins, served by port-forwards, so
+their plain HTTP URLs satisfy the OAuth endpoint contract.
 """
 
 import contextlib
@@ -306,8 +306,8 @@ class McpFixtureAccess:
     ca_bundle: Path
     # The Secret with the operator's Dex login.
     operator_secret: str
-    # The Action Service's MCP endpoint, at the origin its OAuth server names itself by.
-    actions_mcp_url: str
+    # The standalone edge's MCP endpoint, at the origin its OAuth server names itself by.
+    mcp_edge_url: str
 
 
 @dataclass(frozen=True)
@@ -322,7 +322,7 @@ class Stack:
 def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
     ca = tls.make_ca("test-k3s-fixture-ca")
     cert, key = tls.issue_leaf(ca, dex_host, work)
-    # Free ports now; port-forwards listen once the app and Action Service are Available.
+    # Free ports now; port-forwards listen once the app and MCP edge are Available.
     with socket.socket() as probe, socket.socket() as app_probe:
         probe.bind(("127.0.0.1", 0))
         app_probe.bind(("127.0.0.1", 0))
@@ -332,7 +332,7 @@ def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
         dex_ca_cert=ca.cert_pem.decode(),
         dex_cert=cert.read_text(),
         dex_key=key.read_text(),
-        actions_origin=f"http://127.0.0.1:{port}",
+        mcp_edge_origin=f"http://127.0.0.1:{port}",
         app_origin=f"http://127.0.0.1:{app_port}",
     )
 
@@ -483,9 +483,9 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
                 _port_forward(
                     k3s,
                     fixture.namespace,
-                    fixture.mcp_fixtures.actions_service,
-                    mcp.actions_origin,
-                    fixture.mcp_fixtures.actions_port,
+                    fixture.mcp_fixtures.mcp_edge_service,
+                    mcp.mcp_edge_origin,
+                    fixture.mcp_fixtures.mcp_edge_port,
                 )
             )
             cleanup.enter_context(
@@ -500,7 +500,7 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
             access = McpFixtureAccess(
                 ca_bundle=ca_bundle,
                 operator_secret=fixture.mcp_fixtures.operator_secret,
-                actions_mcp_url=f"{mcp.actions_origin}/mcp",
+                mcp_edge_url=f"{mcp.mcp_edge_origin}/mcp",
             )
         token = k3s.kubectl(
             "-n", fixture.namespace, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
