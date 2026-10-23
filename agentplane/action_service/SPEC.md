@@ -14,7 +14,9 @@ surfaces do not require caller admission.
 
 Every caller is a Kubernetes ServiceAccount carrying the label
 `agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace.
-A Pod-bound workload token proves that account directly; an external MCP bearer proves an active
+A Kubernetes token proves that account directly through TokenReview for the configured audience.
+The resolver requires an allowed namespace and ServiceAccount UID; Actions accepts tokens with or without a Pod binding. A supplied
+Pod binding must have exactly one name and UID. An external MCP bearer proves an active
 Connection grant whose currently bound account is admitted by the same label. Nothing is admitted
 before the ServiceAccount watch has synced. Missing or unlabeled accounts cannot submit Actions.
 
@@ -176,7 +178,7 @@ authorization.
 Refresh and bearer admission resolve current canonical grant validity and the current Connection
 binding. External receipts and idempotency are ServiceAccount-scoped. Connections retain their grant
 history; accepted Actions retain their submitting account independently of later Connection changes.
-In-cluster Actions RPCs and their HTTP facade use live workload authentication; workload tokens
+In-cluster Actions RPCs and their HTTP facade use live ServiceAccount authentication; workload tokens
 do not authenticate to `/mcp`. Neither path accepts operator credentials as a caller bypass. OAuth protocol state is durable across replacement and replicas. Recoverable upstream refresh
 tokens are stored in the service database; issued opaque token values are stored only as hashes. Enabling these contracts does not imply deployed client acceptance.
 

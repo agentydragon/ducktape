@@ -1,4 +1,4 @@
-// Package auth authenticates Pod-bound workload tokens for Agentplane services.
+// Package auth authenticates Kubernetes ServiceAccount tokens for Agentplane services.
 // Each API surface constructs its own Resolver with its own audience and namespace policy.
 package auth
 
@@ -56,6 +56,12 @@ type Principal struct {
 	ServiceAccountUID string
 	PodName           string
 	PodUID            string
+}
+
+// ServiceAccountPrincipal proves an account without claiming a Pod binding.
+type ServiceAccountPrincipal struct {
+	Account           Account
+	ServiceAccountUID string
 }
 
 // TokenReviews is the Kubernetes TokenReview Create operation. The production implementation
@@ -180,31 +186,59 @@ func BearerToken(values []string) (string, error) {
 // Unauthenticated when the token does not prove a workload this Resolver serves and with
 // Unavailable when the TokenReview could not be answered.
 func (r *Resolver) ResolveToken(ctx context.Context, token string) (Principal, error) {
-	response, authenticated, err := r.verdicts.AuthenticateToken(ctx, token)
+	account, extra, err := r.resolveServiceAccountToken(ctx, token)
 	if err != nil {
-		return Principal{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
+		return Principal{}, err
 	}
-	if !authenticated {
-		return Principal{}, ErrInvalidBearer
-	}
-	parts := strings.Split(response.User.GetName(), ":")
-	if len(parts) != 4 || parts[0]+":"+parts[1]+":" != accountPrefix || parts[2] == "" || parts[3] == "" {
-		return Principal{}, ErrInvalidBearer
-	}
-	if _, ok := r.namespaces[parts[2]]; !ok {
-		return Principal{}, ErrInvalidBearer
-	}
-	extra := response.User.GetExtra()
 	podName, okName := oneClaim(extra[podNameClaim])
 	podUID, okUID := oneClaim(extra[podUIDClaim])
-	if !okName || !okUID || response.User.GetUID() == "" {
+	if !okName || !okUID {
 		return Principal{}, ErrInvalidBearer
 	}
 	return Principal{
+		Account: account.Account, ServiceAccountUID: account.ServiceAccountUID,
+		PodName: podName, PodUID: podUID,
+	}, nil
+}
+
+// ResolveServiceAccountToken requires the reviewed audience, namespace and ServiceAccount UID, without requiring
+// a Pod binding. It is for destinations whose authority is the account alone; it does not prove a Pod identity.
+func (r *Resolver) ResolveServiceAccountToken(ctx context.Context, token string) (ServiceAccountPrincipal, error) {
+	account, extra, err := r.resolveServiceAccountToken(ctx, token)
+	if err != nil {
+		return ServiceAccountPrincipal{}, err
+	}
+	_, hasName := extra[podNameClaim]
+	_, hasUID := extra[podUIDClaim]
+	if hasName || hasUID {
+		_, validName := oneClaim(extra[podNameClaim])
+		_, validUID := oneClaim(extra[podUIDClaim])
+		if !validName || !validUID {
+			return ServiceAccountPrincipal{}, ErrInvalidBearer
+		}
+	}
+	return account, nil
+}
+
+func (r *Resolver) resolveServiceAccountToken(ctx context.Context, token string) (ServiceAccountPrincipal, map[string][]string, error) {
+	response, authenticated, err := r.verdicts.AuthenticateToken(ctx, token)
+	if err != nil {
+		return ServiceAccountPrincipal{}, nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	if !authenticated {
+		return ServiceAccountPrincipal{}, nil, ErrInvalidBearer
+	}
+	parts := strings.Split(response.User.GetName(), ":")
+	if len(parts) != 4 || parts[0]+":"+parts[1]+":" != accountPrefix || parts[2] == "" || parts[3] == "" || response.User.GetUID() == "" {
+		return ServiceAccountPrincipal{}, nil, ErrInvalidBearer
+	}
+	if _, ok := r.namespaces[parts[2]]; !ok {
+		return ServiceAccountPrincipal{}, nil, ErrInvalidBearer
+	}
+	return ServiceAccountPrincipal{
 		Account:           Account{Namespace: parts[2], Name: parts[3]},
 		ServiceAccountUID: response.User.GetUID(),
-		PodName:           podName, PodUID: podUID,
-	}, nil
+	}, response.User.GetExtra(), nil
 }
 
 // RequireAccount applies an API/method-specific allowlist after token validation. It does not

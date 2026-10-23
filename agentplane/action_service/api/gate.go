@@ -108,7 +108,7 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	if g.operators != nil && g.operators.issued(token) {
 		return g.operator(ctx, token)
 	}
-	workload, err := g.workloads.ResolveToken(ctx, token)
+	workload, err := g.workloads.ResolveServiceAccountToken(ctx, token)
 	switch {
 	case errors.Is(err, auth.ErrInvalidBearer):
 		return admission{}, unauthenticated

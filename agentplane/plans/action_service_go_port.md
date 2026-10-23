@@ -84,8 +84,14 @@ migrations. The Go protos, generated clients and current deployment contracts re
 ## After the flip: the edge split
 
 1. The edge's database and a copy of its tables (database before code).
-2. `actions` accepts ServiceAccount tokens that are not Pod-bound (reader before writer).
-3. `mcp-edge`: `main`, Deployment, TokenRequest rights and token minting for the bound accounts, audience
-   `actions`; the in-process `ActionService` call becomes the gRPC call.
+2. Actions accepts ServiceAccount tokens without a Pod binding in source through the explicit account-only
+   resolver. Verify that image has replaced deployed Actions before the edge starts minting such tokens.
+   Caller namespace, audience, ServiceAccount UID and live label checks still apply. This is token acceptance
+   before token issuance; the edge acts as an owner-scoped caller, not an all-owner `reader_accounts` identity.
+3. `mcp-edge`: `main`, Deployment, restricted TokenRequest rights and token minting for the currently bound
+   accounts; the in-process `ActionService` call becomes gRPC. Its minted audience must match the Actions
+   verifier (currently `agentplane-egress`; a dedicated audience is a separate reader-before-writer change).
+   Preserve grant/binding rechecks on every MCP call and while forwarding watches. The Connection API keeps
+   operator-OIDC verification and the app's request-bound operator bearer independently of MCP client OAuth.
 4. The public route and the app's Connection calls move to the edge; `actions` stops being public.
 5. The tables leave the `actions` database, in a separate data change.

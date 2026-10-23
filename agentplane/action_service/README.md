@@ -407,10 +407,13 @@ not hold that token: it presents the public
 path, whose generic `authenticatedWorkloadToken` source substitutes the already-authenticated
 `agentplane-egress` bearer for the exact first-party destination rule.
 
-At the destination, the [workload resolver](../workload_auth/go/auth/) performs the TokenReview. The caller is the
-ServiceAccount that Pod runs as, derived only from what the bearer proved. Identity headers are
-never authorization. Thread and Agent fields remain untrusted until an authoritative binding exists;
-workload authentication performs no Thread or Agent lookup.
+At the destination, the [workload resolver](../workload_auth/go/auth/) performs the TokenReview. Actions
+uses its explicit ServiceAccount-only resolution: the configured audience, allowed namespace and
+ServiceAccount UID are required; a Pod binding is optional, and partial or duplicate Pod claims are
+rejected. This admits account tokens for the planned MCP edge while ordinary Sandbox tokens retain
+their API-server-validated Pod binding. The caller is the account the bearer proved. Identity headers
+are never authorization. Thread and Agent fields remain untrusted until an authoritative binding exists;
+authentication performs no Thread or Agent lookup.
 
 Operator/BFF calls use the separate `/v1/operator/...` surface, gated by the configured OIDC
 verifier. Without `operator_oidc`, operator requests are refused.

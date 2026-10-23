@@ -37,6 +37,10 @@ func idsOf(requests ...store.ActionRequest) []string {
 
 func TestEachPrincipalReadsTheRequestsItMayAndEachSeesTheSameReceipt(t *testing.T) {
 	s := serve(t)
+	unbound, err := kube.UnboundToken(t.Context(), callerAccount, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
 	own := s.decide(t, s.submit(t, caller, "test-own"), store.VerdictAllow)
 	others := s.decide(t, s.submit(t, otherCaller, "test-others"), store.VerdictDeny)
 	// The service reader carries no caller label: a reader account needs none.
@@ -44,7 +48,7 @@ func TestEachPrincipalReadsTheRequestsItMayAndEachSeesTheSameReceipt(t *testing.
 		token string
 		want  []string
 	}{
-		"the owner":        {callerToken, idsOf(own)},
+		"the owner":        {unbound, idsOf(own)},
 		"another caller":   {otherToken, idsOf(others)},
 		"a service reader": {readerToken, idsOf(own, others)},
 		"an operator":      {s.operatorToken, idsOf(own, others)},
@@ -75,7 +79,7 @@ func TestEachPrincipalReadsTheRequestsItMayAndEachSeesTheSameReceipt(t *testing.
 			t.Errorf("readers see different receipts:\n%v\n%v", receipts[0], receipt)
 		}
 	}
-	_, err := s.client.GetActionRequest(as(t, otherToken), &action_servicepb.GetActionRequestRequest{RequestId: own.ID.String()})
+	_, err = s.client.GetActionRequest(as(t, otherToken), &action_servicepb.GetActionRequestRequest{RequestId: own.ID.String()})
 	wantCode(t, "another caller's receipt", err, codes.NotFound)
 	_, err = s.client.ListActionRequestEvents(as(t, otherToken), &action_servicepb.ListActionRequestEventsRequest{RequestId: own.ID.String()})
 	wantCode(t, "another caller's events", err, codes.NotFound)
@@ -98,15 +102,10 @@ func TestABearerTheServiceDoesNotAcceptIsRefusedWithoutSayingWhy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	unbound, err := kube.UnboundToken(t.Context(), callerAccount, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var refusals []string
 	for name, ctx := range map[string]context.Context{
 		"no bearer":                                presenting(t),
 		"a token for another audience":             as(t, otherAudience),
-		"a token bound to no Pod":                  as(t, unbound),
 		"two bearers":                              presenting(t, "Bearer "+callerToken, "Bearer "+callerToken),
 		"another scheme":                           presenting(t, "Basic "+callerToken),
 		"an unknown token":                         as(t, "test-token-unknown"),

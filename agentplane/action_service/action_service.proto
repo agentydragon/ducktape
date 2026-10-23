@@ -11,8 +11,10 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
-// Callers are workloads and operators, and the bearer says which. A workload's bearer is the Pod-bound token of a
-// ServiceAccount that carries the `agentplane.allegedly.works/use-action-service` label. A workload acts for its own
+// Callers are workloads and operators, and the bearer says which. A workload's bearer is a Kubernetes token of a
+// ServiceAccount that carries the `agentplane.allegedly.works/use-action-service` label; a Pod binding is optional.
+// TokenReview must accept the configured audience; the resolver requires an allowed namespace and ServiceAccount UID.
+// A workload acts for its own
 // ServiceAccount and sees only the requests that account submitted, whichever Pod or external Connection submitted
 // them. The exception is a service reader (the Notification Service's ServiceAccount): it may list, get, watch and
 // read the events of every account's requests. An operator's bearer is the OIDC token the integration app forwards

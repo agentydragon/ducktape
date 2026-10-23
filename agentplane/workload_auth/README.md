@@ -24,6 +24,14 @@ header, body field, source address, operator identity, role, permission, Agent, 
 participates, and resolution does not read the Pod object. The Runner Gateway's `resolve_peer` reads
 it afterwards, to follow a runner control stream's Pod to its controlling Sandbox.
 
+The Go resolver also exposes `ResolveServiceAccountToken`, returning a `ServiceAccountPrincipal`
+with the account and its UID, without a Pod identity. Actions explicitly uses that method: it
+requires the same TokenReview audience, namespace and ServiceAccount UID, and accepts either no
+Pod binding claims or one complete name/UID pair. Partial or duplicate claims are rejected.
+Its caller admission still requires the account's live label, apart from configured read-only
+service readers. `ResolveToken`, `Resolve`, `ResolveAuthorization` and `RequireAccount` retain their
+Pod-bound contract for the other destinations.
+
 **Verdict reuse (Go).** The Go `Resolver` (`go/auth`) puts its TokenReview behind `k8s.io/apiserver`'s
 cached token authenticator, the cache the API server itself uses for webhook and delegated
 authentication (`authenticatorfactory.DelegatingAuthenticatorConfig`). It keeps the API server's
