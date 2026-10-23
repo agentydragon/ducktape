@@ -313,7 +313,8 @@ def seaweed(scope: Construct) -> Seaweed:
             # self-contained (no inheritance from a base spec.volume; topology-only deployment
             # needs the operator's nil-safe BaseVolumeSpec fallback, added in 1.0.20).
             volume_topology={
-                # 3 servers on the KS-5 HDD nodes; destination for the migrated bulk.
+                # 2 servers remain after evacuating hdd-2 on ovh-ns103656. Its Piraeus-backed
+                # replacement is a separate change after the host is reimaged.
                 # -disk=hdd matches the flat servers' default disk type ("" == hdd, verified
                 # in seaweedfs 4.29 ToDiskType).
                 #
@@ -341,7 +342,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     storage="1800Gi",
                     storage_class="local-path-ovh-hdd",
                     disk="hdd",
-                    replicas=3,
+                    replicas=2,
                     max_volume_counts=600,
                 ),
                 # The usual 3-server OVH NVMe group serves Forgejo git via the
