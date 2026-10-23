@@ -188,6 +188,33 @@ not apply it to the serving node. After reimage, verify the volume layout and
 data-disk identity before preparing a separate readiness change or selecting the
 data disk for Piraeus initialization.
 
+### Second HDD worker worksheet
+
+`ovh-ns103711` uses the same worker system-volume profile: EPHEMERAL 32 GiB,
+CRI 512 GiB, KUBELET 1024 GiB and LOG 32 GiB. Talos inventory on 2026-10-23
+verified two 2000398934016-byte HGST disks:
+
+<!-- prettier-ignore -->
+| Role | by-id path | WWID |
+| --- | --- | --- |
+| System | `/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H61MEA` | `naa.5000cca25ed0d7d6` |
+| Data | `/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H48V6A` | `naa.5000cca25ed00a31` |
+
+Apply its prepared Talos layout only through maintenance mode after workload
+handoffs. Keep `piraeus_ready_enabled = false` until the whole data disk is
+verified clear and the new pool passes acceptance. Do not apply this layout to
+the serving node or run the rescue/dd installer. Reconcile Terraform after the
+maintenance apply and inspect a targeted machine-readable plan first.
+
+For this node only, the operator authorized discarding remaining Seaweed source
+copies after verifying a healthy surviving copy elsewhere, then restoring
+replication after reimage. The normal two-copy gate outside the outage set is
+waived for this window; no other node may be rolled concurrently. The operator
+also accepted a temporary single ClickHouse data replica on `102453` and waived
+preservation of the Anki volume. Preserve and move both Grocy configurations via
+a final consistent VolSync copy to Piraeus, and preserve Langfuse queue state.
+Flush replicated ingesters and check their survivors before retirement.
+
 ### Applied and proposed data-disk layouts
 
 Live LVM reporting on 2026-10-22 confirmed that the first node has one whole-device
