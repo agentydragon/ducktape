@@ -139,11 +139,54 @@ These total 384 GiB. On the 450 GB disks, the nominal remainder is about 35 GiB
 rather than carrying over the first node's free-space figure. Bind each volume
 to the verified system serial, fixed min/max sizes, grow=false.
 
-Give the separate data disk wholly to the existing `piraeus_ssd/data` LVM thin
-pool with the accepted 4 GiB metadata, metadata spare and 64 KiB chunk sizing.
-Record actual resulting capacity after creation. Worker system-volume and HDD
-pool budgets need their own worksheet; do not copy the SSD disk identities or
-assume an ETCD volume is required on a worker.
+Give the separate SSD data disk wholly to the existing `piraeus_ssd/data` LVM
+thin pool with the accepted 4 GiB metadata, metadata spare and 64 KiB chunk
+sizing. Record actual resulting capacity after creation.
+
+Worker system-volume and HDD pool budgets follow in a separate worksheet; do not
+copy the SSD disk identities or assume an ETCD volume is required on a worker.
+
+### First HDD worker system-volume worksheet
+
+Preparation snapshot, 2026-10-23: `ovh-ns103656` is the first HDD worker target.
+It is drained and cordoned. The operator authorized reformat after waiving all
+48 remaining historical source directories. The maintenance worksheet recorded
+that no archive stream or source deletion had occurred; the waiver is not a
+backup. Refresh the worker and shared-service gates above before the reset.
+
+Both physical disks were verified at 2000398934016 bytes. Talos does not report
+the system disk serial, so both system-volume and data-disk selectors use the
+verified WWID. The installation path names the system disk by-id:
+
+<!-- prettier-ignore -->
+| Role | by-id path | WWID | Bytes |
+| --- | --- | --- | ---: |
+| System | `/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H5NGHA` | `naa.5000cca25ed0aa31` | 2000398934016 |
+| Data | `/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA` | `naa.5000cca25ed21ab1` | 2000398934016 |
+
+Use these worker Talos volumes on the system disk; workers have no ETCD volume:
+
+<!-- prettier-ignore -->
+| Talos volume | Size |
+| --- | ---: |
+| EPHEMERAL | 32 GiB |
+| CRI | 512 GiB |
+| KUBELET | 1024 GiB |
+| LOG | 32 GiB |
+
+The system volumes total 1600 GiB, leaving about 263 GiB before Talos boot/STATE,
+alignment and other geometry overhead. Keep that remainder unallocated; do not
+use the system disk for Piraeus. Piraeus will use only the separate whole data
+disk after its existing data has been evacuated and the disk has been wiped.
+
+The prepared Terraform layout removes the `drbd-canary` FILE_THIN selector and
+keeps `storage.allegedly.works/piraeus-ready` absent. Before resetting the
+worker, inspect a machine-readable targeted plan: it must show the intended
+system layout for this worker only, no changes to the accepted SSD nodes, and no
+`null_resource.install_talos_kimsufi`, OVH rescue or `dd` installer action. Do
+not apply it to the serving node. After reimage, verify the volume layout and
+data-disk identity before preparing a separate readiness change or selecting the
+data disk for Piraeus initialization.
 
 ### Applied and proposed data-disk layouts
 

@@ -20,26 +20,37 @@ locals {
   # and removes the legacy data-disk UserVolumeConfig from the generated machine
   # config. It does not run the rescue/dd installer. piraeus_ready_enabled is a
   # separate gate: it selects the node-specific raw-device pool configuration.
+  # System volumes remain Talos-only; Piraeus uses the separate whole data disk.
   # Apply a newly enabled system layout through maintenance mode after evacuation.
   # Keep raw-device readiness false until the data disk is verified clear.
   piraeus_talos_node_layouts = {
     "ovh-ns1001419" = {
       talos_storage_enabled = true
       piraeus_ready_enabled = true
-      system_disk_serial    = "190130800417"
+      system_disk_match     = "disk.serial == '190130800417'"
+      system_volume_profile = "controlplane"
       data_disk_serial      = "1951A3449505"
     }
     "ovh-ns104952" = {
       talos_storage_enabled = true
       piraeus_ready_enabled = true
-      system_disk_serial    = "BTPF8256006P450RGN"
+      system_disk_match     = "disk.serial == 'BTPF8256006P450RGN'"
+      system_volume_profile = "controlplane"
       data_disk_serial      = "BTPF8304019P450RGN"
     }
     "ovh-ns104963" = {
       talos_storage_enabled = true
       piraeus_ready_enabled = true
-      system_disk_serial    = "BTPF8256002V450RGN"
+      system_disk_match     = "disk.serial == 'BTPF8256002V450RGN'"
+      system_volume_profile = "controlplane"
       data_disk_serial      = "BTPF8256009U450RGN"
+    }
+    "ovh-ns103656" = {
+      talos_storage_enabled = true
+      piraeus_ready_enabled = false
+      # Talos omits this disk's serial; pin the split system volumes by WWID.
+      system_disk_match     = "disk.wwid == 'naa.5000cca25ed0aa31'"
+      system_volume_profile = "worker"
     }
   }
 
@@ -50,23 +61,31 @@ locals {
     for node, layout in local.piraeus_talos_node_layouts : node if layout.piraeus_ready_enabled
   ])
 
-  piraeus_controlplane_system_volume_sizes = {
-    ETCD      = "16GiB"
-    EPHEMERAL = "32GiB"
-    CRI       = "192GiB"
-    KUBELET   = "128GiB"
-    LOG       = "16GiB"
+  piraeus_system_volume_sizes = {
+    controlplane = {
+      ETCD      = "16GiB"
+      EPHEMERAL = "32GiB"
+      CRI       = "192GiB"
+      KUBELET   = "128GiB"
+      LOG       = "16GiB"
+    }
+    worker = {
+      EPHEMERAL = "32GiB"
+      CRI       = "512GiB"
+      KUBELET   = "1024GiB"
+      LOG       = "32GiB"
+    }
   }
 
-  piraeus_controlplane_system_volume_config_patches = {
+  piraeus_system_volume_config_patches = {
     for node, layout in local.piraeus_talos_node_layouts : node => [
-      for name, size in local.piraeus_controlplane_system_volume_sizes : yamlencode({
+      for name, size in local.piraeus_system_volume_sizes[layout.system_volume_profile] : yamlencode({
         apiVersion = "v1alpha1"
         kind       = "VolumeConfig"
         name       = name
         provisioning = {
           diskSelector = {
-            match = "disk.serial == '${layout.system_disk_serial}'"
+            match = layout.system_disk_match
           }
           minSize = size
           maxSize = size
@@ -82,8 +101,8 @@ locals {
     "ovh-ns103656" = {
       service_name    = var.kimsufi_service_name
       apply_mode      = "staged_if_needing_reboot"
-      install_disk    = "/dev/sda"
-      data_disk_match = "disk.dev_path == '/dev/sdb'"
+      install_disk    = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H5NGHA"
+      data_disk_match = "disk.wwid == 'naa.5000cca25ed21ab1'"
       zone            = "hil-ovh"
       # Media of the data disk (/var/mnt/seaweedfs-data). Drives the
       # `storage.allegedly.works/tier` node label; keyed to hardware, NOT role, so it stays
@@ -445,9 +464,14 @@ locals {
     for k, v in local.kimsufi_servers :
     k => yamlencode({
       machine = merge(local.worker_machine_base, {
-        install = {
-          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
-        }
+        install = merge(
+          {
+            image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
+          },
+          contains(local.piraeus_talos_storage_enabled_nodes, k) ? {
+            disk = v.install_disk
+          } : {},
+        )
         # Talos hardens user.max_user_namespaces to 0; the haku-ci runner's rootless
         # dind (docker:dind-rootless) needs user namespaces to start. Scoped to the
         # OVH/hil workers, not cluster-wide; the runner has no node affinity, so any
@@ -458,11 +482,16 @@ locals {
         # Topology labels set explicitly — no CCM for OVH bare metal.
         # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
         # (cluster/generated/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
-        nodeLabels = {
-          "topology.kubernetes.io/region" = "hil"
-          "topology.kubernetes.io/zone"   = v.zone
-          "storage.allegedly.works/tier"  = v.storage_tier
-        }
+        nodeLabels = merge(
+          {
+            "topology.kubernetes.io/region" = "hil"
+            "topology.kubernetes.io/zone"   = v.zone
+            "storage.allegedly.works/tier"  = v.storage_tier
+          },
+          contains(local.piraeus_ready_nodes, k) ? {
+            "storage.allegedly.works/piraeus-ready" = "true"
+          } : {},
+        )
       })
       cluster = local.worker_cluster_config
     })
@@ -624,7 +653,7 @@ data "talos_machine_configuration" "kimsufi" {
     local.nebula_machine_patches[each.key],
     [local.talos_node_logging_patch],
     local.drbd_canary_machine_config_patches[each.key],
-    lookup(local.piraeus_controlplane_system_volume_config_patches, each.key, []),
+    lookup(local.piraeus_system_volume_config_patches, each.key, []),
   )
 }
 
