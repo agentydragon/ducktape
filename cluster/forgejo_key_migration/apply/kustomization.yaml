@@ -12,8 +12,5 @@ patches:
         path: /metadata/name
         value: forgejo-key-apply
       - op: replace
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
-      - op: replace
         path: /spec/template/spec/containers/0/args/0
         value: apply

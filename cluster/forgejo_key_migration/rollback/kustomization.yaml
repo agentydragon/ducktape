@@ -12,9 +12,6 @@ patches:
         path: /metadata/name
         value: forgejo-key-rollback
       - op: replace
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
-      - op: replace
         path: /spec/template/spec/containers/0/args/0
         value: apply
       - op: replace

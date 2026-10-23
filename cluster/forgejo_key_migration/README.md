@@ -67,19 +67,19 @@ one concrete **suspended** Job; creating it does not run it. All use the exact
 rehearsed image digest, production Secret names, TLS certificate verification,
 and the reviewed inventory of four Actions secrets and one mirror address.
 
-| Directory  | Operation                      | Image pull policy |
-| ---------- | ------------------------------ | ----------------- |
-| `check`    | Read-only, current key         | `IfNotPresent`    |
-| `apply`    | Migrate current to replacement | `Never`           |
-| `verify`   | Read-only, replacement key     | `Never`           |
-| `rollback` | Migrate replacement to current | `Never`           |
+| Directory  | Operation                      |
+| ---------- | ------------------------------ |
+| `check`    | Read-only, current key         |
+| `apply`    | Migrate current to replacement |
+| `verify`   | Read-only, replacement key     |
+| `rollback` | Migrate replacement to current |
 
-All Jobs select `ovh-ns103656`. Complete `check` there **before** stopping
-Forgejo: it pulls the image using the existing `haku-forgejo-registry-pull`
-Secret and verifies access to the production database and staged keys. The
-later Jobs require that same cached image because Forgejo's registry is offline
-during migration. If the node or image cache becomes unavailable, keep Forgejo
-stopped and restore image availability before proceeding; do not weaken `Never`.
+The GHCR image has the exact same manifest digest as the rehearsed Forgejo
+registry image. It remains available while Forgejo is stopped, needs no private
+pull Secret, and all Jobs use `IfNotPresent`. Complete `check` on the selected
+worker (`ovh-ns103656`) before downtime to verify image startup, database access
+and staged keys. A successful pull in another namespace does not prove an
+uncredentialed pod can use a private cached image.
 
 From the repo's Nix devshell, create and explicitly start the read-only check:
 

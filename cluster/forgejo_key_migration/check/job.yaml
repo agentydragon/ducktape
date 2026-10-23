@@ -21,12 +21,10 @@ spec:
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
         kubernetes.io/hostname: ovh-ns103656
-      imagePullSecrets:
-        - name: haku-forgejo-registry-pull
       containers:
         - name: migrate
           # Exact image exercised by the isolated rehearsal.
-          image: git.allegedly.works/ducktape-ci/forgejo-key-migration@sha256:89516e63d6fbf4161a5915e12b999379a55b213ff8325eaec36682dc82b3032f
+          image: ghcr.io/agentydragon/forgejo-key-migration@sha256:89516e63d6fbf4161a5915e12b999379a55b213ff8325eaec36682dc82b3032f
           imagePullPolicy: IfNotPresent
           args:
             - check
