@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/agentydragon/ducktape/util/netlistener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -29,7 +30,7 @@ type routeForwarder struct {
 	tokenFile string
 }
 
-func bindPlatformRoutes(routes map[string]platformRouteConfig, listenHost string) ([]*platformRoute, error) {
+func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute, error) {
 	names := make([]string, 0, len(routes))
 	for name := range routes {
 		names = append(names, name)
@@ -38,7 +39,7 @@ func bindPlatformRoutes(routes map[string]platformRouteConfig, listenHost string
 	started := make([]*platformRoute, 0, len(names))
 	for _, name := range names {
 		config := routes[name]
-		listener, err := net.Listen("tcp", net.JoinHostPort(listenHost, fmt.Sprint(*config.ListenPort)))
+		listener, err := netlistener.Open(config.ListenAddress)
 		if err != nil {
 			stopPlatformRoutes(started)
 			return nil, fmt.Errorf("listen for platform route %q: %w", name, err)

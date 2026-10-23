@@ -10,23 +10,20 @@ import (
 
 const configFileEnv = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 
-// A pointer distinguishes a missing listen_port from an explicit ephemeral port (0).
 type platformRouteConfig struct {
-	ListenPort *int   `yaml:"listen_port"`
-	Upstream   string `yaml:"upstream"`
-	TokenFile  string `yaml:"token_file"`
+	ListenAddress string `yaml:"listen_address"`
+	Upstream      string `yaml:"upstream"`
+	TokenFile     string `yaml:"token_file"`
 }
 
 type config struct {
-	ProxyHost          string                         `yaml:"proxy_host"`
-	ProxyPort          int                            `yaml:"proxy_port"`
-	TokenFile          string                         `yaml:"token_file"`
-	AudienceTokenFiles map[string]string              `yaml:"audience_token_files"`
-	PlatformRoutes     map[string]platformRouteConfig `yaml:"platform_routes"`
-	ListenHost         string                         `yaml:"listen_host"`
-	ListenPort         int                            `yaml:"listen_port"`
-	ReadinessHost      string                         `yaml:"readiness_host"`
-	ReadinessPort      int                            `yaml:"readiness_port"`
+	ProxyHost              string                         `yaml:"proxy_host"`
+	ProxyPort              int                            `yaml:"proxy_port"`
+	TokenFile              string                         `yaml:"token_file"`
+	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
+	PlatformRoutes         map[string]platformRouteConfig `yaml:"platform_routes"`
+	ListenAddress          string                         `yaml:"listen_address"`
+	ReadinessListenAddress string                         `yaml:"readiness_listen_address"`
 }
 
 // loadConfig applies the settings file named by the configFileEnv variable over the defaults.
@@ -36,13 +33,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("%s must name the YAML settings file", configFileEnv)
 	}
 	c := config{
-		AudienceTokenFiles: map[string]string{},
-		PlatformRoutes:     map[string]platformRouteConfig{},
-		ProxyPort:          8888,
-		ListenHost:         "127.0.0.1",
-		ListenPort:         3128,
-		ReadinessHost:      "0.0.0.0",
-		ReadinessPort:      3129,
+		AudienceTokenFiles:     map[string]string{},
+		PlatformRoutes:         map[string]platformRouteConfig{},
+		ProxyPort:              8888,
+		ListenAddress:          "127.0.0.1:3128",
+		ReadinessListenAddress: "0.0.0.0:3129",
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -67,16 +62,15 @@ func (c config) validate() error {
 	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
 		return fmt.Errorf("proxy_port must be in 1..65535: %d", c.ProxyPort)
 	}
-	if c.ListenHost == "" || c.ReadinessHost == "" || c.ListenPort < 0 || c.ListenPort > 65535 ||
-		c.ReadinessPort < 0 || c.ReadinessPort > 65535 {
-		return errors.New("listener hosts are required and ports must be in 0..65535")
+	if c.ListenAddress == "" || c.ReadinessListenAddress == "" {
+		return errors.New("listen_address and readiness_listen_address are required")
 	}
 	if c.PlatformRoutes == nil {
 		return errors.New("platform_routes must be an object")
 	}
 	for name, route := range c.PlatformRoutes {
-		if route.ListenPort == nil || *route.ListenPort < 0 || *route.ListenPort > 65535 || route.Upstream == "" || route.TokenFile == "" {
-			return fmt.Errorf("platform route %q requires upstream and token_file and a listen_port in 0..65535", name)
+		if route.ListenAddress == "" || route.Upstream == "" || route.TokenFile == "" {
+			return fmt.Errorf("platform route %q requires listen_address, upstream, and token_file", name)
 		}
 	}
 	return nil

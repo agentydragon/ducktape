@@ -16,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/agentydragon/ducktape/util/netlistener"
 )
 
 const (
@@ -40,9 +42,30 @@ type sidecar struct {
 }
 
 func (s *sidecar) run(ctx context.Context) error {
-	if err := s.bindReadiness(); err != nil {
+	readinessListener, err := netlistener.Open(s.config.ReadinessListenAddress)
+	if err != nil {
 		return fmt.Errorf("start readiness listener: %w", err)
 	}
+
+	routes, err := bindPlatformRoutes(s.config.PlatformRoutes)
+	if err != nil {
+		_ = readinessListener.Close()
+		return err
+	}
+
+	proxyListener, err := netlistener.Open(s.config.ListenAddress)
+	if err != nil {
+		_ = readinessListener.Close()
+		stopPlatformRoutes(routes)
+		return fmt.Errorf("start HTTP proxy listener: %w", err)
+	}
+	return s.serve(ctx, proxyListener, readinessListener, routes)
+}
+
+func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener net.Listener, routes []*platformRoute) error {
+	s.proxyListener = proxyListener
+	s.routes = routes
+	s.bindReadiness(readinessListener)
 	var serving sync.WaitGroup
 	defer func() {
 		s.stopProxy()
@@ -51,17 +74,6 @@ func (s *sidecar) run(ctx context.Context) error {
 		serving.Wait()
 	}()
 
-	routes, err := bindPlatformRoutes(s.config.PlatformRoutes, s.config.ListenHost)
-	if err != nil {
-		return err
-	}
-	s.routes = routes
-
-	listener, err := net.Listen("tcp", net.JoinHostPort(s.config.ListenHost, strconv.Itoa(s.config.ListenPort)))
-	if err != nil {
-		return fmt.Errorf("start HTTP proxy listener: %w", err)
-	}
-	s.proxyListener = listener
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -82,7 +94,7 @@ func (s *sidecar) run(ctx context.Context) error {
 	}
 	serve("HTTP proxy listener", s.acceptLoop)
 	s.ready.Store(true)
-	slog.Info("relaying HTTP proxy traffic", "listen", listener.Addr(), "upstream", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
+	slog.Info("relaying HTTP proxy traffic", "listen", proxyListener.Addr(), "upstream", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
 
 	select {
 	case <-ctx.Done():
@@ -95,11 +107,7 @@ func (s *sidecar) run(ctx context.Context) error {
 	}
 }
 
-func (s *sidecar) bindReadiness() error {
-	listener, err := net.Listen("tcp", net.JoinHostPort(s.config.ReadinessHost, strconv.Itoa(s.config.ReadinessPort)))
-	if err != nil {
-		return err
-	}
+func (s *sidecar) bindReadiness(listener net.Listener) {
 	s.readinessListener = listener
 	s.readinessServer = &http.Server{
 		Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -122,7 +130,6 @@ func (s *sidecar) bindReadiness() error {
 			}
 		}),
 	}
-	return nil
 }
 
 func (s *sidecar) stopReadiness() {

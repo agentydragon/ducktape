@@ -348,12 +348,15 @@ class RunnerTemplate(Construct):
         return self._add_sidecar_settings(name=name, listen_host="0.0.0.0").config_map.name
 
     def _add_sidecar_settings(self, *, name: str, listen_host: str | None = None) -> SettingsFile:
+        bind_host = listen_host or "127.0.0.1"
         return sandbox_pod.add_sidecar_settings(
             self,
             self.env,
             name=name,
-            platform_routes=platform_routes.sidecar_routes(self.env.namespace, control_service=self.control_service),
-            listen_host=listen_host,
+            platform_routes=platform_routes.sidecar_routes(
+                self.env.namespace, control_service=self.control_service, listen_host=bind_host
+            ),
+            listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
         )
 
     def _add_sandbox_template(self, *, name: str, image: str) -> dict[str, Any]:

@@ -89,12 +89,16 @@ def token_file(tmp_path: Path) -> Path:
 @pytest.fixture
 async def route_channel(upstream: tuple[Upstream, int], token_file: Path) -> AsyncIterator[RouteUnderTest]:
     handler, port = upstream
-    route_config = {"control": {"listen_port": 0, "upstream": f"127.0.0.1:{port}", "token_file": str(token_file)}}
+    route_config = {
+        "control": {"listen_address": "127.0.0.1:0", "upstream": f"127.0.0.1:{port}", "token_file": str(token_file)}
+    }
     async with (
         SidecarProcess(
             proxy_host="127.0.0.1", proxy_port=1, token_file=token_file, platform_routes=route_config
         ) as sidecar,
-        grpc.aio.insecure_channel(f"127.0.0.1:{sidecar.platform_route_ports['control']}") as channel,
+        grpc.aio.insecure_channel(
+            f"{sidecar.platform_route_listeners['control'].host}:{sidecar.platform_route_listeners['control'].port}"
+        ) as channel,
     ):
         yield RouteUnderTest(channel, handler, token_file)
 

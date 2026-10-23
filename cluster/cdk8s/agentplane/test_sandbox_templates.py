@@ -114,7 +114,17 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     def settings(name: str) -> dict[str, Any]:
         return cast(dict[str, Any], yaml.safe_load(_by_name(docs, "ConfigMap", name)["data"]["settings.yaml"]))
 
-    assert settings("launcher-relay-egress-sidecar") == {**settings("runner-egress-sidecar"), "listen_host": "0.0.0.0"}
+    runner_settings = settings("runner-egress-sidecar")
+    launcher_settings = settings("launcher-relay-egress-sidecar")
+    assert "listen_address" not in runner_settings
+    assert launcher_settings["listen_address"] == "0.0.0.0:3128"
+    for name, route in runner_settings["platform_routes"].items():
+        _, port = route["listen_address"].rsplit(":", 1)
+        assert route["listen_address"] == f"127.0.0.1:{port}"
+        assert launcher_settings["platform_routes"][name]["listen_address"] == f"0.0.0.0:{port}"
+        launcher_settings["platform_routes"][name]["listen_address"] = route["listen_address"]
+    del launcher_settings["listen_address"]
+    assert launcher_settings == runner_settings
     policy = _by_name(docs, "ClusterPolicy", f"{namespace}-launcher-relay")
     inject = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")
     volumes = inject["mutate"]["patchStrategicMerge"]["spec"]["volumes"]
