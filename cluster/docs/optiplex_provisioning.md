@@ -151,25 +151,14 @@ Expected results:
 - the Nebula extension service is running;
 - Cilium and the cluster DaemonSets become healthy on the node.
 
-## Ongoing machine configuration
+## Storage layout and routine machine configuration
 
-For the Piraeus reimage, upgrade the DRBD image with the legacy layout first.
-After the documented cold capture, reset STATE and EPHEMERAL and deliver the
-validated new config through the maintenance API. Before merging the
-post-reimage handoff, verify on the rejoined node that the physical partitions
-match the declared 16 GiB EPHEMERAL, 64 GiB CRI, 32 GiB KUBELET, 8 GiB LOG,
-and 112 GiB `r-piraeus` layout on NVMe serial `AS9CN54631CA0CT13`. Verify
-the DRBD modules, Nebula identity, and node readiness as well. The Piraeus
-satellite must use `/dev/disk/by-partlabel/r-piraeus`, never the whole NVMe.
-Do not run a routine Tofu apply or enable the Piraeus-ready node label before
-these checks pass.
+The NVMe with serial `AS9CN54631CA0CT13` is provisioned with 16 GiB EPHEMERAL,
+64 GiB CRI, 32 GiB KUBELET, 8 GiB LOG, and a 112 GiB Piraeus data partition
+labelled `r-piraeus`. The Piraeus satellite uses
+`/dev/disk/by-partlabel/r-piraeus`, never the whole NVMe.
 
-After that handoff, the existing managed apply resource consumes the same
-generated machine configuration used for maintenance installation. It adds
-the Piraeus-ready label and retains the installer, storage layout, networking,
-and cluster identity from the installed configuration.
-
-After the initial installation, Tofu owns subsequent OptiPlex machine-config changes through
+Tofu owns subsequent OptiPlex machine-config changes through
 `talos_machine_configuration_apply.home_worker["optiplex"]`. This reaches the installed node
 over its Nebula address and uses `staged_if_needing_reboot`, which dry-runs the change and
 applies non-rebooting changes automatically. For a routine update, review a targeted plan and

@@ -651,22 +651,6 @@ def _backup(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    # Keep the old claim managed until its live prune protection and recovery copies
-    # are verified. Removing its declaration is a separate cleanup decision.
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        "legacy-config",
-        metadata=k8s.ObjectMeta(
-            name="home-assistant-config",
-            namespace=_NAMESPACE,
-            annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="local-path-home-ssd",
-            resources=k8s.VolumeResourceRequirements(requests=_quantities(storage="32Gi")),
-        ),
-    )
     k8s.KubePersistentVolumeClaim(
         chart,
         "config",

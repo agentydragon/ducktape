@@ -29,9 +29,10 @@ SSD volume server on `104963`, accept a replacement server on the converted
 `1001419` alone cannot preserve two copies outside `104963`. Keep the final
 legacy server available until that second Piraeus destination is ready.
 
-One HDD worker may accompany one control plane under the paired-roll gates below. Other workers follow; OptiPlex
-and wyrm2 need separate hardware, capacity, local-data and site-dependency plans.
-Do not apply this OVH disk recipe to those machines unchanged.
+One HDD worker may accompany one control plane under the paired-roll gates below.
+OptiPlex has its own installed [single-disk layout](../optiplex_provisioning.md);
+wyrm2 still needs a separate hardware, capacity, local-data and site-dependency
+plan. Do not apply this OVH disk recipe to either machine unchanged.
 
 ### Paired HDD worker and SSD control plane
 

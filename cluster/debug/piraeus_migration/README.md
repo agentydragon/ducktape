@@ -5,7 +5,7 @@ operational gates. This index separates the latest reported status from dated
 inventories, proofs, and benchmark results. Refresh live state and the runbook
 gates before any operation.
 
-## Status snapshot — 2026-10-22
+## Status snapshot — 2026-10-23
 
 The first SSD node, `ovh-ns1001419`, is converted and accepted; application
 restores and the Seaweed master-2 handoff are complete. Its retained evidence is
@@ -46,18 +46,23 @@ zero changes (refresh disabled). See [the final restoration proof](next_nodes/th
 The four application claims total 263Gi against 411.18Gi of thin-data capacity;
 the overcommit issue trigger is not met on this SSD node.
 
-The HDD copy leg from `103656` to the 4TB `102453` completed 150 native moves.
-The remaining 151-copy leg to the smaller `103711`
-leg remains held for physical reclamation: deleting S3 objects does not itself
-free the volume files. Four initial backup scopes, three additional scopes and
-Agentplane staging's approved snapshot were cleared; future backups remain
-enabled. Survivor-only compaction targets volumes already on `hdd-0`/`hdd-1`,
-leaving the maintenance source's copies unchanged. Volumes still
-on the source in maintenance reject compaction there; do not count their
-unreclaimed bytes. Refresh actual disk space, copy/index overhead and growth
-before releasing the smaller-destination wave. No HDD reset or ClickHouse
-migration has started. The accepted overcommit policy and issue trigger remain
-in the [runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
+OptiPlex is converted and admitted to `piraeus-ssd-local` on its 112Gi NVMe data
+partition, which persisted through a controlled reboot. Home Assistant now runs
+from `home-assistant-config-piraeus`, and its post-restore VolSync backup was
+verified. The historical 32Gi and 1Gi Piraeus claims remain retained.
+After GitOps drops its declaration, remove the retired `home-assistant-config`
+PVC and erased Retain PV records. The CPAP VM is restored, but the card SSID was absent, so live
+sync remains unverified. See the [OptiPlex provisioning record](../../docs/optiplex_provisioning.md)
+for the durable disk layout.
+
+The SeaweedFS evacuation from `ovh-ns103656/hdd-2` to `ovh-ns103711` is
+complete: the 151-copy wave finished at 10:29:33 UTC (final move 1058), and the
+source has zero Seaweed volumes and zero allocated volume data. At 10:48 UTC,
+the smaller destination had about 331 GB free (16.58%), above the 15%
+free-space floor.
+The source has not been reimaged; no HDD reset or ClickHouse migration has
+started. The accepted overcommit policy and issue trigger remain in the
+[runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
 
 ## Evidence map
 
