@@ -177,9 +177,9 @@ If idle polling becomes a priority, replace the notification source's five-secon
 - Consider automatic Action following or a submission convenience flag, backed by durable authorized
   intent and reconciliation rather than a best-effort second request.
 - Consider narrower GitHub repository/event grants instead of shared access to every App installation.
-- Deferred, not a current priority: bound raw GitHub receipt retention without breaking subscription
-  boundaries, association evidence or delivery-ID deduplication. See
-  [`NOTIFICATION_GITHUB_RETENTION`](task_freezer.md#notification_github_retention--bound-github-delivery-receipt-storage).
+- Raw GitHub receipts have configurable retention (default seven days), bounding replay, late
+  association matching and delivery-ID deduplication. Inbox payload copies retain their separate
+  30-day lifetime; see [retention configuration](../notification_service/README.md#raw-github-delivery-retention).
 - Additional sources/scopes: repository subjects, workflow-specific
   filters, tags/releases and deployment/environment subscriptions. No promise of complete historical replay.
 - Notification-triggered provisioning/resume, offline-delivery guarantees and wake budgets.

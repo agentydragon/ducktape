@@ -24,7 +24,7 @@ import (
 const stepBudget = store.LeaseDuration - 10*time.Second
 
 const (
-	// cleanupInterval is how often Run expires old payloads and deletes long-retired inboxes.
+	// cleanupInterval is how often Run expires raw GitHub receipts, old inbox payloads and long-retired inboxes.
 	cleanupInterval = time.Minute
 	// storageRetry is the wait after the database fails.
 	storageRetry = 5 * time.Second
@@ -87,7 +87,7 @@ func (w *Worker) Run(ctx context.Context, changes <-chan struct{}) error {
 	}
 }
 
-// retention pages through the store's expiry of payloads and deletion of long-retired inboxes, one page a minute.
+// retention schedules raw receipt cleanup and pages through inbox retention, one batch a minute.
 type retention struct {
 	after *uuid.UUID
 	due   time.Time
@@ -97,6 +97,9 @@ type retention struct {
 // long to idle: until the next retention page or the next durable deadline, whichever is first.
 func (w *Worker) advance(ctx context.Context, sweep *retention) (idle time.Duration, worked bool, err error) {
 	if !time.Now().Before(sweep.due) {
+		if err = w.Store.CleanupGitHubDeliveries(ctx, time.Now().Add(-time.Duration(w.Settings.GitHubDeliveryRetentionDays)*24*time.Hour)); err != nil {
+			return 0, false, err
+		}
 		if sweep.after, err = w.Store.Cleanup(ctx, sweep.after); err != nil {
 			return 0, false, err
 		}

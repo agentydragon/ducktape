@@ -34,6 +34,7 @@ session_dispatcher:
 const deploymentFile = `namespace: test-agentplane
 token_audience: test-notifications
 operator_reader_account: test-app
+github_delivery_retention_days: 14
 notice_debounce:
   quiet_seconds: 60
   max_wait_seconds: 120
@@ -78,7 +79,7 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 		t.Fatal(err)
 	}
 	if c.DatabaseURL == "" || c.Namespace != "test-agentplane" || c.TokenAudience != "test-notifications" ||
-		c.OperatorReaderAccount != "test-app" || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
+		c.OperatorReaderAccount != "test-app" || c.GitHubDeliveryRetentionDays != 14 || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
 		c.Actions.URL != "http://test-actions.invalid:8080" || c.Actions.TokenFile != "/test/tokens/actions" ||
 		c.RunnerGateway.ControlTarget != "{sandbox}-control.{namespace}.svc:8080" || c.RunnerGateway.TokenFile != "/test/tokens/gateway" ||
 		c.HistoryService.Target != "test-history.invalid:8080" || c.HistoryService.TokenFile != "/test/tokens/history" ||
@@ -101,7 +102,7 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if c.Quotas.InboxesPerAccount != 64 || c.Quotas.ActiveSubscriptionsPerInbox != 64 || c.Quotas.EntriesPerInbox != 10_000 {
 		t.Errorf("quota defaults: %+v", c.Quotas)
 	}
-	if c.NoticeDebounce.QuietSeconds != 2 || c.NoticeDebounce.MaxWaitSeconds != 10 || c.StaleInboxConfirmationSeconds != 30 {
+	if c.NoticeDebounce.QuietSeconds != 2 || c.NoticeDebounce.MaxWaitSeconds != 10 || c.StaleInboxConfirmationSeconds != 30 || c.GitHubDeliveryRetentionDays != 7 {
 		t.Errorf("worker defaults: %+v", c.Settings)
 	}
 	if c.RunnerGateway.RequestTimeoutSeconds != 5 || c.HistoryService.RequestTimeoutSeconds != 20 ||
@@ -114,14 +115,14 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 }
 
 func TestAnEnvironmentVariableOverridesTheFileAtTopLevelAndNested(t *testing.T) {
-	c, err := loadTestConfig(t, requiredFile+"port: 9000\nquotas:\n  entries_per_inbox: 5\n",
+	c, err := loadTestConfig(t, requiredFile+"github_delivery_retention_days: 14\nport: 9000\nquotas:\n  entries_per_inbox: 5\n",
 		settingPrefix+"PORT=9001", settingPrefix+"NOTICE_DEBOUNCE__QUIET_SECONDS=7", settingPrefix+"ACTIONS__REQUEST_TIMEOUT_S=1.5",
-		settingPrefix+"STALE_INBOX_CONFIRMATION_S=9")
+		settingPrefix+"STALE_INBOX_CONFIRMATION_S=9", settingPrefix+"GITHUB_DELIVERY_RETENTION_DAYS=3")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Port != 9001 || c.Quotas.EntriesPerInbox != 5 || c.NoticeDebounce.QuietSeconds != 7 ||
-		c.Actions.RequestTimeoutSeconds != 1.5 || c.StaleInboxConfirmationSeconds != 9 {
+		c.Actions.RequestTimeoutSeconds != 1.5 || c.StaleInboxConfirmationSeconds != 9 || c.GitHubDeliveryRetentionDays != 3 {
 		t.Errorf("file and environment overrides: %+v", c)
 	}
 }

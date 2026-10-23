@@ -11,6 +11,11 @@ func TestSettingsAreBoundedAsThePythonServiceBoundsThem(t *testing.T) {
 		change func(*Settings)
 		valid  bool
 	}{
+		{"shortest retention", func(s *Settings) { s.GitHubDeliveryRetentionDays = 1 }, true},
+		{"longest retention", func(s *Settings) { s.GitHubDeliveryRetentionDays = 3650 }, true},
+		{"zero retention", func(s *Settings) { s.GitHubDeliveryRetentionDays = 0 }, false},
+		{"negative retention", func(s *Settings) { s.GitHubDeliveryRetentionDays = -1 }, false},
+		{"excessive retention", func(s *Settings) { s.GitHubDeliveryRetentionDays = 3651 }, false},
 		{"no quiet window", func(s *Settings) { s.NoticeDebounce.QuietSeconds = 0 }, true},
 		{"longest quiet window", func(s *Settings) { s.NoticeDebounce.QuietSeconds = 3600 }, true},
 		{"negative quiet window", func(s *Settings) { s.NoticeDebounce.QuietSeconds = -1 }, false},

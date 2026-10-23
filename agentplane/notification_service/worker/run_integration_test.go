@@ -114,3 +114,24 @@ func TestRunReturnsAProviderErrorOutsideItsContract(t *testing.T) {
 		t.Fatalf("Run = %v, want the Provider's error", err)
 	}
 }
+
+func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.T) {
+	settings := DefaultSettings()
+	settings.GitHubDeliveryRetentionDays = 3
+	h := newHarness(t, settings)
+	h.exec(t, `INSERT INTO github_delivery
+		(app_id, delivery_id, installation_id, event, digest, payload, received_at)
+		VALUES (42, '00000000-0000-0000-0000-000000000001', 42, 'issue_comment', 'digest', '{}', now() - interval '4 days'),
+		(42, '00000000-0000-0000-0000-000000000002', 42, 'issue_comment', 'digest', '{}', now() - interval '2 days')`)
+	if _, _, err := h.worker.advance(t.Context(), &retention{}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM github_delivery WHERE app_id = 42`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("retained %d receipts, want only the two-day-old receipt", count)
+	}
+	h.exec(t, `DELETE FROM github_delivery WHERE app_id = 42`)
+}

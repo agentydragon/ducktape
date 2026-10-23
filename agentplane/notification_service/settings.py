@@ -150,6 +150,12 @@ class Settings(YamlFileSettings):
     )
     quotas: QuotaSettings = Field(default_factory=QuotaSettings)
     notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)
+    github_delivery_retention_days: int = Field(
+        default=7,
+        ge=1,
+        le=3650,
+        description="Days to retain raw GitHub deliveries, their IDs/digests and subject links. Bounds replay and deduplication; inbox payloads retain their separate 30-day lifetime.",
+    )
     stale_inbox_confirmation_s: PositiveSeconds = Field(
         default=30, le=3600, description="Seconds between first and confirming unavailable UID-pinned Sandbox lookup."
     )

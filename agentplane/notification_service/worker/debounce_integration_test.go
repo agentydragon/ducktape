@@ -8,7 +8,9 @@ import (
 )
 
 func debounce(quiet, maxWait float64) Settings {
-	return Settings{NoticeDebounce: NoticeDebounce{QuietSeconds: quiet, MaxWaitSeconds: maxWait}, StaleInboxConfirmationSeconds: 30}
+	settings := DefaultSettings()
+	settings.NoticeDebounce = NoticeDebounce{QuietSeconds: quiet, MaxWaitSeconds: maxWait}
+	return settings
 }
 
 func TestNoticeWaitsOutTheQuietWindowAcrossRestartsWhileReadsAreImmediate(t *testing.T) {

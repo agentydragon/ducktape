@@ -485,3 +485,69 @@ func TestDeliveriesPythonStoredAreRecognisedAsRedeliveries(t *testing.T) {
 		})
 	}
 }
+
+func TestGitHubRetentionDeletesReceiptsAndLinksButPreservesInboxCopies(t *testing.T) {
+	g := newGitHubFixture(t)
+	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	delivered := g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("copied"))
+	claim := g.claimInbox(t, g.inbox)
+	if err := g.record(t, claim, g.prepare(t, sub)); err != nil {
+		t.Fatal(err)
+	}
+	_, position := g.storedDelivery(t, g.app, delivered.DeliveryID)
+	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour).Truncate(time.Microsecond)
+	g.exec(t, `UPDATE github_delivery SET received_at = $2 WHERE position = $1`, position, cutoff.Add(-time.Second))
+	missed := g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("expired before matching"))
+	g.exec(t, `UPDATE github_delivery SET received_at = $2 WHERE delivery_id = $1`, missed.DeliveryID, cutoff.Add(-time.Second))
+	boundary := g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("boundary"))
+	g.exec(t, `UPDATE github_delivery SET received_at = $2 WHERE delivery_id = $1`, boundary.DeliveryID, cutoff)
+	g.deliver(t, "issue_comment", action("created"), onPullRequest(7), labelled("recent"))
+	if err := g.CleanupGitHubDeliveries(t.Context(), cutoff); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.deliveries(t); got != 2 {
+		t.Fatalf("retained %d receipts, want 2", got)
+	}
+	if got := g.links(t, position); len(got) != 0 {
+		t.Fatalf("expired links remain: %v", got)
+	}
+	g.requireDelivered(t, "copied")
+	step := g.prepare(t, sub)
+	if len(step.Matched) != 2 {
+		t.Fatalf("matched %d receipts, want boundary and recent", len(step.Matched))
+	}
+	if err := g.record(t, claim, step); err != nil {
+		t.Fatal(err)
+	}
+	g.requireDelivered(t, "copied", "boundary", "recent")
+	// Raw IDs/digests expire too. Redelivery is new to ingress, but not to an inbox holding it.
+	if !g.ingest(t, delivered) {
+		t.Fatal("expired ID was still deduplicated")
+	}
+	if err := g.record(t, claim, g.prepare(t, sub)); err != nil {
+		t.Fatal(err)
+	}
+	g.requireDelivered(t, "copied", "boundary", "recent")
+}
+
+func TestGitHubRetentionBoundsEachDeletionBatch(t *testing.T) {
+	g := newGitHubFixture(t)
+	seed := g.deliver(t, "issue_comment", action("created"), onPullRequest(7))
+	g.exec(t, `INSERT INTO github_delivery
+		(app_id, delivery_id, installation_id, event, digest, payload, received_at)
+		SELECT app_id, gen_random_uuid(), installation_id, event, digest, payload, now() - interval '8 days'
+		FROM github_delivery CROSS JOIN generate_series(1,1001) WHERE delivery_id = $1`, seed.DeliveryID)
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	if err := g.CleanupGitHubDeliveries(t.Context(), cutoff); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.deliveries(t); got != 2 {
+		t.Fatalf("retained %d receipts, want recent seed and one expired receipt", got)
+	}
+	if err := g.CleanupGitHubDeliveries(t.Context(), cutoff); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.deliveries(t); got != 1 {
+		t.Fatalf("retained %d receipts, want recent seed", got)
+	}
+}

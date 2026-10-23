@@ -245,7 +245,12 @@ and delivered inbox entry. Ingress performs no extra GitHub job/run lookup.
 
 PostgreSQL is the durable ingress journal, with committed ordering serialized against subscription
 creation. Inbox workers asynchronously replay from each subscription boundary; they recheck current App
-access, stable repository/installation identity, cancellation/version and inbox fencing. Raw GitHub journal payloads are retained without automatic pruning; monitor database growth.
+access, stable repository/installation identity, cancellation/version and inbox fencing. Raw GitHub receipts are deleted in batches once older than `github_delivery_retention_days`
+(default seven days), measured from local ingestion, including IDs, digests and subject links.
+This bounds catch-up and late PR/commit association matching even for active subscriptions;
+receipts that expire before matching cannot be recovered from this journal. Deduplication and
+conflicting-ID rejection last only while the receipt is retained. A redelivery after expiry is
+accepted as new; an inbox that already holds that event still deduplicates it by event identity.
 Inbox payload retention remains as documented above.
 
 PR, issue, exact branch and fixed-commit subjects use native GitHub event/action names. Default CI means completed
@@ -279,7 +284,7 @@ Rate-limit retries respect both `Retry-After` and an exhausted primary quota's `
 with a minimum 60-second delay when GitHub supplies no later deadline. Workers log the shared entity,
 safe failure category and retry delay, never upstream bodies or credentials.
 
-Accepted webhooks remain durable while a source is backing off. New ingress does not shorten that
+Accepted webhooks remain durable within the raw receipt retention window while a source is backing off. New ingress does not shorten that
 source's retry deadline; workers resume matching retained receipts after the deadline, including
 after restart, and clear the error on success. No client-side resubscription or reconciliation is
 needed for this recovery. Webhook deliveries GitHub never successfully submitted are outside that

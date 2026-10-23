@@ -86,6 +86,19 @@ confirmation from History Service, and a Dispatcher error never falls back to a 
 The deployment mounts the settings from its ConfigMap. Roll the application image and configuration
 together because their structure is versioned with the code.
 
+### Raw GitHub delivery retention
+
+`github_delivery_retention_days` defaults to 7 and accepts whole days from 1 to 3650.
+Override it with `AGENTPLANE_NOTIFICATIONS_GITHUB_DELIVERY_RETENTION_DAYS` or deployment YAML.
+Workers delete up to 1000 expired raw deliveries per cleanup pass, once a minute per worker,
+including their IDs, digests and subject links. This bounds source replay, late association
+matching and delivery-ID deduplication, including for active subscriptions. Inbox payload copies
+keep their independent 30-day retention. Changing this setting does not enable the GitHub provider.
+
+The migration gives existing deliveries its own timestamp because their actual ingestion times
+were not recorded. They first become eligible after the configured retention interval from migration.
+Deletes free space for PostgreSQL to reuse; they do not immediately shrink its volume.
+
 ### Runner notice debounce
 
 The deployment ConfigMap sets the `notice_debounce.quiet_seconds` and

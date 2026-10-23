@@ -68,10 +68,6 @@ management. Current defaults are unchanged; this review does not block v1 messag
 
 Only if worker deaths cause actual operational trouble. Keep workers in-process; first address the specific failure with current supervision/claims/retries.
 
-### `NOTIFICATION_GITHUB_RETENTION` — bound GitHub delivery receipt storage
-
-Only when measured receipt storage warrants it. Preserve dedup, creation boundaries and active-subscription replay; do not copy Session-delta policy onto webhooks.
-
 ### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
 
 Only if idle polling cost matters. One authorized feed per replica plus canonical catch-up; see [remaining work](notifications.md#deferred-event-driven-actions-consumption).
