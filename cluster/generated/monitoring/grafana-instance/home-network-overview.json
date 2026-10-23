@@ -765,7 +765,7 @@
             "uid": "mimir"
           },
           "editorMode": "code",
-          "expr": "1 - sum by (target) (rate(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\"}[5m])) / sum by (target) (rate(smokeping_requests_total{job=\"monitoring/smokeping\"}[5m]))",
+          "expr": "1 - sum by (target) (rate(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|\"}[5m])) / sum by (target) (rate(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|\"}[5m]))",
           "legendFormat": "{{target}}",
           "refId": "A",
           "range": true
@@ -785,8 +785,95 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "gateway" },
-            "properties": [{ "id": "displayName", "value": "AT&T gateway (192.168.1.254)" }]
+            "matcher": {
+              "id": "byName",
+              "options": "gateway"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "AT&T gateway (192.168.1.254)"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "ICMP probes from wyrm2 to the AT&T gateway, MikroTik switch, optiplex LAN address (192.168.1.10), and ovh-ns104952 over Nebula. Loss is the unanswered fraction of 5 pings/s, averaged over 5 minutes. Compare with optiplex above; a gap means missing observations.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "id": 45,
+      "title": "Ping loss from wyrm2",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "1 - sum by (target) (rate(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=\"wyrm2\"}[5m])) / sum by (target) (rate(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=\"wyrm2\"}[5m]))",
+          "legendFormat": "{{target}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "gateway"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "AT&T gateway (192.168.1.254)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "optiplex"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "OptiPlex LAN (192.168.1.10)"
+              }
+            ]
           }
         ]
       },
@@ -824,7 +911,7 @@
             "uid": "mimir"
           },
           "editorMode": "code",
-          "expr": "sum by (target) (rate(smokeping_response_duration_seconds_sum{job=\"monitoring/smokeping\"}[5m])) / sum by (target) (rate(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\"}[5m]))",
+          "expr": "sum by (target) (rate(smokeping_response_duration_seconds_sum{job=\"monitoring/smokeping\",source_node=~\"optiplex|\"}[5m])) / sum by (target) (rate(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|\"}[5m]))",
           "legendFormat": "{{target}}",
           "refId": "A",
           "range": true
@@ -844,8 +931,95 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "gateway" },
-            "properties": [{ "id": "displayName", "value": "AT&T gateway (192.168.1.254)" }]
+            "matcher": {
+              "id": "byName",
+              "options": "gateway"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "AT&T gateway (192.168.1.254)"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "ICMP probes from wyrm2 to the AT&T gateway, MikroTik switch, optiplex LAN address (192.168.1.10), and ovh-ns104952 over Nebula. Mean round-trip time of answered pings, per target.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "id": 46,
+      "title": "Ping RTT from wyrm2",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "sum by (target) (rate(smokeping_response_duration_seconds_sum{job=\"monitoring/smokeping\",source_node=\"wyrm2\"}[5m])) / sum by (target) (rate(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=\"wyrm2\"}[5m]))",
+          "legendFormat": "{{target}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "gateway"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "AT&T gateway (192.168.1.254)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "optiplex"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "OptiPlex LAN (192.168.1.10)"
+              }
+            ]
           }
         ]
       },
@@ -867,7 +1041,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 38
       },
       "id": 12,
       "panels": [],
@@ -884,7 +1058,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 31
+        "y": 39
       },
       "id": 13,
       "title": "Fiber Rx power",
@@ -972,7 +1146,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 31
+        "y": 39
       },
       "id": 14,
       "title": "Fiber Tx power",
@@ -1060,7 +1234,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 31
+        "y": 39
       },
       "id": 15,
       "title": "Optics temperature",
@@ -1148,7 +1322,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 39
+        "y": 47
       },
       "id": 16,
       "title": "Gateway WAN errors and drops",
@@ -1235,7 +1409,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 39
+        "y": 47
       },
       "id": 17,
       "title": "Gateway LAN port errors and drops",
@@ -1322,7 +1496,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 39
+        "y": 47
       },
       "id": 18,
       "title": "Gateway LAN ports",
@@ -1406,7 +1580,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 39
+        "y": 47
       },
       "id": 19,
       "title": "Gateway DHCP leases",
@@ -1471,7 +1645,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 47
+        "y": 55
       },
       "id": 20,
       "title": "Gateway NAT sessions",
@@ -1536,7 +1710,7 @@
         "h": 6,
         "w": 4,
         "x": 12,
-        "y": 47
+        "y": 55
       },
       "id": 21,
       "title": "Speed test throughput",
@@ -1582,7 +1756,7 @@
         "h": 6,
         "w": 4,
         "x": 16,
-        "y": 47
+        "y": 55
       },
       "id": 22,
       "title": "Speed test latency",
@@ -1628,7 +1802,7 @@
         "h": 6,
         "w": 4,
         "x": 20,
-        "y": 47
+        "y": 55
       },
       "id": 23,
       "title": "Speed test ran",
@@ -1670,7 +1844,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 53
+        "y": 61
       },
       "id": 24,
       "panels": [],
@@ -1687,7 +1861,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 54
+        "y": 62
       },
       "id": 25,
       "title": "Switch reachable",
@@ -1760,7 +1934,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 54
+        "y": 62
       },
       "id": 26,
       "title": "Switch uptime",
@@ -1822,7 +1996,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 54
+        "y": 62
       },
       "id": 27,
       "title": "Switch CPU load",
@@ -1884,7 +2058,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 54
+        "y": 62
       },
       "id": 28,
       "title": "Switch CPU temperature",
@@ -1946,7 +2120,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 58
+        "y": 66
       },
       "id": 29,
       "title": "Switch port traffic",
@@ -2031,7 +2205,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 58
+        "y": 66
       },
       "id": 30,
       "title": "Switch port errors and drops",
@@ -2085,7 +2259,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 58
+        "y": 66
       },
       "id": 31,
       "title": "Switch port link flaps",
@@ -2139,7 +2313,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 66
+        "y": 74
       },
       "id": 32,
       "title": "Switch port links",
@@ -2223,7 +2397,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 66
+        "y": 74
       },
       "id": 33,
       "title": "Switch temperatures",
@@ -2298,7 +2472,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 82
       },
       "id": 34,
       "title": "Switch log",
@@ -2332,7 +2506,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 84
+        "y": 92
       },
       "id": 35,
       "panels": [],
@@ -2349,7 +2523,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 85
+        "y": 93
       },
       "id": 36,
       "title": "Home node LAN throughput",
@@ -2434,7 +2608,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 85
+        "y": 93
       },
       "id": 37,
       "title": "Home node NIC errors and drops",
@@ -2488,7 +2662,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 85
+        "y": 93
       },
       "id": 38,
       "title": "Home node NIC link flaps",
@@ -2538,7 +2712,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 93
+        "y": 101
       },
       "id": 39,
       "panels": [],
@@ -2555,7 +2729,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 94
+        "y": 102
       },
       "id": 40,
       "title": "Remote-write delay per home node",
@@ -2609,7 +2783,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 94
+        "y": 102
       },
       "id": 41,
       "title": "Samples waiting to send",
@@ -2663,7 +2837,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 94
+        "y": 102
       },
       "id": 42,
       "title": "Series in WAL",

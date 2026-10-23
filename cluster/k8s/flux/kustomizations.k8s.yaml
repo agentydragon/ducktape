@@ -747,7 +747,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: ICMP loss and RTT from the home LAN to the gateway, the switch and an OVH node.
+    description: ICMP loss and RTT from optiplex and wyrm2 to home LAN and OVH targets.
   name: monitoring-smokeping
   namespace: ducktape-flux
 spec:

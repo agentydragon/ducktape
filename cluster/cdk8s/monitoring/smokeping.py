@@ -1,5 +1,5 @@
-"""smokeping_prober on `optiplex`: continuous ICMP loss and RTT from the home LAN to the AT&T
-gateway, the switch, and one OVH node over Nebula.
+"""Continuous ICMP loss and RTT from `optiplex` and `wyrm2` to the AT&T gateway,
+the switch, and one OVH node over Nebula. `wyrm2` also probes optiplex on the LAN.
 
 The switch is the control. Loss to the gateway with none to the switch is the uplink fault in
 debug/home_network_connectivity/2026_10_gateway_uplink_loss.md; loss only to the OVH node is
@@ -15,6 +15,7 @@ from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecPodMetricsEndpoints,
     PodMonitorSpecPodMetricsEndpointsMetricRelabelings,
+    PodMonitorSpecPodMetricsEndpointsRelabelings,
     PodMonitorSpecSelector,
 )
 
@@ -22,7 +23,7 @@ from cluster.cdk8s import pod_policy
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.node_scheduling import OPTIPLEX
+from cluster.cdk8s.node_scheduling import Placement
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.service_ref import Port
@@ -31,7 +32,7 @@ from cluster.scripts.nebula_mesh import Mesh
 NAME = "smokeping"
 NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/{NAME}"
-_LABELS = {"app.kubernetes.io/name": NAME}
+_SOURCES = ("optiplex", "wyrm2")
 _JOB = f"{NAMESPACE}/{NAME}"
 _HTTP = Port(name="http", number=9374)
 _IMAGE = (
@@ -49,26 +50,34 @@ _OVH_NODE = "ovh-ns104952"
 
 def _targets(mesh: Mesh) -> dict[str, str]:
     """The `target` label each pinged address gets."""
-    return {_GATEWAY: str(HOME_LAN.gateway), _SWITCH: str(HOME_LAN.switch), _OVH_NODE: mesh.hosts[_OVH_NODE].nebula_ip}
+    return {
+        _GATEWAY: str(HOME_LAN.gateway),
+        _SWITCH: str(HOME_LAN.switch),
+        _OVH_NODE: mesh.hosts[_OVH_NODE].nebula_ip,
+        "optiplex": str(HOME_LAN.optiplex),
+    }
 
 
-def _deployment(chart: Chart, addresses: list[str]) -> k8s.KubeDeployment:
+def _deployment(chart: Chart, source: str, addresses: list[str]) -> k8s.KubeDeployment:
+    name = NAME if source == "optiplex" else f"{NAME}-{source}"
+    selector = {"app.kubernetes.io/name": name}
+    labels = {**selector, "app.kubernetes.io/part-of": NAME}
     tcp = k8s.Probe(tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_string(_HTTP.name)), period_seconds=30)
     return k8s.KubeDeployment(
         chart,
-        "deployment",
+        f"deployment-{source}",
         metadata=k8s.ObjectMeta(
-            name=NAME,
+            name=name,
             namespace=NAMESPACE,
-            labels=_LABELS,
-            annotations={"description": "ICMP loss and RTT from the home LAN to the gateway, switch and OVH."},
+            labels=labels,
+            annotations={"description": f"ICMP loss and RTT from {source} to home LAN and OVH targets."},
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             revision_history_limit=2,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=labels),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     termination_grace_period_seconds=10,
@@ -111,29 +120,35 @@ def _deployment(chart: Chart, addresses: list[str]) -> k8s.KubeDeployment:
 def _loss(target: str) -> str:
     selector = f'job="{_JOB}", target="{target}"'
     return (
-        f"(1 - sum(rate(smokeping_response_duration_seconds_count{{{selector}}}[5m]))"
-        f" / sum(rate(smokeping_requests_total{{{selector}}}[5m])))"
+        f"(1 - sum by (source_node) (rate(smokeping_response_duration_seconds_count{{{selector}}}[5m]))"
+        f" / sum by (source_node) (rate(smokeping_requests_total{{{selector}}}[5m])))"
     )
 
 
 def chart(app: App, mesh: Mesh) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     targets = _targets(mesh)
-    deployment = _deployment(chart, list(targets.values()))
-    pod_policy.harden(deployment)
-    # The gateway and switch are on optiplex's LAN, and its WAN path is the one in question.
-    pod_policy.place(deployment, OPTIPLEX)
+    for source in _SOURCES:
+        addresses = [address for target, address in targets.items() if target != source]
+        deployment = _deployment(chart, source, addresses)
+        pod_policy.harden(deployment)
+        pod_policy.place(deployment, Placement(node_selector={"kubernetes.io/hostname": source}))
     PodMonitor(
         chart,
         "pod-monitor",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        selector=PodMonitorSpecSelector(match_labels=_LABELS),
+        selector=PodMonitorSpecSelector(match_labels={"app.kubernetes.io/part-of": NAME}),
         pod_metrics_endpoints=[
             PodMonitorSpecPodMetricsEndpoints(
                 port=_HTTP.name,
                 path="/metrics",
                 interval="30s",
                 scrape_timeout="10s",
+                relabelings=[
+                    PodMonitorSpecPodMetricsEndpointsRelabelings(
+                        source_labels=["__meta_kubernetes_pod_node_name"], target_label="source_node"
+                    )
+                ],
                 metric_relabelings=[
                     PodMonitorSpecPodMetricsEndpointsMetricRelabelings(
                         source_labels=["ip"], regex=address.replace(".", r"\."), target_label="target", replacement=name
@@ -156,7 +171,7 @@ def chart(app: App, mesh: Mesh) -> Chart:
                         dedent(
                             f"""\
                             {_loss(_GATEWAY)} > 0.03
-                            and on ()
+                            and on (source_node)
                             {_loss(_SWITCH)} < 0.005
                             """
                         ),
@@ -164,7 +179,7 @@ def chart(app: App, mesh: Mesh) -> Chart:
                         labels={"severity": "warning"},
                         summary="Packet loss from the home LAN to the AT&T gateway, none to the switch",
                         description=(
-                            "optiplex has lost {{ $value | humanizePercentage }} of pings to the gateway "
+                            "{{ $labels.source_node }} has lost {{ $value | humanizePercentage }} of pings to the AT&T gateway "
                             f"({HOME_LAN.gateway}) for 15 minutes while pings to the switch ({HOME_LAN.switch}) "
                             "are clean: the switch-to-gateway uplink (CRS310 ether1) is likely back in the 2.5G "
                             "loss state. See debug/home_network_connectivity/2026_10_gateway_uplink_loss.md."
@@ -185,5 +200,5 @@ def smokeping(flux_chart: Chart, directory: RenderedDirectory, monitoring_crds: 
         timeout="5m",
         # the PodMonitor and PrometheusRule CRDs
         depends_on=[flux_kustomization_depends_on(monitoring_crds)],
-        description="ICMP loss and RTT from the home LAN to the gateway, the switch and an OVH node.",
+        description="ICMP loss and RTT from optiplex and wyrm2 to home LAN and OVH targets.",
     )
