@@ -416,3 +416,21 @@ py_library(
         "@pypi//cdk8s_plus_34",
     ],
 )
+
+py_test(
+    name = "test_smokeping",
+    srcs = ["test_smokeping.py"],
+    data = [
+        "dashboards/home-network-overview.json",
+        "testdata/smokeping_rules.yaml",
+        "@multitool//tools/promtool",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

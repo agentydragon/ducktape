@@ -1335,12 +1335,179 @@
       }
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "Number of one-minute classifications with at least 1% unanswered host ICMP pings. This is measured affected time, up to 60 minutes per hour, per source and target. A minute is classified only with fresh, reset-free request and reply counters and roughly 5 requests/s. Missing observations are excluded; compare the coverage panel. Computed from raw probe samples when queried, so buffered samples can fill historical gaps after delivery.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 54
+      },
+      "id": 51,
+      "title": "Affected probe minutes per trailing hour",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "sum_over_time((((sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) - sum by (source_node, target) (increase(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m]))) / sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= bool 0.01) and on (source_node, target) ((sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 240 and sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) <= 360) and on (source_node, target) (sum by (source_node, target) (count_over_time(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 2) and on (source_node, target) (sum by (source_node, target) (count_over_time(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 2) and on (source_node, target) (sum by (source_node, target) (resets(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[2m])) == 0) and on (source_node, target) (sum by (source_node, target) (resets(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[2m])) == 0) and on (source_node, target) (max by (source_node, target) (time() - timestamp(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"})) < 45) and on (source_node, target) (max by (source_node, target) (time() - timestamp(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"})) < 45)))[1h:1m])",
+          "legendFormat": "{{source_node}} \u2192 {{target}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never",
+            "lineInterpolation": "stepAfter"
+          },
+          "min": 0,
+          "max": 60
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "An episode starts when an observed healthy minute (under 1% loss) is followed immediately by an affected minute (at least 1% loss). A return from a telemetry gap is left-censored and does not start a new counted episode. Zero requires at least one observed minute. Computed from raw probe samples when queried, so buffered samples can fill historical gaps after delivery.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 54
+      },
+      "id": 52,
+      "title": "Observed episode starts per trailing hour",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "sum_over_time((delta((((sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) - sum by (source_node, target) (increase(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m]))) / sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= bool 0.01) and on (source_node, target) ((sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 240 and sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) <= 360) and on (source_node, target) (sum by (source_node, target) (count_over_time(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 2) and on (source_node, target) (sum by (source_node, target) (count_over_time(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 2) and on (source_node, target) (sum by (source_node, target) (resets(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[2m])) == 0) and on (source_node, target) (sum by (source_node, target) (resets(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[2m])) == 0) and on (source_node, target) (max by (source_node, target) (time() - timestamp(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"})) < 45) and on (source_node, target) (max by (source_node, target) (time() - timestamp(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"})) < 45)))[2m:1m]) > bool 0)[1h:1m]) or on (source_node, target) (0 * count_over_time((((sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) - sum by (source_node, target) (increase(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m]))) / sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= bool 0.01) and on (source_node, target) ((sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 240 and sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) <= 360) and on (source_node, target) (sum by (source_node, target) (count_over_time(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 2) and on (source_node, target) (sum by (source_node, target) (count_over_time(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 2) and on (source_node, target) (sum by (source_node, target) (resets(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[2m])) == 0) and on (source_node, target) (sum by (source_node, target) (resets(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[2m])) == 0) and on (source_node, target) (max by (source_node, target) (time() - timestamp(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"})) < 45) and on (source_node, target) (max by (source_node, target) (time() - timestamp(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"})) < 45)))[1h:1m]))",
+          "legendFormat": "{{source_node}} \u2192 {{target}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never",
+            "lineInterpolation": "stepAfter"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "Coverage for affected-time and episode counts. Each source/target can contribute at most 60 classified minutes per trailing hour. Missing scrapes, stopped probes, and counter resets reduce coverage; low coverage prevents a claim of reliable delivery. Computed from raw probe samples when queried, so buffered samples can fill historical gaps after delivery.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      },
+      "id": 53,
+      "title": "Observed probe minutes per trailing hour",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "count_over_time((((sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) - sum by (source_node, target) (increase(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m]))) / sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= bool 0.01) and on (source_node, target) ((sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 240 and sum by (source_node, target) (increase(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) <= 360) and on (source_node, target) (sum by (source_node, target) (count_over_time(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 2) and on (source_node, target) (sum by (source_node, target) (count_over_time(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[1m])) >= 2) and on (source_node, target) (sum by (source_node, target) (resets(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[2m])) == 0) and on (source_node, target) (sum by (source_node, target) (resets(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"}[2m])) == 0) and on (source_node, target) (max by (source_node, target) (time() - timestamp(smokeping_requests_total{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"})) < 45) and on (source_node, target) (max by (source_node, target) (time() - timestamp(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\",source_node=~\"optiplex|wyrm2\",target=~\"gateway|ovh-ns104952\"})) < 45)))[1h:1m])",
+          "legendFormat": "{{source_node}} \u2192 {{target}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never",
+            "lineInterpolation": "stepAfter"
+          },
+          "min": 0,
+          "max": 60
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 54
+        "y": 70
       },
       "id": 12,
       "panels": [],
@@ -1357,7 +1524,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 55
+        "y": 71
       },
       "id": 13,
       "title": "Fiber Rx power",
@@ -1445,7 +1612,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 55
+        "y": 71
       },
       "id": 14,
       "title": "Fiber Tx power",
@@ -1533,7 +1700,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 55
+        "y": 71
       },
       "id": 15,
       "title": "Optics temperature",
@@ -1621,7 +1788,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 63
+        "y": 79
       },
       "id": 16,
       "title": "Gateway WAN errors and drops",
@@ -1708,7 +1875,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 63
+        "y": 79
       },
       "id": 17,
       "title": "Gateway LAN port errors and drops",
@@ -1795,7 +1962,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 63
+        "y": 79
       },
       "id": 18,
       "title": "Gateway LAN ports",
@@ -1879,7 +2046,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 63
+        "y": 79
       },
       "id": 19,
       "title": "Gateway DHCP leases",
@@ -1944,7 +2111,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 71
+        "y": 87
       },
       "id": 20,
       "title": "Gateway NAT sessions",
@@ -2009,7 +2176,7 @@
         "h": 6,
         "w": 4,
         "x": 12,
-        "y": 71
+        "y": 87
       },
       "id": 21,
       "title": "Speed test throughput",
@@ -2055,7 +2222,7 @@
         "h": 6,
         "w": 4,
         "x": 16,
-        "y": 71
+        "y": 87
       },
       "id": 22,
       "title": "Speed test latency",
@@ -2101,7 +2268,7 @@
         "h": 6,
         "w": 4,
         "x": 20,
-        "y": 71
+        "y": 87
       },
       "id": 23,
       "title": "Speed test ran",
@@ -2143,7 +2310,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 77
+        "y": 93
       },
       "id": 24,
       "panels": [],
@@ -2160,7 +2327,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 78
+        "y": 94
       },
       "id": 25,
       "title": "Switch reachable",
@@ -2233,7 +2400,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 78
+        "y": 94
       },
       "id": 26,
       "title": "Switch uptime",
@@ -2295,7 +2462,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 78
+        "y": 94
       },
       "id": 27,
       "title": "Switch CPU load",
@@ -2357,7 +2524,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 78
+        "y": 94
       },
       "id": 28,
       "title": "Switch CPU temperature",
@@ -2419,7 +2586,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 82
+        "y": 98
       },
       "id": 29,
       "title": "Switch port traffic",
@@ -2504,7 +2671,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 82
+        "y": 98
       },
       "id": 30,
       "title": "Switch port errors and drops",
@@ -2558,7 +2725,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 82
+        "y": 98
       },
       "id": 31,
       "title": "Switch port link flaps",
@@ -2612,7 +2779,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 90
+        "y": 106
       },
       "id": 32,
       "title": "Switch port links",
@@ -2696,7 +2863,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 90
+        "y": 106
       },
       "id": 33,
       "title": "Switch temperatures",
@@ -2768,7 +2935,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 98
+        "y": 114
       },
       "id": 34,
       "title": "Switch log",
@@ -2799,7 +2966,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 108
+        "y": 124
       },
       "id": 35,
       "panels": [],
@@ -2816,7 +2983,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 109
+        "y": 125
       },
       "id": 36,
       "title": "Home node LAN throughput",
@@ -2901,7 +3068,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 109
+        "y": 125
       },
       "id": 37,
       "title": "Home node NIC errors and drops",
@@ -2955,7 +3122,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 109
+        "y": 125
       },
       "id": 38,
       "title": "Home node NIC link flaps",
@@ -3005,7 +3172,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 117
+        "y": 133
       },
       "id": 39,
       "panels": [],
@@ -3022,7 +3189,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 118
+        "y": 134
       },
       "id": 40,
       "title": "Remote-write delay per home node",
@@ -3076,7 +3243,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 118
+        "y": 134
       },
       "id": 41,
       "title": "Samples waiting to send",
@@ -3130,7 +3297,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 118
+        "y": 134
       },
       "id": 42,
       "title": "Series in WAL",

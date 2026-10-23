@@ -1,0 +1,53 @@
+rule_files:
+  - smokeping.yaml
+evaluation_interval: 1m
+tests:
+  - name: clean affected clean and a missing scrape cannot manufacture an episode
+    interval: 30s
+    input_series:
+      - series: smokeping_requests_total{job="monitoring/smokeping",source_node="optiplex",target="gateway"}
+        values: 0+150x10 stale stale 1800 1950 2100 2250 0 150
+      - series: smokeping_response_duration_seconds_count{job="monitoring/smokeping",source_node="optiplex",target="gateway"}
+        values: 0 150 300 450 600 735 870 1005 1140 1290 1440 stale stale 1740 1875 2010 2145 0 150
+    promql_expr_test:
+      - expr: home_network:icmp_affected:1m{source_node="optiplex",target="gateway"}
+        eval_time: 2m
+        exp_samples:
+          - labels: home_network:icmp_affected:1m{source_node="optiplex",target="gateway"}
+            value: 0
+      - expr: home_network:icmp_affected:1m{source_node="optiplex",target="gateway"}
+        eval_time: 3m
+        exp_samples:
+          - labels: home_network:icmp_affected:1m{source_node="optiplex",target="gateway"}
+            value: 1
+      - expr: home_network:episode_starts:1h{source_node="optiplex",target="gateway"}
+        eval_time: 3m
+        exp_samples:
+          - labels: home_network:episode_starts:1h{source_node="optiplex",target="gateway"}
+            value: 1
+      - expr: home_network:icmp_affected:1m{source_node="optiplex",target="gateway"}
+        eval_time: 6m
+        exp_samples: []
+      - expr: home_network:episode_starts:1h{source_node="optiplex",target="gateway"}
+        eval_time: 8m
+        exp_samples:
+          - labels: home_network:episode_starts:1h{source_node="optiplex",target="gateway"}
+            value: 1
+      - expr: home_network:icmp_affected:1m{source_node="optiplex",target="gateway"}
+        eval_time: 9m
+        exp_samples: []
+      - expr: home_network:affected_minutes:1h{source_node="optiplex",target="gateway"}
+        eval_time: 5m
+        exp_samples:
+          - labels: home_network:affected_minutes:1h{source_node="optiplex",target="gateway"}
+            value: 2
+      - expr: home_network:observed_minutes:1h{source_node="optiplex",target="gateway"}
+        eval_time: 5m
+        exp_samples:
+          - labels: home_network:observed_minutes:1h{source_node="optiplex",target="gateway"}
+            value: 5
+      - expr: home_network:episode_starts:1h{source_node="optiplex",target="gateway"}
+        eval_time: 5m
+        exp_samples:
+          - labels: home_network:episode_starts:1h{source_node="optiplex",target="gateway"}
+            value: 1
