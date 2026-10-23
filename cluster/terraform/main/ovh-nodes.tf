@@ -37,7 +37,7 @@ locals {
     }
     "ovh-ns104963" = {
       talos_storage_enabled = true
-      piraeus_ready_enabled = false
+      piraeus_ready_enabled = true
       system_disk_serial    = "BTPF8256002V450RGN"
       data_disk_serial      = "BTPF8256009U450RGN"
     }

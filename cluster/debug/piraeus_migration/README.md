@@ -20,19 +20,26 @@ checks, and master-1 returned from the temporary HDD claim. See
 [reset checkpoint](next_nodes/second_ssd_roll.json) records the pre-reset
 boundary, including the retained archive and explicit restore/comparison waiver.
 
-The last SSD control plane, `ovh-ns104963`, is being evacuated. Its Seaweed SSD
-server is online and empty after 35 native moves, with every current SSD
-volume retaining two copies on the converted nodes. All nine persistent
-PostgreSQL clusters now have two healthy off-node members. Attic and Study
-Casino temporarily hold their desired-three templates at two until this node
-returns. Forgejo Valkey now has two 2Gi Piraeus claims; the testing database was
-recreated with native initdb on a fresh 5Gi Piraeus claim after explicit approval
-to discard its data (PR #11604). Master-0, SSD client refresh/retirement, historical
-data ownership, and refreshed destructive-window gates remain. No reset of
-`104963` has started. See [the drain checkpoint](next_nodes/third_ssd_drain.json).
+The last SSD control plane, `ovh-ns104963`, is converted and admitted. Its five
+system partitions have the agreed sizes; the whole data disk backs a measured
+411.18GiB thin-data pool. Filesystem and block PVC hashes and identities survived
+a controlled reboot, all three etcd members are healthy, pool monitoring is
+fresh, and disposable canaries were removed before uncordoning. See
+[the roll proof](next_nodes/third_ssd_roll.json). Historical local-path files were
+archived off-node before the wipe; the operator waived scratch restore and file
+comparison. Retained source PV metadata does not restore erased disk contents.
 
-The HDD copy leg from `103656` to the 4TB `102453` has resumed after a fresh
-three-server identity, replication and capacity check. The smaller `103711`
+The evacuated legacy Seaweed SSD Pod is retired. Every SSD volume retains two
+copies on the first two converted nodes; a new 250Gi server on `104963` is proposed
+in PR #11624. Master-0 remains healthy on its temporary HDD claim on `102453`.
+Attic and Study Casino are restored to three healthy members, with fresh 8Gi and
+1Gi Piraeus claims on `104963`, observed WAL replay and all temporary holds removed.
+The seven normally two-member PostgreSQL clusters remain healthy on the other
+converted nodes. Forgejo Valkey has two 2Gi Piraeus claims; the testing database
+was recreated empty on a fresh 5Gi Piraeus claim by agreement (PR #11604).
+
+The HDD copy leg from `103656` to the 4TB `102453` completed 150 native moves.
+The remaining 151-copy leg to the smaller `103711`
 leg remains held for physical reclamation: deleting S3 objects does not itself
 free the volume files. Four initial backup scopes, three additional scopes and
 Agentplane staging's approved snapshot were cleared; future backups remain

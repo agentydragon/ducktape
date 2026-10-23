@@ -16,11 +16,11 @@ its gates from live state before any operation.
 The 2026-10-22 inventory suggests `ovh-ns104952` next, then `ovh-ns104963`.
 Refresh all placements before choosing a window.
 
-| Node            | Reason / complication                                                                                                                                                                                                                                |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ovh-ns1001419` | First converted SSD control plane. Attic and Study Casino replicas returned on Piraeus; Seaweed passed a bounded native SSD move and separate S3 checks. Master-2 also returned to its 4Gi Piraeus claim.                                            |
-| `ovh-ns104952`  | Converted and accepted. Dedicated system volumes, whole-disk SSD pool, reboot/PVC acceptance, Seaweed SSD server and master-1 restoration are complete. PostgreSQL claims on this node now receive the final SSD control plane's evacuated replicas. |
-| `ovh-ns104963`  | Seaweed SSD evacuation, nine persistent PostgreSQL drains and Valkey migration are complete; testing Postgres was recreated empty on Piraeus by agreement. Master-0 and SSD client/retirement checks remain before reset.                            |
+| Node            | Reason / complication                                                                                                                                                                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ovh-ns1001419` | First converted SSD control plane. Attic and Study Casino replicas returned on Piraeus; Seaweed passed a bounded native SSD move and separate S3 checks. Master-2 also returned to its 4Gi Piraeus claim.                                             |
+| `ovh-ns104952`  | Converted and accepted. Dedicated system volumes, whole-disk SSD pool, reboot/PVC acceptance, Seaweed SSD server and master-1 restoration are complete. PostgreSQL claims on this node now receive the final SSD control plane's evacuated replicas.  |
+| `ovh-ns104963`  | Converted and admitted: dedicated system partitions, whole-disk SSD pool, filesystem/block PVC and reboot acceptance passed. Master-0 remains on its temporary HDD claim; the new Seaweed SSD server and application restoration have separate gates. |
 
 Finish the control planes first by default. Before evacuating the last legacy
 SSD volume server on `104963`, accept a replacement server on the converted

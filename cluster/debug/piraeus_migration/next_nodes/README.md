@@ -7,14 +7,19 @@ reboot, native PostgreSQL, Seaweed SSD and master-1 restoration gates. Its
 [restoration proof](second_ssd_restoration.json) follows the dated
 [reset checkpoint](second_ssd_roll.json).
 
-`ovh-ns104963` has completed Seaweed SSD evacuation and nine persistent
-PostgreSQL drains to the converted nodes. Valkey's two members use Piraeus;
-`agentplane-testing/postgres` was recreated empty on a fresh 5Gi Piraeus claim
-with operator approval. The [drain checkpoint](third_ssd_drain.json) records
-identities, retained sources and remaining master/client/data-preservation
-checks. No reset of this node has started. The sections below retain the
-older preparation snapshots; use the [node-roll runbook](../../../docs/runbooks/piraeus_node_roll.md)
-and refresh all gates before further operations.
+`ovh-ns104963` passed its system-volume, whole-disk thin-pool, filesystem/block
+PVC and controlled-reboot admission gates and is uncordoned. The
+[roll proof](third_ssd_roll.json) records its retained off-node historical archive,
+the explicit restore/comparison waiver and physical acceptance. Attic and Study Casino
+returned to three healthy members with fresh Piraeus claims and all holds removed.
+Seaweed restoration is a separate gate: master-0 remains on its temporary HDD
+claim and the new 250Gi SSD server is proposed in PR #11624. The earlier
+[drain checkpoint](third_ssd_drain.json) and [retirement checkpoint](third_ssd_retirement.json)
+retain their original capture times. Valkey's two members and the recreated
+empty testing database already use Piraeus on the other converted nodes.
+The sections below retain older preparation snapshots; use the
+[node-roll runbook](../../../docs/runbooks/piraeus_node_roll.md) and refresh all
+gates before further operations.
 
 ## Completed early SSD evacuation
 
