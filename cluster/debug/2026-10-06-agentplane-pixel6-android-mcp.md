@@ -40,7 +40,7 @@ exchange and refresh. The phone does not advertise `client_id_metadata_document_
 CIMD is not applicable; when resuming, register a fixed public client on the phone and configure its
 returned client ID. The ID is not a secret. Agentplane's browser callback requires the operator's
 existing browser session, and its Action Service exchanges the code directly with the phone over
-Nebula. See `agentplane/action_service/mcp_linkage.py` and `agentplane/app/api.py`.
+Nebula. See `agentplane/action_service/linkage/` and `agentplane/app/api.py`.
 
 ## Viable paths if resumed
 

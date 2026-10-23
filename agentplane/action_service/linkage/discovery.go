@@ -27,11 +27,10 @@ type discovered struct {
 	cimd bool
 }
 
-// discover reads the server's OAuth metadata as the Python service does (mcp_linkage.py, after the Python MCP SDK's
-// discovery): RFC 9728 protected resource metadata, then RFC 8414 authorization server metadata, falling back to the
-// endpoints the settings configure.
+// discover reads RFC 9728 protected resource metadata, then RFC 8414 authorization server metadata, falling back to
+// the endpoints the settings configure.
 //
-// It fetches the documents itself and decodes them into oauthex's types. oauthex's own fetches refuse servers this
+// It fetches the documents itself and decodes them into oauthex's types. The SDK's own fetches refuse servers this
 // service links: GitHub's MCP server answers its protected resource metadata as `application/json,application/json`,
 // the Kubernetes MCP server (containers/kubernetes-mcp-server v0.0.66) serves Authentik's metadata, whose issuer is
 // Authentik's, at its own origin, and the testing deployment's MCP server is plain HTTP inside the cluster.

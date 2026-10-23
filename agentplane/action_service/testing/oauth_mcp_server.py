@@ -1,8 +1,7 @@
-"""OAuth-protected MCP server for system-testing MCP OAuth linkage.
+"""Dex-backed OAuth-protected MCP server for system-testing MCP OAuth linkage.
 
-The hermetic test variant uses fastmcp's ``InMemoryOAuthProvider``. The deployed variant uses
-Dex as the authorization server and only verifies Dex-issued JWTs locally. The Action Service
-holds the OAuth client credentials; this server needs only issuer, audience and JWKS configuration.
+The Action Service holds the OAuth client credentials; this server needs only issuer, audience and
+JWKS configuration.
 """
 
 from __future__ import annotations
@@ -12,13 +11,9 @@ from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import RemoteAuthProvider
-from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from mcp.shared.auth import OAuthClientInformationFull
-from pydantic import AnyHttpUrl, AnyUrl
+from pydantic import AnyHttpUrl
 
-CLIENT_ID = "agentplane-acceptance-client"
-IN_MEMORY_SCOPE = "mcp"
 DEX_SCOPE = "openid"
 PATH = "/mcp"
 
@@ -34,22 +29,6 @@ def _build_mcp(auth: Any) -> FastMCP:
         return f"Echo: {message}"
 
     return mcp
-
-
-def build_app(*, base_url: str, redirect_uri: str) -> FastMCP:
-    auth = InMemoryOAuthProvider(base_url=base_url, required_scopes=[IN_MEMORY_SCOPE])
-    auth.clients[CLIENT_ID] = OAuthClientInformationFull(
-        client_id=CLIENT_ID,
-        # Gotcha: the authorize handler parses the redirect_uri query parameter as `AnyUrl`, and
-        # compares it against this list with `==`; pydantic's `AnyUrl`/`AnyHttpUrl` do not compare
-        # equal even for an identical string, so registering with `AnyHttpUrl` here always 400s.
-        redirect_uris=[AnyUrl(redirect_uri)],
-        grant_types=["authorization_code", "refresh_token"],
-        response_types=["code"],
-        token_endpoint_auth_method="none",
-        scope=IN_MEMORY_SCOPE,
-    )
-    return _build_mcp(auth)
 
 
 def build_dex_app(*, base_url: str, authorization_server: str, jwks_uri: str, audience: str) -> FastMCP:

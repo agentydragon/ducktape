@@ -8,14 +8,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
-from datetime import timedelta
 
 import httpx
 import pytest
-from fastmcp import FastMCP
 from sqlalchemy.ext.asyncio import AsyncEngine
-from starlette.applications import Starlette
 
 from agentplane.action_service.catalog import (
     ActionCatalog,
@@ -27,11 +23,9 @@ from agentplane.action_service.catalog import (
 from agentplane.action_service.database_migrate import RUNNER
 from agentplane.action_service.db import make_engine, make_sessionmaker
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
-from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import ExecutionRequest, ExecutionResult, ExecutionState
 from agentplane.action_service.service import ExecutionLease, Executor
 from agentplane.action_service.store import ActionStore
-from agentplane.action_service.testing.lifecycle import wait_available
 from util.testing.postgres_fixtures import migrated_database_fixtures
 from util.testing.sqlalchemy_engines import managed_async_engine
 
@@ -70,23 +64,6 @@ def echo_catalog() -> ActionCatalog:
     )
 
 
-class AlwaysLiveLease(ExecutionLease):
-    """Always still owned, for driving an executor with no claimed Execution behind it."""
-
-    renewal_interval = timedelta(seconds=1)
-
-    def __init__(self) -> None:
-        """No store or claim: `heartbeat` answers without them."""
-
-    async def heartbeat(self) -> bool:
-        return True
-
-
-@pytest.fixture
-def execution_lease() -> ExecutionLease:
-    return AlwaysLiveLease()
-
-
 class RecordingExecutor(Executor):
     def __init__(self) -> None:
         self.requests: list[ExecutionRequest] = []
@@ -118,47 +95,6 @@ class ScriptedExecutor(Executor):
 @pytest.fixture
 def scripted() -> ScriptedExecutor:
     return ScriptedExecutor()
-
-
-@asynccontextmanager
-async def lifespan_in_own_task(app: Starlette) -> AsyncIterator[None]:
-    """Hold `app`'s lifespan open in a task of its own. pytest-asyncio resumes a yield fixture's
-    teardown in another task, and the MCP lifespan's AnyIO scopes must enter and exit in the same
-    one, as they do under uvicorn."""
-    started: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-    stopping = asyncio.Event()
-
-    async def lifespan() -> None:
-        try:
-            async with app.router.lifespan_context(app):
-                started.set_result(None)
-                await stopping.wait()
-        except BaseException as error:
-            if not started.done():
-                started.set_exception(error)
-            raise
-
-    task = asyncio.create_task(lifespan())
-    try:
-        await started
-        yield
-    finally:
-        stopping.set()
-        await task
-
-
-@pytest.fixture
-async def mcp_executor(echo_catalog: ActionCatalog) -> AsyncIterator[McpActionGroupExecutor]:
-    server = FastMCP("test-actions")
-
-    @server.tool
-    def echo(n: int) -> dict[str, int]:
-        return {"n": n}
-
-    executor = McpActionGroupExecutor("agentplane", echo_catalog.groups["agentplane"], server)
-    async with executor:
-        await wait_available(echo_catalog.groups["agentplane"])
-        yield executor
 
 
 @pytest.fixture

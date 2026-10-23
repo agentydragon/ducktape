@@ -3,9 +3,8 @@ Claude Code's SDK MCP host role (`sdkMcpServers`) from the harness tests, not a 
 
 The tool registry and its execution run on a real `fastmcp.FastMCP` server reached over an
 in-memory `fastmcp` `Client` (the same in-process pattern as
-`x/postscanmail_mcp_server/conftest.py` and `agentplane/action_service/mcp_executor.py`); only the
-outer JSON-RPC-over-`mcp_message` envelope, which is Claude's own control-protocol framing and not
-part of MCP itself, is handled directly.
+`x/postscanmail_mcp_server/conftest.py`); only the outer JSON-RPC-over-`mcp_message` envelope, which
+is Claude's own control-protocol framing and not part of MCP itself, is handled directly.
 """
 
 from __future__ import annotations

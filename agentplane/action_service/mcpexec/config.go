@@ -19,8 +19,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// server is an MCP server a group's binding configures: a stdioServer or an httpServer. Its fields and their meaning
-// are the Python service's (McpServerConfig in mcp_executor.py), which reads the same settings.
+// server is the stdio or streamable-HTTP transport configured by a catalog MCP binding.
 type server interface {
 	// transport reaches the server for one session. A credential it needs is read here, so that one mounted after
 	// the service started is used by the next attempt; lifecycle bounds each read of a linkage.
@@ -69,9 +68,8 @@ func linkedAccountOf(s server) (linkedAccount, bool) {
 	return account, linked
 }
 
-// parseServer reads an MCP binding's config, refusing what the Python service refuses: an unknown field, a null
-// where a value is required, and an Authorization header, which the credential owns. Its errors name fields, never
-// a value: the config can hold a credential.
+// parseServer reads an MCP binding's config and refuses unknown fields, null required values, and Authorization
+// headers, which the credential setting owns. Its errors name fields, never values: config can hold a credential.
 func parseServer(config json.RawMessage) (server, error) {
 	var tag struct {
 		Transport *string `json:"transport"`

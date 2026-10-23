@@ -9,8 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 )
 
-// Server is an MCP server an operator links an account to: an entry of `mcp_servers`, with the keys of the Python
-// service's McpOAuthServer (mcp_settings.py).
+// Server is an MCP server an operator can link an account to: an entry of the configured `mcp_servers` map.
 type Server struct {
 	ServerID  string `mapstructure:"server_id"`
 	ServerURL string `mapstructure:"server_url"`
@@ -39,8 +38,8 @@ type ClientMetadata struct {
 	ClientName string `mapstructure:"client_name"`
 }
 
-// Validate refuses settings the Python service refuses, and a server whose key is not its server_id or whose URL is
-// not an http(s) URL. Its errors name keys, never a value.
+// Validate checks linkage settings, including that each server key matches its server_id and uses an http(s) URL.
+// Its errors name keys, never values.
 func Validate(servers map[string]Server, metadata ClientMetadata) error {
 	sharesCIMD := false
 	for key, server := range servers {

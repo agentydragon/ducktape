@@ -36,43 +36,6 @@ py_library(
 )
 
 py_library(
-    name = "mcp_executor",
-    srcs = ["mcp_executor.py"],
-    deps = [
-        ":catalog",
-        ":mcp_linkage",
-        ":models",
-        ":service",
-        "//util:urls",
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx2",
-        "@pypi//jsonschema",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
-    name = "mcp_linkage",
-    srcs = ["mcp_linkage.py"],
-    deps = [
-        ":db",
-        ":mcp_settings",
-        ":models",
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx2",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//prometheus_client",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
     name = "db",
     srcs = ["db.py"],
     deps = [
@@ -166,37 +129,6 @@ py_test(
 )
 
 py_test(
-    name = "test_mcp_executor",
-    size = "medium",
-    srcs = ["test_mcp_executor.py"],
-    data = [
-        "//agentplane/action_service/testing:fake_mcp_server_bin",
-    ],
-    requires_docker = True,
-    deps = [
-        ":catalog",
-        ":conftest",
-        ":db",
-        ":mcp_executor",
-        ":models",
-        ":service",
-        ":store",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane:subjects",
-        "//agentplane/action_service/testing:lifecycle",
-        "//util/bazel:runfiles",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
     name = "test_catalog",
     srcs = ["test_catalog.py"],
     data = ["testdata/configured_action_groups.yaml"],
@@ -209,75 +141,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_decision_providers",
-    size = "medium",
-    srcs = ["test_decision_providers.py"],
-    requires_docker = True,
-    deps = [
-        ":catalog",
-        ":conftest",
-        ":db",
-        ":mcp_executor",
-        ":models",
-        ":policy_evaluation",
-        ":policy_informer",
-        ":providers",
-        ":service",
-        ":store",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:subjects",
-        "//agentplane/action_service/github_policy:visibility",
-        "//agentplane/action_service/testing:lifecycle",
-        "//agentplane/action_service/testing:policies",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "runtime",
-    testonly = True,
-    srcs = ["runtime.py"],
-    deps = [
-        ":catalog",
-        ":mcp_executor",
-        ":mcp_linkage",
-        ":service",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_mcp_executor_http",
-    size = "medium",
-    srcs = ["test_mcp_executor_http.py"],
-    deps = [
-        ":catalog",
-        ":conftest",
-        ":mcp_executor",
-        ":mcp_linkage",
-        ":models",
-        ":runtime",
-        ":service",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/action_service/testing:lifecycle",
-        "//util/testing:asgi",
-        "@pypi//httpx",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -329,27 +192,6 @@ py_test(
         ":store",
         "//:conftest",
         "//agentplane:subjects",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_mcp_linkage",
-    size = "medium",
-    srcs = ["test_mcp_linkage.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":db",
-        ":mcp_linkage",
-        ":mcp_settings",
-        ":models",
-        ":updates",
-        "//:conftest",
-        "@pypi//httpx2",
-        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
