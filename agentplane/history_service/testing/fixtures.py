@@ -48,25 +48,20 @@ async def history_service(
     api_server: KubernetesApiServer,
     history_writer_namespaces: Sequence[str],
     tmp_path: Path,
-    unused_tcp_port_factory: Callable[[], int],
 ) -> AsyncIterator[GoHistoryService]:
     async with go_history_service(
-        service_history_db_url,
-        api=api_server,
-        directory=tmp_path,
-        port_factory=unused_tcp_port_factory,
-        writer_namespaces=history_writer_namespaces,
+        service_history_db_url, api=api_server, directory=tmp_path, writer_namespaces=history_writer_namespaces
     ) as service:
         yield service
 
 
 @pytest.fixture
 def history_on(
-    api_server: KubernetesApiServer, tmp_path: Path, unused_tcp_port_factory: Callable[[], int]
+    api_server: KubernetesApiServer, tmp_path: Path
 ) -> Callable[[str], AbstractAsyncContextManager[History]]:
     """The Go History Service and a scripted `History` on a database other than the default one."""
 
     def start(database_url: str) -> AbstractAsyncContextManager[History]:
-        return scripted_history(database_url, api=api_server, directory=tmp_path, port_factory=unused_tcp_port_factory)
+        return scripted_history(database_url, api=api_server, directory=tmp_path)
 
     return start

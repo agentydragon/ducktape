@@ -11,7 +11,7 @@ import asyncio
 import json
 import subprocess
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
-from contextlib import aclosing, asynccontextmanager, contextmanager
+from contextlib import ExitStack, aclosing, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
@@ -28,6 +28,7 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.net import listen_tcp
 from util.testing.postgres import PostgresDatabaseTemplate
 
 # gazelle:include_dep @pypi//protobuf
@@ -192,53 +193,57 @@ async def go_history_service(
     *,
     api: KubernetesApiServer,
     directory: Path,
-    port_factory: Callable[[], int],
     writer_namespaces: Sequence[str] = (WRITER.namespace,),
     watch_lease_s: float = 300,
 ) -> AsyncIterator[GoHistoryService]:
     """The Go History Service on `database_url`, which the Go migrator has built, authenticating through `api`."""
-    read_port, ingress_port = port_factory(), port_factory()
-    token_file = directory / "history-reader-token"
-    token_file.write_text(await api.workload_token(READER, [READER_AUDIENCE]))
-    config = directory / "history-service.yaml"
-    config.write_text(
-        json.dumps(
-            {
-                "reader_accounts": [{"namespace": READER.namespace, "name": READER.name}],
-                "token_audience": READER_AUDIENCE,
-                "request_timeout_s": 10,
-                "host": "127.0.0.1",
-                "port": read_port,
-                "kubeconfig": str(api.kubeconfig),
-                "ingress": {
-                    "token_audience": WRITER_AUDIENCE,
-                    "writer_namespaces": list(writer_namespaces),
-                    "port": ingress_port,
-                    # Tests compare the archive with the runner's journal entry by entry.
-                    "settle_deltas": False,
-                },
-                # The fold also runs when a commit announces itself; the interval only bounds a missed notice.
-                "fold_interval_s": 0.05,
-                "watch_lease_s": watch_lease_s,
-            }
+    with ExitStack() as listeners:
+        reader_listener = listeners.enter_context(listen_tcp())
+        ingress_listener = listeners.enter_context(listen_tcp())
+        token_file = directory / "history-reader-token"
+        token_file.write_text(await api.workload_token(READER, [READER_AUDIENCE]))
+        config = directory / "history-service.yaml"
+        reader_fd = reader_listener.socket.fileno()
+        ingress_fd = ingress_listener.socket.fileno()
+        config.write_text(
+            json.dumps(
+                {
+                    "reader_accounts": [{"namespace": READER.namespace, "name": READER.name}],
+                    "token_audience": READER_AUDIENCE,
+                    "request_timeout_s": 10,
+                    "listen_address": f"fd:{reader_fd}",
+                    "kubeconfig": str(api.kubeconfig),
+                    "ingress": {
+                        "token_audience": WRITER_AUDIENCE,
+                        "writer_namespaces": list(writer_namespaces),
+                        "listen_address": f"fd:{ingress_fd}",
+                        # Tests compare the archive with the runner's journal entry by entry.
+                        "settle_deltas": False,
+                    },
+                    # The fold also runs when a commit announces itself; the interval only bounds a missed notice.
+                    "fold_interval_s": 0.05,
+                    "watch_lease_s": watch_lease_s,
+                }
+            )
         )
-    )
-    async with go_process(
-        _SERVICE,
-        env={_DATABASE_URL_ENV: _go_database_url(database_url), _CONFIG_FILE_ENV: str(config)},
-        stderr=directory / "history-service.stderr",
-        health_port=read_port,
-        grace_s=_GRACE_SECONDS,
-    ) as process:
-        read_target = f"127.0.0.1:{read_port}"
-        service = GoHistoryService(
-            database_url=database_url,
-            read_target=read_target,
-            ingress_target=f"127.0.0.1:{ingress_port}",
-            reader_token_file=token_file,
-            reader=HistoryServiceClient(read_target, token_file=token_file, request_timeout_s=20),
-            api=api,
-            process=process,
-        )
-        async with service.reader:
-            yield service
+        async with go_process(
+            _SERVICE,
+            env={_DATABASE_URL_ENV: _go_database_url(database_url), _CONFIG_FILE_ENV: str(config)},
+            stderr=directory / "history-service.stderr",
+            health_port=reader_listener.port,
+            grace_s=_GRACE_SECONDS,
+            pass_fds=(reader_fd, ingress_fd),
+        ) as process:
+            listeners.close()
+            read_target = f"{reader_listener.host}:{reader_listener.port}"
+            service = GoHistoryService(
+                database_url=database_url,
+                read_target=read_target,
+                ingress_target=f"{ingress_listener.host}:{ingress_listener.port}",
+                reader_token_file=token_file,
+                reader=HistoryServiceClient(read_target, token_file=token_file, request_timeout_s=20),
+                api=api,
+                process=process,
+            )
+            async with service.reader:
+                yield service

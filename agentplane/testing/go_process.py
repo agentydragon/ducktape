@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,18 +38,26 @@ class GoProcess:
                     assert self.process.returncode is None, (
                         f"process exited with {self.process.returncode}:\n{await asyncio.to_thread(self.stderr.read_text)}"
                     )
-                    assert (await stub.Check(health_pb2.HealthCheckRequest())).status == expected
+                    assert (await stub.Check(health_pb2.HealthCheckRequest(), timeout=0.5)).status == expected
                     return
         raise AssertionError("health retry exhausted")
 
 
 @asynccontextmanager
 async def go_process(
-    binary: Path, *, env: Mapping[str, str], stderr: Path, health_port: int, grace_s: float
+    binary: Path,
+    *,
+    env: Mapping[str, str],
+    stderr: Path,
+    health_port: int,
+    grace_s: float,
+    pass_fds: Sequence[int] = (),
 ) -> AsyncIterator[GoProcess]:
-    """`binary` with only `env`, once it reports SERVING on `health_port`; on exit it gets TERM and `grace_s` to stop cleanly."""
+    """`binary` with only `env` and inherited descriptors, once it reports SERVING on `health_port`."""
     with stderr.open("wb") as log:
-        process = await asyncio.create_subprocess_exec(binary, env=dict(env), stdout=log, stderr=log)
+        process = await asyncio.create_subprocess_exec(
+            binary, env=dict(env), stdout=log, stderr=log, pass_fds=tuple(pass_fds)
+        )
     running = GoProcess(process, stderr, health_port)
     try:
         await running.health(serving=True)

@@ -51,18 +51,18 @@ func TestSettingsLoadFromTheFileAndTheEnvironmentWithTheirDefaults(t *testing.T)
 	if !slices.Equal(c.ReaderAccounts, wantReaders) || c.DatabaseURL == "" || c.Ingress.WriterNamespaces[0] != "test-agentplane" {
 		t.Errorf("settings were not read: %+v", c)
 	}
-	// What a deployment leaves unset: the two listeners differ, and the ingress settles deltas.
-	if c.Port == c.Ingress.Port || !c.Ingress.SettleDeltas {
-		t.Errorf("defaults: port %d, ingress port %d, settle deltas %v", c.Port, c.Ingress.Port, c.Ingress.SettleDeltas)
+	// What a deployment leaves unset: the listeners remain on their exposed endpoints, and the ingress settles deltas.
+	if c.ListenAddress != "0.0.0.0:8080" || c.Ingress.ListenAddress != "0.0.0.0:8081" || !c.Ingress.SettleDeltas {
+		t.Errorf("defaults: reader %q, ingress %q, settle deltas %v", c.ListenAddress, c.Ingress.ListenAddress, c.Ingress.SettleDeltas)
 	}
 }
 
 func TestASettingAFileSetsToItsNonDefaultOverridesTheDefault(t *testing.T) {
-	c, err := loadTestConfig(t, requiredFile+"port: 9000\nwatch_lease_s: 1.5\n", settingPrefix+"FOLD_CONCURRENCY=7")
+	c, err := loadTestConfig(t, requiredFile+"listen_address: 127.0.0.1:9000\nwatch_lease_s: 1.5\n", settingPrefix+"FOLD_CONCURRENCY=7")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Port != 9000 || c.WatchLeaseSeconds != 1.5 || c.FoldConcurrency != 7 {
+	if c.ListenAddress != "127.0.0.1:9000" || c.WatchLeaseSeconds != 1.5 || c.FoldConcurrency != 7 {
 		t.Errorf("file and environment overrides: %+v", c)
 	}
 	c, err = loadTestConfig(t, strings.Replace(requiredFile, "  writer_namespaces", "  settle_deltas: false\n  writer_namespaces", 1))
@@ -81,8 +81,7 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"no audience":                  strings.Replace(requiredFile, "token_audience: test-history-service\n", "", 1),
 		"no ingress audience":          strings.Replace(requiredFile, "  token_audience: test-runner-ingress\n", "", 1),
 		"no writer namespaces":         strings.Replace(requiredFile, "  writer_namespaces: [test-agentplane]\n", "", 1),
-		"listeners on one port":        requiredFile + "port: 8081\n",
-		"port out of range":            requiredFile + "port: 70000\n",
+		"removed listener settings":    requiredFile + "host: 0.0.0.0\nport: 8080\n",
 		"request timeout too long":     requiredFile + "request_timeout_s: 61\n",
 		"fold page larger than served": requiredFile + "fold_page_size: 1001\n",
 		"fold without concurrency":     requiredFile + "fold_concurrency: 0\n",

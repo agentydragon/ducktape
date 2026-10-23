@@ -23,11 +23,10 @@ class IngressSettings(BaseModel):
     writer_namespaces: frozenset[str] = Field(
         min_length=1, description="Namespaces whose ServiceAccounts may push: the ones Sandboxes run in."
     )
-    port: int = Field(
-        default=8081,
-        ge=1,
-        le=65535,
-        description="The ingress's own listener, so the network fence admits the egress proxy to it and nothing else.",
+    listen_address: str = Field(
+        default="0.0.0.0:8081",
+        min_length=1,
+        description="The ingress listener, so the network fence admits the egress proxy to it and nothing else.",
     )
     settle_deltas: bool = Field(
         default=True,
@@ -47,8 +46,7 @@ class Settings(YamlFileSettings):
     token_audience: str = Field(min_length=1)
     request_timeout_s: float = Field(default=15, gt=0, le=60)
     log_levels: LogLevels
-    host: str = "0.0.0.0"
-    port: int = Field(default=8080, ge=1, le=65535)
+    listen_address: str = Field(default="0.0.0.0:8080", min_length=1)
     kubeconfig: Path | None = None
     ingress: IngressSettings
     fold_concurrency: int = Field(default=4, ge=1, le=64)

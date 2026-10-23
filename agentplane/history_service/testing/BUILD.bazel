@@ -78,6 +78,7 @@ py_library(
         "//agentplane/runner/testing:process",
         "//agentplane/testing:go_process",
         "//agentplane/testing:kubernetes_apiserver",
+        "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
         "@pypi//grpcio",
