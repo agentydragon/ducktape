@@ -311,25 +311,21 @@ py_library(
         ":fixture_database",
         ":rendered_fixture",
         "//agentplane:subjects",
-        "//agentplane/action_service:models",
-        "//agentplane/action_service:oauth_settings",
-        "//agentplane/action_service/policies:resources",
         "//agentplane/crds:policyset",
         "//agentplane/system_tests:launch_preset",
-        "//agentplane/system_tests:mcp_servers",
         "//agentplane/system_tests:runtime_grant",
         "//agentplane/system_tests:send_grant",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/agentplane:actions",
-        "//cluster/cdk8s/agentplane:actions_testing_fixtures",
         "//cluster/cdk8s/agentplane:app",
         "//cluster/cdk8s/agentplane:chart",
         "//cluster/cdk8s/agentplane:command_sandbox",
         "//cluster/cdk8s/agentplane:dex",
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:egress_credentials",
+        "//cluster/cdk8s/agentplane:environment",
         "//cluster/cdk8s/agentplane:history_service",
         "//cluster/cdk8s/agentplane:llm_ingress",
         "//cluster/cdk8s/agentplane:mcp_edge",
@@ -346,12 +342,34 @@ py_library(
         "//cluster/cdk8s/agentplane:testing",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//model_catalog:catalog",
-        "@pypi//bcrypt",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
         "@pypi//more_itertools",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "mcp_fixture_chart",
+    testonly = True,
+    srcs = ["mcp_fixture_chart.py"],
+    deps = [
+        ":fixture_chart",
+        ":rendered_fixture",
+        "//agentplane:subjects",
+        "//agentplane/action_service:models",
+        "//agentplane/action_service:oauth_settings",
+        "//agentplane/action_service/policies:resources",
+        "//agentplane/system_tests:mcp_servers",
+        "//cluster/cdk8s/agentplane:actions",
+        "//cluster/cdk8s/agentplane:actions_testing_fixtures",
+        "//cluster/cdk8s/agentplane:dex",
+        "@pypi//bcrypt",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+        "@pypi//more_itertools",
     ],
 )
 
@@ -381,23 +399,84 @@ py_binary(
     deps = [":render_fixture"],
 )
 
-# The fixture chart for each model backend, and for the local model with the MCP fixtures (Dex and the
-# MCP servers of `system_test(mcp_fixtures = True)` targets) and with VM Sandboxes, rendered once
-# per build so no test action starts Node or compiles the chart code. The values only the test action
-# knows are placeholders it fills in.
-genrule(
-    name = "rendered",
+py_library(
+    name = "render_mcp_fixture",
     testonly = True,
-    outs = [
-        "rendered/local-model.json",
-        "rendered/local-model-mcp-fixtures.json",
-        "rendered/local-model-vm.json",
-        "rendered/none.json",
-        "rendered/public-litellm.json",
+    srcs = ["render_mcp_fixture.py"],
+    deps = [
+        ":fixture_chart",
+        ":mcp_fixture_chart",
+        ":render_fixture",
+        ":rendered_fixture",
+        "//cluster/cdk8s/agentplane:dex",
     ],
-    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+)
+
+py_binary(
+    name = "render_mcp_fixture_bin",
+    testonly = True,
+    imports = ["../../.."],
+    main_module = "agentplane.x.k3s_env.render_mcp_fixture",
+    deps = [":render_mcp_fixture"],
+)
+
+# Each output has a separate action. Ordinary and VM renderers use the common chart; only the MCP
+# output depends on its fixture servers and Dex additions. Runtime values stay placeholders.
+genrule(
+    name = "render_local_model",
+    testonly = True,
+    outs = ["rendered/local-model.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
     tools = [
         ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__pkg__"],
+)
+
+genrule(
+    name = "render_local_model_vm",
+    testonly = True,
+    outs = ["rendered/local-model-vm.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-vm K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    tools = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__pkg__"],
+)
+
+genrule(
+    name = "render_none",
+    testonly = True,
+    outs = ["rendered/none.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=none K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    tools = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__pkg__"],
+)
+
+genrule(
+    name = "render_public_litellm",
+    testonly = True,
+    outs = ["rendered/public-litellm.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=public-litellm K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    tools = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__pkg__"],
+)
+
+genrule(
+    name = "render_local_model_mcp_fixtures",
+    testonly = True,
+    outs = ["rendered/local-model-mcp-fixtures.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_mcp_fixture_bin)",
+    tools = [
+        ":render_mcp_fixture_bin",
         "@nodejs_linux_amd64//:bin/node",
     ],
     visibility = ["//agentplane/system_tests:__pkg__"],
@@ -426,11 +505,13 @@ py_test(
     srcs = ["test_render_determinism.py"],
     data = [
         ":render_fixture_bin",
+        ":render_mcp_fixture_bin",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "K3S_RENDERER_RLOCATION": "$(rlocationpath :render_fixture_bin)",
+        "K3S_MCP_RENDERER_RLOCATION": "$(rlocationpath :render_mcp_fixture_bin)",
     },
     deps = [
         "//:conftest",

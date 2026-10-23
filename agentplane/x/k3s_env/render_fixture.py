@@ -1,54 +1,36 @@
-"""Render the fixture chart into `$K3S_FIXTURE_DIR`, at build time: `<backend>.json` for each model
-backend, `local-model-mcp-fixtures.json` with Dex and the MCP servers `test_mcp` calls, and
-`local-model-vm.json` with VM Sandboxes.
+"""Render one ordinary or VM fixture chart into `$K3S_FIXTURE_DIR`.
 
-Takes no arguments: the app's `Settings`, which the chart code builds, parses `sys.argv` as its own.
+`K3S_FIXTURE_VARIANT` selects `none`, `local-model`, `public-litellm`, or `local-model-vm`.
+The selector is an environment variable because the app's Settings parse `sys.argv` as their own.
 """
 
 import os
 from dataclasses import asdict
+from enum import StrEnum
 from pathlib import Path
 
 from agentplane.x.k3s_env import fixture_chart
 from agentplane.x.k3s_env.rendered_fixture import (
-    MCP_PLACEHOLDERS,
     MODEL_PLACEHOLDERS,
     PLACEHOLDERS,
     Backend,
     BrowserService,
     LocalModel,
-    McpFixtures,
     McpInputs,
+    Models,
     PublicLiteLLM,
     RenderedFixture,
 )
 
 
-def _render(output: Path, backend: Backend, mcp: McpInputs | None, *, vm_sandboxes: bool) -> None:
-    models = MODEL_PLACEHOLDERS[backend]
-    fixture = RenderedFixture(
-        backend=backend,
-        vm_sandboxes=vm_sandboxes,
-        namespace=fixture_chart.NAMESPACE,
-        app_origin=mcp.app_origin if mcp is not None else fixture_chart.APP_ORIGIN,
-        browser_services=[
-            BrowserService(name=service.name, host=service.host, fqdn=service.fqdn)
-            for service in fixture_chart.browser_services(mcp_fixtures=mcp is not None)
-        ],
-        mcp_fixtures=(
-            McpFixtures(
-                dex_host=fixture_chart.DEX_HOST,
-                operator_secret=fixture_chart.OPERATOR_SECRET,
-                mcp_edge_service=fixture_chart.MCP_EDGE_SERVICE.name,
-                mcp_edge_port=fixture_chart.MCP_EDGE_SERVICE.port.number,
-                app_service=fixture_chart.APP_SERVICE.name,
-                app_port=fixture_chart.APP_SERVICE.port.number,
-            )
-            if mcp is not None
-            else None
-        ),
-        objects=fixture_chart.objects(**asdict(PLACEHOLDERS), models=models, mcp=mcp, vm_sandboxes=vm_sandboxes),
-    )
+class FixtureVariant(StrEnum):
+    NONE = "none"
+    LOCAL_MODEL = "local-model"
+    LOCAL_MODEL_VM = "local-model-vm"
+    PUBLIC_LITELLM = "public-litellm"
+
+
+def write_fixture(path: Path, fixture: RenderedFixture, *, models: Models, mcp: McpInputs | None) -> None:
     text = fixture.model_dump_json()
     placeholders = list(asdict(PLACEHOLDERS).values())
     match models:
@@ -56,19 +38,47 @@ def _render(output: Path, backend: Backend, mcp: McpInputs | None, *, vm_sandbox
             placeholders.append(model_placeholder)
     if mcp is not None:
         placeholders.extend(asdict(mcp).values())
-    # The chart transformed a placeholder (encoded it, say), so filling it in would miss.
     if missing := [placeholder for placeholder in placeholders if placeholder not in text]:
-        raise ValueError(f"{backend=} renders without {missing=}")
-    variant = f"{'-mcp-fixtures' if mcp is not None else ''}{'-vm' if vm_sandboxes else ''}"
-    (output / f"{backend}{variant}.json").write_text(text)
+        raise ValueError(f"{fixture.backend=} renders without {missing=}")
+    path.write_text(text)
+
+
+def _render(output: Path, variant: FixtureVariant, backend: Backend, *, vm_sandboxes: bool) -> None:
+    models = MODEL_PLACEHOLDERS[backend]
+    fixture = RenderedFixture(
+        backend=backend,
+        vm_sandboxes=vm_sandboxes,
+        namespace=fixture_chart.NAMESPACE,
+        app_origin=fixture_chart.APP_ORIGIN,
+        browser_services=[
+            BrowserService(
+                name=fixture_chart.APP_SERVICE.name,
+                host=fixture_chart.APP_SERVICE.host,
+                fqdn=fixture_chart.APP_SERVICE.fqdn,
+            )
+        ],
+        mcp_fixtures=None,
+        objects=fixture_chart.objects(
+            **asdict(PLACEHOLDERS),
+            models=models,
+            vm_sandboxes=vm_sandboxes,
+        ),
+    )
+    write_fixture(output / f"{variant}.json", fixture, models=models, mcp=None)
 
 
 def main() -> None:
     output = Path(os.environ["K3S_FIXTURE_DIR"])
-    for backend in Backend:
-        _render(output, backend, None, vm_sandboxes=False)
-    _render(output, Backend.LOCAL_MODEL, MCP_PLACEHOLDERS, vm_sandboxes=False)
-    _render(output, Backend.LOCAL_MODEL, None, vm_sandboxes=True)
+    variant = FixtureVariant(os.environ["K3S_FIXTURE_VARIANT"])
+    match variant:
+        case FixtureVariant.NONE:
+            _render(output, variant, Backend.NONE, vm_sandboxes=False)
+        case FixtureVariant.LOCAL_MODEL:
+            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
+        case FixtureVariant.LOCAL_MODEL_VM:
+            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True)
+        case FixtureVariant.PUBLIC_LITELLM:
+            _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False)
 
 
 if __name__ == "__main__":
