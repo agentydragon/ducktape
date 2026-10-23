@@ -30,6 +30,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "Team.litellm.m.crossplane.io",
         "ProviderConfig.litellm.m.crossplane.io",
     },
+    "crossplane-provider-opentofu": {"Workspace.opentofu.upbound.io", "ProviderConfig.opentofu.upbound.io"},
     "keda": {"ScaledJob", "TriggerAuthentication"},
     "kyverno": {"ClusterPolicy", "Policy", "CleanupPolicy"},
     "kyverno-policies": set(),

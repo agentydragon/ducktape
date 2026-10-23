@@ -29,7 +29,7 @@ Two tables, symmetric on pins:
 ```text
 pins:
   <pin_name>:
-    target:    Bazel label that produces the asset
+    target:    Bazel label to build; external targets use the canonical `@@` spelling BES reports
     filename:  released asset name — the built file basename and download-URL component
     release:   release group this pin ships in
 ```

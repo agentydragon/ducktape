@@ -320,7 +320,9 @@ ENV = Environment(
     settle_deltas=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
-    db=DbProps(instances=2, wal_archive=True),
+    db=DbProps(
+        instances=2, wal_archive=True, size="12Gi", storage_class="piraeus-ssd-local", resize_in_use_volumes=False
+    ),
     llm_ingress=LlmIngressProps(
         litellm_key_secret_name=_LITELLM_KEY_SECRET,
         models=model_configs(STAGING_APP_MODELS),
@@ -342,7 +344,6 @@ ENV = Environment(
     actions=ActionsProps(
         hostname=_ACTIONS_HOSTNAME,
         operator_oidc=_FEDERATION_TARGET,
-        runtime="python",
         caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, public_coder_egress.NAMESPACE}),
         mcp_servers=_MCP_SERVERS,
         action_groups=_ACTION_GROUPS,

@@ -342,7 +342,6 @@ py_test(
         ":web",
         "//:conftest",
         "//devinfra/claude:conftest",
-        "//util:net",
         "//util/testing:asgi",
         "//util/testing:mock_oidc",
         "@pypi//httpx",

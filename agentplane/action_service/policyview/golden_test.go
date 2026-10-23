@@ -15,7 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
-// golden.json is written by generate_golden.py from the Python service's own views; test_golden.py holds it to them.
+// golden.json holds fixed policy inputs and their workload/operator API projections.
 //
 //go:embed golden.json
 var goldenJSON []byte
@@ -30,7 +30,7 @@ type vector struct {
 	Operator       json.RawMessage             `json:"operator"`
 }
 
-func TestEachReaderIsShownWhatPythonShowsIt(t *testing.T) {
+func TestReadersReceiveTheirPolicyViews(t *testing.T) {
 	var golden struct {
 		Views map[string]vector `json:"views"`
 	}

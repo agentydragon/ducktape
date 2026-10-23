@@ -49,5 +49,15 @@ def test_long_context_route_has_explicit_litellm_timeouts() -> None:
     assert "stream_timeout" not in standard
 
 
+def test_langfuse_otel_v2_captures_content_on_spans_without_console_exporter() -> None:
+    [spec] = proxy_specs()
+    env = {entry.name: getattr(entry, "value", None) for entry in spec.env}
+
+    assert env["LITELLM_OTEL_V2"] == "true"
+    assert env["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] == "span_only"
+    assert "OTEL_EXPORTER" not in env
+    assert "langfuse_otel" in main_proxy_config()["litellm_settings"]["callbacks"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

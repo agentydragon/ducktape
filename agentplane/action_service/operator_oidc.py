@@ -6,15 +6,8 @@ resulting issuer, audience, signature, and lifetime without maintaining a second
 
 from __future__ import annotations
 
-from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
-from util.oidc_principal import (
-    AuthentikOidcPrincipalResolver,
-    DexOidcPrincipalResolver,
-    InvalidOidcPrincipalError,
-    OidcPrincipalResolver,
-    OidcPrincipalVerificationUnavailableError,
-)
+from util.oidc_principal import AuthentikOidcPrincipalResolver, DexOidcPrincipalResolver, OidcPrincipalResolver
 
 
 def resolver_for(settings: OperatorOidcSettings) -> OidcPrincipalResolver:
@@ -31,15 +24,3 @@ def resolver_for(settings: OperatorOidcSettings) -> OidcPrincipalResolver:
         signing_algorithms=["RS256"],
         client_id=settings.audience,
     )
-
-
-class OidcOperatorAuthenticator:
-    def __init__(self, settings: OperatorOidcSettings) -> None:
-        self._resolver = resolver_for(settings)
-
-    async def authenticate(self, token: str) -> OperatorPrincipal | None:
-        try:
-            identity = await self._resolver.resolve({"access_token": token, "token_type": "Bearer"})
-        except InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError:
-            return None
-        return OperatorPrincipal(issuer=identity.issuer, subject=identity.subject)

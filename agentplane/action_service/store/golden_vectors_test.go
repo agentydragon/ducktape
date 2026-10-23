@@ -9,21 +9,19 @@ import (
 	"testing"
 )
 
-// golden.json holds what the Python service writes and accepts: the values of the columns a Pydantic model
-// serializes, the inputs its models refuse, and the cursor a history page ends at, each from the Python code
-// that produces it. `generate_golden.py` writes it and `test_golden.py` checks it is current.
+// golden.json defines stored column forms, validation bounds and history cursors.
 //
 //go:embed golden.json
 var goldenJSON []byte
 
-// vector is one case: Input is what Python was given and Valid whether it accepted it.
+// Valid records whether an input satisfies the store contract.
 type vector struct {
 	Name  string          `json:"name"`
 	Input json.RawMessage `json:"input"`
 	Valid bool            `json:"valid"`
 }
 
-// storedVector also holds the JSON Python writes for an input it accepted.
+// Stored holds the expected JSONB representation of a valid input.
 type storedVector struct {
 	vector
 	Stored json.RawMessage `json:"stored"`

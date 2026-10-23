@@ -259,11 +259,18 @@ async def async_main(settings: Settings) -> None:
 
 
 async def serve_then_close(
-    server: uvicorn.Server, *, session_openings: SessionOpenings, database_updates: WakeupListener, engine: AsyncEngine
+    server: uvicorn.Server,
+    *,
+    session_openings: SessionOpenings,
+    database_updates: WakeupListener,
+    engine: AsyncEngine,
+    sockets: list[socket.socket] | None = None,
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
     timeout bounds the requests and streams still open, and stopping Session openings and closing the
-    runner connections and the database have the rest of the Pod's grace period to themselves."""
+    runner connections and the database have the rest of the Pod's grace period to themselves.
+
+    ``sockets`` lets lifecycle tests hand over a listener they own already."""
     async with AsyncExitStack() as stack:
         stack.push_async_callback(engine.dispose)
         await stack.enter_async_context(database_updates.listener.listen())
@@ -281,7 +288,7 @@ async def serve_then_close(
                 # A worker failure requests Uvicorn shutdown above. Let its drain
                 # finish before propagating the task-group error out of the process.
                 with anyio.CancelScope(shield=True):
-                    await server.serve()
+                    await server.serve(sockets)
             finally:
                 tasks.cancel_scope.cancel()
 

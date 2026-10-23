@@ -85,6 +85,7 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
+from util.net import refusing_tcp_endpoint
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 from util.testing.postgres_fixtures import (
     database_clones,
@@ -416,3 +417,10 @@ def notifications_token_file(tmp_path: Path) -> Path:
     token_file = tmp_path / "notifications-token"
     token_file.write_text("fake-notifications-token")
     return token_file
+
+
+@pytest.fixture
+def refused_address() -> Iterator[str]:
+    """A loopback endpoint held bound without listening for tests that expect a connection refusal."""
+    with refusing_tcp_endpoint() as (host, port):
+        yield f"{host}:{port}"

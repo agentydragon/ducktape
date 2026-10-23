@@ -181,40 +181,6 @@ spec:
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform
 metadata:
-  name: forgejo-agentydragon
-  namespace: flux-system
-spec:
-  approvePlan: auto
-  backendConfig:
-    customConfiguration: |
-      backend "pg" {
-        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
-        schema_name = "forgejo_agentydragon"
-      }
-  interval: 15m
-  path: ./tf/gitops/forgejo-agentydragon
-  refreshBeforeApply: true
-  runnerPodTemplate:
-    spec:
-      env:
-        - name: PGPASSWORD
-          valueFrom:
-            secretKeyRef:
-              key: password
-              name: tofu-state-db-credentials
-      resources:
-        requests:
-          cpu: 250m
-          memory: 512Mi
-  serviceAccountName: tf-runner
-  sourceRef:
-    kind: ExternalArtifact
-    name: tf-gitops-forgejo-agentydragon
-    namespace: ducktape-flux
----
-apiVersion: infra.contrib.fluxcd.io/v1alpha2
-kind: Terraform
-metadata:
   name: finance-agent
   namespace: flux-system
 spec:

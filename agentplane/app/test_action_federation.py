@@ -30,8 +30,7 @@ from agentplane.app.operator_sessions import (
     OperatorSessionStore,
     SessionRow,
 )
-from util.net import bind_free_port
-from util.testing.asgi import serve_app
+from util.testing.asgi import bind_http_server
 from util.testing.mock_oidc import build_jwks, build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 
 CLIENT = "test-login-client"
@@ -42,25 +41,25 @@ SPENT = "test-spent-refresh-token"  # a test literal, not a real credential
 @pytest.fixture
 async def dex_session() -> AsyncIterator[OperatorSession]:
     private, public = generate_rsa_keypair()
-    sock = bind_free_port()
-    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
-    now = int(time())
-    token = sign_jwt(
-        private, {"iss": issuer, "aud": "test-dex-client", "sub": "test-dex-user", "iat": now, "exp": now + 60}
-    )
-
-    async def keys(_request: Request) -> JSONResponse:
-        return JSONResponse(build_jwks(public))
-
-    async with serve_app(Starlette(routes=[Route("/keys", keys)]), sock=sock):
-        yield OperatorSession(
-            issuer=issuer,
-            subject="test-dex-user",
-            username="test-dex-name",
-            tokens=LoginTokens(
-                access_token=SecretStr(token), expires_at=datetime.fromtimestamp(now + 60, UTC), refresh_token=None
-            ),
+    with bind_http_server() as endpoint:
+        issuer = endpoint.origin
+        now = int(time())
+        token = sign_jwt(
+            private, {"iss": issuer, "aud": "test-dex-client", "sub": "test-dex-user", "iat": now, "exp": now + 60}
         )
+
+        async def keys(_request: Request) -> JSONResponse:
+            return JSONResponse(build_jwks(public))
+
+        async with endpoint.serve(Starlette(routes=[Route("/keys", keys)])):
+            yield OperatorSession(
+                issuer=issuer,
+                subject="test-dex-user",
+                username="test-dex-name",
+                tokens=LoginTokens(
+                    access_token=SecretStr(token), expires_at=datetime.fromtimestamp(now + 60, UTC), refresh_token=None
+                ),
+            )
 
 
 @pytest.mark.parametrize(
@@ -122,54 +121,54 @@ async def login_provider() -> AsyncIterator[LoginProvider]:
     """An Authentik-shaped login provider whose token endpoint renews by refresh token, rotating it,
     and a direct federation that hands the renewed login token on as the target token."""
     private, public = generate_rsa_keypair()
-    sock = bind_free_port()
-    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}/application/o/test-login/"
-    idp = build_mock_oidc_app(
-        issuer_url=issuer, private_key=private, public_key=public, subject=SUBJECT, authentik_compatible=True
-    )
-    oidc = OIDCSettings(
-        issuer=issuer,
-        client_id=CLIENT,
-        client_secret="test-only-client-secret",
-        session_secret="test-only-session-secret",
-        public_base_url="http://test-app.invalid",
-    )
-    config = DirectFederationSettings(
-        service_url=AnyHttpUrl("http://test-actions.invalid"),
-        login_jwks_uri=f"{issuer}jwks/",
-        target=OperatorOidcSettings(issuer=issuer, audience=CLIENT, jwks_uri=f"{issuer}jwks/"),
-        scope="openid",
-    )
-    expired = LoginTokens(
-        access_token=SecretStr("test-expired-login-token"),
-        expires_at=datetime.now(UTC) - timedelta(seconds=1),
-        refresh_token=SecretStr(SPENT),
-    )
-    provider = LoginProvider(
-        FederatedOperatorActions(config, oidc),
-        OperatorSession(issuer=issuer, subject=SUBJECT, username="test-operator", tokens=expired),
-    )
-
-    async def renew(request: Request) -> JSONResponse:
-        form = parse_qs((await request.body()).decode())
-        assert form["grant_type"] == ["refresh_token"]
-        provider.presented.append(form["refresh_token"][0])
-        if provider.refuse:
-            return JSONResponse({"error": "invalid_grant"}, status_code=400)
-        now = int(time())
-        claims = {"iss": issuer, "aud": CLIENT, "azp": CLIENT, "sub": SUBJECT, "iat": now, "exp": now + 600}
-        return JSONResponse(
-            {
-                "access_token": sign_jwt(private, claims),
-                "token_type": "Bearer",
-                "expires_in": 600,
-                "refresh_token": f"test-rotated-refresh-token-{len(provider.presented)}",
-            }
+    with bind_http_server() as endpoint:
+        issuer = f"{endpoint.origin}/application/o/test-login/"
+        idp = build_mock_oidc_app(
+            issuer_url=issuer, private_key=private, public_key=public, subject=SUBJECT, authentik_compatible=True
+        )
+        oidc = OIDCSettings(
+            issuer=issuer,
+            client_id=CLIENT,
+            client_secret="test-only-client-secret",
+            session_secret="test-only-session-secret",
+            public_base_url="http://test-app.invalid",
+        )
+        config = DirectFederationSettings(
+            service_url=AnyHttpUrl("http://test-actions.invalid"),
+            login_jwks_uri=f"{issuer}jwks/",
+            target=OperatorOidcSettings(issuer=issuer, audience=CLIENT, jwks_uri=f"{issuer}jwks/"),
+            scope="openid",
+        )
+        expired = LoginTokens(
+            access_token=SecretStr("test-expired-login-token"),
+            expires_at=datetime.now(UTC) - timedelta(seconds=1),
+            refresh_token=SecretStr(SPENT),
+        )
+        provider = LoginProvider(
+            FederatedOperatorActions(config, oidc),
+            OperatorSession(issuer=issuer, subject=SUBJECT, username="test-operator", tokens=expired),
         )
 
-    idp.routes.insert(0, Route("/application/o/token/", renew, methods=["POST"]))
-    async with serve_app(idp, sock=sock):
-        yield provider
+        async def renew(request: Request) -> JSONResponse:
+            form = parse_qs((await request.body()).decode())
+            assert form["grant_type"] == ["refresh_token"]
+            provider.presented.append(form["refresh_token"][0])
+            if provider.refuse:
+                return JSONResponse({"error": "invalid_grant"}, status_code=400)
+            now = int(time())
+            claims = {"iss": issuer, "aud": CLIENT, "azp": CLIENT, "sub": SUBJECT, "iat": now, "exp": now + 600}
+            return JSONResponse(
+                {
+                    "access_token": sign_jwt(private, claims),
+                    "token_type": "Bearer",
+                    "expires_in": 600,
+                    "refresh_token": f"test-rotated-refresh-token-{len(provider.presented)}",
+                }
+            )
+
+        idp.routes.insert(0, Route("/application/o/token/", renew, methods=["POST"]))
+        async with endpoint.serve(idp):
+            yield provider
 
 
 async def _stored_tokens(store: OperatorSessionStore, row_id: str) -> LoginTokens | None:

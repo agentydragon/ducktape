@@ -306,7 +306,7 @@ func TestAWaitDeadlineAnswersTheCurrentReceipt(t *testing.T) {
 	}
 }
 
-func TestAWatchTheCoreEndsEarlyAnswersAsPythonDid(t *testing.T) {
+func TestAWatchTheCoreEndsEarlyReturnsTheDefinedToolError(t *testing.T) {
 	for _, tc := range []struct {
 		code codes.Code
 		want toolError

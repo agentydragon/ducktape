@@ -24,7 +24,7 @@ from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_mcp
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
+from util.net import listen_tcp
 
 logger = logging.getLogger(__name__)
 
@@ -45,35 +45,36 @@ def _build_model_client(*, api: str, model: str, base_url: str | None = None) ->
 @asynccontextmanager
 async def _serve_mcp(grocy_base_url: str) -> AsyncGenerator[str]:
     """Serve the Grocy MCP server on a local port and yield its URL."""
-    port = pick_free_port()
-    http_client = GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
-    mcp = build_mcp(
-        ServerSettings(grocy_url=grocy_base_url), client_provider=borrowed_http_client_provider(http_client)
-    )
-    app = mcp.http_app(path="/mcp")
-
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    serve_task = asyncio.create_task(server.serve())
-    try:
-        for _ in range(50):
-            await asyncio.sleep(0.1)
-            if server.started:
-                break
-        else:
-            raise TimeoutError("MCP server did not start within 5s")
-
-        mcp_url = f"http://127.0.0.1:{port}/mcp"
-        logger.info("MCP server ready at %s", mcp_url)
-        yield mcp_url
-    finally:
-        server.should_exit = True
+    with listen_tcp() as listener:
+        http_client = GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
+        serve_task: asyncio.Task[None] | None = None
+        server: uvicorn.Server | None = None
         try:
-            await asyncio.wait_for(serve_task, timeout=5.0)
-        except TimeoutError:
-            serve_task.cancel()
-            await asyncio.gather(serve_task, return_exceptions=True)
-        await http_client.aclose()
+            mcp = build_mcp(
+                ServerSettings(grocy_url=grocy_base_url), client_provider=borrowed_http_client_provider(http_client)
+            )
+            app = mcp.http_app(path="/mcp")
+            server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+            serve_task = asyncio.create_task(server.serve(sockets=[listener.socket]))
+            async with asyncio.timeout(5.0):
+                while not server.started:
+                    if serve_task.done():
+                        serve_task.result()
+                        raise RuntimeError("MCP server exited before starting")
+                    await asyncio.sleep(0.1)
+
+            mcp_url = f"http://{listener.host}:{listener.port}/mcp"
+            logger.info("MCP server ready at %s", mcp_url)
+            yield mcp_url
+        finally:
+            if server is not None and serve_task is not None:
+                server.should_exit = True
+                try:
+                    await asyncio.wait_for(asyncio.shield(serve_task), timeout=5.0)
+                except TimeoutError:
+                    serve_task.cancel()
+                    await asyncio.gather(serve_task, return_exceptions=True)
+            await http_client.aclose()
 
 
 def _write_messages_jsonl(messages: list[Message], path: Path) -> None:

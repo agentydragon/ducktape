@@ -294,7 +294,7 @@ no owner-scoping, since the catalog is the same for every caller.
 
 Group bindings are reviewed runtime configuration, not a dynamic registry: `action_groups` is read
 from the Action Service settings file and applied at startup ([configuration](config.go)). Both
-environments use `Recreate` to avoid overlapping Python and Go workers during cutover.
+environments deploy the service with `Recreate`.
 `catalog.MCPBinding.config` is never exposed by discovery; only the human-authored executor description is.
 
 The catalog is also the admission and routing authority: `ActionService` resolves the submitted
@@ -420,8 +420,8 @@ operator form.
 The end-to-end proof is `//agentplane/system_tests:test_mcp`, which creates the set and binding
 for the Sandbox it launches through the Kubernetes API (see [the system tests README](../system_tests/README.md))
 against the upstream `mcp-everything` image described in
-[the fixture guide](testing/README.md); `test_runtime` drives the same production
-composition against an envtest API server.
+[the fixture guide](testing/README.md). The Go service's startup, MCP execution recovery and OAuth
+edge composition are covered by `//agentplane/action_service:integration_test`.
 
 ## Authentication boundaries
 

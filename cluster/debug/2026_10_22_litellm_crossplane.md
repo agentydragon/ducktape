@@ -1,48 +1,182 @@
-# LiteLLM Crossplane first reconciliation
+# LiteLLM Crossplane migration recovery
 
-The Crossplane migration PR and Tofu handoff are merged, but the live migration is
-not healthy yet. `litellm-keys-tf` is Ready; `litellm-crossplane-keys` is still
-Progressing, and `litellm-buildbuddy-sync` is blocked on that Kustomization.
+## Current recovery state at 2026-10-22 16:07 UTC
 
-The installed `provider-litellm:v2.1.0` reports two independent failures:
+All 12 Keys and all three Teams report `Synced=True` and `Ready=True` with the
+installed provider package `v2.1.0-1.ducktape.5cc2f4308916`. The LiteLLM provider,
+keys, BuildBuddy sync and both Agentplane Flux Kustomizations are Ready.
 
-- Each Key create that reached the provider returned an unknown
-  `organization_id`, which Terraform rejects after apply. Subsequent Observe
-  attempts then plan to destroy the key and stop at the provider's
-  `prevent_destroy` guard. In the provider's `readKeyWithTransport`,
-  `organization_id` is only assigned when LiteLLM returns a non-empty string;
-  unlike some neighboring optional fields, an unknown value is not cleared when
-  the API omits it. Setting this optional field to `""` does not fix that
-  provider behavior: Crossplane v2.4.0's generated reference resolver
-  normalizes the empty string to nil, sends `organizationId: null`, and the API
-  server rejects that patch because the CRD schema requires a string. The
-  recovery manifest now creates one LiteLLM Organization and uses the typed
-  `organizationIdRef` on every Key, so LiteLLM returns a concrete organization
-  ID. Provider PR [#1](https://github.com/TheCodingSheikh/provider-litellm/pull/1)
-  remains a general compatibility fix for keys that intentionally omit an
-  organization; it is no longer required for this migration's keys.
-- The Antigravity Team spec sent one fallback entry with an empty
-  `fallback_models` list. LiteLLM's team-info response omitted that field, but
-  the provider schema requires it for every fallback entry, so Observe failed
-  while refreshing `router_settings`. The Antigravity lane has no fallbacks;
-  the cdk8s spec now omits `router_settings` for that Team. At the first
-  observation, the live Team had no external name or create-succeeded
-  annotation, so retrying did not require deleting a provider-created Team.
+The remaining Antigravity Team replacement plan came from a `tainted` instance
+in the provider Pod's temporary `/tmp/<Team CR UID>/terraform.tfstate`. A
+read-only `/team/info` call confirmed the remote Team still existed. Deleting
+that Team would also delete its linked Key, because LiteLLM's Team deletion
+cascades to associated keys.
 
-At 2026-10-22 08:04 UTC, Flux was on a new 20-minute health-check cycle for
-artifact `latest@sha256:d44f154c9f758e8127ca60126d22500a8b37bfc06c56cb3858ce5f3e996e529b`.
-All twelve Keys reported `Synced=False`, with recent events showing the
-`organizationId: null` patch rejection. Eight ExternalSecrets were unready
-because the generated Crossplane connection Secrets expose `attribute.key`,
-while ESO requested a property named `key`. The Team fallback fix had already
-been applied, and a later event confirmed the provider requested Team creation.
+The operator permitted Team destruction, but it was unnecessary for this recovery.
+A single provider Pod replacement, guarded by its Kubernetes UID, rebuilt the
+workspace from the existing managed-resource identity. Antigravity became
+`Synced=True` at 16:06:53 UTC. Its CR UID and remote Team UUID stayed unchanged;
+all 12 Key CR UIDs and external identifiers also stayed unchanged. No Team or
+Key was deleted. The old `LastAsyncOperation=False` condition records the earlier
+failed create; the current `Synced=True` condition records successful observation.
 
-This follow-up creates a top-level `ducktape` organization, associates all Keys
-through typed references, and reads `attribute.key` from each provider
-connection Secret. The user explicitly accepted key rotation and a brief
-outage if reassociation requires replacement. After the manifests are
-reconciled, verify the Organization, all Team and Key resources become Synced,
-exported Secrets become Ready,
-`litellm-crossplane-keys` becomes Ready, and then
-`litellm-buildbuddy-sync` applies and becomes Ready. Until then, BuildBuddy sync
-is blocked on its dependency.
+This was a one-time recovery of ephemeral provider state, not a change to the
+provider's replacement policy. Upjet generates `prevent_destroy` until the managed
+resource enters deletion; `managementPolicies: ["*"]` already permits that deletion.
+Before deleting a Team, account for LiteLLM's associated-key cascade.
+
+The sections below retain the earlier investigation and package handoff evidence.
+
+## Intended ownership and secret flow
+
+Crossplane is the target owner for LiteLLM Teams and virtual Keys. Keys must be
+root-scoped: there is no `Organization` object and no `organizationId` on a Key.
+The provider's `default` ProviderConfig gets the in-cluster LiteLLM API base and
+master key from an ESO-created Kubernetes Secret. Each Team and Key references
+that ProviderConfig. Crossplane connection Secrets expose the generated client
+keys; ESO republishes them into consumer namespaces. A separate Tofu root copies
+the BuildBuddy live-test key into BuildBuddy and the old Tofu root performs the
+handoff cleanup.
+
+Draft ducktape PR [#11553](https://github.com/agentydragon/ducktape/pull/11553)
+removes the Organization and all `organizationIdRef`s. It must wait for a
+provider package that can reconcile a root-scoped Key through a read cycle.
+
+## Failure causes
+
+The attempted top-level `ducktape` Organization is unavailable on this LiteLLM
+deployment. The running process has no `LITELLM_LICENSE`; its organization-info
+endpoint returns HTTP 403. Key updates that include `organization_id=ducktape`
+then fail because the API database has no such organization. LiteLLM server
+logs report: `Organization doesn't exist in db. Organization=ducktape. Create
+organization via /organization/new call.` The provider status withholds response
+bodies because they may contain the Key dictionary or lookup token.
+
+A trailing-24-hour access-log query at 2026-10-22 10:49 UTC recorded 48
+`POST /key/update` responses with HTTP 400 and 53 `GET /organization/info`
+responses with HTTP 403. At that check, 8 of 12 Key resources were
+`Synced=False`; all 12 still had `organizationId: ducktape`. The missing
+organization is the immediate cause of those update failures. Removing the
+organization references addresses those 400s.
+
+Root-scoped Keys expose a separate provider bug: when LiteLLM omits
+`organization_id` on read, provider v2.1.0 leaves the optional-computed field
+unknown. Provider PR
+[#1](https://github.com/TheCodingSheikh/provider-litellm/pull/1) resolves only
+an unknown omitted value to null and adds a focused regression test. Its body
+reports `make test` passing, but the PR is still open with no GitHub checks and
+no released package containing the fix. A patched xpkg was built locally from
+commit `4c1d445` and its focused regression test passes. Draft ducktape PR #11553
+now pins that artifact under `ghcr.io/agentydragon/provider-litellm`, but the
+artifact has not been published or pulled by the cluster; do not apply that pin
+until publication and pullability are verified. The Crossplane package running
+in the cluster remains v2.1.0. The removal of the local package pin is tracked
+in [`cluster/k8s/TODO.md`](../k8s/TODO.md).
+
+PR #11511 fixed two earlier cutover problems and is merged: it omits
+`routerSettings` for Teams without fallbacks, and the ESO export reads the
+provider connection field `attribute.key`.
+
+## Latest live state at 2026-10-22 10:54 UTC
+
+- PR #11511 merged as `ec2baca8c0d9e404e1749e34885c9caa8566b424`.
+- Tofu runner fix PR #11564 merged at 10:48 UTC as
+  `46453703895e59bba33345fec945830e0dfee13b`. Flux applied that source revision:
+  `litellm-keys-tf` became Ready at 10:50:30 UTC and
+  `litellm-crossplane-keys` at 10:50:46 UTC. The latter's Ready condition does
+  not mean its Keys are Synced; 8 still report `ReconcileError` and 4
+  `ReconcileSuccess`.
+- `litellm-buildbuddy-sync` has not converged. Its Terraform resource reported
+  `TFExecPlanFailed` at 10:52:28 UTC because `buildbuddy-secret-sync` requires
+  `TF_VAR_buildbuddy_api_key`. The new manifest correctly provides the
+  Secret-backed Terraform var and `BUILDBUDDY_API_KEY` environment value, but
+  the live `tofu-controller` still selects runner image
+  `ghcr.io/agentydragon/tf-runner:devel-20261022023445-10a3655`. That image's
+  source still expects `TF_VAR_buildbuddy_api_key`. The merged commit's
+  `push-images / Push tf-runner` job succeeded at 10:52:54 UTC. However, the
+  Flux ImageRepository last scanned at 10:52:03 UTC, before that push; the
+  ImagePolicy and controller still select the old tag. Verify the new tag is
+  scanned, the pin updates, the runner is replaced, and BuildBuddy Tofu
+  planning/apply succeeds before calling this fixed.
+- Crossplane's installed package remains v2.1.0. Provider PR #1 is still open,
+  so the root-scope PR cannot safely be applied yet.
+- The live Organization remains `Synced=False`, and all Keys still specify
+  `organizationId: ducktape`. The root-scope PR remains a draft pending the
+  provider package fix. At 10:54 UTC, the BuildBuddy sync Kustomization remained
+  `Unknown/Progressing` (last transition 10:51:13 UTC), while its Terraform
+  resource had reported `TFExecPlanFailed` at 10:52:28 UTC.
+
+## Follow-up at 2026-10-22 10:56 UTC
+
+The `tf-runner` ImagePolicy selected the newly published
+`devel-20261022105251-4645370` image after image automation pushed pin commit
+`2f24ed4e7485860a280dd7c2bbb12a680eb81f73`. The tofu-controller then used that
+runner image. `litellm-buildbuddy-sync` Terraform reported
+`TerraformAppliedSucceed` at 10:56:23 UTC, and its Flux Kustomization became
+Ready at 10:56:24 UTC. A read-only BuildBuddy `ListSecrets` call returned HTTP
+200 and confirmed the `OPENAI_API_KEY` name is present; no secret value or
+ciphertext was read or printed. The BuildBuddy handoff is now verified.
+
+The LiteLLM Key state has not changed: 8 of 12 Keys remain `Synced=False`, 4 are
+`Synced=True`, and all still carry `organizationId: ducktape`. Provider PR #1
+remains open, so root-scope adoption is still pending its released package.
+
+After a provider package containing PR #1 is available and pinned, apply the
+root-scope change and verify a Key read/reconcile cycle. Then verify all Keys,
+exported Secrets, the BuildBuddy Tofu reconciliation, and the stored BuildBuddy
+secret. Replacing Keys is acceptable if they cannot be adopted in place; verify
+consumer propagation after rotation.
+
+## Follow-up at 2026-10-22 14:04 UTC
+
+The Forgejo image-pull fix merged as ducktape PR #11587 (`77b2ee2e`). Flux
+fetched that revision, synced the dedicated `crossplane-system/forgejo-images-creds`
+ExternalSecret, installed the provider package, and marked
+`crossplane-provider-litellm` Ready. The key Kustomization then applied its new
+root-scoped artifact.
+
+Existing Key custom resources still had `spec.forProvider.organizationId: ducktape`,
+even though the served artifact omitted that field. A server-side apply dry run
+confirmed omission preserves the legacy field; a merge-patch null dry run
+confirmed explicit deletion removes it. I applied that deletion to
+`key-agentplane-staging` as a one-resource probe. Its spec no longer had the
+organization field, but `status.atProvider.organizationId` remained `ducktape`
+and its next update still returned HTTP 400. A 15-minute LiteLLM log sample
+contained 270 `Organization doesn't exist in db. Organization=ducktape` errors.
+
+The pinned provider patch only resolved an unknown `organization_id` to null.
+When the API omitted it but provider state already held the known stale value,
+the read path preserved it. The patch is being changed to clear the value on any
+API omission, with regression cases for both unknown and stale known state. The
+new package version is `v2.1.0-1.ducktape.8fc5d2ef39dd`; its pin and CI build
+workflow are in the follow-up change. Local BuildBuddy-backed Bazel testing
+could not start because `remote.buildbuddy.io` DNS resolution failed, so PR CI
+must provide that validation.
+
+After the patched package is published and installed, remove the stale
+`organizationId` from the remaining live Key specs, then verify all Keys report
+`Synced=True`, all exported Secrets refresh successfully, and the BuildBuddy
+secret sync converges. Do not print or inspect any key values.
+
+## Follow-up at 2026-10-22 14:50 UTC
+
+PR #11591 merged the root-scoped Key spec and provider pin; its post-merge
+workflow published `v2.1.0-1.ducktape.8fc5d2ef39dd`, and Flux installed the
+package. Clearing the obsolete resolver-owned `organizationId` from the live
+Keys brought 11 of 12 to `Synced=True`. `key-codex-clients` still reports
+`Provider produced inconsistent result after apply: .key_wo: inconsistent
+values for sensitive attribute`.
+
+The remaining error traces to `KeyResource.Update` clearing `KeyWO` after
+Crossplane has resolved it from a Kubernetes Secret and included it in the
+planned state. The compatibility patch removes Terraform's `WriteOnly` marker
+for Upjet, so the provider must retain that sensitive planned value in its
+transient state. Provider-fork commit `5cc2f43` removes the Create/Update
+clears and adds protocol tests for both paths; `make test-terraform-provider-patch`
+passes. The adapter commit also carries the stale-organization fix, so the
+redundant Ducktape overlay has been removed. The follow-up package build pins
+`5cc2f4308916642f4342cfd61e6ffe1362570fb0` and publishes as
+`v2.1.0-1.ducktape.5cc2f4308916`; its build script runs the protocol tests
+before packaging. The PR build and publish are still pending. After deployment,
+verify provider health, all 12 Key conditions, ESO exports, and the BuildBuddy
+Tofu sync in the cluster.

@@ -9,8 +9,6 @@ forwarded to the upstream registry.
 from __future__ import annotations
 
 import asyncio
-import contextlib
-from collections.abc import AsyncIterator
 
 import httpx
 import pytest
@@ -21,7 +19,6 @@ from starlette.responses import Response
 from props.core.agent_types import AgentType
 from props.core.oci_utils import BUILTIN_TAG
 from props.registry_proxy.routes import _is_grader_builtin_push, _proxy_to_upstream
-from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 
 DOCKER_ACCEPT_TYPES = [
@@ -30,14 +27,6 @@ DOCKER_ACCEPT_TYPES = [
     "application/vnd.oci.image.manifest.v1+json",
     "application/vnd.oci.image.index.v1+json",
 ]
-
-
-@contextlib.asynccontextmanager
-async def _run_server(app: FastAPI) -> AsyncIterator[str]:
-    """Run a FastAPI app on an ephemeral port, yield the base URL."""
-    sock = bind_free_port()
-    async with serve_app_in_loop(app, sock=sock):
-        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
 
 
 async def test_proxy_preserves_multi_valued_accept_headers(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -68,10 +57,10 @@ async def test_proxy_preserves_multi_valued_accept_headers(monkeypatch: pytest.M
     async def proxy(request: Request) -> Response:
         return await _proxy_to_upstream(request)
 
-    async with _run_server(upstream_app) as upstream_url:
+    async with serve_app_in_loop(upstream_app) as upstream_url:
         monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", upstream_url)
 
-        async with _run_server(proxy_app) as proxy_url, httpx.AsyncClient(base_url=proxy_url) as client:
+        async with serve_app_in_loop(proxy_app) as proxy_url, httpx.AsyncClient(base_url=proxy_url) as client:
             raw_headers = [(b"accept", t.encode()) for t in DOCKER_ACCEPT_TYPES]
             response = await client.get("/v2/critic/manifests/sha256:abc123", headers=raw_headers)
 
@@ -113,10 +102,10 @@ async def test_proxy_forwards_streaming_mutation_body(monkeypatch: pytest.Monkey
         await asyncio.sleep(0)
         yield b"second"
 
-    async with _run_server(upstream_app) as upstream_url:
+    async with serve_app_in_loop(upstream_app) as upstream_url:
         monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", upstream_url)
 
-        async with _run_server(proxy_app) as proxy_url, httpx.AsyncClient(base_url=proxy_url) as client:
+        async with serve_app_in_loop(proxy_app) as proxy_url, httpx.AsyncClient(base_url=proxy_url) as client:
             response = await client.patch("/v2/critic/blobs/uploads/session", content=body_chunks())
 
     assert response.status_code == 202

@@ -14,11 +14,12 @@ postgres deployments.
 
 Only these CNPG cluster profiles are permitted:
 
-| Profile                               | Instances | Pin                                      | Storage                                           | Anti-affinity                      |
-| ------------------------------------- | --------- | ---------------------------------------- | ------------------------------------------------- | ---------------------------------- |
-| **OVH-HA**                            | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh-hdd` or `-ssd`                    | required, `kubernetes.io/hostname` |
-| **OVH-HA with Piraeus pilot replica** | 3         | `topology.kubernetes.io/zone: hil-ovh`   | Existing claims unchanged; new claim uses Piraeus | required, `kubernetes.io/hostname` |
-| **Proxmox-single**                    | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`                              | n/a                                |
+| Profile                                    | Instances | Pin                                      | Storage                                           | Anti-affinity                      |
+| ------------------------------------------ | --------- | ---------------------------------------- | ------------------------------------------------- | ---------------------------------- |
+| **OVH-HA**                                 | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh-hdd` or `-ssd`                    | required, `kubernetes.io/hostname` |
+| **OVH-HA with Piraeus pilot replica**      | 3         | `topology.kubernetes.io/zone: hil-ovh`   | Existing claims unchanged; new claim uses Piraeus | required, `kubernetes.io/hostname` |
+| **OVH-HA with Piraeus migration template** | 2         | `topology.kubernetes.io/zone: hil-ovh`   | Existing claims unchanged; new claim uses Piraeus | required, `kubernetes.io/hostname` |
+| **Proxmox-single**                         | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`                              | n/a                                |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
 nodes. Two instances on separate nodes.
@@ -27,6 +28,15 @@ nodes. Two instances on separate nodes.
 the `piraeus-ssd-local` class has a single local pool on `ovh-ns1001419`. Their
 existing two PVCs keep their current StorageClass and size; CNPG applies the
 Piraeus class and configured size only to a newly-created claim.
+
+**OVH-HA with Piraeus migration template**: A bounded preparation profile for
+the seven clusters preparing for the `ovh-ns104952` SSD evacuation, listed
+under Current Compliance below. Git keeps their desired count at two and their
+existing claims unchanged; the new-claim template uses `piraeus-ssd-local`,
+sized for measured PGDATA plus headroom, with `resizeInUseVolumes: false`. During the serial roll, a
+resource-specific Flux hold permits one temporary third member at a time. The
+operator procedure and restoration to two members before releasing each hold
+are in the [Piraeus node roll runbook](runbooks/piraeus_node_roll.md#postgresql).
 
 **Placement** (`cnpg.cluster` derives it; no site builds its own): pod
 anti-affinity is `required` on `kubernetes.io/hostname` for every OVH Cluster,
@@ -56,7 +66,9 @@ OVH-HA uses `local-path-ovh-hdd` or, for fsync/latency-critical DBs, the
 same media as `-hdd`, kept only for already-bound PVCs — see the SC manifest;
 new clusters name the tiered classes explicitly.) The Piraeus pilot profile's
 new claim uses `piraeus-ssd-local`; this local, one-node class does not replace
-the existing replicas' bound volumes. Proxmox-single uses
+the existing replicas' bound volumes. The bounded Piraeus migration-template
+profile uses `piraeus-ssd-local` only for a newly-created claim; existing
+replicas stay on their bound volumes. Proxmox-single uses
 `local-path-proxmox`. OVH-HA gets
 replication at the CNPG level (2 instances on separate nodes);
 Proxmox-single gets replication at the storage level (ZFS on the Proxmox
@@ -108,6 +120,16 @@ deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   pilot profile. Its two existing 1Gi PVCs retain their current classes; the
   new claim uses `piraeus-ssd-local`. This restores its deliberate profile for
   tolerating one-node loss without quorum or primary impact.
+- `agentplane-staging/postgres`, `atuin-db`, `authentik-db-ovh`,
+  `forgejo-db-ssd`, `langfuse-db`, `seaweedfs-filer-db-ssd`, and
+  `tofu-state-db-ovh`: 2 desired instances using the Piraeus migration-template
+  profile while preparing the `ovh-ns104952` SSD evacuation. Existing PVCs
+  keep their current StorageClass and size; a new claim uses
+  `piraeus-ssd-local` sized for measured data and headroom, with
+  `resizeInUseVolumes: false`. Create the temporary third member one cluster
+  at a time under a resource-specific Flux hold. After switchover, keep the
+  Piraeus-seeded member and retire only the exact old member on `ovh-ns104952`;
+  restore/verify two desired members before releasing the hold.
 - `postgres` (`generated/agentplane-testing/`): 1 instance pinned
   `zone: hil-ovh` on `local-path-ovh-ssd`, shared by testing's three disposable
   logical databases. This experimental environment deliberately accepts no

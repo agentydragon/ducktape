@@ -42,18 +42,15 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator, Mapping, Sequence
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 import aiodocker
 import pytest
 import pytest_asyncio
-import uvicorn
-from fastapi import FastAPI
 
 from openai_utils.model import OpenAIModelProto
 from openai_utils.model_metadata import get_model_metadata
@@ -71,8 +68,8 @@ from props.orchestration.docker_executor import DockerExecutor
 from props.registry_proxy.app import create_app as create_registry_proxy_app
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
-from util.net import pick_free_port
 from util.oci import BazelImage, bazel_crane, push_bazel_image
+from util.testing.asgi import bind_http_server
 
 logger = logging.getLogger(__name__)
 
@@ -141,33 +138,6 @@ def _build_agent_base_env(db_config: DatabaseConfig) -> dict[str, str]:
     return {"PGHOST": E2E_HOST_HOSTNAME, "PGPORT": str(db_config.port), "PGDATABASE": db_config.database}
 
 
-@asynccontextmanager
-async def _serve_app(app: FastAPI, port: int, *, name: str, host: str = "0.0.0.0") -> AsyncIterator[None]:
-    """Run a FastAPI app under uvicorn for the lifetime of the context."""
-    config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    task = asyncio.create_task(server.serve())
-
-    while not server.started:
-        await asyncio.sleep(0.01)
-        if task.done():
-            raise RuntimeError(f"{name} failed to start on port {port}: {task.exception()}")
-
-    logger.info("%s started on port %d", name, port)
-
-    try:
-        yield
-    finally:
-        server.should_exit = True
-        try:
-            await asyncio.wait_for(task, timeout=5.0)
-        except TimeoutError:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        logger.info("%s stopped", name)
-
-
 def _set_backend_env(monkeypatch: pytest.MonkeyPatch, db_config: DatabaseConfig, e2e_registry_url: str) -> None:
     """Set env vars needed by the backend's lifespan."""
     monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", e2e_registry_url)
@@ -193,78 +163,84 @@ async def _make_stack(
 
     try:
         _set_backend_env(monkeypatch, db.config, e2e_registry_url)
-        backend_port = pick_free_port()
-        llm_proxy_port = pick_free_port()
-        registry_proxy_port = pick_free_port()
-        registry_proxy_config = RegistryProxyConfig(host="localhost", port=registry_proxy_port)
-        backend_url = f"http://{E2E_HOST_HOSTNAME}:{backend_port}"
-        agent_registry_url = f"http://{E2E_HOST_HOSTNAME}:{registry_proxy_port}"
-        # Agents talk to the standalone LLM proxy (the backend dropped its /v1
-        # mount in #1894); the proxy reuses the backend's llm router + auth against
-        # the same DB and forwards to the fake OpenAI upstream above.
-        llm_proxy_url = f"http://{E2E_HOST_HOSTNAME}:{llm_proxy_port}"
-        agent_base_env = _build_agent_base_env(db.config)
-
-        config = PropsConfig(
-            backend_url=backend_url,
-            agent_env=agent_base_env,
-            executor=DockerExecutorConfig(extra_hosts=HOST_GATEWAY),
-            llm_proxy_url=llm_proxy_url,
-            upstreams={"fake-openai": UpstreamConfig(url=f"{fake_openai.url}/v1", api_key_env="FAKE_OPENAI_API_KEY")},
-            models=[
-                CustomModelConfig(
-                    name=model_id,
-                    upstream="fake-openai",
-                    upstream_model=model_id,
-                    **get_model_metadata(model_id).model_dump(),
-                )
-                for model_id in models
-            ],
-        )
-        with db.session() as session:
-            sync_model_metadata_with_session(session, config)
-            session.commit()
-        deps = BackendDeps(config=config, registry_proxy_config=registry_proxy_config, backend_url=backend_url)
-
-        async with (
-            ensure_agent_network(async_docker_client),
-            _serve_app(create_app(deps=deps), backend_port, name="backend"),
-            _serve_app(create_llm_proxy_app(db=db, config=config), llm_proxy_port, name="llm-proxy"),
-            _serve_app(create_registry_proxy_app(db=db), registry_proxy_port, name="registry-proxy"),
-        ):
-            executor = DockerExecutor(
-                async_docker_client,
-                network_name=PROPS_NETWORK_NAME,
-                extra_hosts=HOST_GATEWAY,
-                pull_auth={"username": db.config.user, "password": db.config.password},
+        with ExitStack() as bound_servers:
+            backend_server = bound_servers.enter_context(bind_http_server("0.0.0.0", advertised_host=E2E_HOST_HOSTNAME))
+            llm_proxy_server = bound_servers.enter_context(
+                bind_http_server("0.0.0.0", advertised_host=E2E_HOST_HOSTNAME)
             )
-            registry = AgentRegistry(
-                executor=executor,
-                db=db,
-                db_config=db.config,
+            registry_proxy_server = bound_servers.enter_context(
+                bind_http_server("0.0.0.0", advertised_host=E2E_HOST_HOSTNAME)
+            )
+            registry_proxy_config = RegistryProxyConfig(host="localhost", port=registry_proxy_server.port)
+            backend_url = backend_server.origin
+            # Agents talk to the standalone LLM proxy (the backend dropped its /v1
+            # mount in #1894); the proxy reuses the backend's llm router + auth against
+            # the same DB and forwards to the fake OpenAI upstream above.
+            llm_proxy_url = llm_proxy_server.origin
+            agent_base_env = _build_agent_base_env(db.config)
+
+            config = PropsConfig(
                 backend_url=backend_url,
-                agent_base_env=agent_base_env,
-                registry_config=registry_proxy_config,
-                llm_base_url=llm_proxy_url,
-                agent_registry_url=agent_registry_url,
+                agent_env=agent_base_env,
+                executor=DockerExecutorConfig(extra_hosts=HOST_GATEWAY),
+                llm_proxy_url=llm_proxy_url,
+                upstreams={
+                    "fake-openai": UpstreamConfig(url=f"{fake_openai.url}/v1", api_key_env="FAKE_OPENAI_API_KEY")
+                },
+                models=[
+                    CustomModelConfig(
+                        name=model_id,
+                        upstream="fake-openai",
+                        upstream_model=model_id,
+                        **get_model_metadata(model_id).model_dump(),
+                    )
+                    for model_id in models
+                ],
             )
+            with db.session() as session:
+                sync_model_metadata_with_session(session, config)
+                session.commit()
+            deps = BackendDeps(config=config, registry_proxy_config=registry_proxy_config, backend_url=backend_url)
 
-            try:
-                proxy_url = f"localhost:{registry_proxy_port}"
-                crane = bazel_crane(registry=proxy_url, username=db.config.user, password=db.config.password)
-                resolved_images: dict[str, ResolvedImage] = {}
-                for image in images:
-                    digest = await push_bazel_image(crane, image, proxy_url, BUILTIN_TAG, insecure=True)
-                    oci_ref = registry_proxy_config.build_oci_reference(AgentType(image.repo_name), digest)
-                    resolved_images[image.repo_name] = ResolvedImage(digest=digest, oci_ref=oci_ref)
-                # Pull through the authenticated proxy concurrently so nested agents
-                # do not each wait for a cold image pull when orchestration reaches them.
-                async with asyncio.TaskGroup() as tasks:
-                    for resolved_image in resolved_images.values():
-                        tasks.create_task(executor.ensure_image(resolved_image.oci_ref))
-                yield E2EStack(registry=registry, model=model, resolved_images=resolved_images)
-            finally:
-                await registry.close()
+            async with (
+                ensure_agent_network(async_docker_client),
+                backend_server.serve_in_loop(create_app(deps=deps)),
+                llm_proxy_server.serve_in_loop(create_llm_proxy_app(db=db, config=config)),
+                registry_proxy_server.serve_in_loop(create_registry_proxy_app(db=db)),
+            ):
+                executor = DockerExecutor(
+                    async_docker_client,
+                    network_name=PROPS_NETWORK_NAME,
+                    extra_hosts=HOST_GATEWAY,
+                    pull_auth={"username": db.config.user, "password": db.config.password},
+                )
+                registry = AgentRegistry(
+                    executor=executor,
+                    db=db,
+                    db_config=db.config,
+                    backend_url=backend_url,
+                    agent_base_env=agent_base_env,
+                    registry_config=registry_proxy_config,
+                    llm_base_url=llm_proxy_url,
+                    agent_registry_url=registry_proxy_server.origin,
+                )
+
+                try:
+                    proxy_url = f"localhost:{registry_proxy_server.port}"
+                    crane = bazel_crane(registry=proxy_url, username=db.config.user, password=db.config.password)
+                    resolved_images: dict[str, ResolvedImage] = {}
+                    for image in images:
+                        digest = await push_bazel_image(crane, image, proxy_url, BUILTIN_TAG, insecure=True)
+                        oci_ref = registry_proxy_config.build_oci_reference(AgentType(image.repo_name), digest)
+                        resolved_images[image.repo_name] = ResolvedImage(digest=digest, oci_ref=oci_ref)
+                    # Pull through the authenticated proxy concurrently so nested agents
+                    # do not each wait for a cold image pull when orchestration reaches them.
+                    async with asyncio.TaskGroup() as tasks:
+                        for resolved_image in resolved_images.values():
+                            tasks.create_task(executor.ensure_image(resolved_image.oci_ref))
+                    yield E2EStack(registry=registry, model=model, resolved_images=resolved_images)
+                finally:
+                    await registry.close()
 
     finally:
         await fake_openai.stop()

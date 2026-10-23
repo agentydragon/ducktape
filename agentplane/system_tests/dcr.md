@@ -16,9 +16,3 @@ no client for the Action Service's OAuth server. No Action, sandbox, model turn,
 created. HTTP logging is suppressed; SDK exceptions are replaced with phase-only diagnostics and
 `--showlocals` is refused. Requests have 15-second timeouts and each scenario has a 60-second overall
 bound. The registrations go with the stack.
-
-`test_real_sdk_dcr_over_http_persists_client_metadata` in `action_service:test_oauth` runs the same
-probe over real TCP against the Actions app with PostgreSQL and the existing hermetic upstream IdP.
-It checks metadata through a separately constructed provider and verifies that SDK-generated
-authorization reaches the consent boundary without creating caller authority. This regression
-coverage is not evidence that a deployed Action Service's DCR succeeded.

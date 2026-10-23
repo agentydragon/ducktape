@@ -33,12 +33,32 @@ inputs:
 runs:
   using: composite
   steps:
+    # Each release-matrix job has two Bazel builds. Give both a deterministic ID
+    # scoped by package so parallel rows cannot silently merge in BuildBuddy.
+    - name: Choose BuildBuddy invocation IDs
+      id: invocation
+      shell: bash
+      env:
+        PKG: ${{ inputs.pkg }}
+      run: |
+        set -euo pipefail
+        for phase in unstamped stamped; do
+          invocation_id="$(python3 devinfra/ci/invocation_ids.py \
+            --run-id "$GITHUB_RUN_ID" \
+            --attempt "$GITHUB_RUN_ATTEMPT" \
+            --role "release-$phase" \
+            --scope "$PKG")"
+          echo "$phase=$invocation_id" >> "$GITHUB_OUTPUT"
+        done
+
     # Build 1: unstamped (default, --stamp off) — deterministic, for skip decision
     - name: Build artifact (unstamped)
       id: build
       uses: ./.github/actions/bb-remote
       with:
-        args: build ${{ inputs.bazel_targets }} ${{ inputs.bazel_flags }}
+        args: build --invocation_id=${{ steps.invocation.outputs.unstamped }} ${{ inputs.bazel_targets }} ${{ inputs.bazel_flags }}
+        linkage_roles: release-unstamped
+        bazel_invocation_ids: ${{ steps.invocation.outputs.unstamped }}
         rbe_container_image: ${{ inputs.rbe_container_image }}
 
     - name: Check content hash
@@ -99,7 +119,9 @@ runs:
       if: steps.check.outputs.should_release == 'true'
       uses: ./.github/actions/bb-remote
       with:
-        args: build ${{ inputs.bazel_targets }} ${{ inputs.bazel_flags }} --stamp
+        args: build --invocation_id=${{ steps.invocation.outputs.stamped }} ${{ inputs.bazel_targets }} ${{ inputs.bazel_flags }} --stamp
+        linkage_roles: release-stamped
+        bazel_invocation_ids: ${{ steps.invocation.outputs.stamped }}
         rbe_container_image: ${{ inputs.rbe_container_image }}
 
     - name: Upload release

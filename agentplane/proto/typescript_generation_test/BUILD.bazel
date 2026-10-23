@@ -1,5 +1,8 @@
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 
+# Keep this hand-authored fixture intact to test strip_import_prefix on a nested source.
+# gazelle:proto disable
+
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 proto_library(

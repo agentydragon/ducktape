@@ -14,13 +14,15 @@ from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, E
 SECRET_NAME = "forgejo-images-creds"
 
 
-def forgejo_images_creds_external_secret(scope: Construct, id: str, *, namespace: str) -> ExternalSecret:
+def forgejo_images_creds_external_secret(
+    scope: Construct, id: str, *, namespace: str, secret_store_name: str = "kubernetes-forgejo-images-secret-store"
+) -> ExternalSecret:
     return ExternalSecret(
         scope,
         id,
         metadata=ApiObjectMetadata(name=SECRET_NAME, namespace=namespace),
         refresh_interval="1h",
-        secret_store_ref=SecretStoreRef.cluster("kubernetes-forgejo-images-secret-store"),
+        secret_store_ref=SecretStoreRef.cluster(secret_store_name),
         data_from=[DataFrom.from_extract(SECRET_NAME)],
         template=ExternalSecretSpecTargetTemplate(
             type="kubernetes.io/dockerconfigjson", merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE

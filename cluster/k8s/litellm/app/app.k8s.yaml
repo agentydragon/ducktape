@@ -857,6 +857,10 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: "4000"
+            - name: LITELLM_OTEL_V2
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+              value: span_only
             - name: LITELLM_MASTER_KEY
               valueFrom:
                 secretKeyRef:

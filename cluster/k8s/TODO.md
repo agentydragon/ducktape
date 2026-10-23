@@ -2,6 +2,15 @@
 
 Audit findings deferred for later.
 
+## LiteLLM Crossplane provider pin
+
+- [ ] Replace the pinned `agentydragon/provider-litellm` commit and
+      `git.allegedly.works/ducktape-ci/provider-litellm` package with an upstream
+      release that clears stale `organization_id` state and preserves the planned
+      sensitive `key_wo` value through Create and Update. Verify root-scoped Keys
+      reconcile through read and update cycles before removing the private pin.
+      Related upstream work: [provider-litellm PR #1](https://github.com/TheCodingSheikh/provider-litellm/pull/1).
+
 ## Study Casino database backups
 
 - [ ] Choose and deploy the backup/restore path for the CNPG

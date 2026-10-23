@@ -33,6 +33,9 @@ provider "forgejo" {
 resource "random_password" "haku" {
   length  = 48
   special = false
+  keepers = {
+    recovery = "2026-10-23-forgejo-secret-key"
+  }
 }
 
 resource "forgejo_user" "haku" {
@@ -220,6 +223,25 @@ resource "forgejo_repository_action_secret" "registry_push" {
       random_password.haku,
       terraform_data.registry_push_secret_refresh,
     ]
+  }
+}
+
+# Existing legacy Actions entries use the same account as the runtime Secret.
+# The provider's create/update path upserts by name, so adopting them preserves
+# the entries while bringing all password copies under the same rotation owner.
+resource "forgejo_repository_action_secret" "ui_git_username" {
+  repository_id = forgejo_repository.state.id
+  name          = "HAKU_UI_GIT_USERNAME"
+  data          = forgejo_user.haku.login
+}
+
+resource "forgejo_repository_action_secret" "ui_git_password" {
+  repository_id = forgejo_repository.state.id
+  name          = "HAKU_UI_GIT_PASSWORD"
+  data          = random_password.haku.result
+
+  lifecycle {
+    replace_triggered_by = [random_password.haku]
   }
 }
 

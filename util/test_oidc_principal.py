@@ -22,7 +22,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from util.net import bind_free_port
 from util.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     DexOidcPrincipalResolver,
@@ -30,7 +29,7 @@ from util.oidc_principal import (
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
-from util.testing.asgi import serve_app
+from util.testing.asgi import bind_http_server
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 _ISSUER = "https://auth.example.test/application/o/haku-mcp/"
@@ -122,9 +121,9 @@ def signing_keys() -> tuple[_SigningKey, _SigningKey, _SigningKey]:
 @pytest.fixture
 async def jwks_server(signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]):
     state = _JwksState(document=_jwks(signing_keys[0]))
-    sock = bind_free_port()
-    async with serve_app(Starlette(routes=[Route("/jwks", state.serve)]), sock=sock):
-        yield state, f"http://127.0.0.1:{sock.getsockname()[1]}/jwks"
+    with bind_http_server() as endpoint:
+        async with endpoint.serve(Starlette(routes=[Route("/jwks", state.serve)])) as origin:
+            yield state, f"{origin}/jwks"
 
 
 async def test_resolves_only_issuer_and_subject_from_access_token(
@@ -700,36 +699,38 @@ async def _authorization_and_refresh_tokens(
 
 async def test_authentik_compatible_mock_access_tokens_match_authentik_audience_contract() -> None:
     private_key, public_key = generate_rsa_keypair()
-    sock = bind_free_port()
-    base_url = f"http://127.0.0.1:{sock.getsockname()[1]}"
-    issuer = f"{base_url}/application/o/test/"
-    app = build_mock_oidc_app(
-        issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
-    )
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=base_url, follow_redirects=False) as client:
-        token_responses = await _authorization_and_refresh_tokens(
-            client, authorization_path="/application/o/authorize/", token_path="/application/o/token/"
+    with bind_http_server() as endpoint:
+        base_url = endpoint.origin
+        issuer = f"{base_url}/application/o/test/"
+        app = build_mock_oidc_app(
+            issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
         )
-        resolver = AuthentikOidcPrincipalResolver(
-            expected_issuer=issuer,
-            discovered_issuer=issuer,
-            jwks_uri=f"{issuer}jwks/",
-            signing_algorithms=["RS256"],
-            client_id=_CLIENT_ID,
-        )
-        for token_response in token_responses:
-            assert await resolver.resolve(token_response) == VerifiedOidcPrincipal(issuer=issuer, subject="test-user")
+        async with endpoint.serve(app), httpx.AsyncClient(base_url=base_url, follow_redirects=False) as client:
+            token_responses = await _authorization_and_refresh_tokens(
+                client, authorization_path="/application/o/authorize/", token_path="/application/o/token/"
+            )
+            resolver = AuthentikOidcPrincipalResolver(
+                expected_issuer=issuer,
+                discovered_issuer=issuer,
+                jwks_uri=f"{issuer}jwks/",
+                signing_algorithms=["RS256"],
+                client_id=_CLIENT_ID,
+            )
+            for token_response in token_responses:
+                assert await resolver.resolve(token_response) == VerifiedOidcPrincipal(
+                    issuer=issuer, subject="test-user"
+                )
 
 
 async def test_default_mock_access_token_audience_behavior_is_unchanged() -> None:
     private_key, public_key = generate_rsa_keypair()
-    sock = bind_free_port()
-    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
-    app = build_mock_oidc_app(issuer_url=issuer, private_key=private_key, public_key=public_key)
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=issuer, follow_redirects=False) as client:
-        issued, refreshed = await _authorization_and_refresh_tokens(
-            client, authorization_path="/authorize", token_path="/token"
-        )
+    with bind_http_server() as endpoint:
+        issuer = endpoint.origin
+        app = build_mock_oidc_app(issuer_url=issuer, private_key=private_key, public_key=public_key)
+        async with endpoint.serve(app), httpx.AsyncClient(base_url=issuer, follow_redirects=False) as client:
+            issued, refreshed = await _authorization_and_refresh_tokens(
+                client, authorization_path="/authorize", token_path="/token"
+            )
 
     issued_claims = jwt.decode(
         issued["access_token"],

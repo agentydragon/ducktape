@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
-	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -24,8 +22,7 @@ import (
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 )
 
-// golden.json is what the Python tools answer; `//agentplane/action_service:test_mcp_golden` regenerates and
-// checks it.
+// golden.json is the fixed Go contract fixture for MCP tool calls and direct-tool listings.
 //
 //go:embed golden.json
 var goldenJSON []byte
@@ -43,7 +40,7 @@ type goldenVectors struct {
 	Calls          []goldenCall    `json:"calls"`
 }
 
-// goldenListing is the direct tools Python lists for a caller, after the generic tools.
+// goldenListing is the direct tools the caller receives, after the generic tools.
 type goldenListing struct {
 	MaxWaitSeconds    float64           `json:"max_wait_seconds"`
 	DirectWaitSeconds float64           `json:"direct_wait_seconds"`
@@ -214,11 +211,9 @@ func decoded(t *testing.T, value any) map[string]any {
 	return fields
 }
 
-// answerValue is a tool answer as the comparison reads it: its content and structured content as the values they
-// encode, without the framing the two SDKs spell differently (the result type, the server's name the 2026-07-28
-// protocol stamps on each result, and an isError that is false). fromPython reads Python's repr quotes in prose as
-// Go's %q.
-func answerValue(t *testing.T, answer any, fromPython bool) map[string]any {
+// answerValue is the tool's payload apart from SDK framing: resultType is the SDK's result variant and server info
+// metadata is added by the protocol transport. The tool content, structured content, and error bit stay asserted.
+func answerValue(t *testing.T, answer any) map[string]any {
 	t.Helper()
 	fields := decoded(t, answer)
 	delete(fields, "resultType")
@@ -228,27 +223,24 @@ func answerValue(t *testing.T, answer any, fromPython bool) map[string]any {
 			delete(fields, "_meta")
 		}
 	}
-	if fields["isError"] == false {
-		delete(fields, "isError")
-	}
-	if structured, ok := fields["structuredContent"]; ok {
-		fields["structuredContent"] = jsonValue(structured)
+	// The MCP result contract treats an omitted isError as false, matching Go's omitempty JSON representation.
+	if _, ok := fields["isError"]; !ok {
+		fields["isError"] = false
 	}
 	content, _ := fields["content"].([]any)
 	for _, block := range content {
 		if block, ok := block.(map[string]any); ok && block["type"] == "text" {
-			block["text"] = textValue(block["text"].(string), fromPython)
+			block["text"] = textValue(block["text"].(string))
 		}
 	}
 	return fields
 }
 
-// textValue is a text block as the value it encodes: JSON as a JSON value, and prose as its words and the JSON
-// values it quotes after a space.
-func textValue(text string, fromPython bool) any {
+// textValue keeps prose exact and compares a JSON document or embedded JSON as the values it encodes.
+func textValue(text string) any {
 	var whole any
 	if json.Unmarshal([]byte(text), &whole) == nil {
-		return jsonValue(whole)
+		return whole
 	}
 	var words strings.Builder
 	quoted := []any{}
@@ -257,7 +249,7 @@ func textValue(text string, fromPython bool) any {
 			var value any
 			decoder := json.NewDecoder(strings.NewReader(text[i:]))
 			if decoder.Decode(&value) == nil {
-				quoted = append(quoted, jsonValue(value))
+				quoted = append(quoted, value)
 				words.WriteString("<json>")
 				i += int(decoder.InputOffset()) - 1
 				continue
@@ -265,41 +257,7 @@ func textValue(text string, fromPython bool) any {
 		}
 		words.WriteByte(text[i])
 	}
-	prose := words.String()
-	if fromPython {
-		prose = goQuotes(prose)
-	}
-	return []any{prose, quoted}
-}
-
-// goQuotes reads Python's repr quotes as %q's: a ' between two letters is an apostrophe, any other one a quote.
-func goQuotes(text string) string {
-	runes := []rune(text)
-	for i, r := range runes {
-		if r == '\'' && (i == 0 || i == len(runes)-1 || !unicode.IsLetter(runes[i-1]) || !unicode.IsLetter(runes[i+1])) {
-			runes[i] = '"'
-		}
-	}
-	return string(runes)
-}
-
-// jsonValue is a decoded JSON value with each timestamp read as the instant it names.
-func jsonValue(value any) any {
-	switch value := value.(type) {
-	case map[string]any:
-		for key, field := range value {
-			value[key] = jsonValue(field)
-		}
-	case []any:
-		for i, item := range value {
-			value[i] = jsonValue(item)
-		}
-	case string:
-		if at, err := time.Parse(time.RFC3339Nano, value); err == nil {
-			return at.UTC().Format(time.RFC3339Nano)
-		}
-	}
-	return value
+	return []any{words.String(), quoted}
 }
 
 func indented(t *testing.T, value any) string {
@@ -311,7 +269,7 @@ func indented(t *testing.T, value any) string {
 	return string(encoded)
 }
 
-func TestToolCallsAnswerAsThePythonToolsDo(t *testing.T) {
+func TestToolCallsMatchTheGoMCPContract(t *testing.T) {
 	vectors := loadGolden(t)
 	catalog := vectors.catalog(t)
 	for _, vector := range vectors.Calls {
@@ -328,28 +286,20 @@ func TestToolCallsAnswerAsThePythonToolsDo(t *testing.T) {
 			if arrived() != len(vector.Core) {
 				t.Errorf("%d of the script's %d RPCs arrived", arrived(), len(vector.Core))
 			}
-			want := answerValue(t, vector.Result, true)
-			if got := answerValue(t, result, false); !reflect.DeepEqual(got, want) {
+			want := answerValue(t, vector.Result)
+			if got := answerValue(t, result); !reflect.DeepEqual(got, want) {
 				t.Errorf("answer =\n%s\nwant\n%s", indented(t, got), indented(t, want))
 			}
 		})
 	}
 }
 
-func TestToolsAreListedAsFastMCPListsThem(t *testing.T) {
+func TestToolsAreListedAccordingToTheGoMCPContract(t *testing.T) {
 	vectors := loadGolden(t)
 	catalog := vectors.catalog(t)
 	var generic []map[string]any
 	if err := json.Unmarshal(toolsJSON, &generic); err != nil {
 		t.Fatal(err)
-	}
-	titles := map[string]string{}
-	for _, group := range catalog.GetActionGroups() {
-		for _, action := range group.GetActions() {
-			if action.Title == nil {
-				titles[group.GetKey()+directSeparator+action.GetName()] = group.GetTitle() + ": " + action.GetName()
-			}
-		}
 	}
 	for _, listing := range vectors.DirectListings {
 		t.Run(fmt.Sprintf("direct wait %vs", listing.DirectWaitSeconds), func(t *testing.T) {
@@ -368,27 +318,21 @@ func TestToolsAreListedAsFastMCPListsThem(t *testing.T) {
 			if arrived() != len(listing.Core) {
 				t.Errorf("%d of the script's %d RPCs arrived", arrived(), len(listing.Core))
 			}
-			// The SDK sorts the generic tools by name; the direct tools follow in Python's order.
+			// The SDK sorts generic tools by name and the Go server appends direct tools in group/name order.
 			want := map[string]any{}
 			for _, definition := range generic {
 				want[definition["name"].(string)] = toolValue(t, definition)
 			}
 			direct := []any{}
 			for _, tool := range listing.Tools {
-				definition := decoded(t, tool)
-				// Deliberate difference: FastMCP titles an untitled tool after its name, Go after its group's title
-				// and the Action's name.
-				if title, ok := titles[definition["name"].(string)]; ok {
-					definition["title"] = title
-				}
-				direct = append(direct, toolValue(t, definition))
+				direct = append(direct, decoded(t, tool))
 			}
 			got, gotDirect := map[string]any{}, []any{}
 			for _, tool := range listed.Tools {
 				if strings.Contains(tool.Name, directSeparator) {
-					gotDirect = append(gotDirect, toolValue(t, tool))
+					gotDirect = append(gotDirect, decoded(t, tool))
 				} else {
-					got[tool.Name] = toolValue(t, tool)
+					got[tool.Name] = decoded(t, tool)
 				}
 			}
 			if !reflect.DeepEqual(got, want) {
@@ -401,8 +345,7 @@ func TestToolsAreListedAsFastMCPListsThem(t *testing.T) {
 	}
 }
 
-// toolValue is a listed tool as the comparison reads it: the SDK spells out a false hint FastMCP leaves out, and
-// both mean the same.
+// toolValue reads static definitions through the SDK type so the expected wire form includes its false hint defaults.
 func toolValue(t *testing.T, tool any) map[string]any {
 	t.Helper()
 	fields := decoded(t, tool)

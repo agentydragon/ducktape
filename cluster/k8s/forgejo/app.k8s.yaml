@@ -105,14 +105,26 @@ spec:
       - mountPath: /etc/ssl/certs/cluster-ca
         name: cluster-ca
         readOnly: true
+      - mountPath: /etc/forgejo-key
+        name: secret-key
+        readOnly: true
     extraInitVolumeMounts:
       - mountPath: /etc/ssl/certs/cluster-ca
         name: cluster-ca
+        readOnly: true
+      - mountPath: /etc/forgejo-key
+        name: secret-key
         readOnly: true
     extraVolumes:
       - configMap:
           name: cluster-internal-ca-bundle
         name: cluster-ca
+      - name: secret-key
+        secret:
+          items:
+            - key: replacement
+              path: secret-key
+          secretName: forgejo-secret-key
     gitea:
       additionalConfigFromEnvs:
         - name: FORGEJO__metrics__TOKEN
@@ -169,7 +181,8 @@ spec:
           TYPE: redis
         security:
           INSTALL_LOCK: true
-          SECRET_KEY: change-this-secret-key-in-production
+          SECRET_KEY: ""
+          SECRET_KEY_URI: file:/etc/forgejo-key/secret-key
         server:
           DISABLE_SSH: false
           DOMAIN: git.allegedly.works
@@ -199,6 +212,10 @@ spec:
           scopes: email profile
     global:
       imageRegistry: ""
+    initPreScript: |
+      if [ -f "$GITEA_APP_INI" ]; then
+        sed -i '/^\[security\]/,/^\[/{s|^[[:space:]]*SECRET_KEY[[:space:]]*=.*|SECRET_KEY_URI = file:/etc/forgejo-key/secret-key|;}' "$GITEA_APP_INI"
+      fi
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
     persistence:

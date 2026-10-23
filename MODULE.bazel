@@ -1155,8 +1155,17 @@ http_file(
     urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_alerts.yaml"],
 )
 
-# Crossplane LiteLLM CRDs used by cluster/cdk8s/providers/litellm. Keep this package pin equal to
-# cluster/cdk8s/crossplane.py's provider package version.
+# Crossplane's Provider CRD used by cluster/cdk8s/crossplane.py. Keep this pin equal to
+# cluster/cdk8s/crossplane.py's Crossplane chart version.
+http_file(
+    name = "crossplane_pkg_provider_crd",
+    downloaded_file_path = "pkg.crossplane.io_providers.yaml",
+    sha256 = "205f660040a78a297190a1940a7d36d57a61bd27ac6e6286964734570cb4ed91",
+    urls = ["https://raw.githubusercontent.com/crossplane/crossplane/v2.4.2/cluster/crds/pkg.crossplane.io_providers.yaml"],
+)
+
+# Crossplane LiteLLM CRDs used by cluster/cdk8s/providers/litellm. The local package build applies
+# a read-cycle fix only; these schemas remain the ones from the adapter's v2.1.0 base revision.
 http_file(
     name = "crossplane_litellm_keys_crd",
     downloaded_file_path = "litellm.m.crossplane.io_keys.yaml",
@@ -1183,6 +1192,22 @@ http_file(
     downloaded_file_path = "litellm.m.crossplane.io_organizations.yaml",
     sha256 = "3c5f13122312d6083c66ab306498678e6827c2de6a73b0a31d3d6ef1c5917f43",
     urls = ["https://raw.githubusercontent.com/TheCodingSheikh/provider-litellm/v2.1.0/package/crds/litellm.m.crossplane.io_organizations.yaml"],
+)
+
+# Upbound's OpenTofu provider CRDs used by the Crossplane Tofu adoption spike.
+# Keep these pinned to the package version installed by cluster/cdk8s/crossplane.py.
+http_file(
+    name = "crossplane_opentofu_workspaces_crd",
+    downloaded_file_path = "opentofu.upbound.io_workspaces.yaml",
+    sha256 = "0768fd4947702d05221dcc8582fa761f0cbdca4f0aa52e0a99de8d1e0c458b38",
+    urls = ["https://raw.githubusercontent.com/upbound/provider-opentofu/v1.1.10/package/crds/opentofu.upbound.io_workspaces.yaml"],
+)
+
+http_file(
+    name = "crossplane_opentofu_providerconfigs_crd",
+    downloaded_file_path = "opentofu.upbound.io_providerconfigs.yaml",
+    sha256 = "503d7d2ebd3dbae405e2fdd309124d71b61da6d05175f023f51d16b29388a6ae",
+    urls = ["https://raw.githubusercontent.com/upbound/provider-opentofu/v1.1.10/package/crds/opentofu.upbound.io_providerconfigs.yaml"],
 )
 
 # Match kube-prometheus-stack's operator version tracked by

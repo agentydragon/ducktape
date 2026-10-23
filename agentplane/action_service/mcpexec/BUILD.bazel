@@ -25,11 +25,6 @@ go_library(
     ],
 )
 
-exports_files(
-    ["golden.json"],
-    visibility = ["//agentplane/action_service:__pkg__"],
-)
-
 go_test(
     name = "mcpexec_test",
     srcs = [

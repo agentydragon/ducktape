@@ -6,7 +6,7 @@ import asyncio
 import base64
 import json
 import time
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Iterator, Mapping
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -21,8 +21,7 @@ from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretC
 from airlock.oauth.k8s_client import K8sTokenStore
 from airlock.oauth.provider import GenericOAuth2Provider, TokenData
 from airlock.settings import Settings
-from util.net import bind_free_port
-from util.testing.asgi import serve_app
+from util.testing.asgi import BoundHTTPServer, bind_http_server
 
 
 @pytest.fixture
@@ -35,16 +34,34 @@ def mock_k8s_store():
         yield store
 
 
-def _settings(port: int, *, oauth: OAuthConfig | None = None) -> Settings:
+@pytest.fixture
+def endpoint() -> Iterator[BoundHTTPServer]:
+    with bind_http_server() as endpoint:
+        yield endpoint
+
+
+@pytest.fixture
+def settings(endpoint: BoundHTTPServer) -> Settings:
     return Settings(
-        public_base_url=f"http://127.0.0.1:{port}",
+        public_base_url=endpoint.origin,
         oidc_issuer="https://unused.example.com",
         oidc_client_id="airlock-test",
         oidc_client_secret="airlock-test-secret",
         oidc_session_secret="airlock-test-session-secret",
-        oauth=oauth or OAuthConfig(providers=[]),
-        port=port,
+        oauth=OAuthConfig(providers=[]),
+        port=endpoint.port,
     )
+
+
+@pytest.fixture
+async def http(
+    endpoint: BoundHTTPServer, settings: Settings, mock_k8s_store: MagicMock
+) -> AsyncIterator[httpx.AsyncClient]:
+    async with (
+        endpoint.serve(create_app(settings, include_static=False)),
+        httpx.AsyncClient(base_url=endpoint.origin) as http,
+    ):
+        yield http
 
 
 def _operator_cookies(settings: Settings) -> dict[str, str]:
@@ -62,16 +79,12 @@ def _operator_cookies(settings: Settings) -> dict[str, str]:
     return {session_cookie_name(settings): signer.sign(payload).decode("ascii")}
 
 
-async def test_oauth_api_works_after_startup(mock_k8s_store: MagicMock) -> None:
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
-    settings = _settings(port)
-    app = create_app(settings, include_static=False)
-
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
-        assert (await http.get("/healthz")).json() == {"ok": True}
-        http.cookies.update(_operator_cookies(settings))
-        response = await http.get("/api/oauth/providers")
+async def test_oauth_api_works_after_startup(
+    http: httpx.AsyncClient, settings: Settings, mock_k8s_store: MagicMock
+) -> None:
+    assert (await http.get("/healthz")).json() == {"ok": True}
+    http.cookies.update(_operator_cookies(settings))
+    response = await http.get("/api/oauth/providers")
 
     assert response.status_code == 200
     assert response.json() == []
@@ -79,7 +92,7 @@ async def test_oauth_api_works_after_startup(mock_k8s_store: MagicMock) -> None:
 
 
 async def test_oauth_providers_reports_expired_token_status(
-    monkeypatch: pytest.MonkeyPatch, mock_k8s_store: MagicMock
+    monkeypatch: pytest.MonkeyPatch, mock_k8s_store: MagicMock, endpoint: BoundHTTPServer, settings: Settings
 ) -> None:
     monkeypatch.setenv("TEST_CLIENT_ID", "test-client-id")
     monkeypatch.setenv("TEST_CLIENT_SECRET", "test-client-secret")
@@ -121,12 +134,10 @@ async def test_oauth_providers_reports_expired_token_status(
             )
         ],
     )
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
     with patch("airlock.app.token_refresh_loop", side_effect=fake_token_refresh_loop):
-        settings = _settings(port, oauth=oauth)
+        settings = settings.model_copy(update={"oauth": oauth})
         app = create_app(settings, include_static=False)
-        async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+        async with endpoint.serve(app), httpx.AsyncClient(base_url=endpoint.origin) as http:
             http.cookies.update(_operator_cookies(settings))
             response = await http.get("/api/oauth/providers")
 
@@ -141,32 +152,19 @@ async def test_oauth_providers_reports_expired_token_status(
     mock_k8s_store.read_token.assert_called_once_with("test-refresh", "airlock-test")
 
 
-async def test_api_requires_valid_session(mock_k8s_store: MagicMock) -> None:
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
-    settings = _settings(port)
-    app = create_app(settings, include_static=False)
-
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
-        assert (await http.get("/api/oauth/providers")).status_code == 401
-        assert (
-            await http.get("/api/oauth/providers", headers={"Authorization": "Bearer not-a-jwt"})
-        ).status_code == 401
-        http.cookies.update(_operator_cookies(settings))
-        assert (await http.get("/api/oauth/providers")).status_code == 200
+async def test_api_requires_valid_session(http: httpx.AsyncClient, settings: Settings) -> None:
+    assert (await http.get("/api/oauth/providers")).status_code == 401
+    assert (await http.get("/api/oauth/providers", headers={"Authorization": "Bearer not-a-jwt"})).status_code == 401
+    http.cookies.update(_operator_cookies(settings))
+    assert (await http.get("/api/oauth/providers")).status_code == 200
 
 
-async def test_mcp_and_tool_approval_routes_are_absent(mock_k8s_store: MagicMock) -> None:
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
-    app = create_app(_settings(port), include_static=False)
-
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
-        assert (await http.post("/mcp")).status_code == 404
-        assert (await http.get("/api/actions")).status_code == 404
-        assert (await http.get("/api/backends")).status_code == 404
-        assert (await http.get("/api/events")).status_code == 404
-        assert (await http.post("/api/actions/00000000-0000-0000-0000-000000000001/1/approve")).status_code == 404
+async def test_mcp_and_tool_approval_routes_are_absent(http: httpx.AsyncClient) -> None:
+    assert (await http.post("/mcp")).status_code == 404
+    assert (await http.get("/api/actions")).status_code == 404
+    assert (await http.get("/api/backends")).status_code == 404
+    assert (await http.get("/api/events")).status_code == 404
+    assert (await http.post("/api/actions/00000000-0000-0000-0000-000000000001/1/approve")).status_code == 404
 
 
 if __name__ == "__main__":

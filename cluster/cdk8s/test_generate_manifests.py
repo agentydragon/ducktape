@@ -125,7 +125,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert cluster["highAvailabilityController"] == {"enabled": False}
     assert cluster["nfsServer"] == {"enabled": False}
 
-    satellite, ssd_satellite, next_ssd_satellite = values["linstorSatelliteConfigurations"]
+    satellite, ssd_satellite, next_ssd_satellite, third_ssd_satellite = values["linstorSatelliteConfigurations"]
     assert satellite["nodeSelector"] == canary_selector
     assert satellite["deletionPolicy"] == "Retain"
     [pool] = satellite["storagePools"]
@@ -162,6 +162,25 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
             "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
         },
         "source": {"hostDevices": ["/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"]},
+    }
+
+    assert third_ssd_satellite["name"] == "ssd-ovh-ns104963"
+    assert third_ssd_satellite["nodeSelector"] == {
+        "storage.allegedly.works/piraeus-ready": "true",
+        "kubernetes.io/hostname": "ovh-ns104963",
+    }
+    assert third_ssd_satellite["deletionPolicy"] == "Retain"
+    assert third_ssd_satellite["podTemplate"] == ssd_satellite["podTemplate"]
+    assert third_ssd_satellite["patches"] == ssd_satellite["patches"]
+    [third_ssd_pool] = third_ssd_satellite["storagePools"]
+    assert third_ssd_pool == {
+        "name": "ssd",
+        "lvmThinPool": {
+            "volumeGroup": "piraeus_ssd",
+            "thinPool": "data",
+            "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+        },
+        "source": {"hostDevices": ["/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"]},
     }
 
     storage_class, ssd_class = values["storageClasses"]
@@ -228,6 +247,13 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
     provider = next(
         doc for doc in documents if doc.get("kind") == "Provider" and doc["metadata"].get("name") == "provider-litellm"
     )
+    pull_secret = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "ExternalSecret"
+        and doc["metadata"].get("name") == "forgejo-images-creds"
+        and doc["metadata"].get("namespace") == "crossplane-system"
+    )
     kustomization = next(
         doc
         for doc in documents
@@ -236,10 +262,113 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
 
     assert provider["apiVersion"] == "pkg.crossplane.io/v1"
     assert provider["spec"]["revisionActivationPolicy"] == "Automatic"
-    assert kustomization["spec"]["dependsOn"] == [{"name": "crossplane", "namespace": "ducktape-flux"}]
+    assert provider["spec"]["package"].startswith("git.allegedly.works/ducktape-ci/provider-litellm:")
+    assert provider["spec"]["packagePullSecrets"] == [{"name": "forgejo-images-creds"}]
+    assert pull_secret["apiVersion"] == "external-secrets.io/v1"
+    assert pull_secret["spec"]["secretStoreRef"] == {
+        "kind": "ClusterSecretStore",
+        "name": "kubernetes-crossplane-forgejo-images-creds-secret-store",
+    }
+    assert pull_secret["spec"]["target"]["template"]["type"] == "kubernetes.io/dockerconfigjson"
+    store = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "ClusterSecretStore"
+        and doc["metadata"].get("name") == "kubernetes-crossplane-forgejo-images-creds-secret-store"
+    )
+    assert store["spec"]["conditions"] == [{"namespaces": ["crossplane-system"]}]
+    assert store["spec"]["provider"]["kubernetes"]["remoteNamespace"] == "forgejo-images"
+    assert store["spec"]["provider"]["kubernetes"]["auth"]["serviceAccount"] == {
+        "name": "crossplane-forgejo-images-creds-reader"
+    }
+    reader_role = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "Role" and doc["metadata"].get("name") == "crossplane-forgejo-images-creds-reader"
+    )
+    assert reader_role["metadata"]["namespace"] == "forgejo-images"
+    assert reader_role["rules"] == [
+        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["forgejo-images-creds"], "verbs": ["get"]}
+    ]
+    reader_binding = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "RoleBinding" and doc["metadata"].get("name") == "crossplane-forgejo-images-creds-reader"
+    )
+    assert reader_binding["subjects"] == [
+        {
+            "apiGroup": "",
+            "kind": "ServiceAccount",
+            "name": "crossplane-forgejo-images-creds-reader",
+            "namespace": "crossplane-system",
+        }
+    ]
+    assert kustomization["spec"]["dependsOn"] == [
+        {"name": "crossplane", "namespace": "ducktape-flux"},
+        {"name": "external-secrets-operator", "namespace": "ducktape-flux"},
+        {"name": "forgejo-images", "namespace": "ducktape-flux"},
+    ]
     assert kustomization["spec"]["wait"] is True
     assert kustomization["spec"]["prune"] is False
     assert kustomization["spec"]["healthCheckExprs"] == [
+        {
+            "apiVersion": "external-secrets.io/v1",
+            "kind": "ExternalSecret",
+            "current": "has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')",
+            "failed": "has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'False')",
+        },
+        {
+            "apiVersion": "pkg.crossplane.io/v1",
+            "kind": "Provider",
+            "current": "has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
+            "failed": "has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
+        },
+    ]
+
+
+def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_state(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    provider = next(
+        doc for doc in documents if doc.get("kind") == "Provider" and doc["metadata"].get("name") == "provider-opentofu"
+    )
+    provider_kustomization = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "crossplane-provider-opentofu"
+    )
+    provider_config = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "opentofu.upbound.io/v1beta1"
+        and doc.get("kind") == "ProviderConfig"
+        and doc.get("metadata", {}).get("name") == "crossplane-forgejo-agentydragon"
+    )
+    workspace = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "opentofu.upbound.io/v1beta1"
+        and doc.get("kind") == "Workspace"
+        and doc.get("metadata", {}).get("name") == "forgejo-agentydragon"
+    )
+    resources_kustomization = next(
+        doc
+        for doc in documents
+        if doc.get("kind", "").lower() == "kustomization"
+        and doc.get("metadata", {}).get("name") == "crossplane-forgejo-agentydragon"
+    )
+    forgejo_gitops_kustomization = next(
+        doc
+        for doc in documents
+        if doc.get("kind", "").lower() == "kustomization" and doc.get("metadata", {}).get("name") == "forgejo-gitops"
+    )
+
+    assert provider["spec"]["package"] == "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
+    assert provider_kustomization["spec"]["dependsOn"] == [{"name": "crossplane", "namespace": "ducktape-flux"}]
+    assert provider_kustomization["spec"]["wait"] is True
+    assert provider_kustomization["spec"]["prune"] is False
+    assert provider_kustomization["spec"]["healthCheckExprs"] == [
         {
             "apiVersion": "pkg.crossplane.io/v1",
             "kind": "Provider",
@@ -247,6 +376,41 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
             "failed": "has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
         }
     ]
+    assert provider_config["spec"]["configuration"] == 'terraform {\n  backend "pg" {}\n}\n'
+    assert 'schema_name = "forgejo_agentydragon"' in provider_config["spec"]["backendFile"]
+    assert "PGPASSWORD" not in provider_config["spec"]["backendFile"]
+    assert workspace["metadata"]["annotations"]["crossplane.io/external-name"] == "default"
+    assert workspace["spec"]["providerConfigRef"] == {"name": "crossplane-forgejo-agentydragon"}
+    assert workspace["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]
+    assert "Delete" not in workspace["spec"]["managementPolicies"]
+    assert workspace["spec"]["deletionPolicy"] == "Orphan"
+    assert workspace["spec"]["forProvider"]["source"] == "Remote"
+    assert workspace["spec"]["forProvider"]["remotePullPolicy"] == "Always"
+    assert workspace["spec"]["forProvider"]["module"] == (
+        "git::https://github.com/agentydragon/ducktape.git//tf/gitops/forgejo-agentydragon?ref=devel"
+    )
+    assert workspace["spec"]["forProvider"]["planArgs"] == ["-lock-timeout=5m"]
+    assert workspace["spec"]["forProvider"]["env"] == [
+        {
+            "name": "PGPASSWORD",
+            "secretKeyRef": {"name": "tofu-state-db-credentials", "namespace": "flux-system", "key": "password"},
+        }
+    ]
+    assert resources_kustomization["spec"]["dependsOn"] == [
+        {"name": "crossplane-provider-opentofu", "namespace": "ducktape-flux"},
+        {"name": "tofu-state-db", "namespace": "ducktape-flux"},
+        {"name": "forgejo-gitops", "namespace": "ducktape-flux"},
+    ]
+    assert resources_kustomization["spec"]["wait"] is True
+    assert resources_kustomization["spec"]["prune"] is True
+    assert forgejo_gitops_kustomization["spec"]["wait"] is True
+    assert forgejo_gitops_kustomization["spec"]["prune"] is True
+    assert not any(
+        doc.get("apiVersion") == "infra.contrib.fluxcd.io/v1alpha2"
+        and doc.get("kind") == "Terraform"
+        and doc.get("metadata", {}).get("name") == "forgejo-agentydragon"
+        for doc in documents
+    )
 
 
 def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
@@ -276,15 +440,6 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
         {"name": "litellm-crossplane-keys", "namespace": "ducktape-flux"},
     ]
 
-    organizations = [
-        doc
-        for doc in documents
-        if doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Organization"
-    ]
-    assert len(organizations) == 1
-    assert organizations[0]["metadata"]["name"] == "ducktape"
-    assert organizations[0]["spec"]["forProvider"]["organizationAlias"] == "ducktape"
-
     keys = {
         doc["spec"]["forProvider"]["keyAlias"]: doc
         for doc in documents
@@ -304,13 +459,17 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
         "gemini-clients",
         "antigravity-clients",
     }
+    assert not any(
+        doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Organization"
+        for doc in documents
+    )
     for alias in ("claude-subscription-clients", "codex-clients", "gemini-clients", "antigravity-clients"):
         assert keys[alias]["spec"]["forProvider"]["keyWoSecretRef"] == {
             "name": f"litellm-client-key-{alias}",
             "key": "api-key",
         }
 
-    assert all(key["spec"]["forProvider"]["organizationIdRef"] == {"name": "ducktape"} for key in keys.values())
+    assert all("organizationIdRef" not in key["spec"]["forProvider"] for key in keys.values())
 
     published_key_secrets = [
         doc

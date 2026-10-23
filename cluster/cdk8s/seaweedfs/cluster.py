@@ -3,8 +3,8 @@ replication-repair `AdminScript`, the PodDisruptionBudgets the operator CRD has 
 field for, and the `tenants` grant letting the `TENANTS` namespaces' S3 objects reference it.
 
 Replication "001" (1 copy on a different node, same rack) survives a single node loss.
-Volume server PVCs use `local-path-ovh-*`, plus `piraeus-ssd-local` on the rebuilt SSD
-pilot. The two SSD topology groups share one Seaweed placement domain. S3 runs as a standalone
+Volume server PVCs use `local-path-ovh-*`, plus `piraeus-ssd-local` on rebuilt SSD
+nodes. The SSD topology groups share one Seaweed placement domain. S3 runs as a standalone
 deployment (`spec.s3`, not `filer.s3`); the filer stays because S3 needs it for metadata.
 Every component is pinned to OVH nodes: the operator default would let pods land anywhere.
 
@@ -328,39 +328,34 @@ def seaweed(scope: Construct) -> Seaweed:
                 # defaultReplication above; the split + repl 010 sketch stays in
                 # cluster/docs/plans/ovh_storage_tiering.md as an option, not a plan.
                 #
-                # 400 slots: -max=0 gave only 112/113 on the 1.8 TiB servers, which sat at
-                # 112/112 (full) while volumes were ~5% full (~0.85 GB of a 16 GB cap). 400
-                # leaves 2*400 = 800 slots across any two survivors; the current 2-copy set
-                # uses 652 (326 logical volumes), leaving 148 slots for evacuation and growth.
-                # 400 also exceeds the 3.6 TB node's auto-derived 232 slots, so no server is
-                # capped below its prior count.
+                # 600 slots: -max=0 gave only 112/113 on the 1.8 TiB servers, which sat at
+                # 112/112 (full) while volumes were ~5% full (~0.85 GB of a 16 GB cap). As of
+                # 2026-10-22, the 2-copy set uses 992 placements (496 logical volumes). During
+                # a one-server evacuation, each of the two survivors must hold 496 placements;
+                # 600 leaves 104 slots per survivor for evacuation and growth. This raises the
+                # slot limit only; verify actual free space and the minFreeSpacePercent reserve
+                # before evacuation. 600 also exceeds the 3.6 TB node's auto-derived 232 slots,
+                # so no server is capped below its prior count.
                 "hdd": _volume_topology(
                     rack="hil-ovh-h109b04",
                     storage="1800Gi",
                     storage_class="local-path-ovh-hdd",
                     disk="hdd",
                     replicas=3,
-                    max_volume_counts=400,
+                    max_volume_counts=600,
                 ),
                 # The usual 3-server OVH NVMe group serves Forgejo git via the
                 # seaweedfs-ovh-ssd StorageClass (diskType=ssd -> -disk=ssd).
                 #
-                # Real OVH rack -- both KS-GAME nodes (104952, 104963) are physically in
-                # H108B01 (verified via the ovh_dedicated_server data source for the existing
-                # nodes). The logical rack label keeps repl 001's two git copies in this group
-                # while the SYS-1 provides a third evacuation target.
-                #
-                # 200 slots: -max=0 auto-derives only ~24 on the 419 GB NVMe. 200 gives
-                # 2*200 = 400 slots across any two survivors; the current 2-copy set uses 68
-                # (34 logical volumes), leaving room for the planned SSD migrations.
-                # Keep the existing pod and claim templates unchanged while the separate
-                # Piraeus server joins: changing anti-affinity here would roll live servers.
+                # Keep the evacuated legacy StatefulSet and retained claim template for
+                # rollback, with no running local-path volume servers. The Piraeus groups
+                # below provide independent SSD volume servers.
                 "ssd": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
                     storage_class="local-path-ovh-ssd",
                     disk="ssd",
-                    replicas=2,
+                    replicas=0,
                     max_volume_counts=200,
                 ),
                 # Same Seaweed disk/DC/rack as ssd; only the Kubernetes claim template differs.
@@ -373,8 +368,34 @@ def seaweed(scope: Construct) -> Seaweed:
                     replicas=1,
                     max_volume_counts=200,
                     additional_node_selector={_HOSTNAME: "ovh-ns1001419"},
-                    # Match both SSD groups without rolling the existing ssd template.
+                    # Match every Seaweed volume group without rolling the legacy ssd template.
                     # Required anti-affinity also protects this pod when peers are scheduled.
+                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
+                ),
+                "ssd-piraeus-104952": _volume_topology(
+                    rack="hil-ovh-h108b01",
+                    storage="250Gi",
+                    storage_class="piraeus-ssd-local",
+                    disk="ssd",
+                    replicas=1,
+                    max_volume_counts=200,
+                    additional_node_selector={
+                        _HOSTNAME: "ovh-ns104952",
+                        "storage.allegedly.works/piraeus-ready": "true",
+                    },
+                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
+                ),
+                "ssd-piraeus-104963": _volume_topology(
+                    rack="hil-ovh-h108b01",
+                    storage="250Gi",
+                    storage_class="piraeus-ssd-local",
+                    disk="ssd",
+                    replicas=1,
+                    max_volume_counts=200,
+                    additional_node_selector={
+                        _HOSTNAME: "ovh-ns104963",
+                        "storage.allegedly.works/piraeus-ready": "true",
+                    },
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
             },

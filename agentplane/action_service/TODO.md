@@ -30,10 +30,11 @@ keys against the pinned ha-mcp's `ha_call_service` input schema.
 
 ## Executors that answer as MCP tools
 
-`tool_results.py` renders an outcome per executor kind: an MCP group's stored `CallToolResult` as
-it is, the sandbox executor's own JSON models the way FastMCP presents a returned model. Unifying
-the executors behind MCP, with the sandbox executor answering as an MCP tool and storing a
-`CallToolResult` too, would leave one result shape and remove that dispatch.
+The [Go MCP frontend](../mcp_edge/mcpserver/results.go) renders outcomes per executor kind: it
+relays an MCP group's stored `CallToolResult`, and returns a Sandbox group's result object as
+structured content and one text block. Unifying the executors behind MCP, with the Sandbox executor
+answering as an MCP tool and storing a `CallToolResult` too, would leave one result shape and remove
+that dispatch.
 
 ## Submit only if a policy decides
 

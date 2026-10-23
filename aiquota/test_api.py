@@ -1,7 +1,6 @@
 import asyncio
 import base64
 from collections.abc import AsyncGenerator, AsyncIterator
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -9,7 +8,6 @@ import httpx
 import pytest
 import pytest_asyncio
 import pytest_bazel
-from fastapi import FastAPI
 
 from aiquota import api
 from aiquota.api import (
@@ -27,7 +25,6 @@ from aiquota.config import Config
 from aiquota.models import AllQuotas, FetchError, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
 from aiquota.render.view_model import AllQuotasView
 from aiquota.settings import Settings
-from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 
 if __name__ == "__main__":
@@ -344,13 +341,6 @@ def _make_snapshot(used_percent: float, fetched_at: datetime) -> QuotaSnapshot:
     )
 
 
-@asynccontextmanager
-async def _serve_api(app: FastAPI) -> AsyncIterator[str]:
-    sock = bind_free_port()
-    async with serve_app_in_loop(app, sock=sock):
-        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
-
-
 async def _read_view(lines: AsyncIterator[str]) -> AllQuotasView:
     event: str | None = None
     data: str | None = None
@@ -394,7 +384,7 @@ async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypa
     auth = {"Authorization": "Bearer test-bearer"}
 
     async with (
-        _serve_api(app) as url,
+        serve_app_in_loop(app) as url,
         httpx.AsyncClient(base_url=url) as client,
         client.stream("GET", "/v1/events", headers=auth) as first,
         client.stream("GET", "/v1/events", headers=auth) as second,
@@ -602,7 +592,7 @@ async def test_event_stream_heartbeats_and_disconnect_cleans_up(monkeypatch: pyt
     app = create_app(bearer_token="test-bearer", fetcher=fetcher)
     feed: SnapshotFeed = app.state.snapshot_feed
     async with (
-        _serve_api(app) as url,
+        serve_app_in_loop(app) as url,
         httpx.AsyncClient(base_url=url) as client,
         client.stream("GET", "/v1/events", headers={"Authorization": "Bearer test-bearer"}) as response,
     ):

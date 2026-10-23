@@ -60,6 +60,8 @@ HTTP = ServiceRef(
 _SSH = ServiceRef(name="forgejo-ssh", port=Port(name="ssh", number=2222), pods=HTTP.pods)
 _VALKEY = f"redis://{cache.MASTER.host}:{cache.MASTER.port.number}/0"
 _CLUSTER_CA_MOUNT = {"name": "cluster-ca", "mountPath": "/etc/ssl/certs/cluster-ca", "readOnly": True}
+_SECRET_KEY = SecretRef(namespace=_NAMESPACE, name="forgejo-secret-key").key("replacement")
+_SECRET_KEY_MOUNT = {"name": "secret-key", "mountPath": "/etc/forgejo-key", "readOnly": True}
 
 
 def _git_storage(scope: Construct) -> None:
@@ -227,7 +229,12 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
                 # never go to BuildBuddy/RBE or any external CI. See haku/PLAN.md.
                 "actions": {"ENABLED": True},
                 "metrics": {"ENABLED": True},
-                "security": {"INSTALL_LOCK": True, "SECRET_KEY": "change-this-secret-key-in-production"},
+                "security": {
+                    "INSTALL_LOCK": True,
+                    # Empty suppresses the chart's generated inline key on a fresh install.
+                    "SECRET_KEY": "",
+                    "SECRET_KEY_URI": "file:/etc/forgejo-key/secret-key",
+                },
                 "database": {
                     "DB_TYPE": "postgres",
                     "HOST": f"{db.POSTGRES.rw.host}:{db.POSTGRES.rw.port.number}",
@@ -265,9 +272,27 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
         # Trust cluster CA bundle (includes Let's Encrypt staging CA)
         "deployment": {"env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}]},
         # Mount CA bundle (includes Let's Encrypt staging CA when in staging mode)
-        "extraVolumes": [{"name": "cluster-ca", "configMap": {"name": "cluster-internal-ca-bundle"}}],
-        "extraContainerVolumeMounts": [_CLUSTER_CA_MOUNT],
-        "extraInitVolumeMounts": [_CLUSTER_CA_MOUNT],
+        "extraVolumes": [
+            {"name": "cluster-ca", "configMap": {"name": "cluster-internal-ca-bundle"}},
+            {
+                "name": "secret-key",
+                "secret": {
+                    "secretName": _SECRET_KEY.secret.name,
+                    "items": [{"key": _SECRET_KEY.key, "path": "secret-key"}],
+                },
+            },
+        ],
+        "extraContainerVolumeMounts": [_CLUSTER_CA_MOUNT, _SECRET_KEY_MOUNT],
+        "extraInitVolumeMounts": [_CLUSTER_CA_MOUNT, _SECRET_KEY_MOUNT],
+        # Chart 17.1.6 preserves an existing inline SECRET_KEY. Forgejo rejects
+        # having both forms. Replace it atomically with the URI so git/SSH
+        # subprocesses on the other replica never see a config without a key.
+        "initPreScript": (
+            'if [ -f "$GITEA_APP_INI" ]; then\n'
+            "  sed -i '/^\\[security\\]/,/^\\[/{s|^[[:space:]]*SECRET_KEY[[:space:]]*=.*|"
+            'SECRET_KEY_URI = file:/etc/forgejo-key/secret-key|;}\' "$GITEA_APP_INI"\n'
+            "fi\n"  # Chart appends its END comment directly after this value.
+        ),
         "service": {
             "http": {"type": "ClusterIP", "port": HTTP.port.number},
             "ssh": {"type": "ClusterIP", "port": _SSH.port.number},

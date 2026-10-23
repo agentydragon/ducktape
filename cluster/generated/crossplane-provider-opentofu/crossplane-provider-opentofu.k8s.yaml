@@ -1,0 +1,7 @@
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-opentofu
+spec:
+  package: xpkg.upbound.io/upbound/provider-opentofu:v1.1.10
+  revisionActivationPolicy: Automatic

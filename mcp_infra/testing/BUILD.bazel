@@ -78,10 +78,8 @@ py_library(
     srcs = ["remote_server.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//util:net",
         "//util/testing:asgi",
         "@pypi//fastmcp_slim",
-        "@pypi//starlette",
     ],
 )
 

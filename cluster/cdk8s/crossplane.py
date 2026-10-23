@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import ServiceAccount
+from crossplane_pkg_provider_crds.io.crossplane.pkg import Provider, ProviderSpec, ProviderSpecPackagePullSecrets
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsOn, KustomizationSpecHealthCheckExprs
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import flux, namespaces
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.forgejo_registry.chart import NAME as FORGEJO_IMAGES_KUSTOMIZATION_NAME
+from cluster.cdk8s.forgejo_registry.pull_credentials import (
+    SECRET_NAME as FORGEJO_PULL_SECRET,
+    forgejo_images_creds_external_secret,
+)
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -17,12 +25,21 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 VERSION = "2.4.2"
 LITELLM_PROVIDER_KUSTOMIZATION_NAME = "crossplane-provider-litellm"
 LITELLM_PROVIDER_OUTPUT_DIR = f"{GENERATED_ROOT}/{LITELLM_PROVIDER_KUSTOMIZATION_NAME}"
-LITELLM_PROVIDER_PACKAGE = "xpkg.upbound.io/thecodingsheikh/provider-litellm:v2.1.0"
-_LITELLM_PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
+LITELLM_PROVIDER_PACKAGE = "git.allegedly.works/ducktape-ci/provider-litellm:v2.1.0-1.ducktape.5cc2f4308916"
+OPENTOFU_PROVIDER_KUSTOMIZATION_NAME = "crossplane-provider-opentofu"
+OPENTOFU_PROVIDER_OUTPUT_DIR = f"{GENERATED_ROOT}/{OPENTOFU_PROVIDER_KUSTOMIZATION_NAME}"
+OPENTOFU_PROVIDER_PACKAGE = "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
+_PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
     api_version="pkg.crossplane.io/v1",
     kind="Provider",
     current="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
     failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
+)
+_FORGEJO_PULL_SECRET_HEALTH = KustomizationSpecHealthCheckExprs(
+    api_version="external-secrets.io/v1",
+    kind="ExternalSecret",
+    current="has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')",
+    failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'False')",
 )
 
 
@@ -61,19 +78,37 @@ def crossplane(chart: Chart, directory: RenderedDirectory, kyverno: Kustomizatio
 def litellm_provider_chart(app: App) -> Chart:
     """Install the Upjet-generated provider for LiteLLM's management API."""
     chart = Chart(app, LITELLM_PROVIDER_KUSTOMIZATION_NAME, disable_resource_name_hashes=True)
-    ApiObject(
+    reader = ServiceAccount(
+        chart,
+        "forgejo-images-creds-reader",
+        metadata=ApiObjectMetadata(name="crossplane-forgejo-images-creds-reader", namespace=NAMESPACE),
+        automount_token=False,
+    )
+    store = single_secret_store(
+        chart,
+        "crossplane-forgejo-images-creds",
+        reader=reader,
+        source_namespace="forgejo-images",
+        source_secret=FORGEJO_PULL_SECRET,
+        consumer_namespace=NAMESPACE,
+    )
+    forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE, secret_store_name=store)
+    Provider(
         chart,
         "provider",
-        api_version="pkg.crossplane.io/v1",
-        kind="Provider",
         metadata=ApiObjectMetadata(name="provider-litellm"),
-    ).add_json_patch(
-        JsonPatch.add("/spec", {"package": LITELLM_PROVIDER_PACKAGE, "revisionActivationPolicy": "Automatic"})
+        spec=ProviderSpec(
+            package=LITELLM_PROVIDER_PACKAGE,
+            package_pull_secrets=[ProviderSpecPackagePullSecrets(name=FORGEJO_PULL_SECRET)],
+            revision_activation_policy="Automatic",
+        ),
     )
     return chart
 
 
-def litellm_provider(chart: Chart, directory: RenderedDirectory, crossplane: Kustomization) -> Kustomization:
+def litellm_provider(
+    chart: Chart, directory: RenderedDirectory, crossplane: Kustomization, external_secrets_operator: Kustomization
+) -> Kustomization:
     """Wait for the LiteLLM provider CRDs and controller before applying managed resources."""
     return flux_kustomization(
         chart,
@@ -82,7 +117,38 @@ def litellm_provider(chart: Chart, directory: RenderedDirectory, crossplane: Kus
         timeout="15m",
         prune=False,
         wait=True,
-        health_check_exprs=[_LITELLM_PROVIDER_HEALTH],
-        depends_on=[flux_kustomization_depends_on(crossplane)],
+        health_check_exprs=[_FORGEJO_PULL_SECRET_HEALTH, _PROVIDER_HEALTH],
+        depends_on=[
+            flux_kustomization_depends_on(crossplane),
+            flux_kustomization_depends_on(external_secrets_operator),
+            KustomizationSpecDependsOn(name=FORGEJO_IMAGES_KUSTOMIZATION_NAME, namespace=flux.NAMESPACE),
+        ],
         description="Install the LiteLLM Upjet provider after Crossplane core; LiteLLM resources reconcile separately.",
+    )
+
+
+def opentofu_provider_chart(app: App) -> Chart:
+    """Install Upbound's OpenTofu provider package."""
+    chart = Chart(app, OPENTOFU_PROVIDER_KUSTOMIZATION_NAME, disable_resource_name_hashes=True)
+    Provider(
+        chart,
+        "provider",
+        metadata=ApiObjectMetadata(name="provider-opentofu"),
+        spec=ProviderSpec(package=OPENTOFU_PROVIDER_PACKAGE, revision_activation_policy="Automatic"),
+    )
+    return chart
+
+
+def opentofu_provider(chart: Chart, directory: RenderedDirectory, crossplane: Kustomization) -> Kustomization:
+    """Wait for the OpenTofu provider CRDs and controller before applying Workspaces."""
+    return flux_kustomization(
+        chart,
+        OPENTOFU_PROVIDER_KUSTOMIZATION_NAME,
+        directory,
+        timeout="15m",
+        prune=False,
+        wait=True,
+        health_check_exprs=[_PROVIDER_HEALTH],
+        depends_on=[flux_kustomization_depends_on(crossplane)],
+        description="Install the OpenTofu provider after Crossplane core; its Workspace resources reconcile separately.",
     )

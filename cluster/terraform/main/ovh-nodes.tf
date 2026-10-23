@@ -20,7 +20,8 @@ locals {
   # and removes the legacy data-disk UserVolumeConfig from the generated machine
   # config. It does not run the rescue/dd installer. piraeus_ready_enabled is a
   # separate gate: it selects the node-specific raw-device pool configuration.
-  # Keep both false until evacuation, reset, and disk verification are complete.
+  # Apply a newly enabled system layout through maintenance mode after evacuation.
+  # Keep raw-device readiness false until the data disk is verified clear.
   piraeus_talos_node_layouts = {
     "ovh-ns1001419" = {
       talos_storage_enabled = true
@@ -29,10 +30,16 @@ locals {
       data_disk_serial      = "1951A3449505"
     }
     "ovh-ns104952" = {
-      talos_storage_enabled = false
-      piraeus_ready_enabled = false
+      talos_storage_enabled = true
+      piraeus_ready_enabled = true
       system_disk_serial    = "BTPF8256006P450RGN"
       data_disk_serial      = "BTPF8304019P450RGN"
+    }
+    "ovh-ns104963" = {
+      talos_storage_enabled = true
+      piraeus_ready_enabled = true
+      system_disk_serial    = "BTPF8256002V450RGN"
+      data_disk_serial      = "BTPF8256009U450RGN"
     }
   }
 
@@ -103,7 +110,7 @@ locals {
       service_name    = var.kimsufi_service_name_ks_game_1
       apply_mode      = "staged_if_needing_reboot"
       install_disk    = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256002V450RGN"
-      data_disk_match = "disk.serial == 'BTPF8256009U450RGN'"
+      data_disk_match = "disk.serial == '${local.piraeus_talos_node_layouts["ovh-ns104963"].data_disk_serial}'"
       zone            = "hil-ovh"
       storage_tier    = "ssd"
     }
@@ -281,15 +288,17 @@ resource "ovh_dedicated_server_reboot_task" "kimsufi_to_rescue" {
 
 # Step 3: SSH into rescue, dd Talos image.
 # connection.timeout covers the window waiting for rescue to boot over SSH.
-# triggers on schematic_id so a kernel/extension change triggers re-provisioning.
-# To re-provision: tofu taint null_resource.install_talos_kimsufi["ovh-ns103656"]
+# Re-provision only with an explicit replacement during an approved rescue window.
+# Upgrade installed nodes with talosctl; a new schematic must not overwrite their disks.
 resource "null_resource" "install_talos_kimsufi" {
   for_each = local.active_kimsufi_servers
 
-  # Re-run when the schematic changes (which changes the install image URL).
-  # Schematic changes mean kernel-args/extensions changed — we want a fresh dd.
   triggers = {
     schematic_id = talos_image_factory_schematic.kimsufi.id
+  }
+
+  lifecycle {
+    ignore_changes = [triggers["schematic_id"]]
   }
 
   connection {

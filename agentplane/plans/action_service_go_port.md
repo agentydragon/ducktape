@@ -2,8 +2,26 @@
 
 The Go service, generated callers and disposable K3s acceptance are merged in #11454, including
 client retirement and typed fixture cleanup from #11459 and #11460. The full migration CI passed
-151 test targets, including Go-backed MCP, DCR and both VM sandbox harnesses. Live testing and
-staging cutover, then Python retirement, remain.
+151 test targets, including Go-backed MCP, DCR and both VM sandbox harnesses.
+
+**Stage M accepted (2026-10-22).** Testing runs the Go Actions service and Goose migrator with the
+generated callers. The Action Deployment was Ready 1/1 and its migration init container exited 0.
+A disposable Sandbox (`actions-go-catalog-probe-20261022-160600`, UID prefix `20a68144`) ran one
+`agentplane actions groups --json` command through the normal Runner and egress path, succeeding on
+the first attempt. Cleanup selected the Sandbox by UID; its Pod and both PVCs were confirmed absent.
+
+**Stage N preflight (read only, 2026-10-22).** The staging database had
+`alembic_version=0028_drop_external_grant`, with 4,597 requests, one Connection and three grants.
+The check did not read request or credential values; it confirms the Goose baseline and records the
+pre-cutover row counts.
+
+**Stage N service cutover accepted (2026-10-22; manual client reauthorization remains).** Actions is live
+on Go in both staging and testing; Goose applied migrations 1–3. Staging retained its 4,597 requests,
+one Connection and three grants, and the original
+Sandbox identities. A disposable staging catalog probe (UID prefix `31fe1a2c`) succeeded through the
+Runner and egress path and was removed. Public discovery, protected-resource and CIMD metadata returned
+200; `/mcp` returned 401 with the expected challenge. External-user reauthorization remains a manual
+follow-up; no end-to-end external login is claimed.
 
 The approved destination keeps the Actions lifecycle, policies, executors and Web Push in
 `actions`; Connections, OAuth and `/mcp` become `mcp-edge` after the runtime cutover. Both still run
@@ -11,11 +29,10 @@ in the one Go binary until that separate extraction.
 
 ## Remaining stages
 
-| Stage | Change                                                                                                                                                                                       |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M     | Testing: pin the published Go service/migrator and generated callers together, select Go probes, refresh the runner-disk template pin, and verify the deployed path. Keep staging pins held. |
-| N     | Staging: repeat the tested cutover, preserve its database and Sandbox storage, and have external MCP clients re-authorize once.                                                              |
-| O     | Retire the Python service, obsolete tests/Alembic/migration image and dependencies after staging validation and the rollback window. Drop unused stored columns only with new migrations.    |
+| Stage | Status   | Change                                                                                                                                                                                                                                                                               |
+| ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| N     | Accepted | Go Actions and Goose are live in staging and testing; existing Action/Connection/grant counts and Sandbox identities are preserved. The disposable Runner/egress catalog probe and public-route metadata/authentication checks passed. External-user reauthorization remains manual. |
+| O     | Active   | Retire unused Python entrypoints, runtime modules, parity tests, Alembic source and image targets in small steps. Preserve existing data and published rollback images. Drop unused stored columns only with new migrations after all readers are retired.                           |
 
 ## Cutover requirements
 
@@ -52,18 +69,20 @@ in the one Go binary until that separate extraction.
 
 ## Python retirement
 
+The accepted Go cutover permits source retirement now. Removing reproducible source and build targets
+does not delete published rollback images, database history or Sandbox storage. Stored-schema cleanup
+follows separately after its remaining readers are retired.
+
 Delete Python runtime modules and their obsolete tests, Alembic and Python migration image,
 `agentplane_oauth_kv`, enrollment `decision_digest`/`browser_hash`, and grant
 `request_digest`/`activation_deadline` once no deployed Python reader needs them. Stored schema
 changes are new migrations. Audit all callers before removing shared Python models, config types
 or packages; the Go protos, generated clients and current deployment contracts remain.
 
-Remove Python-parity golden generators/tests (`generate_golden.py`, `generate_mcp_golden.py`,
-`generate_mcp_executor_golden.py`, `generate_catalog_golden.py`, `policies/generate_golden.py` and
-corresponding Python tests), and replace the Go golden tests' lists of deliberate Python
-compatibility differences with direct contract assertions. Keep a golden only where it still
-provides coverage without the Python reference. Update the actual image roster instead of
-removing the published Go service/migrator entries.
+Retire remaining Python parity generators and tests, keeping independent Go fixtures and replacing
+compatibility exceptions with direct expected outcomes. The MCP server's generic definitions in
+`mcp_edge/mcpserver/tools.json` are canonical static schemas checked by Go tests. Update the actual
+image roster instead of removing the published Go service/migrator entries.
 
 ## After the flip: the edge split
 

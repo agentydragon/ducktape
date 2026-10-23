@@ -166,7 +166,6 @@ def objects(
         # The scenarios' own MCP server and Action groups in place of the deployment's.
         actions=replace(
             testing.ENV.actions,
-            runtime="go",
             operator_oidc=operator_oidc,
             mcp_servers={
                 mcp_servers.OAUTH: actions_testing_fixtures.oauth_fixture_server(

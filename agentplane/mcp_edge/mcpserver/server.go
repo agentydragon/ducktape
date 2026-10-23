@@ -19,7 +19,7 @@ import (
 )
 
 // toolsJSON is the tool definitions: names, descriptions, input schemas and annotations.
-// `//agentplane/action_service:test_mcp_golden` holds it to the Python tools.
+// The Go MCP contract tests hold the listed generic tools to this file.
 //
 //go:embed tools.json
 var toolsJSON []byte

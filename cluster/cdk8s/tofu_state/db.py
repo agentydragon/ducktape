@@ -35,12 +35,18 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, manifest_file, write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/tofu-state"
 _DB_DIR = f"{OUTPUT_DIR}/db"
 _NAMESPACE = "tofu-state"
 _CREDENTIALS_FILE = "credentials.sops.yaml"
 DATABASE = cnpg.PostgresRef.generated(name="tofu-state-db-ovh", namespace=_NAMESPACE)
+STATE_DATABASE_NAME = "tfstate"
+STATE_PASSWORD = SecretRef(namespace="flux-system", name="tofu-state-db-credentials").key("password")
+STATE_CONNECTION_STRING = (
+    f"postgres://tfstate@{DATABASE.rw.host}:{DATABASE.rw.port.number}/{STATE_DATABASE_NAME}?sslmode=disable"
+)
 
 
 def chart(app: App) -> Chart:
@@ -67,8 +73,9 @@ def chart(app: App) -> Chart:
             parameters={"tcp_keepalives_idle": "60", "tcp_keepalives_interval": "10", "tcp_keepalives_count": "6"}
         ),
         placement=node_scheduling.HIL_OVH,
-        storage_class="local-path-ovh-ssd",
+        storage_class="piraeus-ssd-local",
         size="1Gi",
+        resize_in_use_volumes=False,
         # CNPG's default bootstrap: an `app` database and owner. Terraform's `tfstate` role is
         # managed below.
         initdb=None,

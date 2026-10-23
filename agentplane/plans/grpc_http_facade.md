@@ -10,6 +10,10 @@ interface at a time) from agents to the browser. Direct browser access to the fa
 [transport tracks](task_dag.md#service-api-transport-tracks) in the task DAG; the contract below
 graduates to a doc under `docs/` as its first step lands.
 
+The hand-written layer counts and service transport table below are a snapshot at `devel` f2741979
+(#10982). Since then, the Action Service's Go port and generated browser facade have landed, and its
+Python HTTP API has been retired; the remaining service tracks continue under the task DAG.
+
 A service's API is its proto. Every RPC meant to be reached over HTTP carries a `google.api.http`
 rule, and gRPC-Gateway generates the JSON facade from it inside the service's own process. Agents
 reach a facade through the egress proxy, as they reach the HTTP APIs now. The browser reaches the same
@@ -46,9 +50,9 @@ Sandbox lookup, model-catalog validation before `SubmitInput`), Sandbox views as
 Kubernetes, runner status and egress, and the multi-source snapshot frames of `app/live.py`. Those
 are the app's own logic.
 
-## Services by transport today
+## Services by transport in that snapshot
 
-| Service                                           | Language | API today                                                        | Facade                                                                  |
+| Service                                           | Language | API at snapshot                                                  | Facade                                                                  |
 | ------------------------------------------------- | -------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Runner Gateway: Dispatcher, control, Runner proxy | Go       | gRPC; Dispatcher has 10 RPCs, one watch                          | Dispatcher reads for the browser. Control stream and proxy stay native. |
 | History Service                                   | Go       | gRPC, 9 RPCs, one watch that only says "changed"                 | Reads                                                                   |

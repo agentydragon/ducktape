@@ -256,10 +256,14 @@ def write_tea_secret(rotation: Rotation, creds: ForgejoCredentials, token_data: 
     prettier_format_yaml_in_place(rotation.tea_secret.path)
 
 
-def rotate_one(client: httpx.Client, rotation: Rotation) -> RotatedToken | None:
+def rotate_one(client: httpx.Client, rotation: Rotation, force: bool = False) -> RotatedToken | None:
     creds = read_credentials(rotation)
     tokens = list_tokens(client, creds)
-    due, reason = should_rotate(rotation, unencrypted_stamps(rotation.sops_file), tokens)
+    due, reason = (
+        (True, "forced by operator")
+        if force
+        else should_rotate(rotation, unencrypted_stamps(rotation.sops_file), tokens)
+    )
     if not due:
         logger.info("%s: %s; skipping", rotation.name, reason)
         return None
@@ -304,6 +308,72 @@ def delete_token(client: httpx.Client, creds: ForgejoCredentials, token: dict[st
     resp.raise_for_status()
 
 
+def configured_rotation(rotations: list[Rotation], name: str) -> Rotation:
+    matches = [rotation for rotation in rotations if rotation.name == name]
+    if len(matches) != 1:
+        raise typer.BadParameter(f"rotation {name!r} must match exactly one configured account")
+    return matches[0]
+
+
+def parse_revocations(values: list[str], rotations: list[Rotation]) -> list[tuple[Rotation, int]]:
+    requests: list[tuple[Rotation, int]] = []
+    seen: set[tuple[str, int]] = set()
+    for value in values:
+        name, separator, token_id_text = value.rpartition(":")
+        if not separator or not name or not token_id_text.isascii() or not token_id_text.isdecimal():
+            raise typer.BadParameter(f"invalid --revoke value {value!r}; expected <rotation-name>:<numeric-id>")
+        token_id = int(token_id_text)
+        if token_id < 1:
+            raise typer.BadParameter(f"invalid --revoke value {value!r}; token ID must be positive")
+        rotation = configured_rotation(rotations, name)
+        key = (rotation.name, token_id)
+        if key in seen:
+            raise typer.BadParameter(f"duplicate --revoke request for {rotation.name}:{token_id}")
+        seen.add(key)
+        requests.append((rotation, token_id))
+    return requests
+
+
+def stamped_published_token_id(rotation: Rotation, tokens: list[dict[str, Any]]) -> str:
+    stamps = unencrypted_stamps(rotation.sops_file)
+    stamped_id = stamps.get("token_id_unencrypted")
+    stamped_name = stamps.get("token_name_unencrypted")
+    stamped_last_eight = stamps.get("token_last_eight_unencrypted")
+    if stamped_id is None or stamped_name is None or stamped_last_eight is None:
+        raise RuntimeError(f"{rotation.name}: current published token identity stamp is incomplete")
+
+    matches = [token for token in tokens if str(token.get("id")) == str(stamped_id)]
+    if len(matches) != 1:
+        raise RuntimeError(f"{rotation.name}: stamped published token ID {stamped_id} is not present exactly once")
+    token = matches[0]
+    if token.get("name") != stamped_name or token.get("token_last_eight") != stamped_last_eight:
+        raise RuntimeError(f"{rotation.name}: published token ID {stamped_id} disagrees with inventory metadata")
+    return str(stamped_id)
+
+
+def revoke_requested_tokens(client: httpx.Client, requests: list[tuple[Rotation, int]]) -> None:
+    inventories: dict[str, tuple[ForgejoCredentials, list[dict[str, Any]]]] = {}
+    published_ids: dict[str, str] = {}
+    planned: list[tuple[Rotation, ForgejoCredentials, dict[str, Any]]] = []
+    for rotation, token_id in requests:
+        if rotation.name not in inventories:
+            creds = read_credentials(rotation)
+            inventories[rotation.name] = (creds, list_tokens(client, creds))
+        creds, tokens = inventories[rotation.name]
+        matches = [token for token in tokens if str(token.get("id")) == str(token_id)]
+        if len(matches) != 1:
+            raise RuntimeError(f"{rotation.name}: token ID {token_id} is not present exactly once in its inventory")
+        if rotation.name not in published_ids:
+            published_ids[rotation.name] = stamped_published_token_id(rotation, tokens)
+        if str(token_id) == published_ids[rotation.name]:
+            raise RuntimeError(f"{rotation.name}: refusing to revoke currently published token ID {token_id}")
+        planned.append((rotation, creds, matches[0]))
+
+    for rotation, creds, token in planned:
+        logger.info("%s: revoking explicitly requested token ID %s", rotation.name, token.get("id"))
+        delete_token(client, creds, token)
+
+
 def prune_old_tokens(client: httpx.Client, rotated: list[RotatedToken]) -> None:
     for result in rotated:
         tokens = list_tokens(client, result.credentials)
@@ -346,9 +416,22 @@ def commit_and_push(config: Config, rotated: list[RotatedToken]) -> bool:
 def main(
     config_path: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, help="tokens.yaml")],
     github_pat_file: Annotated[Path, typer.Option("--github-pat-file")] = Path("/var/run/secrets/github-pat/token"),
+    force: Annotated[str | None, typer.Option("--force", help="Force one configured rotation by name")] = None,
+    retain_existing: Annotated[
+        bool, typer.Option("--retain-existing", help="Skip old-token pruning; requires --force")
+    ] = False,
+    revoke: Annotated[
+        list[str] | None, typer.Option("--revoke", help="Revoke one explicit name:id; repeatable")
+    ] = None,
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     config = Config.model_validate(yaml.safe_load(config_path.read_text()))
+    if revoke is not None and (force is not None or retain_existing):
+        raise typer.BadParameter("--revoke cannot be combined with --force or --retain-existing")
+    if retain_existing and force is None:
+        raise typer.BadParameter("--retain-existing requires --force")
+    revocations = parse_revocations(revoke, config.rotations) if revoke is not None else []
+    rotations = [configured_rotation(config.rotations, force)] if force is not None else config.rotations
     github_pat = github_pat_file.read_text().strip()
 
     repo_dir = Path("/tmp/repo")
@@ -356,12 +439,17 @@ def main(
     os.chdir(repo_dir)
     sparse_clone(config, github_pat)
 
+    if revoke is not None:
+        with httpx.Client(timeout=30) as client:
+            revoke_requested_tokens(client, revocations)
+        return
+
     rotated: list[RotatedToken] = []
     failed: list[str] = []
     with httpx.Client(timeout=30) as client:
-        for rotation in config.rotations:
+        for rotation in rotations:
             try:
-                result = rotate_one(client, rotation)
+                result = rotate_one(client, rotation, force=force is not None)
                 if result is not None:
                     rotated.append(result)
             except Exception:
@@ -370,7 +458,9 @@ def main(
 
         if rotated:
             pushed = commit_and_push(config, rotated)
-            if pushed:
+            if pushed and retain_existing:
+                logger.info("retaining existing tokens as requested")
+            elif pushed:
                 prune_old_tokens(client, rotated)
         else:
             logger.info("no rotations needed this cycle")

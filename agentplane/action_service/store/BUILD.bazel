@@ -57,8 +57,3 @@ go_test(
         "@com_github_lib_pq//:pq",
     ],
 )
-
-exports_files(
-    ["golden.json"],
-    visibility = ["//agentplane/action_service:__pkg__"],
-)

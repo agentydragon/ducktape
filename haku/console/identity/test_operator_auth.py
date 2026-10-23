@@ -29,8 +29,7 @@ from haku.console.config import OperatorOidcConfig
 from haku.console.conftest import TEST_OPERATOR_OIDC, console_settings
 from haku.console.database_schema import OidcIdentity
 from haku.console.identity import operator_auth, operator_login_flow
-from util.net import bind_free_port
-from util.testing.asgi import serve_app
+from util.testing.asgi import bind_http_server
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 AGENT_TOKEN = "agent-secret"  # a test literal, not a real credential
@@ -128,44 +127,43 @@ def _static_agent_config(tmp_path: Path) -> Path:
 async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path: Path) -> None:
     """The browser API requires an Operator session; a static Agent bearer is not browser auth."""
     private_key, public_key = generate_rsa_keypair()
-    idp_sock, console_sock = bind_free_port(), bind_free_port()
-    idp_url, console_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, console_sock))
-    idp = build_mock_oidc_app(
-        issuer_url=idp_url,
-        private_key=private_key,
-        public_key=public_key,
-        subject=_OPERATOR_SUBJECT,
-        extra_id_token_claims={"preferred_username": _OPERATOR_USERNAME},
-    )
-    settings = console_settings(
-        migrated_db_url,
-        haku_ui_url="about:blank",
-        config_file=_static_agent_config(tmp_path),
-        public_base_url=console_url,
-        operator_oidc=OperatorOidcConfig(
-            issuer=idp_url, client_id="console", client_secret=SecretStr("secret"), session_secret=SecretStr("sess")
-        ),
-    )
-    app = create_app(settings)
+    with bind_http_server() as idp_endpoint, bind_http_server() as console_endpoint:
+        idp_url, console_url = idp_endpoint.origin, console_endpoint.origin
+        idp = build_mock_oidc_app(
+            issuer_url=idp_url,
+            private_key=private_key,
+            public_key=public_key,
+            subject=_OPERATOR_SUBJECT,
+            extra_id_token_claims={"preferred_username": _OPERATOR_USERNAME},
+        )
+        settings = console_settings(
+            migrated_db_url,
+            haku_ui_url="about:blank",
+            config_file=_static_agent_config(tmp_path),
+            public_base_url=console_url,
+            operator_oidc=OperatorOidcConfig(
+                issuer=idp_url, client_id="console", client_secret=SecretStr("secret"), session_secret=SecretStr("sess")
+            ),
+        )
+        app = create_app(settings)
 
-    async with serve_app(idp, sock=idp_sock), serve_app(app, sock=console_sock):
-        # No credential: every `/api/*` route rejects; the health probe stays open.
-        async with httpx.AsyncClient(base_url=console_url) as anon:
-            assert (await anon.get("/api/config")).status_code == 401
-            assert (await anon.get("/healthz")).status_code == 200
+        async with idp_endpoint.serve(idp), console_endpoint.serve(app):
+            async with httpx.AsyncClient(base_url=console_url) as anon:
+                assert (await anon.get("/api/config")).status_code == 401
+                assert (await anon.get("/healthz")).status_code == 200
 
-        # A static Agent bearer grants no browser API access.
-        async with httpx.AsyncClient(base_url=console_url, headers={"Authorization": f"Bearer {AGENT_TOKEN}"}) as agent:
-            assert (await agent.get("/api/config")).status_code == 401
+            async with httpx.AsyncClient(
+                base_url=console_url, headers={"Authorization": f"Bearer {AGENT_TOKEN}"}
+            ) as agent:
+                assert (await agent.get("/api/config")).status_code == 401
 
-        # A real operator login (authorization-code flow through the mock IdP) reaches everything.
-        async with httpx.AsyncClient(base_url=console_url, follow_redirects=True) as operator:
-            await operator.get("/auth/login")  # → IdP authorize → /auth/callback → operator session cookie
-            me = await operator.get("/auth/me")
-            assert me.status_code == 200, me.text
-            assert me.json()["username"] == _OPERATOR_USERNAME
-            assert (await operator.get("/api/config")).status_code == 200
-            assert (await operator.get("/api/tool-calls")).status_code == 404
+            async with httpx.AsyncClient(base_url=console_url, follow_redirects=True) as operator:
+                await operator.get("/auth/login")
+                me = await operator.get("/auth/me")
+                assert me.status_code == 200, me.text
+                assert me.json()["username"] == _OPERATOR_USERNAME
+                assert (await operator.get("/api/config")).status_code == 200
+                assert (await operator.get("/api/tool-calls")).status_code == 404
 
 
 async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_path: Path) -> None:
@@ -174,44 +172,44 @@ async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_pat
     state each new authorization request evicts the last, and the loser's callback dies on
     "expired or was superseded"."""
     private_key, public_key = generate_rsa_keypair()
-    idp_sock, console_sock = bind_free_port(), bind_free_port()
-    idp_url, console_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, console_sock))
-    idp = build_mock_oidc_app(
-        issuer_url=idp_url,
-        private_key=private_key,
-        public_key=public_key,
-        subject=_OPERATOR_SUBJECT,
-        extra_id_token_claims={"preferred_username": _OPERATOR_USERNAME},
-    )
-    settings = console_settings(
-        migrated_db_url,
-        haku_ui_url="about:blank",
-        config_file=_static_agent_config(tmp_path),
-        public_base_url=console_url,
-        operator_oidc=OperatorOidcConfig(
-            issuer=idp_url, client_id="console", client_secret=SecretStr("secret"), session_secret=SecretStr("sess")
-        ),
-    )
-    app = create_app(settings)
-
-    async with (
-        serve_app(idp, sock=idp_sock),
-        serve_app(app, sock=console_sock),
-        # One client is one browser: both tabs share a cookie jar, and both requests are built
-        # from the same snapshot of it.
-        httpx.AsyncClient(base_url=console_url) as browser,
-    ):
-        settings_tab, home_tab = await asyncio.gather(
-            browser.get("/auth/login", params={"return_to": "/_console/settings"}),
-            browser.get("/auth/login", params={"return_to": "/"}),
+    with bind_http_server() as idp_endpoint, bind_http_server() as console_endpoint:
+        idp_url, console_url = idp_endpoint.origin, console_endpoint.origin
+        idp = build_mock_oidc_app(
+            issuer_url=idp_url,
+            private_key=private_key,
+            public_key=public_key,
+            subject=_OPERATOR_SUBJECT,
+            extra_id_token_claims={"preferred_username": _OPERATOR_USERNAME},
         )
+        settings = console_settings(
+            migrated_db_url,
+            haku_ui_url="about:blank",
+            config_file=_static_agent_config(tmp_path),
+            public_base_url=console_url,
+            operator_oidc=OperatorOidcConfig(
+                issuer=idp_url, client_id="console", client_secret=SecretStr("secret"), session_secret=SecretStr("sess")
+            ),
+        )
+        app = create_app(settings)
 
-        for tab, expected_return_to in ((settings_tab, "/_console/settings"), (home_tab, "/")):
-            landed = await browser.get(tab.headers["location"], follow_redirects=False)
-            finished = await browser.get(landed.headers["location"], follow_redirects=False)
-            assert finished.status_code == 303, finished.text
-            assert finished.headers["location"] == expected_return_to
-        assert (await browser.get("/auth/me")).status_code == 200
+        async with (
+            idp_endpoint.serve(idp),
+            console_endpoint.serve(app),
+            # One client is one browser: both tabs share a cookie jar, and both requests are built
+            # from the same snapshot of it.
+            httpx.AsyncClient(base_url=console_url) as browser,
+        ):
+            settings_tab, home_tab = await asyncio.gather(
+                browser.get("/auth/login", params={"return_to": "/_console/settings"}),
+                browser.get("/auth/login", params={"return_to": "/"}),
+            )
+
+            for tab, expected_return_to in ((settings_tab, "/_console/settings"), (home_tab, "/")):
+                landed = await browser.get(tab.headers["location"], follow_redirects=False)
+                finished = await browser.get(landed.headers["location"], follow_redirects=False)
+                assert finished.status_code == 303, finished.text
+                assert finished.headers["location"] == expected_return_to
+            assert (await browser.get("/auth/me")).status_code == 200
 
 
 def test_every_unsafe_api_route_has_an_explicit_admission_boundary(make_client) -> None:

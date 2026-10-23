@@ -68,14 +68,16 @@ is the likelier cause.
 Mimir is `http://mimir-gateway.monitoring.svc/prometheus`. Grafana's Explore view works, as
 does `curl` from a pod in a namespace whose egress reaches `monitoring`; `haku-sandbox` does.
 
-Ping loss per target (`gateway`, `switch`, an OVH node over Nebula) from `smokeping_prober` on
-`optiplex`, 5 pings/s each (`cluster/cdk8s/monitoring/smokeping.py`). Its
-`HomeGatewayUplinkLoss` alert fires when the gateway loses over 3% for 15 minutes while the
-switch stays clean; the "Home network overview" dashboard plots loss and RTT:
+Ping loss per source and target from `smokeping_prober` on `optiplex` and `wyrm2`,
+5 pings/s each (`cluster/cdk8s/monitoring/smokeping.py`). Both probe the AT&T gateway,
+the switch, and an OVH node over Nebula; `wyrm2` also probes optiplex at `192.168.1.10`.
+The `source_node` label identifies the probing node (absent on older optiplex samples).
+`HomeGatewayUplinkLoss` evaluates each source separately and fires when the gateway loses
+over 3% for 15 minutes while that source's switch probes stay clean; the "Home network overview" dashboard plots loss and RTT:
 
 ```promql
-1 - sum by (target) (rate(smokeping_response_duration_seconds_count{job="monitoring/smokeping"}[5m]))
-  / sum by (target) (rate(smokeping_requests_total{job="monitoring/smokeping"}[5m]))
+1 - sum by (source_node, target) (rate(smokeping_response_duration_seconds_count{job="monitoring/smokeping"}[5m]))
+  / sum by (source_node, target) (rate(smokeping_requests_total{job="monitoring/smokeping"}[5m]))
 ```
 
 SYN-retransmit ratio per node. This was the only history of the loss before a dedicated
