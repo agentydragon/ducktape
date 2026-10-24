@@ -121,17 +121,10 @@ def _deployment(scope: Construct) -> None:
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    # No explicit zone nodeSelector: the PVC's seaweedfs-ovh StorageClass already
-                    # pins scheduling to topology.kubernetes.io/zone=hil-ovh via WaitForFirstConsumer
-                    # + allowedTopologies (seaweedfs_csi/driver.py), and the
-                    # already-bound PV carries that same zone in its own nodeAffinity.
-                    # hil-ovh's only schedulable workers (ovh-ns103711, ovh-ns102453) run hot enough
-                    # that the descheduler's LowNodeUtilization plugin (cluster/cdk8s/descheduler.py)
-                    # evicts this pod roughly every 15 minutes for node overutilization. As the
-                    # single-writer, Recreate-strategy holder of the Codex OAuth refresh token on its
-                    # PVC, it can't tolerate that churn — each eviction breaks the auto-refresh worker's
-                    # session. Allow the zone's otherwise-idle control-plane nodes as real overflow
-                    # capacity instead of only ever bouncing between the two contended workers.
+                    # Existing Seaweed PVs can lack node affinity. The CSI driver runs only in OVH;
+                    # StorageClass allowedTopologies does not constrain an already-bound claim.
+                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                    # Allow control planes as overflow capacity for this single-writer service.
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     init_containers=[
                         k8s.Container(
