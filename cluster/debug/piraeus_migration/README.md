@@ -55,35 +55,49 @@ PVC and erased Retain PV records. The CPAP VM is restored, but the card SSID was
 sync remains unverified. See the [OptiPlex provisioning record](../../docs/optiplex_provisioning.md)
 for the durable disk layout.
 
-Before the approved `ovh-ns103711` reimage, the SeaweedFS evacuation from
-`ovh-ns103656/hdd-2` completed: the 151-copy wave finished at 10:29:33 UTC
-(final move 1058), and the source had zero Seaweed volumes and zero allocated
-volume data. At 10:48 UTC, the smaller destination had about 331 GB free
-(16.58%), above the 15% free-space floor. The legacy HDD contents were erased
-under the explicit waiver; no archive was made. Keeper-0 and Alertmanager-0 were
-preserved on SSD. Before reimage, the whole HDD passed physical acceptance:
-`piraeus_hdd/data` was 1851.02GiB with 4GiB metadata, a 4GiB spare and 64KiB
-chunks. A 512MiB write/fsync completed at 92.5MiB/s; discard returned pool
-allocation to 0.01%. The node was admitted after shared gates passed, metrics
-were fresh, canaries were removed, and the `1700Gi` Seaweed server passed a
-native canary move and owned S3 checks. These observations describe the prior
-installation and do not qualify the post-reimage disk.
+The SeaweedFS evacuation from `ovh-ns103656/hdd-2` to `ovh-ns103711` is
+complete: the 151-copy wave finished at 10:29:33 UTC (final move 1058), and the
+source has zero Seaweed volumes and zero allocated volume data. At 10:48 UTC,
+the smaller destination had about 331 GB free (16.58%), above the 15%
+free-space floor.
+The legacy HDD contents were erased under the explicit waiver; no archive was
+made. Keeper-0 and Alertmanager-0 were preserved on SSD. Physical acceptance
+passed on the whole HDD: `piraeus_hdd/data` is 1851.02GiB with 4GiB metadata, a
+4GiB spare and 64KiB chunks. A 512MiB write/fsync completed at 92.5MiB/s;
+discard returned pool allocation to 0.01%. Filesystem/block canary hashes and
+claim identities survived a controlled reboot without Pod replacement, all
+three etcd services remained healthy, and the worker's 32/512/1024/32GiB system
+volumes and both disk identities remained intact. The node was admitted and
+uncordoned at 12:56 UTC after shared gates passed, local-path aliases were
+confirmed to deny new allocations, metrics were fresh, and canaries were removed.
+The 1700Gi `piraeus-hdd-local` Retain strict-local Seaweed volume server is
+Ready. One uncapped native canary move and the owned S3 probes passed; both
+temporary probe objects were deleted. All 504 HDD logical volumes retain two
+copies, and existing Pods and claims are unchanged. Pool metrics are fresh and
+the target service is up. The Terraform readiness source is merged and its
+target apply completed: desired and live configuration match, the
+`refresh=false` targeted residual plan has zero changes, and no reboot was
+needed. Only the canary moved; bulk rebalance and later HDD-node conversions
+have not started.
 
-During the 2026-10-23 retirement, `volumeServer.leave` made `/healthz` return
-503; six liveness failures at a 90s period restarted the container at 00:28:11
-and remounted 116 preserved files. After peer checks confirmed all 600
-logical IDs remained off-node, the locked native `volume.delete` removed only
-the 116 explicitly waived source copies; heartbeat and health stayed green with
-maintenance enabled. Avoid `leave` while files must remain preserved.
+## 103711 reimage — 2026-10-24
 
-Post-reimage activation is conditional on fresh disk-identity, system-volume,
-LINSTOR, thin-pool, filesystem/block, monitoring and Seaweed acceptance under
-the [node-roll runbook](../../docs/runbooks/piraeus_node_roll.md). The prepared
-source enables `piraeus-ready` for `103711` and adds a hostname-pinned
-`1700Gi`/`2000`-slot `hdd-piraeus-103711` group with operator-generated volume
-monitoring. Apply that readiness only after the physical gates pass. Keep the
-legacy `hdd` group out of the operator topology map while its `102453` peer is
-preserved with `ordinals.start=1,replicas=1`.
+Application handoffs are accepted. ClickHouse is running with its surviving
+data replica on `102453`. After peer checks confirmed all 600 logical HDD
+volume IDs remained off-node, the 116 user-waived Seaweed source volume copies
+were deleted under lock. The `103711` reimage is pending. Its prepared Terraform
+readiness label and hostname-pinned `1700Gi`/`2000`-slot
+`hdd-piraeus-103711` group, including operator-generated volume monitoring, are
+conditional on fresh post-reimage physical acceptance. Keep legacy `hdd` out of
+the operator topology map while its `102453` peer uses
+`ordinals.start=1,replicas=1`.
+
+During retirement, `volumeServer.leave` made `/healthz` return `503`; six
+liveness failures at a `90s` period restarted the container at
+`2026-10-24 00:28:11 UTC` and remounted 116 preserved volume copies. The locked
+native `volume.delete` removed only those explicitly waived copies; heartbeat
+and health stayed green with maintenance enabled. Avoid `leave` while copies
+must remain preserved.
 The accepted overcommit policy and issue trigger remain in the
 [runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
 
