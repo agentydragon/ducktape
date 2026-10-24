@@ -612,5 +612,3 @@ def _litellm_url(models: Models) -> str:
             return "https://litellm.allegedly.works"
         case LocalModel(url=url):
             return url
-        case None:
-            return "http://litellm.litellm.svc.cluster.local:4000"

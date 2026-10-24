@@ -8,7 +8,7 @@ _HARNESSES_LAYOUT = "//agentplane/x/k3s_env:harnesses/runner_layout"
 # The k3s target's runner image, by what its scenarios run.
 _RUNNER_LAYOUTS = {
     # No harness, so the image imports faster.
-    "model_free": "//agentplane/x/k3s_env:lifecycle/runner_layout",
+    "model_free": "//agentplane/x/k3s_env:model_free/runner_layout",
     "scripted": _HARNESSES_LAYOUT,
 }
 

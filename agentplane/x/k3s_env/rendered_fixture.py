@@ -29,14 +29,12 @@ class LocalModel:
     url: str
 
 
-# None leaves LLM ingress at the cluster-internal LiteLLM Service, which does not exist here, so no turn can run.
-Models = PublicLiteLLM | LocalModel | None
+Models = PublicLiteLLM | LocalModel
 
 
 class Backend(StrEnum):
     """What LLM ingress forwards to; the chart differs by it, so the build renders one manifest each."""
 
-    NONE = "none"
     LOCAL_MODEL = "local-model"
     PUBLIC_LITELLM = "public-litellm"
 
@@ -78,7 +76,6 @@ MCP_PLACEHOLDERS = McpInputs(
     app_origin="http://k3s-env-placeholder-app-origin.invalid",
 )
 MODEL_PLACEHOLDERS: dict[Backend, Models] = {
-    Backend.NONE: None,
     Backend.LOCAL_MODEL: LocalModel(url="http://k3s-env-placeholder-model.invalid:4000"),
     Backend.PUBLIC_LITELLM: PublicLiteLLM(key="k3s-env-placeholder-litellm-key"),
 }
@@ -140,8 +137,6 @@ def fill(fixture: RenderedFixture, inputs: RuntimeInputs, models: Models, mcp: M
     if mcp is not None:
         replacements |= dict(zip(asdict(MCP_PLACEHOLDERS).values(), asdict(mcp).values(), strict=True))
     match MODEL_PLACEHOLDERS[fixture.backend], models:
-        case None, None:
-            pass
         case LocalModel(url=placeholder), LocalModel(url=url):
             replacements[placeholder] = url
         case PublicLiteLLM(key=placeholder), PublicLiteLLM(key=key):

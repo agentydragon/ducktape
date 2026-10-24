@@ -38,7 +38,6 @@ flowchart LR
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
     K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
-    K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s lifecycle spike]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
     DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
@@ -815,9 +814,8 @@ messages, by shimming the web interface's control protocol. Builds on the viewer
 The independent candidates below were requested by the operator on 2026-10-16 PDT; none waits
 for the others. Use equivalent source/scenarios and report transfer, import/unpack, process
 readiness and total test time separately in
-[the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
-Preserve assertions and timeouts. The expensive lifecycle workflow stays **manual-only**;
-automatic triggers require a separate reviewed change. Language rewrites require Rai's decision;
+[the k3s stack timings](../x/k3s_env/debug/stack_timings.md).
+Preserve assertions and timeouts. Language rewrites require Rai's decision;
 rank them by unique image bytes removed and startup time on the dependency chain. Remaining
 Python services still need the shared interpreter.
 
@@ -842,9 +840,9 @@ respect the backend dependency rule; the integration app cannot own this path.
 Whatever delivers Codex must keep the version the model-catalog generator pins at least as new as the runner's
 ([ingress README](../llm_ingress/README.md#codex-model-catalog)).
 
-The [image-split comparison](../x/k3s_env/README.md#harness-specific-runner-comparison-2026-10-16)
+The [image-split comparison](https://github.com/agentydragon/ducktape/blob/7fd9f16f7d/agentplane/x/k3s_env/README.md#harness-specific-runner-comparison-2026-10-16)
 measures removal of unused harness payload; it does not measure runtime delivery of a needed harness.
-Its profiles and inventories are merged in [#10813](https://github.com/agentydragon/ducktape/pull/10813) (`x/k3s_env/`); the image split itself landed in #10812.
+Its profiles and inventories are in [#10813](https://github.com/agentydragon/ducktape/pull/10813); the image split itself landed in #10812.
 
 Exit: a measured recommendation and explicit operator choice. Compare equivalent scenarios and
 pins, separating image build/upload, action-input transfer, containerd import/unpack, harness
@@ -1260,7 +1258,7 @@ Record only observed gaps and what survived; VM-local disks and processes are lo
 while retained state/workspace volumes survive. No claim of a completed VM UI drive follows from
 the automated Pod/VM lifecycle coverage.
 
-Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage), and `VM_RAM_SUSPEND` for
+Related: [lifecycle coverage](../x/k3s_env/README.md#sandbox-lifecycle-coverage), and `VM_RAM_SUSPEND` for
 resuming with memory retained.
 
 ### `AGENT_RESUME_NOTICE` — tell agents when their Sandbox was suspended and resumed
@@ -1278,7 +1276,7 @@ message through the Dispatcher; and the wording agents act on. Test a suspend an
 background process, a terminal and workspace files, and a crash restart (no suspend) that reads
 differently.
 
-Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage).
+Related: [lifecycle coverage](../x/k3s_env/README.md#sandbox-lifecycle-coverage).
 
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 
@@ -1882,7 +1880,6 @@ produce are named at the fake and are not cleanups.
 flowchart LR
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
-    K3S_SPIKE_TARGETS_RETIRE[Blocked: delete the k3s lifecycle spike]
     K3S_ENV_OUT_OF_X[Blocked: the k3s stack leaves x/]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
 ```
@@ -1911,12 +1908,6 @@ One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a 
 
 Exit: those users go through the Go Gateway's runner proxy (`sandbox_control` in `app/testing/runner_gateway.py`),
 the runner fixtures push straight to `GoHistoryService`'s ingress, and both stand-ins are deleted.
-
-### `K3S_SPIKE_TARGETS_RETIRE` — delete the k3s lifecycle spike
-
-**Blocked on the system test scenarios covering `test_lifecycle`'s cases.** Delete `x/k3s_env`'s `test_lifecycle`
-with `.github/workflows/agentplane-k3s-lifecycle.yml` once system test scenarios cover its four cases (check
-suspend/resume and storage).
 
 ### `K3S_ENV_OUT_OF_X` — the k3s stack leaves `x/`
 

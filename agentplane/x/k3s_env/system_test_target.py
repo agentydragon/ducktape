@@ -58,8 +58,6 @@ def _models(listener: Listener) -> rendered_fixture.Models:
             return LocalModel(url=f"http://{listener.host}:{listener.port}")
         case Backend.PUBLIC_LITELLM:
             return PublicLiteLLM(key=os.environ["OPENAI_API_KEY"])
-        case Backend.NONE:
-            return None
 
 
 @pytest.fixture(scope="session", autouse=True)
