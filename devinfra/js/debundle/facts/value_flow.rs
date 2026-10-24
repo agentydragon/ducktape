@@ -124,18 +124,25 @@ impl Default for OriginTable {
 /// share its immutable origin table, so word positions have identical meaning.
 #[derive(Clone)]
 pub(crate) struct Values {
+    bitmap: Arc<ValueBitmap>,
+    unknown: bool,
+    origins: Arc<OriginTable>,
+}
+
+#[derive(Clone, Default)]
+struct ValueBitmap {
     bits: Vec<u64>,
     /// Nonzero word indices, in sorted order. `bits` stays dense so rank
     /// lookup is constant-time, while unions touch only words that can add
     /// origins instead of scanning long zero prefixes.
     occupied_words: Vec<u32>,
-    unknown: bool,
-    origins: Arc<OriginTable>,
 }
 
 impl PartialEq for Values {
     fn eq(&self, other: &Self) -> bool {
-        self.bits == other.bits && self.unknown == other.unknown && self.origins == other.origins
+        self.bitmap.bits == other.bitmap.bits
+            && self.unknown == other.unknown
+            && self.origins == other.origins
     }
 }
 
@@ -150,8 +157,7 @@ impl std::fmt::Debug for Values {
 impl Values {
     pub(super) fn empty(origins: Arc<OriginTable>) -> Self {
         Self {
-            bits: Vec::new(),
-            occupied_words: Vec::new(),
+            bitmap: Arc::new(ValueBitmap::default()),
             unknown: false,
             origins,
         }
@@ -166,12 +172,13 @@ impl Values {
     fn is_empty(&self) -> bool {
         // Insertions and unions only grow the vector through a set bit, so
         // trailing zero words are never introduced.
-        self.bits.is_empty() && !self.unknown
+        self.bitmap.bits.is_empty() && !self.unknown
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.bits
+        self.bitmap
+            .bits
             .iter()
             .map(|word| word.count_ones() as usize)
             .sum::<usize>()
@@ -180,7 +187,12 @@ impl Values {
 
     #[cfg(test)]
     pub(super) fn occupied_word_indices(&self) -> &[u32] {
-        &self.occupied_words
+        &self.bitmap.occupied_words
+    }
+
+    #[cfg(test)]
+    pub(super) fn shares_bitmap(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.bitmap, &other.bitmap)
     }
 
     pub(super) fn contains(&self, value: &ValueOrigin) -> bool {
@@ -192,7 +204,8 @@ impl Values {
         };
         let word = id.0 as usize / u64::BITS as usize;
         let bit = id.0 % u64::BITS;
-        self.bits
+        self.bitmap
+            .bits
             .get(word)
             .is_some_and(|word| word & (1_u64 << bit) != 0)
     }
@@ -203,25 +216,32 @@ impl Values {
         }
         let id = self.origins.id(value).0;
         let word_index = id as usize / u64::BITS as usize;
-        if self.bits.len() <= word_index {
-            self.bits.resize(word_index + 1, 0);
-        }
         let mask = 1_u64 << (id % u64::BITS);
-        let was_empty = self.bits[word_index] == 0;
+        if self
+            .bitmap
+            .bits
+            .get(word_index)
+            .is_some_and(|word| word & mask != 0)
+        {
+            return false;
+        }
+        let bitmap = Arc::make_mut(&mut self.bitmap);
+        if bitmap.bits.len() <= word_index {
+            bitmap.bits.resize(word_index + 1, 0);
+        }
+        let was_empty = bitmap.bits[word_index] == 0;
         if was_empty {
-            self.insert_occupied_word(
+            bitmap.insert_occupied_word(
                 u32::try_from(word_index).expect("chunk origin word index exceeds u32"),
             );
         }
-        let word = &mut self.bits[word_index];
-        let changed = *word & mask == 0;
-        *word |= mask;
-        changed
+        bitmap.bits[word_index] |= mask;
+        true
     }
 
     pub(super) fn iter(&self) -> ValuesIter<'_> {
         ValuesIter {
-            bits: BitIndices::new(self.bits.iter().copied()),
+            bits: BitIndices::new(self.bitmap.bits.iter().copied()),
             origins: &self.origins,
             unknown: self.unknown,
             yielded_unknown: false,
@@ -231,10 +251,30 @@ impl Values {
     /// Merge another value set, returning whether it contributed new origins.
     pub(super) fn union_with(&mut self, other: &Self) -> bool {
         assert!(Arc::ptr_eq(&self.origins, &other.origins));
-        if self.bits.is_empty() {
-            let changed = !other.bits.is_empty() || (other.unknown && !self.unknown);
-            self.bits.clone_from(&other.bits);
-            self.occupied_words.clone_from(&other.occupied_words);
+        if self.bitmap.bits.is_empty() {
+            let changed = !other.bitmap.bits.is_empty() || (other.unknown && !self.unknown);
+            self.bitmap = other.bitmap.clone();
+            self.unknown |= other.unknown;
+            return changed;
+        }
+        if other.bitmap.bits.is_empty() || Arc::ptr_eq(&self.bitmap, &other.bitmap) {
+            let changed = other.unknown && !self.unknown;
+            self.unknown |= other.unknown;
+            return changed;
+        }
+        if Arc::strong_count(&self.bitmap) > 1 && self.bitmap.contains_all(&other.bitmap) {
+            let changed = other.unknown && !self.unknown;
+            self.unknown |= other.unknown;
+            return changed;
+        }
+        // Reuse an existing superset instead of materializing the same wide
+        // union separately for every object or property. Unknown is tracked
+        // independently: it never replaces known origins in the bitmap.
+        if other.bitmap.bits.len() >= self.bitmap.bits.len()
+            && other.bitmap.contains_all(&self.bitmap)
+        {
+            let changed = self.bitmap.bits != other.bitmap.bits || (other.unknown && !self.unknown);
+            self.bitmap = other.bitmap.clone();
             self.unknown |= other.unknown;
             return changed;
         }
@@ -252,80 +292,72 @@ impl Values {
 
     fn union_occupied_words(&mut self, other: &Self) -> bool {
         let mut changed = false;
-        if self.bits.len() < other.bits.len() {
-            self.bits.resize(other.bits.len(), 0);
+        let bitmap = Arc::make_mut(&mut self.bitmap);
+        if bitmap.bits.len() < other.bitmap.bits.len() {
+            bitmap.bits.resize(other.bitmap.bits.len(), 0);
         }
         let mut added_words = Vec::new();
-        for word_index in &other.occupied_words {
+        for word_index in &other.bitmap.occupied_words {
             let index = *word_index as usize;
-            let into = self.bits[index];
-            let from = other.bits[index];
+            let into = bitmap.bits[index];
+            let from = other.bitmap.bits[index];
             let merged = into | from;
             changed |= merged != into;
             if into == 0 {
                 added_words.push(*word_index);
             }
-            self.bits[index] = merged;
+            bitmap.bits[index] = merged;
         }
-        self.merge_occupied_words(&added_words);
+        bitmap.merge_occupied_words(&added_words);
         changed
     }
 
     fn union_without_change_tracking(&mut self, other: &Self) {
-        assert!(Arc::ptr_eq(&self.origins, &other.origins));
-        if self.bits.is_empty() {
-            self.bits.clone_from(&other.bits);
-            self.occupied_words.clone_from(&other.occupied_words);
-            self.unknown |= other.unknown;
-            return;
-        }
-        if self.union_dense_words(other).is_some() {
-            self.unknown |= other.unknown;
-            return;
-        }
-        if self.bits.len() < other.bits.len() {
-            self.bits.resize(other.bits.len(), 0);
-        }
-        let mut added_words = Vec::new();
-        for word_index in &other.occupied_words {
-            let index = *word_index as usize;
-            let into = self.bits[index];
-            if into == 0 {
-                added_words.push(*word_index);
-            }
-            self.bits[index] = into | other.bits[index];
-        }
-        self.merge_occupied_words(&added_words);
-        self.unknown |= other.unknown;
+        self.union_with(other);
     }
 
     /// Preserve the vectorized wordwise path when neither operand contains
     /// zero words. Growing a dense destination adds the dense source's tail
     /// ranks to the already sorted occupied-word index.
     fn union_dense_words(&mut self, other: &Self) -> Option<bool> {
-        if self.occupied_words.len() != self.bits.len()
-            || other.occupied_words.len() != other.bits.len()
+        if self.bitmap.occupied_words.len() != self.bitmap.bits.len()
+            || other.bitmap.occupied_words.len() != other.bitmap.bits.len()
         {
             return None;
         }
 
-        let old_len = self.bits.len();
-        if old_len < other.bits.len() {
-            self.bits.resize(other.bits.len(), 0);
-            self.occupied_words.extend(
-                (old_len..other.bits.len()).map(|index| {
+        let bitmap = Arc::make_mut(&mut self.bitmap);
+        let old_len = bitmap.bits.len();
+        if old_len < other.bitmap.bits.len() {
+            bitmap.bits.resize(other.bitmap.bits.len(), 0);
+            bitmap.occupied_words.extend(
+                (old_len..other.bitmap.bits.len()).map(|index| {
                     u32::try_from(index).expect("chunk origin word index exceeds u32")
                 }),
             );
         }
 
         let mut changed = false;
-        for (into, from) in self.bits.iter_mut().zip(&other.bits) {
+        for (into, from) in bitmap.bits.iter_mut().zip(&other.bitmap.bits) {
             let merged = *into | *from;
             changed |= merged != *into;
             *into = merged;
         }
         Some(changed)
+    }
+
+    fn union(mut self, other: Self) -> Self {
+        self.union_with(&other);
+        self
+    }
+}
+
+impl ValueBitmap {
+    fn contains_all(&self, other: &Self) -> bool {
+        other.occupied_words.iter().all(|word_index| {
+            let index = *word_index as usize;
+            self.bits.get(index).copied().unwrap_or(0) & other.bits[index] == other.bits[index]
+        })
     }
 
     fn insert_occupied_word(&mut self, word: u32) {
@@ -366,11 +398,6 @@ impl Values {
         merged.extend(existing);
         merged.extend(additions);
         self.occupied_words = merged;
-    }
-
-    fn union(mut self, other: Self) -> Self {
-        self.union_with(&other);
-        self
     }
 }
 
@@ -437,10 +464,25 @@ impl Iterator for ValuesIter<'_> {
 }
 
 pub(crate) struct ValuesIntoIter {
-    bits: BitIndices<std::vec::IntoIter<u64>>,
+    bits: BitIndices<ArcWords>,
     origins: Arc<OriginTable>,
     unknown: bool,
     yielded_unknown: bool,
+}
+
+struct ArcWords {
+    bitmap: Arc<ValueBitmap>,
+    next: usize,
+}
+
+impl Iterator for ArcWords {
+    type Item = u64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let word = self.bitmap.bits.get(self.next).copied()?;
+        self.next += 1;
+        Some(word)
+    }
 }
 
 impl Iterator for ValuesIntoIter {
@@ -464,7 +506,10 @@ impl IntoIterator for Values {
 
     fn into_iter(self) -> Self::IntoIter {
         ValuesIntoIter {
-            bits: BitIndices::new(self.bits.into_iter()),
+            bits: BitIndices::new(ArcWords {
+                bitmap: self.bitmap,
+                next: 0,
+            }),
             origins: self.origins,
             unknown: self.unknown,
             yielded_unknown: false,
@@ -478,7 +523,7 @@ impl<'a> IntoIterator for &'a Values {
 
     fn into_iter(self) -> Self::IntoIter {
         ValuesIter {
-            bits: BitIndices::new(self.bits.iter().copied()),
+            bits: BitIndices::new(self.bitmap.bits.iter().copied()),
             origins: &self.origins,
             unknown: self.unknown,
             yielded_unknown: false,
@@ -883,35 +928,42 @@ impl ChunkValueFlow {
         if values.is_empty() {
             return false;
         }
-        let origin_table = self.origin_table.clone();
-        let entry = self
-            .bindings
-            .entry(id)
-            .or_insert_with(|| Values::empty(origin_table));
-        entry.union_with(&values)
+        assert!(Arc::ptr_eq(&self.origin_table, &values.origins));
+        match self.bindings.entry(id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(values);
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().union_with(&values)
+            }
+        }
     }
 
     fn merge_property(&mut self, object: u32, prop: String, values: Values) -> bool {
         if values.is_empty() {
             return false;
         }
-        let changed = {
-            let origin_table = self.origin_table.clone();
-            let entry = self
-                .properties
-                .entry(object)
-                .or_default()
-                .entry(prop)
-                .or_insert_with(|| Values::empty(origin_table));
-            entry.union_with(&values)
+        assert!(Arc::ptr_eq(&self.origin_table, &values.origins));
+        let changed = match self.properties.entry(object).or_default().entry(prop) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(values.clone());
+                true
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().union_with(&values)
+            }
         };
         if changed {
             // A wildcard-property read needs the exact union for this object.
-            let origin_table = self.origin_table.clone();
-            self.property_unions
-                .entry(object)
-                .or_insert_with(|| Values::empty(origin_table))
-                .union_with(&values);
+            match self.property_unions.entry(object) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(values);
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.get_mut().union_with(&values);
+                }
+            }
         }
         changed
     }
@@ -920,12 +972,16 @@ impl ChunkValueFlow {
         if values.is_empty() {
             return false;
         }
-        let origin_table = self.origin_table.clone();
-        let entry = self
-            .returns
-            .entry(function)
-            .or_insert_with(|| Values::empty(origin_table));
-        entry.union_with(&values)
+        assert!(Arc::ptr_eq(&self.origin_table, &values.origins));
+        match self.returns.entry(function) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(values);
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().union_with(&values)
+            }
+        }
     }
 
     pub(crate) fn values_of_binding(&self, id: &Id) -> Values {
