@@ -11,6 +11,8 @@
 # artifacts, host configs. Pull a tree out of this list to bazelize it.
 # gazelle:exclude cluster/docs/inference
 # gazelle:exclude cluster/parked
+# Mounted into a one-off Job, run by the Home Assistant image's own Python.
+# gazelle:exclude cluster/k8s/home-assistant/recorder-import
 # gazelle:exclude devinfra/debug/agent_fleet
 # gazelle:exclude debug/kernel_6_18_amd_kvm_stall
 # gazelle:exclude cluster/debug/optiplex_nvme_thermal

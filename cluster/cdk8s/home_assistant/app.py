@@ -68,12 +68,13 @@ SERVICE = HostNetworkServiceRef(
     port=Port(name="http", number=8123),
     pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
-_CONFIG_CLAIM = "home-assistant-config-piraeus"
+CONFIG_CLAIM = "home-assistant-config-piraeus"
 # `password` is the ESO Password generator's own field, which `_metrics_token` copies verbatim.
 _METRICS_TOKEN = SecretRef(namespace=_NAMESPACE, name="home-assistant-metrics-token").key("password")
 _BACKUP = "home-assistant-config-restic"
 _BACKUP_LABELS = {"app.kubernetes.io/name": _BACKUP}
 _STORAGE_CLASS = "piraeus-ssd-local"
+IMAGE = "ghcr.io/home-assistant/home-assistant:2026.9.2"
 _ONBOARDING = "home-assistant-onboarding"
 _ONBOARDING_JOB = "onboarding"
 _TOKEN_PROVISIONER = "token-provisioner"
@@ -216,7 +217,9 @@ def _deployment(scope: Construct) -> None:
         "deployment",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
-            replicas=1,
+            # Stopped while the recorder import Job copies its SQLite history into Postgres
+            # (cluster/cdk8s/home_assistant/db.py); the cutover change restores 1.
+            replicas=0,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
@@ -251,7 +254,7 @@ def _deployment(scope: Construct) -> None:
                     containers=[
                         k8s.Container(
                             name=_NAME,
-                            image="ghcr.io/home-assistant/home-assistant:2026.9.2",
+                            image=IMAGE,
                             env=[
                                 k8s.EnvVar(name="TZ", value="America/Los_Angeles"),
                                 # Home Assistant's HTTP settings are converged through the admin
@@ -303,7 +306,7 @@ def _deployment(scope: Construct) -> None:
                     volumes=[
                         k8s.Volume(
                             name="config",
-                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_CONFIG_CLAIM),
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=CONFIG_CLAIM),
                         ),
                         _config_map_volume("configuration", _CONFIGURATION_CONFIG_MAP.name),
                         _config_map_volume("installer-settings", installer_settings.name),
@@ -561,7 +564,7 @@ def _backup(scope: Construct) -> None:
         scope,
         "backup",
         metadata=ApiObjectMetadata(name=_BACKUP, namespace=_NAMESPACE),
-        source_pvc=_CONFIG_CLAIM,
+        source_pvc=CONFIG_CLAIM,
         trigger=ReplicationSourceSpecTrigger(schedule="17 */6 * * *"),
         mover=ReplicationSourceSpecRestic(
             repository="home-assistant-config-restic-tenant",
@@ -654,7 +657,7 @@ def chart(app: App) -> Chart:
     k8s.KubePersistentVolumeClaim(
         chart,
         "config",
-        metadata=k8s.ObjectMeta(name=_CONFIG_CLAIM, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=CONFIG_CLAIM, namespace=_NAMESPACE),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             storage_class_name=_STORAGE_CLASS,
