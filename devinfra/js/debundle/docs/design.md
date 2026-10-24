@@ -2541,6 +2541,15 @@ Over-restriction is the accepted failure mode for both gates: a
 namespace consumer that happens to read only non-swapped members is
 still rejected, because per-member usage is not analyzed.
 
+The residual strip analyzes its post-rewrite module with the shared
+structural, value-flow, purity, and `VendorPrune` local-effect facts.
+Value-flow call augmentation is required for its island reachability;
+`StatementFacts::effects()` supplies its observable binding and global-cell
+writes. The strip does not build an owner graph or consume
+`synchronous_calls`, so this analysis entry point omits only synchronous
+call-effect annotation. The split-brain and swap-privacy gates still use the
+same augmented calls, local effects, and cell-write summaries.
+
 ### Deliberate split-brain bypasses in the strip pass
 
 The strip pass bails on "split-brain" items — top-level items

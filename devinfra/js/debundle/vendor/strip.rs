@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use analysis::{AnalysisHints, EffectCell, LocalEffectPolicy, StatementFacts, analyze_chunk};
+use analysis::{EffectCell, StatementFacts, analyze_vendor_prune_chunk};
 use anyhow::{Result, bail};
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
 use js_ast::item_var_decl;
@@ -936,11 +936,7 @@ enum SideEffectKind {
 }
 
 fn analyze_prune_items(module: &Module, chunk_path: &str) -> Result<Vec<ItemAnalysis>> {
-    let hints = AnalysisHints {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisHints::default()
-    };
-    let facts = analyze_chunk(module, &hints, None, |_| None).facts;
+    let facts = analyze_vendor_prune_chunk(module).facts;
     if facts.len() != module.body.len() {
         bail!(
             "strip_swapped_vendor_exports vendor entry {chunk_path}: analysis produced {} top-level facts for {} module items",

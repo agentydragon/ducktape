@@ -565,6 +565,32 @@ fn partial_swap_keeps_side_effect_init() {
 }
 
 #[test]
+fn partial_swap_preserves_escaped_synchronous_callback_effect() {
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "export const e6 = () => true;\n\
+             const callbacks = [];\n\
+             function register(callback) { callbacks.push(callback); }\n\
+             register(() => { globalThis.__vendor_callback_probe = 'called'; });\n\
+             callbacks[0]();\n\
+             export const keepMe = () => globalThis.__vendor_callback_probe;\n",
+        caller_source: "import { e6, keepMe } from '../megachunk/entry.js';\n\
+             console.log(e6(), keepMe());\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+    assert_success(&fixture.result);
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => true;\n",
+    );
+    assert_node_output(&fixture.caller_emitted_path, "true called\n", "");
+}
+
+#[test]
 fn partial_swap_rejects_observable_side_effect_reading_swapped_binding() {
     // A `Hard`, globally-observable side effect (`globalThis.__zodBoolean =
     // e6`) that *reads* the swapped binding `e6`. The read makes the
