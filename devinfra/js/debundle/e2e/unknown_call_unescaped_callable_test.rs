@@ -156,10 +156,11 @@ function readLater() { return later; }
 }
 
 #[test]
-fn exported_hoisted_callable_remains_reachable_before_evaluation() {
+fn cyclic_importer_keeps_exported_hoisted_callable_reachable_before_evaluation() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
-            r#"new globalThis.Error();
+            r#"import "./peer.js";
+new globalThis.Error();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -172,7 +173,13 @@ export { dynamic, later, readLater };
                 logical_module("values/dynamic", &[Member::new("dynamic")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        ),
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            r#"import { readLater } from "./app.js";
+readLater();
+"#,
+        )]),
         &["values/dynamic", "values/later"],
         &[],
     );
