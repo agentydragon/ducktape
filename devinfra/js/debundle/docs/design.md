@@ -713,6 +713,24 @@ separate argument environments. The pass memoizes call contexts and caps its
 work; recursive or unknown targets, unsupported syntax, and mutable captures
 fall back conservatively.
 
+The summary also records reads at the callback's source prefix. For each
+callback-read binding, the graph builds a source-order timeline of callback
+readers and known writers, including lexical and `var` initialization, eager
+rebinds, synchronous-call rebinds, and trusted local mutations. Direct
+`Sequenced` edges preserve writer order and place each callback or ordinary
+eager reader against its nearest preceding and following writer. This keeps
+earlier values before their readers and every later writer after those reads
+without a read-by-writer cross product or unnecessary reader-to-reader order.
+For a read known to occur before initialization,
+the graph additionally keeps a direct `EagerUse(caller → declaration)` and,
+when that declaration is later in source order, a reverse
+`Sequenced(declaration → caller)` edge. Their constraining cycle keeps the
+callback and declaration together; the declaration then runs in original
+source order. This constraint uses the synchronous callsite's own summary,
+rather than the ordinary promoted-read role that the lenient projection may
+drop when the known callee lives in another module. Unknown writes still use
+the conservative S-chain fallback.
+
 The `Object.assign` fast path requires static data-property source keys that
 cannot be `__proto__`, and an unrebound local function target whose descriptor
 and prototype have not been changed or exposed to another callable. Static
