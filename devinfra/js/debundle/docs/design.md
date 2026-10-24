@@ -925,9 +925,12 @@ Property writes inside collection callbacks retain the conservative accessor
 fallback when receiver integrity is unproved.
 
 **Audited callback-factory exports.**
-`chunk_export_purity.<defining chunk>.callback_factory_exports` is a separate
-callback-flow contract. The analyzer uses it only when an importer calls a
-listed export with exactly one non-spread inline function or arrow callback;
+`chunk_export_purity.<defining chunk>.callback_factory_exports` and
+`callback_factory_members` are separate callback-flow contracts. The latter
+names static members on an imported namespace export; `pure_members` does not
+imply callback deferral. The analyzer uses these contracts only when an importer
+calls a listed target with exactly one non-spread inline function or arrow
+callback, or a retained result from another audited callback factory;
 construction and other call shapes keep the conservative fallback. The
 provider must neither invoke that callback nor synchronously invoke caller-,
 host-, or export-provided callbacks, and must not publish the callback outside
@@ -937,7 +940,11 @@ imported lexical cells or caller-owned objects. Provider-private effects are
 allowed. The consumer may later reach or invoke the captured callback through that result. Authors must audit
 all provider branches and helpers, callback-bearing property access, and
 prototype integrity; the returned graph must contain no proxies or accessors.
-Calls remain impure for S-chain ordering unless a separate purity contract
+Nested audited factories retain the original callback through each returned
+graph. Invoking or publishing a result before the captured lexical cells are
+initialized reactivates the ordinary callback-read analysis. Namespace member
+contracts require an unmodified imported namespace target; reassigned or
+dynamic targets fall back to opaque calls. Calls remain impure for S-chain ordering unless a separate purity contract
 applies. Without an author assertion, source inference recognizes only
 immutable exported function declarations with one simple identifier parameter.
 Their body must only return a zero-argument function or arrow that only calls

@@ -191,6 +191,22 @@ impl ValueExpr {
             Self::Origin(_) | Self::Undefined | Self::NonCallable | Self::Unknown => {}
         }
     }
+
+    fn exposes_binding(&self, id: &Id) -> bool {
+        match self {
+            Self::Binding(binding) => binding == id,
+            Self::ObjectLiteral(_, properties) => properties
+                .iter()
+                .any(|(_, value)| value.exposes_binding(id)),
+            Self::Alternatives(options) => options.iter().any(|value| value.exposes_binding(id)),
+            Self::Call(_, args) => args.iter().any(|value| value.exposes_binding(id)),
+            Self::Member(_, _)
+            | Self::Origin(_)
+            | Self::Undefined
+            | Self::NonCallable
+            | Self::Unknown => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -379,6 +395,7 @@ struct ExecutionIndex {
     opaque_top: BTreeSet<StatementOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     callback_factory_imports: BTreeSet<Id>,
+    callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
     callback_factory_functions: BTreeSet<u32>,
 }
 
@@ -412,6 +429,7 @@ impl Default for ExecutionIndex {
             opaque_top: BTreeSet::new(),
             no_sync_callback_members: BTreeMap::new(),
             callback_factory_imports: BTreeSet::new(),
+            callback_factory_members: BTreeMap::new(),
             callback_factory_functions: BTreeSet::new(),
         }
     }
@@ -449,10 +467,67 @@ impl ExecutionIndex {
                     if hints.callback_factories.contains(local.sym.as_ref()) {
                         index.callback_factory_imports.insert(local.to_id());
                     }
+                    if let Some(members) = hints.callback_factory_members.get(local.sym.as_ref()) {
+                        index
+                            .callback_factory_members
+                            .insert(local.to_id(), members.clone());
+                    }
                 }
             }
             item.as_module_item().visit_with(&mut index);
         }
+        // A namespace member is an audited target only while its binding is
+        // unchanged. Any local write could replace a member with an eager
+        // callback invoker before the apparent factory call.
+        index.callback_factory_members.retain(|id, members| {
+            !index
+                .top_property_writes
+                .iter()
+                .flatten()
+                .any(|(receiver, property)| {
+                    receiver.as_ref() == Some(id)
+                        && property
+                            .as_ref()
+                            .is_none_or(|property| members.contains(property))
+                })
+                && !index.callables.values().any(|callable| {
+                    callable
+                        .member_writes
+                        .iter()
+                        .any(|(receiver, property)| receiver == id && members.contains(property))
+                        || callable.dynamic_property_effect && callable.reads.contains(id)
+                        || callable.literal_captures.contains(id)
+                        || callable.escaped_bindings.contains(id)
+                        || callable
+                            .local_assignments
+                            .iter()
+                            .any(|(_, value)| value.exposes_binding(id))
+                        || callable
+                            .returns
+                            .iter()
+                            .any(|value| value.exposes_binding(id))
+                })
+                && !index
+                    .top_assignments
+                    .iter()
+                    .flatten()
+                    .any(|(_, value)| value.exposes_binding(id))
+                && !index
+                    .top_member_value_writes
+                    .iter()
+                    .flatten()
+                    .any(|(_, _, value)| value.exposes_binding(id))
+                && !index
+                    .top_calls
+                    .iter()
+                    .flatten()
+                    .any(|call| call.args.iter().any(|value| value.exposes_binding(id)))
+                && !index
+                    .top_exported_values
+                    .iter()
+                    .flatten()
+                    .any(|value| value.exposes_binding(id))
+        });
         index
     }
 
@@ -2151,6 +2226,16 @@ impl Executor<'_> {
             ValueExpr::Undefined => BTreeSet::from([AbstractValue::Undefined]),
             ValueExpr::NonCallable => BTreeSet::from([AbstractValue::NonCallable]),
             ValueExpr::Member(object, property) => {
+                if let ValueExpr::Binding(id) = object.as_ref()
+                    && property.as_ref().is_some_and(|property| {
+                        self.index
+                            .callback_factory_members
+                            .get(id)
+                            .is_some_and(|members| members.contains(property))
+                    })
+                {
+                    return BTreeSet::from([AbstractValue::CallbackFactory]);
+                }
                 if matches!(object.as_ref(), ValueExpr::Binding(id) if id.0.as_ref() == "Object" && !self.flow.is_declared(id))
                     && property.as_deref() == Some("assign")
                     && !self.shadowed.contains("Object")
@@ -2219,7 +2304,7 @@ impl Executor<'_> {
                 if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
                     return BTreeSet::from([AbstractValue::Unavailable]);
                 }
-                let fresh_callback = matches!(
+                let inline_callback = matches!(
                     args.as_slice(),
                     [ValueExpr::Origin(ValueOrigin::Function(_))]
                 );
@@ -2239,6 +2324,8 @@ impl Executor<'_> {
                 for values in &mut args {
                     values.remove(&AbstractValue::Unavailable);
                 }
+                let deferred_callback = matches!(args.as_slice(), [values] if !values.is_empty()
+                    && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
                 let mut returns = Values::new();
                 let no_targets = targets.is_empty();
                 let may_throw = args_may_throw
@@ -2253,7 +2340,7 @@ impl Executor<'_> {
                     });
                 for target in targets {
                     match target {
-                        AbstractValue::CallbackFactory if fresh_callback => {
+                        AbstractValue::CallbackFactory if inline_callback || deferred_callback => {
                             let callbacks = self.callback_values(&args[0]);
                             returns.insert(self.deferred_callbacks(callbacks));
                         }
@@ -2462,6 +2549,8 @@ impl Executor<'_> {
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
         }
+        let retained_callback = matches!(args.as_slice(), [values] if !values.is_empty()
+            && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
         if targets.is_empty() {
             outcome.complete = false;
             outcome.unknown_call = true;
@@ -2474,10 +2563,11 @@ impl Executor<'_> {
                 AbstractValue::CallbackFactory
                     if !call.is_new
                         && !call.has_spread
-                        && matches!(
-                            call.args.as_slice(),
-                            [ValueExpr::Origin(ValueOrigin::Function(_))]
-                        ) => {}
+                        && (retained_callback
+                            || matches!(
+                                call.args.as_slice(),
+                                [ValueExpr::Origin(ValueOrigin::Function(_))]
+                            )) => {}
                 AbstractValue::DeferredCallbacks(captured) => {
                     outcome.complete = false;
                     outcome.unknown_call = true;

@@ -202,12 +202,14 @@ reports include it on rejection, while accepted dry runs remain silent. The
 typed wire schema and blocker fields are described in
 <docs/wire_format.md#export-reentry-diagnostics>.
 
-## Audited callback-factory exports
+## Audited callback factories
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named
-exports whose calls are audited to defer a single callback argument. At an
-importer, the analyzer applies this contract only to a call with exactly one
-non-spread inline function or arrow callback; construction and other argument
+exports whose calls are audited to defer a single callback argument.
+`callback_factory_members` lists static members on an imported namespace with
+the same contract. At an importer, the analyzer applies either contract only
+to a call with exactly one non-spread inline function or arrow callback, or a
+retained result of another audited factory. Construction and other argument
 shapes remain conservative. The provider must not invoke that callback or any
 caller-, host-, or export-provided callback synchronously, or publish the
 callback outside the returned fresh ordinary callable/plain-object graph. The
