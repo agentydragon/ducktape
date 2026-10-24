@@ -1031,6 +1031,8 @@ struct CallbackFallbackSummary {
     expanded: BTreeSet<StatementOrdinal>,
     reads: BTreeSet<Id>,
     rebinds: BTreeSet<Id>,
+    read_additions: Vec<Id>,
+    rebind_additions: Vec<Id>,
 }
 
 type InvocationSignature = (
@@ -1112,19 +1114,49 @@ impl Executor<'_> {
         effect_owner: StatementOrdinal,
         outcome: &mut Outcome,
     ) {
-        for id in reads.iter().filter(|id| self.top_bindings.contains(*id)) {
-            outcome.effects.reads.insert((id.clone(), effect_owner));
-            if !self.initialized_bindings.contains(id) {
-                outcome.effects.uninitialized_reads.insert(id.clone());
-            }
-        }
-        outcome.effects.rebinds.extend(
-            rebinds
-                .iter()
+        // Large fallback summaries are already sorted. Building and merging
+        // their sets in bulk avoids a tree lookup for every repeated read.
+        // Small per-owner additions still use insertion into the larger set.
+        if reads.len() >= 64 && reads.len().saturating_mul(2) >= outcome.effects.reads.len() {
+            let mut uninitialized = reads
+                .difference(&self.initialized_bindings)
                 .filter(|id| self.top_bindings.contains(*id))
                 .cloned()
-                .map(|id| (id, effect_owner)),
-        );
+                .collect();
+            outcome
+                .effects
+                .uninitialized_reads
+                .append(&mut uninitialized);
+            let mut promoted = reads
+                .intersection(&self.top_bindings)
+                .cloned()
+                .map(|id| (id, effect_owner))
+                .collect();
+            outcome.effects.reads.append(&mut promoted);
+        } else {
+            for id in reads.iter().filter(|id| self.top_bindings.contains(*id)) {
+                outcome.effects.reads.insert((id.clone(), effect_owner));
+                if !self.initialized_bindings.contains(id) {
+                    outcome.effects.uninitialized_reads.insert(id.clone());
+                }
+            }
+        }
+        if rebinds.len() >= 64 && rebinds.len().saturating_mul(2) >= outcome.effects.rebinds.len() {
+            let mut promoted = rebinds
+                .intersection(&self.top_bindings)
+                .cloned()
+                .map(|id| (id, effect_owner))
+                .collect();
+            outcome.effects.rebinds.append(&mut promoted);
+        } else {
+            outcome.effects.rebinds.extend(
+                rebinds
+                    .iter()
+                    .filter(|id| self.top_bindings.contains(*id))
+                    .cloned()
+                    .map(|id| (id, effect_owner)),
+            );
+        }
     }
 
     fn roots_for_owner(&self, owner: StatementOrdinal) -> BTreeSet<StatementOrdinal> {
@@ -1673,34 +1705,53 @@ impl Executor<'_> {
         }
         for reached_owner in reached {
             let fact = &self.facts[reached_owner.0];
-            self.callback_fallback.reads.extend(
-                fact.reads
-                    .lazy
-                    .iter()
-                    .filter(|id| self.top_bindings.contains(*id))
-                    .cloned(),
-            );
-            self.callback_fallback.rebinds.extend(
-                fact.rebinds
-                    .lazy
-                    .iter()
-                    .filter(|id| self.top_bindings.contains(*id))
-                    .cloned(),
-            );
+            for id in fact
+                .reads
+                .lazy
+                .iter()
+                .filter(|id| self.top_bindings.contains(*id))
+            {
+                if self.callback_fallback.reads.insert(id.clone()) {
+                    self.callback_fallback.read_additions.push(id.clone());
+                }
+            }
+            for id in fact
+                .rebinds
+                .lazy
+                .iter()
+                .filter(|id| self.top_bindings.contains(*id))
+            {
+                if self.callback_fallback.rebinds.insert(id.clone()) {
+                    self.callback_fallback.rebind_additions.push(id.clone());
+                }
+            }
         }
         let callback_sizes = (
             self.callback_fallback.reads.len(),
             self.callback_fallback.rebinds.len(),
         );
-        if self.fallback_callback_sizes != Some(callback_sizes) {
+        if let Some((reads_before, rebinds_before)) = self.fallback_callback_sizes {
+            // New escaped roots can appear during a statement. Apply only
+            // their newly discovered IDs, rather than repeatedly reapplying
+            // the entire growing closure at the same initialization prefix.
+            let reads = self.callback_fallback.read_additions[reads_before..]
+                .iter()
+                .cloned()
+                .collect();
+            let rebinds = self.callback_fallback.rebind_additions[rebinds_before..]
+                .iter()
+                .cloned()
+                .collect();
+            self.promote_lazy_effects(&reads, &rebinds, effect_owner, &mut outcome);
+        } else {
             self.promote_lazy_effects(
                 &self.callback_fallback.reads,
                 &self.callback_fallback.rebinds,
                 effect_owner,
                 &mut outcome,
             );
-            self.fallback_callback_sizes = Some(callback_sizes);
         }
+        self.fallback_callback_sizes = Some(callback_sizes);
         // The directly truncated callable need not escape. Its static SCC
         // summary already contains the same transitive lazy effects, without
         // adding its private roots to the persistent callback cache.
@@ -1708,7 +1759,15 @@ impl Executor<'_> {
             && self.fallback_local_owners.insert(owner)
         {
             let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
-            self.promote_lazy_effects(reads, rebinds, effect_owner, &mut outcome);
+            let reads = reads
+                .difference(&self.callback_fallback.reads)
+                .cloned()
+                .collect();
+            let rebinds = rebinds
+                .difference(&self.callback_fallback.rebinds)
+                .cloned()
+                .collect();
+            self.promote_lazy_effects(&reads, &rebinds, effect_owner, &mut outcome);
         }
 
         // The truncated body may have passed one of these callback values to

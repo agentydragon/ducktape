@@ -195,3 +195,38 @@ fn cached_callback_summary_grows_at_a_later_tdz_read() {
         &[],
     );
 }
+
+#[test]
+fn cached_invocations_do_not_copy_fallback_effects_through_each_call() {
+    let mut source = String::from("globalThis.host = () => 7;\nconst state = 7;\n");
+    for index in 0..2048 {
+        writeln!(source, "function reader{index}() {{ return state; }}").unwrap();
+    }
+    // Keep the pool below the bulk-pool bound, including the host callback.
+    // Deferred return bodies give each fallback a large read summary without
+    // making those reads part of the precise invocation's eager effects.
+    for index in 0..63 {
+        write!(
+            source,
+            "function factory{index}(callback) {{ host(callback); return () => ["
+        )
+        .unwrap();
+        for reader in 0..2048 {
+            write!(source, "reader{reader},").unwrap();
+        }
+        source.push_str("]; }\n");
+    }
+    source.push_str("const payload = {");
+    for index in 0..63 {
+        write!(source, "factory{index},").unwrap();
+    }
+    source.push_str("};\nconst result = (");
+    for _ in 0..4096 {
+        source.push_str("host(payload),");
+    }
+    source.push_str("7);\nconsole.log(result);\nexport { result };\n");
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}
