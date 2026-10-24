@@ -15,7 +15,7 @@ from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import egress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
@@ -137,6 +137,10 @@ def _pod_template(
             sidecar_settings=scope.sidecar_settings,
             sidecar_resources=scope.sidecar_resources,
             image_pull_secret_name=scope.image_pull_secret_name,
+            # Keep command boxes in the environment's runner zone alongside LiteLLM.
+            node_selector=(
+                {node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else None
+            ),
         ),
     )
     # A PodTemplate rather than a Pod spec in the Action Service's ConfigMap: the image pins

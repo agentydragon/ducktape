@@ -57,7 +57,7 @@ def container_disk_template(
     image: str,
     cpu: VirtualMachineSpecTemplateSpecDomainCpu,
     resources: VirtualMachineSpecTemplateSpecDomainResources,
-    node_selector: Mapping[str, str],
+    node_selector: Mapping[str, str] | None = None,
     ports: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts],
     disks: Mapping[str, VirtualMachineSpecTemplateSpecVolumes],
     controller_attached_disks: Sequence[str] = (),
@@ -74,7 +74,7 @@ def container_disk_template(
     return VirtualMachineSpecTemplate(
         metadata=k8s.ObjectMeta(labels=dict(labels)),
         spec=VirtualMachineSpecTemplateSpec(
-            node_selector=node_selector,
+            node_selector=dict(node_selector) if node_selector is not None else None,
             affinity=affinity,
             domain=VirtualMachineSpecTemplateSpecDomain(
                 cpu=cpu,

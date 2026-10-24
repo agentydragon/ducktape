@@ -377,7 +377,6 @@ class RunnerTemplate(Construct):
                 service_account_name=NAME,
                 sidecar_settings=sidecar_settings,
                 # Let LINSTOR's storage-pool topology place the strict-local HDD claims.
-                node_selector={},
                 workload_volumes=[
                     k8s.Volume(
                         name=_RUNNER_VOLUME_NAME,

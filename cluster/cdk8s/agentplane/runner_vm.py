@@ -114,7 +114,6 @@ class RunnerVmTemplate(Construct):
             resources=VirtualMachineSpecTemplateSpecDomainResources(
                 requests={"memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("1536Mi")}
             ),
-            node_selector={},
             ports=[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(port=_UNUSED_GUEST_PORT)],
             disks={
                 "agentplane-config": VirtualMachineSpecTemplateSpecVolumes(

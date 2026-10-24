@@ -4704,7 +4704,6 @@ spec:
         networks:
           - name: default
             pod: {}
-        nodeSelector: {}
         volumes:
           - containerDisk:
               image: git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset

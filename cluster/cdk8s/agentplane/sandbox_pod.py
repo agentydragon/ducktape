@@ -26,7 +26,6 @@ from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane import egress, notifications, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
@@ -320,15 +319,10 @@ def pod_spec(
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
     `service_account_name` is the template's own; whoever creates a box from it may replace it.
     `sidecar_settings` is the sidecar's settings file (`add_sidecar_settings`), and `workload_volumes`
-    are Pod volumes the workload mounts beyond the egress path's own. If `node_selector` is set, it
-    replaces the environment's default runner-zone pin."""
+    are Pod volumes the workload mounts beyond the egress path's own. `node_selector` is the optional
+    placement restriction for this template."""
     settings = sidecar_settings.pod_wiring(
         volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
-    )
-    selected_nodes = (
-        dict(node_selector)
-        if node_selector is not None
-        else ({node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else {})
     )
     return k8s.PodSpec(
         # The workload first: with no default-container annotation, the first container is the one
@@ -350,10 +344,7 @@ def pod_spec(
         image_pull_secrets=(
             [k8s.LocalObjectReference(name=image_pull_secret_name)] if image_pull_secret_name is not None else None
         ),
-        # The default keeps command sandboxes with the rest of the namespace and LiteLLM in one zone.
-        # Storage-backed runner templates can pass an empty selector and let WFFC volume topology
-        # choose a suitable node.
-        node_selector=selected_nodes or None,
+        node_selector=dict(node_selector) if node_selector is not None else None,
         service_account_name=service_account_name,
         termination_grace_period_seconds=60,
         security_context=k8s.PodSecurityContext(
