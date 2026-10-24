@@ -383,6 +383,14 @@ rules:
       - list
       - watch
   - apiGroups:
+      - redis.redis.opstreelabs.in
+    resources:
+      - redisreplications
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - infra.contrib.fluxcd.io
     resources:
       - terraforms
