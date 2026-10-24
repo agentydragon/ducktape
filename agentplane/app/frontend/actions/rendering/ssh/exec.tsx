@@ -22,6 +22,7 @@ function ExecArguments({ args }: PreviewProps<SshExecArguments>): JSX.Element {
       notes={args.timeout_seconds == null ? [] : [`Timeout ${args.timeout_seconds} s`]}
       releaseWhenFar
       surface="framed"
+      stickyCollapse={false}
     />
   );
 }

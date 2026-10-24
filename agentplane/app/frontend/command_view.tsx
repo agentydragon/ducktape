@@ -53,9 +53,11 @@ export function CommandCallView(
     releaseWhenFar?: boolean;
     /** Use the shared operation frame in Action hosts. Thread tool cards retain their own frame. */
     surface?: CodeBlockSurface;
+    /** Keep the Command heading pinned as the collapse control while scrolling expanded content. */
+    stickyCollapse?: boolean;
   } & CommandInput
 ): JSX.Element {
-  const { description, target, notes, expansion, releaseWhenFar = false, surface } = props;
+  const { description, target, notes, expansion, releaseWhenFar = false, surface, stickyCollapse = true } = props;
   const command = "command" in props ? props.command : undefined;
   const argv = "argv" in props ? props.argv : undefined;
   const commandText = command ?? (argv === undefined ? "" : argvText(argv));
@@ -74,7 +76,15 @@ export function CommandCallView(
         maxHeightRem={COMMAND_MAX_HEIGHT_REM}
         lines={lineCount(commandText)}
         label={commandLabel}
+        header={
+          stickyCollapse ? undefined : (
+            <Text className="agentplane-command-heading" size="sm" c="dimmed">
+              {commandLabel}
+            </Text>
+          )
+        }
         expansion={expansion}
+        stickyCollapse={stickyCollapse}
       >
         <CodeBlock text={commandText} language="bash" surface="plain" releaseWhenFar={releaseWhenFar} />
       </ClampedBlock>

@@ -677,9 +677,20 @@ async def capture_long_ssh_preview_scrolled(view: VisualPage, app: AgentplaneFix
     preview = section.locator(".agentplane-actions-sidebar-preview").last
     await expect(preview.get_by_role("button", name="Show all 55 lines")).to_be_visible()
     await preview.get_by_role("button", name="Show all 55 lines").click()
+    await expect(preview.locator(".agentplane-command-heading")).to_be_attached()
+    await expect(preview.get_by_role("button", name="Show less Command")).to_be_visible()
     await preview.evaluate("element => { element.scrollTop = element.scrollHeight; }")
     await wait_for_stable(page)
     assert await preview.evaluate("element => element.scrollTop") > 0
+    # The short sidebar preview scrolls independently. Its command label must scroll with the
+    # text, leaving no pinned disclosure row for the final lines to peek above.
+    heading = preview.locator(".agentplane-command-heading")
+    preview_box = await preview.bounding_box()
+    heading_box = await heading.bounding_box()
+    assert preview_box is not None
+    assert heading_box is not None
+    assert heading_box["y"] + heading_box["height"] <= preview_box["y"] + 1
+    await expect(preview.get_by_role("button", name="Show less Command")).to_be_in_viewport()
     await view.capture(target=section)
 
 
