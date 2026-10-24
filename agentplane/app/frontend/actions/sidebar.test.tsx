@@ -204,12 +204,8 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
   await vi.waitFor(() => expect(container.textContent).toContain("previous run"));
   for (const { request: read, visible, expands } of reads) {
     const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${read.title}"]`);
-    if (expands) {
-      if (!disclosure) throw new Error(`missing disclosure for ${read.title}`);
-      await act(async () => disclosure.click());
-    } else {
-      expect(disclosure).toBeNull();
-    }
+    expect(disclosure !== null).toBe(expands);
+    if (disclosure) await act(async () => disclosure.click());
     for (const value of visible) expect(container.textContent).toContain(value);
     expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
     expect(container.textContent).not.toContain("Decisions require full review.");
