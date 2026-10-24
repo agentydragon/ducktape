@@ -37,7 +37,6 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:restic_backup",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/volsync:replicationsource",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
     ],
