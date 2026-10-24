@@ -1,9 +1,20 @@
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
 
 package(default_visibility = ["//visibility:private"])
+
+copy_to_bin(
+    name = "css_types",
+    srcs = ["css.d.ts"],
+    visibility = [
+        "//agentplane/app/frontend:__pkg__",
+        "//agentplane/app/frontend:__subpackages__",
+        "//airlock/frontend:__pkg__",
+    ],
+)
 
 ts_config(
     name = "tsconfig",

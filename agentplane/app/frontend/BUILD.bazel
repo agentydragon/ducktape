@@ -80,8 +80,8 @@ ts_library(
 ts_library(
     name = "custom_mark_icons",
     srcs = [
-        "css.d.ts",
         "custom_mark_icons.tsx",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -206,8 +206,8 @@ js_library(
 ts_library(
     name = "disclosure",
     srcs = [
-        "css.d.ts",
         "disclosure.tsx",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -251,8 +251,8 @@ js_library(
 ts_library(
     name = "operation_section",
     srcs = [
-        "css.d.ts",
         "operation_section.tsx",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -306,8 +306,8 @@ js_library(
 ts_library(
     name = "inline_name",
     srcs = [
-        "css.d.ts",
         "inline_name.tsx",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -357,8 +357,8 @@ agentplane_vitest_test(
 ts_library(
     name = "connections",
     srcs = [
-        "css.d.ts",
         "settings/connections.tsx",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -603,8 +603,8 @@ agentplane_vitest_test(
 ts_library(
     name = "mark_glyph",
     srcs = [
-        "css.d.ts",
         "mark_glyph.tsx",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -665,7 +665,7 @@ ts_library(
     srcs = [
         "sidebar.tsx",
         # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -745,8 +745,8 @@ ts_library(
 ts_library(
     name = "system",
     srcs = [
-        "css.d.ts",
         "system.tsx",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -858,7 +858,7 @@ ts_library(
     srcs = [
         "app.tsx",
         # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [

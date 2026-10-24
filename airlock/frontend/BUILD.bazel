@@ -77,8 +77,8 @@ ts_library(
 ts_library(
     name = "main",
     srcs = [
-        "css.d.ts",
         "main.tsx",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -106,8 +106,8 @@ ts_library(
     name = "visual_harness_lib",
     testonly = True,
     srcs = [
-        "css.d.ts",
         "harness/harness.tsx",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [

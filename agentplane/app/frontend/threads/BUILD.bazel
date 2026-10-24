@@ -163,7 +163,7 @@ ts_library(
     srcs = [
         "projected_session.tsx",
         # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -389,7 +389,7 @@ ts_library(
     name = "thread_evidence",
     srcs = [
         # `declare module "*.css"` for the stylesheet import below.
-        "css.d.ts",
+        "//util/frontend:css_types",
         "thread_evidence.tsx",
     ],
     tsconfig = TSCONFIG,
@@ -496,7 +496,7 @@ ts_library(
     name = "thread_title",
     srcs = [
         # `declare module "*.css"` for the stylesheet import below.
-        "css.d.ts",
+        "//util/frontend:css_types",
         "thread_title.tsx",
     ],
     tsconfig = TSCONFIG,
@@ -585,8 +585,8 @@ agentplane_vitest_test(
 ts_library(
     name = "thread_status_indicator",
     srcs = [
-        "css.d.ts",
         "thread_status_indicator.tsx",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -614,7 +614,7 @@ ts_library(
     srcs = [
         "thread_list.tsx",
         # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
+        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
