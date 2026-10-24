@@ -1,0 +1,76 @@
+/* On phones, keep the status table's columns together as one readable card per component. */
+.agentplane-system-status-mobile-label {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .agentplane-system-status-table {
+    display: block;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .agentplane-system-status-table thead {
+    display: none;
+  }
+
+  .agentplane-system-status-table tbody {
+    display: grid;
+    gap: var(--mantine-spacing-sm);
+  }
+
+  .agentplane-system-status-table tr {
+    display: grid;
+    grid-template-areas:
+      "component state"
+      "detail detail"
+      "checked checked";
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+    padding: var(--mantine-spacing-sm);
+    border: 1px solid var(--mantine-color-default-border);
+    border-radius: var(--mantine-radius-sm);
+    background: var(--mantine-color-body);
+  }
+
+  .agentplane-system-status-table td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .agentplane-system-status-component {
+    grid-area: component;
+    overflow-wrap: anywhere;
+    font-weight: 600;
+  }
+
+  .agentplane-system-status-state {
+    grid-area: state;
+    justify-self: end;
+    white-space: nowrap;
+  }
+
+  .agentplane-system-status-detail {
+    grid-area: detail;
+  }
+
+  .agentplane-system-status-detail[data-empty="true"] {
+    display: none;
+  }
+
+  .agentplane-system-status-checked {
+    grid-area: checked;
+    color: var(--mantine-color-dimmed);
+    font-size: var(--mantine-font-size-xs);
+    text-align: right;
+  }
+
+  .agentplane-system-status-mobile-label {
+    display: inline;
+    color: var(--mantine-color-dimmed);
+  }
+}

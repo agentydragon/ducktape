@@ -14,7 +14,7 @@ from agentplane.app.frontend.testing.visual_assertions import (
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
 from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture, Flag, Scene
 from util.testing.page_capture import wait_for_stable
-from util.testing.viewports import SMALL_MOBILE
+from util.testing.viewports import SMALL_MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
 
 pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
@@ -143,18 +143,23 @@ async def test_debug_tools_in_sidebar_footer(view: VisualPage, app: AgentplaneFi
 
 
 @DESKTOP_AND_MOBILE
-async def test_system_status_page(view: VisualPage, app: AgentplaneFixture) -> None:
-    """The sidebar's System entry opens the page: one row per component, a down one with its reason."""
+async def test_system_status_page(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    """The System page shows each component and its reason in desktop and phone layouts."""
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
     await _open_phone_navigation(page)
     await page.get_by_role("button", name="System status").click()
-    healthy = page.get_by_role("row", name=re.compile("Healthy component"))
-    down = page.get_by_role("row", name=re.compile("Down component"))
+    rows = page.locator(".agentplane-system-status-table tbody tr")
+    healthy = rows.filter(has_text=re.compile("Healthy component"))
+    down = rows.filter(has_text=re.compile("Down component"))
     await expect(healthy.get_by_text("ok", exact=True)).to_be_visible()
     await expect(down.get_by_text("down", exact=True)).to_be_visible()
     await expect(down).to_contain_text("UNAVAILABLE: connection refused")
+    if viewport.width <= 560:
+        await expect(down).to_have_css("display", "grid")
+        table = page.locator(".agentplane-system-status-table")
+        assert await table.evaluate("element => element.scrollWidth <= element.clientWidth")
     await wait_for_stable(page)
     await view.capture(target=page.locator("#app"))
 

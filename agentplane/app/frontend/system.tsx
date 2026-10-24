@@ -4,6 +4,7 @@ import { type JSX, useEffect, useState } from "react";
 import { api, displayableError, ok, type ComponentStatus } from "./client";
 import { TimeAgo } from "./time_ago";
 import { TopbarTitle } from "./topbar";
+import "./system.css";
 
 const REFRESH_SECONDS = 15;
 
@@ -54,7 +55,7 @@ export function SystemStatus(): JSX.Element {
           </Text>
         )
       ) : (
-        <Table>
+        <Table className="agentplane-system-status-table">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Component</Table.Th>
@@ -66,15 +67,28 @@ export function SystemStatus(): JSX.Element {
           <Table.Tbody>
             {components.map((component) => (
               <Table.Tr key={component.name}>
-                <Table.Td>{component.name}</Table.Td>
-                <Table.Td>
-                  {/* The badge truncates its label to the cell; a phone squeezes the cell below the word. */}
+                <Table.Td className="agentplane-system-status-component">{component.name}</Table.Td>
+                <Table.Td className="agentplane-system-status-state">
+                  <span className="agentplane-system-status-mobile-label">Status: </span>
+                  {/* Keep the status readable if its table cell gets narrower than the badge label. */}
                   <Badge color={component.state === "ok" ? "green" : "red"} miw="max-content">
                     {component.state}
                   </Badge>
                 </Table.Td>
-                <Table.Td style={{ overflowWrap: "anywhere" }}>{component.detail}</Table.Td>
-                <Table.Td>
+                <Table.Td
+                  className="agentplane-system-status-detail"
+                  data-empty={component.detail === null ? "true" : "false"}
+                  style={{ overflowWrap: "anywhere" }}
+                >
+                  {component.detail !== null && (
+                    <>
+                      <span className="agentplane-system-status-mobile-label">Detail: </span>
+                      {component.detail}
+                    </>
+                  )}
+                </Table.Td>
+                <Table.Td className="agentplane-system-status-checked">
+                  <span className="agentplane-system-status-mobile-label">Checked: </span>
                   <TimeAgo value={component.checked_at} />
                 </Table.Td>
               </Table.Tr>

@@ -1042,16 +1042,25 @@ ts_library(
 
 ts_library(
     name = "system",
-    srcs = ["system.tsx"],
+    srcs = [
+        "css.d.ts",
+        "system.tsx",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":system_css",
         ":time_ago",
         ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
+)
+
+js_library(
+    name = "system_css",
+    srcs = ["system.css"],
 )
 
 agentplane_vitest_test(
