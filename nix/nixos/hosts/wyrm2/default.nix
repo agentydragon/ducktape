@@ -59,6 +59,17 @@ in
 
   ducktape.homeWifi.enable = true;
 
+  # Idle Bazel servers on this shared box stack up: Bazel's 3h default kept 10 of them,
+  # ~22 GiB RSS, on 2026-10-24. Measured 2026-10-24 on devel 7976adcd, cold server and
+  # fresh output base, warm shared repo caches: `bazel build --nobuild //...` took
+  # 187 s / 109 s / 85 s wall and peaked at 9.0-12.2 GiB server RSS. 15 min idle keeps
+  # an active session's server while costing at most ~3 min to rebuild a dropped one.
+  # Startup lines only reach direct bazel/bazelisk; local `bb` drops them
+  # (devinfra/docs/bb_bazelrc_startup.md). A user's ~/.bazelrc overrides this.
+  ducktape.bazel.extraSystemBazelrc = ''
+    startup --max_idle_secs=900
+  '';
+
   # Pull substituter for cache.allegedly.works/{main,gaffer}. Reader JWT is
   # auto-rotated by attic-rotate-wyrm2-reader CronJob; the SOPS file is
   # decryptable by the wyrm2 host key + agentydragon user key.
