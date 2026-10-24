@@ -28,13 +28,11 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
   choices and broader authorization-system evaluation, separate from multiagent implementation
-- [Cross-agent communication and authorization](multiagent_communication.md) — agreed SA attribution,
-  Sandbox scopes, Sandbox tags, live bundles and Session inboxes; shared inbox/messaging
-  service with subscriptions and batched notices; tentative service-enforced PolicySet rules,
-  remaining schema/API decisions and deferred agent lifecycle delegation
-- [Generated HTTP facades](grpc_http_facade.md) — extension of the approved gRPC-Gateway direction
-  to the browser, through the app first, with direct browser access as a later option; the
-  per-service tracks are in the task DAG
+- [Cross-agent communication and authorization](multiagent_communication.md) — agreed requirements
+  (SA attribution, Sandbox scopes and tags, live bundles) and what is open after messaging shipped:
+  the transcript-read rule and archive split, discovery, Session creation and Sandbox launch
+- [Generated HTTP facades](grpc_http_facade.md) — what is left: History reads, the app-contract
+  question, browser error codes, attribution, and direct browser access as a later option
 - [MCP edge extraction](mcp_edge_extraction.md) — retirement of Actions' integrated Connection/OAuth
   ownership; staging's edge handoff is merged
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving

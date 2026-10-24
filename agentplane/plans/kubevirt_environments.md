@@ -19,8 +19,9 @@ arbitrary user-supplied VM specifications are out of scope.
   evicting it with a migration. Reject both for these VMs and prevent unauthorized migration
   creation.
 - **Admission outage.** The launcher policy's failure scope is designed to block only VM launches.
-  Stop Kyverno on `agentplane-testing` and show that unrelated Pods still schedule and running VMs
-  keep running.
+  In the k3s VM stack, which runs Kyverno's admission controller and the launcher relay policy
+  ([fixture](../x/k3s_env/README.md)), scale the admission controller to zero and show that a VM launch
+  fails while unrelated Pods still schedule and running VMs keep running.
 - **Relay lifecycle.** The relay is an ordinary container in the launcher. Check its restart and
   termination against KubeVirt's launcher monitoring before choosing between ordinary and native
   sidecar lifecycle. Never patch a live launcher.

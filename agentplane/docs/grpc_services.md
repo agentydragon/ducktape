@@ -151,8 +151,22 @@ gRPC-Gateway, so no handler translates between the two.
   gRPC, on an optional `http_listen_address` setting, and forwards each request over loopback to the gRPC
   listener. The servicer's own authentication runs on every call: the gateway sends `Authorization` on
   as `authorization` metadata, and a gRPC status becomes its HTTP status with a `{"code", "message"}` body.
+- **Exposure:** only an RPC with a rule is on HTTP, so the full-duplex `RunnerControl.Connect` and
+  `RunnerIngress.Push` and the tunneled `Runner` service stay native gRPC. Operator and workload
+  callers get separate proto services (`OperatorActionService` beside `ActionService`,
+  `NotificationsOperator` beside `Notifications`), each authenticating its own audience. A Python
+  service gets its facade with its Go port, from the same proto.
 - **Wire form:** stock gRPC-Gateway. Fields are camelCase, enums their names, unpopulated fields
   present. A server stream is newline-delimited JSON, one `{"result": <message>}` per line.
+- **Browser:** the browser reaches a facade only through the app's
+  [upstream proxy](../app/upstream_proxy.py), under `/upstream/<service>/v1/`, which forwards with the
+  credential that service expects. It decodes ProtoJSON into protobuf-es messages from
+  `ts_proto_library`, which for an annotated proto needs the root
+  [`//google/api`](../../google/api/BUILD.bazel) package, and follows a stream with
+  [`followWatch`](../app/frontend/watch_stream.ts).
+- **Not RPCs, so hand-written HTTP:** OIDC login, callback and logout; `GET /sw.js`; the Electric shape
+  proxy; the Sandbox console's WebSocket bridge; the MCP endpoint, OAuth metadata and MCP linkage
+  callback; the signed GitHub webhook; LLM ingress; Prometheus metrics.
 - **Reference:** the service's HTTP reference is the OpenAPI document that `proto_openapi`
   ([`//devinfra/go:proto_openapi.bzl`](../../devinfra/go/proto_openapi.bzl)) generates from the proto,
   so a route and a field are described once, in the proto comment beside them. The service embeds

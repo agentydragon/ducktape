@@ -1,10 +1,13 @@
 # Cross-agent communication and authorization: design space
 
-Status: **service-enforced Session-access PolicySet rules tentatively selected for v1**. Exact rule and
-API schemas remain open. This records design directions, not implemented behavior;
-the operator may revisit the choice if implementation does not work well.
-Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations).
-The decisions still open are summarized under [cases to resolve before implementation](#cases-to-resolve-before-implementation).
+Status: **messaging shipped (2026-10-21); transcript reads, discovery and launch open.** The send
+rule (`session_inbox_access`), inbox tags, peer messages, receipts and notices are the Notification
+Service's contract ([API](../notification_service/docs/api.md#messages)). This plan keeps the agreed
+requirements and the open design: the read rule and the
+[archive split](#option-authorize-the-archive-apart-from-live-objects), discovery, Session creation
+and Sandbox launch. Gates are in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations);
+the decisions still open are summarized under [cases to resolve](#cases-to-resolve-before-implementation).
+The operator may revisit the service-enforced rule direction if implementation does not work well.
 
 ## Requirements and preferences
 
@@ -82,7 +85,7 @@ independent overlapping grants remain.
 **`allSandboxes` target agreed with the operator, 2026-10-17:** a rule may target every Sandbox in the
 namespace of the PolicySet holding it, never the whole cluster; the Sandbox Controller likewise
 reconciles a single namespace. A Sandbox in another namespace is out of v1's reach, since direct
-targets are same-namespace too ([schema](#schema-for-the-session-inbox-access-rule)). The target
+targets are same-namespace too (settled with the operator, 2026-10-18). The target
 covers later Sandboxes without tags, and the backends match it on the recorded Sandbox namespace,
 so it keeps working after a Sandbox is deleted. It grants only the operations its rule lists:
 read-any does not imply send-any.
@@ -125,26 +128,12 @@ change to the shared definition, followed by centrally removing that addition. T
 from expiring an SA's whole binding. Automatic scheduling or rule-level expiry is not selected or
 claimed to exist by this requirement; the chosen design must explain how the temporary change ends.
 
-## Existing pieces
-
-Source inventory checked on 2026-10-16 against `f11947bf7a`; this is not a live deployment audit.
-
-| Concern           | Existing implementation                                                                                                                                                              | Gap for general cross-agent use                                                                                                              |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workload identity | [Python principal](../workload_auth/principal.py) and [Go resolver](../workload_auth/go/auth/auth.go) verify audience-scoped, Pod-bound SA tokens and retain SA/Pod UIDs.            | Sufficient for v1 caller attribution; authenticated per-Session sender identity is not required.                                             |
-| Standing grants   | [Policy sets](../docs/adr_policy_sets.md) bind typed Kubernetes, egress and Action rules to SAs.                                                                                     | No general scoped session-sharing policy; human authentication and Action operator authority remain separate.                                |
-| Command delivery  | [Dispatcher](../runner_gateway/dispatcher/README.md) supports input, model/effort changes, interrupts, stop and Open, with durable queues for the queued operations.                 | Its service caller allowlist is not destination- and operation-scoped agent authorization.                                                   |
-| Runner access     | [Proxy](../runner_gateway/gateway/proxy.go) checks callers and Sandbox UID/owner identity; Quiesce is controller-only.                                                               | Identity fencing does not grant permission, and general authorization must cover direct paths around command admission.                      |
-| Receiving         | [Notifications](../notification_service/docs/api.md) stores Actions/GitHub events in session inboxes, sends notices through Dispatcher, and exposes read/ack operations.             | Agent correspondence is not a source. Inboxes are SA/Sandbox/Session-scoped; optional standing addresses or other lifetimes need a contract. |
-| History           | [History reads](../history_service/api/service.go) serve retained conversations and evidence to configured service readers.                                                          | Scoped agent discovery/read/follow permissions are not implemented.                                                                          |
-| Provisioning      | [Sandbox inventory](../sandboxes/inventory.py) submits CRs; the [controller](../sandbox_controller/identity.go) creates a dedicated SA and binds the Sandbox's selected policy sets. | Constrained agent launch, delegation and session-create authority remain design work.                                                        |
+## Current identity and policy wiring
 
 The [scoped-read plan](scoped_session_reads.md) applies the agreed Sandbox minimum and tags to
 retained history and the tentative Session-access rule family; its exact schema and
 administration remain open. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
 already calls for comparing reusable authorization systems rather than inventing a universal broker.
-
-### Current identity and policy wiring
 
 - External Action Service OAuth Connections act as an existing labeled SA selected by the operator
   at enrollment ([Connection authority](../mcp_edge/connections/store.go)). This is an explicit
@@ -259,14 +248,9 @@ rules to existing `PolicySet`s and assign them through existing SA `PolicyBindin
 the typed-rule pattern already used by egress and Actions. Kubernetes RBAC controls administration
 of the policy resources and Sandbox tags; the resource-owning services enforce Session operations.
 
-Illustrative rule syntax, not a selected CRD schema or an implemented rule type:
-
-```yaml
-type: session_inbox_access
-operations: [send_message]
-targets:
-  inboxTags: [developers]
-```
+The send rule is implemented: `session_inbox_access` in `policy/api/v1alpha1`, read through the
+shared `policy/reader` package and enforced by Notifications
+([send contract](../notification_service/docs/api.md#messages)).
 
 **Send and transcript reads are separate rule types (operator, 2026-10-18 and 2026-10-21 UTC):**
 they are separate capabilities, and transcript reads "should probably go through a different kind of
@@ -289,10 +273,9 @@ select permitted Sandboxes; a tag is not an inbox recipient. Session addressing 
 canonical state stay outside Kubernetes; this direction requires no Session CRs or projection of
 these rules into native Roles.
 
-Before implementation, finalize rule schemas, concrete administrative RBAC, freshness
-settings, filtered enumeration and retained-history behavior. The agreed propagation contract below
-applies; accepted inbox correspondence survives later loss of send permission. Revisit
-the representation if implementation exposes a poor fit or disproportionate maintenance cost.
+Before the read rule, finalize its schema, concrete administrative RBAC, filtered enumeration and
+retained-history behavior; the propagation contract below applies. Revisit the representation if
+implementation exposes a poor fit or disproportionate maintenance cost.
 
 ### Policy propagation and freshness
 
@@ -305,22 +288,10 @@ Refuse protected operations before initial sync or when required policy data exc
 freshness limit. A watch outage must not permit indefinite use of old grants. Re-evaluate
 authorization and freshness throughout transcript streams, and stop further Event emission when
 the replica observes loss of the required permission or its policy view becomes too stale.
-Independent overlapping grants still apply. The enforcing backends are Go services, so freshness
-follows the egress informer: each watched kind is held open for a configured watch period, a watch the
-server ends on schedule counts as a completed cycle, and a view is refused after three missed periods.
-The Notification service's watch period defaults to 60 seconds; no global replica-acknowledgement
+Independent overlapping grants still apply. Notifications implements this for sends
+([`policy_watch_period_s`](../notification_service/README.md#running-and-deployment)), following the
+egress informer; History's read rule reuses `policy/reader`. No global replica-acknowledgement
 barrier is required for v1.
-
-### Schema for the Session inbox access rule
-
-**Implemented** after review with the operator, 2026-10-21 UTC: the `session_inbox_access` type of the `Rule`
-in `policy/api/v1alpha1`, whose one operation is `send_message`, with direct (`sandboxes`, each with an
-optional `uid`), `inboxTags` and `allSandboxes` targets in the PolicySet's namespace. The Notification service enforces
-it, reading through the shared `policy/reader` package; the
-[send contract](../notification_service/docs/api.md#messages) states matching, freshness and revocation.
-History reads take their own rule type and reuse `policy/reader`. Direct targets are same-namespace, with no `namespace`
-field: **settled with the operator, 2026-10-18 UTC**, who needs no way to name another namespace. A field
-can be added without changing existing rules when a service serves a second namespace.
 
 ### Alternatives if the tentative direction needs revision
 
@@ -453,144 +424,29 @@ own for every history bound to a writer, which is what the split would build on.
 
 ## Message storage, delivery and agent tools
 
-**V1 direction agreed:** reuse the Notification Service's durable inboxes for agent correspondence.
-V1 recipients are Sandbox-hosted Sessions, with send permission checked against the Sandbox.
-There is no shared Sandbox inbox in v1. Inbox ownership remains SA-level; per-Session routing does
-not provide isolation between co-resident Sessions.
+**Shipped (2026-10-21).** Agent correspondence uses the Notification Service's durable Session
+inboxes; its [API](../notification_service/docs/api.md) is the contract for sends, authorization,
+sender attribution, receipts, notices, wake-on-send, revocation, retention, quotas and size bounds.
+Renaming and splitting the service is
+[`NOTIFICATION_SERVICE_SPLIT`](task_dag.md#notification_service_split--split-move-or-rename-the-notification-services-responsibilities).
+Still open:
 
-### Vocabulary and service ownership
-
-| Term         | Meaning                                                                                    |
-| ------------ | ------------------------------------------------------------------------------------------ |
-| Message      | Durable correspondence explicitly sent to a Session's inbox.                               |
-| Inbox        | The Session-addressed store of entries, with cursors and explicit handled acknowledgement. |
-| Subscription | A standing request to follow a source/filter and put matching events into an inbox.        |
-| Notice       | A platform-generated, batchable prompt telling a Session to inspect its inbox.             |
-
-Use `subscription` for source-following; do not use `notification` interchangeably with `notice`
-or peer correspondence. These are semantic distinctions, not a requirement for separate databases
-or queues.
-
-**V1 direction agreed:** generalize the existing Notification Service around common inbox and
-messaging responsibilities, with subscriptions/source integrations as optional producers. Keep
-one deployment initially and leave Dispatcher separate. Peer messaging must work with Actions and
-GitHub integrations disabled. A service rename should reflect its inbox/messaging responsibility;
-the service keeps the Notification service name for now, and a rename is a separate mechanical
-change. References to Notification Service elsewhere in this plan describe the existing component
-being generalized.
-
-### Peer message path
-
-**Implemented:** the authorized send, its addressing (agreed with the operator, 2026-10-17), the
-History check before a message opens an inbox, recipient states (reviewed with the operator,
-2026-10-21 UTC) and sender provenance ([send contract](../notification_service/docs/api.md#messages)).
-The operator accepts the History check for v1 and may revisit addressing with the planned
-Notification Service refactors. A send to a suspended or offline Sandbox is to be noticed per
-`spec.wakeOnSend`.
-
-The inbox/messaging service prepares a platform-generated inbox notice; Dispatcher delivers that
-notice through the existing input path. The peer's raw text stays in the inbox and is not promoted
-into a human user-role instruction. The recipient retrieves entries and explicitly acknowledges
-handled work. Validate actual agent receive/read/ack behavior before claiming the workflow is
-effective; this is an initial approach to try, not measured agent evidence.
-
-Protocol facades can be evaluated later without changing the reviewed SA and operation/target
-policy. Protocol roles or room membership cannot silently grant history reads, controls or reverse
-send authority. Do not introduce another command queue duplicating Dispatcher admission/retries.
-
-### Inbox read and acknowledgement authority
-
-**V1 direction agreed:** retain owner-SA-scoped inbox read/ack checks, with the receiving Sandbox's
-SA as the owner of its Session inboxes. Sessions in that Sandbox share this authority. V1 adds no
-delegable inbox-read or inbox-acknowledgement operations. A grant to send or read transcripts does
-not confer authority to read or acknowledge another Sandbox's inboxes.
-
-Delegated inbox reading and acknowledgement are
-[potential follow-up work](task_freezer.md#delegated_inbox_access--delegated-inbox-reading-and-acknowledgement),
-not v1 prerequisites.
-
-### Sender-facing receipts
-
-**Implemented** as agreed with the operator, 2026-10-17 ([send contract](../notification_service/docs/api.md#messages)):
-the sender reads independent `covered`, `acknowledged` and `inbox_retired` facts derived from the
-inbox cursors. There is no read receipt, because reads are not recorded, and no notice delivery
-stage, because Notifications keeps only the latest notice per inbox. Removing other old inboxes is
-deferred ([`INBOX_VACUUM`](task_freezer.md#inbox_vacuum--remove-old-live-inboxes)); a removed record
-answers not found, which never means "not delivered".
-
-### Batching and wake behavior
-
-**V1 direction agreed:** retain the current ownership and per-Sandbox wake-on-message policy.
-Notifications decides when to prepare a notice and batches inbox content from potentially different
-sources. Dispatcher receives that notice as a message and owns any guarded wake and delivery.
-For messages admitted through the existing trusted caller path, a suspended Sandbox with
-`spec.wakeOnSend` enabled may wake on any message, including an inbox notice; with it disabled,
-queued notices wait for an explicit resume. Running recipients need no wake regardless of that
-flag. Retain Dispatcher caller admission, its wake allowlist and lifecycle safeguards.
-V1 adds no per-peer or per-source wake permission or filter.
-
-With this policy, notice timing and batching determine when accumulated inbox content can trigger
-a wake. Keep that decision in Notifications for v1. Event/source-specific wake switches and moving
-Notification Service responsibilities into Dispatcher are separate future design questions in the
-[freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership),
-not prerequisites or assumed changes to v1.
-
-**V1 lifecycle scope agreed:** keep explicit suspend/resume and wake-setting edits as operator
-controls; defer agent lifecycle delegation. Existing controller/Dispatcher automation continues
-under its trusted service authority. Messaging and history-read grants imply no lifecycle edits.
-Explain suspension and wake behavior to agents, and configure scoped read access to destination
-Sandbox CRs where useful so communicating agents can inspect status and `spec.wakeOnSend`.
-That read access is a separate permission, not implicit in send authority.
-
-The intended longer-term experience is wake-on-message by default, with suspension/resume usually
-transparent to users and agents. This direction does not change current defaults or require granular
-lifecycle management in v1. Revisit delegated controls only on a concrete need; the
-[lifecycle authorization review](task_freezer.md#sandbox_lifecycle_authorization_design--delegated-lifecycle-controls)
-is deferred.
-
-An envelope could retain an idempotent message ID, authenticated sender, resolved destination,
-correlation/reply reference and content. V1 authenticates the caller at Sandbox/SA level; any
-originating-Session label is metadata. The recipient sees the verified sender SA, which names the
-Sandbox for a Sandbox-hosted sender and is the Connection's SA for an OAuth caller, and an unverified
-`from_session` label; no other account reads the message. Do not trust sender identity in the body or
-launder a sender into a Notification/Messaging service's broader authority. Forwarded actor/delegation proof needs its own
-audience, scope, lifetime and revocation contract.
-
-Distinguish durable acceptance, runner admission, harness confirmation, explicit handling
-acknowledgement and task success. The current Dispatcher has no writer for `HARNESS_CONFIRMED`.
-Reading an inbox is not acknowledgement, and an acknowledgement does not prove task success.
-Offline delivery, ordering, duplicates, batching and retention follow the existing inbox: the notice
-is a durable Dispatcher command, entries take contiguous cursors in acceptance order, a sender's
-idempotency key (unique per sender and destination inbox) deduplicates retries, and payloads expire
-after 30 days. Peer messages do not count toward the inbox's 10000-cursor lifetime limit, because
-reaching it forces the inbox to be retired, which cancels its subscriptions. Instead each sender may
-have at most 128 unacknowledged messages in an inbox, and a send beyond that is refused with HTTP 429,
-never dropped. **The 30-day expiry, the 128-message cap and the idempotency key were accepted by the
-operator, 2026-10-21 UTC.**
-Sending and explicit lifecycle controls remain different operations; v1 notice-triggered wake
-follows the Sandbox policy above, without a separate peer-wake grant.
-
-**V1 send revocation agreed:** check send authority at durable acceptance using the current fresh
-policy view. Observed revocation blocks new sends but does not retract accepted correspondence,
-including messages not yet noticed or read.
-Accepted messages remain available under the recipient's inbox permissions and the applicable
-retention and Sandbox-deletion rules; delivery does not recheck the sender's send authority.
-Controls may need different execution-time checks from correspondence. Bytes already read cannot
-be revoked. A retry must not silently retarget a replacement Sandbox or new role holder.
-
-**V1 message-size bounds agreed:** the inbox/messaging service owns an operator-configurable
-maximum message-body size, measured in UTF-8 bytes. Reject oversized messages before durable
-acceptance with an explicit error; do not truncate. Enforce an absolute ceiling in the database
-as well, and reject service configurations exceeding that ceiling. The default is 32 KiB and the
-absolute ceiling 256 KiB.
-
-Illustrative tool operations are finding recipients, sending, checking delivery, reading/acking an
-inbox and opening a Session. Control operations stay explicit, with target and parameter constraints
-such as the expected turn ID. V1 exposes the send, receipt and inbox operations as HTTP JSON in the
-Notification service, like its existing agent API; A2A, MCP and other facades can expose the selected
-contract later, and their names and schemas are not settled here. File exchange can later use authorized retained
-object references without requiring shared filesystems; storage, retention and read rights remain
-separate questions.
+- Validate actual agent receive, read and acknowledge behavior before calling the workflow effective.
+- Inbox authority is the owning Sandbox's ServiceAccount, which no send or read grant confers.
+  Delegated inbox reading and acknowledgement are
+  [deferred](task_freezer.md#delegated_inbox_access--delegated-inbox-reading-and-acknowledgement).
+- The longer-term intent is wake-on-message by default, with suspension and resume transparent to
+  users and agents. V1 keeps per-Sandbox `spec.wakeOnSend`, Dispatcher's wake allowlist and operator
+  lifecycle controls; messaging and history grants imply no lifecycle edits
+  ([lifecycle authorization](task_freezer.md#sandbox_lifecycle_authorization_design--delegated-lifecycle-controls)).
+  Per-source wake switches and moving notice timing into Dispatcher are
+  [deferred](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership).
+- A2A, MCP and other facades can expose the same contract later without changing the SA and
+  operation/target policy. Protocol roles or room membership never grant history reads, controls or
+  reverse sends, and no facade adds a command queue beside Dispatcher's.
+- Forwarded actor or delegation proof needs its own audience, scope, lifetime and revocation contract.
+  Controls may need execution-time checks that correspondence does not. File exchange can later use
+  authorized retained object references; storage, retention and read rights stay separate questions.
 
 ## Discovery, session creation and Sandbox launch
 

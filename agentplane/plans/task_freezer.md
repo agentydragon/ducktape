@@ -136,7 +136,7 @@ or silently discard accepted messages.
 
 Operator, 2026-10-17: not v1; revisit when inbox growth or retention cost is material. Retention
 already purges expired payloads and retired inboxes. A vacuum of other inboxes keeps the sender
-[receipt](multiagent_communication.md#sender-facing-receipts) honest: a removed record answers not
+[receipt](../notification_service/docs/api.md#messages) honest: a removed record answers not
 found, meaning no record and never "not delivered". The design states what a sender's idempotent
 retry does once its message record is gone.
 

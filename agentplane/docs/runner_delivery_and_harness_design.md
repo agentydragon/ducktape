@@ -254,26 +254,32 @@ before authorizing any queue or database removal.
 
 ## API transports and agent workflows
 
-**Approved direction; implementation design remains open.** Use gRPC for internal service APIs, a
-gRPC-Gateway-generated HTTP/JSON facade over the protobuf contracts, and an ergonomic CLI for agent
-workflows. Adopt these interfaces incrementally, one service and interface at a time; do not plan a
-repo-wide cutover as one change. Reuse the repository's protobuf and code-generation tooling rather
-than maintaining a second, hand-authored HTTP API alongside the gRPC service.
-
-The operator selected [gRPC-Gateway](https://github.com/grpc-ecosystem/grpc-gateway) as the facade.
-Use its newline-delimited JSON server streams for watches and waits, including terminal stream-error
-envelopes; this is not SSE framing. Keep full-duplex connections on native gRPC. Resume cursors,
-reconnection and retention remain application contracts, not guarantees supplied by the facade.
-
-The exact generation path, first service, API-specific contract and rollout sequence remain open. Resolve those through a bounded integration spike and reviewed service plans. Keep authentication and authorization, stable errors,
-streaming and reconnect, wait deadlines and cancellation behavior consistent across the generated
+**Approved (operator, 2026-10-15); adopted one service and interface at a time.** Use gRPC for
+internal service APIs, a gRPC-Gateway-generated HTTP/JSON facade over the protobuf contracts, and an
+ergonomic CLI for agent workflows; no hand-authored HTTP API beside a gRPC service. Watches and waits
+are the facade's newline-delimited JSON server streams, including terminal stream-error envelopes,
+not SSE. Full-duplex connections stay native gRPC. Resume cursors, reconnection and retention remain
+application contracts, not guarantees supplied by the facade. The facade contract is in
+[gRPC services](grpc_services.md#httpjson-facades). Keep authentication and authorization, stable
+errors, streaming and reconnect, wait deadlines and cancellation behavior consistent across the
 facade and CLI; a transport conversion must not weaken a service's existing permission checks.
+
+Rejected for the facade:
+
+- **Connect:** RPC-shaped URLs and binary-enveloped streams that `curl` and `jq` cannot read, and a
+  second agent-facing path beside gRPC-Gateway. The parked PRs (#7079, #7083) saw an open stream
+  yield no frames ([transport experiments](thread_view_sync.md#transport-experiments)).
+- **gRPC-Web through Envoy:** a translation hop in production and in browser acceptance (same
+  experiments).
+- **Envoy `grpc_json_transcoder`:** a service's HTTP API would live in cluster edge config; the facade
+  travels with the service.
+- **SSE through a custom gateway marshaler:** a community workaround, not an upstream mode, which
+  gives agents and browsers different stream formats.
 
 Agent tooling should support both concise commands and composable JSON for listing Action groups and
 Actions, inspecting an Action schema, reading the authenticated caller's own Action status/results,
 waiting for completion, and subscribing to or cancelling GitHub PR notifications. The
-[`agentplane` CLI](agent_cli.md) uses each service's generated client and HTTP facade as appropriate. No runtime
-API implementation is authorized by this direction alone.
+[`agentplane` CLI](agent_cli.md) uses each service's generated client and HTTP facade as appropriate.
 
 ## Harness process, store and Session identity
 

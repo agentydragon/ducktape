@@ -1758,9 +1758,7 @@ UID-to-connection locator.
 One track per service. Tracks are independent except where an edge is drawn, and graph position
 claims no priority. Each migration keeps its own caller inventory, authorization and
 behavior-preservation review, tests, rollout and rollback plan; none is a repo-wide migration. The
-shared piece is the facade machinery (gateway toolchain, serve helper, the app's generic upstream
-proxy, the browser's stream client), built with the Dispatcher's. A Python service gets its facade with
-its Go port, from the same proto. Design, alternatives and exit evidence:
+contract is [HTTP/JSON facades](../docs/grpc_services.md#httpjson-facades); what is still open is in
 [generated HTTP facades](grpc_http_facade.md). The order of the ports belongs to the Go rewrite.
 
 ```mermaid
