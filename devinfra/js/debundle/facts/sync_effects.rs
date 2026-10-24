@@ -306,7 +306,7 @@ impl Default for Callable {
     }
 }
 
-fn sole_return_expression(body: &BlockStmt) -> Option<&Expr> {
+fn sole_return_expression(body: &FunctionBody) -> Option<&Expr> {
     match body.stmts.as_slice() {
         [Stmt::Return(ret)] => ret.arg.as_deref(),
         _ => None,
@@ -318,7 +318,7 @@ fn is_callback_forwarder(expr: &Expr, callback: &Id) -> bool {
         Expr::Arrow(arrow) if !arrow.is_async && arrow.params.is_empty() => {
             match arrow.body.as_ref() {
                 ArrowFunctionBody::Expr(expr) => Some(expr.as_ref()),
-                ArrowFunctionBody::BlockStmt(body) => sole_return_expression(body),
+                ArrowFunctionBody::FunctionBody(body) => sole_return_expression(body),
             }
         }
         Expr::Fn(function)
