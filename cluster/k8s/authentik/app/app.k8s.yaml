@@ -257,13 +257,6 @@ spec:
         - ports:
             - port: "9000"
               protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: claude-sandbox
-      toPorts:
-        - ports:
-            - port: "9000"
-              protocol: TCP
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor

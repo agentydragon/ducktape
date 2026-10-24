@@ -1,4 +1,11 @@
-# authentik_rbac_permission_role — Broken Upstream Since Inception
+# Historical: authentik_rbac_permission_role — Broken Upstream Since Inception
+
+> This records the former Claude diagnostics service account workaround. The service account,
+> API token, Kubernetes Secrets, and active diagnostics role/group blueprint are retired; the
+> Authentik config now carries a blueprint tombstone for the role and group. The observations
+> below describe the investigation at the time and may be stale. Possible future agent access
+> through Agentplane credential substitution is tracked in
+> [the Agentplane egress TODO](../../../agentplane/egress/TODO.md).
 
 ## Symptom
 
@@ -110,7 +117,7 @@ class RoleAssignedPermissionViewSet(ListModelMixin, RetrieveModelMixin, GenericV
     ...
 ```
 
-## Workaround
+## Former workaround (retired)
 
 Each Authentik object has exactly one owner, split by the constraints both sides impose:
 
@@ -119,27 +126,35 @@ Each Authentik object has exactly one owner, split by the constraints both sides
 | Terraform           | `authentik_user.claude_service_account`, `authentik_token.claude_api`, `kubernetes_secret.claude_authentik_token`                             | TF has no `authentik_token` data source, so the token's `.key` is only obtainable as the `resource` create-time response.      |
 | Authentik blueprint | `authentik_rbac.role` (`claude-diagnostics`) + its permissions, `authentik_core.group` (`claude-diagnostics`) binding the role to the TF user | Permission assignment goes through the broken `assign` REST endpoint in TF; the blueprint reconciles via internal Python APIs. |
 
-The blueprint binds the TF-managed user into the group via `!Find [authentik_core.user, [username, claude-service-account]]` — no double ownership. The blueprint is mounted into the Authentik server via the `authentik-sso-blueprints` configMapGenerator in <../../k8s/authentik/app/kustomization.yaml>. The token value flows `authentik_token.claude_api.key` → `kubernetes_secret.claude_authentik_token` → Reflector → `claude-sandbox`.
+The blueprint formerly bound the TF-managed user into the group via
+`!Find [authentik_core.user, [username, claude-service-account]]` — no double ownership. It was
+mounted into the Authentik server via the `authentik-sso-blueprints` configMapGenerator in
+<../../k8s/authentik/app/kustomization.yaml>. The token value flowed
+`authentik_token.claude_api.key` → `kubernetes_secret.claude_authentik_token` → Reflector →
+`claude-sandbox`. The current retirement blueprint removes the role and group.
 
-### State migration (one-time)
+### State migration (completed before retirement)
 
-The previous version of <tf/gitops/sso-providers/service_account_claude.tf> had `authentik_rbac_role.claude_diagnostics` and `authentik_group.claude_diagnostics` as TF-owned resources. To hand them off to the blueprint without an API DELETE (which would cause a permissions outage during the gap before the next blueprint reconciliation), the TF file carries `removed { from = ...; lifecycle { destroy = false } }` blocks for both, tagged `CLEANUP(added 2026-05-05)`. After the migration apply has run against `Terraform/sso-providers` in production and the blueprint has reconciled them as its own, the `removed` blocks should be deleted in a follow-up.
+The previous version of <tf/gitops/sso-providers/service_account_claude.tf> had
+`authentik_rbac_role.claude_diagnostics` and `authentik_group.claude_diagnostics` as TF-owned
+resources. They were handed off to the blueprint without an API DELETE; the current retirement
+removes the blueprint-owned objects.
 
-### Long-term fix
+### Original proposed long-term fix (historical)
 
 The cleanest endpoint is **upstream**: add an `authentik_token` data source to `goauthentik/terraform-provider-authentik` (mirror `data_source_user.go` against the existing `view_key` endpoint). With that data source available, the token can move into the blueprint too and TF collapses to a single `kubernetes_secret` referencing `data.authentik_token.claude_api.key`.
 
 ## References
 
-| Item                                    | Location                                                                                       |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Server URL config                       | `authentik/rbac/urls.py` in `goauthentik/authentik`                                            |
-| ViewSet with broken actions             | `authentik/rbac/api/rbac_assigned_by_roles.py`                                                 |
-| TF provider resource                    | `pkg/provider/resource_rbac_permission_role.go` in `goauthentik/terraform-provider-authentik`  |
-| Our TF config (user, token, k8s secret) | `tf/gitops/sso-providers/service_account_claude.tf`                                            |
-| Our blueprint YAML                      | `cluster/k8s/authentik/app/blueprints/claude-service-account.yaml`                             |
-| Blueprint kustomization wiring          | `cluster/k8s/authentik/app/kustomization.yaml` (`authentik-sso-blueprints` configMapGenerator) |
-| Initial broken commit                   | `e28babb0b8` in `goauthentik/authentik` (July 2024)                                            |
-| Current server version                  | `ghcr.io/goauthentik/server:2026.2.1`                                                          |
-| TF provider constraint                  | `~> 2026.2` (from `tf/gitops/sso-providers/main.tf`)                                           |
-| API client (in provider)                | `goauthentik.io/api/v3 v3.2025120.3`                                                           |
+| Item                                       | Location                                                                                       |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Server URL config                          | `authentik/rbac/urls.py` in `goauthentik/authentik`                                            |
+| ViewSet with broken actions                | `authentik/rbac/api/rbac_assigned_by_roles.py`                                                 |
+| TF provider resource                       | `pkg/provider/resource_rbac_permission_role.go` in `goauthentik/terraform-provider-authentik`  |
+| Former TF config (user, token, k8s secret) | `tf/gitops/sso-providers/service_account_claude.tf`                                            |
+| Former blueprint YAML                      | `cluster/k8s/authentik/app/blueprints/claude-service-account.yaml`                             |
+| Blueprint kustomization wiring             | `cluster/k8s/authentik/app/kustomization.yaml` (`authentik-sso-blueprints` configMapGenerator) |
+| Initial broken commit                      | `e28babb0b8` in `goauthentik/authentik` (July 2024)                                            |
+| Server version at investigation            | `ghcr.io/goauthentik/server:2026.2.1`                                                          |
+| TF provider constraint at investigation    | `~> 2026.2` (from `tf/gitops/sso-providers/main.tf`)                                           |
+| API client (in provider)                   | `goauthentik.io/api/v3 v3.2025120.3`                                                           |

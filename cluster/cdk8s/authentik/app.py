@@ -274,9 +274,6 @@ def _network_policy(chart: Chart) -> None:
             IngressRule.from_endpoints(_namespace_source("agentplane-staging"), ports=[_HTTP, _HTTPS]),
             # kubectl MCP servers: OIDC discovery and JWKS.
             IngressRule.from_endpoints(_namespace_source("kubectl-passthrough-mcp"), ports=[_HTTP]),
-            # The Claude agent reads the Authentik API (events, apps, users, outposts, flows,
-            # policies) with the AUTHENTIK_API_TOKEN loaded at session start.
-            IngressRule.from_endpoints(_namespace_source("claude-sandbox"), ports=[_HTTP]),
         ],
     )
 

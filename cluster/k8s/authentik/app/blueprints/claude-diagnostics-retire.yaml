@@ -1,0 +1,16 @@
+version: 1
+metadata:
+  name: Retire Claude diagnostics service account
+  labels:
+    blueprints.goauthentik.io/description: "Delete the retired Claude diagnostics role and group"
+
+entries:
+  - model: authentik_core.group
+    state: absent
+    identifiers:
+      name: claude-diagnostics
+
+  - model: authentik_rbac.role
+    state: absent
+    identifiers:
+      name: claude-diagnostics
