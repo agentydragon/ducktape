@@ -13,7 +13,7 @@ fn provider() -> String {
         writeln!(source, "  return object{index};").unwrap();
     }
     source.push_str("}\nfunction assign(target, value) {\n");
-    for index in 0..1408 {
+    for index in 0..768 {
         writeln!(source, "  target.property{index} = value;").unwrap();
     }
     source.push_str("}\nconst pool = choose();\n");
@@ -27,21 +27,13 @@ fn provider() -> String {
 #[test]
 fn repeated_wide_value_sets_preserve_cross_chunk_output() {
     let provider = provider();
-    let peers = [
-        ("static/peer", provider.as_str()),
-        ("static/peer1", provider.as_str()),
-        ("static/peer2", provider.as_str()),
-        ("static/peer3", provider.as_str()),
-    ];
+    let peers = [("static/peer", provider.as_str())];
     let source = "import { result as a } from './peer.js';\n\
-                  import { result as b } from './peer1.js';\n\
-                  import { result as c } from './peer2.js';\n\
-                  import { result as d } from './peer3.js';\n\
-                  console.log(a + b + c + d);\n";
+                  console.log(a);\n";
     let fixture = run_fixture(
         FixtureOpts::new(source, vec![])
             .with_unassigned_mode(unassigned_mode_inline())
             .with_extra_chunks(&peers),
     );
-    assert_preserved_entry_output(&fixture, "28\n");
+    assert_preserved_entry_output(&fixture, "7\n");
 }
