@@ -1,12 +1,19 @@
 # Agentplane integration app
 
-The human-facing frontend over Agentplane's services: a FastAPI service that manages Sandboxes
-through the Kubernetes API as the requesting operator, opens Sessions and submits commands through
-the Session Dispatcher, and uses the Runner Gateway for UID-fenced live checks and read-only runner
-status diagnostics. It reads archived Session history and Threads (each Session's conversation projection) from
-the History Service and synchronizes selected rows and content to the browser through authenticated
-Electric endpoints. It also presents Actions, operator decisions and Connection consent.
-The staging instance lives in `cluster/k8s/agentplane-staging/`.
+The human-facing API is a Go service built from `//agentplane/app/go:agentplane-app` and packaged as
+`//agentplane/app:image`. It manages Sandboxes through the Kubernetes API as the requesting
+operator, opens Sessions and submits commands through the Session Dispatcher, and uses the Runner
+Gateway for UID-fenced live checks and read-only runner status diagnostics. It reads archived Session
+history and Threads (each Session's conversation projection) from the History Service and synchronizes
+selected rows and content to the browser through authenticated Electric endpoints. It also presents
+Actions, operator decisions and Connection consent. The staging instance lives in
+`cluster/k8s/agentplane-staging/`.
+
+The Python request-serving executable has been removed from the published image. The Python sources
+and tests remain as a reference implementation and Python-specific test suite; those tests exercise
+the Python app, not the Go runtime. Go tests live under `agentplane/app/go/`. The separate
+`//agentplane/app:migration_image` remains Python/Alembic because it still owns the app's database
+migrations; it is a Deployment init container, not an API runtime.
 
 The API image contains no browser assets. The separate [static frontend](frontend/serving/README.md)
 serves the SPA and service worker on the same public origin through Gateway path routing; API,
@@ -59,9 +66,13 @@ the Thread's feed state (`api.py`, `threads/bridge.py`), so even a command the r
 reads the feed state the same way. Sandbox lifecycle and Action review keep working.
 `HistoryWatch` reconnects on its own, and Sessions recorded meanwhile get their Threads once it does.
 
-## Layout
+## Python reference and tests
 
-- `main.py`: the entry point; `Settings` names every knob as a flag, an `AGENTPLANE_*`
+The following Python modules are not packaged into the serving image. They remain available for the
+Python-specific tests and, where noted, the migration source. They do not provide coverage of the Go
+runtime.
+
+- `main.py`: the former Python entry point; `Settings` names every knob as a flag, an `AGENTPLANE_*`
   variable, and a key of the YAML file `AGENTPLANE_CONFIG_FILE` points at.
   `runner_gateway_target` is only for the health check; app live reads use the per-Sandbox
   `runner_gateway_control_target` and projected `runner_gateway_token_file`.
@@ -94,13 +105,15 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   `threads/runner_directory.py` resolves a Thread's Sandbox through the Runner Gateway and creates
   UID-fenced clients for operations that need live runner state. The Sandbox page's retained Session
   inventory comes from History Thread summaries, not a runner inventory RPC.
-- `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits for the frontend's
-  generated client.
+- `api.py` is the Python REST behavior reference. The frontend's generated OpenAPI client comes from
+  Huma's typed Go routes via `//agentplane/app/go:export_schema_bin`. Raw streaming, auth-flow,
+  telemetry and pass-through proxy handlers remain ordinary HTTP handlers and are not included in
+  that generated JSON API document.
 - `threads/events/`: a Thread's archived events, read through the History Service. `event_log.py`
   (`EventLogStore`: the Thread mapping, the archive's events and the feed state), `stream.py` (a
   thread's archived events as SSE, so any replica serves it without a runner) and `debug.py` (the
   typed, paginated observation and evidence reads).
-- `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and
+- `client.py`: the Python test client for the former Python HTTP surface, speaking its request and
   response models and the runner protocol's `Event` messages.
 - `live.py`: one list-and-watch over Sandboxes, their Pods and the egress objects
   (`../kubernetes_watch.py`), the action policy kinds watched only as a trigger to re-ask the Action
@@ -127,12 +140,13 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 - `frontend/connections/connection_service_client.ts`: generated ConnectionService HTTP/NDJSON message adapters for the consent
   page and OAuth-client settings; the service owns Connections and consent.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
-- `database.py`: the declarative `Base` every table maps onto, and the app's one connection pool;
-  `main.py` builds the pool and hands it to each store and to the database update listener.
-- `database_migrate.py` and `migrations/`: the Alembic history covering the tables of
+- `database.py`: the declarative `Base` every table maps onto and, in the former Python runtime, the
+  connection pool passed to each store and the database update listener.
+- `database_migrate.py` and `migrations/`: the Python Alembic history covering the tables of
   `operator_sessions.py` and `threads/models.py`. Migrations run separately through
-  `:migrate`, which fails when the migrated schema differs from the models; the server itself
-  never creates or checks tables at startup. `:image` and `:migration_image` are separate OCI targets.
+  `:migration_image`, which fails when the migrated schema differs from the models; the Go server
+  itself never creates or checks tables at startup. `:image` and `:migration_image` are separate OCI
+  targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/harness/`.
 
@@ -401,17 +415,17 @@ co-resident Threads.
 
 ## Shutdown
 
-SIGTERM begins a drain as Uvicorn's shutdown starts: `/readyz` answers 503 (`/healthz` stays a
-liveness check), every other new request is refused, and every open SSE stream -- the live views,
-a session's events, the Actions stream -- ends where it is waiting rather than at its next frame.
-Uvicorn waits at most `--shutdown-timeout` (5 s) for what is still open, then cancels it. Only after
-that do Session openings stop and the store close its connections, which is what
-the rest of the Deployments' 60-second grace period is for. No preStop delay consumes that budget.
+SIGTERM or SIGINT begins the Go server's drain. `/readyz` answers 503 while `/healthz` remains a
+liveness check. The server stops accepting new connections; long-lived SSE and upstream stream
+handlers that watch the drain signal end promptly. `http.Server.Shutdown` waits up to
+`--shutdown-timeout` seconds (5 by default) for active requests. When that wait ends, the runtime
+cancels the app context and waits for background workers before closing the database and clients.
+The Deployment keeps its 60-second termination grace period for this sequence; no preStop delay
+consumes that budget.
 
-An unexpected Session openings worker failure starts the same drain, then exits the process with
-the worker's error so Kubernetes restarts the replica. Connection, timeout, and database failures
-handled by the worker's retry loop keep retrying. The restarted worker replays Session openings;
-opening an existing Thread is idempotent.
+An unexpected background worker failure starts the same drain, then exits with that error so
+Kubernetes restarts the replica. Failures handled by a worker's retry loop keep retrying. The
+restarted Session openings worker replays openings; opening an existing Thread is idempotent.
 
 ## Shape
 

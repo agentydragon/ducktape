@@ -24,7 +24,16 @@ const THREAD: ThreadView = {
   name: "Test stored name",
   archived: false,
   last_cursor: 0,
+  last_event_at: null,
+  last_model_activity_at: null,
+  idle_since: null,
   harness_state: "HARNESS_STATE_RUNNING",
+  setup_state: null,
+  launch_outcome: null,
+  active_turn_id: null,
+  reasoning_effort: null,
+  feed_status: null,
+  last_turn_status: null,
 };
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;

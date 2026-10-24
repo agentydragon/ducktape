@@ -36,10 +36,14 @@ const CREATED: SandboxView = {
   created_at: "2026-01-01T00:00:00Z",
   operating_mode: "Running",
   service_account: { namespace: "agentplane-test", name: "test-created-sandbox" },
-  status: null,
+  binding: null,
+  status: {},
   phase: "Creating",
   pod: null,
   wake_on_send: false,
+  idle_suspend_after_seconds: null,
+  preset: null,
+  suspended_by: null,
 };
 
 // What the app serves when its configuration leaves the new-Sandbox defaults unset.
@@ -53,7 +57,14 @@ async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
     template: "test-template",
     policy_sets: ["test-basic"],
     inbox_tags: ["test-group"],
-    session_defaults: { harness: "HARNESS_CODEX", model: "test-codex-b" },
+    session_defaults: {
+      harness: "HARNESS_CODEX",
+      model: "test-codex-b",
+      cwd: "/state/workspaces/test",
+      reasoning_effort: null,
+      instructions: "",
+      setup_script: "",
+    },
     bootstrap: "mkdir -p /state/workspaces",
   };
   vi.spyOn(api, "GET").mockImplementation(async (path) => {
@@ -152,7 +163,6 @@ it("pre-fills the preset's policy sets and inbox tags, hides picked sets, and se
       inbox_tags: ["test-group"],
       bootstrap: "mkdir -p /state/workspaces",
       wake_on_send: false,
-      idle_suspend_after_seconds: null,
     },
   });
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
@@ -394,7 +404,7 @@ it("turns idle suspension off when the time is cleared", async () => {
 
   expect(patch).toHaveBeenCalledWith("/sandboxes/{name}/idle-suspend", {
     params: { path: { name: CREATED.name } },
-    body: { uid: CREATED.uid, idle_suspend_after_seconds: null },
+    body: { uid: CREATED.uid },
   });
 });
 

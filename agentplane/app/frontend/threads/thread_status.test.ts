@@ -12,8 +12,12 @@ const READY_SANDBOX: SandboxView = {
   uid: SANDBOX_UID,
   namespace: "agentplane-test",
   created_at: "2026-01-01T00:00:00Z",
+  binding: null,
+  preset: null,
   operating_mode: "Running",
   wake_on_send: false,
+  idle_suspend_after_seconds: null,
+  suspended_by: null,
   service_account: { namespace: "agentplane-test", name: "test-sandbox" },
   status: { conditions: [{ type: "Ready", status: "True" }] },
   phase: "Running",
@@ -39,7 +43,7 @@ const READY_SANDBOX: SandboxView = {
 const SUSPENDED_SANDBOX: SandboxView = {
   ...READY_SANDBOX,
   operating_mode: "Suspended",
-  status: null,
+  status: {},
   phase: "Suspended",
   pod: null,
 };
@@ -55,8 +59,16 @@ function thread(overrides: Partial<ThreadView> = {}): ThreadView {
     name: null,
     archived: false,
     last_cursor: 3,
+    last_event_at: null,
+    last_model_activity_at: null,
+    idle_since: null,
     harness_state: "HARNESS_STATE_RUNNING",
+    setup_state: null,
+    launch_outcome: null,
+    active_turn_id: null,
+    reasoning_effort: null,
     feed_status: "active",
+    last_turn_status: null,
     ...overrides,
   };
 }

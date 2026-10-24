@@ -117,8 +117,8 @@ class App(Construct):
             "config",
             metadata=ApiObjectMetadata(name="app-config", namespace=env.namespace),
             model=Settings,
-            # The endpoint is delivered as an env var: an older app image ignores unknown env vars
-            # while this manifest reaches the cluster before image automation publishes the new image.
+            # The service-specific Connection Service endpoint comes from the environment below,
+            # keeping one authoritative value for the Go runtime.
             content=env.app_config.model_dump(mode="json", exclude_unset=True, exclude={"connection_service_url"}),
             path="/etc/agentplane/config.yaml",
         )
@@ -266,8 +266,8 @@ class App(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
             ),
-            # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
-            # release and the store's close.
+            # The Go HTTP/SSE drain is bounded by --shutdown-timeout (5s by default); the rest
+            # of the grace period allows background workers and stores to close cleanly.
             termination_grace=Duration.seconds(60),
             # The app's Alembic history. The app itself creates no tables; it verifies
             # the migrated schema at startup and fails if this hasn't run.

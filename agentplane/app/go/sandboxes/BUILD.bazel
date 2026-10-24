@@ -1,0 +1,56 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "sandboxes",
+    srcs = [
+        "console.go",
+        "errors.go",
+        "inventory.go",
+        "views.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/go/sandboxes",
+    deps = [
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/sandboxreader",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_kubevirt_client_go//kubecli",
+        "@io_kubevirt_client_go//kubevirt/typed/core/v1:core",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/structpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "unit_test",
+    srcs = [
+        "console_test.go",
+        "inventory_test.go",
+    ],
+    embed = [":sandboxes"],
+    deps = [
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/sandboxes/api",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@io_kubevirt_client_go//kubevirt/typed/core/v1:core",
+    ],
+)

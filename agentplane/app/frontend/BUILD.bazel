@@ -38,7 +38,8 @@ ts_config(
 # proto-JSON bodies are plain objects there; the runner's shared protocol types them.
 js_openapi_schema(
     name = "schema",
-    generator = "//agentplane/app:export_schema_bin",
+    generator = "//agentplane/app/go:export_schema_bin",
+    generator_args = ["--export-openapi"],
 )
 
 ts_library(
@@ -475,9 +476,9 @@ ts_library(
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":format_time",
         ":live_stream",
-        ":schema",
         ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

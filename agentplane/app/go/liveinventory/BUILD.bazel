@@ -1,0 +1,48 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "liveinventory",
+    srcs = [
+        "changes.go",
+        "index.go",
+        "watch_cycles.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/go/liveinventory",
+    deps = [
+        "//agentplane/egress/api/v1alpha1",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/sandboxes/api",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_client_go//tools/cache",
+        "@io_k8s_sigs_controller_runtime//pkg/cache",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+    ],
+)
+
+go_test(
+    name = "unit_test",
+    srcs = [
+        "index_test.go",
+        "watch_cycles_test.go",
+    ],
+    embed = [":liveinventory"],
+    deps = [
+        "//agentplane/egress/api/v1alpha1",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/sandboxes/api",
+        "//agentplane/testing/kubeapiserver",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_apimachinery//pkg/util/wait",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+    ],
+)
