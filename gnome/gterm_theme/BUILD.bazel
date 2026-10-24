@@ -11,7 +11,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//absl_py",
-        "@pypi//dbus_python",
         "@pypi//pycairo",
         "@pypi//pygobject",
     ],
@@ -41,7 +40,6 @@ py_wheel(
     python_requires = ">=3.14",
     requires = [
         "absl-py",
-        "dbus-python",
         "pycairo",
         "pygobject",
     ],
