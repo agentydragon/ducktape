@@ -74,7 +74,7 @@ impl Visit for TopLevelAwaitFinder {
 /// **Sharing**: materialization computes this layer once and feeds it
 /// to selector resolution and then to [`analyze_chunk_with_policy`]
 /// (via `chunk_analysis::compute_chunk_analysis`), so the source-text walk
-/// happens once per chunk. `vendor::strip` calls [`analyze_chunk`] on
+/// happens once per chunk. `vendor::strip` calls [`analyze_vendor_prune_chunk`] on
 /// its own: it reparses the emitted chunk file from disk and mutates it
 /// (`split_top_level_var_decls`, `strip_export_specifiers`) before
 /// analyzing, so the materializer's layer does not describe its module.
@@ -189,7 +189,34 @@ pub fn analyze_chunk_with_policy<F>(
     hints: &AnalysisHints,
     export_reentry_policy: ExportReentryPolicy,
     source_path: Option<&str>,
+    line_range_for_span: F,
+) -> ChunkFactAnalysis
+where
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
+{
+    analyze_chunk_with_policy_and_sync(
+        structural,
+        hints,
+        export_reentry_policy,
+        source_path,
+        line_range_for_span,
+        SynchronousCallAnalysis::Include,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum SynchronousCallAnalysis {
+    Include,
+    Omit,
+}
+
+fn analyze_chunk_with_policy_and_sync<F>(
+    structural: StructuralChunkAnalysis<'_>,
+    hints: &AnalysisHints,
+    export_reentry_policy: ExportReentryPolicy,
+    source_path: Option<&str>,
     mut line_range_for_span: F,
+    synchronous_calls: SynchronousCallAnalysis,
 ) -> ChunkFactAnalysis
 where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
@@ -279,20 +306,42 @@ where
         })
         .collect();
     value_flow.augment_calls(&body, &mut facts);
-    super::sync_effects::annotate_synchronous_calls(
-        &body,
-        &value_flow,
-        &shadowed,
-        hints,
-        export_reentry_policy,
-        &mut facts,
-    );
+    if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {
+        super::sync_effects::annotate_synchronous_calls(
+            &body,
+            &value_flow,
+            &shadowed,
+            hints,
+            export_reentry_policy,
+            &mut facts,
+        );
+    }
     ChunkFactAnalysis {
         facts,
         top_level_await,
         redundant_purity_hints,
         redundant_pure_member_hints,
     }
+}
+
+/// Facts needed by vendor pruning after its own AST mutations. Vendor pruning
+/// consumes the structural, value-flow, purity and local-effect fields, but
+/// builds no owner graph and never reads `StatementFacts::synchronous_calls`.
+/// Keep value-flow call augmentation; it is part of vendor reachability.
+pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
+    let hints = AnalysisHints {
+        local_effect_policy: LocalEffectPolicy::VendorPrune,
+        ..AnalysisHints::default()
+    };
+    let structural = analyze_chunk_structural(module, None, |_| None);
+    analyze_chunk_with_policy_and_sync(
+        structural,
+        &hints,
+        ExportReentryPolicy::Conservative,
+        None,
+        |_| None,
+        SynchronousCallAnalysis::Omit,
+    )
 }
 
 /// Walk the chunk's module body and produce one `StatementFacts`
