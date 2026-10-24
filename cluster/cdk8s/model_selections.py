@@ -9,7 +9,6 @@ from model_catalog.catalog import (
     ANTIGRAVITY_GEMINI_FLASH_LITE,
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
-    GPT6_LUNA_RESPONSES,
     GPT6_RESPONSES_ROUTES,
     OLLAMA_OPENAI_ROUTES,
     OLLAMA_QWEN_IQ4XS_128K,
@@ -32,8 +31,7 @@ class HarnessRoutes:
 
 # Agentplane's hosted Claude and Codex pickers share the supported Antigravity Claude
 # and Gemini routes. Claude uses Anthropic Messages; Codex reaches the same upstream
-# through LiteLLM's Responses-to-Messages bridge. `TESTING_APP_MODELS`, the k3s fixture's
-# local-model catalog, offers Claude only the local smoke model.
+# through LiteLLM's Responses-to-Messages bridge.
 _AGENTPLANE_ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
@@ -42,8 +40,7 @@ _AGENTPLANE_ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
 )
 
-# The Agentplane Codex picker offers Qwen at 256K only; the 128K native route remains
-# available in `TESTING_APP_MODELS` for the Claude smoke flow.
+# The Agentplane Codex picker offers Qwen at 256K only.
 _AGENTPLANE_OLLAMA_OPENAI_ROUTES = tuple(
     route for route in OLLAMA_OPENAI_ROUTES if route != OLLAMA_QWEN_IQ4XS_128K.openai
 )
@@ -51,9 +48,6 @@ _AGENTPLANE_OLLAMA_OPENAI_ROUTES = tuple(
 STAGING_APP_MODELS = HarnessRoutes(
     claude=_AGENTPLANE_ANTIGRAVITY_ROUTES,
     codex=(*GPT6_RESPONSES_ROUTES, *_AGENTPLANE_ANTIGRAVITY_ROUTES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES),
-)
-TESTING_APP_MODELS = HarnessRoutes(
-    claude=(OLLAMA_QWEN_IQ4XS_128K.native,), codex=(GPT6_LUNA_RESPONSES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES)
 )
 
 # Client context budgets, not inferred from Ollama num_ctx or provider limits. The ingress serves

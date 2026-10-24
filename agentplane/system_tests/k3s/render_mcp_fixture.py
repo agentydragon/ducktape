@@ -4,7 +4,8 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 
-from agentplane.system_tests.k3s import fixture_chart, mcp_fixture_chart
+from agentplane.system_tests.k3s import dex, fixture_chart, mcp_fixture_chart
+from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.render_fixture import write_fixture
 from agentplane.system_tests.k3s.rendered_fixture import (
     MCP_PLACEHOLDERS,
@@ -15,7 +16,6 @@ from agentplane.system_tests.k3s.rendered_fixture import (
     McpFixtures,
     RenderedFixture,
 )
-from cluster.cdk8s.agentplane import dex
 
 
 def render(output: Path) -> None:
@@ -27,7 +27,7 @@ def render(output: Path) -> None:
     fixture = RenderedFixture(
         backend=Backend.LOCAL_MODEL,
         vm_sandboxes=False,
-        namespace=fixture_chart.NAMESPACE,
+        namespace=NAMESPACE,
         app_origin=mcp.app_origin,
         browser_services=[
             BrowserService(name=service.name, host=service.host, fqdn=service.fqdn)

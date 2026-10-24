@@ -94,26 +94,6 @@ py_library(
 )
 
 py_library(
-    name = "dex",
-    srcs = ["dex.py"],
-    deps = [
-        ":actions",
-        ":app",
-        "//agentplane/action_service:operator_oidc_settings",
-        "//agentplane/app:action_federation_settings",
-        "//cluster/cdk8s:config_format",
-        "//cluster/cdk8s:pod_policy",
-        "//cluster/cdk8s:probes",
-        "//cluster/cdk8s:secret_ref",
-        "//cluster/cdk8s:service_ref",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "egress",
     srcs = ["egress.py"],
     visibility = [
@@ -284,7 +264,6 @@ py_test(
         "//cluster/cdk8s:model_selections",
         "//model_catalog:catalog",
         "//util/bazel:runfiles",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -572,20 +551,6 @@ py_library(
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/public_coder:egress",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
-    name = "actions_testing_fixtures",
-    srcs = ["actions_testing_fixtures.py"],
-    deps = [
-        ":actions",
-        "//agentplane/action_service:catalog",
-        "//agentplane/action_service:mcp_settings",
-        "//cluster/cdk8s:pod_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

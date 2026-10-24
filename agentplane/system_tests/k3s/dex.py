@@ -30,6 +30,7 @@ from pydantic import AnyHttpUrl
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.action_federation_settings import DirectFederationSettings
+from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.agentplane import actions, app as app_component
 from cluster.cdk8s.config_format import yaml_config
@@ -37,18 +38,17 @@ from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-_NAMESPACE = "agentplane-testing"
 _NAME = "dex"
 # The Dex Pods' `app.kubernetes.io/name` label value, not an object name.
-_POD_LABEL = "agentplane-testing-dex"
+_POD_LABEL = "systest-dex"
 _SERVICE = ServiceRef(
     name=_NAME,
     port=Port(name="http", number=5556),
-    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _POD_LABEL),)),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _POD_LABEL),)),
 )
 # The client Secrets this Dex reads, which the app and the Action Service read too.
-_OIDC = app_component.oidc_secret(_NAMESPACE)
-_MCP_OAUTH = actions.mcp_oauth_secret(_NAMESPACE)
+_OIDC = app_component.oidc_secret(NAMESPACE)
+_MCP_OAUTH = actions.mcp_oauth_secret(NAMESPACE)
 # The environment variables the static clients' `secretEnv` name, set from those Secrets.
 _APP_LOGIN_SECRET_ENV = "DEX_CLIENT_SECRET"
 _MCP_LINKAGE_SECRET_ENV = "MCP_CLIENT_SECRET"
@@ -83,7 +83,7 @@ def action_federation(target: OperatorOidcSettings) -> DirectFederationSettings:
     """The app hands the Action Service the operator's own Dex token, which `target` verifies."""
     return DirectFederationSettings(
         mode="direct",
-        service_url=AnyHttpUrl(actions.service(_NAMESPACE).url),
+        service_url=AnyHttpUrl(actions.service(NAMESPACE).url),
         login_jwks_uri=target.jwks_uri,
         login_token_profile=OperatorTokenProfile.DEX,
         target=target,
@@ -206,7 +206,7 @@ class Dex(Construct):
             "DEX_CLIENT_ID": _OIDC.key("client-id").env_value(self, "oidc-client-id-ref"),
             _APP_LOGIN_SECRET_ENV: _OIDC.key("client-secret").env_value(self, "oidc-client-secret-ref"),
             _MCP_LINKAGE_SECRET_ENV: _MCP_OAUTH.key("client-secret").env_value(self, "mcp-oauth-client-secret-ref"),
-            _MCP_EDGE_LOGIN_SECRET_ENV: SecretRef(namespace=_NAMESPACE, name=mcp_edge_login_secret_name)
+            _MCP_EDGE_LOGIN_SECRET_ENV: SecretRef(namespace=NAMESPACE, name=mcp_edge_login_secret_name)
             .key("client-secret")
             .env_value(self, "mcp-edge-oauth-client-secret-ref"),
         }
@@ -216,7 +216,7 @@ class Dex(Construct):
             "deployment",
             metadata=ApiObjectMetadata(
                 name=_NAME,
-                namespace=_NAMESPACE,
+                namespace=NAMESPACE,
                 labels=_SERVICE.pods.selector,
                 annotations={
                     # Dex reads its generated config and client secret only at startup.
@@ -260,7 +260,7 @@ class Dex(Construct):
         Service(
             self,
             "service",
-            metadata=ApiObjectMetadata(name=_SERVICE.name, namespace=_NAMESPACE),
+            metadata=ApiObjectMetadata(name=_SERVICE.name, namespace=NAMESPACE),
             selector=deployment,
             ports=[_SERVICE.port.service_port(), HTTPS_PORT.service_port()],
         )

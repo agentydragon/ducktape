@@ -169,6 +169,7 @@ py_test(
     deps = [
         ":fixture_chart",
         ":fixture_database",
+        ":namespaces",
         ":rendered_fixture",
         "//:conftest",
         "//agentplane/action_service:oauth_settings",
@@ -228,7 +229,9 @@ py_library(
     testonly = True,
     srcs = ["fixture_chart.py"],
     deps = [
+        ":dex",
         ":fixture_database",
+        ":namespaces",
         ":rendered_fixture",
         "//agentplane:subjects",
         "//agentplane/action_service:catalog",
@@ -249,14 +252,12 @@ py_library(
         "//cluster/cdk8s/agentplane:app_settings",
         "//cluster/cdk8s/agentplane:chart",
         "//cluster/cdk8s/agentplane:command_sandbox",
-        "//cluster/cdk8s/agentplane:dex",
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:egress_credentials",
         "//cluster/cdk8s/agentplane:environment",
         "//cluster/cdk8s/agentplane:history_service",
         "//cluster/cdk8s/agentplane:llm_ingress",
         "//cluster/cdk8s/agentplane:mcp_edge",
-        "//cluster/cdk8s/agentplane:namespaces",
         "//cluster/cdk8s/agentplane:notifications",
         "//cluster/cdk8s/agentplane:policy_controller",
         "//cluster/cdk8s/agentplane:policy_controller_rbac",
@@ -283,7 +284,10 @@ py_library(
     testonly = True,
     srcs = ["mcp_fixture_chart.py"],
     deps = [
+        ":dex",
         ":fixture_chart",
+        ":mcp_fixture_servers",
+        ":namespaces",
         ":rendered_fixture",
         "//agentplane:subjects",
         "//agentplane/action_service:models",
@@ -291,8 +295,6 @@ py_library(
         "//agentplane/action_service/policies:resources",
         "//agentplane/system_tests:mcp_servers",
         "//cluster/cdk8s/agentplane:actions",
-        "//cluster/cdk8s/agentplane:actions_testing_fixtures",
-        "//cluster/cdk8s/agentplane:dex",
         "@pypi//bcrypt",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -315,6 +317,7 @@ py_library(
     srcs = ["render_fixture.py"],
     deps = [
         ":fixture_chart",
+        ":namespaces",
         ":rendered_fixture",
     ],
 )
@@ -332,11 +335,12 @@ py_library(
     testonly = True,
     srcs = ["render_mcp_fixture.py"],
     deps = [
+        ":dex",
         ":fixture_chart",
         ":mcp_fixture_chart",
+        ":namespaces",
         ":render_fixture",
         ":rendered_fixture",
-        "//cluster/cdk8s/agentplane:dex",
     ],
 )
 
@@ -467,4 +471,45 @@ py_binary(
     imports = ["../../.."],
     main_module = "agentplane.system_tests.k3s.render_fixture_variants_driver",
     deps = [":render_fixture_variants_driver"],
+)
+
+py_library(
+    name = "dex",
+    srcs = ["dex.py"],
+    deps = [
+        ":namespaces",
+        "//agentplane/action_service:operator_oidc_settings",
+        "//agentplane/app:action_federation_settings",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/agentplane:actions",
+        "//cluster/cdk8s/agentplane:app",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "mcp_fixture_servers",
+    srcs = ["mcp_fixture_servers.py"],
+    deps = [
+        ":namespaces",
+        "//agentplane/action_service:catalog",
+        "//agentplane/action_service:mcp_settings",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s/agentplane:actions",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "namespaces",
+    srcs = ["namespaces.py"],
 )

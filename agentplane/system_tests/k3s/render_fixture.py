@@ -10,6 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from agentplane.system_tests.k3s import fixture_chart
+from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import (
     MODEL_PLACEHOLDERS,
     PLACEHOLDERS,
@@ -47,7 +48,7 @@ def _render(output: Path, variant: FixtureVariant, backend: Backend, *, vm_sandb
     fixture = RenderedFixture(
         backend=backend,
         vm_sandboxes=vm_sandboxes,
-        namespace=fixture_chart.NAMESPACE,
+        namespace=NAMESPACE,
         app_origin=fixture_chart.APP_ORIGIN,
         browser_services=[
             BrowserService(

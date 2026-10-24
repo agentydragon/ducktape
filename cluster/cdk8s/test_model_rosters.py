@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 
 from cluster.cdk8s.litellm.config import model_entry
-from cluster.cdk8s.model_selections import STAGING_APP_MODELS, TESTING_APP_MODELS
+from cluster.cdk8s.model_selections import STAGING_APP_MODELS
 from model_catalog.catalog import (
     ANTHROPIC_API_ROUTES,
     ANTHROPIC_SUBSCRIPTION_ROUTES,
@@ -43,11 +43,6 @@ def test_catalog_has_unique_ids_and_aliases_reference_served_routes() -> None:
     assert GEMINI_EMBEDDING_ALIAS.id not in {route.id for route in GEMINI_EMBEDDING_ROUTES}
 
 
-def test_testing_picker_does_not_widen_its_key() -> None:
-    admitted = KEY_MODEL_LANES["cheap_experiments_models"].allowed
-    assert all(route in admitted for route in TESTING_APP_MODELS.all)
-
-
 def test_staging_picker_does_not_widen_its_key() -> None:
     admitted = (
         *KEY_MODEL_LANES["gpt6_oai_lane_models"].allowed,
@@ -56,11 +51,6 @@ def test_staging_picker_does_not_widen_its_key() -> None:
         *KEY_MODEL_LANES["ollama_chat_client_models"].allowed,
     )
     assert all(route in admitted for route in STAGING_APP_MODELS.all)
-
-
-def test_picker_is_narrower_than_ollama_key() -> None:
-    assert all(route in OLLAMA_CHAT_ROUTES for route in TESTING_APP_MODELS.codex[1:])
-    assert any(route not in TESTING_APP_MODELS.all for route in OLLAMA_CHAT_ROUTES)
 
 
 def test_rugged_local_candidates_are_served_and_experiment_only() -> None:

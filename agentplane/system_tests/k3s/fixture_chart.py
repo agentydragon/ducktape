@@ -44,7 +44,8 @@ from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant
-from agentplane.system_tests.k3s import fixture_database
+from agentplane.system_tests.k3s import dex, fixture_database
+from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, Models, PublicLiteLLM
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
@@ -52,7 +53,6 @@ from cluster.cdk8s.agentplane import (
     app as app_component,
     app_settings,
     command_sandbox,
-    dex,
     egress,
     history_service,
     llm_ingress,
@@ -69,7 +69,7 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
 )
 from cluster.cdk8s.agentplane.chart import Namespace
-from cluster.cdk8s.agentplane.egress_credentials import TESTING_CREDENTIALS_NAMESPACE, EgressCredentials
+from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
@@ -79,15 +79,13 @@ from cluster.cdk8s.agentplane.environment import (
     McpEdgeProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
-from cluster.cdk8s.model_selections import TESTING_APP_MODELS, HarnessRoutes, model_configs
+from cluster.cdk8s.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
-from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, OLLAMA_QWEN_IQ4XS_128K
 
-NAMESPACE = TESTING_NAMESPACE
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
 RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
@@ -110,12 +108,14 @@ _VM_GUEST_BOOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot
 _VM_GUEST_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
 # The serial guest/initramfs_init mounts as the root.
 _VM_GUEST_ROOT_SERIAL = "guest-root"
+# What the app offers when LLM ingress forwards to the scenario's scripted model. Scenarios take each harness's
+# first model; a ChatGPT route puts Codex in code mode.
+_LOCAL_MODEL_MODELS = HarnessRoutes(claude=(OLLAMA_QWEN_IQ4XS_128K.native,), codex=(GPT6_LUNA_RESPONSES,))
 # What the app offers when LLM ingress forwards to the public LiteLLM: models the BuildBuddy live-test key's
-# lane admits (`cheap_experiments_models`), neither waiting on the shared GPU as `TESTING_APP_MODELS`' Claude
-# model does.
+# lane admits (`cheap_experiments_models`), neither waiting on the shared GPU.
 _PUBLIC_LITELLM_MODELS = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESPONSES,))
 _ONE_REPLICA = ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None)
-_EGRESS_CA = "agentplane-testing-egress-ca"
+_EGRESS_CA = "systest-egress-ca"
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
 
 
@@ -153,7 +153,7 @@ def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORI
     """Build the common fixture settings; MCP renderers add their servers and Dex resources separately."""
     app_login = login_client(app_origin)
     operator_oidc = dex.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
-    routes = _PUBLIC_LITELLM_MODELS if isinstance(models, PublicLiteLLM) else TESTING_APP_MODELS
+    routes = _PUBLIC_LITELLM_MODELS if isinstance(models, PublicLiteLLM) else _LOCAL_MODEL_MODELS
     return Environment(
         namespace=NAMESPACE,
         description="Agentplane k3s fixture",
@@ -177,7 +177,7 @@ def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORI
         ),
         egress=EgressProps(
             ca_secret_name=_EGRESS_CA,
-            credentials_namespace=TESTING_CREDENTIALS_NAMESPACE,
+            credentials_namespace=CREDENTIALS_NAMESPACE,
             replicas=_ONE_REPLICA,
             traffic_distribution=None,
         ),
@@ -477,7 +477,7 @@ def build_chart(
     k8s.KubeConfigMap(
         chart,
         "fixture-egress-upstream-ca",
-        metadata=k8s.ObjectMeta(name="agentplane-testing-egress-upstream-ca", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="systest-egress-upstream-ca", namespace=NAMESPACE),
         data={"ca-certificates.crt": system_roots + cluster_ca},
     )
     key = models.key if isinstance(models, PublicLiteLLM) else "unused-without-litellm"

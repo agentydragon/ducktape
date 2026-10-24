@@ -1,6 +1,6 @@
-"""The MCP servers the k3s acceptance stack's Action groups call: the credentialless
-`mcp-everything` reference server and the Dex-backed `oauth-fixture` MCP server, both
-acceptance-testing the MCP linkage flow without touching any real credential.
+"""The MCP servers the k3s stack's Action groups call: the credentialless `mcp-everything` reference
+server and the Dex-backed `oauth-fixture` MCP server, which test the MCP linkage flow without touching
+any real credential.
 """
 
 from __future__ import annotations
@@ -32,10 +32,9 @@ from constructs import Construct
 
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.mcp_settings import McpOAuthServer
+from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.agentplane import actions
-
-_NAMESPACE = "agentplane-testing"
 
 _MCP_EVERYTHING_NAME = "mcp-everything"
 _MCP_EVERYTHING_PORT = 3001
@@ -46,8 +45,8 @@ _OAUTH_FIXTURE_NAME = "oauth-fixture"
 _OAUTH_FIXTURE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:unset"
 _OAUTH_FIXTURE_PORT = 8080
 _OAUTH_FIXTURE_LABELS = {"app.kubernetes.io/name": _OAUTH_FIXTURE_NAME}
-_MCP_EVERYTHING_URL = f"http://{_MCP_EVERYTHING_NAME}.{_NAMESPACE}.svc.cluster.local:{_MCP_EVERYTHING_PORT}/mcp"
-_OAUTH_FIXTURE_MCP_URL = f"http://{_OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{_OAUTH_FIXTURE_PORT}/mcp"
+_MCP_EVERYTHING_URL = f"http://{_MCP_EVERYTHING_NAME}.{NAMESPACE}.svc.cluster.local:{_MCP_EVERYTHING_PORT}/mcp"
+_OAUTH_FIXTURE_MCP_URL = f"http://{_OAUTH_FIXTURE_NAME}.{NAMESPACE}.svc.cluster.local:{_OAUTH_FIXTURE_PORT}/mcp"
 
 
 def _resources() -> ContainerResources:
@@ -68,7 +67,7 @@ def add_mcp_everything(scope: Construct, *, image: str) -> None:
     deployment = Deployment(
         scope,
         "mcp-everything-deployment",
-        metadata=ApiObjectMetadata(name=_MCP_EVERYTHING_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_MCP_EVERYTHING_NAME, namespace=NAMESPACE),
         pod_metadata=ApiObjectMetadata(labels=_MCP_EVERYTHING_LABELS),
         replicas=1,
         strategy=DeploymentStrategy.recreate(),
@@ -93,7 +92,7 @@ def add_mcp_everything(scope: Construct, *, image: str) -> None:
     Service(
         scope,
         "mcp-everything-service",
-        metadata=ApiObjectMetadata(name=_MCP_EVERYTHING_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_MCP_EVERYTHING_NAME, namespace=NAMESPACE),
         selector=deployment,
         ports=[
             ServicePort(name="http", port=_MCP_EVERYTHING_PORT, target_port=_MCP_EVERYTHING_PORT, protocol=Protocol.TCP)
@@ -109,7 +108,7 @@ def add_oauth_fixture(scope: Construct, *, authorization_server: str, jwks_uri: 
         "oauth-fixture-deployment",
         metadata=ApiObjectMetadata(
             name=_OAUTH_FIXTURE_NAME,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={
                 "description": "Dex-backed OAuth-protected MCP server for acceptance-testing MCP OAuth linkage; the fixture verifies Dex JWTs locally and has no credentials."
             },
@@ -126,7 +125,7 @@ def add_oauth_fixture(scope: Construct, *, authorization_server: str, jwks_uri: 
         env_variables={
             # The MCP resource server remains cluster-internal.
             "OAUTH_FIXTURE_BASE_URL": EnvValue.from_value(
-                f"http://{_OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{_OAUTH_FIXTURE_PORT}"
+                f"http://{_OAUTH_FIXTURE_NAME}.{NAMESPACE}.svc.cluster.local:{_OAUTH_FIXTURE_PORT}"
             ),
             "OAUTH_FIXTURE_AUTHORIZATION_SERVER": EnvValue.from_value(authorization_server),
             "OAUTH_FIXTURE_JWKS_URI": EnvValue.from_value(jwks_uri),
@@ -148,7 +147,7 @@ def add_oauth_fixture(scope: Construct, *, authorization_server: str, jwks_uri: 
     Service(
         scope,
         "oauth-fixture-service",
-        metadata=ApiObjectMetadata(name=_OAUTH_FIXTURE_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_OAUTH_FIXTURE_NAME, namespace=NAMESPACE),
         selector=deployment,
         ports=[
             ServicePort(name="http", port=_OAUTH_FIXTURE_PORT, target_port=_OAUTH_FIXTURE_PORT, protocol=Protocol.TCP)

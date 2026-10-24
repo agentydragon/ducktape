@@ -6,12 +6,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-import pytest
 import pytest_bazel
 
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
-from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES, STAGING_APP_MODELS, TESTING_APP_MODELS
-from model_catalog.catalog import Provider, Route
+from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES, STAGING_APP_MODELS
+from model_catalog.catalog import Provider
 from util.bazel.runfiles import get_required_path
 
 
@@ -37,8 +36,8 @@ def _codex_reads(catalog: str, directory: Path) -> dict[str, Any]:
     return {model["slug"]: model for model in json.loads(result.stdout)["models"]}
 
 
-@pytest.mark.parametrize("routes", [STAGING_APP_MODELS.codex, TESTING_APP_MODELS.codex], ids=["staging", "testing"])
-def test_pinned_codex_reads_the_catalog(routes: tuple[Route, ...], tmp_path: Path) -> None:
+def test_pinned_codex_reads_the_catalog(tmp_path: Path) -> None:
+    routes = STAGING_APP_MODELS.codex
     catalog = codex_catalog(routes)
     assert catalog is not None
     models = _codex_reads(catalog, tmp_path)

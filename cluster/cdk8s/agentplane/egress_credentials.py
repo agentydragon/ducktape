@@ -21,7 +21,6 @@ from cluster.cdk8s.ollama.app import DIRECT_TOKEN
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 STAGING_CREDENTIALS_NAMESPACE = "agentplane-staging-egress-credentials"
-TESTING_CREDENTIALS_NAMESPACE = "agentplane-testing-egress-credentials"
 # The Secret `egress.py`'s `github-pat` EgressCredential reads.
 GITHUB_PAT_SECRET = "agentplane-github-pat"
 BUILDBUDDY_API_KEY_SECRET = "buildbuddy-api-key"

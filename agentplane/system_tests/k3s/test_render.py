@@ -18,6 +18,7 @@ from agentplane.app.settings import Settings as AppSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
 from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendered_fixture
+from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
 from util.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
@@ -122,7 +123,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert "args" not in proxy
     egress_config = yaml.safe_load(_resource(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
     assert egress_config["admin_grpc_audience"] == "agentplane-egress-admin"
-    assert egress_config["admin_grpc_callers"] == [f"{fixture_chart.NAMESPACE}/app"]
+    assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app"]
     app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
     token = next(volume for volume in app_pod["volumes"] if volume["name"] == "egress-admin-token")
     assert token["projected"]["sources"][0]["serviceAccountToken"]["audience"] == "agentplane-egress-admin"
@@ -167,7 +168,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     gateway_config = yaml.safe_load(
         _resource(docs, "ConfigMap", f"{fixture_chart.RUNNER_GATEWAY}-settings")["data"]["settings.yaml"]
     )
-    assert f"{fixture_chart.NAMESPACE}/app" in gateway_config["wake_callers"]
+    assert f"{NAMESPACE}/app" in gateway_config["wake_callers"]
     assert not pod.get("imagePullSecrets")
 
     for name, expected_port in (
@@ -182,7 +183,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         port = next(entry for entry in service["spec"]["ports"] if entry["name"] == "grpc")
         assert port["port"] == expected_port
 
-    endpoint = f"{fixture_chart.SESSION_DISPATCHER}.{fixture_chart.NAMESPACE}.svc.cluster.local:{fixture_chart.DISPATCHER_PORT}"
+    endpoint = f"{fixture_chart.SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local:{fixture_chart.DISPATCHER_PORT}"
     app = _resource(docs, "Deployment", "app")
     assert not any(
         entry["name"] == "AGENTPLANE_ELECTRIC_URL" for entry in app["spec"]["template"]["spec"]["containers"][0]["env"]
@@ -198,7 +199,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert endpoint in notifications["data"]["settings.yaml"]
     role = _resource(docs, "Role", fixture_chart.RUNNER_GATEWAY)
     assert any("sandboxes" in rule["resources"] and "patch" in rule["verbs"] for rule in role["rules"])
-    assert _resource(docs, "ClusterRole", f"{fixture_chart.NAMESPACE}-runner-gateway-token-reviewer")["rules"] == [
+    assert _resource(docs, "ClusterRole", f"{NAMESPACE}-runner-gateway-token-reviewer")["rules"] == [
         {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
     ]
     postgres = _resource(docs, "Deployment", fixture_database.NAME)
@@ -235,7 +236,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         assert uri.scheme == "postgresql"
         assert uri.username == role_name
         assert uri.password == data["password"]
-        assert uri.hostname == f"{fixture_database.SERVICE}.{fixture_chart.NAMESPACE}.svc"
+        assert uri.hostname == f"{fixture_database.SERVICE}.{NAMESPACE}.svc"
         assert uri.port == 5432
         assert uri.path == f"/{database_name}"
 
@@ -245,7 +246,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert app_uri.scheme == "postgresql+asyncpg"
     assert app_uri.username == "app"
     assert app_uri.password == app_data["password"]
-    assert app_uri.hostname == f"{fixture_database.SERVICE}.{fixture_chart.NAMESPACE}.svc"
+    assert app_uri.hostname == f"{fixture_database.SERVICE}.{NAMESPACE}.svc"
     assert app_uri.port == 5432
     assert app_uri.path == "/app"
     assert not any(doc["kind"] == "Secret" and doc["metadata"]["name"] == "postgres-electric" for doc in docs)

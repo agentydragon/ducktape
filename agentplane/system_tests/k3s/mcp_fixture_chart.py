@@ -17,9 +17,10 @@ from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import mcp_servers
-from agentplane.system_tests.k3s import fixture_chart
+from agentplane.system_tests.k3s import dex, fixture_chart, mcp_fixture_servers
+from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import McpInputs, Models
-from cluster.cdk8s.agentplane import actions, actions_testing_fixtures, dex
+from cluster.cdk8s.agentplane import actions
 
 DEX_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-dex:unset"
 MCP_EVERYTHING_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset"
@@ -47,20 +48,20 @@ def objects(
     actions_config = replace(
         env.actions,
         mcp_servers={
-            mcp_servers.OAUTH: actions_testing_fixtures.oauth_fixture_server(
+            mcp_servers.OAUTH: mcp_fixture_servers.oauth_fixture_server(
                 mcp_servers.OAUTH, client_id=mcp_linkage.id, redirect_uri=mcp_linkage.redirect_uri
             )
         },
         action_groups={
-            mcp_servers.EVERYTHING_GROUP: actions_testing_fixtures.everything_group(),
-            mcp_servers.OAUTH: actions_testing_fixtures.oauth_fixture_group(mcp_servers.OAUTH),
+            mcp_servers.EVERYTHING_GROUP: mcp_fixture_servers.everything_group(),
+            mcp_servers.OAUTH: mcp_fixture_servers.oauth_fixture_group(mcp_servers.OAUTH),
             "sandbox": env.actions.action_groups["sandbox"],
         },
         oauth_secret_items=("client-secret",),
     )
     mcp_edge_config = replace(
         env.mcp_edge,
-        mintable_accounts=frozenset({ServiceAccountRef(namespace=fixture_chart.NAMESPACE, name=_MCP_EDGE_TEST_CALLER)}),
+        mintable_accounts=frozenset({ServiceAccountRef(namespace=NAMESPACE, name=_MCP_EDGE_TEST_CALLER)}),
         oauth_secret_name=_MCP_EDGE_OAUTH_SECRET,
     )
     env = replace(env, actions=actions_config, mcp_edge=mcp_edge_config)
@@ -77,9 +78,7 @@ def objects(
     ServiceAccount(
         fixture.chart,
         "mcp-edge-test-caller",
-        metadata=ApiObjectMetadata(
-            name=_MCP_EDGE_TEST_CALLER, namespace=fixture_chart.NAMESPACE, labels={CALLER_LABEL: "true"}
-        ),
+        metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_CALLER, namespace=NAMESPACE, labels={CALLER_LABEL: "true"}),
         automount_token=False,
     )
     _add_mcp_fixtures(
@@ -127,7 +126,7 @@ def _add_mcp_fixtures(
     trust_bundle = ConfigMap(
         chart,
         "trust-bundle",
-        metadata=ApiObjectMetadata(name=_TRUST_BUNDLE, namespace=fixture_chart.NAMESPACE),
+        metadata=ApiObjectMetadata(name=_TRUST_BUNDLE, namespace=NAMESPACE),
         data={_TRUST_BUNDLE_KEY: system_roots + mcp.dex_ca_cert},
     )
     for client in dex_clients:
@@ -140,8 +139,8 @@ def _add_mcp_fixtures(
         tls_secret=_DEX_TLS_SECRET,
         mcp_edge_login_secret_name=_MCP_EDGE_OAUTH_SECRET,
     )
-    actions_testing_fixtures.add_mcp_everything(chart, image=MCP_EVERYTHING_IMAGE)
-    actions_testing_fixtures.add_oauth_fixture(
+    mcp_fixture_servers.add_mcp_everything(chart, image=MCP_EVERYTHING_IMAGE)
+    mcp_fixture_servers.add_oauth_fixture(
         chart,
         authorization_server=fixture_chart.DEX_ISSUER,
         # The fixture fetches signing keys over Dex's plain-http port.
