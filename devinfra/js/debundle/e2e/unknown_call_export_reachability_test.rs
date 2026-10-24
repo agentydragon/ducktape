@@ -32,8 +32,21 @@ fn assert_split_preserved(source: &'static str) {
     );
 }
 
-fn assert_split_rejected(opts: FixtureOpts<'static>) {
+fn assert_split_rejected(opts: FixtureOpts<'_>) {
     expect_atomic_conflict_rejection(opts, &["values/dynamic", "values/later"], &[]);
+}
+
+fn assert_split_rejected_with_peer(
+    source: &'static str,
+    peer: &'static str,
+    admission_overrides: &'static [&'static str],
+) {
+    let peer_chunks = [("static/peer", peer)];
+    assert_split_rejected(
+        split_fixture(source)
+            .with_extra_chunks(&peer_chunks)
+            .with_admission_overrides(admission_overrides),
+    );
 }
 
 #[test]
@@ -70,8 +83,9 @@ console.log(later);
 
 #[test]
 fn exported_hoisted_function_is_reachable_before_its_declaration() {
-    assert_split_rejected(split_fixture(
-        r#"export function readLater() { return later; }
+    assert_split_rejected_with_peer(
+        r#"import "./peer.js";
+export function readLater() { return later; }
 const prefix = new globalThis.Error();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -80,13 +94,19 @@ const dynamic = ((object) => {
 const later = dynamic;
 console.log(later);
 "#,
-    ));
+        r#"import { readLater } from "./app.js";
+readLater();
+export {};
+"#,
+        &[],
+    );
 }
 
 #[test]
 fn exported_default_function_is_reachable_before_its_declaration() {
-    assert_split_rejected(split_fixture(
-        r#"const prefix = new globalThis.Error();
+    assert_split_rejected_with_peer(
+        r#"import "./peer.js";
+const prefix = new globalThis.Error();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -95,13 +115,19 @@ const later = dynamic;
 export default function () { return later; }
 console.log(later);
 "#,
-    ));
+        r#"import readLater from "./app.js";
+readLater();
+export {};
+"#,
+        &[],
+    );
 }
 
 #[test]
 fn initialized_exported_const_arrow_reaches_a_later_unknown_call() {
-    assert_split_rejected(split_fixture(
-        r#"export const readLater = () => later;
+    assert_split_rejected_with_peer(
+        r#"import "./peer.js";
+export const readLater = () => later;
 const prefix = new globalThis.Error();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -110,13 +136,19 @@ const dynamic = ((object) => {
 const later = dynamic;
 console.log(later);
 "#,
-    ));
+        r#"import { readLater } from "./app.js";
+readLater();
+export {};
+"#,
+        &[],
+    );
 }
 
 #[test]
 fn reachable_opaque_exported_body_retains_lexical_callback_reads() {
-    assert_split_rejected(split_fixture(
-        r#"export function opaque() { foreignTag`${readLater}`; }
+    assert_split_rejected_with_peer(
+        r#"import "./peer.js";
+export function opaque() { foreignTag`${readLater}`; }
 const prefix = new globalThis.Error();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -126,14 +158,19 @@ const later = dynamic;
 function readLater() { return later; }
 console.log(later);
 "#,
-    ));
+        r#"import { opaque } from "./app.js";
+opaque();
+export {};
+"#,
+        &[],
+    );
 }
 
 #[test]
 fn reachable_exported_direct_eval_retains_all_local_callables() {
-    assert_split_rejected(
-        split_fixture(
-            r#"export function evaluate() { eval("readLater()"); }
+    assert_split_rejected_with_peer(
+        r#"import "./peer.js";
+export function evaluate() { eval("readLater()"); }
 const prefix = new globalThis.Error();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -143,8 +180,11 @@ const later = dynamic;
 function readLater() { return later; }
 console.log(later);
 "#,
-        )
-        .with_admission_overrides(&["a1_eval"]),
+        r#"import { evaluate } from "./app.js";
+evaluate();
+export {};
+"#,
+        &["a1_eval"],
     );
 }
 
