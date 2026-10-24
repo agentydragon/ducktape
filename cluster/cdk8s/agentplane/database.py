@@ -4,6 +4,8 @@ credentials for managed roles.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from cdk8s import ApiObjectMetadata
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from cnpg_cluster_crds.io.cnpg.postgresql import (
@@ -18,6 +20,7 @@ from constructs import Construct
 
 from cluster.cdk8s import cnpg
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.cnpg import ClusterPlacement
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 from cluster.cdk8s.providers.cnpg.database import Database
@@ -69,12 +72,24 @@ def _role_credentials(
     )
 
 
+@dataclass(frozen=True)
+class DbProps:
+    instances: int
+    # Archive WAL and take base backups into the environment's SeaweedFS bucket
+    # (agentplane/db_backups.py) through the barman-cloud plugin.
+    wal_archive: bool
+    # Node selector, storage class, and control-plane tolerance are selected together.
+    profile: ClusterPlacement
+    size: str = "5Gi"
+    resize_in_use_volumes: bool | None = None
+
+
 class Db(Construct):
     """Shared CNPG Postgres Cluster, its per-service Databases, and the ESO-generated
     credentials for managed roles.
     """
 
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment, props: DbProps) -> None:
         super().__init__(scope, id)
         cluster = postgres(env)
 
@@ -86,10 +101,10 @@ class Db(Construct):
             self,
             "cluster",
             ref=cluster,
-            instances=env.db.instances,
-            profile=env.db.profile,
-            size=env.db.size,
-            resize_in_use_volumes=env.db.resize_in_use_volumes,
+            instances=props.instances,
+            profile=props.profile,
+            size=props.size,
+            resize_in_use_volumes=props.resize_in_use_volumes,
             # Electric's WAL-loss recovery purges every shape, then stays unready while
             # rebuilding its replication pipeline. Keep a bounded outage budget below the
             # configured volume instead of silently recycling the logical slot's WAL.
@@ -98,7 +113,7 @@ class Db(Construct):
             # fails requests and can stop background loops such as the History Service fold.
             postgresql=ClusterSpecPostgresql(parameters={"max_slot_wal_keep_size": "512MB", "max_connections": "300"}),
             initdb=cnpg.same_owner_initdb("app"),
-            wal_archive=env.db.wal_archive,
+            wal_archive=props.wal_archive,
             managed=ClusterSpecManaged(
                 roles=[
                     ClusterSpecManagedRoles(

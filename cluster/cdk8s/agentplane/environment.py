@@ -1,4 +1,4 @@
-"""One `Environment` per deployed Agentplane namespace (staging.py, testing.py). Every
+"""One `Environment` per Agentplane stack (staging.py, testing.py, the k3s fixture). Every
 construct in this package takes the whole environment and reads what it needs, so a value
 two constructs share (the egress CA name the runner template mounts, the namespace) is
 written once.
@@ -20,7 +20,6 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.llm_ingress.models import ModelConfig
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s.cnpg import ClusterPlacement
 from model_catalog.catalog import Route
 
 
@@ -33,18 +32,6 @@ class ReplicaProfile:
     min_ready: Duration | None
     # PodDisruptionBudget minAvailable for voluntary evictions, or None for no budget.
     pdb_min_available: int | None
-
-
-@dataclass(frozen=True)
-class DbProps:
-    instances: int
-    # Archive WAL and take base backups into the environment's SeaweedFS bucket
-    # (agentplane/db_backups.py) through the barman-cloud plugin.
-    wal_archive: bool
-    # Node selector, storage class, and control-plane tolerance are selected together.
-    profile: ClusterPlacement
-    size: str = "5Gi"
-    resize_in_use_volumes: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -168,7 +155,6 @@ class Environment:
     # Whether the History Service's writers remove an item's streamed delta entries once its
     # completion provably holds them (agentplane/history_service/README.md#delta-settlement).
     settle_deltas: bool
-    db: DbProps
     llm_ingress: LlmIngressProps
     egress: EgressProps
     app: AppProps

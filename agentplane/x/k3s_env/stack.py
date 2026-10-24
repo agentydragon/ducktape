@@ -1,4 +1,4 @@
-"""A bare-k3s copy of the `agentplane-testing` stack on one RBE action, for tests to drive.
+"""A bare-k3s Agentplane stack on one RBE action, for tests to drive.
 
 Starts k3s with kube-proxy and no Cilium, loads the Bazel-built service images, applies the composed
 manifest and yields the app's address and a token once every Deployment is Available. It fails at the

@@ -37,7 +37,10 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
+from pydantic import AnyHttpUrl
 
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
+from agentplane.app.action_federation_settings import DirectFederationSettings
 from cluster.cdk8s import cilium, pod_policy
 from cluster.cdk8s.agentplane import actions, app as app_component
 from cluster.cdk8s.config_format import yaml_config
@@ -90,6 +93,25 @@ def service() -> ServiceRef:
 def issuer(origin: str) -> str:
     """The issuer of a Dex served at `origin`, which Dex serves under `/dex`."""
     return f"{origin}/dex"
+
+
+def operator_oidc(*, issuer: str, app_client_id: str) -> OperatorOidcSettings:
+    """The Action Service's view of operators logged in to the app's Dex client `app_client_id`."""
+    return OperatorOidcSettings(
+        issuer=issuer, audience=app_client_id, jwks_uri=f"{issuer}/keys", token_profile=OperatorTokenProfile.DEX
+    )
+
+
+def action_federation(target: OperatorOidcSettings) -> DirectFederationSettings:
+    """The app hands the Action Service the operator's own Dex token, which `target` verifies."""
+    return DirectFederationSettings(
+        mode="direct",
+        service_url=AnyHttpUrl(actions.service(_NAMESPACE).url),
+        login_jwks_uri=target.jwks_uri,
+        login_token_profile=OperatorTokenProfile.DEX,
+        target=target,
+        scope="openid",
+    )
 
 
 @dataclass(frozen=True)

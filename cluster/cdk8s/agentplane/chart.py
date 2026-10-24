@@ -53,7 +53,7 @@ class Namespace(Construct):
         )
 
 
-def environment_chart(app: App, env: Environment) -> Chart:
+def environment_chart(app: App, env: Environment, *, db: database.DbProps) -> Chart:
     """The shared objects. The fleet rules attach as a synth-time validation, so a caller
     may keep adding objects to the returned chart and they are still checked.
 
@@ -61,7 +61,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
     adds them."""
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
-    database.Db(chart, "db", env)
+    database.Db(chart, "db", env, db)
     app_credentials = database.postgres(env).app_secret
     app_database_url = app_credentials.key("uri").env_value(chart, "postgres-app-database-url")
     actions_database_url = (

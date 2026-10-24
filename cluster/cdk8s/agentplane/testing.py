@@ -16,13 +16,10 @@ from pydantic import AnyHttpUrl
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from agentplane.action_service.catalog import ActionGroup
-from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
-from agentplane.app.action_federation_settings import DirectFederationSettings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles as access, cilium, cnpg, node_scheduling
 from cluster.cdk8s.agentplane import (
-    actions,
     app as app_component,
     app_settings,
     command_sandbox,
@@ -35,12 +32,12 @@ from cluster.cdk8s.agentplane import (
     sandbox_pod,
 )
 from cluster.cdk8s.agentplane.chart import environment_chart
+from cluster.cdk8s.agentplane.database import DbProps
 from cluster.cdk8s.agentplane.egress_credentials import TESTING_CREDENTIALS_NAMESPACE, EgressCredentials
 from cluster.cdk8s.agentplane.egress_testing_credentials import add_testing_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
-    DbProps,
     EgressProps,
     Environment,
     LlmIngressProps,
@@ -68,26 +65,7 @@ _CONNECTION_SERVICE = mcp_edge.service(TESTING_NAMESPACE)
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
 
 
-def operator_oidc(*, issuer: str, app_client_id: str) -> OperatorOidcSettings:
-    """The Action Service's view of operators logged in to the app's Dex client `app_client_id`."""
-    return OperatorOidcSettings(
-        issuer=issuer, audience=app_client_id, jwks_uri=f"{issuer}/keys", token_profile=OperatorTokenProfile.DEX
-    )
-
-
-def action_federation(target: OperatorOidcSettings) -> DirectFederationSettings:
-    """The app hands the Action Service the operator's own Dex token, which `target` verifies."""
-    return DirectFederationSettings(
-        mode="direct",
-        service_url=AnyHttpUrl(actions.service(TESTING_NAMESPACE).url),
-        login_jwks_uri=target.jwks_uri,
-        login_token_profile=OperatorTokenProfile.DEX,
-        target=target,
-        scope="openid",
-    )
-
-
-_FEDERATION_TARGET = operator_oidc(issuer=_DEX_ISSUER, app_client_id="agentplane-testing")
+_FEDERATION_TARGET = dex.operator_oidc(issuer=_DEX_ISSUER, app_client_id="agentplane-testing")
 _ACTION_GROUPS = {
     "sandbox": ActionGroup(
         title="Sandbox",
@@ -123,12 +101,11 @@ ENV = Environment(
         models=TESTING_APP_MODELS,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
-        action_federation=action_federation(_FEDERATION_TARGET),
+        action_federation=dex.action_federation(_FEDERATION_TARGET),
         public_coder_policy_sets=[],
         default_policy_sets=set(egress.DEFAULT_POLICIES),
     ),
     settle_deltas=True,
-    db=DbProps(instances=1, wal_archive=False, profile=cnpg.OVH_PIRAEUS_SSD, resize_in_use_volumes=False),
     llm_ingress=LlmIngressProps(
         litellm_key_secret_name=_LITELLM_KEY_SECRET,
         models=model_configs(TESTING_APP_MODELS),
@@ -236,7 +213,9 @@ class TestingNamespaceResourceLimits(Construct):
 
 
 def chart(app: App) -> Chart:
-    chart = environment_chart(app, ENV)
+    chart = environment_chart(
+        app, ENV, db=DbProps(instances=1, wal_archive=False, profile=cnpg.OVH_PIRAEUS_SSD, resize_in_use_volumes=False)
+    )
     mcp_edge.SchemaMigration(
         chart,
         "mcp-edge-schema-migration",

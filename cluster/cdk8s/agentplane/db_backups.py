@@ -1,5 +1,5 @@
 """Agentplane staging's CNPG backups (`cluster/generated/agentplane-staging/db-backups`), which
-the staging Cluster archives WAL to (`DbProps.wal_archive`)."""
+the staging Cluster archives WAL to (`database.DbProps.wal_archive`)."""
 
 from __future__ import annotations
 

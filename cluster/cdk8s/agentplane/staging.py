@@ -51,6 +51,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies, coinbase_egress_rules
 from cluster.cdk8s.agentplane.chart import environment_chart
+from cluster.cdk8s.agentplane.database import DbProps
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
     STAGING_CREDENTIALS_NAMESPACE,
@@ -62,7 +63,6 @@ from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
     BearerMcpMount,
-    DbProps,
     EgressProps,
     Environment,
     GitHubAppProps,
@@ -326,7 +326,6 @@ ENV = Environment(
     settle_deltas=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
-    db=DbProps(instances=2, wal_archive=True, profile=cnpg.OVH_PIRAEUS_SSD, size="16Gi", resize_in_use_volumes=True),
     llm_ingress=LlmIngressProps(
         litellm_key_secret_name=_LITELLM_KEY_SECRET,
         models=model_configs(STAGING_APP_MODELS),
@@ -444,7 +443,13 @@ def assignable_grants() -> tuple[KubernetesGrant, ...]:
 
 
 def chart(app: App) -> Chart:
-    chart = environment_chart(app, ENV)
+    chart = environment_chart(
+        app,
+        ENV,
+        db=DbProps(
+            instances=2, wal_archive=True, profile=cnpg.OVH_PIRAEUS_SSD, size="16Gi", resize_in_use_volumes=True
+        ),
+    )
     NetworkPolicy(
         chart,
         "networkpolicy-app-to-mcp-edge",

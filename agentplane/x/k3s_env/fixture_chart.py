@@ -1,4 +1,4 @@
-"""Compose the ephemeral Agentplane testing stack directly from cdk8s constructs.
+"""Compose the ephemeral k3s Agentplane stack directly from cdk8s constructs.
 
 The fixture keeps the service contracts and settings authored in cluster/cdk8s/agentplane.
 It supplies bare-k3s dependencies (Secrets, local-path storage) as inputs
@@ -29,6 +29,7 @@ from cdk8s_plus_34 import (
     ContainerSecurityContextProps,
     Cpu,
     CpuResources,
+    DeploymentStrategy,
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
@@ -38,6 +39,9 @@ from constructs import Construct
 from more_itertools import one
 from pydantic import AnyHttpUrl
 
+from agentplane.action_service.catalog import ActionGroup
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
+from agentplane.app.settings import AppSettingsConfig
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant
 from agentplane.x.k3s_env import fixture_database
@@ -63,11 +67,19 @@ from cluster.cdk8s.agentplane import (
     sandbox_controller,
     sandbox_pod,
     session_dispatcher,
-    testing,
 )
 from cluster.cdk8s.agentplane.chart import Namespace
-from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
-from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.egress_credentials import TESTING_CREDENTIALS_NAMESPACE, EgressCredentials
+from cluster.cdk8s.agentplane.environment import (
+    ActionsProps,
+    AppProps,
+    EgressProps,
+    Environment,
+    LlmIngressProps,
+    McpEdgeProps,
+    ReplicaProfile,
+)
+from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
 from cluster.cdk8s.model_selections import TESTING_APP_MODELS, HarnessRoutes, model_configs
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
@@ -75,7 +87,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API
 
-NAMESPACE = testing.ENV.namespace
+NAMESPACE = TESTING_NAMESPACE
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
 RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
@@ -101,6 +113,9 @@ _VM_GUEST_ROOT_SERIAL = "guest-root"
 # What the app offers when LLM ingress forwards to the public LiteLLM: models the BuildBuddy live-test key's
 # lane admits (`cheap_experiments_models`), neither waiting on the shared GPU as testing's Claude model does.
 _PUBLIC_LITELLM_MODELS = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESPONSES,))
+_ONE_REPLICA = ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None)
+_EGRESS_CA = "agentplane-testing-egress-ca"
+_LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
 
 
 def add_secret(
@@ -136,39 +151,70 @@ def linkage_client(app_origin: str) -> dex.StaticClient:
 def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORIGIN) -> Environment:
     """Build the common fixture settings; MCP renderers add their servers and Dex resources separately."""
     app_login = login_client(app_origin)
-    operator_oidc = testing.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
+    operator_oidc = dex.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
     routes = _PUBLIC_LITELLM_MODELS if isinstance(models, PublicLiteLLM) else TESTING_APP_MODELS
-    return replace(
-        testing.ENV,
-        vm_sandboxes=vm_sandboxes,
-        llm_ingress=replace(testing.ENV.llm_ingress, models=model_configs(routes), codex_routes=routes.codex),
-        # The scenarios' own preset in place of the deployment's, which an operator uses.
-        app_config=testing.ENV.app_config.model_copy(
-            update={
-                "models": app_settings.model_catalog(routes),
-                "connection_service_url": AnyHttpUrl(MCP_EDGE_SERVICE.url),
-                "thread_presets": {
-                    launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)
-                },
-                "sandbox_presets": {
-                    launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
-                        template=runner_sandbox.NAME, policy_sets=[egress.PACKAGES_POLICY]
-                    )
-                },
-                "action_federation": testing.action_federation(operator_oidc),
-            }
+    return Environment(
+        namespace=NAMESPACE,
+        description="Agentplane k3s fixture",
+        replicas=_ONE_REPLICA,
+        app_config=AppSettingsConfig(
+            models=app_settings.model_catalog(routes),
+            default_policy_sets=set(egress.DEFAULT_POLICIES),
+            connection_service_url=AnyHttpUrl(MCP_EDGE_SERVICE.url),
+            thread_presets={launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)},
+            sandbox_presets={
+                launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
+                    template=runner_sandbox.NAME, policy_sets=[egress.PACKAGES_POLICY]
+                )
+            },
+            egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
+            action_federation=dex.action_federation(operator_oidc),
         ),
-        app=replace(testing.ENV.app, origin=app_origin, oidc_issuer=DEX_ISSUER),
-        actions=replace(
-            testing.ENV.actions,
+        settle_deltas=True,
+        llm_ingress=LlmIngressProps(
+            litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(routes), codex_routes=routes.codex
+        ),
+        egress=EgressProps(
+            ca_secret_name=_EGRESS_CA,
+            credentials_namespace=TESTING_CREDENTIALS_NAMESPACE,
+            replicas=_ONE_REPLICA,
+            traffic_distribution=None,
+        ),
+        app=AppProps(origin=app_origin, oidc_issuer=DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
+        actions=ActionsProps(
             integrated_connection_service=False,
             operator_oidc=operator_oidc,
+            caller_service_account_namespaces=frozenset({NAMESPACE}),
             mcp_servers={},
-            action_groups={"sandbox": testing.ENV.actions.action_groups["sandbox"]},
+            action_groups={
+                "sandbox": ActionGroup(
+                    title="Sandbox",
+                    description="Boxes that run as the calling ServiceAccount, and bounded commands in them.",
+                    executor=PodExecutorBinding(
+                        kind="pod",
+                        description="Created and exec'd by this service, as the caller, in its own namespace.",
+                        namespace=NAMESPACE,
+                        templates=command_sandbox.TEMPLATES,
+                    ),
+                )
+            },
             oauth_secret_items=("client-secret",),
         ),
-        mcp_edge=replace(
-            testing.ENV.mcp_edge, operator_oidc=operator_oidc, mintable_accounts=frozenset(), oauth_secret_name=None
+        mcp_edge=McpEdgeProps(
+            replicas=_ONE_REPLICA,
+            operator_oidc=operator_oidc,
+            caller_service_account_namespaces=frozenset({NAMESPACE}),
+            mintable_accounts=frozenset(),
+            oauth_secret_name=None,
+            hostname=None,
+        ),
+        vm_sandboxes=vm_sandboxes,
+        vm_console_autologin=True,
+        wake_caller_accounts=frozenset(
+            {
+                ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME),
+                ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME),
+            }
         ),
     )
 
@@ -420,16 +466,11 @@ def build_chart(
         actions.mcp_oauth_secret(NAMESPACE).name,
         {"client-id": _MCP_LINKAGE.id, "client-secret": "test-k3s-actions-client-secret"},
     )
-    add_secret(
-        chart,
-        "agentplane-testing-egress-ca",
-        {"tls.crt": ca_cert, "tls.key": ca_key, "ca.crt": ca_cert},
-        kind="kubernetes.io/tls",
-    )
+    add_secret(chart, _EGRESS_CA, {"tls.crt": ca_cert, "tls.key": ca_key, "ca.crt": ca_cert}, kind="kubernetes.io/tls")
     k8s.KubeConfigMap(
         chart,
         "fixture-egress-ca",
-        metadata=k8s.ObjectMeta(name="agentplane-testing-egress-ca", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_EGRESS_CA, namespace=NAMESPACE),
         data={"ca-certificates.crt": system_roots + ca_cert},
     )
     k8s.KubeConfigMap(
@@ -439,12 +480,12 @@ def build_chart(
         data={"ca-certificates.crt": system_roots + cluster_ca},
     )
     key = models.key if isinstance(models, PublicLiteLLM) else "unused-without-litellm"
-    add_secret(chart, "litellm-key-cheap-experiments", {"api-key": key})
+    add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key})
     EgressCredentials(
         chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=NAMESPACE
     )
     if isinstance(models, PublicLiteLLM):
-        add_secret(chart, "litellm-key-cheap-experiments", {"api-key": key}, namespace=env.egress.credentials_namespace)
+        add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key}, namespace=env.egress.credentials_namespace)
     tool_config_grant = sandbox_pod.tool_config_grant(NAMESPACE)
     PolicySet(
         chart,

@@ -86,6 +86,8 @@ py_library(
     deps = [
         ":actions",
         ":app",
+        "//agentplane/action_service:operator_oidc_settings",
+        "//agentplane/app:action_federation_settings",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:gateway",
@@ -100,6 +102,7 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@pypi//pydantic",
     ],
 )
 
@@ -670,7 +673,6 @@ py_library(
         "//agentplane/action_service:operator_oidc_settings",
         "//agentplane/app:settings",
         "//agentplane/llm_ingress:models",
-        "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//model_catalog:catalog",
         "@pypi//cdk8s",
@@ -731,6 +733,7 @@ py_library(
         ":actions_staging_policies",
         ":chart",
         ":command_sandbox",
+        ":database",
         ":egress_credentials",
         ":egress_staging_credentials",
         ":environment",
@@ -778,16 +781,13 @@ py_library(
 py_library(
     name = "testing",
     srcs = ["testing.py"],
-    visibility = [
-        "//agentplane/x/k3s_env:__pkg__",
-        "//cluster/cdk8s:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":actions",
         ":app",
         ":app_settings",
         ":chart",
         ":command_sandbox",
+        ":database",
         ":dex",
         ":egress",
         ":egress_credentials",
@@ -800,9 +800,7 @@ py_library(
         ":policy_controller_rbac",
         ":sandbox_pod",
         "//agentplane/action_service:catalog",
-        "//agentplane/action_service:operator_oidc_settings",
         "//agentplane/action_service/sandbox:binding",
-        "//agentplane/app:action_federation_settings",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:cnpg",
