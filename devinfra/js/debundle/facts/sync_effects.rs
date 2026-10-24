@@ -2156,6 +2156,32 @@ pub(crate) fn annotate_synchronous_calls(
             complete: true,
             ..Outcome::default()
         };
+        // A source owner is indivisible, but can assign an existing binding
+        // before one of its calls, e.g. `(reader = () => later, host())`.
+        // Join these possible values before the flattened calls. Keep the
+        // previous values and do not mark initialization definite until the
+        // owner finishes; assignments on skipped/later paths are only may
+        // values. A lexical TDZ still blocks publication through that binding.
+        for (id, expression) in assignments {
+            if !needed.contains(id)
+                || !fact.rebinds.eager.contains(id)
+                || !(executor.var_bindings.contains(id)
+                    || executor.initialized_bindings.contains(id))
+            {
+                continue;
+            }
+            let values = executor.evaluate(expression, &top_env, &top_captures);
+            top_env
+                .entry(id.clone())
+                .or_default()
+                .extend(values.iter().cloned());
+            let possible = executor.prefix_values.entry(id.clone()).or_default();
+            let before = possible.len();
+            possible.extend(values);
+            if possible.len() != before {
+                executor.prefix_revision = executor.prefix_revision.wrapping_add(1);
+            }
+        }
         // Like callable writes above, top-level property writes are kept in a
         // separate visitor lane. Applying all of this statement's writes
         // before its flattened call list may expose a later write early, which
