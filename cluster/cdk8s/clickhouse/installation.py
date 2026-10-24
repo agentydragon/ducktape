@@ -17,9 +17,6 @@ from clickhouse_installation_crds.com.altinity.clickhouse import (
     ClickHouseInstallationSpecConfiguration,
     ClickHouseInstallationSpecConfigurationClusters,
     ClickHouseInstallationSpecConfigurationClustersLayout,
-    ClickHouseInstallationSpecConfigurationClustersLayoutShards,
-    ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas,
-    ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates,
     ClickHouseInstallationSpecConfigurationClustersSecret,
     ClickHouseInstallationSpecConfigurationClustersSecretValueFrom,
     ClickHouseInstallationSpecConfigurationClustersSecretValueFromSecretKeyRef,
@@ -81,10 +78,7 @@ _METRICS = Port(name="metrics", number=9363)
 _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
 _STORAGE_CLASS = "local-path-ovh-hdd-retain"
-_PIRAEUS_HDD_STORAGE_CLASS = "piraeus-hdd-local"
 _PIRAEUS_SSD_STORAGE_CLASS = "piraeus-ssd-local"
-_CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE = "clickhouse-piraeus-103711"
-_CLICKHOUSE_PIRAEUS_HDD_CLAIM = "data-piraeus-hdd"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
 _HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
 _SSD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "ssd"}
@@ -120,34 +114,6 @@ def _claim_spec(storage: str, storage_class: str = _STORAGE_CLASS) -> dict[str, 
         "storageClassName": storage_class,
         "resources": {"requests": {"storage": storage}},
     }
-
-
-def _clickhouse_pod_template(
-    name: str, node_selector: dict[str, str]
-) -> ClickHouseInstallationSpecTemplatesPodTemplates:
-    return ClickHouseInstallationSpecTemplatesPodTemplates(
-        name=name,
-        metadata={"labels": client.LABELS},
-        spec={
-            "nodeSelector": node_selector,
-            "affinity": _one_per_host(client.LABELS),
-            "terminationGracePeriodSeconds": 120,
-            "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
-            "containers": [
-                {
-                    "name": "clickhouse",
-                    "image": client.IMAGE,
-                    "imagePullPolicy": "IfNotPresent",
-                    "ports": [_METRICS.k8s_container_port()],
-                    "resources": {
-                        "requests": {"cpu": "500m", "memory": "2Gi"},
-                        "limits": {"cpu": "4", "memory": "8Gi"},
-                    },
-                    "securityContext": _CONTAINER_SECURITY_CONTEXT,
-                }
-            ],
-        },
-    )
 
 
 def _keeper_pod_template(
@@ -355,27 +321,7 @@ def clickhouse_chart(app: App) -> Chart:
                                 )
                             )
                         ),
-                        layout=ClickHouseInstallationSpecConfigurationClustersLayout(
-                            shards_count=1,
-                            replicas_count=2,
-                            shards=[
-                                ClickHouseInstallationSpecConfigurationClustersLayoutShards(
-                                    name="0",
-                                    replicas_count=2,
-                                    replicas=[
-                                        ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
-                                            name="0",
-                                            templates=(
-                                                ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
-                                                    pod_template=_CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE,
-                                                    data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
-                                                )
-                                            ),
-                                        )
-                                    ],
-                                )
-                            ],
-                        ),
+                        layout=ClickHouseInstallationSpecConfigurationClustersLayout(shards_count=1, replicas_count=2),
                     )
                 ],
             ),
@@ -389,11 +335,29 @@ def clickhouse_chart(app: App) -> Chart:
             ),
             templates=ClickHouseInstallationSpecTemplates(
                 pod_templates=[
-                    _clickhouse_pod_template(pod_template, _HDD_NODE_SELECTOR),
-                    _clickhouse_pod_template(
-                        _CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE,
-                        {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns103711"},
-                    ),
+                    ClickHouseInstallationSpecTemplatesPodTemplates(
+                        name=pod_template,
+                        metadata={"labels": client.LABELS},
+                        spec={
+                            "nodeSelector": _HDD_NODE_SELECTOR,
+                            "affinity": _one_per_host(client.LABELS),
+                            "terminationGracePeriodSeconds": 120,
+                            "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
+                            "containers": [
+                                {
+                                    "name": "clickhouse",
+                                    "image": client.IMAGE,
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "ports": [_METRICS.k8s_container_port()],
+                                    "resources": {
+                                        "requests": {"cpu": "500m", "memory": "2Gi"},
+                                        "limits": {"cpu": "4", "memory": "8Gi"},
+                                    },
+                                    "securityContext": _CONTAINER_SECURITY_CONTEXT,
+                                }
+                            ],
+                        },
+                    )
                 ],
                 volume_claim_templates=[
                     ClickHouseInstallationSpecTemplatesVolumeClaimTemplates(
@@ -402,12 +366,7 @@ def clickhouse_chart(app: App) -> Chart:
                         # Raw responses are retained for one year; the generous HDD
                         # volume leaves headroom for MergeTree parts and future tenants.
                         spec=_claim_spec("500Gi"),
-                    ),
-                    ClickHouseInstallationSpecTemplatesVolumeClaimTemplates(
-                        name=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
-                        reclaim_policy=ClickHouseInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
-                        spec=_claim_spec("500Gi", storage_class=_PIRAEUS_HDD_STORAGE_CLASS),
-                    ),
+                    )
                 ],
             ),
         ),
@@ -485,7 +444,7 @@ def keeper_chart(app: App) -> Chart:
                     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplates(
                         name=claim,
                         reclaim_policy=ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
-                        spec=_claim_spec("2Gi"),
+                        spec=_claim_spec("2Gi", storage_class=_PIRAEUS_SSD_STORAGE_CLASS),
                     )
                     for claim in (data_claim, control_plane_data_claim)
                 ]
