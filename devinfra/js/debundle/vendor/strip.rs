@@ -339,6 +339,7 @@ fn sweep_unreachable_top_level(
     }
 
     let mut swapped_reachability = vec![BTreeSet::new(); analyses.len()];
+    let mut swapped_reasons = BTreeMap::new();
     let mut swapped_root_items = BTreeSet::new();
     let mut queue: Vec<(usize, String)> = Vec::new();
     for (alias, stripped_export) in stripped {
@@ -346,6 +347,10 @@ fn sweep_unreachable_top_level(
             let decl_idx = resolve_declared_local(local, &declarer, chunk_path, alias)?;
             swapped_root_items.insert(decl_idx);
             if swapped_reachability[decl_idx].insert(stripped_export.package.clone()) {
+                swapped_reasons.insert(
+                    (decl_idx, stripped_export.package.clone()),
+                    SwappedReason::Export(alias.clone()),
+                );
                 queue.push((decl_idx, stripped_export.package.clone()));
             }
         }
@@ -353,6 +358,7 @@ fn sweep_unreachable_top_level(
 
     propagate_swapped_dependency_reachability(
         &mut swapped_reachability,
+        &mut swapped_reasons,
         &mut queue,
         &analyses,
         &declarer,
@@ -366,6 +372,7 @@ fn sweep_unreachable_top_level(
     );
     absorb_swapped_dependent_items(
         &mut swapped_reachability,
+        &mut swapped_reasons,
         &analyses,
         &declarer,
         &mutation_items_by_target,
@@ -438,10 +445,17 @@ fn sweep_unreachable_top_level(
                 .cloned()
                 .collect::<Vec<_>>()
                 .join(",");
+            let swapped_paths = packages
+                .iter()
+                .map(|package| {
+                    format_swapped_trace(i, package, &analyses, &module.body, &swapped_reasons)
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
             let packages = packages.iter().cloned().collect::<Vec<_>>().join(",");
             let residual_path = format_live_trace(i, &analyses, &module.body, &live_reasons);
             bail!(
-                "strip_swapped_vendor_exports vendor entry {chunk_path}: split-brain vendor swap: top-level item {i} remains reachable from the residual chunk while also belonging to swapped package(s) [{packages}] (declared=[{declared}], exports=[{exports}]); residual path: {residual_path}",
+                "strip_swapped_vendor_exports vendor entry {chunk_path}: split-brain vendor swap: top-level item {i} remains reachable from the residual chunk while also belonging to swapped package(s) [{packages}] (declared=[{declared}], exports=[{exports}]); swapped path: {swapped_paths}; residual path: {residual_path}",
             );
         }
     }
@@ -651,6 +665,7 @@ fn dependency_items(
 
 fn propagate_swapped_dependency_reachability(
     swapped_reachability: &mut [BTreeSet<String>],
+    swapped_reasons: &mut BTreeMap<(usize, String), SwappedReason>,
     queue: &mut Vec<(usize, String)>,
     analyses: &[ItemAnalysis],
     declarer: &BTreeMap<Id, usize>,
@@ -659,6 +674,10 @@ fn propagate_swapped_dependency_reachability(
     while let Some((i, package)) = queue.pop() {
         for dep_idx in dependency_items(&analyses[i], declarer, mutation_items_by_target) {
             if swapped_reachability[dep_idx].insert(package.clone()) {
+                swapped_reasons.insert(
+                    (dep_idx, package.clone()),
+                    SwappedReason::Dependency { from: i },
+                );
                 queue.push((dep_idx, package.clone()));
             }
         }
@@ -667,6 +686,7 @@ fn propagate_swapped_dependency_reachability(
 
 fn absorb_swapped_dependent_items(
     swapped_reachability: &mut [BTreeSet<String>],
+    swapped_reasons: &mut BTreeMap<(usize, String), SwappedReason>,
     analyses: &[ItemAnalysis],
     declarer: &BTreeMap<Id, usize>,
     mutation_items_by_target: &BTreeMap<Id, Vec<usize>>,
@@ -682,7 +702,8 @@ fn absorb_swapped_dependent_items(
             let mut packages = BTreeSet::new();
             let mut saw_declared_dependency = false;
             let mut blocked_by_residual_dependency = false;
-            for dep_idx in dependency_items(analysis, declarer, mutation_items_by_target) {
+            let dependencies = dependency_items(analysis, declarer, mutation_items_by_target);
+            for &dep_idx in &dependencies {
                 saw_declared_dependency = true;
                 if residual_export_closure.contains(&dep_idx)
                     && !shareable_items.get(dep_idx).copied().unwrap_or(false)
@@ -698,7 +719,15 @@ fn absorb_swapped_dependent_items(
                     .next()
                     .expect("one package after len check")
                     .clone();
+                let dependency = dependencies
+                    .into_iter()
+                    .find(|&dependency| swapped_reachability[dependency].contains(&package))
+                    .expect("an absorbed item has a dependency owned by its package");
                 swapped_reachability[i].insert(package.clone());
+                swapped_reasons.insert(
+                    (i, package.clone()),
+                    SwappedReason::Dependent { dependency },
+                );
                 queue.push((i, package));
             }
         }
@@ -707,6 +736,7 @@ fn absorb_swapped_dependent_items(
         }
         propagate_swapped_dependency_reachability(
             swapped_reachability,
+            swapped_reasons,
             &mut queue,
             analyses,
             declarer,
@@ -788,6 +818,47 @@ fn dependency_edges(
         }
     }
     out
+}
+
+#[derive(Debug, Clone)]
+enum SwappedReason {
+    Export(String),
+    Dependency { from: usize },
+    Dependent { dependency: usize },
+}
+
+fn format_swapped_trace(
+    start: usize,
+    package: &str,
+    analyses: &[ItemAnalysis],
+    items: &[ModuleItem],
+    reasons: &BTreeMap<(usize, String), SwappedReason>,
+) -> String {
+    let mut node = start;
+    let mut seen = BTreeSet::new();
+    let mut trace = Vec::new();
+    while seen.insert(node) {
+        trace.push(format_item_summary(node, &analyses[node], &items[node]));
+        match reasons
+            .get(&(node, package.to_owned()))
+            .expect("every swapped ownership has a recorded reason")
+        {
+            SwappedReason::Export(alias) => {
+                trace.push(format!("swapped export `{alias}` from package `{package}`"));
+                break;
+            }
+            SwappedReason::Dependency { from } => {
+                trace.push(format!("dependency of item {from}"));
+                node = *from;
+            }
+            SwappedReason::Dependent { dependency } => {
+                trace.push(format!("depends on swapped item {dependency}"));
+                node = *dependency;
+            }
+        }
+    }
+    trace.reverse();
+    trace.join(" -> ")
 }
 
 #[derive(Debug, Clone)]

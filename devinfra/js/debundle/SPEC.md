@@ -255,3 +255,11 @@ Helpers with non-top-level captured state, dynamic scopes and unsupported forms
 keep conservative timing. Eager argument reads,
 the helper's and local decorators' syntactic lazy read/rebind dependency closure,
 and target-local mutation/co-location edges remain. This is not purity.
+
+## Vendor split-brain evidence
+
+A partial vendor swap rejected for shared retained implementation reports both
+its swapped-package ownership path and its residual liveness path. Ownership
+traces distinguish dependencies of stripped exports from dependent items absorbed
+into the package island. These explain the stripper's conservative classification;
+they do not assert that every reported dependency executes synchronously.
