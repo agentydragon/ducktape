@@ -1,6 +1,6 @@
 # DRBD canary execution
 
-Disposable fixtures for the [canary runbook](../../docs/drbd_canary.md).
+Disposable fixtures for the retired FILE_THIN canary; the deployed design is [Piraeus block storage](../../docs/piraeus.md).
 These resources are applied explicitly for the experiment; Flux does not own
 them. The provider itself is managed through Flux. Do not run before both
 workers and the `local-canary` class pass preparation checks.

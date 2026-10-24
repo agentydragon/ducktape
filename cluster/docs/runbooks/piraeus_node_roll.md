@@ -1,60 +1,19 @@
-# Roll an OVH Talos node onto Piraeus
+# Evacuate and reimage an OVH Talos node
 
-Convert an evacuated node's whole physical data disk into a Piraeus thin pool,
-split its Talos system volumes, then restore application members. This runbook
-carries forward the first physical SSD conversion; it is not evidence that a
-later node has been drained or converted. Each destructive window needs its own
-accepted inventory and disk identities. Future PRs require the operator's
-go-ahead before merge.
+Take one Piraeus node out of service, reset or reimage it, and restore its
+application members: for a disk failure, a Talos reset, a system-layout change
+or adding a new node. Every OVH node already runs the split system layout and a
+whole-data-disk pool ([Piraeus block storage](../piraeus.md)); this runbook keeps
+the gates and handoffs that worked during the migration
+([lessons](../lessons_learned/2026_10_24_piraeus_ovh_migration.md)). Each
+destructive window needs its own fresh inventory, disk identities and the
+operator's go-ahead.
 
-The [Piraeus migration evidence index](../../debug/piraeus_migration/README.md)
-tracks the latest status separately from dated inventories and proofs. Refresh
-its gates from live state before any operation.
-
-## Next candidates and ordering
-
-All three OVH SSD control planes are now converted and accepted. The HDD
-evacuation is the next active lane; refresh its capacity, placements and shared
-service gates before choosing a destructive window.
-
-| Node            | Reason / complication                                                                                                                                                                                                                                |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ovh-ns1001419` | First converted SSD control plane. Attic and Study Casino replicas returned on Piraeus; Seaweed passed a bounded native SSD move and separate S3 checks. Master-2 also returned to its 4Gi Piraeus claim.                                            |
-| `ovh-ns104952`  | Converted and accepted. Dedicated system volumes, whole-disk SSD pool, reboot/PVC acceptance, Seaweed SSD server and master-1 restoration are complete. PostgreSQL claims on this node now receive the final SSD control plane's evacuated replicas. |
-| `ovh-ns104963`  | Converted and accepted. Dedicated system partitions, whole-disk pool, PVC/reboot checks, Attic/Study replicas, Seaweed SSD server and master-0 restoration passed. Terraform source/state are reconciled; the node is uncordoned.                    |
-
-Finish the control planes first by default. Before evacuating the last legacy
-SSD volume server on `104963`, accept a replacement server on the converted
-`104952`. The current `104963` and `1001419` servers each hold all SSD volumes;
-`1001419` alone cannot preserve two copies outside `104963`. Keep the final
-legacy server available until that second Piraeus destination is ready.
-
-One HDD worker may accompany one control plane under the paired-roll gates below.
-OptiPlex has its own installed [single-disk layout](../optiplex_provisioning.md);
-wyrm2 still needs a separate hardware, capacity, local-data and site-dependency
-plan. Do not apply this OVH disk recipe to either machine unchanged.
-
-### Paired HDD worker and SSD control plane
-
-Different media separate the bulk-data failure domains, but both lanes depend on
-Seaweed masters, filer PostgreSQL, Kubernetes, LINSTOR and the physical network.
-Evacuate shared services one at a time. Overlap the node reset/reformat/rejoin
-windows only after **both nodes pass evacuation and the union of their outages
-passes every gate**. Do not roll two control planes or two HDD workers under this
-profile.
-
-Worker inventory, 2026-10-22:
-
-| Worker         | Relevant dependencies before pairing                                                                                                                                                                                                                                                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ovh-ns102453` | HDD volume-1 and active evacuation destination, filer-0, ClickHouse data/Keeper and multiple DB replicas. The temporary masters 1/2 have returned to the converted SSD nodes. Keep this destination available while evacuating `103656`; refresh Raft placement before pairing any later control-plane window.                                   |
-| `ovh-ns103656` | HDD volume-2 is the last ordinal, convenient for retirement. Currently hosts LINSTOR controller, CSI controller and affinity controller. Its configured LINSTOR datastore is Kubernetes; move the control Pods and verify metadata availability before taking it down. Also inspect Keeper-0, local backup receivers, Haku WAL and other claims. |
-| `ovh-ns103711` | HDD volume-0, filer-1, ClickHouse data/Keeper, multiple DB members and application claims. Shrinking the old HDD group removes its last ordinal, not volume-0; use an explicitly reviewed ordinal-preserving handoff.                                                                                                                            |
-
-No worker is selected solely from this table. Inventory every bound PV on both
-targets, classify its actual backend and consumers, and choose the pair with the
-smallest verified shared failure budget. A Seaweed CSI claim mounted on a target
-does not mean its backing data resides on that target.
+Roll one node at a time. One HDD worker may overlap one SSD control plane only
+after both are evacuated and the union of their outages passes every gate below;
+never overlap two control planes or two HDD workers. Shared services (Seaweed
+masters, filer PostgreSQL, Kubernetes, LINSTOR, the network) are evacuated one
+at a time even then.
 
 ## Gates
 
@@ -67,7 +26,7 @@ node returns. In a pair, evaluate against **both targets simultaneously**.
 | Seaweed masters   | Three healthy masters at boundaries, consistent leader and peer list; at least two healthy masters outside the outage set. No overlapping master handoffs. Preserve Raft state and cluster identity.                                                   |
 | Seaweed data      | No missing or under-replicated volumes. Before retiring each source, every affected volume has two verified healthy copies outside the outage set in its required media/DC/rack. Keep sources online until evacuation and client refresh are accepted. |
 | PostgreSQL        | Each affected replicated cluster has at least two healthy, caught-up members outside the outage set before disk destruction. Move every target primary first. Resolve singleton clusters explicitly.                                                   |
-| Piraeus           | Controller metadata, operator and CSI control services survive off-target; no live resource/snapshot depends on a target FILE_THIN directory. Existing strict-local application volumes remain on available nodes.                                     |
+| Piraeus           | Controller metadata, operator and CSI control services survive off-target; the target is fenced from autoplacement. Existing strict-local application volumes remain on available nodes.                                                               |
 | Other state       | ClickHouse Keeper retains a majority; replicated data services retain a healthy copy. Handle Valkey queues, WALs, ingesters, backup receivers and singleton local claims individually. A successful generic drain does not prove data safety.          |
 | Capacity          | Remaining nodes can carry workloads and full evacuated data with agreed headroom. Bound copy concurrency and bandwidth across both lanes; inspect pool data and metadata, disk latency, memory pressure and replication lag.                           |
 
@@ -77,284 +36,32 @@ before the next node or pair.
 
 ## 1. Prepare the node-specific changes
 
-Current configuration explicitly prepares the three converted SSD nodes. A label
-alone does not prepare another pool. Review these changes before the maintenance
-window; merge only with the operator's go-ahead:
+Reimaging an existing node needs no configuration change: its Talos layout, its
+Piraeus satellite (by-id data device) and its pool monitoring are already
+declared. Re-read disk identities from the live node and compare them with
+[`ovh-nodes.tf`](../../terraform/main/ovh-nodes.tf) and
+[`piraeus.py`](../../cdk8s/piraeus.py) before the window; a replaced disk changes
+its serial and by-id path.
 
-- Add the target to the explicit converted-node map in
-  [Talos configuration](../../terraform/main/ovh-nodes.tf). Preserve the other
-  accepted nodes and leave unconverted nodes unchanged. Generate the
-  private machine configuration from the same desired source.
-- Extend [Piraeus configuration](../../cdk8s/piraeus.py) with an inert, explicit
-  per-node satellite selector and the target's actual data-disk by-id path.
-  Preserve the existing operator and LINSTOR cluster. SSD nodes reuse their
-  accepted pool name and StorageClass; the first HDD pool and class need their
-  own reviewed media-specific configuration and acceptance.
-  Enable raw-device initialization only after evacuation, old Talos data-volume
-  removal and disk wipe have been verified.
-- Extend [pool monitoring](../../cdk8s/piraeus_metrics.py) to the new node.
-  Preserve per-node identity and absent/stale detection; one healthy node must
-  not mask another missing pool.
-- Exclude only the converted node from fresh local-path provisioning: empty
-  nodePathMap entry and hostname exclusions in every applicable legacy SC,
-  including deprecated aliases. Existing bound claims remain readable during
-  evacuation. Remove only the target's legacy UserVolumeConfig at cutover.
-- Prepare workload evacuation and restoration changes separately from the node
-  layout. Keep original DB instance counts and claim sizes recorded; temporary
-  replicas are not a decision to increase permanent capacity.
+A new node needs, reviewed and merged with the operator's go-ahead:
+
+- An entry in `piraeus_talos_node_layouts` (system disk selector and role profile).
+- A per-node satellite configuration in `piraeus.py` with the data disk's by-id
+  path, selected by hostname plus `storage.allegedly.works/piraeus-ready`, and
+  `ExtCmd/WaitTimeout` for HDDs.
+- Pool monitoring in [`piraeus_metrics.py`](../../cdk8s/piraeus_metrics.py), with
+  per-node absent/stale detection.
+- Its Seaweed volume group, if it hosts one (step 4).
+
+Before the window, fence the node in LINSTOR so new diskless tiebreakers do not
+land on it: `linstor node set-property NODE AutoplaceTarget false`. Prepare
+workload evacuation changes separately from the node layout, recording original
+instance counts and claim sizes; temporary replicas are not a capacity decision.
 
 Inspect a machine-readable Terraform plan. It must not reset another node,
 replace persistent cluster identity, invoke the OVH rescue/dd installation path,
 or apply partition changes to a serving machine. Do not run a broad apply to
-start maintenance. The first-node directory-to-partition conversion was rejected
-by the live Talos configuration validator even in staged mode; perform that
-transition through maintenance mode. Reconcile Terraform afterward and inspect
-the remaining plan.
-
-### Disk and system-volume worksheet
-
-Live Talos inventory on 2026-10-22 matched Terraform:
-
-| Node           | System disk serial   | Data disk serial     | Each physical disk |
-| -------------- | -------------------- | -------------------- | -----------------: |
-| `ovh-ns104952` | `BTPF8256006P450RGN` | `BTPF8304019P450RGN` | 450098159616 bytes |
-| `ovh-ns104963` | `BTPF8256002V450RGN` | `BTPF8256009U450RGN` | 450098159616 bytes |
-
-Both are Intel SSDPE2MX450G7 devices, smaller than the pilot's 512 GB disks.
-Refresh serial, size, by-id mapping, partition geometry and actual system-disk
-selection through Talos before execution; Linux device order is not identity.
-
-Use the accepted SSD control-plane budgets if actual geometry fits:
-
-| Talos volume |    Size |
-| ------------ | ------: |
-| ETCD         |  16 GiB |
-| EPHEMERAL    |  32 GiB |
-| CRI          | 192 GiB |
-| KUBELET      | 128 GiB |
-| LOG          |  16 GiB |
-
-These total 384 GiB. On the 450 GB disks, the nominal remainder is about 35 GiB
-**before** boot/STATE and alignment overhead. Record actual remaining space,
-rather than carrying over the first node's free-space figure. Bind each volume
-to the verified system serial, fixed min/max sizes, grow=false.
-
-Give the separate SSD data disk wholly to the existing `piraeus_ssd/data` LVM
-thin pool with the accepted 4 GiB metadata, metadata spare and 64 KiB chunk
-sizing. Record actual resulting capacity after creation.
-
-Worker system-volume and HDD pool budgets follow in a separate worksheet; do not
-copy the SSD disk identities or assume an ETCD volume is required on a worker.
-
-### First HDD worker system-volume worksheet
-
-Preparation snapshot, 2026-10-23: `ovh-ns103656` is the first HDD worker target.
-It is drained and cordoned. The operator authorized reformat after waiving all
-48 remaining historical source directories. The maintenance worksheet recorded
-that no archive stream or source deletion had occurred; the waiver is not a
-backup. Refresh the worker and shared-service gates above before the reset.
-
-Both physical disks were verified at 2000398934016 bytes. Talos does not report
-the system disk serial, so both system-volume and data-disk selectors use the
-verified WWID. The installation path names the system disk by-id:
-
-<!-- prettier-ignore -->
-| Role | by-id path | WWID | Bytes |
-| --- | --- | --- | ---: |
-| System | `/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H5NGHA` | `naa.5000cca25ed0aa31` | 2000398934016 |
-| Data | `/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA` | `naa.5000cca25ed21ab1` | 2000398934016 |
-
-Use these worker Talos volumes on the system disk; workers have no ETCD volume:
-
-<!-- prettier-ignore -->
-| Talos volume | Size |
-| --- | ---: |
-| EPHEMERAL | 32 GiB |
-| CRI | 512 GiB |
-| KUBELET | 1024 GiB |
-| LOG | 32 GiB |
-
-The system volumes total 1600 GiB, leaving about 263 GiB before Talos boot/STATE,
-alignment and other geometry overhead. Keep that remainder unallocated; do not
-use the system disk for Piraeus. Piraeus will use only the separate whole data
-disk after its existing data has been evacuated and the disk has been wiped.
-
-The prepared Terraform layout removes the `drbd-canary` FILE_THIN selector and
-keeps `storage.allegedly.works/piraeus-ready` absent. Before resetting the
-worker, inspect a machine-readable targeted plan: it must show the intended
-system layout for this worker only, no changes to the accepted SSD nodes, and no
-`null_resource.install_talos_kimsufi`, OVH rescue or `dd` installer action. Do
-not apply it to the serving node. After reimage, verify the volume layout and
-data-disk identity before preparing a separate readiness change or selecting the
-data disk for Piraeus initialization.
-
-### Second HDD worker identity and accepted layout
-
-`ovh-ns103711` uses the same worker system-volume profile: EPHEMERAL 32 GiB,
-CRI 512 GiB, KUBELET 1024 GiB and LOG 32 GiB. Talos inventory on 2026-10-23
-verified two 2000398934016-byte HGST disks:
-
-<!-- prettier-ignore -->
-| Role | by-id path | WWID |
-| --- | --- | --- |
-| System | `/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H61MEA` | `naa.5000cca25ed0d7d6` |
-| Data | `/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H48V6A` | `naa.5000cca25ed00a31` |
-
-The maintenance layout, whole-disk pool, controlled reboot and Terraform
-source/live/state agreement passed before admission on 2026-10-24; readiness is
-enabled and the node is uncordoned. Do not repeat initial layout/reset or
-rescue/dd installation on the serving node. Refresh the shared gates before
-further maintenance.
-
-For this node only, the operator authorized discarding remaining Seaweed source
-copies after verifying a healthy surviving copy elsewhere, then restoring
-replication after reimage. The normal two-copy gate outside the outage set is
-waived for this window; no other node may be rolled concurrently. The operator
-also accepted a temporary single ClickHouse data replica on `102453` and waived
-preservation of the Anki volume. Preserve and move both Grocy configurations via
-a final consistent VolSync copy to Piraeus, and preserve Langfuse queue state.
-Flush replicated ingesters and check their survivors before retirement.
-
-### Final OVH HDD worker preparation
-
-`ovh-ns102453` remains cordoned while Seaweed repairs and evacuates its final
-legacy HDD server. Preparation does not activate its raw-device pool. The
-Terraform layout enables the existing worker profile: EPHEMERAL 32 GiB, CRI
-512 GiB, KUBELET 1024 GiB and LOG 32 GiB, all on the system disk. There is no
-worker ETCD volume and no system-disk Piraeus pool; unused system space remains
-unallocated.
-
-Talos inventory on 2026-10-24 verified two 4000787030016-byte HGST disks:
-
-<!-- prettier-ignore -->
-| Role | by-id path | WWID |
-| --- | --- | --- |
-| System | `/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V1HADBTH` | `naa.5000cca0bcd2d1b0` |
-| Data | `/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V3H370PN` | `naa.5000cca0c4cf8efa` |
-
-The entire data disk is reserved for `piraeus_hdd/data`, with 4 GiB thin
-metadata, its metadata spare and 64 KiB chunks. Measure actual capacity after
-initialization. The node-specific pool and its LVM collector require both the
-hostname and `storage.allegedly.works/piraeus-ready=true`; readiness stays
-**false** in this preparation. New OVH local-path allocations are disabled,
-including legacy aliases; bound claims remain readable.
-
-Activate evacuation separately through its GitOps AdminScript only after each
-source volume has a healthy copy elsewhere. Before merging/applying this
-maintenance layout, require an empty source, two healthy off-node copies of
-every original source volume, current shared-service gates and no remaining
-application consumers. A successful repair Job alone does not prove this.
-Refresh client volume locations before retiring the source server. Remove the
-old `drbd-canary` selection only after proving zero LINSTOR resources and
-snapshots, and retain both readiness gates through the physical rebuild.
-
-Inspect a targeted Terraform plan before maintenance: only this worker's
-intended machine configuration may change, with no rescue/dd installer action
-or changes to accepted nodes. Do not apply the layout to the serving node.
-Reimage through the existing maintenance procedure, verify both physical disk
-identities and all system mounts, then prepare a separate Piraeus readiness
-change. Re-run pool, filesystem/block PVC, reboot and shared-service gates
-before uncordoning. This preparation authorizes none of those later mutations.
-
-### Applied and proposed data-disk layouts
-
-Live LVM reporting on 2026-10-22 confirmed that the first node has one whole-device
-PV on `/dev/nvme1n1`, VG `piraeus_ssd`, with 4 MiB extents and no free VG extents.
-Its thin-data LV is exactly 503517806592 bytes. Other rows are estimates using
-the same layout; record the actual extent/alignment result after initialization.
-
-| Node                          | Physical data disk |         Thin-data LV | Thin metadata + spare | Seaweed volume-server PVC |
-| ----------------------------- | -----------------: | -------------------: | --------------------: | ------------------------: |
-| `ovh-ns1001419`, applied SSD  |         476.94 GiB | 468.94 GiB, measured |             4 + 4 GiB |                     250Gi |
-| `ovh-ns104952`, applied SSD   |         419.19 GiB | 411.18 GiB, measured |             4 + 4 GiB |                     250Gi |
-| `ovh-ns104963`, applied SSD   |         419.19 GiB | 411.18 GiB, measured |             4 + 4 GiB |                     250Gi |
-| `ovh-ns103656`, candidate HDD |        1863.02 GiB |    about 1855.02 GiB |             4 + 4 GiB |   1700Gi, sizing proposal |
-
-The HDD candidate's 2000398934016-byte HGST data disk has serial `K5H8UMLA`;
-its separate system disk is `K5H5NGHA`. Keep every converted SSD Seaweed replica
-at 250Gi. A common 1700Gi for converted HDD replicas is proposed pending actual
-consumer-usage checks and layout review; existing HDD claims request 1800Gi.
-Replace each old claim during its native migration rather than trying to shrink
-an existing PVC.
-
-These are thin logical volumes inside the shared pool, not fixed Seaweed-only
-partitions. Other applications use the pool through their own PVCs. The first
-node's four application requests total 263Gi. On the HDD candidate, current
-requests are 1800Gi Seaweed plus 90Gi for other local claims: 1890Gi exceeds the
-estimated 1855Gi pool before DRBD overhead. A proposed 1700Gi Seaweed PVC plus
-those 90Gi of other claims totals 1790Gi of logical capacity, 65Gi below the
-estimate. That difference is not 65Gi of reserved physical free space. Measure
-actual per-consumer usage: legacy local-path requests were not enforced limits.
-
-### First HDD pool initialization retry
-
-The first `ovh-ns103656` pool-creation failure was reported after about 61 seconds.
-Its 45-second wait plus 15-second termination is inferred; the retry obscured the
-original command failure. A later direct thin-pool `lvcreate` completed in 46.5
-seconds, supporting an external-command timeout during 4 GiB metadata and spare
-initialization as the leading explanation, though the original failed command is
-unknown. The target satellite now sets `ExtCmd/WaitTimeout` to 180000 ms.
-
-Before removing partial LVM state or retrying, verify that LINSTOR reports zero
-resources on this satellite and zero cluster snapshots. Enable `piraeus-ready`
-only after the physical data-disk and system-volume ownership gates pass; then
-keep the node cordoned and prevent application PVCs until repair and media-specific
-pool acceptance are complete.
-
-### Accepted thin-pool overcommit policy
-
-Approved policy (2026-10-22): aggregate logical PVC capacity may exceed the
-physical thin-data pool, provided each PVC's declared size is bounded and actual
-pool use and headroom are monitored. Logical capacity is not a physical
-reservation, and this policy does not promise that all PVCs can be filled at
-once. Treat any such overcommit as temporary capacity debt to resolve through
-workload placement and balancing; do not assume extra disks or indefinite
-overcommit. On 2026-10-24, `ovh-ns103711` has six Bound `piraeus-hdd-local`
-claims: 1700Gi SeaweedFS, 500Gi ClickHouse, two 2Gi Valkey replicas and two 10Gi
-monitoring claims, totaling 2224Gi against a measured 1855.015625GiB thin-data
-pool. The 368.984375GiB excess (19.89%), before reserve and additional volume
-overhead, is tracked in
-[#11786](https://github.com/agentydragon/ducktape/issues/11786).
-
-Enforce the planned per-PVC sizes. Monitor actual thin-data and thin-metadata
-utilization independently of PVC capacity, with fresh samples and alerts for
-each pool. Before evacuation or node maintenance, verify both metrics and the
-destination's actual free-space reserve; pause new allocation or migration if
-samples are stale, the pool is unhealthy, or available headroom falls below
-the approved reserve. PVC totals and volume-slot limits do not establish
-physical headroom.
-
-When a live pool's aggregate provisioned PVC capacities exceed its
-physical thin-data capacity, open a dedicated Ducktape GitHub issue and add
-the issue link here. Record physical capacity, total provisioned PVC capacities,
-actual data and metadata use, remaining headroom and alert state, contributing
-claims (including ClickHouse), and concrete mitigation or growth options. Track
-an exit plan such as rebalancing volumes or moving suitable workloads to SSD.
-Close the issue only after placement or size changes bring aggregate provisioned
-PVC capacities within the usable physical-pool budget, accounting for agreed
-reserve and overhead, and fresh data, metadata, and free-space measurements
-confirm the agreed headroom. Low current pool use alone does not resolve
-overcommit. If the owner explicitly accepts a revised target, record that
-target and its rationale in the issue before closing.
-
-### HDD evacuation capacity checkpoint
-
-On 2026-10-22 the HDD group had **496 logical volumes, 992 placements**, all with
-exactly two copies. Evacuating any one of its three servers requires all 496
-volumes on each survivor. The existing 400-slot cap therefore blocks complete
-evacuation; increasing to 600 slots gives 104 spare slots per survivor at this
-snapshot. A slot increase does not create physical space.
-
-For the preferred `103656` candidate, the observed missing-copy sizes were
-621350169600 bytes to `103711` and 427655280192 bytes to `102453`. Subtracting
-these from reported free space predicts about 236 GB and 1957 GB free afterward.
-The smaller survivor would be only about **36 GB above its 10% free-space
-threshold**, before copy overhead and new writes. A later refresh projected
-233.62GB free (11.7%), 66.29GB below the 15% reserve; that copy wave remained
-held. The native ClickHouse-to-SSD proposal and current copy progress are in
-[the evacuation evidence](../../debug/piraeus_migration/next_nodes/README.md#hdd-headroom-proposal).
-Refresh actual copy sizes, other local usage, growth and headroom before declaring
-the space gate passed. Do not infer adequate headroom from the enlarged slot limit.
+start maintenance: partition changes go through the Talos maintenance API.
 
 ## 2. Evacuate application state while sources remain available
 
@@ -376,15 +83,12 @@ then require healthy streaming members and the correct read-write Service
 endpoint before the next cluster. Cordon after every primary is off-target;
 retire and rebuild the source standbys serially afterward.
 
-1. For each of the seven SSD evacuation clusters listed in
-   [CNPG conventions](../cnpg_conventions.md#current-compliance), work serially:
-   finish and verify one before starting the next. Record its desired count
-   (two), each Pod/PVC UID, size, StorageClass and primary. The prepared Git
-   template keeps two instances, sizes the replacement for measured PGDATA
-   plus headroom, uses `piraeus-ssd-local` for a new claim, and disables resize-in-use. Existing
-   claims keep their StorageClass and size.
-   Measure actual PGDATA, including WAL: legacy local-path requests were not
-   enforced limits. Stop before requesting a replacement that cannot hold the
+1. For each CNPG cluster with a member on the target (see
+   [CNPG conventions](../cnpg_conventions.md#current-compliance)), work serially:
+   finish and verify one before starting the next. Record its desired count,
+   each Pod/PVC UID, size, StorageClass and primary. New claims use
+   `piraeus-ssd-local`, sized for measured PGDATA plus headroom.
+   Measure actual PGDATA, including WAL. Stop before requesting a replacement that cannot hold the
    current data and agreed reserve.
 2. Put a brief, resource-specific Flux hold on that Cluster, then temporarily
    request a third member. Required hostname anti-affinity should place the new
@@ -399,12 +103,11 @@ retire and rebuild the source standbys serially afterward.
    member selection; scaling down alone does not identify which ordinal it
    will remove. UID-guard Pod/PVC operations and retain the PV. Verify two
    healthy members remain outside the outage set.
-5. Restore the Cluster's desired count to two before removing its Flux hold.
-   Verify Flux and CNPG agree on two members, then proceed to the next cluster.
-   Repeat until all seven have been evacuated.
-6. Attic and Study Casino are already at three members and are outside this
-   seven-cluster procedure. Move a target primary first and retain two healthy
-   off-target members. Study Casino stays **1Gi**.
+5. Restore the Cluster's desired count before removing its Flux hold. Verify
+   Flux and CNPG agree, then proceed to the next cluster.
+6. Three-member clusters (Attic, Study Casino) need no temporary member: move a
+   target primary first and retain two healthy off-target members. Study Casino
+   stays **1Gi**.
 
 Use a brief, resource-specific Flux hold for each temporary member change. A
 parent can undo suspension of a child Kustomization; hold the managed resource
@@ -430,47 +133,26 @@ active.
 
 Refresh long-lived FUSE clients while the old endpoint still exists, then check
 that requests no longer depend on it. The [retirement caveat](rolling_seaweedfs_volume_pvc.md#caveat-retiring-a-volume-server-refresh-fuse-clients-before-you-delete-it)
-describes the cached-location failure. Retire only the evacuated ordinal:
-`ssd-1` on `ovh-ns104952` permits old-group replicas 2 to 1; a later empty
-`ssd-0` permits removal of the remaining old group. The HDD group needs the same
-ordinal check. Do not treat a generic PVC-roll drain as proof of evacuation.
+describes the cached-location failure: an alive-but-empty server still proxies
+reads, so a stale client never re-resolves. A rolling restart that lands on the
+same node keeps its CSI mount staged; scale the consumer to zero and back to
+respawn the mount. Refresh `seaweedfs-s3` and `public-s3` Pods serially for the
+same reason. Do not treat a generic PVC-roll drain as proof of evacuation.
 
-### Retiring HDD ordinal 0 while preserving ordinal 1
+Each node's volume server is its own `volumeTopology` group, so retiring it
+removes a whole group rather than an ordinal. Avoid `volumeServer.leave` while
+copies must stay preserved: it makes `/healthz` return 503 and liveness
+restarts the server. If the owner waives two copies to shorten the window,
+record the exact volume set, delete only those source copies under the admin
+lock, and run copy-only repair onto the replacement server afterward; a server
+added after repair started is absent from its topology snapshot, so start a
+fresh run.
 
-For the approved `103711` single-copy window, preserve the legacy HDD peer
-`seaweedfs-volume-hdd-1` on `102453`. A plain replicas 2 to 1 removes ordinal 1,
-which is the peer that must survive. The pinned operator has no per-CR pause or
-ordinal-start field and would reconcile the old group's replica count back.
+### Seaweed masters: identity-preserving claim moves
 
-First remove only `hdd` from the Seaweed CR's desired topology map. Operator
-0.1.42 iterates configured groups and leaves omitted groups' existing resources
-in place; verify the deployed operator version before relying on this. Wait for
-the CR to observe the new generation and verify the old StatefulSet, both Pod
-UIDs, services and claims remain unchanged. The old StatefulSet temporarily
-holds the legacy group's desired state outside topology reconciliation.
-
-Refresh every source volume's off-node survivor and the user's scoped waiver,
-plus masters, filer/database, S3 and affected FUSE client health. Under exact
-StatefulSet UID/resource-version guards, atomically set `ordinals.start: 1` and
-`replicas: 1`; retain both PVCs and verify only ordinal 0 stops. Require the
-original ordinal 1 Pod/claim identities, native server registration, surviving
-volume placement and application reads to remain healthy. Never create ordinal
-2 or delete the peer's PVC as part of this transition.
-
-Keep this explicit legacy exception until `102453` is migrated. After `103711`
-pool acceptance, add its own readiness-gated 1700Gi Piraeus HDD topology and
-restore replication before touching the remaining peer. When that peer is
-replaced, retire the legacy StatefulSet, services/monitor and obsolete claims
-under their own acceptance gates. Do not re-add `hdd` while its ordinal-start
-exception remains, and do not treat retained metadata as preservation after a
-physical disk wipe.
-
-### Seaweed master-2: return it to the first Piraeus node
-
-Before the next control-plane drain, return master-2 from `ovh-ns102453` to
-`ovh-ns1001419`. As observed on 2026-10-22, all three masters are healthy and
-agree on master-0 as leader. Master-2 uses the temporary retained 4Gi HDD claim.
-The reverse handoff uses the same cold-copy mechanism as its evacuation:
+A master's Raft state moves by cold copy to a new claim with the same name;
+masters never rebuild from peers. For master-2, the last ordinal, as when it
+moved from a temporary HDD claim to `ovh-ns1001419`:
 
 1. Capture current peer/leader agreement, cluster identity, maximum volume ID,
    survivor Pod UIDs, claim/PV identities and normal controller settings. Require
@@ -480,21 +162,20 @@ The reverse handoff uses the same cold-copy mechanism as its evacuation:
    from three to two. Leave the Seaweed CR at three and preserve the original
    three-peer Pod template; changing the CR to two can change peers and roll
    surviving masters. Verify master-2 stopped and both survivors unchanged.
-3. Mount its HDD claim read-only in a bounded helper on the source node. Capture
+3. Mount its claim read-only in a bounded helper on the source node. Capture
    a **fresh** cold archive of the Raft directory off-node, preserving file
-   ownership and modes and recording hashes. Do not reuse the earlier archive
-   from before the first node's conversion.
+   ownership and modes and recording hashes. Never reuse an older archive.
 4. Remove the helper and release only master-2's PVC name, with UID/resourceVersion
    guards. Keep the HDD PV and files. Create the same claim name,
    `seaweedfs-master-seaweedfs-master-2`, as a 4Gi Filesystem claim on
    `piraeus-ssd-local`.
-5. A bounded restore Pod with nodeSelector `ovh-ns1001419` and the ordinary
+5. A bounded restore Pod with a nodeSelector for the destination and the ordinary
    control-plane toleration becomes its first consumer. WaitForFirstConsumer
    provisions the volume there. Verify Retain, CSI handle and strict-local PV
    affinity before restoring. Compare every file hash, ownership and mode;
    preserve timestamps, including directory timestamps if extraction changes them.
 6. Remove the helper, return the StatefulSet to three and let master-2 mount the
-   restored claim. PV affinity keeps it on the first converted node. Preserve
+   restored claim. PV affinity keeps it on the destination node. Preserve
    its name, peer DNS and Raft identity; never run two copies of that identity.
 7. Require three Ready masters, leader/peer agreement, preserved cluster identity
    and no regression of the observed allocated volume-ID watermark. Verify an
@@ -503,21 +184,18 @@ The reverse handoff uses the same cold-copy mechanism as its evacuation:
    HDD source only after acceptance.
 
 The deployed operator exposes a shared master persistence template, not an
-ordinal-specific SC selector. The pre-created master-2 claim can differ from
-the existing template, as its temporary HDD claim already does. Pod deletion
-reuses that claim; **PVC deletion does not preserve the override**. Record its
-Piraeus class and retained PV for recovery. A future template-default change
-must handle immutable StatefulSet claim templates without rolling unaffected
-masters; do not casually change the shared SC during this handoff.
+ordinal-specific SC selector, and that template still names `local-path-ovh-ssd`.
+Pod deletion reuses a pre-created Piraeus claim; **PVC deletion does not preserve
+the override**. A template-default change must handle immutable StatefulSet
+claim templates without rolling unaffected masters.
 
 For later master handoffs, use the same cold-copy/identity checks with explicit
 member control. The last-ordinal scale trick applies to master-2 only. Do not
 shrink the StatefulSet to remove master-0 or master-1.
 
-#### Master-1: preserve the other ordinals
+#### Master-0 or master-1: preserve the other ordinals
 
-The second SSD evacuation exercised this procedure with master-1 moving from
-`104952` to a fresh retained 4Gi HDD claim on `102453`:
+Master-1's move off `104952` exercised this procedure:
 
 1. Use the controller holds, native health gates and fresh cold-copy checks
    above. Keep the Seaweed CR and master StatefulSet at three members; scaling
@@ -666,52 +344,58 @@ claim default with a controlled orphan/adopt handoff once all members are ready.
 Update backup sources and verification Jobs with the application. A retained
 PVC/PV with erased files is metadata cleanup, not an application migration;
 verify its replacement before removing that exact obsolete record.
-For a worker with a Piraeus FILE_THIN canary, enumerate all live resources and
-snapshots before removing its backing directory. Move LINSTOR/CSI control
-services off the outage set and verify metadata persistence and recovery access.
+Move LINSTOR/CSI control services off the outage set and verify metadata
+persistence and recovery access.
 
 ## 3. Rebuild the evacuated node
 
 Before destruction, accept the gates against the current outage set and save
 sanitized evidence off-node. Preserve full private machine configuration,
-cluster identity and credentials securely. Record the etcd snapshot policy;
-the operator accepted no snapshot for the first-node rebuild. That choice does
-not replace quorum checks or preservation of application/Raft state.
+cluster identity and credentials securely. Record the etcd snapshot policy
+the operator accepts for this window (the migration ran without snapshots,
+relying on the two surviving members); that choice does not replace quorum
+checks or preservation of application/Raft state.
 
 Use direct `talosctl` access to the node's IP from the maintenance machine.
-Follow the [Talos upgrade runbook](talos_cluster_upgrades.md) for image handling;
-prepare the accepted DRBD/iSCSI extensions and kernel modules while keeping the
-legacy data volume and Piraeus eligibility disabled until cutover.
+Follow the [Talos upgrade runbook](talos_cluster_upgrades.md) for image handling.
+Read the node's current configuration from the `machineconfig` resource
+(`talosctl get machineconfig -o json`, id `v1alpha1`); Talos 1.14 has no
+on-disk config path to read.
 
-For a **legacy unsplit control plane only**, the first-node reset used:
+**Gotcha:** on a worker, `talosctl upgrade --drain=true` installed the image and
+then failed before reboot, because its drain called a Kubernetes API the worker's
+Talos kubeconfig does not allow. Drain with `kubectl`, then
+`talosctl reboot --drain=false`; do not repeat the installer.
 
-```bash
-talosctl -e "$target_ip" -n "$target_ip" reset \
-  --graceful=true --reboot \
-  --wipe-mode=system-disk --system-labels-to-wipe=STATE,EPHEMERAL
-```
-
-Check pinned CLI help and the actual volume inventory before use. A node already
-using dedicated ETCD/CRI/KUBELET/LOG partitions needs its own explicit wipe-label
-selection. Preserve EFI/META as required. Do not use a default reset that wipes
-all disks. Do not bootstrap a second cluster.
+Reset with an explicit `--wipe-mode=system-disk` and
+`--system-labels-to-wipe` matching the node's actual volumes (read them first;
+a split node has `STATE`, `EPHEMERAL` and its `ETCD`/`CRI`/`KUBELET`/`LOG`
+partitions). Preserve EFI/META. Check pinned CLI help before use. Do not use a
+default reset that wipes all disks, and do not bootstrap a second cluster.
 
 Use the node's verified public IP directly with `talosctl` for maintenance.
 Record its first maintenance certificate and pin subsequent calls with
 `--cert-fingerprint`; a trusted console can independently verify that fingerprint
 when available. Recording the first certificate trusts that initial connection;
-pinning alone is not an independent identity check. Re-read disk serials, sizes
+pinning alone is not an independent identity check. Maintenance-mode flags
+(`--insecure --cert-fingerprint <pin>`) go **after** the subcommand; before it,
+`talosctl` exits with a usage error. Re-read disk serials, sizes
 and partition/volume status. Require the
 data disk to differ from the system disk, be writable, have no active Talos
-volume allocation and no remaining legacy UserVolumeConfig. Only then issue a
+volume allocation. Only then issue a
 fingerprint-pinned FAST wipe of the explicitly identified data device. Apply
 the preserved-identity machine configuration with the intended system split
-through the maintenance API. Do not copy the pilot's fingerprint or by-id path.
+through the maintenance API. Never reuse another node's fingerprint or by-id path.
 
 Wait for the node to rejoin; verify etcd returns to three healthy members before
 any further control-plane disruption. Keep workloads cordoned while accepting
-the empty pool. Reconcile the node-specific Terraform state/configuration and
-inspect drift without triggering unrelated machine changes.
+the empty pool. Live label changes need a strategic-merge `talosctl patch mc`;
+JSON6902 patches are rejected on multi-document configs.
+
+Reconcile Terraform afterward with a `refresh=false` plan targeted at the one
+`talos_machine_configuration_apply` instance. Diff its rendered config against
+the live `machineconfig` and show the plan to the operator before applying it.
+A rebuild through the maintenance API leaves Terraform state stale until then.
 
 ## 4. Accept the pool and restore members
 
@@ -725,14 +409,12 @@ Repeat the checks that depend on this physical node:
   readable afterward, healthy pool and all three etcd members healthy again.
 - Headroom and absence of disk, memory, network or storage errors.
 
-Reuse the accepted first-node lifecycle/compatibility evidence; do not repeat
-the full QEMU matrix or benchmark suite on each SSD node. The first HDD pool
-still needs media-specific canary, bounded I/O, discard and reboot acceptance.
-Do not claim metadata exhaustion, full production DRBD-pool recovery or live
-controller disaster restore were qualified by the first-node checks.
+Do not repeat the migration's QEMU matrix or benchmarks per node. Production
+metadata exhaustion, DRBD-pool recovery and controller disaster restore remain
+unqualified.
 
-Before uncordoning, verify all legacy local-path classes exclude new allocations
-on this node. Strict-local PVCs select their node through the workload's
+Before uncordoning, remove the LINSTOR `AutoplaceTarget` fence. Strict-local PVCs
+select their node through the workload's
 scheduling constraints and first-consumer placement. Do not leave a healthy
 node cordoned as the long-term storage policy.
 
@@ -744,21 +426,17 @@ Restore applications in bounded steps:
    Restore the recorded desired count, removing only explicitly temporary
    members after full redundancy returns.
    `cnpg destroy --keep-pvc` leaves the detached PVC discoverable through its
-   CNPG labels. Scaling up can reuse that local-path PVC even when the new-claim
-   template selects Piraeus. Under bounded Flux/CNPG holds, verify the exact
+   CNPG labels. Scaling up can reuse that old PVC even when the new-claim
+   template selects another class. Under bounded Flux/CNPG holds, verify the exact
    retired PVC/PV identities, no remaining consumers, Retain policy and accepted
    data-preservation source. Remove only that retired PVC's metadata before
    requesting the fresh claim; preserve its PV and files/archive. Then let CNPG
    create the new Piraeus claim and prove its class, affinity and native replay.
-2. Add a separate node-specific Seaweed Piraeus volume group on the converted
-   node. Keep `disk=ssd` (or accepted HDD), DC/rack, replication 001, metrics
-   and required anti-affinity across old and new volume groups consistent.
-   The first `ssd-piraeus` group hard-pins `ovh-ns1001419`; scaling it up without
-   changing that placement cannot add a server on the next node.
-   `ssd-piraeus-104952` requests a fresh 250Gi claim and requires both hostname
-   `ovh-ns104952` and `storage.allegedly.works/piraeus-ready=true`. It remains
-   unscheduled until that node passes pool admission and is uncordoned. Its
-   addition preserves the running legacy and first Piraeus server templates.
+2. Restore the node's Seaweed volume group: one `volumeTopology` group per node,
+   hard-pinned by hostname plus `piraeus-ready`, so it stays unscheduled until
+   the node passes pool admission. Keep `disk`, DC/rack, replication `001`,
+   metrics and anti-affinity consistent across groups. A reimaged node's group
+   comes back empty; repair or native moves refill it.
 3. Verify server registration, metrics and claim/pool placement. Use a bounded
    native canary move plus owned S3 write/read verification before gradual,
    rate-limited redistribution. Existing Seaweed CSI application PVCs and
