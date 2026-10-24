@@ -107,11 +107,7 @@ const toolCopies = tools.map((tool) => ({ ...tool }));
 const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
 const ids = [...tools.filter((tool) => tool.systemNodeId).map((tool) => tool.systemNodeId)];
 const copiedIds = [...toolCopies.map((tool) => tool.systemNodeId)];
-const byId = {};
-tools.forEach((tool) => {
-  tool.systemNodeId && (byId[tool.systemNodeId] = tool.name);
-});
-export { later, tools, toolCopies, byName, ids, copiedIds, byId };
+export { later, tools, toolCopies, byName, ids, copiedIds };
 "#,
         vec![logical_module(
             "collections",
@@ -142,6 +138,23 @@ export { later, tools, toolCopies, byName, ids, copiedIds, byId };
          Full owner graph: {graph:#?}",
     );
     assert_entry_output(&fixture, "");
+}
+
+#[test]
+fn plain_array_callback_mutation_preserves_runtime_behavior() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const later = "ready";
+const tools = [{ name: "tool", id: "tool-id", run: () => later }];
+const byId = {};
+tools.forEach((tool) => {
+  tool.id && (byId[tool.id] = tool.name);
+});
+console.log(byId["tool-id"], tools[0].run());
+export { later, tools, byId };
+"#,
+        vec![logical_module("collections", &[Member::new("byId")])],
+    ));
+    assert_preserved_entry_output(&fixture, "tool ready\n");
 }
 
 #[test]

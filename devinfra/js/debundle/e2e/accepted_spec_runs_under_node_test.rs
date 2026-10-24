@@ -81,28 +81,23 @@ export { T, readT, init };
 }
 
 #[test]
-fn at_init_when_reader_source_precedes_declarer_executes_under_node() {
-    // Like the basic case, but reader's source ord (mod_init's
-    // owners) come BEFORE declarer's (mod_logger's T) in source
-    // order. If `source_import_position` blindly preserves
-    // source-order it would put mod_init first → ESM DFS
-    // evaluates mod_init's body before mod_logger's → TDZ.
-    //
-    // The eager_use edge mod_init → mod_logger MUST override
-    // source order.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function readT() { return T; }
+fn at_init_read_before_initialization_cannot_be_repaired_by_splitting() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"function readT() { return T; }
 const init = readT();
 let T = "ready";
 console.log(init);
 export { T, readT, init };
 "#,
-        vec![
-            logical_module("mod_init", &[Member::new("readT"), Member::new("init")]),
-            logical_module("mod_logger", &[Member::new("T")]),
-        ],
-    ));
-    assert_entry_output(&fixture, "ready\n");
+            vec![
+                logical_module("mod_init", &[Member::new("readT"), Member::new("init")]),
+                logical_module("mod_logger", &[Member::new("T")]),
+            ],
+        ),
+        &["mod_init", "mod_logger"],
+        &["eager_use", "sequenced"],
+    );
 }
 
 #[test]

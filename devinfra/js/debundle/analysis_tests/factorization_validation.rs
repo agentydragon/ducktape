@@ -243,7 +243,7 @@ fn owner_graph_report_emits_atomic_graph() {
 #[test]
 fn owner_graph_report_names_the_callee_owner_on_a_promoted_at_init_edge() {
     let factorization = factorization_with_residual_module(
-        "const seed = 7; const result = callee(seed); function callee(x) { return dep + x; } const dep = 42;",
+        "const seed = 7; const dep = 42; const result = callee(seed); function callee(x) { return dep + x; }",
         &["seed", "result", "callee", "dep"],
         &[],
     );

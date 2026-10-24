@@ -865,6 +865,12 @@ summaries; the call also remains impure for S-chain ordering unless a
 separate purity hint applies. The hint suppresses the conservative
 "the callback may have run now" edge for inline functions, object
 literals containing functions, and first-order argument callbacks.
+The synchronous value-flow summary honors the same argument exemption for
+static event-listener registrations. Neither exemption suppresses reentry
+through callbacks already escaped to host code or available exports.
+Purity annotations alone do not assert that callback arguments are deferred.
+Property writes inside collection callbacks retain the conservative accessor
+fallback when receiver integrity is unproved.
 
 **Residual limitations.** Dynamic global/property stashes and values
 arriving from other chunks are outside the identity-based local flow

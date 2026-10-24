@@ -141,13 +141,12 @@ fn pure_members_call_with_impure_arg_does_not_admit() {
 
 #[test]
 fn pure_members_member_call_does_not_promote_callback_body_reads() {
-    // React-style factories such as `forwardRef` store the render
-    // callback but do not invoke it at module init. The pure-members
-    // assertion already says `ns.forwardRef(...)` is an audited pure
-    // call site; at-init promotion must still record ordinary eager
-    // argument reads, but it must not treat the callback body's lazy
-    // reads as if they fired during the wrapper declaration.
-    let pure_members = namespace_rename("ReactLike", &["forwardRef"]);
+    let mut pure_members = namespace_rename("ReactLike", &["forwardRef"]);
+    pure_members
+        .annotations
+        .get_mut("ReactLike")
+        .unwrap()
+        .no_sync_callback_members = vec!["forwardRef".to_string()];
     let fixture = run_fixture(
         FixtureOpts::new(
             r#"import * as ns from "./vendor.js";

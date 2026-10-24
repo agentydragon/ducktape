@@ -930,7 +930,7 @@ impl Visit for ExecutionIndex {
                 no_sync_arguments: is_no_sync_callback_member_call(
                     callee,
                     &self.no_sync_callback_members,
-                ),
+                ) || is_static_event_listener_registration(callee, &call.args),
                 caller: self.current,
                 owner: self.owner,
                 plain_object_sources: call.args.len() > 1
