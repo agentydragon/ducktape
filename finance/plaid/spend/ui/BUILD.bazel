@@ -120,7 +120,6 @@ ts_library(
 ts_library(
     name = "main",
     srcs = [
-        "assets.d.ts",
         "main.tsx",
     ],
     tsconfig = ":tsconfig",
