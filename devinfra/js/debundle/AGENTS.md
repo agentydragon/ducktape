@@ -79,6 +79,9 @@ completeness. Read <docs/purity_soundness.md> before touching
 - **Default: e2e through the `debundle` CLI** (`e2e/`, `e2e/support/`), even for a
   bug in one internal stage. Assert the external contract (module exports, entry
   output under Node, layout, source shape).
+- Synthetic fixtures use neutral descriptive names (`factory`, `lazyLoader`) or
+  simple placeholders (`a`, `b`, `foo`, `bar`). Never carry arbitrary minified
+  identifiers from the source being reproduced into a fixture.
 - Use the assertion helpers re-exported by `e2e/support/mod.rs`
   (`assert_module_exports`, `assert_module_source`, `assert_entry_output`, …); add a
   helper for a repeated shape — a test is one or two helper calls, not `fs::read` +

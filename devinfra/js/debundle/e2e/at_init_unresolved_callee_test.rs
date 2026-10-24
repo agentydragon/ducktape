@@ -115,7 +115,6 @@ export { later, tools, toolCopies, byName, ids, copiedIds };
                 Member::new("byName"),
                 Member::new("ids"),
                 Member::new("copiedIds"),
-                Member::new("byId"),
             ],
         )],
     ));

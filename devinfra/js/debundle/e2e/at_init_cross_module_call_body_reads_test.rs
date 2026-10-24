@@ -3,12 +3,12 @@
 use analysis::DepKind;
 use debundle_e2e_support::*;
 
-const INITIALIZED_SOURCE: &str = r#"const iA = 7;
-const crossModBinding = 42;
-const triggerInit = gR(iA);
-function gR(x) { return crossModBinding + x; }
-console.log(triggerInit);
-export { iA, triggerInit, gR, crossModBinding };
+const INITIALIZED_SOURCE: &str = r#"const seed = 7;
+const value = 42;
+const result = readValue(seed);
+function readValue(x) { return value + x; }
+console.log(result);
+export { seed, result, readValue, value };
 "#;
 
 #[test]
@@ -16,15 +16,15 @@ fn cross_module_at_init_call_preserves_initialized_body_read() {
     let fixture = run_fixture(FixtureOpts::new(
         INITIALIZED_SOURCE,
         vec![
-            logical_module("mod_m", &[Member::new("gR")]),
-            logical_module("mod_m2", &[Member::new("crossModBinding")]),
+            logical_module("readers", &[Member::new("readValue")]),
+            logical_module("values", &[Member::new("value")]),
         ],
     ));
     assert_preserved_entry_output(&fixture, "49\n");
 
     let graph = fixture.owner_graph();
-    let caller = owner_for_binding(&graph, "triggerInit");
-    let initializer = owner_for_binding(&graph, "crossModBinding");
+    let caller = owner_for_binding(&graph, "result");
+    let initializer = owner_for_binding(&graph, "value");
     assert!(graph.edges.iter().any(|edge| {
         edge.source == caller
             && edge.target == initializer
@@ -37,19 +37,19 @@ fn cross_module_at_init_call_preserves_initialized_body_read() {
 fn cross_module_at_init_call_cannot_initialize_a_later_body_read_early() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
-            r#"const iA = 7;
-const triggerInit = gR(iA);
-function gR(x) { return crossModBinding + x; }
-const crossModBinding = 42;
-console.log(triggerInit);
-export { iA, triggerInit, gR, crossModBinding };
+            r#"const seed = 7;
+const result = readValue(seed);
+function readValue(x) { return value + x; }
+const value = 42;
+console.log(result);
+export { seed, result, readValue, value };
 "#,
             vec![
-                logical_module("mod_m", &[Member::new("gR")]),
-                logical_module("mod_m2", &[Member::new("crossModBinding")]),
+                logical_module("readers", &[Member::new("readValue")]),
+                logical_module("values", &[Member::new("value")]),
             ],
         ),
-        &["residual", "mod_m2"],
+        &["residual", "values"],
         &["eager_use", "sequenced"],
     );
 }
@@ -75,12 +75,12 @@ export { state, setState };
 fn intra_module_at_init_call_preserves_initialized_body_read() {
     let fixture = run_fixture(FixtureOpts::new(
         INITIALIZED_SOURCE,
-        vec![logical_module("mod_m2", &[Member::new("crossModBinding")])],
+        vec![logical_module("values", &[Member::new("value")])],
     ));
     assert_preserved_entry_output(&fixture, "49\n");
     let graph = fixture.owner_graph();
-    let caller = owner_for_binding(&graph, "triggerInit");
-    let initializer = owner_for_binding(&graph, "crossModBinding");
+    let caller = owner_for_binding(&graph, "result");
+    let initializer = owner_for_binding(&graph, "value");
     assert!(graph.edges.iter().any(|edge| {
         edge.source == caller
             && edge.target == initializer
