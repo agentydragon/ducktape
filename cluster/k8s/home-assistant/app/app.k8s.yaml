@@ -140,11 +140,6 @@ spec:
               value: America/Los_Angeles
             - name: SETUP_PORT
               value: "8124"
-            - name: RECORDER_DB_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: home-assistant-db-app
           image: ghcr.io/home-assistant/home-assistant:2026.9.2
           livenessProbe:
             httpGet:

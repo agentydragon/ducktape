@@ -16,7 +16,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant"
-# Home Assistant's recorder reads `uri` from this Cluster's generated `-app` Secret.
+# Home Assistant's recorder will read `uri` from this Cluster's generated `-app` Secret.
 DATABASE = cnpg.PostgresRef.generated(name="home-assistant-db", namespace="home-assistant")
 
 

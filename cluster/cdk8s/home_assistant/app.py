@@ -43,7 +43,6 @@ from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustom
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.home_assistant.db import DATABASE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -260,8 +259,6 @@ def _deployment(scope: Construct) -> None:
                                 # aligned with Caddy while the API applies the loopback/proxy
                                 # settings.
                                 k8s.EnvVar(name="SETUP_PORT", value=str(_BACKEND.number)),
-                                # configuration.yaml.conf reads it with `!env_var`.
-                                DATABASE.app_secret.key("uri").env_var("RECORDER_DB_URL"),
                             ],
                             ports=[_BACKEND.k8s_container_port()],
                             readiness_probe=_backend_probe(initial_delay_seconds=15, period_seconds=10),
