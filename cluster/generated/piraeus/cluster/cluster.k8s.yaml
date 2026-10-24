@@ -89,11 +89,11 @@ spec:
             limits:
               cpu: 250m
               ephemeral-storage: 640Mi
-              memory: 128Mi
+              memory: 512Mi
             requests:
               cpu: 10m
               ephemeral-storage: 64Mi
-              memory: 64Mi
+              memory: 256Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

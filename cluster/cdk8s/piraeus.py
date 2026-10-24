@@ -241,15 +241,22 @@ def cluster_chart(app: App) -> Chart:
                                 run_as_group=473,
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
+                            # The limit covers heap plus Alloy's mapped binary. At 128Mi
+                            # (~35Mi heap, ~90Mi page cache) the kernel kept evicting the
+                            # binary's text and the process faulted it straight back: on
+                            # ovh-ns103711 that read ~150 MB/s off containerd's HDD for 16 h,
+                            # stalled every image pull there, and scraped nothing, while the
+                            # pod stayed Ready. See
+                            # docs/lessons_learned/2026_09_07_eso_memory_limit_thrash.md.
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
+                                    "memory": k8s.Quantity.from_string("256Mi"),
                                     "ephemeral-storage": k8s.Quantity.from_string("64Mi"),
                                 },
                                 limits={
                                     "cpu": k8s.Quantity.from_string("250m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
+                                    "memory": k8s.Quantity.from_string("512Mi"),
                                     "ephemeral-storage": k8s.Quantity.from_string("640Mi"),
                                 },
                             ),
