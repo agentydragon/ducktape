@@ -857,6 +857,7 @@ ts_library(
         "//agentplane/app/frontend/actions:proto_test_fixtures",
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/connections:fixture",
+        "//agentplane/app/frontend/connections:models",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",
     ],

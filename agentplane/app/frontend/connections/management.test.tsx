@@ -3,7 +3,7 @@ import { act } from "react";
 import { MemoryRouter } from "react-router";
 import { expect, it, vi } from "vitest";
 
-import type { CallerGrantReader, Connection } from "../client";
+import type { CallerGrantReader, Connection } from "./models";
 import { answerConnectionFacade, mountConnectionService, type Sent } from "./test_support";
 import { Connections } from "./management";
 import { sampleConnection } from "./fixture";

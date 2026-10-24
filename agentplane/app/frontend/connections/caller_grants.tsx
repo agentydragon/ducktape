@@ -3,14 +3,9 @@ import { type JSX, useEffect, useState } from "react";
 
 import { ActionPolicySection } from "../actions/policy";
 import { BindingsTable } from "../bindings_table";
-import {
-  type CallerGrantReader,
-  type CallerGrantView,
-  type CallerServiceAccount,
-  displayableError,
-  readCallerGrants,
-  serviceAccountKey,
-} from "../client";
+import { type CallerServiceAccount, displayableError, serviceAccountKey } from "../client";
+import { readCallerGrants } from "./caller_grants_client";
+import type { CallerGrantReader, CallerGrantView } from "./models";
 
 /** Read-only account snapshot. Sandbox pages use the same renderers with their live data. */
 export function CallerGrants({

@@ -40,15 +40,8 @@ import {
   mcpLinkageUpsertProtoJson,
 } from "../actions/proto_test_fixtures";
 import { sampleConnection } from "../connections/fixture";
-import type {
-  BindingView,
-  Decision,
-  DispatchReceipt,
-  PolicySetView,
-  SandboxView,
-  ThreadView,
-  Connection,
-} from "../client";
+import type { Connection } from "../connections/models";
+import type { BindingView, Decision, DispatchReceipt, PolicySetView, SandboxView, ThreadView } from "../client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { McpLinkageView } from "../mcp_linkage_client";
