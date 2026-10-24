@@ -34,7 +34,6 @@ from seaweed_adminscript_crds.com.seaweedfs.seaweed import (
     AdminScriptSpecResourcesLimits,
     AdminScriptSpecResourcesRequests,
     AdminScriptSpecRestartPolicy,
-    AdminScriptSpecTolerations,
 )
 from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
     ResourceReferenceGrantSpecFrom,
@@ -314,13 +313,9 @@ def seaweed(scope: Construct) -> Seaweed:
             # self-contained (no inheritance from a base spec.volume; topology-only deployment
             # needs the operator's nil-safe BaseVolumeSpec fallback, added in 1.0.20).
             volume_topology={
-                # Legacy hdd StatefulSet is outside the topology map during its final
-                # two-node migration. Operator 0.1.42 leaves omitted groups in place;
-                # the controlled ordinal handoff keeps hdd-1 on 102453 while retiring
-                # hdd-0 on 103711. Do not re-add hdd: that would reconcile replicas
-                # against its temporary ordinals.start=1. Remove the legacy resources
-                # after 102453's replacement is accepted (piraeus_node_roll.md).
-                # -disk=hdd matches the flat servers' default disk type ("" == hdd, verified
+                # The legacy hdd group stays out of this map: its last StatefulSet was
+                # deleted when 102453 was reimaged (2026-10-24), and re-adding it would
+                # recreate local-path servers. -disk=hdd matches the flat servers' default disk type ("" == hdd, verified
                 # in seaweedfs 4.29 ToDiskType).
                 #
                 # The rack label is logical, not physical: OVH racks these boxes across THREE
@@ -363,6 +358,20 @@ def seaweed(scope: Construct) -> Seaweed:
                     node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
                         _HOSTNAME: "ovh-ns103711",
+                        "storage.allegedly.works/piraeus-ready": "true",
+                    },
+                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
+                ),
+                "hdd-piraeus-102453": _volume_topology(
+                    rack="hil-ovh-h109b04",
+                    storage="1700Gi",
+                    storage_class="piraeus-hdd-local",
+                    disk="hdd",
+                    replicas=1,
+                    max_volume_counts=2000,
+                    node_selector={
+                        **node_scheduling.HIL_OVH_NODE_SELECTOR,
+                        _HOSTNAME: "ovh-ns102453",
                         "storage.allegedly.works/piraeus-ready": "true",
                     },
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
@@ -627,58 +636,6 @@ def chart(app: App) -> Chart:
             ),
         ),
     )
-    for name, description, suspend, script in (
-        (
-            "repair-hdd-102453",
-            "Copy-only replica repair for the 102453 HDD evacuation; verify every volume has two copies before evacuation.",
-            True,
-            "lock\n"
-            "volumeServer.state -nodes=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -maintenanceOn\n"
-            "volume.fix.replication -apply -doDelete=false -maxParallelization=2"
-            " -maxParallelizationPerServer=1 -retry=5 -volumesPerStep=1\n"
-            "unlock\n",
-        ),
-        (
-            "evacuate-hdd-102453",
-            "Evacuate the 102453 SeaweedFS HDD volume server after all target volumes have two copies.",
-            True,
-            "lock\n"
-            "volumeServer.state -nodes=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -maintenanceOn\n"
-            "volumeServer.evacuate -node=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -apply\n"
-            "unlock\n",
-        ),
-    ):
-        AdminScript(
-            chart,
-            name,
-            metadata=ApiObjectMetadata(name=name, namespace=namespace.NAME, annotations={"description": description}),
-            spec=AdminScriptSpec(
-                cluster_ref=AdminScriptSpecClusterRef(name=NAME),
-                schedule="*/10 * * * *",
-                time_zone="Etc/UTC",
-                suspend=suspend,
-                concurrency_policy=AdminScriptSpecConcurrencyPolicy.FORBID,
-                restart_policy=AdminScriptSpecRestartPolicy.NEVER,
-                backoff_limit=2,
-                starting_deadline_seconds=300,
-                active_deadline_seconds=43200,
-                successful_jobs_history_limit=1,
-                failed_jobs_history_limit=3,
-                resources=AdminScriptSpecResources(
-                    requests={
-                        "cpu": AdminScriptSpecResourcesRequests.from_string("100m"),
-                        "memory": AdminScriptSpecResourcesRequests.from_string("128Mi"),
-                    },
-                    limits={"memory": AdminScriptSpecResourcesLimits.from_string("512Mi")},
-                ),
-                tolerations=[
-                    AdminScriptSpecTolerations(
-                        key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
-                    )
-                ],
-                script=script,
-            ),
-        )
     # The descheduler honors PDBs unconditionally, so these are the lever that stops it (and
     # `kubectl drain` / node-autoscaler) from breaking quorum via voluntary eviction -- the
     # trigger behind the 2026-06-19 crash-loop incident (cluster/docs/lessons_learned/

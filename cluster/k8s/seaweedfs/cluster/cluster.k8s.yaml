@@ -102,6 +102,43 @@ spec:
         operator: Exists
   volumeServerDiskCount: 1
   volumeTopology:
+    hdd-piraeus-102453:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: volume
+                  app.kubernetes.io/instance: seaweedfs
+                  app.kubernetes.io/name: seaweedfs
+              topologyKey: kubernetes.io/hostname
+      dataCenter: hil
+      env:
+        - name: GOMEMLIMIT
+          value: 1400MiB
+      extraArgs:
+        - -disk=hdd
+      limits:
+        memory: 1536Mi
+      maxVolumeCounts: 2000
+      metricsPort: 9325
+      minFreeSpacePercent: 10
+      nodeSelector:
+        kubernetes.io/hostname: ovh-ns102453
+        storage.allegedly.works/piraeus-ready: "true"
+        topology.kubernetes.io/zone: hil-ovh
+      priorityClassName: stateful-infra
+      rack: hil-ovh-h109b04
+      replicas: 1
+      requests:
+        cpu: 100m
+        memory: 512Mi
+        storage: 1700Gi
+      storageClassName: piraeus-hdd-local
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
     hdd-piraeus-103656:
       affinity:
         podAntiAffinity:
@@ -346,78 +383,6 @@ spec:
   successfulJobsHistoryLimit: 1
   suspend: false
   timeZone: Etc/UTC
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: AdminScript
-metadata:
-  annotations:
-    description: Copy-only replica repair for the 102453 HDD evacuation; verify every volume has two copies before evacuation.
-  name: repair-hdd-102453
-  namespace: seaweedfs
-spec:
-  activeDeadlineSeconds: 43200
-  backoffLimit: 2
-  clusterRef:
-    name: seaweedfs
-  concurrencyPolicy: Forbid
-  failedJobsHistoryLimit: 3
-  resources:
-    limits:
-      memory: 512Mi
-    requests:
-      cpu: 100m
-      memory: 128Mi
-  restartPolicy: Never
-  schedule: "*/10 * * * *"
-  script: |
-    lock
-    volumeServer.state -nodes=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -maintenanceOn
-    volume.fix.replication -apply -doDelete=false -maxParallelization=2 -maxParallelizationPerServer=1 -retry=5 -volumesPerStep=1
-    unlock
-  startingDeadlineSeconds: 300
-  successfulJobsHistoryLimit: 1
-  suspend: true
-  timeZone: Etc/UTC
-  tolerations:
-    - effect: NoSchedule
-      key: node-role.kubernetes.io/control-plane
-      operator: Exists
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: AdminScript
-metadata:
-  annotations:
-    description: Evacuate the 102453 SeaweedFS HDD volume server after all target volumes have two copies.
-  name: evacuate-hdd-102453
-  namespace: seaweedfs
-spec:
-  activeDeadlineSeconds: 43200
-  backoffLimit: 2
-  clusterRef:
-    name: seaweedfs
-  concurrencyPolicy: Forbid
-  failedJobsHistoryLimit: 3
-  resources:
-    limits:
-      memory: 512Mi
-    requests:
-      cpu: 100m
-      memory: 128Mi
-  restartPolicy: Never
-  schedule: "*/10 * * * *"
-  script: |
-    lock
-    volumeServer.state -nodes=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -maintenanceOn
-    volumeServer.evacuate -node=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -apply
-    unlock
-  startingDeadlineSeconds: 300
-  successfulJobsHistoryLimit: 1
-  suspend: true
-  timeZone: Etc/UTC
-  tolerations:
-    - effect: NoSchedule
-      key: node-role.kubernetes.io/control-plane
-      operator: Exists
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
