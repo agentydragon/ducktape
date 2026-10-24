@@ -14,13 +14,13 @@ postgres deployments.
 
 Only these CNPG cluster profiles are permitted:
 
-| Profile                                    | Instances | Pin                                      | Storage                                           | Anti-affinity                      |
-| ------------------------------------------ | --------- | ---------------------------------------- | ------------------------------------------------- | ---------------------------------- |
-| **OVH-HA**                                 | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh-hdd` or `-ssd`                    | required, `kubernetes.io/hostname` |
-| **OVH-HA with Piraeus pilot replica**      | 3         | `topology.kubernetes.io/zone: hil-ovh`   | Existing claims unchanged; new claim uses Piraeus | required, `kubernetes.io/hostname` |
-| **OVH-HA with Piraeus migration template** | 2         | `topology.kubernetes.io/zone: hil-ovh`   | Existing claims unchanged; new claim uses Piraeus | required, `kubernetes.io/hostname` |
-| **Proxmox-single**                         | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`                              | n/a                                |
-| **Optiplex-single**                        | 1         | `kubernetes.io/hostname: optiplex`       | `piraeus-ssd-local`                               | n/a                                |
+| Profile                                    | Instances | Pin                                      | Storage                                                     | Anti-affinity                      |
+| ------------------------------------------ | --------- | ---------------------------------------- | ----------------------------------------------------------- | ---------------------------------- |
+| **OVH-HA**                                 | 2         | `topology.kubernetes.io/zone: hil-ovh`   | New HDD: `local-path-ovh-hdd`; new SSD: `piraeus-ssd-local` | required, `kubernetes.io/hostname` |
+| **OVH-HA with Piraeus pilot replica**      | 3         | `topology.kubernetes.io/zone: hil-ovh`   | Existing claims unchanged; new claim uses Piraeus           | required, `kubernetes.io/hostname` |
+| **OVH-HA with Piraeus migration template** | 2         | `topology.kubernetes.io/zone: hil-ovh`   | Existing claims unchanged; new claim uses Piraeus           | required, `kubernetes.io/hostname` |
+| **Proxmox-single**                         | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`                                        | n/a                                |
+| **Optiplex-single**                        | 1         | `kubernetes.io/hostname: optiplex`       | `piraeus-ssd-local`                                         | n/a                                |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
 nodes. Two instances on separate nodes.
@@ -48,8 +48,6 @@ class, and control-plane tolerance together. Callers select one of these named
 profiles rather than deriving scheduling eligibility from the storage-class
 string:
 
-- `cnpg.OVH_LOCAL_PATH`: `HIL_OVH`, `local-path-ovh`, no control-plane
-  toleration. This preserves the existing behavior for the legacy HDD alias.
 - `cnpg.OVH_PIRAEUS_SSD`: `HIL_OVH`, `piraeus-ssd-local`, with a
   control-plane toleration.
 

@@ -38,11 +38,6 @@ PORT = Port(name="postgres", number=5432)
 _CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
     key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
 )
-_OVH_WORKER_AFFINITY = ClusterSpecAffinity(
-    node_selector=node_scheduling.HIL_OVH.node_selector,
-    topology_key="kubernetes.io/hostname",
-    pod_anti_affinity_type="required",
-)
 _OVH_CONTROL_PLANE_AFFINITY = ClusterSpecAffinity(
     node_selector=node_scheduling.HIL_OVH.node_selector,
     tolerations=[_CONTROL_PLANE_TOLERATION],
@@ -59,10 +54,7 @@ class ClusterPlacement:
     affinity: ClusterSpecAffinity | None
 
 
-# Choose the affinity and storage combination as a named profile at each callsite. OVH SSD classes
-# currently have local pools on control-plane nodes; the legacy local-path-ovh class keeps its
-# prior worker-only affinity behavior.
-OVH_LOCAL_PATH = ClusterPlacement(storage_class="local-path-ovh", affinity=_OVH_WORKER_AFFINITY)
+# OVH Piraeus SSD pools are on control-plane nodes, so this profile carries their toleration.
 OVH_PIRAEUS_SSD = ClusterPlacement(storage_class="piraeus-ssd-local", affinity=_OVH_CONTROL_PLANE_AFFINITY)
 # Single-instance only: one node, so no anti-affinity to satisfy.
 OPTIPLEX_PIRAEUS_SSD = ClusterPlacement(
