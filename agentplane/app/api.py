@@ -642,9 +642,7 @@ async def thread_form(services: Services) -> ThreadForm:
 async def list_threads(
     store: Store,
     sandbox: Annotated[str | None, Query(description="Only threads of this sandbox.")] = None,
-    sandbox_uid: Annotated[
-        UUID | None, Query(description="Only threads of this Sandbox incarnation.")
-    ] = None,
+    sandbox_uid: Annotated[UUID | None, Query(description="Only threads of this Sandbox incarnation.")] = None,
     include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
     search: Annotated[
         str | None,
@@ -742,7 +740,9 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
             )
         snapshot = await bridge.runner_status(thread.sandbox)
         if any(session.session_id == str(thread.id) and session.busy for session in snapshot.sessions):
-            raise HTTPException(status.HTTP_409_CONFLICT, "finish or interrupt active work before archiving this thread")
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "finish or interrupt active work before archiving this thread"
+            )
     await store.archive(thread_id)
 
 

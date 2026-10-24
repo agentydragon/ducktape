@@ -217,6 +217,7 @@ py_library(
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
         "//agentplane/runner_gateway/testing:runner_peer",
         "//agentplane/sandboxes:inventory",
+        "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/sandboxes/testing:sandbox_namespace",
         "//agentplane/testing:electric_role",
         "//agentplane/testing:kubernetes_apiserver",

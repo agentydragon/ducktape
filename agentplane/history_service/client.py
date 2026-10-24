@@ -97,7 +97,11 @@ class HistoryServiceClient:
         return list(response.summaries)
 
     async def find_sessions(
-        self, *, sandbox_name: str | None = None, sandbox_name_contains: str | None = None, sandbox_uid: str | None = None
+        self,
+        *,
+        sandbox_name: str | None = None,
+        sandbox_name_contains: str | None = None,
+        sandbox_uid: str | None = None,
     ) -> list[history_service_pb2.SessionSandbox]:
         """Every Session written by the exact Sandbox UID/name, or whose name contains the text."""
         request = history_service_pb2.FindSessionsRequest()

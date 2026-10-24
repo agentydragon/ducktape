@@ -109,7 +109,11 @@ class HistoryService(Construct):
             "service-account-reader-rolebinding",
             metadata=ApiObjectMetadata(name=f"{NAME}-service-accounts", namespace=env.namespace),
             role=Role.from_role_name(self, "service-account-reader-role-ref", f"{NAME}-service-accounts"),
-        ).add_subjects(ServiceAccount.from_service_account_name(self, "history-service-account", NAME, namespace_name=env.namespace))
+        ).add_subjects(
+            ServiceAccount.from_service_account_name(
+                self, "history-service-account", NAME, namespace_name=env.namespace
+            )
+        )
         config = SettingsFile(
             self,
             "config",
