@@ -55,6 +55,11 @@ PVC and erased Retain PV records. The CPAP VM is restored, but the card SSID was
 sync remains unverified. See the [OptiPlex provisioning record](../../docs/optiplex_provisioning.md)
 for the durable disk layout.
 
+### 103656 acceptance checkpoint — 2026-10-23
+
+This checkpoint records the first HDD admission; its volume counts and
+destination capacity are historical snapshots.
+
 The SeaweedFS evacuation from `ovh-ns103656/hdd-2` to `ovh-ns103711` is
 complete: the 151-copy wave finished at 10:29:33 UTC (final move 1058), and the
 source has zero Seaweed volumes and zero allocated volume data. At 10:48 UTC,
@@ -77,20 +82,73 @@ copies, and existing Pods and claims are unchanged. Pool metrics are fresh and
 the target service is up. The Terraform readiness source is merged and its
 target apply completed: desired and live configuration match, the
 `refresh=false` targeted residual plan has zero changes, and no reboot was
-needed. Only the canary moved; bulk rebalance and later HDD-node conversions
-have not started.
+needed. At this checkpoint only the canary had moved; bulk rebalance and later
+HDD-node conversions had not started. The subsequent `103711` rebuild is below.
 
 ## 103711 reimage — 2026-10-24
 
 Application handoffs are accepted. ClickHouse is running with its surviving
 data replica on `102453`. After peer checks confirmed all 600 logical HDD
 volume IDs remained off-node, the 116 user-waived Seaweed source volume copies
-were deleted under lock. The `103711` reimage is pending. Its prepared Terraform
-readiness label and hostname-pinned `1700Gi`/`2000`-slot
-`hdd-piraeus-103711` group, including operator-generated volume monitoring, are
-conditional on fresh post-reimage physical acceptance. Keep legacy `hdd` out of
-the operator topology map while its `102453` peer uses
+were deleted under lock. The empty legacy source Pod is retired; keep legacy
+`hdd` out of the operator topology map while its `102453` peer uses
 `ordinals.start=1,replicas=1`.
+
+The worker rejoined on Talos `v1.14.0` with the intended custom schematic and
+the same Kubernetes Node UID. The `01:12 UTC` system acceptance verified both
+disk identities, exact `32/512/1024/32GiB` `EPHEMERAL/CRI/KUBELET/LOG`
+partitions, no legacy user volume, and a partitionless, unowned data disk.
+The node remains cordoned. After those checks, `piraeus-ready=true` enabled the
+hostname-specific HDD configuration. Native LVM and fresh collector metrics
+verified a `1,991,807,860,736`-byte `piraeus_hdd/data` thin-data pool with
+`4GiB` metadata, a `4GiB` spare, `64KiB` chunks and runtime
+`ExtCmd/WaitTimeout=180000`.
+
+Two owned `2Gi` filesystem/block canaries passed `16MiB` write/read hashes,
+filesystem `ENOSPC`, and the raw block end boundary at `01:18 UTC`. At
+`01:20:40 UTC`, bounded `512MiB` writes and read-back per mode, filesystem trim
+and raw block discard passed: native thin-data allocation moved from `0.01%`
+to `0.06%` and back to `0.01%`, with the persistent hashes preserved. The first
+discard write OOM-killed the canary container; recovery bounded dirty pages with
+`fdatasync` and clean-page eviction every `8MiB`.
+
+Controlled-reboot acceptance completed at `01:27:56 UTC`. The boot ID changed;
+the Node, canary Pod, PVC, PV and CSI identities and both payload hashes stayed
+unchanged. Both disk identities, all four system partitions, thin-pool geometry,
+metadata and spare were preserved, and the replacement collector reported
+fresh metrics. Post-reboot shared gates passed at `01:28 UTC`; disposable
+Pods, claims, PVs, CSI resources and the qualification namespace were removed
+at `01:30 UTC`. The node remains cordoned. Application restoration and the
+prepared `1700Gi`/`2000`-slot `hdd-piraeus-103711` group remain gated on fresh
+shared checks, local-path allocation-denial proof and readiness-source agreement.
+
+The shared gate now expects 19 CNPG clusters after merged `2ef4072ceded`
+removed `agentplane-testing`; the namespace deletion was observed at
+`01:21:16 UTC`. All 19 are Ready at this checkpoint. Seaweed gates require
+every prior 600 HDD ID off-target, two copies for every ID outside the approved
+116-copy waiver, and any remaining single-copy IDs to be a subset of that
+approved set. Healing an approved ID to two copies does not expand the waiver.
+
+Private acceptance artifacts are under
+`/tmp/piraeus-hdd-roll-20261023/next-hdd-103711/`:
+`system-rejoin-accepted.json`, `pool-geometry-initial-accepted.json`,
+`pvc-canaries-before-reboot.json`, `discard-accepted.json`,
+`pool-and-reboot-accepted.json`, `system-after-qualification-reboot.json`, and
+`pool-geometry-after-reboot.json`, `post-reboot-boundary-gates.json`, and
+`canary-cleanup-complete.json`. Re-read the admission proofs before
+uncordoning.
+
+Operational gotchas from this roll:
+
+- Direct worker `talosctl v1.14.2 upgrade --drain=true` installed the image,
+  then failed before reboot when its drain requested the worker's unsupported
+  Talos kubeconfig API. A separately gated `reboot --drain=false` completed
+  activation on the already-drained worker; the installer was not repeated.
+  Verify the booted server version and schematic before selective reset.
+- Seaweed S3 gateways retained cached source routing during retirement. Both
+  `seaweedfs-s3` and both `public-s3` Pods were refreshed serially, preserving
+  a Ready peer. Include gateway refresh alongside FUSE refresh and owned S3
+  hash checks before relying on a quiet retired source.
 
 During retirement, `volumeServer.leave` made `/healthz` return `503`; six
 liveness failures at a `90s` period restarted the container at
@@ -118,17 +176,17 @@ primary LSN with zero current lag. Gatus's primary auto-rolled once
 (14:21:44–14:24:58) after the merged control-plane toleration triggered an
 unsupervised CNPG primary rollout. Before replacing the remaining six standby
 PVCs, each Cluster was briefly held while the toleration was added to its live
-primary Pod and stored `cnpg.io/podSpec`. The old secondary files remain on
-`103711`, excluded from archives for eventual wipe, and their old `Retain` PV
-metadata remains. This work did not authorize a wipe; all temporary Cluster
-holds were removed after acceptance.
+primary Pod and stored `cnpg.io/podSpec`. At handoff, the old secondary files
+were left on `103711`, excluded from archives; their old `Retain` PV metadata
+remains. The subsequent physical rebuild erased the old source disk contents.
+All temporary Cluster holds were removed after handoff acceptance.
 
-`ovh-ns103711` remains cordoned for reimage. The user waived preservation of
+The `103711` preservation boundary included the user's waiver for
 SeaweedFS source copies on its old HDD volume after verifying healthy survivors,
-and the Anki claim. Grocy has been preserved via VolSync, and ClickHouse may
-temporarily run with its healthy off-node data replica. The new Piraeus HDD
-selector requires `piraeus-ready=true`; keep that label absent and leave the disk
-uninitialized until the wipe and physical layout are accepted.
+and the Anki claim. Grocy was preserved via VolSync, and ClickHouse may
+temporarily run with its healthy off-node data replica. Retained source PV
+records do not restore erased files; recovery uses the accepted off-node
+handoffs and retained preservation artifacts.
 
 Grocy SF and Vallejo were cold-copied from local-path claims on `ovh-ns103711`
 to retained 1Gi `piraeus-hdd-local` claims on `ovh-ns103656` using Rsync-TLS
