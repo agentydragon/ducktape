@@ -119,6 +119,7 @@ async def test_pending_actions_on_every_route(
     await expect(sidebar).to_be_visible(visible=sidebar_open)
     strip = page.locator(".agentplane-actions-attention")
     await expect(strip).to_have_count(0 if sidebar_open or route == "/actions" else 1)
+    await expect(page.locator(".agentplane-actions-sidebar")).to_have_count(0 if route == "/actions" else 1)
     await view.capture(target=page.locator("#app"))
 
 

@@ -2,7 +2,7 @@
 import { ActionIcon, Tooltip } from "@mantine/core";
 import { IconBox, IconHeartbeat, IconListCheck, IconPlus, IconSettings, IconX } from "./icons";
 import { type JSX, useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useLocation, useMatch, useNavigate } from "react-router";
 
 import { ActionsSidebarSection } from "./actions/sidebar";
 import { ResizeHandle, usePaneSize } from "./resize_handle";
@@ -39,6 +39,7 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
   const location = useLocation();
   const pane = usePaneSize("agentplane-sidebar-width", 240, 180, 480);
   const phone = usePhoneWidth();
+  const actionsPage = useMatch("/actions");
 
   useEffect(() => {
     // Escape dismisses the phone-width overlay, the way it would any other full-screen modal.
@@ -92,7 +93,8 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
       </div>
       <div className="agentplane-sidebar-body">
         <ThreadList detailed={false} onNavigate={closeIfPhone} />
-        <ActionsSidebarSection onNavigate={closeIfPhone} />
+        {/* The Actions page is the queue, so the section would only repeat it there. */}
+        {actionsPage === null && <ActionsSidebarSection onNavigate={closeIfPhone} />}
       </div>
       <div className="agentplane-sidebar-footer">
         <div className="agentplane-sidebar-debug">
