@@ -464,5 +464,8 @@ pub(super) fn known_effect_from_member_effect(effect: MemberEffect) -> Option<Kn
     match effect {
         MemberEffect::Default => None,
         MemberEffect::TypescriptDecorateHelper => Some(KnownEffect::TypescriptDecorateHelper),
+        MemberEffect::TypescriptMetadataDecorateHelper => {
+            Some(KnownEffect::TypescriptMetadataDecorateHelper)
+        }
     }
 }

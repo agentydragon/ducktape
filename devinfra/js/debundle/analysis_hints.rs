@@ -13,6 +13,7 @@ use crate::purity::Purity;
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum KnownEffect {
     TypescriptDecorateHelper,
+    TypescriptMetadataDecorateHelper,
 }
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]

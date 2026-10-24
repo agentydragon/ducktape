@@ -1316,14 +1316,9 @@ member names`, it projects onto each importing chunk's local binding
   author-trusted.** The spec format also admits an optional
   per-member `effect:` field for named helper bindings whose
   top-level calls have a known, narrow mutation shape that ordinary
-  expression purity cannot infer. The first admitted value is
-  `effect: typescript_decorate_helper`, for esbuild/TypeScript
-  `__decorate`-style helpers:
-
-  ```js
-  Ro([Z], C.prototype, "visible", 2);
-  Ro([ClassDecorator], C);
-  ```
+  expression purity cannot infer. The existing value is
+  `effect: typescript_decorate_helper`, for bundled TypeScript helper calls
+  that decorate a class member or class.
 
   This annotation does **not** assert that the call is pure. It
   asserts a more precise effect: for recognized call shapes, the
@@ -1343,6 +1338,16 @@ member names`, it projects onto each importing chunk's local binding
   incorrect annotation can produce a buggy debundle, so it carries the
   same review burden as `purity: "pure"`; the difference is that the
   trusted claim is local target mutation, not absence of effects.
+
+  `effect: typescript_metadata_decorate_helper` adds the audited callback-timing
+  contract in <../SPEC.md> § Local-effect decorator annotations. For eligible
+  whole-statement member decoration, the executor summarizes helper and local
+  decorator bodies' static lazy dependency closures without synthesizing target
+  method invocations or global callback publication. Eager argument reads and
+  the target-local mutation/co-location edge remain. Supplied decorators still
+  execute synchronously; the author audit covers their metadata-only behavior,
+  including imported implementations. This stronger value is independent of
+  purity, and the older helper value does not imply it.
 
   `chunk_analysis_options.<chunk>.local_property_effects` is the
   chunk-wide structural sibling of the same idea, for plain

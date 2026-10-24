@@ -1659,6 +1659,11 @@ pub enum MemberEffect {
     /// effect on the target class/prototype instead of as a global
     /// side-effect-order edge. See docs/design.md A10.
     TypescriptDecorateHelper,
+    /// Stronger, application-wide author contract: every recognized member
+    /// decoration only records metadata on the target. The helper and every
+    /// supplied decorator neither invoke target behavior nor publish callbacks
+    /// or synchronously reenter other caller/host/export callbacks. See SPEC.md.
+    TypescriptMetadataDecorateHelper,
 }
 
 #[cfg(test)]

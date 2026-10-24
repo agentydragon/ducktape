@@ -8,7 +8,9 @@ pub(crate) fn collect_local_effects(
     local_effect_context: &local_effects::LocalEffectContext,
 ) -> BTreeSet<Id> {
     let mut out = BTreeSet::new();
-    if let Some(target) = recognized_local_effect_target(item, &hints.known_effects) {
+    if let Some(target) =
+        recognized_local_effect_target(item, &hints.known_effects, local_effect_context)
+    {
         out.insert(target);
     }
     match hints.local_effect_policy {
@@ -31,6 +33,7 @@ pub(crate) fn collect_local_effects(
 fn recognized_local_effect_target(
     item: &ModuleItem,
     known_effects: &BTreeMap<String, KnownEffect>,
+    context: &local_effects::LocalEffectContext,
 ) -> Option<Id> {
     let ModuleItem::Stmt(Stmt::Expr(expr_stmt)) = item else {
         return None;
@@ -39,10 +42,92 @@ fn recognized_local_effect_target(
         return None;
     };
     let callee = call_callee_ident(call)?;
-    if known_effects.get(callee.sym.as_ref()) != Some(&KnownEffect::TypescriptDecorateHelper) {
+    match known_effects.get(callee.sym.as_ref())? {
+        KnownEffect::TypescriptDecorateHelper => typescript_decorate_helper_target(call),
+        KnownEffect::TypescriptMetadataDecorateHelper => {
+            context.metadata_decorate_target(item).cloned()
+        }
+    }
+}
+
+pub(crate) struct MetadataDecorateCall {
+    pub helper: Id,
+    pub target: Id,
+    pub decorators: Vec<Id>,
+}
+
+impl MetadataDecorateCall {
+    pub(crate) fn stable_origins(&self, flow: &ChunkValueFlow) -> Option<(u32, u32)> {
+        let helpers = flow.values_of_binding(&self.helper);
+        let mut helpers = helpers.iter();
+        let ValueOrigin::Function(helper) = helpers.next()? else {
+            return None;
+        };
+        let targets = flow.values_of_binding(&self.target);
+        let mut targets = targets.iter();
+        let ValueOrigin::Class(target) = targets.next()? else {
+            return None;
+        };
+        (helpers.next().is_none() && targets.next().is_none()).then_some((helper, target))
+    }
+}
+
+/// The stronger timing assertion covers a complete member-decoration statement,
+/// never calls nested in another expression or argument evaluation with effects.
+pub(crate) fn metadata_decorate_call(
+    item: &ModuleItem,
+    known_effects: &BTreeMap<String, KnownEffect>,
+) -> Option<MetadataDecorateCall> {
+    let ModuleItem::Stmt(Stmt::Expr(statement)) = item else {
+        return None;
+    };
+    let Expr::Call(call) = statement.expr.unwrap_parens() else {
+        return None;
+    };
+    let helper = call_callee_ident(call)?;
+    if known_effects.get(helper.sym.as_ref())
+        != Some(&KnownEffect::TypescriptMetadataDecorateHelper)
+        || call.args.len() != 4
+        || call.args.iter().any(|arg| arg.spread.is_some())
+    {
         return None;
     }
-    typescript_decorate_helper_target(call)
+    let Expr::Array(array) = call.args[0].expr.unwrap_parens() else {
+        return None;
+    };
+    if array.elems.is_empty() {
+        return None;
+    }
+    let decorators = array
+        .elems
+        .iter()
+        .map(|element| {
+            let element = element.as_ref()?;
+            let Expr::Ident(decorator) = element.expr.unwrap_parens() else {
+                return None;
+            };
+            element.spread.is_none().then(|| decorator.to_id())
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let Expr::Member(prototype) = call.args[1].expr.unwrap_parens() else {
+        return None;
+    };
+    let Expr::Ident(target) = prototype.obj.unwrap_parens() else {
+        return None;
+    };
+    if !matches!(&prototype.prop, MemberProp::Ident(property) if property.sym == "prototype")
+        || !matches!(call.args[2].expr.unwrap_parens(), Expr::Lit(Lit::Str(key))
+            if key.value.to_string_lossy() != "__proto__")
+        || !matches!(call.args[3].expr.unwrap_parens(), Expr::Lit(Lit::Num(kind))
+            if kind.value == 1.0 || kind.value == 2.0)
+    {
+        return None;
+    }
+    Some(MetadataDecorateCall {
+        helper: helper.to_id(),
+        target: target.to_id(),
+        decorators,
+    })
 }
 
 fn call_callee_ident(call: &CallExpr) -> Option<&Ident> {

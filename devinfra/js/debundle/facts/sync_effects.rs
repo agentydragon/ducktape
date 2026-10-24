@@ -367,6 +367,7 @@ struct ExecutionIndex {
     top_member_value_writes: Vec<Vec<(Id, Option<String>, ValueExpr)>>,
     top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
     top_exported_values: Vec<Vec<ValueExpr>>,
+    top_metadata_decorations: Vec<Option<MetadataDecorateCall>>,
     hoisted_bindings: BTreeMap<Id, u32>,
     exported_hoisted_functions: BTreeSet<u32>,
     global_object_names: BTreeSet<&'static str>,
@@ -399,6 +400,7 @@ impl Default for ExecutionIndex {
             top_member_value_writes: Vec::new(),
             top_callback_result_writes: Vec::new(),
             top_exported_values: Vec::new(),
+            top_metadata_decorations: Vec::new(),
             hoisted_bindings: BTreeMap::new(),
             exported_hoisted_functions: BTreeSet::new(),
             global_object_names: BTreeSet::new(),
@@ -425,6 +427,10 @@ impl ExecutionIndex {
             top_member_value_writes: vec![Vec::new(); body.len()],
             top_callback_result_writes: vec![Vec::new(); body.len()],
             top_exported_values: vec![Vec::new(); body.len()],
+            top_metadata_decorations: body
+                .iter()
+                .map(|item| metadata_decorate_call(item.as_module_item(), &hints.known_effects))
+                .collect(),
             global_object_names: super::global_object::unshadowed_global_object_aliases(body),
             no_sync_callback_members: hints.no_sync_callback_members.clone(),
             ..Self::default()
@@ -1197,6 +1203,59 @@ struct Executor<'a> {
 }
 
 impl Executor<'_> {
+    fn summarize_metadata_decoration(
+        &mut self,
+        application: &MetadataDecorateCall,
+        env: &Context,
+        captures: &Context,
+        owner: StatementOrdinal,
+        outcome: &mut Outcome,
+    ) -> bool {
+        if !self.index.dynamic_scope_owners.is_empty()
+            || !self.initialized_bindings.contains(&application.helper)
+            || !self.initialized_bindings.contains(&application.target)
+        {
+            return false;
+        }
+        let helper = self.evaluate(
+            &ValueExpr::Binding(application.helper.clone()),
+            env,
+            captures,
+        );
+        let target = self.evaluate(
+            &ValueExpr::Binding(application.target.clone()),
+            env,
+            captures,
+        );
+        if helper.len() != 1 || target.len() != 1 {
+            return false;
+        }
+        let helper_key = match helper.first() {
+            Some(AbstractValue::Origin(ValueOrigin::Function(key))) => *key,
+            Some(AbstractValue::Closure(key, captured)) if captured.values.is_empty() => *key,
+            _ => return false,
+        };
+        let Some(AbstractValue::Origin(ValueOrigin::Class(target_key))) = target.first() else {
+            return false;
+        };
+        if application.stable_origins(self.flow) != Some((helper_key, *target_key)) {
+            return false;
+        }
+        // The author certifies the helper's dispatch and every decorator's
+        // metadata-only behavior, not purity. Preserve all static dependencies
+        // of their bodies without manufacturing calls into the target methods.
+        for binding in std::iter::once(&application.helper).chain(&application.decorators) {
+            if let Some(&binding_owner) = self.binding_owner.get(binding) {
+                let (reads, rebinds) = self
+                    .owner_read_closure
+                    .lazy_effects_for_owner(binding_owner);
+                self.promote_lazy_effects(reads, rebinds, owner, outcome);
+                outcome.executed_owners.insert(binding_owner);
+            }
+        }
+        true
+    }
+
     fn all_owners(&self) -> impl Iterator<Item = StatementOrdinal> + '_ {
         self.facts.iter().map(|fact| fact.ordinal)
     }
@@ -2747,8 +2806,21 @@ pub(crate) fn annotate_synchronous_calls(
             fact.ordinal,
             &mut outcome,
         );
-        for call in calls {
-            executor.execute_call(call, &top_env, &top_captures, &mut outcome);
+        let metadata_only = index.top_metadata_decorations[fact.ordinal.0]
+            .as_ref()
+            .is_some_and(|application| {
+                executor.summarize_metadata_decoration(
+                    application,
+                    &top_env,
+                    &top_captures,
+                    fact.ordinal,
+                    &mut outcome,
+                )
+            });
+        if !metadata_only {
+            for call in calls {
+                executor.execute_call(call, &top_env, &top_captures, &mut outcome);
+            }
         }
         executor.promote_property_writes(
             &index.top_property_writes[fact.ordinal.0],

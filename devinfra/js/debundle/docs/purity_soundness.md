@@ -208,6 +208,16 @@ invoke the captured callback later, and must not contain proxies or accessors.
 Factory calls remain effectful for ordering unless a separate purity contract
 applies. See <design.md> for how this contract scopes callback-flow analysis.
 
+## Local-effect decorator annotations
+
+`typescript_decorate_helper` only certifies mutation locality.
+`typescript_metadata_decorate_helper` also certifies metadata-only helper and
+supplied-decorator behavior at eligible applications. The full shape checks,
+author audit and retained constraints are in <../SPEC.md> § Local-effect
+decorator annotations. Observable writes outside the target graph invalidate
+locality; callback invocation or publication invalidates the stronger timing
+summary. Neither annotation asserts call purity.
+
 ## `ChunkBinding::PlainData`
 
 A chunk-top binding admits as `PlainData` when its declared value is a

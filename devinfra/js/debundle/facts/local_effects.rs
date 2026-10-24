@@ -1,16 +1,21 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use binding_targets::{
     TargetAccessRecorder, binding_names, record_assign_target, record_update_target,
 };
+use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use super::{TopLevelItemView, collect_declared_names, var_decl_of_item};
-use crate::analysis_hints::LocalEffectPolicy;
+use super::{
+    ChunkValueFlow, TopLevelItemView, collect_declared_names, metadata_decorate_call,
+    var_decl_of_item,
+};
+use crate::analysis_hints::{KnownEffect, LocalEffectPolicy};
 use crate::purity::{ChunkCodeGraph, classify_expr_purity};
 
 #[derive(Debug, Default)]
 pub(crate) struct LocalEffectContext {
+    metadata_decorate_targets: BTreeMap<u32, Id>,
     /// Chunk-top declared binding names. Populated under both
     /// non-default policies: `VendorPrune` uses it to scope its
     /// recognizers' write targets, `LocalPropertyWrites` to require
@@ -26,8 +31,25 @@ impl LocalEffectContext {
     pub(crate) fn for_body(
         body: &[TopLevelItemView<'_>],
         local_effect_policy: LocalEffectPolicy,
+        known_effects: &BTreeMap<String, KnownEffect>,
+        flow: &ChunkValueFlow,
     ) -> Self {
         let mut context = Self::default();
+        if known_effects
+            .values()
+            .any(|effect| *effect == KnownEffect::TypescriptMetadataDecorateHelper)
+        {
+            for item in body {
+                if let Some(application) =
+                    metadata_decorate_call(item.as_module_item(), known_effects)
+                    && application.stable_origins(flow).is_some()
+                {
+                    context
+                        .metadata_decorate_targets
+                        .insert(item.as_module_item().span().lo.0, application.target);
+                }
+            }
+        }
         if local_effect_policy == LocalEffectPolicy::KnownEffectsOnly {
             return context;
         }
@@ -57,6 +79,10 @@ impl LocalEffectContext {
 
     pub(crate) fn local_effect_targets(&self, item: &ModuleItem) -> BTreeSet<Id> {
         vendor_prune_local_effect_targets(item, self)
+    }
+
+    pub(crate) fn metadata_decorate_target(&self, item: &ModuleItem) -> Option<&Id> {
+        self.metadata_decorate_targets.get(&item.span().lo.0)
     }
 
     /// Recognize a whole-statement local property write under

@@ -194,3 +194,26 @@ Without an assertion, source inference recognizes only immutable exported
 function declarations with one simple identifier parameter. The body must
 only return a zero-argument function or arrow that only calls that parameter
 with no arguments. Reassigned bindings and dynamic scopes remain opaque.
+
+## Local-effect decorator annotations
+
+`effect: typescript_decorate_helper` asserts target-local mutation; it does not
+assert callback timing. `effect: typescript_metadata_decorate_helper` additionally
+certifies that every admitted application, including every helper branch,
+intrinsic alias and supplied decorator, only writes inert target metadata.
+Decorators run synchronously, but neither they nor the helper may invoke target
+methods, getters, setters or constructors; publish callbacks outside the target
+graph; reenter unrelated caller/host/export callbacks; or access caller cells
+through hidden routes. Provider-private constant/metadata reads are allowed;
+observable writes outside the target graph are not. The author audits ordinary
+intact targets, prototypes, descriptors and intrinsics. Existing descriptor,
+prototype and callable behavior must remain unchanged. Imported decorators need
+this explicit audit; purity or import shape does not imply their behavior.
+
+The stronger summary applies only to a whole expression statement shaped as
+`helper([bare identifiers], LocalClass.prototype, literalStringKey, 1|2)`, with
+a nonempty spread-free array and a key other than `"__proto__"`. Analysis must
+prove exact stable local function/class identities and initialized bindings.
+Dynamic scopes and unsupported forms stay conservative. Eager argument reads,
+the helper's and local decorators' syntactic lazy read/rebind dependency closure,
+and target-local mutation/co-location edges remain. This is not purity.

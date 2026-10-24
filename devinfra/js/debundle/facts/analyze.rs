@@ -222,8 +222,12 @@ where
             Some(&mut locate),
         )
     };
-    let local_effect_context =
-        local_effects::LocalEffectContext::for_body(&body, hints.local_effect_policy);
+    let local_effect_context = local_effects::LocalEffectContext::for_body(
+        &body,
+        hints.local_effect_policy,
+        &hints.known_effects,
+        &value_flow,
+    );
     let redundant_purity_hints =
         detect_redundant_purity_hints(&body, &shadowed, &hints.declared_pure);
     let redundant_pure_member_hints =
