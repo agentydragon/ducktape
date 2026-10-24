@@ -198,8 +198,10 @@ classification. There is no "declare a whole module pure" shorthand.
 purity annotation. It asserts that a call to the named export, with one inline
 function or arrow callback, neither invokes that callback or other
 caller-, host-, or export-provided callbacks synchronously nor publishes the
-argument outside the returned fresh ordinary callable/plain-object graph. The
-analyzer enforces the call-site shape and conservatively handles other shapes;
+argument outside the returned fresh ordinary callable/plain-object graph. It
+must not synchronously access importer-owned state through other routes, including
+imported lexical cells or caller-owned objects. Provider-private effects are
+allowed. The analyzer enforces the call-site shape and conservatively handles other shapes;
 the author remains responsible for every provider branch/helper, ordinary
 property access, and prototype integrity. The returned graph may expose or
 invoke the captured callback later, and must not contain proxies or accessors.

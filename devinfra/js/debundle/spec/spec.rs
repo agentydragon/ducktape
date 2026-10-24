@@ -151,6 +151,9 @@ pub struct ChunkExportPurity {
     /// it or other caller/host/export callbacks synchronously, or publishing
     /// the argument outside the returned fresh ordinary callable/plain-object
     /// graph. That result may later expose or invoke the captured callback.
+    /// No synchronous access to importer-owned state through other routes is
+    /// allowed, including imported lexical cells or caller-owned objects.
+    /// Provider-private effects are allowed.
     /// Call sites must pass exactly one non-spread inline function or arrow
     /// callback and must not construct the export; other shapes stay
     /// conservative. The author must audit every implementation/helper path,

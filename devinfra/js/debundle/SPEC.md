@@ -180,6 +180,9 @@ shapes remain conservative. The provider must not invoke that callback or any
 caller-, host-, or export-provided callback synchronously, or publish the
 callback outside the returned fresh ordinary callable/plain-object graph. The
 consumer may later reach or invoke the captured callback through that result.
+The provider must not synchronously read or write importer-owned state through
+another route, including imported lexical cells or caller-owned objects; effects
+confined to provider-private state are allowed.
 The author must audit every provider branch and helper, callback-bearing
 property access, and prototype integrity; returned graphs must not contain
 proxies or accessors. This assertion describes callback flow only. It does not

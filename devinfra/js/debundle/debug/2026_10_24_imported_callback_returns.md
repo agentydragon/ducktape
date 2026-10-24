@@ -59,8 +59,10 @@ replacement and a getter installed under an ordinary nested property; primitive
 metadata writes retain callback deferral. The first mutation repair and analysis
 tests passed in `68ef062d-b44c-4066-a516-f18f259af3aa`.
 
-The earlier production candidate passed all 165 full-suite Bazel test targets
-in `d8640b04-2054-4e29-ab79-ba90ef63c866`. A real consumer run with an audited
-complex-provider contract removed two callback-timing conflicts, leaving two
-independent conflicts. It completed in 129.224 seconds wall time on RBE. The
-final mutation safeguard is checked again on the complete suite and consumer.
+The final mutation safeguard passed all 165 full-suite Bazel test targets in
+`4fdcaaa2-6531-4080-a3fe-9efab2b32b72`, including fifteen callback-flow cases.
+Exact-head GitHub Bazel, Nix and pre-commit checks passed at `0108d44078`.
+A real consumer run of the preceding candidate with an audited complex-provider
+contract removed two callback-timing conflicts, leaving two independent conflicts.
+It completed in 129.224 seconds wall time on RBE. The final consumer rerun checks
+the mutation safeguard too.
