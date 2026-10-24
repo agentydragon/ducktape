@@ -34,7 +34,6 @@ spec:
       retries: 3
   interval: 15m
   values:
-    affinity: {}
     configuration:
       logging:
         minimumLevel: Information
@@ -46,7 +45,6 @@ spec:
       repository: emberstack/kubernetes-reflector
       tag: 10.0.65
     nameOverride: reflector
-    nodeSelector: {}
     rbac:
       enabled: true
     replicaCount: 1
@@ -60,4 +58,3 @@ spec:
     serviceAccount:
       create: true
       name: reflector
-    tolerations: []

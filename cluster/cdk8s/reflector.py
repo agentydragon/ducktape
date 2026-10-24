@@ -52,9 +52,6 @@ def chart(app: App) -> Chart:
             "rbac": {"enabled": True},
             "serviceAccount": {"create": True, "name": NAME},
             "resources": {"requests": {"memory": "128Mi", "cpu": "100m"}, "limits": {"memory": "256Mi", "cpu": "200m"}},
-            "nodeSelector": {},
-            "tolerations": [],
-            "affinity": {},
         },
     )
     return chart
