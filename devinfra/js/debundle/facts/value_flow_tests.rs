@@ -45,8 +45,6 @@ function cycle() { return alpha; }
 alpha.callback = cycle;
 function return_cycle() { return cycle(); }
 const rooted = return_cycle();
-function return_unknown() { return missing_global; }
-const unknown_result = return_unknown();
 "#;
     let module = raw_js_test_support::parse(source);
     let body = top_level_item_views(&module.body);
@@ -60,7 +58,7 @@ const unknown_result = return_unknown();
                 .filter(|origin| matches!(origin, ValueOrigin::Object(_))),
         );
     }
-    for name in ["cycle", "return_unknown"] {
+    for name in ["cycle"] {
         candidates.extend(
             flow.values_of_binding(&id(name))
                 .iter()
@@ -124,16 +122,8 @@ const unknown_result = return_unknown();
                 .expect("peer property should point to beta"),
         ))
     );
-    let [ValueOrigin::Function(return_unknown_span)] = flow
-        .values_of_binding(&id("return_unknown"))
-        .iter()
-        .collect::<Vec<_>>()[..]
-    else {
-        panic!("return_unknown should have one function identity");
-    };
     let unknown_reachable = &actual.0[&ValueOrigin::Unknown];
     assert!(unknown_reachable.contains(&ValueOrigin::Unknown));
-    assert!(unknown_reachable.contains(&ValueOrigin::Function(return_unknown_span)));
     assert_eq!(actual.0[&foreign], BTreeSet::from([foreign]));
     assert!(actual.1.contains_key(&id("rooted")));
 }

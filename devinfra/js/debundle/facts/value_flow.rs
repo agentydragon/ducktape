@@ -665,12 +665,13 @@ impl ChunkValueFlow {
                     .push(origins.id(ValueOrigin::Function(*function)));
             }
         }
-        for (object, properties) in &self.properties {
+        // `merge_property` keeps this monotone union in sync whenever a
+        // property's facts grow. Reusing it avoids rescanning all per-property
+        // sets and deduplicating the same value across many properties here.
+        for (object, values) in &self.property_unions {
             let owner = origins.id(ValueOrigin::Object(*object));
-            for values in properties.values() {
-                for value in values {
-                    reverse[origins.id(value).0 as usize].push(owner);
-                }
+            for value in values {
+                reverse[origins.id(value).0 as usize].push(owner);
             }
         }
         for predecessors in &mut reverse {
