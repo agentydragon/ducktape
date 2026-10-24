@@ -46,6 +46,8 @@ _HDD_FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostnam
 _HDD_FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"
 _HDD_NEXT_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns103711"}
 _HDD_NEXT_NODE_DATA_DEVICE = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H48V6A"
+_HDD_LAST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns102453"}
+_HDD_LAST_NODE_DATA_DEVICE = "/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V3H370PN"
 _NEXT_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns104952"}
 _NEXT_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"
 _THIRD_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns104963"}
@@ -327,6 +329,15 @@ def cluster_chart(app: App) -> Chart:
         name="piraeus-lvm-metrics-ovh-ns103711",
     )
     piraeus_metrics.add_thin_pool_monitoring(
+        Construct(chart, "hdd-last-node-metrics"),
+        namespace=NAMESPACE,
+        node_selector=_HDD_LAST_NODE_SELECTOR,
+        volume_group=_HDD_VOLUME_GROUP,
+        thin_pool=_FIRST_NODE_THIN_POOL,
+        storage_pool="hdd",
+        name="piraeus-lvm-metrics-ovh-ns102453",
+    )
+    piraeus_metrics.add_thin_pool_monitoring(
         Construct(chart, "optiplex-metrics"),
         namespace=NAMESPACE,
         node_selector=_OPTIPLEX_SELECTOR,
@@ -517,6 +528,27 @@ def cluster_chart(app: App) -> Chart:
                                 "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
                             },
                             "source": {"hostDevices": [_HDD_NEXT_NODE_DATA_DEVICE]},
+                        }
+                    ],
+                },
+                {
+                    "name": "hdd-ovh-ns102453",
+                    # This remains inert until the old HDD is wiped and its physical
+                    # layout is accepted; piraeus-ready is enabled only afterward.
+                    "nodeSelector": _HDD_LAST_NODE_SELECTOR,
+                    "properties": [{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
+                    "patches": _TALOS_SATELLITE_PATCHES,
+                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
+                    "deletionPolicy": "Retain",
+                    "storagePools": [
+                        {
+                            "name": "hdd",
+                            "lvmThinPool": {
+                                "volumeGroup": _HDD_VOLUME_GROUP,
+                                "thinPool": _FIRST_NODE_THIN_POOL,
+                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+                            },
+                            "source": {"hostDevices": [_HDD_LAST_NODE_DATA_DEVICE]},
                         }
                     ],
                 },

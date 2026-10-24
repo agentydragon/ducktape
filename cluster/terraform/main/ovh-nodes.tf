@@ -58,6 +58,12 @@ locals {
       system_disk_match     = "disk.wwid == 'naa.5000cca25ed0d7d6'"
       system_volume_profile = "worker"
     }
+    "ovh-ns102453" = {
+      talos_storage_enabled = true
+      piraeus_ready_enabled = false
+      system_disk_match     = "disk.wwid == 'naa.5000cca0bcd2d1b0'"
+      system_volume_profile = "worker"
+    }
   }
 
   piraeus_talos_storage_enabled_nodes = toset([
@@ -151,8 +157,8 @@ locals {
     "ovh-ns102453" = {
       service_name    = var.kimsufi_service_name_cp0
       apply_mode      = "staged_if_needing_reboot"
-      install_disk    = "/dev/sda"
-      data_disk_match = "disk.dev_path == '/dev/sdb'"
+      install_disk    = "/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V1HADBTH"
+      data_disk_match = "disk.wwid == 'naa.5000cca0c4cf8efa'"
       zone            = "hil-ovh"
       storage_tier    = "hdd"
     }
@@ -183,6 +189,7 @@ locals {
   talos_installer_version_overrides = {
     "ovh-ns103656" = "v1.14.0"
     "ovh-ns103711" = "v1.14.0"
+    "ovh-ns102453" = "v1.14.0"
     "optiplex"     = "v1.14.0"
   }
   kimsufi_installer_version = {

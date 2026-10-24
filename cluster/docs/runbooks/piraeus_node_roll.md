@@ -215,6 +215,47 @@ preservation of the Anki volume. Preserve and move both Grocy configurations via
 a final consistent VolSync copy to Piraeus, and preserve Langfuse queue state.
 Flush replicated ingesters and check their survivors before retirement.
 
+### Final OVH HDD worker preparation
+
+`ovh-ns102453` remains cordoned while Seaweed repairs and evacuates its final
+legacy HDD server. Preparation does not activate its raw-device pool. The
+Terraform layout enables the existing worker profile: EPHEMERAL 32 GiB, CRI
+512 GiB, KUBELET 1024 GiB and LOG 32 GiB, all on the system disk. There is no
+worker ETCD volume and no system-disk Piraeus pool; unused system space remains
+unallocated.
+
+Talos inventory on 2026-10-24 verified two 4000787030016-byte HGST disks:
+
+<!-- prettier-ignore -->
+| Role | by-id path | WWID |
+| --- | --- | --- |
+| System | `/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V1HADBTH` | `naa.5000cca0bcd2d1b0` |
+| Data | `/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V3H370PN` | `naa.5000cca0c4cf8efa` |
+
+The entire data disk is reserved for `piraeus_hdd/data`, with 4 GiB thin
+metadata, its metadata spare and 64 KiB chunks. Measure actual capacity after
+initialization. The node-specific pool and its LVM collector require both the
+hostname and `storage.allegedly.works/piraeus-ready=true`; readiness stays
+**false** in this preparation. New OVH local-path allocations are disabled,
+including legacy aliases; bound claims remain readable.
+
+Activate evacuation separately through its GitOps AdminScript only after each
+source volume has a healthy copy elsewhere. Before merging/applying this
+maintenance layout, require an empty source, two healthy off-node copies of
+every original source volume, current shared-service gates and no remaining
+application consumers. A successful repair Job alone does not prove this.
+Refresh client volume locations before retiring the source server. Remove the
+old `drbd-canary` selection only after proving zero LINSTOR resources and
+snapshots, and retain both readiness gates through the physical rebuild.
+
+Inspect a targeted Terraform plan before maintenance: only this worker's
+intended machine configuration may change, with no rescue/dd installer action
+or changes to accepted nodes. Do not apply the layout to the serving node.
+Reimage through the existing maintenance procedure, verify both physical disk
+identities and all system mounts, then prepare a separate Piraeus readiness
+change. Re-run pool, filesystem/block PVC, reboot and shared-service gates
+before uncordoning. This preparation authorizes none of those later mutations.
+
 ### Applied and proposed data-disk layouts
 
 Live LVM reporting on 2026-10-22 confirmed that the first node has one whole-device

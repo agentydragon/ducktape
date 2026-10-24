@@ -47,8 +47,7 @@ spec:
       - node: ovh-ns103711
         paths: []
       - node: ovh-ns102453
-        paths:
-          - /var/mnt/local-path-ovh-hdd/local-path
+        paths: []
       - node: ovh-ns104952
         paths: []
       - node: ovh-ns104963
@@ -71,7 +70,12 @@ allowedTopologies:
           - hil-ovh
       - key: kubernetes.io/hostname
         values:
+          - ovh-ns103656
+          - ovh-ns103711
           - ovh-ns102453
+          - ovh-ns104952
+          - ovh-ns104963
+          - ovh-ns1001419
       - key: storage.allegedly.works/tier
         values:
           - hdd
@@ -90,7 +94,12 @@ allowedTopologies:
           - hil-ovh
       - key: kubernetes.io/hostname
         values:
+          - ovh-ns103656
+          - ovh-ns103711
           - ovh-ns102453
+          - ovh-ns104952
+          - ovh-ns104963
+          - ovh-ns1001419
       - key: storage.allegedly.works/tier
         values:
           - hdd
@@ -109,7 +118,12 @@ allowedTopologies:
           - hil-ovh
       - key: kubernetes.io/hostname
         values:
+          - ovh-ns103656
+          - ovh-ns103711
           - ovh-ns102453
+          - ovh-ns104952
+          - ovh-ns104963
+          - ovh-ns1001419
       - key: storage.allegedly.works/tier
         values:
           - hdd
@@ -128,7 +142,12 @@ allowedTopologies:
           - hil-ovh
       - key: kubernetes.io/hostname
         values:
+          - ovh-ns103656
+          - ovh-ns103711
           - ovh-ns102453
+          - ovh-ns104952
+          - ovh-ns104963
+          - ovh-ns1001419
       - key: storage.allegedly.works/tier
         values:
           - ssd
