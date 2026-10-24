@@ -248,7 +248,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # cluster/docs/lessons_learned/2026_10_19_seaweedfs_master_persistence.md.
                 persistence=SeaweedSpecMasterPersistence(
                     enabled=True,
-                    storage_class_name="local-path-ovh-ssd",
+                    storage_class_name="piraeus-ssd-local",
                     mount_path="/data",
                     resources=SeaweedSpecMasterPersistenceResources(
                         requests={"storage": SeaweedSpecMasterPersistenceResourcesRequests.from_string("4Gi")}
