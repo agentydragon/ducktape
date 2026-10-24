@@ -721,7 +721,10 @@ reachable owner's lazy reads and rebinds once. Callbacks retained by a fallback
 remain escaped, so their static read closure grows incrementally across source
 statements. The directly truncated callable uses the shared SCC summary without
 escaping its private roots. Applying either summary rechecks initialization at
-the active source prefix; per-statement outcomes are reset at the next prefix. Callback discovery visits each closure's capture snapshot once,
+the active source prefix; per-statement outcomes are reset at the next prefix.
+Fallback effects accumulate directly in that statement's summary and are merged
+once, rather than copied through every nested invocation. Rebinds still update
+the prefix environment immediately. Callback discovery visits each closure's capture snapshot once,
 including snapshots shared through several captured bindings. The executor
 interns immutable capture contexts bottom-up, so value-set and invocation-key
 comparisons use canonical identities rather than recursively comparing the

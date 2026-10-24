@@ -1083,6 +1083,8 @@ struct Executor<'a> {
     invocation_count: usize,
     callback_fallback: CallbackFallbackSummary,
     fallback_outcome: Outcome,
+    fallback_callback_sizes: Option<(usize, usize)>,
+    fallback_local_owners: BTreeSet<StatementOrdinal>,
     capture_contexts: BTreeMap<Arc<Context>, usize>,
     active: BTreeSet<ActiveInvocation>,
     cache: BTreeMap<InvocationSignature, Outcome>,
@@ -1226,7 +1228,9 @@ impl Executor<'_> {
         if writes.is_empty() {
             return;
         }
-        let unknown_call = outcome.unknown_call || self.reachability.unknown_call_seen;
+        let unknown_call = outcome.unknown_call
+            || self.reachability.unknown_call_seen
+            || self.fallback_outcome.unknown_call;
         if self.index.setter_owners.is_empty() && !unknown_call {
             return;
         }
@@ -1625,7 +1629,7 @@ impl Executor<'_> {
         // even when recursion or changing abstract arguments hit the bound
         // repeatedly. Reusing earlier fallback roots only adds constraints.
         let mut outcome = std::mem::take(&mut self.fallback_outcome);
-        outcome.returns = unknown();
+        let rebinds_before = outcome.effects.rebinds.len();
         outcome.complete = false;
         outcome.unknown_call = true;
         outcome.executed_owners.insert(owner);
@@ -1684,17 +1688,28 @@ impl Executor<'_> {
                     .cloned(),
             );
         }
-        self.promote_lazy_effects(
-            &self.callback_fallback.reads,
-            &self.callback_fallback.rebinds,
-            effect_owner,
-            &mut outcome,
+        let callback_sizes = (
+            self.callback_fallback.reads.len(),
+            self.callback_fallback.rebinds.len(),
         );
+        if self.fallback_callback_sizes != Some(callback_sizes) {
+            self.promote_lazy_effects(
+                &self.callback_fallback.reads,
+                &self.callback_fallback.rebinds,
+                effect_owner,
+                &mut outcome,
+            );
+            self.fallback_callback_sizes = Some(callback_sizes);
+        }
         // The directly truncated callable need not escape. Its static SCC
         // summary already contains the same transitive lazy effects, without
         // adding its private roots to the persistent callback cache.
-        let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
-        self.promote_lazy_effects(reads, rebinds, effect_owner, &mut outcome);
+        if !self.callback_fallback.expanded.contains(&owner)
+            && self.fallback_local_owners.insert(owner)
+        {
+            let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
+            self.promote_lazy_effects(reads, rebinds, effect_owner, &mut outcome);
+        }
 
         // The truncated body may have passed one of these callback values to
         // opaque code. Retain only this proven escape set for later calls.
@@ -1703,8 +1718,20 @@ impl Executor<'_> {
         if self.global_escaped_callbacks.len() != before {
             self.prefix_revision = self.prefix_revision.wrapping_add(1);
         }
-        self.fallback_outcome = outcome.clone();
-        outcome
+        if outcome.effects.rebinds.len() != rebinds_before {
+            self.apply_rebind_effects(&outcome.effects.rebinds);
+        }
+        // Fallback effects are attributed to the active top-level statement,
+        // not the lexical callee. Accumulate them there once instead of copying
+        // and re-merging the whole summary through every nested invocation.
+        self.fallback_outcome = outcome;
+        Outcome {
+            returns: unknown(),
+            complete: false,
+            unknown_call: true,
+            executed_owners: BTreeSet::from([owner]),
+            ..Outcome::default()
+        }
     }
 
     fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
@@ -2282,6 +2309,8 @@ pub(crate) fn annotate_synchronous_calls(
         invocation_count: 0,
         callback_fallback: CallbackFallbackSummary::default(),
         fallback_outcome: Outcome::default(),
+        fallback_callback_sizes: None,
+        fallback_local_owners: BTreeSet::new(),
         capture_contexts: BTreeMap::new(),
         active: BTreeSet::new(),
         cache: BTreeMap::new(),
@@ -2299,6 +2328,8 @@ pub(crate) fn annotate_synchronous_calls(
         executor.cache.clear();
         executor.invocation_count = 0;
         executor.fallback_outcome = Outcome::default();
+        executor.fallback_callback_sizes = None;
+        executor.fallback_local_owners.clear();
         let fact_roots = executor.fact_roots(fact);
         if executor.reachability.unknown_call_seen {
             executor.extend_reachable_owners(fact_roots.iter().copied());
@@ -2355,6 +2386,18 @@ pub(crate) fn annotate_synchronous_calls(
             fact.ordinal,
             &mut outcome,
         );
+        let fallback = std::mem::take(&mut executor.fallback_outcome);
+        if fallback.unknown_call {
+            outcome.effects.reads.extend(fallback.effects.reads);
+            outcome.effects.rebinds.extend(fallback.effects.rebinds);
+            outcome
+                .effects
+                .uninitialized_reads
+                .extend(fallback.effects.uninitialized_reads);
+            outcome.executed_owners.extend(fallback.executed_owners);
+            outcome.unknown_call = true;
+            outcome.complete = false;
+        }
         outcome.complete &= !index.opaque_top.contains(&fact.ordinal);
         outcome.effects.complete = outcome.complete;
         let mut prior_effect_owners = outcome.executed_owners.clone();
