@@ -69,6 +69,13 @@ were fresh, canaries were removed, and the `1700Gi` Seaweed server passed a
 native canary move and owned S3 checks. These observations describe the prior
 installation and do not qualify the post-reimage disk.
 
+During the 2026-10-23 retirement, `volumeServer.leave` made `/healthz` return
+503; six liveness failures at a 90s period restarted the container at 00:28:11
+and remounted 116 preserved files. After peer checks confirmed all 600
+logical IDs remained off-node, the locked native `volume.delete` removed only
+the 116 explicitly waived source copies; heartbeat and health stayed green with
+maintenance enabled. Avoid `leave` while files must remain preserved.
+
 Post-reimage activation is conditional on fresh disk-identity, system-volume,
 LINSTOR, thin-pool, filesystem/block, monitoring and Seaweed acceptance under
 the [node-roll runbook](../../docs/runbooks/piraeus_node_roll.md). The prepared
