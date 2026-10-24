@@ -87,9 +87,10 @@ HDD-node conversions had not started. The subsequent `103711` rebuild is below.
 
 ## 103711 admission and application restoration — 2026-10-24
 
-Evacuation handoffs are accepted. ClickHouse's client Service remains on the
-healthy data replica on `102453` while the new replica catches up. After peer
-checks confirmed all 600 logical HDD volume IDs remained off-node, the 116
+Evacuation handoffs are accepted. ClickHouse host-0 completed its Piraeus
+backfill and normal client routing and reconciliation were restored at
+`2026-10-24 06:09 UTC`. After peer checks confirmed all 600 logical HDD volume
+IDs remained off-node, the 116
 user-waived Seaweed source volume copies
 were deleted under lock. The empty legacy source Pod is retired; keep legacy
 `hdd` out of the operator topology map while its `102453` peer uses
@@ -130,22 +131,34 @@ reported metrics `up=1`; existing survivor Pod UIDs were preserved. The new
 server was absent from the initial repair pass's topology snapshot. That pass
 was stopped with its partial copy cleaned up and original intact; the replacement
 copy-only Job `replication-repair-refresh-103711-20261024` now targets `103711`
-and refreshes topology after each volume. The `replication-repair` AdminScript
+and refreshes topology after each volume. At `06:29 UTC`, native server
+inventories showed all 600 logical IDs present, 540 with two copies and 60
+with one copy (about 442GiB still to copy). The same Job's deadline was extended
+from 6 to 12 hours at `06:31 UTC` because the observed rate put completion
+beyond the original deadline; its Pod identity was preserved. The `replication-repair` AdminScript
 is temporarily suspended with its own Flux reconciliation disabled. Restore
 its original unsuspended state and remove that annotation after the replacement
 Job terminates and native copy/lock checks pass. The new
 500Gi ClickHouse host-0 is Ready with its two-database, 26-object catalog
 replayed, including two pre-existing orphan materialized views restored with a
 per-command compatibility setting. Catalog UUID/definition and migration-ledger
-comparison passed at `02:02 UTC`; data fetching remains in progress. AIQuota and
-Langfuse returned to normal Flux management with clean startup DDL checks.
-CHI/Flux holds and the client Service's peer-1-only routing remain until native
-data catch-up acceptance. Anki's Flux reconciliation observed
+comparison passed at `02:02 UTC`. Final acceptance at `06:09 UTC` found all
+17 replicated tables healthy with two active members, no queued work, no parts
+to check and no lost parts. All 26 catalog objects still matched, and both
+migration ledgers matched with latest version 53 clean. Normal client routing
+includes both Ready members, an authenticated query through the Service passed,
+the native CHI is `Completed`, and Flux is current and `Ready` without holds.
+The operator normalized host-0's Pod-template name, causing one controlled Pod
+replacement on the same PVC/PV; the host-1 Pod UID and restart count stayed
+unchanged. All three Keepers remained healthy. AIQuota and Langfuse returned
+to normal Flux management with clean startup DDL checks. Anki's Flux
+reconciliation observed
 `64b7c6ea` and is Ready.
 
 The initial two Bound claims totaled 2200Gi. Adding two 2Gi Valkey replicas
-during the `102453` evacuation brought the total to 2204Gi against
-1855.015625GiB of thin-data capacity.
+during the `102453` evacuation brought the total to 2204Gi. The two 10Gi
+monitoring destinations bring commitments to 2224Gi against 1855.015625GiB of
+thin-data capacity.
 [#11786](https://github.com/agentydragon/ducktape/issues/11786) tracks this live
 overcommit and its placement-based exit; low current allocation does not close it.
 
@@ -191,7 +204,8 @@ ClickHouse Keeper replicas 1 and 2 were cold-copied serially to retained
 metadata matched, Raft identities and DNS stayed unchanged, and the leader
 reported two synced followers after each copy. Keeper 0 was the final leader.
 That handoff finished with healthy quorum and all 17 data tables caught up;
-the later data host-0 rebuild above is still backfilling. Keeper replica 0
+the later data host-0 rebuild above completed catch-up at `06:09 UTC`.
+Keeper replica 0
 remains on `ovh-ns104963`; all three Keeper Pod UIDs and restart counts
 stayed unchanged through Flux reconciliation. The old HDD claims remain bound
 with `Retain`, and temporary helpers are removed. Flux is resumed and `Ready`;
@@ -228,6 +242,36 @@ remain Ready on their Piraeus claims.
 
 ## 102453 evacuation — 2026-10-24
 
+Mimir ingester-0 and Loki writer-0 were cold-copied serially to retained 10Gi
+`piraeus-hdd-local` claims on `103711`; handoff finished at `06:53 UTC`. Both
+services are `2/2` with their peer on `103656`, whose Pod UID and restart count
+stayed unchanged. Full contents and metadata matched before restart and again
+through the rebound claim; only host/mount `security.selinux` labels were
+excluded. Original source PVs are Released with `Retain`, and private cold
+archives remain off-node. Both Flux/HelmRelease owners are current and Ready
+without maintenance holds.
+
+Mimir replay/corruption checks passed and buffered writers caught up with no
+new failed samples. Recent/historical and outage-window aggregate queries
+passed for both services. Alloy failure/drop deltas stayed zero. Promtail
+dropped 6,609 entries (111,487,442 bytes) during the Loki move; the user
+accepted that migration-specific log gap. The earlier 971-entry count omitted
+two temporarily unready senders; all eleven retained their UIDs and returned
+Ready. Native Loki WAL replay completed with no corruption or write failures.
+The immutable local-path claim templates/defaults remain tracked in #4717.
+
+Fresh source inventory at `06:52 UTC` has four active local-path claims:
+Seaweed HDD-1, ClickHouse host-1 and active Coder-1 workspace/state. Two
+historical migration archives and parked Coder/recording claims still need
+preservation; the old Keeper claim needs replacement-backed metadata cleanup.
+All 20 CNPG clusters are Ready, including the new Home Assistant database
+created by separate work at `06:30 UTC`; the earlier 19-cluster checkpoints
+remain historical. Refresh the expected set before the next physical gate.
+Private proofs: `last-hdd-102453/monitoring-evacuation/`,
+`last-hdd-102453/root-monitoring-final-accepted.json` and
+`last-hdd-102453/remaining-source-live-inventory.json` under
+`/tmp/piraeus-hdd-roll-20261023/`.
+
 All ten primaries were switched serially to their caught-up Piraeus SSD peers
 before cordoning `ovh-ns102453` at `02:57 UTC`. CNPG can automatically switch
 primaries away from an unschedulable node, so cordoning first would have started
@@ -240,9 +284,9 @@ volumes. No CNPG Pods remain on the source, no per-cluster reconciliation holds
 remain, and all 19 cluster-wide CNPG clusters are Ready. Source PV metadata and
 files remain retained.
 
-The node stays cordoned. ClickHouse data catch-up, Seaweed copy repair, the
-remaining monitoring members and authored/historical data still need acceptance before a
-physical reset. Private per-cluster proofs are in
+The node stays cordoned. ClickHouse host-0 catch-up is accepted. Seaweed copy
+repair, ClickHouse host-1 and authored/historical data still need acceptance
+before a physical reset. Private per-cluster proofs are in
 `/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/`, including
 `root-final-independent-acceptance.json`.
 

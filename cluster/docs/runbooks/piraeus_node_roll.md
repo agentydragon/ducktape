@@ -268,10 +268,11 @@ pool use and headroom are monitored. Logical capacity is not a physical
 reservation, and this policy does not promise that all PVCs can be filled at
 once. Treat any such overcommit as temporary capacity debt to resolve through
 workload placement and balancing; do not assume extra disks or indefinite
-overcommit. On 2026-10-24, `ovh-ns103711` has four Bound `piraeus-hdd-local`
-claims: 1700Gi SeaweedFS, 500Gi ClickHouse and two 2Gi Valkey replicas, totaling
-2204Gi against a measured 1855.015625GiB thin-data pool. The 348.984375GiB excess
-(18.81%), before reserve and additional volume overhead, is tracked in
+overcommit. On 2026-10-24, `ovh-ns103711` has six Bound `piraeus-hdd-local`
+claims: 1700Gi SeaweedFS, 500Gi ClickHouse, two 2Gi Valkey replicas and two 10Gi
+monitoring claims, totaling 2224Gi against a measured 1855.015625GiB thin-data
+pool. The 368.984375GiB excess (19.89%), before reserve and additional volume
+overhead, is tracked in
 [#11786](https://github.com/agentydragon/ducktape/issues/11786).
 
 Enforce the planned per-PVC sizes. Monitor actual thin-data and thin-metadata
@@ -583,6 +584,26 @@ success is not evidence that every upload succeeded. If that cannot be proved,
 preserve the cold local state before replacing its claim. Restore and accept
 both members before moving the other one. Preserve Alertmanager silence and
 notification state through verified peer synchronization or a cold copy.
+
+For cold Mimir/Loki copies, preserve and compare file contents, paths/types,
+ownership, modes, nanosecond mtimes, symlink targets, ACLs and application
+xattrs. The accepted procedure excludes only `security.selinux`, which records
+host/mount context; do not repeat manual relabeling attempts to make that
+attribute match. Keep the source files as rollback, verify the rebound claim
+before starting the application, then verify application access and native
+WAL/head replay. Prepare destination volumes and the complete executor before
+stopping a member so model turns do not extend the ingestion-buffering window.
+
+With reconciliation held, stop ordinal 0 of a two-member StatefulSet while
+preserving ordinal 1: verify `whenScaled: Retain` and protect the source PV,
+then atomically set
+`spec.ordinals.start: 1` and `spec.replicas: 1`. A plain scale to one removes
+ordinal 1. Restore the original ordinal range and replica count only after
+verifying the replacement claim, and require the survivor UID and restart
+count to stay unchanged. During acceptance, record Loki's live flush-queue
+length; one queued flush under active ingestion is not a health failure.
+Require healthy ring membership, completed WAL replay, no new corruption or
+write/drop failures, and readable data across the move.
 
 Changing a StorageClass default never migrates bound PVCs. A precreated
 per-ordinal Piraeus claim can bridge an immutable StatefulSet template, but its
