@@ -72,9 +72,6 @@ spec:
               name: config
             - mountPath: /config/data/settingoverrides
               name: settingoverrides
-      nodeSelector:
-        topology.kubernetes.io/region: hil
-        topology.kubernetes.io/zone: hil-ovh
       securityContext:
         seccompProfile:
           type: RuntimeDefault
@@ -204,8 +201,6 @@ spec:
           volumeMounts:
             - mountPath: /config
               name: config
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Never
       securityContext:
         seccompProfile:
@@ -237,15 +232,6 @@ spec:
   rsyncTLS:
     copyMethod: Direct
     destinationPVC: grocy-config-ovh-backup
-    moverAffinity:
-      nodeAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          nodeSelectorTerms:
-            - matchExpressions:
-                - key: topology.kubernetes.io/zone
-                  operator: In
-                  values:
-                    - hil-ovh
     moverSecurityContext:
       fsGroup: 1000
       runAsGroup: 1000
@@ -264,15 +250,6 @@ spec:
     address: volsync-rsync-tls-dst-grocy-config-ovh-backup.grocy-sf.svc
     copyMethod: Direct
     keySecret: volsync-rsync-tls-grocy-config-ovh-backup
-    moverAffinity:
-      nodeAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          nodeSelectorTerms:
-            - matchExpressions:
-                - key: topology.kubernetes.io/zone
-                  operator: In
-                  values:
-                    - hil-ovh
     moverSecurityContext:
       fsGroup: 1000
       runAsGroup: 1000

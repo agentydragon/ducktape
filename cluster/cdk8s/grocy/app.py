@@ -16,28 +16,18 @@ from cdk8s_plus_34 import k8s
 from volsync_replicationdestination_crds.backube.volsync import (
     ReplicationDestinationSpecRsyncTls,
     ReplicationDestinationSpecRsyncTlsCopyMethod,
-    ReplicationDestinationSpecRsyncTlsMoverAffinity,
-    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinity,
-    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
-    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
     ReplicationDestinationSpecRsyncTlsMoverSecurityContext,
     ReplicationDestinationSpecRsyncTlsMoverSecurityContextSeccompProfile,
 )
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecRsyncTls,
     ReplicationSourceSpecRsyncTlsCopyMethod,
-    ReplicationSourceSpecRsyncTlsMoverAffinity,
-    ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinity,
-    ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
-    ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
     ReplicationSourceSpecRsyncTlsMoverSecurityContext,
     ReplicationSourceSpecRsyncTlsMoverSecurityContextSeccompProfile,
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -103,7 +93,6 @@ def _server(chart: Chart, namespace: str) -> None:
                 spec=k8s.PodSpec(
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
-                    node_selector={"topology.kubernetes.io/region": "hil", **node_scheduling.HIL_OVH_NODE_SELECTOR},
                     containers=[
                         k8s.Container(
                             name=_NAME,
@@ -227,42 +216,6 @@ def _source_mover_security_context() -> ReplicationSourceSpecRsyncTlsMoverSecuri
     )
 
 
-def _destination_mover_zone_affinity() -> ReplicationDestinationSpecRsyncTlsMoverAffinity:
-    return ReplicationDestinationSpecRsyncTlsMoverAffinity(
-        node_affinity=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinity(
-            required_during_scheduling_ignored_during_execution=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                node_selector_terms=[
-                    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                        match_expressions=[
-                            ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
-                            )
-                        ]
-                    )
-                ]
-            )
-        )
-    )
-
-
-def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
-    return ReplicationSourceSpecRsyncTlsMoverAffinity(
-        node_affinity=ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinity(
-            required_during_scheduling_ignored_during_execution=ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                node_selector_terms=[
-                    ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                        match_expressions=[
-                            ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
-                            )
-                        ]
-                    )
-                ]
-            )
-        )
-    )
-
-
 def household_chart(app: App, *, household: str) -> Chart:
     namespace = service(household).pods.namespace
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
@@ -311,7 +264,6 @@ def household_chart(app: App, *, household: str) -> Chart:
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     restart_policy="Never",
-                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(
@@ -371,7 +323,6 @@ def household_chart(app: App, *, household: str) -> Chart:
             copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
             service_type="ClusterIP",
             mover_security_context=_destination_mover_security_context(),
-            mover_affinity=_destination_mover_zone_affinity(),
         ),
     )
     ReplicationSource(
@@ -386,7 +337,6 @@ def household_chart(app: App, *, household: str) -> Chart:
             address=f"volsync-rsync-tls-dst-{_BACKUP}.{namespace}.svc",
             port=8000,
             mover_security_context=_source_mover_security_context(),
-            mover_affinity=_source_mover_zone_affinity(),
         ),
     )
     return chart
