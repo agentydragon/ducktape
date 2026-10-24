@@ -98,6 +98,40 @@ primitive/no-substitution templates are admitted; object/unknown/effectful
 substitutions, a shadowed `String`, another tag, and computed `String["raw"]`
 remain rejected. `RegExp` handling is unaffected.
 
+## `Set` from a chunk-top const array alias
+
+`new Set(arrayName)` is admitted only for an exact, unshadowed global `Set`
+call whose argument resolves through chunk-top `const` aliases to a primitive
+array literal. The literal has no holes, spreads, or non-literal elements.
+Every reference to each alias must be either another such const initializer or
+the single argument of a standard `new Set(...)` call. Any other use rejects
+the whole alias chain, including member access, assignment, publication,
+passing it to another call, or capture by an unrelated expression. A
+chunk-wide direct `eval` also disables the proof. The implementation records
+the approved constructor spans in the existing structural analysis; purity and
+synchronous callback analysis consume that same proof.
+
+Under A11, `%Set%` obtains the iterable and calls its built-in `add` for each
+item. The standard Array iterator reads the indexed own data properties of the
+fresh literal, and `Set.prototype.add` stores the values using SameValueZero
+without coercing them or invoking callbacks. The reference rules ensure the
+array cannot have been mutated, published, or given an own iterator override
+before construction. See [Set construction and `Set.prototype.add`](https://tc39.es/ecma262/2024/multipage/keyed-collections.html#sec-set-constructor),
+[`Set.prototype.add`](https://tc39.es/ecma262/2024/multipage/keyed-collections.html#sec-set.prototype.add),
+and the [Array iterator](https://tc39.es/ecma262/2024/multipage/indexed-collections.html#sec-array.prototype-@@iterator).
+
+Fresh inline arrays keep the existing element-purity checks in purity
+classification. Synchronous callback analysis uses the shared span proof only
+for inline primitive-literal arrays and the checked const-alias chains above.
+It leaves other array elements opaque: a pure function or object can still be
+stored in the resulting Set and called by a later consumer. This also means a
+plain-data member such as `mapping.key` remains conservative here until the
+analysis can prove its value primitive, even when the existing purity
+classifier proves the read itself has no accessor effect. Nested callable
+bodies remain conservative. Shadowed `Set`, spreads, holes, effectful or
+unknown alias elements, and any escaped or mutated alias remain outside the
+alias admission.
+
 ## `PURE_STATIC_PROPS` — disposal symbols
 
 `Symbol.dispose` and `Symbol.asyncDispose` are well-known Symbol values, just

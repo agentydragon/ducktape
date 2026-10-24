@@ -429,6 +429,7 @@ rust_library(
         "facts/mod.rs",
         "facts/owner_read_closure.rs",
         "facts/purity_classification.rs",
+        "facts/set_iterables.rs",
         "facts/statement_facts.rs",
         "facts/sync_effects.rs",
         "facts/value_flow.rs",
