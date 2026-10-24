@@ -52,6 +52,8 @@ debundle_e2e_test(name = "unknown_call_export_reachability_test")
 
 debundle_e2e_test(name = "unknown_call_export_reentry_test")
 
+debundle_e2e_test(name = "native_browser_reentry_test")
+
 debundle_e2e_test(
     name = "export_reentry_report_test",
     deps = ["@crates//:serde_json"],

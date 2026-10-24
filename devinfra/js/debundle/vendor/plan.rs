@@ -193,6 +193,25 @@ impl VendorResolutionPlan {
             .collect()
     }
 
+    /// Whether prepared static edges over-approximate the effective edges of
+    /// this chunk after replacement. Residual pruning only deletes source
+    /// edges. A bundled replacement adds facade -> bundle edges, which cannot
+    /// lead back into the artifact when the bundle is a synchronous ESM leaf.
+    /// Raw package/full swaps have an unindexed dependency closure and cannot
+    /// supply this proof. Boundary renames and suppression add no edges.
+    pub fn preserves_static_import_closure(&self, chunk: ChunkId) -> bool {
+        if self.full_swaps.iter().any(|swap| swap.chunk_id == chunk)
+            || self.partial_swaps.contains_key(&chunk)
+        {
+            return false;
+        }
+        self.bundled_partial_swaps.get(&chunk).is_none_or(|swap| {
+            swap.bundle_runtime.module_kind == artifact::ChunkModuleKind::Esm
+                && !swap.bundle_runtime.has_top_level_await
+                && swap.bundle_runtime.static_requests.is_empty()
+        })
+    }
+
     /// Wire-facing full-swap resolutions keyed by chunk path — the
     /// `full` section of the combined vendor swaps report, projected
     /// straight from the plan.
@@ -309,6 +328,9 @@ pub(crate) struct ChunkBundledPartialSwapPlan {
     /// Bundle copy + per-package facades; written during the bundled
     /// wave when writes are enabled.
     pub(crate) assets: PlannedBundledAssets,
+    /// Captured once while preparing the replacement bundle, alongside export
+    /// validation. Reentry analysis must not reparse or rescan this source.
+    bundle_runtime: artifact::ChunkRuntimeFacts,
     /// Wire-facing resolution skeleton (zero-initialized rewrite counts).
     pub(crate) resolution: ChunkBundledPartialSwapResolution,
 }
@@ -986,6 +1008,7 @@ fn plan_bundled_partial_swaps(
         let bundle_code = fs::read_to_string(&bundled.bundle.path)
             .with_context(|| format!("reading {}", bundled.bundle.path.display()))?;
         let bundle_ast = parse_js_module(&bundled.bundle.path.display().to_string(), &bundle_code)?;
+        let bundle_runtime = program_analysis::analyze_program_shallow(&bundle_ast).runtime_facts;
         let bundle_exports = collect_exported_names(&bundle_ast.module);
         for (package_name, package) in &bundled.packages {
             if !bundle_exports.contains(&package.bundle_export) {
@@ -1069,6 +1092,7 @@ fn plan_bundled_partial_swaps(
                 packages: package_targets,
                 symbols: bundled.symbols.clone(),
                 assets,
+                bundle_runtime,
                 resolution: ChunkBundledPartialSwapResolution {
                     chunk_id: chunk.chunk_name.clone(),
                     chunk_path: chunk_path.clone(),

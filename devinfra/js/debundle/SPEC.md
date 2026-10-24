@@ -170,6 +170,28 @@ unprocessed importer leaves the old import form unchanged. Dynamic imports and
 namespace imports continue to use the original minified export names. Bindings
 without a spec-assigned name are not changed by this cross-chunk pass.
 
+## Runtime loading contract
+
+Flat and tree specs accept `execution_runtime: generic` (the default) or
+`execution_runtime: native_browser_esm`. The latter declares execution through
+the browser's native ESM loader, with no synchronous host API that can obtain
+the namespace of a module while that module is evaluating. It is independent
+of browser-harness output configuration.
+
+The native-browser proof still checks a complete ordinary-ESM static closure,
+absence of top-level await and absence of a cycle back to the selected chunk.
+CommonJS compatibility references alone do not expose that chunk's exports
+through the native loader. Callbacks actually passed or published remain
+tracked, including callbacks that escape through global or unknown objects.
+
+Vendor replacement may preserve the proof when the original residual edges
+over-approximate the effective dependencies. A bundled partial replacement
+qualifies only when its prepared bundle is an ESM leaf with no static requests
+or top-level await: generated facades lead only to that leaf, while residual
+pruning can delete original edges. Bundles with external requests, raw package
+swaps and full package swaps retain conservative export reentry. Boundary
+renames and suppressed chunks add no dependency edges.
+
 ## Export-reentry diagnostics
 
 Materialization reports the selected export-reentry policy and its observed

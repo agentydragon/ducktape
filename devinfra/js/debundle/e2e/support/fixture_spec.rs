@@ -647,6 +647,7 @@ pub fn logical_module_with_anon_comment(
 }
 
 pub struct FixtureOpts<'a> {
+    pub execution_runtime: spec::ExecutionRuntime,
     pub source: &'a str,
     pub logical_modules: Vec<LogicalModuleEntry>,
     /// Optional `chunk_renames` entry for this chunk. When set, the
@@ -712,6 +713,7 @@ impl<'a> FixtureOpts<'a> {
         // [`unassigned_mode_inline`]; tests that exercise mini factors
         // override with [`unassigned_mode_mini_factors`].
         Self {
+            execution_runtime: spec::ExecutionRuntime::default(),
             source,
             logical_modules,
             chunk_renames: None,
@@ -958,6 +960,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         .collect();
 
     TransformSpec {
+        execution_runtime: opts.execution_runtime,
         inputs: LoadJsChunksArgs {
             input_root: setup.snapshot_root.clone(),
             js_list_path: setup.js_list_path.clone(),

@@ -32,6 +32,7 @@ fn supported_case_reports_no_static_importer_reentry() {
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
 
     assert_eq!(report["policy"], "no_static_importer_reentry");
+    assert_eq!(report["execution_runtime"], "generic");
     assert_eq!(report["global_blockers"], Value::Array(vec![]));
     assert_eq!(report["closure_blockers"], Value::Array(vec![]));
 }

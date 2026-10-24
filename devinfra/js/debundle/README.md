@@ -83,6 +83,11 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
 
 ## Spec features
 
+- **Runtime loading:** `execution_runtime: native_browser_esm` declares native
+  browser module loading independently of harness emission; omitted or `generic`
+  retains host-loader fallback. Checked closure and replacement prerequisites:
+  <SPEC.md#runtime-loading-contract>.
+
 - **`comment:`** emits into generated JS; **`note:`** is YAML-only authoring
   metadata: <docs/spec_editing.md> § Comments and notes.
 - **Conditionally-correct optimizations** (opt-in per chunk; each checks its

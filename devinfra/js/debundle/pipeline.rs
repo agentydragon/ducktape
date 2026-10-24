@@ -239,6 +239,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         let materialize_result = materialize_logical_modules(
             indexed.into_artifact(),
             MaterializeSpecInputs {
+                execution_runtime: spec.execution_runtime,
                 logical_modules: &spec.logical_modules,
                 chunk_renames: &spec.chunk_renames,
                 unassigned_mode: &spec.unassigned_mode,
@@ -868,6 +869,7 @@ mod tests {
 
     fn empty_transform_spec() -> TransformSpec {
         TransformSpec {
+            execution_runtime: spec::ExecutionRuntime::default(),
             inputs: spec::LoadJsChunksArgs {
                 input_root: PathBuf::from("."),
                 js_list_path: PathBuf::from("js-files.txt"),

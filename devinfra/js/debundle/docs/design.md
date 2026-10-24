@@ -105,6 +105,27 @@ well-behaved and admit precise reasoning even though generic JS does not.
 Document each such optimization with the precondition it requires, where the
 check lives, and the fallback path.
 
+### Native browser loading and vendor replacement
+
+`execution_runtime: native_browser_esm` declares native browser ESM loading;
+the default `generic` contract permits synchronous host loaders. In the native
+browser contract, a static importer outside a cycle cannot execute before its
+provider completes, and dynamic import resolves asynchronously. An opaque
+startup call therefore cannot obtain the provider's namespace merely because
+the provider exports a hoisted callback. This does not suppress callbacks
+already passed or published by the program. Complete ordinary static closure,
+target-cycle and top-level-await checks still gate the inference.
+
+Vendor preparation retains runtime facts from the replacement bundle's initial
+parse. For a bundled partial swap whose bundle is a synchronous ESM leaf,
+prepared residual edges safely over-approximate effective edges: stripping
+deletes source edges and added facades lead only to the closed leaf. No new
+path can return to the application chunk. This proof avoids a second residual
+computation before materialization. Unknown package closures, bundle static
+requests and bundle top-level await retain conservative fallback. The original
+supergraph may reject a cycle that pruning would remove; it never accepts one
+because an unexamined replacement was treated as a leaf.
+
 ## ESM execution model (the constraints)
 
 ESM module evaluation is more constrained than ad-hoc discussion

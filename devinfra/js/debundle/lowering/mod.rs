@@ -144,6 +144,7 @@ pub struct RequestedLogicalModule {
 /// The policy remains conservative whenever either blocker list is non-empty.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExportReentryReport {
+    pub execution_runtime: spec::ExecutionRuntime,
     pub policy: ExportReentryPolicy,
     pub global_blockers: Vec<ExportReentryGlobalBlocker>,
     pub closure_blockers: Vec<ExportReentryClosureBlocker>,
@@ -260,6 +261,7 @@ pub struct MaterializeLogicalModulesOptions {
 /// Spec-derived inputs to [`materialize_logical_modules`], all keyed by
 /// chunk id.
 pub struct MaterializeSpecInputs<'a> {
+    pub execution_runtime: spec::ExecutionRuntime,
     pub logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
@@ -274,6 +276,7 @@ pub fn materialize_logical_modules(
     options: MaterializeLogicalModulesOptions,
 ) -> Result<MaterializeLogicalModulesResult> {
     let MaterializeSpecInputs {
+        execution_runtime,
         logical_modules,
         chunk_renames,
         unassigned_mode,
@@ -305,6 +308,8 @@ pub fn materialize_logical_modules(
     let export_reentry_reports = export_reentry_reports(
         &artifact,
         &artifact_indexes,
+        execution_runtime,
+        vendor_plan,
         &vendor_affected_chunk_ids,
         &selected_chunk_ids,
         options.report_emission.rejection_dir().is_some(),
@@ -456,6 +461,8 @@ pub fn materialize_logical_modules(
 fn export_reentry_reports(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
+    execution_runtime: spec::ExecutionRuntime,
+    vendor_plan: &vendor::VendorResolutionPlan,
     vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
     selected_chunk_names: &[String],
     include_closure_diagnostics: bool,
@@ -472,7 +479,7 @@ fn export_reentry_reports(
     for chunk in &artifact.chunks {
         let source_chunk = artifact.chunk_table.name(chunk.chunk_id).to_string();
         let runtime = &chunk.analysis.runtime_facts;
-        if runtime.has_cjs_interop {
+        if runtime.has_cjs_interop && execution_runtime == spec::ExecutionRuntime::Generic {
             global_blockers.push(ExportReentryGlobalBlocker::CommonJsInterop {
                 source_chunk: source_chunk.clone(),
             });
@@ -503,7 +510,14 @@ fn export_reentry_reports(
         let closure_blockers = if artifact.has_chunk(target)
             && (include_closure_diagnostics || !global_proof_is_blocked)
         {
-            collect_closure_blockers(target, artifact, indexes, vendor_affected_chunk_ids)?
+            collect_closure_blockers(
+                target,
+                artifact,
+                indexes,
+                execution_runtime,
+                vendor_plan,
+                vendor_affected_chunk_ids,
+            )?
         } else {
             Vec::new()
         };
@@ -515,6 +529,7 @@ fn export_reentry_reports(
         reports.insert(
             target,
             ExportReentryReport {
+                execution_runtime,
                 policy,
                 global_blockers: global_blockers.clone(),
                 closure_blockers,
@@ -528,6 +543,8 @@ fn collect_closure_blockers(
     target: ChunkId,
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
+    execution_runtime: spec::ExecutionRuntime,
+    vendor_plan: &vendor::VendorResolutionPlan,
     vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<Vec<ExportReentryClosureBlocker>> {
     // Follow resolved static requests even when another blocker is present,
@@ -550,12 +567,15 @@ fn collect_closure_blockers(
                 source_chunk: source_name.clone(),
             });
         }
-        if runtime.has_cjs_interop {
+        if runtime.has_cjs_interop && execution_runtime == spec::ExecutionRuntime::Generic {
             blockers.push(ExportReentryClosureBlocker::CommonJsInterop {
                 source_chunk: source_name.clone(),
             });
         }
-        if vendor_affected_chunk_ids.contains(&source) {
+        if vendor_affected_chunk_ids.contains(&source)
+            && (execution_runtime == spec::ExecutionRuntime::Generic
+                || !vendor_plan.preserves_static_import_closure(source))
+        {
             blockers.push(ExportReentryClosureBlocker::VendorAffectedChunk {
                 source_chunk: source_name.clone(),
             });

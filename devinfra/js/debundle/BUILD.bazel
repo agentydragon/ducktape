@@ -283,6 +283,7 @@ rust_library(
         ":artifact",
         ":binding_targets",
         ":js_ast",
+        ":program_analysis",
         ":spec",
         "@crates//:anyhow",
         "@crates//:rayon",

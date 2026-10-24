@@ -30,6 +30,11 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct TransformSpec {
     pub inputs: LoadJsChunksArgs,
+    /// Loading contract used by the export-reentry proof. Native browser ESM
+    /// has no synchronous host API for obtaining an evaluating module namespace.
+    /// This is independent of whether a browser harness is emitted.
+    #[serde(default)]
+    pub execution_runtime: ExecutionRuntime,
 
     // --- declarative data sections ---
     #[serde(default)]
@@ -101,6 +106,17 @@ pub struct TransformSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub emit_browser_harness: Option<EmitBrowserHarnessConfig>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionRuntime {
+    /// The embedding host may expose a synchronous module loader.
+    #[default]
+    Generic,
+    /// Modules execute through the browser's native ESM loader. Host code
+    /// cannot synchronously load the namespace of an evaluating module.
+    NativeBrowserEsm,
 }
 
 /// Author-asserted contracts for one defining chunk's exports. See

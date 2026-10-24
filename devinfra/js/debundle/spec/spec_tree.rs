@@ -38,6 +38,8 @@ struct AuthoringConfig {
     #[serde(default)]
     module_roots: BTreeMap<PathBuf, String>,
     inputs: AuthoringInputs,
+    #[serde(default)]
+    execution_runtime: spec::ExecutionRuntime,
     /// Optional: only meaningful for a browser-delivered chunk. Omit for a
     /// target with no HTML entry point (e.g. a Node CLI bundle) to skip the
     /// browser-harness emit step entirely.
@@ -245,6 +247,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         .collect();
 
     Ok(TransformSpec {
+        execution_runtime: config.execution_runtime,
         inputs: LoadJsChunksArgs {
             input_root: input_root.clone(),
             js_list_path,

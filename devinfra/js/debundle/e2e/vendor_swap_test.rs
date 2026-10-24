@@ -3,8 +3,8 @@
 //! asserts the generated wrapper.
 
 use debundle_e2e_support::{
-    CommandResult, assert_module_source, assert_node_output, run_debundler, write_text_file,
-    write_yaml_file,
+    CommandResult, assert_module_source, assert_node_output, read_json, run_debundler,
+    write_text_file, write_yaml_file,
 };
 use serde_json::{Value, json};
 use spec::{
@@ -2874,6 +2874,113 @@ fn full_swapped_chunk_stays_opaque_to_cross_module_purity() {
             swapped.stderr.to_lowercase().contains(expected),
             "stderr missing {expected:?}:\n{}",
             swapped.stderr,
+        );
+    }
+}
+
+fn browser_bundled_reentry_fixture(bundle_source: &str, runtime: &str) -> VendorSwapFixture {
+    const PACKAGE: &str = "factory-kit";
+    let (ws, bundle_path) = setup_bundled_partial_swap(
+        "browser-vendor-reentry-",
+        "factory.js",
+        bundle_source,
+        &[
+            (
+                "static/vendor.js",
+                "try { require('optional-loader'); } catch {}\nexport const factory = () => 'ready';\nexport const keep = () => {};\n",
+            ),
+            (
+                "static/app.js",
+                "import { factory, keep } from './vendor.js';\nconst prefix = (keep(), new globalThis.Error());\nconst value = factory();\nexport function read() { return value; }\n",
+            ),
+        ],
+    );
+    let package_root = ws.write_upstream_package(
+        "upstream/factory-kit",
+        PACKAGE,
+        "1.0.0",
+        "index.js",
+        "export default () => 'ready';\n",
+    );
+    let member = |name: &str| json!({"name": name, "selector": {"binding": {"name": name}}});
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({"static/vendor.js": bundled_vendor(
+            "closed replacement factory",
+            &bundle_path,
+            &[(PACKAGE, bundled_package("1.0.0", "index.js", "factory", None))],
+            &[("factory", swap_symbol(PACKAGE, PartialSwapKind::Default, None, None))],
+        )}),
+        Some(json!({
+            "execution_runtime": runtime,
+            "logical_modules": {"static/app": {
+                "startup": {"members": [member("prefix")]},
+                "values": {"members": [member("value"), member("read")]},
+            }},
+            "unassigned_mode": {"static/app": {"kind": "inline_in_entry"}},
+            "materialize_logical_modules": {
+                "prune_other_chunks": false,
+                "report_out_dir": ws.out_root.join("reports/tree"),
+                "target_dir": "modules",
+            },
+        })),
+    );
+    let spec_path = ws.root.path().join("transform.yaml");
+    write_yaml_file(&spec_path, &spec);
+    let result = run_debundler(&spec_path, &[(PACKAGE, &package_root)]);
+    VendorSwapFixture {
+        result,
+        chunk_path: "static/vendor.js".to_string(),
+        wrapper_path: ws.out_root.join("app/static/app/entry.js"),
+        manifest_path: ws.manifest_path,
+        _root: ws.root,
+    }
+}
+
+#[test]
+fn closed_bundled_replacement_preserves_browser_export_proof() {
+    let fixture = browser_bundled_reentry_fixture(
+        "export const factory = () => 'ready';\n",
+        "native_browser_esm",
+    );
+    let report: Value = read_json(
+        &fixture
+            ._root
+            .path()
+            .join("workspace/out/reports/tree/static/app/export_reentry.json"),
+    );
+    assert_eq!(report["policy"], "no_static_importer_reentry", "{report:#}");
+    assert_success(&fixture.result);
+    let probe = fixture.wrapper_path.with_file_name("probe.mjs");
+    write_text_file(
+        &probe,
+        "import { read } from './entry.js'; console.log(read());\n",
+    );
+    assert_node_output(&probe, "ready\n", "");
+}
+
+#[test]
+fn bundled_reentry_proof_requires_runtime_and_closed_synchronous_bundle() {
+    for (bundle, runtime) in [
+        ("export const factory = () => 'ready';\n", "generic"),
+        (
+            "import './app.js'; export const factory = () => 'ready';\n",
+            "native_browser_esm",
+        ),
+        (
+            "await Promise.resolve(); export const factory = () => 'ready';\n",
+            "native_browser_esm",
+        ),
+    ] {
+        let fixture = browser_bundled_reentry_fixture(bundle, runtime);
+        assert!(!fixture.result.status.success());
+        assert!(
+            fixture
+                .result
+                .stderr
+                .contains("atomic-factor-unit conflict"),
+            "{}",
+            fixture.result.stderr
         );
     }
 }
