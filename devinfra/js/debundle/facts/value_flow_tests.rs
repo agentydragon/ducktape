@@ -400,6 +400,18 @@ fn invoke_arguments_reuse_return_sets_until_a_read_binding_changes() {
 }
 
 #[test]
+fn invoke_does_not_evaluate_arguments_without_identifier_parameters() {
+    let source = r#"
+function noParams() {}
+function leaf() {}
+const box = {};
+const result = noParams(box.missing || leaf);
+"#;
+    assert_matches_reference(source);
+    assert_eq!(argument_evaluations(source), 0);
+}
+
+#[test]
 fn unknown_from_missing_property_survives_its_later_static_write() {
     let flow = assert_matches_reference(
         r#"
