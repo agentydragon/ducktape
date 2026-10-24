@@ -4,14 +4,46 @@
 use super::statement_facts::SynchronousCalls;
 use super::value_flow::{Values as FlowValues, static_prop};
 use super::*;
+use std::cmp::Ordering;
+use std::sync::Arc;
 
 type Values = BTreeSet<AbstractValue>;
 type Context = BTreeMap<Id, Values>;
 
+/// Immutable closure captures are shared across value-set and invocation-cache
+/// clones. Equality remains structural; pointer equality is only a fast path
+/// for the common case where a clone still refers to the same snapshot.
+#[derive(Debug, Clone)]
+struct CapturedContext(Arc<Context>);
+
+impl PartialEq for CapturedContext {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || self.0 == other.0
+    }
+}
+
+impl Eq for CapturedContext {}
+
+impl PartialOrd for CapturedContext {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CapturedContext {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if Arc::ptr_eq(&self.0, &other.0) {
+            Ordering::Equal
+        } else {
+            self.0.cmp(&other.0)
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum AbstractValue {
     Origin(ValueOrigin),
-    Closure(u32, Box<Context>),
+    Closure(u32, CapturedContext),
     ObjectAssign,
     GlobalObject,
     Undefined,
@@ -995,7 +1027,7 @@ struct ReachabilityState {
 type InvocationSignature = (
     u32,
     Vec<Values>,
-    Context,
+    Option<CapturedContext>,
     u64,
     u64,
     Option<StatementOrdinal>,
@@ -1302,7 +1334,12 @@ impl Executor<'_> {
                 AbstractValue::Origin(ValueOrigin::Function(_)) | AbstractValue::Closure(_, _) => {
                     callbacks.insert(value.clone());
                     if let AbstractValue::Closure(_, captured) = &value {
-                        pending.extend(captured.values().flat_map(|values| values.iter().cloned()));
+                        pending.extend(
+                            captured
+                                .0
+                                .values()
+                                .flat_map(|values| values.iter().cloned()),
+                        );
                     }
                 }
                 AbstractValue::Origin(ValueOrigin::Object(object)) => {
@@ -1383,9 +1420,9 @@ impl Executor<'_> {
         }
     }
 
-    fn closure_captures(&self, key: u32, captures: &Context) -> Context {
+    fn closure_captures(&self, key: u32, captures: &Context) -> CapturedContext {
         let Some(callable) = self.index.callables.get(&key) else {
-            return Context::new();
+            return CapturedContext(Arc::new(Context::new()));
         };
         let free_bindings = callable.reads.iter().chain(callable.rebinds.iter());
         let mut captured = Context::new();
@@ -1404,7 +1441,7 @@ impl Executor<'_> {
                 );
             }
         }
-        captured
+        CapturedContext(Arc::new(captured))
     }
 
     fn available_export_callbacks(&self) -> Values {
@@ -1456,10 +1493,10 @@ impl Executor<'_> {
         for callback in callbacks.clone() {
             let nested = match callback {
                 AbstractValue::Origin(ValueOrigin::Function(key)) => {
-                    self.invoke(key, args_for(key, self.index), &Context::new())
+                    self.invoke(key, args_for(key, self.index), None)
                 }
                 AbstractValue::Closure(key, captured) => {
-                    self.invoke(key, args_for(key, self.index), &captured)
+                    self.invoke(key, args_for(key, self.index), Some(captured))
                 }
                 _ => continue,
             };
@@ -1601,7 +1638,7 @@ impl Executor<'_> {
             ValueExpr::Origin(ValueOrigin::Function(key)) => {
                 BTreeSet::from([AbstractValue::Closure(
                     *key,
-                    Box::new(self.closure_captures(*key, captures)),
+                    self.closure_captures(*key, captures),
                 )])
             }
             ValueExpr::Origin(origin) => BTreeSet::from([AbstractValue::Origin(*origin)]),
@@ -1740,10 +1777,10 @@ impl Executor<'_> {
                         | AbstractValue::Undefined
                         | AbstractValue::NonCallable => {}
                         AbstractValue::Origin(ValueOrigin::Function(key)) => {
-                            returns.extend(self.invoke(key, args.clone(), &Context::new()).returns);
+                            returns.extend(self.invoke(key, args.clone(), None).returns);
                         }
                         AbstractValue::Closure(key, captured) => {
-                            returns.extend(self.invoke(key, args.clone(), &captured).returns);
+                            returns.extend(self.invoke(key, args.clone(), Some(captured)).returns);
                         }
                         AbstractValue::ObjectAssign => {
                             returns.extend(args.first().cloned().unwrap_or_else(unknown));
@@ -1772,7 +1809,12 @@ impl Executor<'_> {
         }
     }
 
-    fn invoke(&mut self, key: u32, args: Vec<Values>, captured: &Context) -> Outcome {
+    fn invoke(
+        &mut self,
+        key: u32,
+        args: Vec<Values>,
+        captured: Option<CapturedContext>,
+    ) -> Outcome {
         let Some((callable_owner, callable_opaque)) = self
             .index
             .callables
@@ -1781,6 +1823,10 @@ impl Executor<'_> {
         else {
             return Outcome::default();
         };
+        let empty_context = Context::new();
+        let captured_context = captured
+            .as_ref()
+            .map_or(&empty_context, |captured| captured.0.as_ref());
         self.record_executed_owner(callable_owner);
         if callable_opaque {
             self.note_unknown_execution(callable_owner);
@@ -1801,7 +1847,7 @@ impl Executor<'_> {
             || self.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
             || self.cache.len() + self.active.len() >= 4096
         {
-            return self.bounded_invocation_fallback(callable_owner, &args, captured);
+            return self.bounded_invocation_fallback(callable_owner, &args, captured_context);
         }
         self.active.insert(active_invocation);
         self.invocation_depth += 1;
@@ -1810,7 +1856,7 @@ impl Executor<'_> {
             self.invocation_depth -= 1;
             return Outcome::default();
         };
-        let mut env = captured.clone();
+        let mut env = captured_context.clone();
         for (index, param) in callable.params.iter().enumerate() {
             let mut values = args
                 .get(index)
@@ -1961,7 +2007,7 @@ impl Executor<'_> {
                     outcome.unknown_call = true;
                 }
                 AbstractValue::Origin(ValueOrigin::Function(key)) if !call.is_new => {
-                    let nested = self.invoke(key, args.clone(), &Context::new());
+                    let nested = self.invoke(key, args.clone(), None);
                     self.apply_rebind_effects(&nested.effects.rebinds);
                     outcome.effects.reads.extend(nested.effects.reads);
                     outcome.effects.rebinds.extend(nested.effects.rebinds);
@@ -1974,7 +2020,7 @@ impl Executor<'_> {
                     outcome.complete &= nested.complete;
                 }
                 AbstractValue::Closure(key, captured) if !call.is_new => {
-                    let nested = self.invoke(key, args.clone(), &captured);
+                    let nested = self.invoke(key, args.clone(), Some(captured));
                     self.apply_rebind_effects(&nested.effects.rebinds);
                     outcome.effects.reads.extend(nested.effects.reads);
                     outcome.effects.rebinds.extend(nested.effects.rebinds);
