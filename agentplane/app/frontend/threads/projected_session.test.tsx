@@ -425,20 +425,16 @@ it.each([true, false])(
     const field = composer(container);
     expect(field.disabled).toBe(false);
     expect(button(container, "Send").disabled).toBe(true);
-    if (wakeOnSend) {
-      expect(field.placeholder).toBe(
-        "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes. Enter sends, Shift+Enter or Ctrl+Enter for a new line"
-      );
-      expect(container.textContent).not.toContain(
-        "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes."
-      );
-      expect(buttonIn(container, "Resume Sandbox")).toBeUndefined();
-    } else {
-      expect(container.textContent).toContain(
-        "Wake on message is off; submitted commands stay queued until you resume it manually."
-      );
-      expect(buttonIn(container, "Resume Sandbox")).toBeDefined();
-    }
+    const expectedMessage = wakeOnSend
+      ? "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes. Enter sends, Shift+Enter or Ctrl+Enter for a new line"
+      : "Wake on message is off; submitted commands stay queued until you resume it manually.";
+    const messageLocation = wakeOnSend ? field.placeholder : (container.textContent ?? "");
+    expect(messageLocation).toContain(expectedMessage);
+    expect(field.placeholder).toBe(
+      wakeOnSend ? expectedMessage : "Enter sends, Shift+Enter or Ctrl+Enter for a new line"
+    );
+    expect(container.textContent).not.toContain("Wake on message is on;");
+    expect(buttonIn(container, "Resume Sandbox") === undefined).toBe(wakeOnSend);
 
     await type(field, "Continue after resume");
     await press(field, {});
