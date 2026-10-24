@@ -113,6 +113,9 @@ def config(
             COMMON_GITHUB_READ_SET,
             GITHUB_IDENTITY_READS_SET,
             SSH_READS_SET,
+            # Its boxes run as the Sandbox's own ServiceAccount, so they hold its egress, the write-capable
+            # agentydragon-agent GitHub token included, and nothing more (operator, 2026-10-24).
+            SANDBOX_SELF_SET,
             *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["public-coder"]),
         ],
         default_policy_sets=set(DEFAULT_POLICIES),

@@ -3002,6 +3002,7 @@ data:
           - common-github-read
           - github-identity-reads
           - ssh-reads
+          - sandbox-self
           - shared-diagnostics
           - public-inventory
           - cluster-diagnostics
@@ -3091,6 +3092,7 @@ data:
           - common-github-read
           - github-identity-reads
           - ssh-reads
+          - sandbox-self
           - shared-diagnostics
           - public-inventory
           - cluster-diagnostics
