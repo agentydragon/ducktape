@@ -28,6 +28,7 @@ from agentplane.app.notifications_operator_client import NotificationsOperatorCl
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_access import SandboxAccess
+from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.app.testing.dispatcher import served_dispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
@@ -117,8 +118,14 @@ def presets() -> PresetCatalog:
 
 
 @pytest.fixture
+def new_sandbox_defaults() -> NewSandboxDefaults:
+    return NewSandboxDefaults()
+
+
+@pytest.fixture
 def bare_app(
     presets: PresetCatalog,
+    new_sandbox_defaults: NewSandboxDefaults,
     model_catalog: ModelCatalog,
     inventory: SandboxAccess,
     bridge: RunnerBridge,
@@ -148,6 +155,7 @@ def bare_app(
         action_policy,
         reviewer=reviewer,
         presets=presets,
+        new_sandbox_defaults=new_sandbox_defaults,
         electric=electric_proxy,
         event_logs=event_logs,
         content=content,
@@ -240,7 +248,19 @@ async def test_templates_list_the_concrete_choices_for_the_create_form(client: h
     assert (await client.get("/sandboxes/templates")).json() == [TEMPLATE]
 
 
-async def test_the_form_offers_the_namespace_policy_sets(client: httpx.AsyncClient) -> None:
+@pytest.mark.parametrize(
+    ("new_sandbox_defaults", "served_defaults"),
+    [
+        (NewSandboxDefaults(), {"wake_on_send": False, "idle_suspend_after_seconds": None}),
+        (
+            NewSandboxDefaults(wake_on_send=True, idle_suspend_after_seconds=900),
+            {"wake_on_send": True, "idle_suspend_after_seconds": 900},
+        ),
+    ],
+)
+async def test_the_form_offers_the_namespace_policy_sets_and_the_configured_defaults(
+    client: httpx.AsyncClient, served_defaults: dict[str, object]
+) -> None:
     assert (await client.get("/sandboxes/form")).json() == {
         "policy_sets": [
             "broken-reads",
@@ -250,7 +270,8 @@ async def test_the_form_offers_the_namespace_policy_sets(client: httpx.AsyncClie
             "pypi",
             "test-basic",
             "test-packages",
-        ]
+        ],
+        "new_sandbox_defaults": served_defaults,
     }
 
 

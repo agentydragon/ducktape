@@ -83,6 +83,19 @@ class NewSandbox(BaseModel):
     )
 
 
+class NewSandboxDefaults(BaseModel):
+    """What the Sandbox creation form starts with for the lifecycle policies the operator may change per Sandbox."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    wake_on_send: bool = Field(default=False, description="Whether the form starts with wake on message on.")
+    idle_suspend_after_seconds: int | None = Field(
+        default=None,
+        ge=MIN_IDLE_SUSPEND_AFTER_SECONDS,
+        description="The idle suspension time the form starts with; null starts it at never.",
+    )
+
+
 class SandboxWakePolicyChange(BaseModel):
     """The user-controlled wake policy, fenced to the Sandbox incarnation the browser displayed."""
 

@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, type SandboxPresetView, type SandboxView } from "./client";
+import { api, type NewSandboxDefaults, type SandboxPresetView, type SandboxView } from "./client";
 import { SandboxList } from "./sandboxes";
 import { deletable, SuspendResume } from "./lifecycle";
 import { sandboxSummary } from "./sandbox_status";
@@ -42,12 +42,10 @@ const CREATED: SandboxView = {
   wake_on_send: false,
 };
 
-async function render(
-  codexModels: { model: string; display_name: string; reasoning_efforts: string[] }[] = [
-    { model: "test-codex-a", display_name: "Test Codex A", reasoning_efforts: TEST_REASONING_EFFORTS },
-    { model: "test-codex-b", display_name: "Test Codex B", reasoning_efforts: TEST_REASONING_EFFORTS },
-  ]
-) {
+// What the app serves when its configuration leaves the new-Sandbox defaults unset.
+const UNSET_DEFAULTS: NewSandboxDefaults = { wake_on_send: false, idle_suspend_after_seconds: null };
+
+async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
   const onOpen = vi.fn();
   const preset: SandboxPresetView = {
     name: "test-preset",
@@ -63,12 +61,15 @@ async function render(
       path === "/models"
         ? testModelCatalog(
             [{ model: "test-claude", display_name: "Test Claude", reasoning_efforts: TEST_REASONING_EFFORTS }],
-            codexModels
+            [
+              { model: "test-codex-a", display_name: "Test Codex A", reasoning_efforts: TEST_REASONING_EFFORTS },
+              { model: "test-codex-b", display_name: "Test Codex B", reasoning_efforts: TEST_REASONING_EFFORTS },
+            ]
           )
         : path === "/presets"
           ? [preset]
           : path === "/sandboxes/form"
-            ? { policy_sets: ["test-basic", "test-packages"] }
+            ? { policy_sets: ["test-basic", "test-packages"], new_sandbox_defaults: newSandboxDefaults }
             : path === "/sandboxes/templates"
               ? ["test-template", "other-template"]
               : [];
@@ -151,6 +152,7 @@ it("pre-fills the preset's policy sets and inbox tags, hides picked sets, and se
       inbox_tags: ["test-group"],
       bootstrap: "mkdir -p /state/workspaces",
       wake_on_send: false,
+      idle_suspend_after_seconds: null,
     },
   });
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
@@ -262,6 +264,27 @@ it("lets an operator opt a new Sandbox into wake on message", async () => {
   expect(post).toHaveBeenCalledWith(
     "/sandboxes",
     expect.objectContaining({ body: expect.objectContaining({ wake_on_send: true }) })
+  );
+});
+
+it("starts a new Sandbox with the app's wake and idle suspension defaults whatever the preset", async () => {
+  const { container } = await render({ wake_on_send: true, idle_suspend_after_seconds: 900 });
+  const wakeCheckbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+  if (!wakeCheckbox) throw new Error("Missing Wake on message checkbox");
+  expect(wakeCheckbox.checked).toBe(true);
+  expect(input(container, "Suspend when idle (min)").value).toBe("15");
+
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  await type(input(container, "Name"), "defaulted");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+
+  expect(post).toHaveBeenCalledWith(
+    "/sandboxes",
+    expect.objectContaining({
+      body: expect.objectContaining({ wake_on_send: true, idle_suspend_after_seconds: 900 }),
+    })
   );
 });
 

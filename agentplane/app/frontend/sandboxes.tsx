@@ -20,7 +20,14 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { type JSX, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { api, displayableError, type NewSandbox, type SandboxPresetView, type SandboxView } from "./client";
+import {
+  api,
+  displayableError,
+  type NewSandbox,
+  type NewSandboxDefaults,
+  type SandboxPresetView,
+  type SandboxView,
+} from "./client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
@@ -57,6 +64,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
+  // The app's starting wake and idle suspension values; a preset leaves them alone.
+  const [defaults, setDefaults] = useState<NewSandboxDefaults>({ wake_on_send: false });
   const [presets, setPresets] = useState<SandboxPresetView[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -105,7 +114,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     void (async () => {
       const { data: sandboxForm, error: formFailure } = await api.GET("/sandboxes/form");
       if (formFailure) setError(displayableError(formFailure));
-      else setPolicySets(sandboxForm.policy_sets);
+      else {
+        setPolicySets(sandboxForm.policy_sets);
+        setDefaults(sandboxForm.new_sandbox_defaults);
+        setForm((current) => ({ ...current, ...sandboxForm.new_sandbox_defaults }));
+      }
       const { data: presetViews } = await api.GET("/presets");
       setPresets(presetViews ?? []);
       const { data: templateNames, error: templateFailure } = await api.GET("/sandboxes/templates");
@@ -136,7 +149,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     });
     if (failure) setError(displayableError(failure));
     else {
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM, ...defaults });
       setSelectedPreset(null);
       const params = new URLSearchParams(searchParams);
       params.delete(PRESET_PARAM);

@@ -545,7 +545,9 @@ to.
 A Sandbox takes `policy_sets` alone. The shared inventory validates the app's configured default sets
 with the submitted policy sets; Action policy sets and Kubernetes grants are not create inputs.
 `GET /sandboxes/form` lists the namespace's `PolicySet`s, which the form offers; a preset names
-`PolicySet`s only. A preset's `inbox_tags` likewise prefill the form, and `POST /sandboxes` writes the submitted
+`PolicySet`s only. It also serves the app-level `new_sandbox_defaults`, the wake-on-message and
+idle-suspend values the form starts with whatever the preset; `POST /sandboxes` stores only what the
+caller sends, so an API caller that omits them gets neither. A preset's `inbox_tags` likewise prefill the form, and `POST /sandboxes` writes the submitted
 ones as the Sandbox's initial `spec.inboxTags`: editing a preset changes only later launches.
 
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap

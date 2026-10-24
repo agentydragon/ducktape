@@ -12,6 +12,7 @@ from pydantic_settings import SettingsConfigDict
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPreset, ThreadPreset
+from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.log_levels import LogLevels
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
@@ -65,6 +66,10 @@ class AppSettingsConfig(YamlFileSettings):
     default_policy_sets: Set[str] = Field(
         description="PolicySets every new Sandbox is bound to. The app creates, suspends, resumes and deletes "
         "Sandboxes through Kubernetes itself."
+    )
+    new_sandbox_defaults: NewSandboxDefaults = Field(
+        default_factory=NewSandboxDefaults,
+        description="Initial wake and idle suspension values of the new-Sandbox form, whatever the preset.",
     )
     egress_admin_url: HttpEndpointUrl = Field(
         description="The egress proxy's admin endpoint; its host and port serve gRPC."

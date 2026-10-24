@@ -50,6 +50,7 @@ from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.sandbox_models import (
     NewSandbox,
+    NewSandboxDefaults,
     RunnerStatusView,
     SandboxIdleSuspendChange,
     SandboxView,
@@ -139,6 +140,7 @@ class AppServices:
     system_status: SystemStatusChecker
     models: ModelCatalog
     presets: PresetCatalog
+    new_sandbox_defaults: NewSandboxDefaults
     egress: EgressAccess
     action_policy: ActionPolicyInventory
     decisions: DecisionsClient
@@ -232,12 +234,15 @@ class SandboxForm(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     policy_sets: list[str] = Field(description="The PolicySets a new Sandbox may name.")
+    new_sandbox_defaults: NewSandboxDefaults
 
 
 @router.get("/form")
 async def sandbox_form(services: Services) -> SandboxForm:
-    """What the create form offers."""
-    return SandboxForm(policy_sets=await services.action_policy.policy_set_names())
+    """What the create form offers and starts with."""
+    return SandboxForm(
+        policy_sets=await services.action_policy.policy_set_names(), new_sandbox_defaults=services.new_sandbox_defaults
+    )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -1115,6 +1120,7 @@ def create_app(
     oidc: OIDCSettings | None = None,
     reviewer: TokenReviewer | None = None,
     presets: PresetCatalog | None = None,
+    new_sandbox_defaults: NewSandboxDefaults | None = None,
     operator_actions: FederatedOperatorActions | None = None,
     *,
     electric: ElectricProxy | None,
@@ -1185,6 +1191,7 @@ def create_app(
         system_status=system_status,
         models=catalog,
         presets=configured_presets,
+        new_sandbox_defaults=new_sandbox_defaults or NewSandboxDefaults(),
         egress=egress,
         action_policy=action_policy,
         decisions=decisions,
