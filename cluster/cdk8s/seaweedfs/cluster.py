@@ -601,7 +601,7 @@ def chart(app: App) -> Chart:
             cluster_ref=AdminScriptSpecClusterRef(name=NAME),
             schedule="17 * * * *",
             time_zone="Etc/UTC",
-            suspend=True,
+            suspend=False,
             concurrency_policy=AdminScriptSpecConcurrencyPolicy.FORBID,
             restart_policy=AdminScriptSpecRestartPolicy.NEVER,
             backoff_limit=0,
@@ -641,7 +641,7 @@ def chart(app: App) -> Chart:
         (
             "evacuate-hdd-102453",
             "Evacuate the 102453 SeaweedFS HDD volume server after all target volumes have two copies.",
-            False,
+            True,
             "lock\n"
             "volumeServer.state -nodes=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -maintenanceOn\n"
             "volumeServer.evacuate -node=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -apply\n"

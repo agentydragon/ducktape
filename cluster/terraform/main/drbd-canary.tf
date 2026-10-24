@@ -1,9 +1,9 @@
 # Host preparation only. Piraeus eligibility is controlled separately and must be
 # activated only after the target's rebuild. Keep the rescue/dd schematic unchanged.
 locals {
-  # 103656 moves to the LVM_THIN path below; keep the FILE_THIN selector label
-  # only on 102453 so it cannot recreate its old canary directory after reimage.
-  drbd_canary_nodes          = toset(["ovh-ns102453"])
+  # No node carries the FILE_THIN canary label: its pool directory lived on the
+  # legacy local-path data volume, which no remaining node has.
+  drbd_canary_nodes          = toset([])
   drbd_lvm_thin_nodes        = local.piraeus_talos_storage_enabled_nodes
   drbd_prepared_nodes        = setunion(local.drbd_canary_nodes, local.drbd_lvm_thin_nodes)
   drbd_canary_talos_version  = "v1.14.0"
