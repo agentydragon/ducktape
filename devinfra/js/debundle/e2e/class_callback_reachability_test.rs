@@ -146,3 +146,37 @@ fn class_creation_keeps_an_unused_method_deferred() {
     ));
     assert_preserved_entry_output(&fixture, "42\n");
 }
+
+#[test]
+fn class_method_rebind_reaches_later_imported_callback_invocation() {
+    let source = r#"import { install, invoke } from './peer.js';
+var receiver = () => 0;
+class Controller { flip() { receiver = invoke; } }
+install(Controller.prototype);
+const result = receiver(() => later);
+const later = 42;
+export { receiver, Controller, result, later };
+"#;
+    let peer = [(
+        "static/peer",
+        "export function install(target) { target.flip(); }\n\
+         export function invoke(callback) { return callback(); }",
+    )];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "controllers/controller",
+                    &[Member::new("Controller"), Member::new("receiver")],
+                    &["install(Controller.prototype);"],
+                ),
+                logical_module("runtime/call", &[Member::new("result")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&peer),
+        &["runtime/call", "values/later"],
+        &["eager_use", "sequenced"],
+    );
+}

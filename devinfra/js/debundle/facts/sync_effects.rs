@@ -1659,7 +1659,7 @@ impl Executor<'_> {
 
     /// The foreign wrapper's body is opaque once invoked. Include the full
     /// lazy closure, including callbacks returned by the original callback.
-    fn promote_deferred_callbacks(&self, captured: &Values, outcome: &mut Outcome) {
+    fn promote_deferred_callbacks(&mut self, captured: &Values, outcome: &mut Outcome) {
         let effect_owner = self.current_top_owner.unwrap();
         for callback in self.callback_values(captured) {
             let key = match callback {
@@ -1683,13 +1683,17 @@ impl Executor<'_> {
     /// Opaque code holding a class or its prototype can retrieve and run any
     /// method, getter, or static callback. The class owner's lazy closure also
     /// covers calls made by those deferred bodies.
-    fn promote_class_members(&self, key: u32, outcome: &mut Outcome) {
+    fn promote_class_members(&mut self, key: u32, outcome: &mut Outcome) {
         let Some(&owner) = self.flow.callable_owner.get(&ValueOrigin::Class(key)) else {
             return;
         };
         let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
         let effect_owner = self.current_top_owner.unwrap_or(owner);
         self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
+        // The opaque caller may invoke a method that changes a top-level
+        // binding. Subsequent prefix calls must include its new possible
+        // value, just as they do after an ordinary callback invocation.
+        self.apply_rebind_effects(&outcome.effects.rebinds);
     }
 
     fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
