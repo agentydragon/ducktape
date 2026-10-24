@@ -279,6 +279,42 @@ _GROCY_MCP = [
     )
 ]
 
+_IO_PRESSURE = [
+    # PSI `full` (every non-idle task stalled at once), not `some`: one I/O-bound job keeps `some` high while
+    # the rest of the node runs fine.
+    Rule.alert(
+        "NodeIOPressure",
+        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/node-io-pressure-warning.promql")).read_text(),
+        for_="1h",
+        labels={"severity": "warning"},
+        summary="{{ $labels.node }} is stalled on disk I/O",
+        description=(
+            "All non-idle tasks on {{ $labels.node }} were stalled on I/O at once for "
+            "{{ $value | humanizePercentage }} of the time, sustained for an hour. Image pulls and Pod starts there "
+            "slow down with it. container_pressure_io_stalled_seconds_total on that node shows who is waiting; "
+            "ContainerPageCacheThrash names the container when the reads are its own evicted files."
+        ),
+    ),
+    # Major faults are the discriminator: a container reading files with read() stalls on I/O too but takes
+    # none.
+    Rule.alert(
+        "ContainerPageCacheThrash",
+        get_required_path(
+            own_repo_rlocation("cluster/cdk8s/monitoring/container-page-cache-thrash-warning.promql")
+        ).read_text(),
+        for_="15m",
+        labels={"severity": "warning"},
+        summary="{{ $labels.namespace }}/{{ $labels.pod }} {{ $labels.container }} is thrashing its page cache",
+        description=(
+            "Container {{ $labels.container }} of {{ $labels.namespace }}/{{ $labels.pod }} on {{ $labels.node }} "
+            "is stalled on I/O {{ $value | humanizePercentage }} of the time while taking more than 5 major page "
+            "faults/s: the kernel keeps evicting its mapped files, usually its own binary, and it reads them back "
+            "from disk. It stays Ready and is never OOM-killed; the node's disk saturates instead. Raise its memory "
+            "limit above heap plus mapped files (cluster/docs/lessons_learned/2026_09_07_eso_memory_limit_thrash.md)."
+        ),
+    ),
+]
+
 _MCP_AUTH = [
     # An OIDCProxy-fronted MCP server (oauth facades, grocy-mcp) failed to
     # refresh a client's token against Authentik or persist refreshed OAuth
@@ -664,6 +700,12 @@ def chart(app: App) -> Chart:
         "grocy-mcp-alerts",
         metadata=ApiObjectMetadata(name="grocy-mcp-alerts", namespace=NAMESPACE),
         groups=[group("grocy-mcp", _GROCY_MCP)],
+    )
+    PrometheusRule(
+        chart,
+        "io-pressure-alerts",
+        metadata=ApiObjectMetadata(name="io-pressure-alerts", namespace=NAMESPACE),
+        groups=[group("io-pressure", _IO_PRESSURE)],
     )
     PrometheusRule(
         chart,

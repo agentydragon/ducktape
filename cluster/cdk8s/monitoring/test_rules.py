@@ -40,5 +40,9 @@ def test_disk_usage_rules(tmp_path: Path) -> None:
     _promtool_test_rules(tmp_path, {"disk-usage-rules": "disk-usage.yaml"}, "disk_usage_rules.yaml")
 
 
+def test_io_pressure_rules(tmp_path: Path) -> None:
+    _promtool_test_rules(tmp_path, {"io-pressure-alerts": "io-pressure.yaml"}, "io_pressure_rules.yaml")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

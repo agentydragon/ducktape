@@ -1,0 +1,8 @@
+max by (node) (
+  rate(node_pressure_io_stalled_seconds_total[5m])
+  * on (namespace, pod) group_left (node)
+    max by (namespace, pod, node) (
+      kube_pod_info{namespace="monitoring", pod=~"prometheus-node-exporter-.+"}
+    )
+)
+> 0.2

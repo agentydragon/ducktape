@@ -272,6 +272,9 @@ def _values() -> dict[str, object]:
                 "KubePodNotReady": True,
                 "KubeletInstanceUnreachable": True,
                 "TargetDown": True,
+                # Replaced by NodeIOPressure in cluster/cdk8s/monitoring/rules.py, which measures stalled tasks
+                # per node instead of queue depth per block device (a disk and each dm-* on it fired separately).
+                "NodeDiskIOSaturation": True,
             },
             "rules": {
                 "alertmanager": True,

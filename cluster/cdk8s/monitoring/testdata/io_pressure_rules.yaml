@@ -1,0 +1,54 @@
+rule_files:
+  - io-pressure.yaml
+evaluation_interval: 1m
+tests:
+  - name: node stalled on I/O fires after an hour, a lightly stalled node never does
+    interval: 1m
+    input_series:
+      - series: kube_pod_info{namespace="monitoring",pod="prometheus-node-exporter-saturated",node="test-saturated-node"}
+        values: 1x80
+      # 18 s stalled per minute: 30% of the time.
+      - series: node_pressure_io_stalled_seconds_total{namespace="monitoring",pod="prometheus-node-exporter-saturated"}
+        values: 0+18x80
+      - series: kube_pod_info{namespace="monitoring",pod="prometheus-node-exporter-light",node="test-lightly-stalled-node"}
+        values: 1x80
+      # 10% of the time.
+      - series: node_pressure_io_stalled_seconds_total{namespace="monitoring",pod="prometheus-node-exporter-light"}
+        values: 0+6x80
+    promql_expr_test:
+      - expr: ALERTS{alertname="NodeIOPressure",alertstate="firing"}
+        eval_time: 50m
+        exp_samples: []
+      - expr: ALERTS{alertname="NodeIOPressure",alertstate="firing"}
+        eval_time: 70m
+        exp_samples:
+          - labels: ALERTS{alertname="NodeIOPressure",alertstate="firing",node="test-saturated-node",severity="warning"}
+            value: 1
+
+  - name: only a container both stalled on I/O and major-faulting is thrashing
+    interval: 1m
+    input_series:
+      # 40% stalled, 10 major faults/s.
+      - series: container_pressure_io_stalled_seconds_total{node="test-worker",namespace="test-ns",pod="thrashing",container="app"}
+        values: 0+24x40
+      - series: container_memory_failures_total{failure_type="pgmajfault",scope="container",node="test-worker",namespace="test-ns",pod="thrashing",container="app"}
+        values: 0+600x40
+      # Equally stalled, but reading files rather than faulting them in.
+      - series: container_pressure_io_stalled_seconds_total{node="test-worker",namespace="test-ns",pod="io-bound-without-faults",container="app"}
+        values: 0+24x40
+      - series: container_memory_failures_total{failure_type="pgmajfault",scope="container",node="test-worker",namespace="test-ns",pod="io-bound-without-faults",container="app"}
+        values: 0+60x40
+      # Faulting just as often, but the faults barely stall it.
+      - series: container_pressure_io_stalled_seconds_total{node="test-worker",namespace="test-ns",pod="faulting-without-stall",container="app"}
+        values: 0+3x40
+      - series: container_memory_failures_total{failure_type="pgmajfault",scope="container",node="test-worker",namespace="test-ns",pod="faulting-without-stall",container="app"}
+        values: 0+600x40
+    promql_expr_test:
+      - expr: ALERTS{alertname="ContainerPageCacheThrash",alertstate="firing"}
+        eval_time: 10m
+        exp_samples: []
+      - expr: ALERTS{alertname="ContainerPageCacheThrash",alertstate="firing"}
+        eval_time: 25m
+        exp_samples:
+          - labels: ALERTS{alertname="ContainerPageCacheThrash",alertstate="firing",container="app",namespace="test-ns",node="test-worker",pod="thrashing",severity="warning"}
+            value: 1
