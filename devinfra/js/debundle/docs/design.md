@@ -719,7 +719,10 @@ back conservatively. Fallback read closures grow incrementally, promoting each
 reachable owner's lazy reads and rebinds once per statement. The summary is
 reset at the next source prefix so initialization timing is never reused across
 statements. Callback discovery visits each closure's capture snapshot once,
-including snapshots shared through several captured bindings.
+including snapshots shared through several captured bindings. The executor
+interns immutable capture contexts bottom-up, so value-set and invocation-key
+comparisons use canonical identities rather than recursively comparing the
+capture DAG.
 
 The summary also records reads at the callback's source prefix. For each
 callback-read binding, the graph builds a source-order timeline of callback

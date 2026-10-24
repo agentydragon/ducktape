@@ -10,15 +10,18 @@ use std::sync::Arc;
 type Values = BTreeSet<AbstractValue>;
 type Context = BTreeMap<Id, Values>;
 
-/// Immutable closure captures are shared across value-set and invocation-cache
-/// clones. Equality remains structural; pointer equality is only a fast path
-/// for the common case where a clone still refers to the same snapshot.
+/// Contexts are interned bottom-up by the executor. Structural equality of
+/// captures becomes identity equality, so comparing value sets and cache keys
+/// never recursively compares a shared capture DAG along every path.
 #[derive(Debug, Clone)]
-struct CapturedContext(Arc<Context>);
+struct CapturedContext {
+    identity: usize,
+    values: Arc<Context>,
+}
 
 impl PartialEq for CapturedContext {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || self.0 == other.0
+        self.identity == other.identity
     }
 }
 
@@ -32,11 +35,7 @@ impl PartialOrd for CapturedContext {
 
 impl Ord for CapturedContext {
     fn cmp(&self, other: &Self) -> Ordering {
-        if Arc::ptr_eq(&self.0, &other.0) {
-            Ordering::Equal
-        } else {
-            self.0.cmp(&other.0)
-        }
+        self.identity.cmp(&other.identity)
     }
 }
 
@@ -1070,6 +1069,7 @@ struct Executor<'a> {
     invocation_count: usize,
     fallback_expanded: BTreeSet<StatementOrdinal>,
     fallback_outcome: Outcome,
+    capture_contexts: BTreeMap<Arc<Context>, usize>,
     active: BTreeSet<ActiveInvocation>,
     cache: BTreeMap<InvocationSignature, Outcome>,
 }
@@ -1346,7 +1346,7 @@ impl Executor<'_> {
                     {
                         pending.extend(
                             captured
-                                .0
+                                .values
                                 .values()
                                 .flat_map(|values| values.iter().cloned()),
                         );
@@ -1430,9 +1430,22 @@ impl Executor<'_> {
         }
     }
 
-    fn closure_captures(&self, key: u32, captures: &Context) -> CapturedContext {
+    fn intern_captures(&mut self, captures: Context) -> CapturedContext {
+        if let Some((values, &identity)) = self.capture_contexts.get_key_value(&captures) {
+            return CapturedContext {
+                identity,
+                values: Arc::clone(values),
+            };
+        }
+        let identity = self.capture_contexts.len();
+        let values = Arc::new(captures);
+        self.capture_contexts.insert(Arc::clone(&values), identity);
+        CapturedContext { identity, values }
+    }
+
+    fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
         let Some(callable) = self.index.callables.get(&key) else {
-            return CapturedContext(Arc::new(Context::new()));
+            return self.intern_captures(Context::new());
         };
         let free_bindings = callable.reads.iter().chain(callable.rebinds.iter());
         let mut captured = Context::new();
@@ -1451,7 +1464,7 @@ impl Executor<'_> {
                 );
             }
         }
-        CapturedContext(Arc::new(captured))
+        self.intern_captures(captured)
     }
 
     fn available_export_callbacks(&self) -> Values {
@@ -1876,7 +1889,7 @@ impl Executor<'_> {
         let empty_context = Context::new();
         let captured_context = captured
             .as_ref()
-            .map_or(&empty_context, |captured| captured.0.as_ref());
+            .map_or(&empty_context, |captured| captured.values.as_ref());
         self.record_executed_owner(callable_owner);
         if callable_opaque {
             self.note_unknown_execution(callable_owner);
@@ -2227,6 +2240,7 @@ pub(crate) fn annotate_synchronous_calls(
         invocation_count: 0,
         fallback_expanded: BTreeSet::new(),
         fallback_outcome: Outcome::default(),
+        capture_contexts: BTreeMap::new(),
         active: BTreeSet::new(),
         cache: BTreeMap::new(),
     };

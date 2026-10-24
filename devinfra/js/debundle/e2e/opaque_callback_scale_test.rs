@@ -54,25 +54,34 @@ fn bounded_callback_summary_preserves_tdz_constraints() {
 }
 
 #[test]
-fn shared_capture_diamond_is_walked_once_and_preserves_output() {
+fn shared_and_equivalent_capture_dags_preserve_output() {
     let mut source = String::from(
         "globalThis.host = () => 7;\n\
          const state = 7;\n\
          function factory(left, right) {\n\
            return () => { host(left, right); return state; };\n\
          }\n\
-         const callback0 = () => state;\n",
+         const callback = () => state;\n\
+         const left0 = callback;\n\
+         const right0 = callback;\n",
     );
     for index in 1..=32 {
-        writeln!(
-            source,
-            "const callback{index} = factory(callback{}, callback{});",
-            index - 1,
-            index - 1,
-        )
-        .unwrap();
+        // Each DAG shares captures internally. The two DAGs are structurally
+        // equal but were allocated separately, so pointer equality alone does
+        // not prevent exponential comparisons when their values meet.
+        for name in ["left", "right"] {
+            writeln!(
+                source,
+                "const {name}{index} = factory({name}{}, {name}{});",
+                index - 1,
+                index - 1,
+            )
+            .unwrap();
+        }
     }
-    source.push_str("const result = host(callback32);\nconsole.log(result);\nexport { result };\n");
+    source.push_str(
+        "const result = host({ left32, right32 });\nconsole.log(result);\nexport { result };\n",
+    );
     let fixture = run_fixture(
         FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
     );
