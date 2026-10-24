@@ -33,6 +33,111 @@ fn assert_matches_reference(source: &str) -> ChunkValueFlow {
     actual
 }
 
+#[test]
+fn candidate_object_index_matches_ordered_reference_for_cycles_and_external_candidates() {
+    let source = r#"
+const alpha = {};
+const beta = {};
+const unknown_box = { value: missing_global };
+alpha.peer = beta;
+beta.peer = alpha;
+function cycle() { return alpha; }
+alpha.callback = cycle;
+function return_cycle() { return cycle(); }
+const rooted = return_cycle();
+function return_unknown() { return missing_global; }
+const unknown_result = return_unknown();
+"#;
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let flow = ChunkValueFlow::analyze(&body);
+
+    let mut candidates = BTreeSet::from([ValueOrigin::Unknown]);
+    for name in ["alpha", "beta", "unknown_box", "rooted"] {
+        candidates.extend(
+            flow.values_of_binding(&id(name))
+                .iter()
+                .filter(|origin| matches!(origin, ValueOrigin::Object(_))),
+        );
+    }
+    for name in ["cycle", "return_unknown"] {
+        candidates.extend(
+            flow.values_of_binding(&id(name))
+                .iter()
+                .filter(|origin| matches!(origin, ValueOrigin::Function(_))),
+        );
+    }
+
+    // This candidate comes from a second parsed source with a much larger
+    // source span, so it is outside the first flow's collected origin table.
+    // The old BTreeMap index accepted it as a seed; the dense index must retain
+    // that behavior without relying on an unchecked origin-table lookup.
+    let foreign_source = format!("/*{}*/ const foreign = {{}};", "padding".repeat(512));
+    let foreign_module = raw_js_test_support::parse(&foreign_source);
+    let foreign_body = top_level_item_views(&foreign_module.body);
+    let foreign_flow = ChunkValueFlow::analyze(&foreign_body);
+    let [ValueOrigin::Object(foreign_span)] = foreign_flow
+        .values_of_binding(&id("foreign"))
+        .iter()
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("foreign binding should have one object identity");
+    };
+    assert!(foreign_span > source.len() as u32);
+    let foreign = ValueOrigin::Object(foreign_span);
+    assert!(candidates.insert(foreign));
+
+    let actual = flow.candidate_object_index_maps_for_test(&candidates);
+    let expected = flow.candidate_object_index_reference_for_test(&candidates);
+    assert_eq!(actual, expected);
+
+    let ValueOrigin::Object(alpha_span) = *candidates
+        .iter()
+        .find(|origin| {
+            matches!(origin, ValueOrigin::Object(_))
+                && flow.values_of_binding(&id("alpha")).contains(origin)
+        })
+        .expect("alpha should be a candidate object")
+    else {
+        panic!("alpha should have an object identity");
+    };
+    let alpha = ValueOrigin::Object(alpha_span);
+    let alpha_reachable = &actual.0[&alpha];
+    let [ValueOrigin::Function(cycle_span)] = flow
+        .values_of_property(alpha_span, "callback")
+        .expect("cycle property should have a value")
+        .iter()
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("cycle property should contain one function identity");
+    };
+    assert!(alpha_reachable.contains(&ValueOrigin::Function(cycle_span)));
+    assert!(
+        alpha_reachable.contains(&ValueOrigin::Object(
+            flow.values_of_property(alpha_span, "peer")
+                .expect("peer property should have a value")
+                .iter()
+                .find_map(|origin| match origin {
+                    ValueOrigin::Object(span) => Some(span),
+                    _ => None,
+                })
+                .expect("peer property should point to beta"),
+        ))
+    );
+    let [ValueOrigin::Function(return_unknown_span)] = flow
+        .values_of_binding(&id("return_unknown"))
+        .iter()
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("return_unknown should have one function identity");
+    };
+    let unknown_reachable = &actual.0[&ValueOrigin::Unknown];
+    assert!(unknown_reachable.contains(&ValueOrigin::Unknown));
+    assert!(unknown_reachable.contains(&ValueOrigin::Function(return_unknown_span)));
+    assert_eq!(actual.0[&foreign], BTreeSet::from([foreign]));
+    assert!(actual.1.contains_key(&id("rooted")));
+}
+
 fn return_call_chain(depth: usize, reverse_declarations: bool) -> String {
     let mut source = String::from("function base() {}\n");
     if reverse_declarations {

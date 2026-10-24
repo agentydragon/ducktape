@@ -31,7 +31,7 @@ pub(crate) enum ValueOrigin {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct OriginId(u32);
 
 /// Per-chunk, deterministic mapping between semantic origins and dense bitmap
@@ -556,7 +556,8 @@ impl ValuesBuilder {
 /// every call or write site.
 pub(crate) struct CandidateObjectIndex {
     objects: Vec<ValueOrigin>,
-    reachable: BTreeMap<ValueOrigin, Vec<u64>>,
+    origins: Arc<OriginTable>,
+    reachable: Vec<Option<Vec<u64>>>,
     bindings: BTreeMap<Id, Vec<u64>>,
 }
 
@@ -580,7 +581,10 @@ impl CandidateObjectIndex {
 
     pub(crate) fn for_values(&self, values: &Values, mut visit: impl FnMut(ValueOrigin)) {
         for value in values {
-            if let Some(bits) = self.reachable.get(&value) {
+            let Some(origin_id) = self.origins.ids.get(&value) else {
+                continue;
+            };
+            if let Some(Some(bits)) = self.reachable.get(origin_id.0 as usize) {
                 self.visit_bits(bits, &mut visit);
             }
         }
@@ -634,6 +638,113 @@ impl ChunkValueFlow {
     ) -> CandidateObjectIndex {
         let objects: Vec<_> = candidates.iter().copied().collect();
         let words = objects.len().div_ceil(64);
+        // All fact origins are collected from this chunk's AST. Callers can
+        // supply additional candidate origins, though, so extend the table
+        // only when needed instead of assuming every query belongs to it.
+        let origins = if candidates
+            .iter()
+            .all(|origin| self.origin_table.ids.contains_key(origin))
+        {
+            self.origin_table.clone()
+        } else {
+            Arc::new(OriginTable::from_origins(
+                self.origin_table
+                    .origins
+                    .iter()
+                    .copied()
+                    .chain(candidates.iter().copied()),
+            ))
+        };
+
+        // Origin IDs follow ValueOrigin::Ord, so sorting and deduplicating
+        // each predecessor list preserves the old BTreeSet traversal order.
+        let mut reverse = vec![Vec::<OriginId>::new(); origins.origins.len()];
+        for (function, values) in &self.returns {
+            for value in values {
+                reverse[origins.id(value).0 as usize]
+                    .push(origins.id(ValueOrigin::Function(*function)));
+            }
+        }
+        for (object, properties) in &self.properties {
+            let owner = origins.id(ValueOrigin::Object(*object));
+            for values in properties.values() {
+                for value in values {
+                    reverse[origins.id(value).0 as usize].push(owner);
+                }
+            }
+        }
+        for predecessors in &mut reverse {
+            predecessors.sort_unstable();
+            predecessors.dedup();
+        }
+
+        // Keep the per-origin bitset lazy: most AST origins are not reachable
+        // from any candidate, and allocating one dense candidate vector for
+        // every origin would turn a sparse graph into O(origins * candidates)
+        // memory before propagation starts.
+        let mut reachable: Vec<Option<Vec<u64>>> = vec![None; origins.origins.len()];
+        let mut pending = VecDeque::new();
+        let mut queued = vec![false; origins.origins.len()];
+        for (index, object) in objects.iter().copied().enumerate() {
+            let origin = origins.id(object);
+            let bits = reachable[origin.0 as usize].get_or_insert_with(|| vec![0; words]);
+            bits[index / 64] |= 1 << (index % 64);
+            pending.push_back(origin);
+            queued[origin.0 as usize] = true;
+        }
+        while let Some(value) = pending.pop_front() {
+            queued[value.0 as usize] = false;
+            let bits = reachable[value.0 as usize]
+                .as_ref()
+                .expect("queued candidate origin must be reachable")
+                .clone();
+            for predecessor in &reverse[value.0 as usize] {
+                let target =
+                    reachable[predecessor.0 as usize].get_or_insert_with(|| vec![0; words]);
+                let predecessor_index = predecessor.0 as usize;
+                if union_bits(target, &bits) && !queued[predecessor_index] {
+                    pending.push_back(*predecessor);
+                    queued[predecessor_index] = true;
+                }
+            }
+        }
+        let bindings = self
+            .bindings
+            .iter()
+            .filter_map(|(id, values)| {
+                let mut bits = vec![0; words];
+                for value in values {
+                    if let Some(origin) = origins.ids.get(&value)
+                        && let Some(found) = &reachable[origin.0 as usize]
+                    {
+                        union_bits(&mut bits, found);
+                    }
+                }
+                bits.iter()
+                    .any(|word| *word != 0)
+                    .then_some((id.clone(), bits))
+            })
+            .collect();
+        CandidateObjectIndex {
+            objects,
+            origins,
+            reachable,
+            bindings,
+        }
+    }
+
+    /// Return the old ordered-map traversal as semantic maps for differential
+    /// tests. This deliberately remains separate from the indexed production
+    /// implementation so the test can catch mistakes in its ID layout.
+    #[cfg(test)]
+    pub(crate) fn candidate_object_index_reference_for_test(
+        &self,
+        candidates: &BTreeSet<ValueOrigin>,
+    ) -> (
+        BTreeMap<ValueOrigin, BTreeSet<ValueOrigin>>,
+        BTreeMap<Id, BTreeSet<ValueOrigin>>,
+    ) {
+        let objects: Vec<_> = candidates.iter().copied().collect();
         let mut reverse: BTreeMap<ValueOrigin, BTreeSet<ValueOrigin>> = BTreeMap::new();
         for (function, values) in &self.returns {
             for value in values {
@@ -644,8 +755,6 @@ impl ChunkValueFlow {
             }
         }
         for (object, properties) in &self.properties {
-            // The reverse index is ordered, so the inner map's iteration order
-            // cannot affect the candidate graph or any later traversal.
             for values in properties.values() {
                 for value in values {
                     reverse
@@ -658,20 +767,20 @@ impl ChunkValueFlow {
         let mut reachable = BTreeMap::new();
         let mut pending = VecDeque::new();
         let mut queued = BTreeSet::new();
-        for (index, object) in objects.iter().copied().enumerate() {
-            let bits = reachable.entry(object).or_insert_with(|| vec![0; words]);
-            bits[index / 64] |= 1 << (index % 64);
+        for object in objects.iter().copied() {
+            let bits = reachable.entry(object).or_insert_with(BTreeSet::new);
+            bits.insert(object);
             pending.push_back(object);
             queued.insert(object);
         }
         while let Some(value) = pending.pop_front() {
             queued.remove(&value);
-            let bits = reachable[&value].clone();
+            let reached = reachable[&value].clone();
             for predecessor in reverse.get(&value).into_iter().flatten() {
-                let target = reachable
-                    .entry(*predecessor)
-                    .or_insert_with(|| vec![0; words]);
-                if union_bits(target, &bits) && queued.insert(*predecessor) {
+                let target = reachable.entry(*predecessor).or_default();
+                let old_len = target.len();
+                target.extend(reached.iter().copied());
+                if target.len() != old_len && queued.insert(*predecessor) {
                     pending.push_back(*predecessor);
                 }
             }
@@ -680,22 +789,52 @@ impl ChunkValueFlow {
             .bindings
             .iter()
             .filter_map(|(id, values)| {
-                let mut bits = vec![0; words];
+                let mut objects = BTreeSet::new();
                 for value in values {
                     if let Some(found) = reachable.get(&value) {
-                        union_bits(&mut bits, found);
+                        objects.extend(found.iter().copied());
                     }
                 }
-                bits.iter()
-                    .any(|word| *word != 0)
-                    .then_some((id.clone(), bits))
+                (!objects.is_empty()).then_some((id.clone(), objects))
             })
             .collect();
-        CandidateObjectIndex {
-            objects,
-            reachable,
-            bindings,
-        }
+        (reachable, bindings)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn candidate_object_index_maps_for_test(
+        &self,
+        candidates: &BTreeSet<ValueOrigin>,
+    ) -> (
+        BTreeMap<ValueOrigin, BTreeSet<ValueOrigin>>,
+        BTreeMap<Id, BTreeSet<ValueOrigin>>,
+    ) {
+        let index = self.candidate_object_index(candidates);
+        let reachable = index
+            .reachable
+            .iter()
+            .enumerate()
+            .filter_map(|(id, bits)| {
+                let bits = bits.as_ref()?;
+                let mut values = BTreeSet::new();
+                index.visit_bits(bits, |object| {
+                    values.insert(object);
+                });
+                Some((index.origins.origin(OriginId(id as u32)), values))
+            })
+            .collect();
+        let bindings = index
+            .bindings
+            .iter()
+            .map(|(id, bits)| {
+                let mut values = BTreeSet::new();
+                index.visit_bits(bits, |object| {
+                    values.insert(object);
+                });
+                (id.clone(), values)
+            })
+            .collect();
+        (reachable, bindings)
     }
 
     pub(crate) fn analyze(body: &[TopLevelItemView<'_>]) -> Self {
