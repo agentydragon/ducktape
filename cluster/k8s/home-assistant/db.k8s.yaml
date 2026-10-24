@@ -118,6 +118,21 @@ spec:
     name: barman-cloud.cloudnative-pg.io
   schedule: 0 19 3 * * *
 ---
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  annotations:
+    description: Initial off-site recorder base backup.
+  name: home-assistant-db-initial
+  namespace: home-assistant
+spec:
+  cluster:
+    name: home-assistant-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  target: primary
+---
 apiVersion: batch/v1
 kind: Job
 metadata:

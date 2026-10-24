@@ -1,4 +1,5 @@
 # gazelle:ignore
+# gazelle:resolve py cnpg_backup_crds //cluster/cdk8s/providers/cnpg:backup
 # gazelle:resolve py cnpg_scheduledbackup_crds //cluster/cdk8s/providers/cnpg:scheduledbackup
 # gazelle:resolve py barman_cloud_objectstore_crds //cluster/cdk8s/providers/cnpg:objectstore
 
@@ -31,6 +32,14 @@ cdk8s_import(
     name = "scheduledbackup",
     crd = "@cnpg_scheduledbackup_crd//file",
     module_name = "cnpg_scheduledbackup_crds",
+    module_path = "io/cnpg/postgresql",
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+cdk8s_import(
+    name = "backup",
+    crd = "@cnpg_backup_crd//file",
+    module_name = "cnpg_backup_crds",
     module_path = "io/cnpg/postgresql",
     visibility = ["//cluster/cdk8s:__subpackages__"],
 )

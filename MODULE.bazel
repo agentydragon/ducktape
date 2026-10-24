@@ -1327,6 +1327,13 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.30.0/config/crd/bases/postgresql.cnpg.io_scheduledbackups.yaml"],
 )
 
+http_file(
+    name = "cnpg_backup_crd",
+    downloaded_file_path = "postgresql.cnpg.io_backups.yaml",
+    sha256 = "694bafce2eda4603629657c2141a89189c15250c74215002a6987538d3d78ff5",
+    urls = ["https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.30.0/config/crd/bases/postgresql.cnpg.io_backups.yaml"],
+)
+
 # Match the plugin-barman-cloud chart 0.8.0 (appVersion v0.15.0) in cluster/cdk8s/cnpg_operator.py;
 # the chart ships this CRD unchanged.
 http_file(

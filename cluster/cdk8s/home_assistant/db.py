@@ -13,8 +13,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from cnpg_backup_crds.io.cnpg.postgresql import (
+    Backup,
+    BackupSpec,
+    BackupSpecCluster,
+    BackupSpecMethod,
+    BackupSpecPluginConfiguration,
+    BackupSpecTarget,
+)
 
 from cluster.cdk8s import cnpg, cnpg_backup, node_scheduling
 from cluster.cdk8s.generation import write_charts
@@ -110,6 +118,23 @@ def chart(app: App) -> Chart:
         wal_archive=True,
     )
     cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
+    # The daily ScheduledBackup starts overnight. Keep this one-shot Backup resource declarative
+    # so the first complete base backup exists before Home Assistant is pointed at this database.
+    Backup(
+        chart,
+        "initial-backup",
+        metadata=ApiObjectMetadata(
+            name="home-assistant-db-initial",
+            namespace=DATABASE.namespace,
+            annotations={"description": "Initial off-site recorder base backup."},
+        ),
+        spec=BackupSpec(
+            cluster=BackupSpecCluster(name=DATABASE.name),
+            method=BackupSpecMethod.PLUGIN,
+            plugin_configuration=BackupSpecPluginConfiguration(name=cnpg.BARMAN_PLUGIN),
+            target=BackupSpecTarget.PRIMARY,
+        ),
+    )
     _import_job(chart)
     return chart
 
