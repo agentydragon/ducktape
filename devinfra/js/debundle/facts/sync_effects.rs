@@ -45,6 +45,9 @@ impl<T> Ord for Captured<T> {
 enum AbstractValue {
     Origin(ValueOrigin),
     Closure(u32, CapturedContext),
+    /// A class's static or prototype surface can expose its deferred methods.
+    /// Merely creating the class does not execute those methods.
+    ClassMembers(u32),
     CallbackFactory,
     /// A fresh opaque return value retaining callbacks without publishing them.
     DeferredCallbacks(Captured<Values>),
@@ -1507,6 +1510,10 @@ impl Executor<'_> {
                         );
                     }
                 }
+                AbstractValue::Origin(ValueOrigin::Class(key))
+                | AbstractValue::ClassMembers(key) => {
+                    callbacks.insert(AbstractValue::ClassMembers(*key));
+                }
                 AbstractValue::DeferredCallbacks(captured) => {
                     if callbacks.insert(value.clone()) {
                         pending.extend(captured.values.iter().cloned());
@@ -1658,6 +1665,10 @@ impl Executor<'_> {
             let key = match callback {
                 AbstractValue::Origin(ValueOrigin::Function(key))
                 | AbstractValue::Closure(key, _) => key,
+                AbstractValue::ClassMembers(key) => {
+                    self.promote_class_members(key, outcome);
+                    continue;
+                }
                 _ => continue,
             };
             if let Some(callable) = self.index.callables.get(&key) {
@@ -1667,6 +1678,18 @@ impl Executor<'_> {
                 self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
             }
         }
+    }
+
+    /// Opaque code holding a class or its prototype can retrieve and run any
+    /// method, getter, or static callback. The class owner's lazy closure also
+    /// covers calls made by those deferred bodies.
+    fn promote_class_members(&self, key: u32, outcome: &mut Outcome) {
+        let Some(&owner) = self.flow.callable_owner.get(&ValueOrigin::Class(key)) else {
+            return;
+        };
+        let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
+        let effect_owner = self.current_top_owner.unwrap_or(owner);
+        self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
     }
 
     fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
@@ -1778,6 +1801,10 @@ impl Executor<'_> {
                 break;
             }
             let nested = match callback {
+                AbstractValue::ClassMembers(key) => {
+                    self.promote_class_members(key, outcome);
+                    continue;
+                }
                 AbstractValue::DeferredCallbacks(captured) => {
                     self.promote_deferred_callbacks(&captured.values, outcome);
                     continue;
@@ -1865,6 +1892,11 @@ impl Executor<'_> {
                 key.and_then(|key| self.index.callables.get(&key).map(|c| c.owner))
             {
                 roots.insert(callback_owner);
+            }
+            if let AbstractValue::ClassMembers(key) = callback
+                && let Some(&owner) = self.flow.callable_owner.get(&ValueOrigin::Class(*key))
+            {
+                roots.insert(owner);
             }
         }
         self.extend_reachable_owners(roots.iter().copied().chain([owner]));
@@ -2074,6 +2106,10 @@ impl Executor<'_> {
                         }
                         AbstractValue::DeferredCallbacks(captured) => {
                             values.insert(AbstractValue::DeferredCallbacks(captured));
+                        }
+                        AbstractValue::Origin(ValueOrigin::Class(key))
+                        | AbstractValue::ClassMembers(key) => {
+                            values.insert(AbstractValue::ClassMembers(key));
                         }
                         AbstractValue::Origin(ValueOrigin::Object(object_id)) => {
                             if let Some(properties) = self.prefix_object_properties.get(&object_id)
@@ -2386,6 +2422,13 @@ impl Executor<'_> {
                     possible_args.push((*captured.values).clone());
                     self.promote_deferred_callbacks(&captured.values, outcome);
                     self.invoke_possible_callbacks(&possible_args, false, outcome);
+                }
+                AbstractValue::ClassMembers(key) => {
+                    outcome.complete = false;
+                    outcome.unknown_call = true;
+                    self.note_unknown_call(call);
+                    self.promote_class_members(key, outcome);
+                    self.invoke_possible_callbacks(&args, false, outcome);
                 }
                 AbstractValue::Unavailable
                 | AbstractValue::Undefined
