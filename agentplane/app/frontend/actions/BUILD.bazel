@@ -100,7 +100,6 @@ ts_library(
     name = "sidebar",
     srcs = [
         "sidebar.tsx",
-        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [

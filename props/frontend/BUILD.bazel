@@ -67,7 +67,6 @@ ts_library(
 ts_library(
     name = "main",
     srcs = [
-        "src/assets.d.ts",
         "src/main.tsx",
     ],
     tsconfig = ":tsconfig",
@@ -144,7 +143,6 @@ spa_bundle(
 ts_library(
     name = "harness_lib",
     srcs = [
-        "tests/harness/assets.d.ts",
         "tests/harness/harness.tsx",
     ] + glob(["tests/harness/fixtures/*.ts"]),
     tags = ["no-lint"],
