@@ -31524,7 +31524,7 @@
       }
     ]
   },
-  "report_sha256": "7b8bb5d823eacd3d58ccaf65c3ec1650179884d357e5a24e1fb0a957d743bc70",
+  "report_sha256": "d1a987601124f948f5c0c899561cafbb92ea1f8746e924ac0607a105c9ae1993",
   "recommendation_revision": {
     "reviewed_at_utc": "2026-10-23T14:31:05.920408+00:00",
     "coverage_source_devel_commit": "80f60cb731e2c8c51e4b890aea87612ce12d1556",
@@ -31602,7 +31602,8 @@
       "completed_at_utc": "2026-10-23T21:59:17.107105+00:00"
     },
     "runner_key_supplement_utc": ["2026-10-24T01:10:47Z", "2026-10-24T01:38:54Z"],
-    "startup_profile_completed_at_utc": "2026-10-24T02:29:47Z"
+    "startup_profile_completed_at_utc": "2026-10-24T02:29:47Z",
+    "workspace_input_experiment_utc": ["2026-10-24T03:41:15.082554789Z", "2026-10-24T03:41:55.095781488Z"]
   },
   "rules_observed_at_utc": "2026-10-23T21:59:17Z",
   "frontend_split": {
@@ -33262,8 +33263,9 @@
       "Native strace attempt and two failed detach-control probes excluded; no production configuration changed."
     ],
     "next_experiments": [
-      "Obtain host-stage timings for createWorkspaceImage/DirectoryToImage, guest readiness and mount on a slow action.",
-      "Separately test scoped precompilation/toolchain repair against 6\u20138s measured Python compilation budget; existing stdlib-resolution failure remains unretired."
+      "Test k3s-only test.init-dockerd=false with matched cold/warm real scenario actions; not yet run.",
+      "Separately repair/test scoped Python precompilation against measured 6\u20138s compilation work; not a demonstrated saving.",
+      "If a long preparation stall recurs naturally, obtain host-stage traces rather than repeat unbounded client-side probing."
     ],
     "upstream_explanatory_source": {
       "repository": "buildbuddy-io/buildbuddy",
@@ -33332,7 +33334,7 @@
         }
       ],
       "next_probe": {
-        "status": "Not run",
+        "status": "Completed: see startup_profiling.workspace_input_experiment",
         "command": "/bin/true",
         "comparison": "Existing slow test input-root digest versus tiny input root",
         "hold_fixed": [
@@ -33349,6 +33351,315 @@
       },
       "prior_cases": "https://github.com/agentydragon/ducktape/blob/9f044bfa7fc43b1120364ecb230d240ce4124a3a/devinfra/debug/buildbuddy_firecracker_workspace_attach_stalls_2026_07.md",
       "limits": "Inspected upstream revisions are not verified hosted deployment revision; no flags changed, no new action timings collected, no population summaries recomputed."
+    },
+    "workspace_input_experiment": {
+      "completed_at_utc": "2026-10-24T03:41:55.095781488Z",
+      "historical_source_commit": "b62fdc92f624a8843d7f81784389cf1ab1f8f904",
+      "historical_invocation": "a66fc801-2b97-56f3-a62c-862219f0e4d9",
+      "full_input_root": {
+        "hash": "7263adbeca40567a5d12405b3d00bd3a140b230b739a6d9e59237d26dd51699b",
+        "sizeBytes": "165"
+      },
+      "empty_input_root": {
+        "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sizeBytes": "0"
+      },
+      "command": ["/bin/true"],
+      "order": [
+        ["full", "tiny"],
+        ["tiny", "full"],
+        ["full", "tiny"]
+      ],
+      "requested_task_size": {
+        "estimatedMemoryBytes": "10000000000",
+        "estimatedMilliCpu": "4000",
+        "estimatedFreeDiskBytes": "53687091200"
+      },
+      "controlled_root_image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:478978590586fa9688ed0b5d8b02c7c8534ed80824b72d27e1c51e9fe53df207",
+      "analysis": {
+        "actions": 6,
+        "all_exit_zero": true,
+        "same_command_digest": {
+          "hash": "f7cbf34a196acb749620abf7b2d6512d565807608c16357f21cbd51b8f462600",
+          "sizeBytes": "475"
+        },
+        "same_executor": true,
+        "same_hostname": true,
+        "same_snapshot_parent": true,
+        "same_resources": true,
+        "all_six_zero_download_files_and_bytes": true,
+        "median": {
+          "full": {
+            "before_workspace_attach_s": 10.618907,
+            "remote_execution_s": 10.797765,
+            "input_fetch_s": 0.19436,
+            "after_workspace_attach_s": 0.184688,
+            "before_workspace_attach_range_s": [10.438635, 11.295129]
+          },
+          "tiny": {
+            "before_workspace_attach_s": 0.442712,
+            "remote_execution_s": 0.593516,
+            "input_fetch_s": 0.036379,
+            "after_workspace_attach_s": 0.154376,
+            "before_workspace_attach_range_s": [0.43914, 0.445627]
+          }
+        },
+        "pairs": [
+          {
+            "pair": 1,
+            "full_s": 11.295129,
+            "tiny_s": 0.445627,
+            "difference_s": 10.849502
+          },
+          {
+            "pair": 2,
+            "full_s": 10.618907,
+            "tiny_s": 0.43914,
+            "difference_s": 10.179767
+          },
+          {
+            "pair": 3,
+            "full_s": 10.438635,
+            "tiny_s": 0.442712,
+            "difference_s": 9.995923
+          }
+        ],
+        "median_paired_difference_s": 10.179767,
+        "historical_hostname_matches": true,
+        "historical_vm_configuration_hash_matches": true
+      },
+      "actions": [
+        {
+          "pair": 1,
+          "arm": "full",
+          "execution_id": "/uploads/d2eb3f9b-83d8-4774-90f6-b08f586dc218/blobs/b023f568ea7e632b3cfd96b00e426e925e0cf80ef4f15b4958261379d6386751/149",
+          "action_digest": {
+            "hash": "b023f568ea7e632b3cfd96b00e426e925e0cf80ef4f15b4958261379d6386751",
+            "sizeBytes": "149"
+          },
+          "input_root": {
+            "hash": "7263adbeca40567a5d12405b3d00bd3a140b230b739a6d9e59237d26dd51699b",
+            "sizeBytes": "165"
+          },
+          "exit_code": 0,
+          "queue_s": 0.060221,
+          "input_fetch_s": 0.31572,
+          "execution_start": "2026-10-24T03:41:15.082554789Z",
+          "workspace_attach": "2026-10-24T03:41:26.377683665Z",
+          "execution_end": "2026-10-24T03:41:26.562371246Z",
+          "before_workspace_attach_s": 11.295129,
+          "after_workspace_attach_s": 0.184688,
+          "remote_execution_s": 11.479817,
+          "io_stats": {
+            "fileDownloadDurationUsec": "11563029",
+            "localCacheHits": "7928",
+            "localCacheLinkDuration": "0.046863578s",
+            "fileUploadCount": "3",
+            "fileUploadSizeBytes": "8402",
+            "fileUploadDurationUsec": "619"
+          },
+          "vm_metrics": {
+            "vmExecDialDurationUsec": "15936",
+            "vmExecTransportDialDurationUsec": "15919",
+            "vmExecDialAttempts": "1",
+            "vmExecReadySignalReceived": true
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "tiny",
+          "execution_id": "/uploads/fff95756-7317-430a-b07e-fd058044b912/blobs/d48c060d4626f79695ae9a6d60170bd0ccf368b6520e203ff92fce23d7656962/146",
+          "action_digest": {
+            "hash": "d48c060d4626f79695ae9a6d60170bd0ccf368b6520e203ff92fce23d7656962",
+            "sizeBytes": "146"
+          },
+          "input_root": {
+            "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "sizeBytes": "0"
+          },
+          "exit_code": 0,
+          "queue_s": 0.11294,
+          "input_fetch_s": 0.035808,
+          "execution_start": "2026-10-24T03:41:27.627994828Z",
+          "workspace_attach": "2026-10-24T03:41:28.073621064Z",
+          "execution_end": "2026-10-24T03:41:28.230296066Z",
+          "before_workspace_attach_s": 0.445627,
+          "after_workspace_attach_s": 0.156675,
+          "remote_execution_s": 0.602302,
+          "io_stats": {
+            "fileDownloadDurationUsec": "602314",
+            "localCacheLinkDuration": "0.000010635s",
+            "fileUploadCount": "3",
+            "fileUploadSizeBytes": "8017",
+            "fileUploadDurationUsec": "668"
+          },
+          "vm_metrics": {
+            "vmExecDialDurationUsec": "278917",
+            "vmExecTransportDialDurationUsec": "13423",
+            "vmExecDialAttempts": "1",
+            "vmExecReadySignalReceived": true
+          }
+        },
+        {
+          "pair": 2,
+          "arm": "tiny",
+          "execution_id": "/uploads/0fee7ddb-e8ed-4bb3-ad53-aef5136d60e0/blobs/d48c060d4626f79695ae9a6d60170bd0ccf368b6520e203ff92fce23d7656962/146",
+          "action_digest": {
+            "hash": "d48c060d4626f79695ae9a6d60170bd0ccf368b6520e203ff92fce23d7656962",
+            "sizeBytes": "146"
+          },
+          "input_root": {
+            "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "sizeBytes": "0"
+          },
+          "exit_code": 0,
+          "queue_s": 0.061025,
+          "input_fetch_s": 0.037972,
+          "execution_start": "2026-10-24T03:41:29.213648744Z",
+          "workspace_attach": "2026-10-24T03:41:29.652788614Z",
+          "execution_end": "2026-10-24T03:41:29.807164667Z",
+          "before_workspace_attach_s": 0.43914,
+          "after_workspace_attach_s": 0.154376,
+          "remote_execution_s": 0.593516,
+          "io_stats": {
+            "fileDownloadDurationUsec": "593547",
+            "localCacheLinkDuration": "0.000021213s",
+            "fileUploadCount": "3",
+            "fileUploadSizeBytes": "8018",
+            "fileUploadDurationUsec": "720"
+          },
+          "vm_metrics": {
+            "vmExecDialDurationUsec": "278462",
+            "vmExecTransportDialDurationUsec": "9515",
+            "vmExecDialAttempts": "1",
+            "vmExecReadySignalReceived": true
+          }
+        },
+        {
+          "pair": 2,
+          "arm": "full",
+          "execution_id": "/uploads/b821b5c1-9dd0-4f58-b7a4-0e6a01ae1fad/blobs/b023f568ea7e632b3cfd96b00e426e925e0cf80ef4f15b4958261379d6386751/149",
+          "action_digest": {
+            "hash": "b023f568ea7e632b3cfd96b00e426e925e0cf80ef4f15b4958261379d6386751",
+            "sizeBytes": "149"
+          },
+          "input_root": {
+            "hash": "7263adbeca40567a5d12405b3d00bd3a140b230b739a6d9e59237d26dd51699b",
+            "sizeBytes": "165"
+          },
+          "exit_code": 0,
+          "queue_s": 0.058797,
+          "input_fetch_s": 0.19436,
+          "execution_start": "2026-10-24T03:41:30.963455438Z",
+          "workspace_attach": "2026-10-24T03:41:41.582362680Z",
+          "execution_end": "2026-10-24T03:41:41.761220401Z",
+          "before_workspace_attach_s": 10.618907,
+          "after_workspace_attach_s": 0.178858,
+          "remote_execution_s": 10.797765,
+          "io_stats": {
+            "fileDownloadDurationUsec": "10882596",
+            "localCacheHits": "7928",
+            "localCacheLinkDuration": "0.046398371s",
+            "fileUploadCount": "3",
+            "fileUploadSizeBytes": "8592",
+            "fileUploadDurationUsec": "38149"
+          },
+          "vm_metrics": {
+            "vmExecDialDurationUsec": "7460",
+            "vmExecTransportDialDurationUsec": "7433",
+            "vmExecDialAttempts": "1",
+            "vmExecReadySignalReceived": true
+          }
+        },
+        {
+          "pair": 3,
+          "arm": "full",
+          "execution_id": "/uploads/594244de-9d56-4324-b3c2-0e6abd19b2b4/blobs/b023f568ea7e632b3cfd96b00e426e925e0cf80ef4f15b4958261379d6386751/149",
+          "action_digest": {
+            "hash": "b023f568ea7e632b3cfd96b00e426e925e0cf80ef4f15b4958261379d6386751",
+            "sizeBytes": "149"
+          },
+          "input_root": {
+            "hash": "7263adbeca40567a5d12405b3d00bd3a140b230b739a6d9e59237d26dd51699b",
+            "sizeBytes": "165"
+          },
+          "exit_code": 0,
+          "queue_s": 0.060006,
+          "input_fetch_s": 0.158781,
+          "execution_start": "2026-10-24T03:41:42.847589007Z",
+          "workspace_attach": "2026-10-24T03:41:53.286224694Z",
+          "execution_end": "2026-10-24T03:41:53.486746584Z",
+          "before_workspace_attach_s": 10.438635,
+          "after_workspace_attach_s": 0.200522,
+          "remote_execution_s": 10.639157,
+          "io_stats": {
+            "fileDownloadDurationUsec": "10728537",
+            "localCacheHits": "7928",
+            "localCacheLinkDuration": "0.050134575s",
+            "fileUploadCount": "3",
+            "fileUploadSizeBytes": "8402",
+            "fileUploadDurationUsec": "752"
+          },
+          "vm_metrics": {
+            "vmExecDialDurationUsec": "7749",
+            "vmExecTransportDialDurationUsec": "7732",
+            "vmExecDialAttempts": "1",
+            "vmExecReadySignalReceived": true
+          }
+        },
+        {
+          "pair": 3,
+          "arm": "tiny",
+          "execution_id": "/uploads/322e7686-f64f-410d-8115-0cc804cc98c0/blobs/d48c060d4626f79695ae9a6d60170bd0ccf368b6520e203ff92fce23d7656962/146",
+          "action_digest": {
+            "hash": "d48c060d4626f79695ae9a6d60170bd0ccf368b6520e203ff92fce23d7656962",
+            "sizeBytes": "146"
+          },
+          "input_root": {
+            "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "sizeBytes": "0"
+          },
+          "exit_code": 0,
+          "queue_s": 0.059874,
+          "input_fetch_s": 0.036379,
+          "execution_start": "2026-10-24T03:41:54.508201737Z",
+          "workspace_attach": "2026-10-24T03:41:54.950913333Z",
+          "execution_end": "2026-10-24T03:41:55.095781488Z",
+          "before_workspace_attach_s": 0.442712,
+          "after_workspace_attach_s": 0.144868,
+          "remote_execution_s": 0.58758,
+          "io_stats": {
+            "fileDownloadDurationUsec": "587601",
+            "localCacheLinkDuration": "0.000011218s",
+            "fileUploadCount": "3",
+            "fileUploadSizeBytes": "8172",
+            "fileUploadDurationUsec": "754"
+          },
+          "vm_metrics": {
+            "vmExecDialDurationUsec": "280647",
+            "vmExecTransportDialDurationUsec": "12520",
+            "vmExecDialAttempts": "1",
+            "vmExecReadySignalReceived": true
+          }
+        }
+      ],
+      "snapshot_validation": "All six actual parents match the same unmeasured seed snapshot and action, using ordinary first-snapshot recycling; no explicit snapshot override used.",
+      "seed": {
+        "included_in_paired_statistics": false,
+        "before_workspace_attach_s": 27.24128,
+        "exit_code": 0,
+        "purpose": "Initialize VM snapshot and file cache"
+      },
+      "conclusion": "Input tree causes about 10s of warmed preparation overhead with zero CAS file downloads, but the prior 91.068s outlier did not recur. No deployable saving or population CI effect established.",
+      "limits": [
+        "Six actions on one executor; earlier load, storage/cache state and executor version not reproduced.",
+        "Changing full tree to empty changes both byte volume and filesystem-entry count; individual host operations remain untimed.",
+        "Direct REAPI actions have no separately published BES invocation pages; execution IDs retrieve cached responses.",
+        "One authentication failure and two local comma-valued snapshot-property parsing failures preceded remote execution and are excluded.",
+        "No Python/k3s scenario ran and no production/workflow settings changed.",
+        "Zero-download observations refer to execution metadata input-file counters; snapshot/root-image traffic was not independently measured."
+      ],
+      "decision": "Stop the bounded outlier reproduction here. Next test k3s-only Docker opt-out, then consider scoped Python precompilation; preserve both as unmeasured candidates."
     }
   },
   "prior_snapshot_validation": {
@@ -33375,7 +33686,7 @@
     },
     "limits": "Core population percentiles were not recomputed; later Nix pilot, runner experiments and startup profiling remain distinct cohorts. Instrumented startup timings do not establish population savings."
   },
-  "validation": {
+  "previous_snapshot_validation": {
     "html_sha256": "7b8bb5d823eacd3d58ccaf65c3ec1650179884d357e5a24e1fb0a957d743bc70",
     "checks": [
       "JSON parsed and HTML fragment IDs checked",
@@ -33394,5 +33705,26 @@
       ]
     },
     "limits": "Source-analysis update only. No new performance experiment, no flags changed, no root cause or saving established."
+  },
+  "validation": {
+    "html_sha256": "d1a987601124f948f5c0c899561cafbb92ea1f8746e924ac0607a105c9ae1993",
+    "checks": [
+      "All 6 measured actions exited 0; both Action digests decode to identical Command digest and differ only in input root",
+      "All 6 actual snapshot parents, executor host and requested resources match; input-file download counters are 0",
+      "Existing prior measurements and cohort counts preserved",
+      "Final browser review passed desktop/mobile cases; report overflow and continuity control checked; screenshots inspected",
+      "Formatting preserves browser-reviewed HTML tags/attributes and normalized text; final report hash checked"
+    ],
+    "browser_review": {
+      "invocation": "7f1d354c-23de-4b3e-90aa-c90801978911",
+      "target": "//devinfra/ci/reports:workspace_input_results_review",
+      "cases": 2,
+      "screenshots_inspected": [
+        "desktop-workspace-input-results",
+        "mobile-workspace-input-results",
+        "desktop-workspace-next-probe"
+      ]
+    },
+    "limits": "A one-executor input-cost experiment, not a deployed speedup or a reproduction of the 91s outlier. Docker opt-out and precompilation remain unmeasured candidates."
   }
 }

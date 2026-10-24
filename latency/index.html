@@ -1758,16 +1758,95 @@
           <a href="https://github.com/agentydragon/ducktape/blob/42752754d9/BUILD.bazel">devel 42752754d9</a>. This
           source inspection did not change production settings or rerun either control.
         </p>
-        <h3 id="workspace-next-probe">Next bounded probe: vary input size while doing no test work</h3>
+        <h3 id="workspace-input-results">
+          Measured: the full input tree adds about 10 seconds, without reproducing the old stall
+        </h3>
         <p>
-          Run a remote <code>/bin/true</code> action with the slow test’s input-root digest, then compare with an
-          otherwise matched tiny-input action. Hold the worker, root image, resources, command, recycling configuration
-          and snapshot starting state fixed, bypass result caching, and collect existing execution timestamps plus the
-          VM workspace-attachment log. This tests whether the input tree reproduces the preparation cost without Python
-          or k3s startup. It has not been run and carries no saving estimate. If it reproduces, request BuildBuddy’s
-          host spans for <code>createWorkspaceImage</code>, <code>DiskSizeBytes</code>,
-          <code>DirectoryToImage</code> and guest readiness to locate the operation.
+          Six direct remote-execution actions passed in three paired comparisons on October 24 UTC. Every command was
+          <code>/bin/true</code>; no Python or k3s code ran. The full arm used exactly the input root from the earlier
+          slow <code>test_launch_presets</code> action, at source
+          <a href="https://github.com/agentydragon/ducktape/commit/b62fdc92f624a8843d7f81784389cf1ab1f8f904"
+            >b62fdc92f624</a
+          >; the other arm used an empty input tree. Pair order was full/empty, empty/full, full/empty.
         </p>
+        <p>
+          All six ran on the historical executor and the same host, with identical command digests, root image,
+          requested resources and recycling configuration. Each action’s actual VM metadata named the same prepared seed
+          snapshot and preceding seed action. Action-result cache reads and writes were disabled. Every measured action
+          downloaded zero files and zero bytes from CAS; each full-input action reported 7928 local cache hits. One
+          unmeasured full-input seed initialized the VM snapshot and file cache.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Pair</th>
+                <th>Full tree before attachment (s)</th>
+                <th>Empty tree before attachment (s)</th>
+                <th>Paired difference (s)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td>11.295</td>
+                <td>0.446</td>
+                <td>10.850</td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td>10.619</td>
+                <td>0.439</td>
+                <td>10.180</td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td>10.439</td>
+                <td>0.443</td>
+                <td>9.996</td>
+              </tr>
+              <tr>
+                <td>Median</td>
+                <td>10.619</td>
+                <td>0.443</td>
+                <td>10.180</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Median remote execution was 10.798 seconds full and 0.594 seconds empty. Completion after attachment took
+          0.145–0.201 seconds. The cold seed took 27.241 seconds before attachment and is excluded from paired
+          statistics. The input tree therefore causes about 10 seconds of repeatable preparation overhead on this warmed
+          executor without input-file downloads or test execution. This comparison changes both input bytes and
+          filesystem-entry count, so it does not distinguish tree traversal from ext4 population or other
+          input-dependent host work.
+        </p>
+        <p>
+          The historical 91.068-second preparation delay did not recur with the exact same input root on the same
+          executor. Input size alone under these conditions does not reproduce that outlier; historical host load,
+          storage/cache state and executor version were not held equal. Stop this bounded reproduction effort and
+          request host-stage traces if the large stall recurs naturally. This is an input-cost measurement, not a
+          deployable 10-second saving: the real test needs its inputs.
+        </p>
+        <p>
+          Per-action digests, timing boundaries, cache counters and execution IDs are in
+          <code>startup_profiling.workspace_input_experiment</code> in
+          <a href="evidence.json">the supporting evidence</a>. Retrieve a cached record with
+          <code>bb execution get &lt;execution_id&gt; --output=json</code>. These were direct REAPI actions; their
+          metadata invocation IDs are correlation labels, not separately published BES invocation pages. Preliminary
+          auth/property-parsing failures occurred before remote execution and are excluded.
+        </p>
+        <h3 id="workspace-next-probe">Next: test a k3s-only Docker-initialization opt-out</h3>
+        <p>
+          The next bounded optimization probe is <code>"test.init-dockerd": "false"</code> on k3s targets, with matched
+          cold/warm runs of the real scenario to verify compatibility and measure total execution. The platform inherits
+          Docker initialization globally while the fixture uses its own containerd. Earlier Docker-readiness counters
+          were roughly 2–6 seconds; overlapping preparation means that is not a guaranteed wall-clock saving. This probe
+          has not run, and no production configuration changed. Python precompilation remains a separate candidate
+          against the observed 6–8-second compilation budget.
+        </p>
+
         <p>
           The
           <a
@@ -1788,10 +1867,10 @@
         <p>
           The next bounded Python experiment is a scoped rules_python precompilation/toolchain repair, checked against
           the observed 6–8-second compilation budget. Existing fixture docs already record a precompile failure
-          resolving the exec interpreter’s standard library; this pair did not retry or repair it. For the larger
-          outlier, request host-stage timings around <code>createWorkspaceImage</code>/<code>DirectoryToImage</code>,
-          guest readiness and mount before changing runner properties. These are two separate follow-ups; neither is a
-          demonstrated 91-second code saving.
+          resolving the exec interpreter’s standard library; this pair did not retry or repair it. The bounded
+          input-tree experiment above did not reproduce the old stall; retain the execution records and obtain
+          host-stage timings if it recurs. The immediate next probe is the k3s-only Docker opt-out, followed by a scoped
+          precompilation repair. Neither is a demonstrated 91-second saving.
         </p>
         <p>
           A preceding whole-launcher native syscall trace did not complete and was canceled; detach-control probes also
