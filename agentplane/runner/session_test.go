@@ -3,10 +3,13 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -16,6 +19,16 @@ import (
 type frameTestAdapter struct {
 	harness.Adapter
 	onFrame func(context.Context, json.RawMessage, uint64) error
+}
+
+type pendingSubmitAdapter struct {
+	harness.Adapter
+	submits int
+}
+
+func (a *pendingSubmitAdapter) Submit(context.Context, string, string) error {
+	a.submits++
+	return &harness.NativeResponsePendingError{Cause: context.DeadlineExceeded}
 }
 
 func (a frameTestAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sequence uint64) error {
@@ -92,7 +105,7 @@ func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
 	defer cancel()
 	done := make(chan nativeResult, 1)
 	go func() {
-		receipt, err := s.RequestNative(ctx, json.RawMessage(`{"request":"echo"}`), func(raw json.RawMessage) bool { return string(raw) == `{"request":"echo"}` })
+		receipt, err := s.RequestNativeHandshake(ctx, json.RawMessage(`{"request":"echo"}`), func(raw json.RawMessage) bool { return string(raw) == `{"request":"echo"}` })
 		done <- nativeResult{receipt: receipt, err: err}
 	}()
 	select {
@@ -126,6 +139,118 @@ func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
 	}
 	if len(entries) != 3 || entries[2].GetEvent().GetHarnessStderr().Text != "translated" || entries[2].GetEvent().SourceSequences[0] != 2 {
 		t.Fatalf("reply did not carry its committed translation: %v", entries)
+	}
+}
+
+func TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend(t *testing.T) {
+	s, _ := frameTestSession(t, []string{"/bin/cat"})
+	ctx := context.Background()
+	command := &commandpb.Command{
+		CommandId: "input-1",
+		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}},
+	}
+	if _, _, err := s.journal.Admit(ctx, command, ""); err != nil {
+		t.Fatal(err)
+	}
+	adapter := &pendingSubmitAdapter{}
+	s.mu.Lock()
+	s.ready = true
+	s.adapter = adapter
+	s.mu.Unlock()
+	if err := s.dispatch(ctx, command); err != nil {
+		t.Fatal(err)
+	}
+	record, err := s.journal.GetCommand(ctx, command.CommandId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter.submits != 1 || record.TerminalCursor != nil {
+		t.Fatalf("pending dispatch = submits %d, command %+v", adapter.submits, record)
+	}
+	s.mu.Lock()
+	s.dispatched = make(map[string]bool)
+	s.mu.Unlock()
+	if err := s.dispatch(ctx, command); err != nil {
+		t.Fatal(err)
+	}
+	if adapter.submits != 1 {
+		t.Fatalf("dispatch-planned command resent %d times", adapter.submits)
+	}
+}
+
+func TestRecoveryKeepsDispatchedInterruptPending(t *testing.T) {
+	s, _ := frameTestSession(t, []string{"/bin/cat"})
+	ctx := context.Background()
+	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn-1"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	command := &commandpb.Command{
+		CommandId: "interrupt-1",
+		Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn-1"}},
+	}
+	if _, _, err := s.journal.Admit(ctx, command, "turn-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.journal.DispatchPlanned(ctx, command.CommandId); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	record, err := s.journal.GetCommand(ctx, command.CommandId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.TerminalCursor != nil {
+		t.Fatalf("dispatched interruption was settled during recovery: %+v", record)
+	}
+}
+
+func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T) {
+	release := filepath.Join(t.TempDir(), "release")
+	script := `while IFS= read -r line; do while [ ! -e "$1" ]; do sleep 0.01; done; printf '%s\n' "$line"; done`
+	s, p := frameTestSession(t, []string{"/bin/sh", "-c", script, "--", release})
+	received := make(chan struct{})
+	adapter := frameTestAdapter{onFrame: func(ctx context.Context, raw json.RawMessage, sequence uint64) error {
+		if err := s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: string(raw)}), []uint64{sequence}); err != nil {
+			return err
+		}
+		close(received)
+		return nil
+	}}
+	s.readers.Add(1)
+	go s.readStdout(p, adapter)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.RequestNativeHandshake(ctx, json.RawMessage(`{"request":"echo"}`), func(raw json.RawMessage) bool {
+			return string(raw) == `{"request":"echo"}`
+		})
+		done <- err
+	}()
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer waitCancel()
+	if err := s.journal.WaitBeyond(waitCtx, 0); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, harness.ErrNativeResponsePending) {
+		t.Fatalf("cancelled native wait error = %v", err)
+	}
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-received:
+	case <-waitCtx.Done():
+		t.Fatal("late native response was not delivered to the adapter")
+	}
+	entries, err := s.journal.Since(context.Background(), 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 || entries[2].GetEvent().GetHarnessStderr() == nil {
+		t.Fatalf("late response journal = %v", entries)
 	}
 }
 

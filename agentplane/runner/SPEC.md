@@ -87,7 +87,11 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   an unknown session, a sealed journal, a command ID already used for other work, or a command
   without an ID and an operation. Delivery never creates a session. A newly admitted execution command
   triggers shared background startup; concurrent commands do not wait for it, and the runner
-  recovers pending admitted commands after a process restart without relying on gateway redelivery.
+  recovers undispatched admitted commands after a process restart without relying on gateway redelivery.
+  A command with a durable dispatch marker is not sent again automatically: its native effect may
+  already have occurred. Each adapter persists and restores a versioned correlation payload using
+  its own schema, then replays a matching response already present in the Event log. The journal
+  wraps older flat correlation maps for compatibility; new writes use the adapter schema.
   A process-lost active turn also triggers native reconciliation even if its input was already
   confirmed. Completed idle sessions remain dormant. Interrupts neither start a harness nor prevent
   recovery required by other work; an admitted interrupt whose target ended is settled as a no-op.
@@ -182,8 +186,9 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 - A later causal event is the terminal result: `HarnessUserMessageConfirmed`, `ModelChanged`, an
   interrupted `TurnCompleted`, `CommandFailed`, or `CommandNoop`. Re-submitting an already
   journaled command id does not dispatch it again. Restart recovery is a separate boundary:
-  it reconciles nonterminal commands with their original ids and replays committed Events unchanged. Native execution before
-  durable effect evidence is not yet proven duplicate-free across restart.
+  it replays committed Events unchanged and reconciles nonterminal commands with their original ids.
+  Native execution before durable effect evidence is not proven duplicate-free across restart, so a
+  dispatch-planned command without terminal evidence remains pending instead of being resent.
 - `SubmitInput` is terminal only when the harness confirms its causal delivery. Its receipt names
   the native message/correlation id, text, turn id, and every originating command id. Claude's
   normal request carries its representative input UUID on `stream_event.message_start`; compatible
@@ -238,8 +243,12 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   already published for another Event. Harness output recording failures stop the harness.
 - A runner that finds a session it had running reports `HarnessLost`, then `TurnCompleted` with
   `PROCESS_LOST` if a turn was active. It replays committed Events unchanged and automatically
-  starts the harness in the background to reconcile remaining admitted commands. There is no
-  indeterminate command outcome.
+  starts the harness in the background to reconcile remaining admitted commands. A dispatched command
+  with no terminal evidence remains pending; a missing response is not a failure or proof that retry
+  is safe. Command dispatch returns after the native write; correlated response Events advance the
+  command state and release later response-dependent commands. If a response was committed before the
+  restart, recovery translates it and settles the command. A planned interruption without terminal
+  evidence also remains pending because the runner cannot know whether it reached the harness.
 - A runner that finds a session whose setup had started without a terminal event records
   `SetupInterrupted`. It never executes that script again. The inherited state-owner descriptor
   keeps a replacement runner out until a surviving setup child exits.

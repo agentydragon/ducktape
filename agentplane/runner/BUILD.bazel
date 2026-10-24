@@ -436,6 +436,7 @@ go_library(
         ["*.go"],
         exclude = ["*_test.go"],
     ),
+    embedsrcs = glob(["journal_migrations/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner",
     deps = [
         "//agentplane/history_service:runner_ingress_go_proto",
@@ -451,6 +452,7 @@ go_library(
         "//agentplane/runner_gateway:runner_control_go_proto",
         "@com_github_containerd_cgroups_v3//cgroup2",
         "@com_github_google_uuid//:uuid",
+        "@com_github_pressly_goose_v3//:goose",
         "@com_github_sethvargo_go_retry//:go-retry",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//backoff",

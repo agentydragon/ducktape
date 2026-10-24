@@ -17,10 +17,11 @@ import (
 )
 
 type adapterTestJournal struct {
-	items  map[string]harness.ObservedItem
-	events []*eventlogpb.EventEntry
-	seen   map[string]bool
-	blocks map[string]int
+	items   map[string]harness.ObservedItem
+	events  []*eventlogpb.EventEntry
+	pending []harness.PendingCommandInfo
+	seen    map[string]bool
+	blocks  map[string]int
 }
 
 func newAdapterTestJournal() *adapterTestJournal {
@@ -35,6 +36,33 @@ func (j *adapterTestJournal) ObservedItems(context.Context, string) (map[string]
 
 func (j *adapterTestJournal) TurnEvents(context.Context, string) ([]*eventlogpb.EventEntry, error) {
 	return j.events, nil
+}
+
+func (j *adapterTestJournal) PendingCommandInfo(context.Context) ([]harness.PendingCommandInfo, error) {
+	return j.pending, nil
+}
+
+func (j *adapterTestJournal) Since(_ context.Context, cursor uint64, limit int) ([]*eventlogpb.EventEntry, error) {
+	entries := make([]*eventlogpb.EventEntry, 0, limit)
+	for _, entry := range j.events {
+		if entry.GetCursor() > cursor {
+			entries = append(entries, entry)
+			if len(entries) == limit {
+				break
+			}
+		}
+	}
+	return entries, nil
+}
+
+func (j *adapterTestJournal) LastCursor() uint64 {
+	var last uint64
+	for _, entry := range j.events {
+		if entry.GetCursor() > last {
+			last = entry.GetCursor()
+		}
+	}
+	return last
 }
 
 func (j *adapterTestJournal) RememberAdapterItem(_ context.Context, adapterID, itemID string) (bool, error) {
@@ -66,6 +94,7 @@ type adapterTestHost struct {
 	confirmations []adapterTestConfirmation
 	noops         []string
 	failures      []string
+	correlations  map[string]harness.NativeCorrelation
 }
 
 type adapterTestConfirmation struct {
@@ -82,12 +111,21 @@ func newAdapterTestHost() *adapterTestHost {
 
 func (h *adapterTestHost) Session() harness.SessionSnapshot { return h.session }
 func (h *adapterTestHost) Journal() harness.AdapterJournal  { return h.journal }
+func (h *adapterTestHost) RecordNativeCorrelation(_ context.Context, commandID string, correlation harness.NativeCorrelation) error {
+	if h.correlations == nil {
+		h.correlations = make(map[string]harness.NativeCorrelation)
+	}
+	correlation.Payload = append(json.RawMessage(nil), correlation.Payload...)
+	h.correlations[commandID] = correlation
+	return nil
+}
+
 func (h *adapterTestHost) SendNative(_ context.Context, frame json.RawMessage) error {
 	h.nativeWrites = append(h.nativeWrites, append(json.RawMessage(nil), frame...))
 	return nil
 }
 
-func (h *adapterTestHost) RequestNative(context.Context, json.RawMessage, func(json.RawMessage) bool) (harness.NativeReceipt, error) {
+func (h *adapterTestHost) RequestNativeHandshake(context.Context, json.RawMessage, func(json.RawMessage) bool) (harness.NativeReceipt, error) {
 	return harness.NativeReceipt{}, errors.New("unexpected native request in adapter test")
 }
 
@@ -132,7 +170,7 @@ type adapterHandshakeHost struct {
 	requests []json.RawMessage
 }
 
-func (h *adapterHandshakeHost) RequestNative(_ context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
+func (h *adapterHandshakeHost) RequestNativeHandshake(_ context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
 	h.requests = append(h.requests, append(json.RawMessage(nil), frame...))
 	var request struct {
 		ID     string `json:"id"`
@@ -159,6 +197,144 @@ func (h *adapterHandshakeHost) RequestNative(_ context.Context, frame json.RawMe
 		return harness.NativeReceipt{}, errors.New("test Codex response did not match request")
 	}
 	return harness.NativeReceipt{Frame: raw, Sequence: uint64(len(h.requests))}, nil
+}
+
+func codexTurnStartResponse(t *testing.T, requestID, turnID string) json.RawMessage {
+	t.Helper()
+	frame, err := json.Marshal(map[string]any{
+		"id": requestID, "result": map[string]any{"turn": map[string]string{"id": turnID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return frame
+}
+
+func TestCodexLateTurnStartResponseConfirmsPendingCommand(t *testing.T) {
+	ctx := context.Background()
+	host := newAdapterTestHost()
+	adapter := codex.New(host, harness.LaunchConfig{Binary: "/bin/false"})
+	if err := adapter.Submit(ctx, "input-1", "hello"); err != nil {
+		t.Fatalf("Submit error = %v", err)
+	}
+	correlation := host.correlations["input-1"]
+	var codexCorrelation struct {
+		TurnStart struct {
+			RequestID string `json:"request_id"`
+		} `json:"turn_start"`
+	}
+	if correlation.Adapter != "codex" || correlation.SchemaVersion != 1 {
+		t.Fatalf("Codex correlation schema = %+v", correlation)
+	}
+	if err := json.Unmarshal(correlation.Payload, &codexCorrelation); err != nil {
+		t.Fatal(err)
+	}
+	requestID := codexCorrelation.TurnStart.RequestID
+	if requestID == "" {
+		t.Fatal("Codex did not record native request correlation before sending")
+	}
+	if len(host.nativeWrites) != 1 || len(host.failures) != 0 || len(host.confirmations) != 0 {
+		t.Fatalf("dispatch did not return with one pending native request: writes=%d failures=%v confirmations=%v", len(host.nativeWrites), host.failures, host.confirmations)
+	}
+	if err := adapter.OnFrame(ctx, codexTurnStartResponse(t, requestID, "turn-late"), 17); err != nil {
+		t.Fatal(err)
+	}
+	if len(host.confirmations) != 1 || host.confirmations[0].value.OriginCommandIDs[0] != "input-1" {
+		t.Fatalf("late response confirmations = %+v", host.confirmations)
+	}
+	if len(host.failures) != 0 {
+		t.Fatalf("late success failed command: %v", host.failures)
+	}
+	if err := adapter.OnFrame(ctx, codexTurnStartResponse(t, requestID, "turn-late"), 18); err != nil {
+		t.Fatal(err)
+	}
+	if len(host.confirmations) != 1 {
+		t.Fatalf("duplicate response confirmed command again: %+v", host.confirmations)
+	}
+}
+
+func TestCodexRecoveryReplaysJournaledLateTurnStartResponse(t *testing.T) {
+	ctx := context.Background()
+	host := newAdapterTestHost()
+	host.session.ActiveTurnID = ""
+	requestID := "agentplane-prior-request"
+	payload, err := json.Marshal(struct {
+		TurnStart struct {
+			RequestID string `json:"request_id"`
+		} `json:"turn_start"`
+	}{TurnStart: struct {
+		RequestID string `json:"request_id"`
+	}{RequestID: requestID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.journal.pending = []harness.PendingCommandInfo{{
+		CommandID: "input-1", SubmitText: "hello", DispatchPlanned: true,
+		NativeCorrelation: &harness.NativeCorrelation{Adapter: "codex", SchemaVersion: 1, Payload: payload},
+	}}
+	host.journal.events = []*eventlogpb.EventEntry{{
+		Cursor: 1, Origin: &eventlogpb.EventOrigin{SourceId: "test-source", Sequence: 43},
+		Event: &eventpb.Event{Observation: &eventpb.Event_Native{Native: &eventpb.Native{
+			Direction: eventpb.Direction_DIRECTION_FROM_HARNESS,
+			Line:      string(codexTurnStartResponse(t, requestID, "turn-late")),
+		}}},
+	}}
+	adapter := codex.New(host, harness.LaunchConfig{Binary: "/bin/false"})
+	if err := adapter.(harness.RecoveryAdapter).Recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(host.confirmations) != 1 || host.confirmations[0].sources[0] != 43 {
+		t.Fatalf("recovered confirmation = %+v", host.confirmations)
+	}
+}
+
+func TestClaudeLateControlResponseSettlesPendingModelChange(t *testing.T) {
+	ctx := context.Background()
+	host := newAdapterTestHost()
+	adapter := claude.New(host, harness.LaunchConfig{Binary: "/bin/false"})
+	if err := adapter.ChangeModel(ctx, "model-1", "claude-model"); err != nil {
+		t.Fatalf("ChangeModel error = %v", err)
+	}
+	correlation := host.correlations["model-1"]
+	var claudeCorrelation struct {
+		ModelChange struct {
+			RequestID string `json:"request_id"`
+			Model     string `json:"model"`
+		} `json:"model_change"`
+	}
+	if correlation.Adapter != "claude" || correlation.SchemaVersion != 1 {
+		t.Fatalf("Claude correlation schema = %+v", correlation)
+	}
+	if err := json.Unmarshal(correlation.Payload, &claudeCorrelation); err != nil {
+		t.Fatal(err)
+	}
+	requestID := claudeCorrelation.ModelChange.RequestID
+	if requestID == "" {
+		t.Fatal("Claude did not record native request correlation")
+	}
+	if len(host.nativeWrites) != 1 || host.session.Model != "test-model" {
+		t.Fatalf("model command did not remain pending after dispatch: writes=%d model=%q", len(host.nativeWrites), host.session.Model)
+	}
+	var request struct {
+		Type      string `json:"type"`
+		RequestID string `json:"request_id"`
+	}
+	if err := json.Unmarshal(host.nativeWrites[0], &request); err != nil || request.Type != "control_request" || request.RequestID != requestID {
+		t.Fatalf("Claude model request correlation = %+v, err=%v", request, err)
+	}
+	frame, err := json.Marshal(map[string]any{
+		"type":     "control_response",
+		"response": map[string]any{"subtype": "success", "request_id": requestID, "response": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.OnFrame(ctx, frame, 19); err != nil {
+		t.Fatal(err)
+	}
+	if host.session.Model != "claude-model" || len(host.failures) != 0 {
+		t.Fatalf("late Claude control response: model=%q failures=%v", host.session.Model, host.failures)
+	}
 }
 
 func TestClaudeOutboundFramesKeepNativeNullableFields(t *testing.T) {
