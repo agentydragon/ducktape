@@ -43,6 +43,7 @@ from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustom
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.home_assistant.db import DATABASE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -94,7 +95,7 @@ _CONFIGURATION_CONFIG_MAP = ConfigMapArgs(
     name="home-assistant-configuration",
     namespace=_NAMESPACE,
     options=_FIXED_NAME,
-    files=["configuration.yaml=configuration.yaml.conf"],
+    files=["configuration.yaml=configuration.yaml.conf", "recorder-packages.yaml=recorder-packages.yaml.conf"],
 )
 _CADDY_CONFIG_MAP = ConfigMapArgs(
     name="home-assistant-caddy", namespace=_NAMESPACE, options=_FIXED_NAME, files=["Caddyfile"]
@@ -217,9 +218,7 @@ def _deployment(scope: Construct) -> None:
         "deployment",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
-            # Stopped while the recorder import Job copies its SQLite history into Postgres
-            # (cluster/cdk8s/home_assistant/db.py); the cutover change restores 1.
-            replicas=0,
+            replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
@@ -257,6 +256,7 @@ def _deployment(scope: Construct) -> None:
                             image=IMAGE,
                             env=[
                                 k8s.EnvVar(name="TZ", value="America/Los_Angeles"),
+                                DATABASE.app_secret.key("uri").env_var("RECORDER_DB_URL"),
                                 # Home Assistant's HTTP settings are converged through the admin
                                 # API after startup. This keeps the empty-PVC bootstrap port
                                 # aligned with Caddy while the API applies the loopback/proxy
@@ -275,6 +275,12 @@ def _deployment(scope: Construct) -> None:
                                     name="configuration",
                                     mount_path=f"{_CONFIG_DIR}/configuration.yaml",
                                     sub_path="configuration.yaml",
+                                    read_only=True,
+                                ),
+                                k8s.VolumeMount(
+                                    name="configuration",
+                                    mount_path=f"{_CONFIG_DIR}/recorder-packages.yaml",
+                                    sub_path="recorder-packages.yaml",
                                     read_only=True,
                                 ),
                             ],
