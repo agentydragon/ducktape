@@ -63,7 +63,7 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestSessionHarnessEnvironmentCarriesItsOwnDestination(t *testing.T) {
+func TestSessionEnvironmentCarriesItsOwnDestination(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
@@ -83,9 +83,9 @@ func TestSessionHarnessEnvironmentCarriesItsOwnDestination(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		environment := session.Session().HarnessEnvironment
-		if environment["AGENTPLANE_DESTINATION"] != destination || environment["TZ"] != "UTC" {
-			t.Fatalf("%s harness environment = %v, want its destination %s and the runner's TZ", id, environment, destination)
+		environment := session.Session().Environment
+		if environment["AGENTPLANE_DESTINATION"] != destination {
+			t.Fatalf("%s environment = %v, want its destination %s", id, environment, destination)
 		}
 	}
 	if _, shared := r.config.HarnessEnvironment["AGENTPLANE_DESTINATION"]; shared {

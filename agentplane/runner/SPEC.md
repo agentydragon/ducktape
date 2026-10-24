@@ -33,8 +33,18 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 ## Sessions
 
 - A session is one native conversation. Its id is client-chosen, up to 128 characters of
-  `[A-Za-z0-9._-]` starting alphanumeric, and the runner keeps everything about it under
-  `<state_dir>/sessions/<session_id>/`: the harness's own persistence and the runner's session log.
+  `[A-Za-z0-9._-]` starting alphanumeric, and the runner keeps its session log under
+  `<state_dir>/sessions/<session_id>/`, with Claude's own persistence for a Claude Session. Codex
+  persists every Codex Session of the runner in one Codex home, `<state_dir>/codex/`.
+- Each Claude Session runs its own harness process. Every Codex Session is one thread of the
+  runner's one Codex app-server, started when a Codex Session first needs a harness. Its command
+  line and Codex home apply to every Codex Session; each thread carries its own Session's working
+  directory, instructions, model, reasoning effort and tool environment, including the notification
+  destination. A native frame naming a thread is recorded only in that thread's Session, a
+  sub-agent's in its root's; a frame naming none, and the app-server's stderr, is recorded in every
+  Codex Session the app-server hosts. Interrupting one Session's turn leaves the others running. An
+  app-server exit ends every hosted Session's harness: each records `HarnessExited` and, with an
+  active turn, `PROCESS_LOST`, and resumes its thread when it next needs a harness.
 - `OpenSession` with an unknown id durably reserves the session from `spec`; `spec.cwd` must be
   absolute. With a known id it confirms the reservation: the `spec` must equal the stored one.
   Opening never starts a harness. Later admitted execution work starts it in the background, and the
@@ -79,7 +89,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   no network connections.
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one in-memory
-  snapshot with a runner boot UUID, per-spawn process UUIDs, and session execution and busy state.
+  snapshot with a runner boot UUID, each harness process (its per-spawn UUID and the Sessions it
+  hosts), and session execution and busy state.
 - Delivered commands are client-chosen and idempotent; the runner serializes them with the session
   lock and deduplicates by `command_id`. A delivered command is answered from the journal:
   its `CommandAdmitted` entry, also when the command was already journaled with the same payload,

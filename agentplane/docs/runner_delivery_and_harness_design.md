@@ -277,22 +277,37 @@ API implementation is authorized by this direction alone.
 
 ## Harness process, store and Session identity
 
-Current Agentplane code creates one supervised native process inside each Go runner `Session`; the
-Session record stores one Claude session ID or Codex thread ID, and its state directory holds that
-harness's persistent data. Claude's `CLAUDE_CONFIG_DIR` and Codex's `CODEX_HOME` are below the
-per-Session store. A runner restart can create a new process and resume the native conversation from
-that store. This is the current implementation, not an invariant that one process must always own
-exactly one Agentplane Session. See [`session.go`](../runner/session.go),
-[`process.go`](../runner/process.go), [`store.go`](../runner/store.go), and the adapters
-([Claude](../runner/claude/adapter.go), [Codex](../runner/codex/adapter.go)).
+Each Claude Session runs its own supervised native process, with `CLAUDE_CONFIG_DIR` in the
+Session's state directory. Every Codex Session of a Runner is one thread of the Runner's one Codex
+app-server ([`codex_server.go`](../runner/codex_server.go)), whose `CODEX_HOME` is `<state_dir>/codex`.
+The app-server's command line and `CODEX_HOME` are process-wide. `thread/start` and `thread/resume`
+carry each Session's working directory, model, effort, developer instructions and a thread `config`
+map, whose `shell_environment_policy.set` gives a thread's tools its Session's notification
+destination. The Session record stores one Claude session ID or Codex thread ID, and a runner restart
+creates a new process and resumes the native conversation from that store. See
+[`session.go`](../runner/session.go), [`process.go`](../runner/process.go),
+[`store.go`](../runner/store.go), and the adapters ([Claude](../runner/claude/adapter.go),
+[Codex](../runner/codex/adapter.go)).
 
-The current lifecycle is Session-scoped: `Runner` keeps a map of `Session` objects; each Session's
-`ensure_running()` creates its own `HarnessProcess` and adapter using that Session's directory, and
-`Session.shutdown()` stops the process while retaining resumable Session state. Runner shutdown stops
-each Session's process separately. Therefore a Session stop currently stops only its own harness.
-Multiplexing multiple Sessions through one process would decouple those lifetimes: stopping or closing
-one Session must not terminate a process still serving other Sessions, and the process needs its own
-start, failure, restart and no-Sessions-left policy.
+The shared app-server starts when a Codex Session first needs a harness and stays up until the
+Runner stops or quiesces; it is not reaped when idle. Stopping is phased: every Session halts first
+(its active turn interrupted), each Claude process stops, then the app-server stops once. Its frames
+are assigned by thread ([`codex/router.go`](../runner/codex/router.go)): a response to the Session
+whose request it answers, a frame naming a thread to that thread's Session or, for a sub-agent, its
+root's, and a frame naming none, like stderr, to every hosted Session. Thread creation is serialized,
+so a thread naming itself before its `thread/start` response belongs to the one Session creating it.
+
+The app-server has one cgroup and memory budget, so one crash or OOM ends the active turn of every
+hosted Codex Session (`PROCESS_LOST`); each resumes its thread when it next needs a harness. That is
+the cost of sharing. Measured with the pinned Codex 0.157.0 against a model endpoint that never
+answers (2026-10-24), eight Sessions take 131 MiB idle and 159 MiB with every turn waiting on the
+model in one app-server, against 258 and 299 MiB proportional set size (969 and 1101 MiB summed
+RSS) in eight.
+
+**Decision (operator, 2026-10-24):** the operator asked for at most one Codex app-server per Runner
+(2026-10-17 PDT). The per-Session Codex homes kept before it are left behind, not migrated: "I'd say
+we leave it behind. I don't have any running sandboxes right now." (17:38 UTC). A Codex Session
+created before it fails to resume its thread.
 
 `HarnessStarted` records `resumed` and a PID, not a unique process-incarnation ID. PID is useful
 process-local diagnostic data, but may be reused and does not identify a spawn over time. The stored
@@ -305,8 +320,8 @@ Keep three axes explicit in the design:
 
 - **Process incarnation:** one unique identity per harness process spawn, useful for routing and
   liveness; it changes on process restart. A PID alone is not a stable identity.
-- **Harness persisted data/store:** data reused by a later process, such as the current per-Session
-  Claude configuration directory or Codex home. The same path/data may outlive a process. Decide
+- **Harness persisted data/store:** data reused by a later process, such as a Claude Session's
+  configuration directory or the Runner's Codex home. The same path/data may outlive a process. Decide
   whether successive processes using the same store count as the same harness object, and what
   evidence distinguishes a resumed process from a new store lineage.
 - **Native Session:** the native conversation identity within the harness/store, which may be scoped
@@ -353,8 +368,8 @@ Session. Process instances may appear as diagnostics with hosted Sessions/status
 process per store and shared-store concurrent safety remain open.
 
 Current [`SessionSpec`](../proto/runner.proto) already selects Claude or Codex and has no store
-selector; the adapters create `CODEX_HOME` or `CLAUDE_CONFIG_DIR` under the Session's runner-owned
-directory. No production in-repo caller currently chooses either directory. A private default-store
+selector; the runner creates `CLAUDE_CONFIG_DIR` under the Session's runner-owned directory and
+one `CODEX_HOME` for the Runner. No production in-repo caller currently chooses either directory. A private default-store
 policy remains a candidate; future store-management needs can be considered separately without
 putting a store ID in the current Session destination.
 

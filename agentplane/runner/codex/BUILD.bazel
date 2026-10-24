@@ -5,6 +5,8 @@ go_library(
     srcs = [
         "adapter.go",
         "history.go",
+        "router.go",
+        "server.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/codex",
     visibility = [
@@ -24,6 +26,7 @@ go_test(
     srcs = [
         "adapter_test.go",
         "history_test.go",
+        "router_test.go",
     ],
     embed = [":codex"],
     deps = [

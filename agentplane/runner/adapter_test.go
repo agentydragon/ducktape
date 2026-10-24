@@ -143,8 +143,6 @@ func (h *adapterHandshakeHost) RequestNative(_ context.Context, frame json.RawMe
 	}
 	var response any
 	switch request.Method {
-	case "initialize":
-		response = map[string]any{"id": request.ID, "result": map[string]any{}}
 	case "thread/start":
 		response = map[string]any{"id": request.ID, "result": map[string]any{"thread": map[string]string{"id": "thread-created"}}}
 	default:
@@ -312,30 +310,28 @@ func TestCodexHandshakeAndUnsupportedServerRequest(t *testing.T) {
 	ctx := context.Background()
 	base := newAdapterTestHost()
 	base.session.Resuming = false
+	base.session.Environment = map[string]string{"AGENTPLANE_DESTINATION": "test-destination"}
 	host := &adapterHandshakeHost{adapterTestHost: base}
-	adapter := codex.New(host, harness.LaunchConfig{Binary: "codex"})
+	adapter := codex.New(host, "/tmp/codex-store")
 	threadID, err := adapter.Handshake(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if threadID != "thread-created" || len(host.requests) != 2 {
+	// The Runner initializes the shared app-server once; a Session's handshake only starts its thread.
+	if threadID != "thread-created" || len(host.requests) != 1 {
 		t.Fatalf("unexpected Codex handshake: thread=%q requests=%d", threadID, len(host.requests))
 	}
-	var initialize map[string]any
-	if err := json.Unmarshal(host.requests[0], &initialize); err != nil {
-		t.Fatal(err)
-	}
-	params := initialize["params"].(map[string]any)
-	if params["clientInfo"].(map[string]any)["name"] != "agentplane" {
-		t.Fatalf("Codex initialize lost client identity: %s", host.requests[0])
-	}
 	var start map[string]any
-	if err := json.Unmarshal(host.requests[1], &start); err != nil {
+	if err := json.Unmarshal(host.requests[0], &start); err != nil {
 		t.Fatal(err)
 	}
-	params = start["params"].(map[string]any)
+	params := start["params"].(map[string]any)
 	if params["cwd"] != base.session.Cwd || params["model"] != base.session.Model || params["approvalPolicy"] != "never" || params["sandbox"] != "danger-full-access" || params["ephemeral"] != false {
-		t.Fatalf("Codex thread/start lost launch policy: %s", host.requests[1])
+		t.Fatalf("Codex thread/start lost launch policy: %s", host.requests[0])
+	}
+	set := params["config"].(map[string]any)["shell_environment_policy.set"].(map[string]any)
+	if set["AGENTPLANE_DESTINATION"] != "test-destination" {
+		t.Fatalf("Codex thread/start lost the Session's own tool environment: %s", host.requests[0])
 	}
 	if err := adapter.OnFrame(ctx, json.RawMessage(`{"id":"server-request","method":"item/tool/requestUserInput","params":{}}`), 3); err != nil {
 		t.Fatal(err)
@@ -401,7 +397,7 @@ func TestClaudeChildFramesStayOutsideRootTurnAndInputCohort(t *testing.T) {
 func TestCodexIgnoresChildFramesAndKeepsUnknownItemFields(t *testing.T) {
 	ctx := context.Background()
 	host := newAdapterTestHost()
-	adapter := codex.New(host, harness.LaunchConfig{Binary: "codex"})
+	adapter := codex.New(host, "/tmp/codex-store")
 	childFrame := json.RawMessage(`{"method":"item/completed","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"agentMessage","id":"child-item","text":"CHILD_ONLY"}}}`)
 	childBefore := append(json.RawMessage(nil), childFrame...)
 	if err := adapter.OnFrame(ctx, childFrame, 1); err != nil {

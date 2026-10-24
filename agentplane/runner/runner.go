@@ -44,6 +44,7 @@ type Runner struct {
 	loadMu      sync.Mutex
 	bootstrapMu sync.Mutex
 	sessions    map[string]*Session
+	codex       *codexServer
 	changes     chan struct{}
 	fatal       chan error
 	idleSince   *timestamppb.Timestamp
@@ -72,7 +73,11 @@ func New(config Config) (*Runner, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Runner{config: config, owner: owner, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1)}, nil
+	r := &Runner{config: config, owner: owner, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1)}
+	if config.Codex != nil {
+		r.codex = newCodexServer(r, *config.Codex)
+	}
+	return r, nil
 }
 
 func (r *Runner) changed() {
@@ -653,7 +658,9 @@ func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*ru
 		if s.processID != "" {
 			id := s.processID
 			row.ProcessId = &id
-			process := &runnerpb.HarnessProcessStatus{ProcessId: id, Harness: s.record.Harness, State: s.processState, AssignedSessionIds: []string{s.id}}
+		}
+		if s.processID != "" && s.codex == nil {
+			process := &runnerpb.HarnessProcessStatus{ProcessId: s.processID, Harness: s.record.Harness, State: s.processState, AssignedSessionIds: []string{s.id}}
 			if s.process != nil && s.process.Running() {
 				pid := int64(s.process.PID())
 				process.Pid = &pid
@@ -662,6 +669,11 @@ func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*ru
 		}
 		result.Sessions = append(result.Sessions, row)
 		s.mu.Unlock()
+	}
+	if r.codex != nil {
+		if process := r.codex.status(); process != nil {
+			result.Processes = append(result.Processes, process)
+		}
 	}
 	return result, nil
 }
@@ -794,16 +806,18 @@ func (r *Runner) drain() {
 		drainErr = err
 		return
 	}
+	sessions := make([]*Session, 0, len(ids))
 	for _, id := range ids {
 		s, err := r.load(r.ctx, id)
 		if err != nil {
 			drainErr = err
 			return
 		}
-		if err := s.stop(r.ctx, true); err != nil {
-			drainErr = err
-			return
-		}
+		sessions = append(sessions, s)
+	}
+	if err := r.stopSessions(r.ctx, sessions, true); err != nil {
+		drainErr = err
+		return
 	}
 	r.bootstrapMu.Lock()
 	done := r.initDone
@@ -813,13 +827,38 @@ func (r *Runner) drain() {
 	}
 }
 
+// stopSessions halts every Session in `sessions`, ordered by ID, then stops their harness processes, then
+// seals their journals when `seal` is set. The shared Codex app-server stops once, after all of them halted.
+func (r *Runner) stopSessions(ctx context.Context, sessions []*Session, seal bool) error {
+	for _, s := range sessions {
+		s.shutdownMu.Lock()
+		defer s.shutdownMu.Unlock()
+	}
+	for _, s := range sessions {
+		s.halt(ctx, seal)
+	}
+	var errs []error
+	for _, s := range sessions {
+		errs = append(errs, s.stopProcess(ctx))
+	}
+	if r.codex != nil {
+		errs = append(errs, r.codex.stop(ctx))
+	}
+	if err := errors.Join(errs...); err != nil || !seal {
+		return err
+	}
+	for _, s := range sessions {
+		if err := s.sealJournal(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *Runner) Close() error {
 	// Streams remain available while orderly shutdown settles native processes and
 	// one-shot scripts. The ownership descriptor is unlocked only after all cleanup.
-	var errs []error
-	for _, s := range r.inventory() {
-		errs = append(errs, s.stop(r.ctx, false))
-	}
+	errs := []error{r.stopSessions(r.ctx, r.inventory(), false)}
 	r.bootstrapMu.Lock()
 	initDone := r.initDone
 	r.bootstrapMu.Unlock()

@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -44,8 +42,9 @@ type codexTurnStart struct {
 }
 
 type codexAdapter struct {
-	host   harness.AdapterHost
-	launch harness.LaunchConfig
+	host harness.AdapterHost
+	// store is the Runner's one Codex home, shared by every Codex Session.
+	store string
 
 	mu                   sync.Mutex
 	threadID             string
@@ -56,101 +55,24 @@ type codexAdapter struct {
 	turnStarts           map[string]codexTurnStart
 }
 
-// New creates an adapter bound to one runner-owned Session.
-func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.Adapter {
+// New creates an adapter for one runner-owned Session hosted as a thread of the Runner's shared
+// app-server, whose Codex home is `store`.
+func New(host harness.AdapterHost, store string) harness.Adapter {
 	snapshot := host.Session()
 	threadID := ""
 	if snapshot.Resuming {
 		threadID = snapshot.NativeSessionID
 	}
 	return &codexAdapter{
-		host: host, launch: launch, threadID: threadID, adapterID: uuid.NewString(),
+		host: host, store: store, threadID: threadID, adapterID: uuid.NewString(),
 		turnStarts: make(map[string]codexTurnStart),
 	}
 }
 
-func (a *codexAdapter) Command() ([]string, error) {
-	catalogURL, err := a.launch.PlatformURL(codexCatalogPath)
-	if err != nil {
-		return nil, err
-	}
-	args := []string{a.launch.Binary}
-	appendOverride := func(key string, value any) error {
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return err
-		}
-		args = append(args, "-c", key+"="+string(encoded))
-		return nil
-	}
-	overrides := []struct {
-		key   string
-		value any
-	}{
-		{"model_provider", "agentplane"},
-		{"model_providers.agentplane.name", "Agentplane LiteLLM"},
-		{"model_providers.agentplane.base_url", a.launch.BaseURL},
-		{"model_providers.agentplane.env_key", "OPENAI_API_KEY"},
-		{"model_providers.agentplane.wire_api", "responses"},
-		{"model_providers.agentplane.model_catalog_url", catalogURL.String()},
-		{"model_providers.agentplane.request_max_retries", 0},
-		{"model_providers.agentplane.stream_max_retries", codexMaxRetries},
-		{"approval_policy", "never"},
-		{"sandbox_mode", "danger-full-access"},
-		{"skills.bundled.enabled", false},
-		{"skills.include_instructions", false},
-		{"include_permissions_instructions", false},
-		{"include_apps_instructions", false},
-		{"include_collaboration_mode_instructions", false},
-		{"include_environment_context", false},
-		{"web_search", "disabled"},
-		{"features.multi_agent", true},
-		{"features.view_image", true},
-		{"features.unbounded_connection_retries", false},
-		// CLEANUP(added 2026-10-20): Remove once the pinned `agentplane_codex_cli_linux_x64` is >= 0.162,
-		//   where the feature is on by default. 0.157.0 never fetches a custom provider's catalog without it.
-		{"features.api_key_model_discovery", true},
-	}
-	for _, override := range overrides {
-		if err := appendOverride(override.key, override.value); err != nil {
-			return nil, err
-		}
-	}
-	return append(args, "app-server", "--listen", "stdio://"), nil
-}
-
-func (a *codexAdapter) Environment() (map[string]string, error) {
-	codexHome := filepath.Join(a.host.Session().Directory, "codex")
-	if err := os.MkdirAll(codexHome, 0o700); err != nil {
-		return nil, err
-	}
-	environment := make(map[string]string)
-	maps.Copy(environment, a.host.Session().HarnessEnvironment)
-	environment["CODEX_HOME"] = codexHome
-	environment["OPENAI_API_KEY"] = a.launch.Token
-	environment["OPENAI_BASE_URL"] = a.launch.BaseURL
-	return environment, nil
-}
-
+// Handshake starts or resumes this Session's thread on the shared app-server, which the Runner has
+// already initialized.
 func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
-	initializeID, err := a.nextID()
-	if err != nil {
-		return "", err
-	}
-	response, _, err := a.request(ctx, initializeID, map[string]any{
-		"method": "initialize", "id": initializeID,
-		"params": protocol.InitializeParams{ClientInfo: protocol.ClientInfo{Name: codexClientName, Version: "0.1"}},
-	})
-	if err != nil {
-		return "", fmt.Errorf("Codex initialize: %w", err)
-	}
-	if err := codexResponseError(response); err != nil {
-		return "", fmt.Errorf("Codex initialize failed: %w", err)
-	}
-	if err := a.send(ctx, map[string]any{"method": "initialized"}); err != nil {
-		return "", err
-	}
-
+	var response codexWireFrame
 	snapshot := a.host.Session()
 	a.mu.Lock()
 	threadID := a.threadID
@@ -166,7 +88,9 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 		excludeTurns := true
 		response, _, err = a.request(ctx, requestID, map[string]any{
 			"method": method, "id": requestID,
-			"params": protocol.ThreadResumeParams{ThreadID: threadID, ExcludeTurns: &excludeTurns},
+			"params": protocol.ThreadResumeParams{
+				ThreadID: threadID, ExcludeTurns: &excludeTurns, Config: threadEnvironment(snapshot.Environment),
+			},
 		})
 		if err != nil {
 			return "", fmt.Errorf("Codex thread/resume: %w", err)
@@ -186,8 +110,9 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 		params := protocol.ThreadStartParams{
 			Cwd: &snapshot.Cwd, ApprovalPolicy: &protocol.ApprovalPolicyUnion{Enum: &never}, Sandbox: &sandbox,
 			Ephemeral: &ephemeral, Model: &snapshot.Model,
-			Config: map[string]any{"model_reasoning_effort": snapshot.ReasoningEffort},
+			Config: threadEnvironment(snapshot.Environment),
 		}
+		params.Config["model_reasoning_effort"] = snapshot.ReasoningEffort
 		if snapshot.Instructions != "" {
 			params.DeveloperInstructions = &snapshot.Instructions
 		}
@@ -234,7 +159,7 @@ func (a *codexAdapter) Reconcile(ctx context.Context, turnID string, _ bool) (*e
 	a.mu.Lock()
 	threadID := a.threadID
 	a.mu.Unlock()
-	recovered, err := readCodexHistory(filepath.Join(a.host.Session().Directory, "codex"), threadID, observed)
+	recovered, err := readCodexHistory(a.store, threadID, observed)
 	if err != nil {
 		return harness.UnknownReport(turnID, observed, "cannot inspect native continuation: "+err.Error()), nil
 	}
@@ -687,11 +612,12 @@ func (a *codexAdapter) request(ctx context.Context, requestID string, request an
 	return response, receipt.Sequence, nil
 }
 
+// nextID names a request uniquely on the shared app-server, which carries every Codex Session's requests.
 func (a *codexAdapter) nextID() (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.nextRequest++
-	return fmt.Sprintf("agentplane-%d", a.nextRequest), nil
+	return fmt.Sprintf("agentplane-%s-%d", a.adapterID, a.nextRequest), nil
 }
 
 func (a *codexAdapter) send(ctx context.Context, value any) error {

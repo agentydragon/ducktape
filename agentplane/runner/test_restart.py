@@ -691,7 +691,7 @@ async def test_codex_failed_turn_reconciles_array_tool_output_before_continuatio
     assert failed.event.turn_completed.status == event_pb2.TURN_STATUS_FAILED
     (tool_call_id,) = events.items(first.seen, event_pb2.ITEM_KIND_TOOL_CALL)
 
-    codex_home = tmp_path / "state" / "sessions" / session_id / "codex"
+    codex_home = tmp_path / "state" / "codex"
     rollout_files = list((codex_home / "sessions").glob("**/rollout-*.jsonl"))
     assert len(rollout_files) == 1
     rollout = [json.loads(line) for line in rollout_files[0].read_text().splitlines()]

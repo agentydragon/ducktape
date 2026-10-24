@@ -85,6 +85,9 @@ type Session struct {
 	waiters                                                     []*nativeWaiter
 	replies                                                     []matchedReply
 	kick                                                        chan struct{}
+
+	// codex is the shared app-server incarnation hosting this Codex Session's thread.
+	codex *codexProcess
 }
 
 func newSession(r *Runner, id string, record *SessionRecord, journal *Journal) *Session {
@@ -104,18 +107,19 @@ func (s *Session) Session() harness.SessionSnapshot {
 	if s.record.NativeSessionID != nil {
 		native = *s.record.NativeSessionID
 	}
-	return harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.CWD, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: s.record.TotalContextBudgetTokens, Resuming: s.resuming, ActiveTurnID: s.activeTurn, HarnessEnvironment: s.harnessEnvironment()}
+	return harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.CWD, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: s.record.TotalContextBudgetTokens, Resuming: s.resuming, ActiveTurnID: s.activeTurn, Environment: s.environment()}
 }
 
-// harnessEnvironment is the runner's harness environment plus this Session's notification destination,
-// which the `agentplane` command reads as AGENTPLANE_DESTINATION.
-func (s *Session) harnessEnvironment() map[string]string {
-	environment := maps.Clone(s.runner.config.HarnessEnvironment)
-	if environment == nil {
-		environment = map[string]string{}
-	}
-	environment["AGENTPLANE_DESTINATION"] = s.runner.config.Launch.Destination(s.id)
-	return environment
+// environment is this Session's own harness environment: its notification destination, which the
+// `agentplane` command reads as AGENTPLANE_DESTINATION.
+func (s *Session) environment() map[string]string {
+	return map[string]string{"AGENTPLANE_DESTINATION": s.runner.config.Launch.Destination(s.id)}
+}
+
+func (s *Session) hostedAdapter() harness.Adapter {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.adapter
 }
 func (s *Session) Journal() harness.AdapterJournal { return s.journal }
 
@@ -460,22 +464,32 @@ func (s *Session) startHarness(ctx context.Context) error {
 	s.processState = runnerpb.ProcessState_PROCESS_STATE_STARTING
 	harnessKind := s.record.Harness
 	s.mu.Unlock()
-	var adapter harness.Adapter
-	if harnessKind == runnerpb.Harness_HARNESS_CLAUDE && s.runner.config.Claude != nil {
-		adapter = claude.New(s, *s.runner.config.Claude)
-	} else if harnessKind == runnerpb.Harness_HARNESS_CODEX && s.runner.config.Codex != nil {
-		adapter = codex.New(s, *s.runner.config.Codex)
-	} else {
+	switch {
+	case harnessKind == runnerpb.Harness_HARNESS_CLAUDE && s.runner.config.Claude != nil:
+		return s.startProcess(ctx, claude.New(s, *s.runner.config.Claude))
+	case harnessKind == runnerpb.Harness_HARNESS_CODEX && s.runner.codex != nil:
+		return s.startOnCodexServer(ctx)
+	default:
 		return errors.New("this runner is not configured for the selected harness")
 	}
+}
+
+// startProcess runs this Session's own native harness process.
+func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapter) error {
 	command, err := adapter.Command()
 	if err != nil {
 		return err
 	}
-	env, err := adapter.Environment()
+	harnessEnv, err := adapter.Environment()
 	if err != nil {
 		return err
 	}
+	env := maps.Clone(s.runner.config.HarnessEnvironment)
+	if env == nil {
+		env = map[string]string{}
+	}
+	maps.Copy(env, s.environment())
+	maps.Copy(env, harnessEnv)
 	cwd, err := s.runner.ensureWorkspace(ctx, s.Session().Cwd)
 	if err != nil {
 		return err
@@ -496,33 +510,7 @@ func (s *Session) startHarness(ctx context.Context) error {
 	s.readers.Add(2)
 	go s.readStdout(process, adapter)
 	go s.readStderr(process)
-	native, err := adapter.Handshake(ctx)
-	if err == nil {
-		s.mu.Lock()
-		s.record.NativeSessionID = &native
-		record := *s.record
-		resuming := s.resuming
-		s.mu.Unlock()
-		err = s.runner.store.Write(s.id, record)
-		if err == nil {
-			err = s.Emit(ctx, observation(&eventpb.HarnessStarted{Resumed: resuming, Pid: int32(process.PID())}), nil)
-		}
-		if err == nil && resuming {
-			var turns []string
-			turns, err = s.journal.RecoveryTurns(ctx)
-			for _, turn := range turns {
-				if err != nil {
-					break
-				}
-				var report *eventpb.ConversationReconciled
-				report, err = adapter.Reconcile(ctx, turn, true)
-				if err == nil {
-					err = s.Emit(ctx, observation(report), nil)
-				}
-			}
-		}
-	}
-	if err != nil {
+	if err := s.prepare(ctx, adapter, process.PID()); err != nil {
 		s.mu.Lock()
 		s.stopping = true
 		s.mu.Unlock()
@@ -530,13 +518,91 @@ func (s *Session) startHarness(ctx context.Context) error {
 		s.readers.Wait()
 		return errors.Join(fmt.Errorf("harness startup failed: %w; %s", err, process.ExitDescription()), stopErr)
 	}
+	s.markReady()
+	return nil
+}
+
+// startOnCodexServer hosts this Session's thread on the Runner's shared Codex app-server.
+func (s *Session) startOnCodexServer(ctx context.Context) error {
+	if _, err := s.runner.ensureWorkspace(ctx, s.Session().Cwd); err != nil {
+		return err
+	}
+	server := s.runner.codex
+	adapter := codex.New(s, server.store)
+	// Frames for every hosted Session can reach this one as soon as it is hosted.
+	s.mu.Lock()
+	s.adapter = adapter
+	s.mu.Unlock()
+	p, err := server.host(ctx, s)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.process = p.process
+	s.codex = p
+	s.processID = p.id
+	s.stopping = false
+	s.mu.Unlock()
+	server.handshakeMu.Lock()
+	err = s.prepare(ctx, adapter, p.process.PID())
+	server.handshakeMu.Unlock()
+	if err != nil {
+		p.router.Release(s)
+		s.mu.Lock()
+		if s.codex == p {
+			s.process, s.codex, s.processID = nil, nil, ""
+		}
+		s.mu.Unlock()
+		return fmt.Errorf("harness startup failed: %w", err)
+	}
+	s.markReady()
+	return nil
+}
+
+// prepare starts or resumes the native conversation on a started harness and reconciles the turns a
+// lost harness left.
+func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int) error {
+	native, err := adapter.Handshake(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.record.NativeSessionID = &native
+	record := *s.record
+	resuming := s.resuming
+	s.mu.Unlock()
+	if err := s.runner.store.Write(s.id, record); err != nil {
+		return err
+	}
+	if err := s.Emit(ctx, observation(&eventpb.HarnessStarted{Resumed: resuming, Pid: int32(pid)}), nil); err != nil {
+		return err
+	}
+	if !resuming {
+		return nil
+	}
+	turns, err := s.journal.RecoveryTurns(ctx)
+	if err != nil {
+		return err
+	}
+	for _, turn := range turns {
+		report, err := adapter.Reconcile(ctx, turn, true)
+		if err != nil {
+			return err
+		}
+		if err := s.Emit(ctx, observation(report), nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Session) markReady() {
 	s.mu.Lock()
 	s.ready = true
 	s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
 	s.mu.Unlock()
 	s.runner.changed()
 	s.wake()
-	return nil
 }
 
 func (s *Session) commandLoop() {
@@ -695,6 +761,7 @@ func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
 	defer s.writeMu.Unlock()
 	s.mu.Lock()
 	process := s.process
+	shared := s.codex
 	target, _ := ctx.Value(interruptTargetKey{}).(string)
 	active := s.activeTurn
 	s.mu.Unlock()
@@ -703,6 +770,11 @@ func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
 	}
 	if process == nil || !process.Running() {
 		return errors.New("the harness is not running")
+	}
+	if shared != nil {
+		if err := shared.router.Sent(s, frame); err != nil {
+			return err
+		}
 	}
 	return process.WriteLine(ctx, string(frame))
 }
@@ -874,6 +946,7 @@ func (s *Session) harnessEnded(ctx context.Context, code int) error {
 	s.replies = nil
 	stopping := s.stopping
 	s.ready = false
+	s.codex = nil
 	s.processID = ""
 	s.processState = runnerpb.ProcessState_PROCESS_STATE_UNSPECIFIED
 	s.mu.Unlock()
@@ -985,9 +1058,10 @@ func (s *Session) settleUndispatched(ctx context.Context, reason string) error {
 	return nil
 }
 
-func (s *Session) stop(ctx context.Context, seal bool) error {
-	s.shutdownMu.Lock()
-	defer s.shutdownMu.Unlock()
+// halt ends this Session's work on its harness: it settles activation and setup, then interrupts the
+// active turn and waits for it to end. The caller holds shutdownMu. The harness stops afterwards, in
+// stopProcess or with the shared Codex app-server.
+func (s *Session) halt(ctx context.Context, seal bool) {
 	s.admitMu.Lock()
 	s.mu.Lock()
 	if seal {
@@ -1028,24 +1102,34 @@ func (s *Session) stop(ctx context.Context, seal bool) error {
 		}
 		cancel()
 	}
-	if process != nil && process.Running() {
+}
+
+// stopProcess stops the harness process this Session owns, if any, and waits for its exit to be recorded.
+func (s *Session) stopProcess(ctx context.Context) error {
+	s.mu.Lock()
+	process := s.process
+	shared := s.codex != nil
+	s.mu.Unlock()
+	if !shared && process != nil && process.Running() {
 		if err := process.Stop(ctx, 5*time.Second); err != nil {
 			return err
 		}
 	}
 	s.readers.Wait()
-	if seal {
-		if err := s.settleUndispatched(ctx, "the Sandbox was quiesced before this command was dispatched"); err != nil {
-			return err
-		}
-		uid, err := s.runner.store.RequireIncarnationUID()
-		if err != nil {
-			return err
-		}
-		_, err = s.journal.Seal(ctx, uid)
+	return nil
+}
+
+// sealJournal fails the commands never dispatched and seals the journal, once the harness has stopped.
+func (s *Session) sealJournal(ctx context.Context) error {
+	if err := s.settleUndispatched(ctx, "the Sandbox was quiesced before this command was dispatched"); err != nil {
 		return err
 	}
-	return nil
+	uid, err := s.runner.store.RequireIncarnationUID()
+	if err != nil {
+		return err
+	}
+	_, err = s.journal.Seal(ctx, uid)
+	return err
 }
 
 func (s *Session) attached() *runnerpb.Attached {

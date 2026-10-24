@@ -1,7 +1,7 @@
 # Agentplane runner
 
-A statically linked Go executable that runs one native harness per session, Claude Code or Codex, and exposes both
-through one protocol, over the control stream and Event ingress it dials. The contract is in <SPEC.md>; the wire definition is
+A statically linked Go executable that runs the native harnesses of its sessions, a Claude Code process per session
+and one Codex app-server for every Codex session, and exposes both through one protocol, over the control stream and Event ingress it dials. The contract is in <SPEC.md>; the wire definition is
 [`agentplane/proto/runner.proto`](../proto/runner.proto).
 
 The deployment renders `platform_instructions.j2` with concrete service URLs; the runner appends
@@ -22,6 +22,8 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 
 - `runner.go` and `session.go`: durable Session reservations, admission, setup,
   lazy native startup, command scheduling, recovery and quiesce.
+- `codex_server.go`: the Runner's one Codex app-server, its startup and exit, and the journaling of
+  each frame in the Sessions that `codex/router.go` assigns it to.
 - `transport.go`: the outbound control tunnel and independent per-Session ingress
   pushes, including heartbeat, replay, acknowledgement and backpressure.
 - `journal.go`, `journal_migrations/` and `store.go`: the Goose-managed SQLite

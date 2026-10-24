@@ -89,8 +89,8 @@ credentials and ServiceAccount authority ([contract](thread_layering.md#sandbox-
 Use separate Sandboxes when workloads need different trust or credential boundaries.
 
 Within a VM, the Runner runs as guest root and native harnesses run as uid/gid 107. Virtiofs presents
-`/state` files as 107:107, including the per-Session Runner and native state under
-`/state/sessions/<session_id>`. The guest does not create per-Session mount or PID namespaces or hide
+`/state` files as 107:107, including the per-Session Runner and Claude state under
+`/state/sessions/<session_id>` and the shared Codex home under `/state/codex`. The guest does not create per-Session mount or PID namespaces or hide
 same-Sandbox processes from one another. The Runner's state-owner descriptor and process supervisor
 protect storage ownership across Runner restart and ensure harness descendants are reaped; they do not
 make Runner internals or sibling Session stores confidential from code in the same Sandbox.
@@ -114,7 +114,8 @@ The subsequent conversation-recovery failure is addressed separately in
 
 - The runner service is a systemd unit with `MemoryHigh`/`MemoryMax`, `CPUQuota` and `TasksMax`, and
   delegates a subtree. The Go runner puts agent work under an aggregate cgroup and each
-  native harness under its own, with memory, CPU, task and I/O limits and `memory.oom.group`.
+  native harness process under its own, with memory, CPU, task and I/O limits and `memory.oom.group`.
+  Every Codex Session shares the one Codex app-server's.
 - When a harness subtree exceeds its memory budget, `memory.oom.group` kills that harness and its
   descendants; the Runner remains outside that group and can continue answering RPCs. Acceptance of
   the VM cgroup limits is still open.

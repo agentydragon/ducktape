@@ -64,7 +64,7 @@ type claudeAdapter struct {
 }
 
 // New creates an adapter bound to one runner-owned Session.
-func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.Adapter {
+func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.ProcessAdapter {
 	snapshot := host.Session()
 	nativeID := snapshot.NativeSessionID
 	if nativeID == "" {
@@ -116,7 +116,6 @@ func (a *claudeAdapter) Environment() (map[string]string, error) {
 		return nil, err
 	}
 	environment := make(map[string]string)
-	maps.Copy(environment, session.HarnessEnvironment)
 	environment["ANTHROPIC_AUTH_TOKEN"] = a.launch.Token
 	environment["ANTHROPIC_BASE_URL"] = a.launch.BaseURL
 	environment["CLAUDE_CONFIG_DIR"] = configDir
@@ -895,4 +894,4 @@ func hasString(inputs map[string]claudePendingInput, key string) bool {
 	return ok
 }
 
-var _ harness.Adapter = (*claudeAdapter)(nil)
+var _ harness.ProcessAdapter = (*claudeAdapter)(nil)

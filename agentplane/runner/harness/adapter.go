@@ -25,7 +25,9 @@ type SessionSnapshot struct {
 	TotalContextBudgetTokens *int
 	Resuming                 bool
 	ActiveTurnID             string
-	HarnessEnvironment       map[string]string
+	// Environment holds the variables only this Session's tools see, beside the runner-wide harness
+	// environment: its notification destination. A shared process applies them per native thread.
+	Environment map[string]string
 }
 
 // LaunchConfig contains the executable and credentials for one native harness.
@@ -84,10 +86,9 @@ type AdapterHost interface {
 	NoopCommand(context.Context, string, string, []uint64) error
 }
 
-// Adapter launches one native harness and translates its raw frames into durable observations.
+// Adapter prepares one Session's native conversation and translates its raw frames into durable
+// observations.
 type Adapter interface {
-	Command() ([]string, error)
-	Environment() (map[string]string, error)
 	Handshake(context.Context) (string, error)
 	Reconcile(context.Context, string, bool) (*eventpb.ConversationReconciled, error)
 	Submit(context.Context, string, string) error
@@ -95,4 +96,13 @@ type Adapter interface {
 	ChangeModel(context.Context, string, string) error
 	ChangeReasoningEffort(context.Context, string, string) error
 	OnFrame(context.Context, json.RawMessage, uint64) error
+}
+
+// ProcessAdapter is an Adapter whose Session runs its own native harness process.
+type ProcessAdapter interface {
+	Adapter
+	Command() ([]string, error)
+	// Environment is the harness's own variables; the runner adds them to the runner-wide harness
+	// environment and the Session's Environment.
+	Environment() (map[string]string, error)
 }
