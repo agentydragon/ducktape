@@ -1253,6 +1253,7 @@ impl Executor<'_> {
                 outcome.executed_owners.insert(binding_owner);
             }
         }
+        self.apply_rebind_effects(&outcome.effects.rebinds);
         true
     }
 
