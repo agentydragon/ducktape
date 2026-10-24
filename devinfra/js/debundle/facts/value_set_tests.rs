@@ -180,6 +180,56 @@ fn union_reports_whether_the_oracle_gains_any_values() {
 }
 
 #[test]
+fn shared_bitmaps_detach_only_when_known_origins_grow() {
+    let origins = origin_table();
+    let mut left = values_from(&origins, [ValueOrigin::Function(7), ValueOrigin::Unknown]);
+    let mut right = left.clone();
+    assert!(left.shares_bitmap(&right));
+
+    let subset = values_from(&origins, [ValueOrigin::Function(7)]);
+    assert!(!right.union_with(&subset));
+    assert!(left.shares_bitmap(&right));
+    assert!(!right.insert(ValueOrigin::Unknown));
+    assert!(left.shares_bitmap(&right));
+
+    assert!(right.insert(ValueOrigin::Class(19)));
+    assert!(!left.shares_bitmap(&right));
+    assert_matches_oracle(
+        &left,
+        &BTreeSet::from([ValueOrigin::Function(7), ValueOrigin::Unknown]),
+    );
+    assert_matches_oracle(
+        &right,
+        &BTreeSet::from([
+            ValueOrigin::Function(7),
+            ValueOrigin::Class(19),
+            ValueOrigin::Unknown,
+        ]),
+    );
+    assert!(left.insert(ValueOrigin::Object(23)));
+    assert!(!right.contains(&ValueOrigin::Object(23)));
+}
+
+#[test]
+fn union_adopts_a_shared_superset_without_losing_unknown() {
+    let origins = origin_table();
+    let mut destination = values_from(&origins, [ValueOrigin::Function(7), ValueOrigin::Unknown]);
+    let source = values_from(&origins, [ValueOrigin::Function(7), ValueOrigin::Class(19)]);
+    assert!(destination.union_with(&source));
+    assert!(destination.shares_bitmap(&source));
+    assert_matches_oracle(
+        &destination,
+        &BTreeSet::from([
+            ValueOrigin::Function(7),
+            ValueOrigin::Class(19),
+            ValueOrigin::Unknown,
+        ]),
+    );
+    assert!(!destination.union_with(&source));
+    assert!(destination.shares_bitmap(&source));
+}
+
+#[test]
 fn generated_value_sequences_match_btree_set_after_each_operation() {
     // A tiny fixed-seed generator covers repeated insertions, bulk extension,
     // and unions without making the test depend on a random-number crate.

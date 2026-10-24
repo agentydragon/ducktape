@@ -73,6 +73,11 @@ debundle_e2e_test(
     deps = ["//devinfra/js/debundle:spec"],
 )
 
+debundle_e2e_test(
+    name = "value_flow_sharing_scale_test",
+    timeout = "short",
+)
+
 debundle_e2e_test(name = "soundness_dynamic_scope_test")
 
 debundle_e2e_test(
