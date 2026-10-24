@@ -20,7 +20,7 @@ from constructs import Construct
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.runner.platform_instructions import render_platform_instructions
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     actions,
     egress,
@@ -376,7 +376,8 @@ class RunnerTemplate(Construct):
                 workload=self._runner_container(image),
                 service_account_name=NAME,
                 sidecar_settings=sidecar_settings,
-                node_selector=node_scheduling.PIRAEUS_HDD_NODE_SELECTOR,
+                # Let LINSTOR's storage-pool topology place the strict-local HDD claims.
+                node_selector={},
                 workload_volumes=[
                     k8s.Volume(
                         name=_RUNNER_VOLUME_NAME,
@@ -409,8 +410,8 @@ class RunnerTemplate(Construct):
             "name": _STATE_VOLUME_NAME,
             "layout": {"type": "DirectoryTree"},
             "claim": {
-                # Sandboxes use strict-local Piraeus HDD storage and select a prepared HDD node so
-                # WaitForFirstConsumer provisions both claims on the selected node.
+                # The StorageClass selects Piraeus' hdd pool; WaitForFirstConsumer lets LINSTOR's
+                # topology-aware provisioner place both strict-local claims on a node with that pool.
                 "storageClassName": self.storage_class,
                 "accessModes": ["ReadWriteOnce"],
                 "resources": {"requests": {"storage": "10Gi"}},

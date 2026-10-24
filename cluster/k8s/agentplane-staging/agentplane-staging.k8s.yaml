@@ -4244,9 +4244,6 @@ spec:
               readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
-      nodeSelector:
-        storage.allegedly.works/piraeus-ready: "true"
-        storage.allegedly.works/tier: hdd
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000
@@ -4707,10 +4704,7 @@ spec:
         networks:
           - name: default
             pod: {}
-        nodeSelector:
-          kubevirt.io/schedulable: "true"
-          storage.allegedly.works/tier: hdd
-          storage.allegedly.works/piraeus-ready: "true"
+        nodeSelector: {}
         volumes:
           - containerDisk:
               image: git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset
@@ -7082,9 +7076,6 @@ spec:
               readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
-      nodeSelector:
-        storage.allegedly.works/piraeus-ready: "true"
-        storage.allegedly.works/tier: hdd
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000

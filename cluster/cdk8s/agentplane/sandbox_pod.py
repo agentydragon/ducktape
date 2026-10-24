@@ -351,7 +351,8 @@ def pod_spec(
             [k8s.LocalObjectReference(name=image_pull_secret_name)] if image_pull_secret_name is not None else None
         ),
         # The default keeps command sandboxes with the rest of the namespace and LiteLLM in one zone.
-        # Storage-backed runner templates can pass an explicit selector to use another prepared node.
+        # Storage-backed runner templates can pass an empty selector and let WFFC volume topology
+        # choose a suitable node.
         node_selector=selected_nodes or None,
         service_account_name=service_account_name,
         termination_grace_period_seconds=60,
