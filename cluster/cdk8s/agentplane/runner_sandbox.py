@@ -376,7 +376,7 @@ class RunnerTemplate(Construct):
                 workload=self._runner_container(image),
                 service_account_name=NAME,
                 sidecar_settings=sidecar_settings,
-                extra_node_selector=node_scheduling.PIRAEUS_HDD_NODE_SELECTOR,
+                node_selector=node_scheduling.PIRAEUS_HDD_NODE_SELECTOR,
                 workload_volumes=[
                     k8s.Volume(
                         name=_RUNNER_VOLUME_NAME,
@@ -409,8 +409,8 @@ class RunnerTemplate(Construct):
             "name": _STATE_VOLUME_NAME,
             "layout": {"type": "DirectoryTree"},
             "claim": {
-                # Sandboxes use strict-local Piraeus HDD storage and are pinned to prepared HDD
-                # satellites so WaitForFirstConsumer provisions both claims on the selected node.
+                # Sandboxes use strict-local Piraeus HDD storage and select a prepared HDD node so
+                # WaitForFirstConsumer provisions both claims on the selected node.
                 "storageClassName": self.storage_class,
                 "accessModes": ["ReadWriteOnce"],
                 "resources": {"requests": {"storage": "10Gi"}},

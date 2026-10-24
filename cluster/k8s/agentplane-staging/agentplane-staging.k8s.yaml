@@ -4247,8 +4247,6 @@ spec:
       nodeSelector:
         storage.allegedly.works/piraeus-ready: "true"
         storage.allegedly.works/tier: hdd
-        topology.kubernetes.io/region: hil
-        topology.kubernetes.io/zone: hil-ovh
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000
@@ -4711,8 +4709,6 @@ spec:
             pod: {}
         nodeSelector:
           kubevirt.io/schedulable: "true"
-          topology.kubernetes.io/zone: hil-ovh
-          topology.kubernetes.io/region: hil
           storage.allegedly.works/tier: hdd
           storage.allegedly.works/piraeus-ready: "true"
         volumes:
@@ -7089,8 +7085,6 @@ spec:
       nodeSelector:
         storage.allegedly.works/piraeus-ready: "true"
         storage.allegedly.works/tier: hdd
-        topology.kubernetes.io/region: hil
-        topology.kubernetes.io/zone: hil-ovh
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000

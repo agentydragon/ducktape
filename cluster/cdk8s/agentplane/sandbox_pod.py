@@ -309,7 +309,7 @@ def pod_spec(
     workload: k8s.Container,
     service_account_name: str | None,
     sidecar_settings: SettingsFile,
-    extra_node_selector: Mapping[str, str] | None = None,
+    node_selector: Mapping[str, str] | None = None,
     workload_volumes: Sequence[k8s.Volume] = (),
     sidecar_resources: k8s.ResourceRequirements | None = None,
     image_pull_secret_name: str | None = SECRET_NAME,
@@ -320,16 +320,16 @@ def pod_spec(
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
     `service_account_name` is the template's own; whoever creates a box from it may replace it.
     `sidecar_settings` is the sidecar's settings file (`add_sidecar_settings`), and `workload_volumes`
-    are Pod volumes the workload mounts beyond the egress path's own. `extra_node_selector` adds
-    placement requirements to the runner zone shared by the box and its services."""
+    are Pod volumes the workload mounts beyond the egress path's own. If `node_selector` is set, it
+    replaces the environment's default runner-zone pin."""
     settings = sidecar_settings.pod_wiring(
         volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
     )
-    node_selector = {node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else {}
-    for key, value in (extra_node_selector or {}).items():
-        if key in node_selector and node_selector[key] != value:
-            raise ValueError(f"extra sandbox node selector conflicts with runner zone for {key!r}")
-        node_selector[key] = value
+    selected_nodes = (
+        dict(node_selector)
+        if node_selector is not None
+        else ({node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else {})
+    )
     return k8s.PodSpec(
         # The workload first: with no default-container annotation, the first container is the one
         # `kubectl exec` and the sandbox Actions run a command in.
@@ -350,9 +350,9 @@ def pod_spec(
         image_pull_secrets=(
             [k8s.LocalObjectReference(name=image_pull_secret_name)] if image_pull_secret_name is not None else None
         ),
-        # With the rest of the namespace and with LiteLLM: a box's traffic through the egress proxy
-        # and a runner's model calls both stay inside the zone.
-        node_selector=node_selector or None,
+        # The default keeps command sandboxes with the rest of the namespace and LiteLLM in one zone.
+        # Storage-backed runner templates can pass an explicit selector to use another prepared node.
+        node_selector=selected_nodes or None,
         service_account_name=service_account_name,
         termination_grace_period_seconds=60,
         security_context=k8s.PodSecurityContext(
