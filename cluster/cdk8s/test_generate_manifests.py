@@ -212,7 +212,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         "source": {"hostDevices": ["/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"]},
     }
 
-    storage_class, ssd_class, hdd_class = values["storageClasses"]
+    storage_class, ssd_class, hdd_class, replicated_ssd_class = values["storageClasses"]
     assert storage_class["name"] == "local-canary"
     assert storage_class["reclaimPolicy"] == "Retain"
     assert storage_class["volumeBindingMode"] == "WaitForFirstConsumer"
@@ -233,6 +233,15 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         "name": "piraeus-hdd-local",
         "parameters": {**storage_class["parameters"], "linstor.csi.linbit.com/storagePool": "hdd"},
     }
+    # Replicated copies and remote attachments both stay inside the OVH site: never over the
+    # home/OVH link.
+    assert replicated_ssd_class["name"] == "piraeus-ssd-2"
+    replicated_parameters = replicated_ssd_class["parameters"]
+    assert replicated_parameters["linstor.csi.linbit.com/placementCount"] == "2"
+    assert replicated_parameters["linstor.csi.linbit.com/replicasOnSame"] == "topology.kubernetes.io/zone=hil-ovh"
+    assert yaml.safe_load(replicated_parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]) == [
+        {"fromSame": ["topology.kubernetes.io/zone"]}
+    ]
 
     operator_flux = next(
         doc
