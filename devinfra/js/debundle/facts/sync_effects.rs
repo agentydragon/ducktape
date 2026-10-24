@@ -1011,6 +1011,7 @@ struct Executor<'a> {
     prefix_object_properties: BTreeMap<u32, BTreeMap<Option<String>, Values>>,
     exported_runtime_values: Values,
     export_reentry_enabled: bool,
+    fresh_mutation_callables: BTreeSet<u32>,
     prefix_revision: u64,
     active: BTreeSet<InvocationSignature>,
     cache: BTreeMap<InvocationSignature, Outcome>,
@@ -1705,7 +1706,9 @@ impl Executor<'_> {
         if callable.dynamic_property_effect {
             writes.push((None, None));
         }
-        self.promote_property_writes(&writes, callable.owner, &mut outcome);
+        if !self.fresh_mutation_callables.contains(&key) {
+            self.promote_property_writes(&writes, callable.owner, &mut outcome);
+        }
         self.active.remove(&signature);
         self.cache.insert(signature, outcome.clone());
         outcome
@@ -1923,6 +1926,11 @@ pub(crate) fn annotate_synchronous_calls(
             .map(|key| AbstractValue::Origin(ValueOrigin::Function(key)))
             .collect(),
         export_reentry_enabled: export_reentry_policy == ExportReentryPolicy::Conservative,
+        fresh_mutation_callables: super::fresh_receiver::fresh_mutation_callables(
+            body,
+            facts,
+            !index.dynamic_scope_owners.is_empty(),
+        ),
         prefix_revision: 0,
         active: BTreeSet::new(),
         cache: BTreeMap::new(),

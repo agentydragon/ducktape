@@ -779,6 +779,18 @@ include that caller and the reachability revision. A static data-property
 write to a proved fresh local function retains the same A11 fast path. This
 keeps unrelated returned closures deferred when no setter can be reached.
 
+A closed inline mutation IIFE can also prove its receiver fresh at that call,
+independently of whether the returned object escapes later. The shared enum-IIFE
+recognizer requires a synchronous ordinary callable, one identifier parameter,
+primitive property writes with safe keys, and return of that same parameter.
+An empty object argument is fresh directly. A self short-circuit argument also
+requires the sole declaration/writer of a `var` binding and no dynamic lexical
+scope in the chunk. Only generic accessor promotion for that body's writes is
+omitted; argument reads, assignments, returned values, and callback effects at
+other calls remain. Async/generator bodies, prototype keys (including keys
+produced by nested assignments), other writers, and custom receivers retain the
+conservative path.
+
 For statements without a complete call-site result, `promote_at_init_calls`
 uses its SCC closure: it builds the call graph among chunk-declared, resolvable
 callees from first-order lazy calls, takes its SCCs, and closes each SCC's
