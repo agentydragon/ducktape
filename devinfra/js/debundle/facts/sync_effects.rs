@@ -222,7 +222,9 @@ impl ValueExpr {
                 .iter()
                 .any(|(_, value)| value.exposes_binding(id)),
             Self::Alternatives(options) => options.iter().any(|value| value.exposes_binding(id)),
-            Self::Call(_, args) => args.iter().any(|value| value.exposes_binding(id)),
+            Self::Call(_, args) | Self::New(_, args) => {
+                args.iter().any(|value| value.exposes_binding(id))
+            }
             Self::Member(_, _)
             | Self::Origin(_)
             | Self::Undefined
