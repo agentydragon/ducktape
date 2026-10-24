@@ -85,11 +85,12 @@ target apply completed: desired and live configuration match, the
 needed. At this checkpoint only the canary had moved; bulk rebalance and later
 HDD-node conversions had not started. The subsequent `103711` rebuild is below.
 
-## 103711 reimage — 2026-10-24
+## 103711 admission and application restoration — 2026-10-24
 
-Application handoffs are accepted. ClickHouse is running with its surviving
-data replica on `102453`. After peer checks confirmed all 600 logical HDD
-volume IDs remained off-node, the 116 user-waived Seaweed source volume copies
+Evacuation handoffs are accepted. ClickHouse's client Service remains on the
+healthy data replica on `102453` while the new replica catches up. After peer
+checks confirmed all 600 logical HDD volume IDs remained off-node, the 116
+user-waived Seaweed source volume copies
 were deleted under lock. The empty legacy source Pod is retired; keep legacy
 `hdd` out of the operator topology map while its `102453` peer uses
 `ordinals.start=1,replicas=1`.
@@ -98,8 +99,8 @@ The worker rejoined on Talos `v1.14.0` with the intended custom schematic and
 the same Kubernetes Node UID. The `01:12 UTC` system acceptance verified both
 disk identities, exact `32/512/1024/32GiB` `EPHEMERAL/CRI/KUBELET/LOG`
 partitions, no legacy user volume, and a partitionless, unowned data disk.
-The node remains cordoned. After those checks, `piraeus-ready=true` enabled the
-hostname-specific HDD configuration. Native LVM and fresh collector metrics
+After those checks, `piraeus-ready=true` enabled the hostname-specific HDD
+configuration. Native LVM and fresh collector metrics
 verified a `1,991,807,860,736`-byte `piraeus_hdd/data` thin-data pool with
 `4GiB` metadata, a `4GiB` spare, `64KiB` chunks and runtime
 `ExtCmd/WaitTimeout=180000`.
@@ -118,9 +119,33 @@ unchanged. Both disk identities, all four system partitions, thin-pool geometry,
 metadata and spare were preserved, and the replacement collector reported
 fresh metrics. Post-reboot shared gates passed at `01:28 UTC`; disposable
 Pods, claims, PVs, CSI resources and the qualification namespace were removed
-at `01:30 UTC`. The node remains cordoned. Application restoration and the
-prepared `1700Gi`/`2000`-slot `hdd-piraeus-103711` group remain gated on fresh
-shared checks, local-path allocation-denial proof and readiness-source agreement.
+at `01:30 UTC`. The targeted Terraform state handoff passed at `01:49 UTC`:
+desired/live configuration agreed, the boot ID stayed unchanged, and the locked
+`refresh=false` residual plan had zero resource or output changes. Fresh shared
+gates, CSI registration, metrics and local-path allocation denial passed before
+the worker was admitted and uncordoned at `01:50 UTC`.
+
+The new `1700Gi`/`2000`-slot Seaweed server became Ready, registered empty and
+reported metrics `up=1`; existing survivor Pod UIDs were preserved. The new
+server was absent from the initial repair pass's topology snapshot. That pass
+was stopped with its partial copy cleaned up and original intact; the replacement
+copy-only Job `replication-repair-refresh-103711-20261024` now targets `103711`
+and refreshes topology after each volume. The `replication-repair` AdminScript
+is temporarily suspended with its own Flux reconciliation disabled. Restore
+its original unsuspended state and remove that annotation after the replacement
+Job terminates and native copy/lock checks pass. The new
+500Gi ClickHouse host-0 is Ready with its two-database, 26-object catalog
+replayed, including two pre-existing orphan materialized views restored with a
+per-command compatibility setting. Catalog UUID/definition and migration-ledger
+comparison passed at `02:02 UTC`; data fetching remains in progress. AIQuota and
+Langfuse returned to normal Flux management with clean startup DDL checks.
+CHI/Flux holds and the client Service's peer-1-only routing remain until native
+data catch-up acceptance. Anki's Flux reconciliation observed
+`64b7c6ea` and is Ready.
+
+The two Bound claims total 2200Gi against 1855.015625GiB of thin-data capacity.
+[#11786](https://github.com/agentydragon/ducktape/issues/11786) tracks this live
+overcommit and its placement-based exit; low current allocation does not close it.
 
 The shared gate now expects 19 CNPG clusters after merged `2ef4072ceded`
 removed `agentplane-testing`; the namespace deletion was observed at
@@ -134,9 +159,9 @@ Private acceptance artifacts are under
 `system-rejoin-accepted.json`, `pool-geometry-initial-accepted.json`,
 `pvc-canaries-before-reboot.json`, `discard-accepted.json`,
 `pool-and-reboot-accepted.json`, `system-after-qualification-reboot.json`, and
-`pool-geometry-after-reboot.json`, `post-reboot-boundary-gates.json`, and
-`canary-cleanup-complete.json`. Re-read the admission proofs before
-uncordoning.
+`pool-geometry-after-reboot.json`, `post-reboot-boundary-gates.json`,
+`canary-cleanup-complete.json`, `activation-tf-handoff/apply-accepted.json`, and
+`worker-admission-accepted.json`. Refresh live gates before further maintenance.
 
 Operational gotchas from this roll:
 
@@ -163,8 +188,9 @@ ClickHouse Keeper replicas 1 and 2 were cold-copied serially to retained
 `piraeus-ssd-local` claims on `ovh-ns1001419` and `ovh-ns104952`. Full data and
 metadata matched, Raft identities and DNS stayed unchanged, and the leader
 reported two synced followers after each copy. Keeper 0 was the final leader.
-Quorum and all 17 ClickHouse tables are healthy, with both replica queues at
-zero. Replica 0 remains on `ovh-ns104963`; all three Pod UIDs and restart counts
+That handoff finished with healthy quorum and all 17 data tables caught up;
+the later data host-0 rebuild above is still backfilling. Keeper replica 0
+remains on `ovh-ns104963`; all three Keeper Pod UIDs and restart counts
 stayed unchanged through Flux reconciliation. The old HDD claims remain bound
 with `Retain`, and temporary helpers are removed. Flux is resumed and `Ready`;
 the live Keeper spec matches the merged generated manifest, and no holds remain.
@@ -197,6 +223,27 @@ retargeted to the Piraeus claims and completed a cold refresh. Both deployments
 are Ready on `103656`; the old source PVCs/PVs remain Bound with `Retain`. Their
 Flux Kustomizations have resumed and observed the merged configuration; both
 remain Ready on their Piraeus claims.
+
+## 102453 Postgres evacuation — 2026-10-24
+
+All ten primaries were switched serially to their caught-up Piraeus SSD peers
+before cordoning `ovh-ns102453` at `02:57 UTC`. CNPG can automatically switch
+primaries away from an unschedulable node, so cordoning first would have started
+several switchovers together. Each old source instance and PVC was then retired
+serially; CNPG rebuilt its replacement from the healthy primary using the merged
+`piraeus-ssd-local` template. Independent acceptance at `03:22 UTC` verified all
+ten at `2/2`, native observed WAL replay and streaming, correct read-write
+endpoints and all twenty member claims on strict-local retained Piraeus SSD
+volumes. No CNPG Pods remain on the source, no per-cluster reconciliation holds
+remain, and all 19 cluster-wide CNPG clusters are Ready. Source PV metadata and
+files remain retained.
+
+The node stays cordoned. This Postgres handoff does not complete its evacuation:
+ClickHouse data catch-up, Seaweed copy repair, the remaining Valkey/monitoring
+members and authored/historical data still need their own acceptance before a
+physical reset. Private per-cluster proofs are in
+`/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/`, including
+`root-final-independent-acceptance.json`.
 
 ## Evidence map
 

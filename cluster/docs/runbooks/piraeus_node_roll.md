@@ -188,7 +188,7 @@ not apply it to the serving node. After reimage, verify the volume layout and
 data-disk identity before preparing a separate readiness change or selecting the
 data disk for Piraeus initialization.
 
-### Second HDD worker worksheet
+### Second HDD worker identity and accepted layout
 
 `ovh-ns103711` uses the same worker system-volume profile: EPHEMERAL 32 GiB,
 CRI 512 GiB, KUBELET 1024 GiB and LOG 32 GiB. Talos inventory on 2026-10-23
@@ -200,11 +200,11 @@ verified two 2000398934016-byte HGST disks:
 | System | `/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H61MEA` | `naa.5000cca25ed0d7d6` |
 | Data | `/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H48V6A` | `naa.5000cca25ed00a31` |
 
-Apply its prepared Talos layout only through maintenance mode after workload
-handoffs. Keep `piraeus_ready_enabled = false` until the whole data disk is
-verified clear and the new pool passes acceptance. Do not apply this layout to
-the serving node or run the rescue/dd installer. Reconcile Terraform after the
-maintenance apply and inspect a targeted machine-readable plan first.
+The maintenance layout, whole-disk pool, controlled reboot and Terraform
+source/live/state agreement passed before admission on 2026-10-24; readiness is
+enabled and the node is uncordoned. Do not repeat initial layout/reset or
+rescue/dd installation on the serving node. Refresh the shared gates before
+further maintenance.
 
 For this node only, the operator authorized discarding remaining Seaweed source
 copies after verifying a healthy surviving copy elsewhere, then restoring
@@ -268,11 +268,11 @@ pool use and headroom are monitored. Logical capacity is not a physical
 reservation, and this policy does not promise that all PVCs can be filled at
 once. Treat any such overcommit as temporary capacity debt to resolve through
 workload placement and balancing; do not assume extra disks or indefinite
-overcommit. On `ovh-ns103711`, other local claims request 566Gi, including a 500Gi
-ClickHouse claim. A proposed 1700Gi Seaweed PVC plus those claims totals 2266Gi
-against about 1855Gi of estimated thin-data capacity. That overcommit is
-permitted under this policy; the common 1700Gi HDD size remains a proposal and
-no claim-size change is applied here.
+overcommit. On 2026-10-24, `ovh-ns103711` has two Bound `piraeus-hdd-local`
+claims: 1700Gi SeaweedFS and 500Gi ClickHouse, totaling 2200Gi against a measured
+1855.015625GiB thin-data pool. The 344.984375GiB excess (18.60%), before reserve
+and additional volume overhead, is tracked in
+[#11786](https://github.com/agentydragon/ducktape/issues/11786).
 
 Enforce the planned per-PVC sizes. Monitor actual thin-data and thin-metadata
 utilization independently of PVC capacity, with fresh samples and alerts for
@@ -282,8 +282,8 @@ samples are stale, the pool is unhealthy, or available headroom falls below
 the approved reserve. PVC totals and volume-slot limits do not establish
 physical headroom.
 
-When the first live pool's aggregate provisioned PVC capacities exceed its
-physical thin-data capacity, open a Ducktape GitHub issue for that pool and add
+When a live pool's aggregate provisioned PVC capacities exceed its
+physical thin-data capacity, open a dedicated Ducktape GitHub issue and add
 the issue link here. Record physical capacity, total provisioned PVC capacities,
 actual data and metadata use, remaining headroom and alert state, contributing
 claims (including ClickHouse), and concrete mitigation or growth options. Track
@@ -293,9 +293,7 @@ PVC capacities within the usable physical-pool budget, accounting for agreed
 reserve and overhead, and fresh data, metadata, and free-space measurements
 confirm the agreed headroom. Low current pool use alone does not resolve
 overcommit. If the owner explicitly accepts a revised target, record that
-target and its rationale in the issue before closing. The applied SSD pilot
-currently has 263Gi of application PVC capacity against a measured 468.94Gi
-thin-data LV, so this issue trigger is not met yet.
+target and its rationale in the issue before closing.
 
 ### HDD evacuation capacity checkpoint
 
@@ -318,7 +316,8 @@ the space gate passed. Do not infer adequate headroom from the enlarged slot lim
 
 ## 2. Evacuate application state while sources remain available
 
-Cordon the selected node after checking spare capacity. Inventory all Pods,
+Check spare capacity and complete the serial CNPG switchovers below before
+cordoning the selected node. Inventory all Pods,
 PVC/PV UIDs, backends, snapshots, application roles and owners. Protect source
 PVs with Retain before releasing any claim. Retain does not protect files from
 a physical disk wipe; off-node application copies are the recovery source.
@@ -327,6 +326,13 @@ Review emptyDir contents before allowing drain to delete them.
 ### PostgreSQL
 
 Use CNPG's native streaming replication, one cluster at a time:
+
+CNPG attempts to switch primaries off an unschedulable node. If the target hosts
+several primaries, perform their native switchovers serially before cordoning:
+verify the candidate has replayed an observed primary WAL position, promote it,
+then require healthy streaming members and the correct read-write Service
+endpoint before the next cluster. Cordon after every primary is off-target;
+retire and rebuild the source standbys serially afterward.
 
 1. For each of the seven SSD evacuation clusters listed in
    [CNPG conventions](../cnpg_conventions.md#current-compliance), work serially:
@@ -502,6 +508,16 @@ then retire only the evacuated member. Use a consistent copy/restore procedure
 for state that has no replicated source. Keeper needs its own identity/log and
 membership handoff; a generic PVC deletion or empty replacement does not migrate
 it. Verify both data and Keeper health before moving another affected member.
+
+For fresh native MergeTree storage, replay captured `CREATE` definitions after
+guarded `SYSTEM DROP REPLICA` for the exact retired, inactive replica.
+The captured `traces_30d_amt_mv` and `traces_7d_amt_mv`
+were already orphaned on the `102453` survivor: their source/target dependencies
+were absent. Only for those verified orphans, restore the exact captured DDL/UUIDs
+with client per-command
+[`--allow_materialized_view_with_bad_select=1`](https://clickhouse.com/docs/reference/settings/session-settings/allow#allow_materialized_view_with_bad_select).
+Keep the setting out of global configuration and compare `SHOW CREATE` with the
+captured definitions before acceptance.
 
 #### Forgejo Valkey replica
 
