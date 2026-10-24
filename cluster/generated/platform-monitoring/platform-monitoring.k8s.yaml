@@ -662,6 +662,53 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
+  name: io-pressure-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: io-pressure
+      rules:
+        - alert: NodeIOPressure
+          annotations:
+            description: All non-idle tasks on {{ $labels.node }} were stalled on I/O at once for {{ $value | humanizePercentage }} of the time, sustained for an hour. Image pulls and Pod starts there slow down with it. container_pressure_io_stalled_seconds_total on that node shows who is waiting; ContainerPageCacheThrash names the container when the reads are its own evicted files.
+            summary: "{{ $labels.node }} is stalled on disk I/O"
+          expr: |
+            max by (node) (
+              rate(node_pressure_io_stalled_seconds_total[5m])
+              * on (namespace, pod) group_left (node)
+                max by (namespace, pod, node) (
+                  kube_pod_info{namespace="monitoring", pod=~"prometheus-node-exporter-.+"}
+                )
+            )
+            > 0.2
+          for: 1h
+          labels:
+            severity: warning
+        - alert: ContainerPageCacheThrash
+          annotations:
+            description: "Container {{ $labels.container }} of {{ $labels.namespace }}/{{ $labels.pod }} on {{ $labels.node }} is stalled on I/O {{ $value | humanizePercentage }} of the time while taking more than 5 major page faults/s: the kernel keeps evicting its mapped files, usually its own binary, and it reads them back from disk. It stays Ready and is never OOM-killed; the node's disk saturates instead. Raise its memory limit above heap plus mapped files (cluster/docs/lessons_learned/2026_09_07_eso_memory_limit_thrash.md)."
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} {{ $labels.container }} is thrashing its page cache"
+          expr: |
+            (
+              max by (node, namespace, pod, container) (
+                rate(container_pressure_io_stalled_seconds_total{container!=""}[5m])
+              )
+              > 0.3
+            )
+            and on (node, namespace, pod, container)
+            (
+              max by (node, namespace, pod, container) (
+                rate(container_memory_failures_total{failure_type="pgmajfault", scope="container", container!=""}[5m])
+              )
+              > 5
+            )
+          for: 15m
+          labels:
+            severity: warning
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
   name: mcp-auth-alerts
   namespace: monitoring
 spec:

@@ -158,6 +158,7 @@ spec:
         KubeSchedulerDown: true
         KubeSchedulerInstanceUnreachable: true
         KubeletInstanceUnreachable: true
+        NodeDiskIOSaturation: true
         TargetDown: true
       node:
         fsSelector: fstype!="",mountpoint!="/var/lib/llm-models-ssd"
