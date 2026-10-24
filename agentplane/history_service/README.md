@@ -49,9 +49,12 @@ own transaction); a full queue applies backpressure to the stream.
 
 The History Service never routes to, reads or manages Sandboxes; it records and reports the
 Sandbox a Session was written by. Every Sandbox runs as a ServiceAccount of its own name, so the
-first push that binds a writer also records its namespace and name as the Session's Sandbox
-(`SessionSummary.sandbox`, absent until recorded). `FindSessions` lists the Sessions whose Sandbox
-name equals or contains given text, deleted Sandboxes included. Sandbox UIDs are not recorded.
+first push that binds a writer records the namespace, name and UID of the Sandbox which controls
+that ServiceAccount (`SessionSummary.sandbox`, absent until recorded). History gets the UID from the
+ServiceAccount's controller ownerReference. The nullable UID lets a later push by the same writer
+fill an older record; a different UID is refused. `FindSessions` supports both name searches and
+exact UID lookup, including deleted Sandboxes. Legacy rows and ServiceAccounts without a Sandbox
+controller owner remain without a UID.
 
 A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
 

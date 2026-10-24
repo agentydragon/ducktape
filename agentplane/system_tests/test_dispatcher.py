@@ -286,7 +286,9 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             await stub.ListDispatches(pb.ListDispatchesRequest(filter=pb.DispatchFilter(sandbox=sandbox)), timeout=15)
         assert unauthenticated.value.code() == grpc.StatusCode.UNAUTHENTICATED
         queued = await stub.ChangeReasoningEffort(
-            pb.ChangeReasoningEffortRequest(sandbox=sandbox, session_id=session, command_id=command, effort="low"),
+            pb.ChangeReasoningEffortRequest(
+                sandbox=sandbox, sandbox_uid=uid, session_id=session, command_id=command, effort="low"
+            ),
             metadata=authentication.metadata,
             timeout=15,
         )
@@ -387,7 +389,11 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             deletion_command = str(uuid4())
             await stub.ChangeReasoningEffort(
                 pb.ChangeReasoningEffortRequest(
-                    sandbox=sandbox, session_id=deletion_session, command_id=deletion_command, effort="low"
+                    sandbox=sandbox,
+                    sandbox_uid=uid,
+                    session_id=deletion_session,
+                    command_id=deletion_command,
+                    effort="low",
                 ),
                 metadata=authentication.metadata,
                 timeout=15,
@@ -546,6 +552,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                     stub.SubmitInput(
                         pb.SubmitInputRequest(
                             sandbox=sandbox,
+                            sandbox_uid=uid,
                             session_id=session,
                             command_id=command,
                             text="Reply with exactly OK and do not use tools.",

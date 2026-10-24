@@ -23,6 +23,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
@@ -33,6 +34,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // callDeadline only bounds a call that stopped making progress, so a hang fails the test.
@@ -53,6 +55,19 @@ func useAPIServer(server *kubeapiserver.Server) (err error) {
 		return err
 	}
 	writerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: "test-sandbox-namespace", Name: "test-sandbox"}, audiences...)
+	if err != nil {
+		return err
+	}
+	account, err := server.Clientset.CoreV1().ServiceAccounts("test-sandbox-namespace").Get(ctx, "test-sandbox", metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	controller := true
+	account.OwnerReferences = []metav1.OwnerReference{{
+		APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind,
+		Name: "test-sandbox", UID: "test-sandbox-uid", Controller: &controller,
+	}}
+	_, err = server.Clientset.CoreV1().ServiceAccounts("test-sandbox-namespace").Update(ctx, account, metav1.UpdateOptions{})
 	return err
 }
 
@@ -88,7 +103,7 @@ func start(t *testing.T, tune func(*config)) running {
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
 	go func() {
-		served <- serve(ctx, c, kube.TokenReviews(), readsListener, ingressListener)
+		served <- serve(ctx, c, kube.Clientset, readsListener, ingressListener)
 	}()
 	var stopped bool
 	stop := func() error {
@@ -367,7 +382,7 @@ func TestAListenerThatFailsEndsTheServiceWithItsError(t *testing.T) {
 	closed.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	if err := serve(ctx, c, kube.TokenReviews(), readsListener, closed); err == nil || errors.Is(err, context.Canceled) {
+	if err := serve(ctx, c, kube.Clientset, readsListener, closed); err == nil || errors.Is(err, context.Canceled) {
 		t.Errorf("serve returned %v, want the listener's error", err)
 	}
 }

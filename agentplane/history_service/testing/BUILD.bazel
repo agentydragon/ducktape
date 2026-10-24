@@ -44,6 +44,7 @@ py_library(
     srcs = ["history.py"],
     deps = [
         ":go_service",
+        "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/history_service:channels",
         "//agentplane/history_service:history_service_pb2",
@@ -54,6 +55,7 @@ py_library(
         "//agentplane/proto:runner_pb2",
         "//agentplane/testing:kubernetes_apiserver",
         "@pypi//asyncpg",
+        "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],

@@ -59,7 +59,7 @@ func entries(first, last uint64) []*eventlogpb.EventEntry {
 func opened(t *testing.T, store *Store) uuid.UUID {
 	t.Helper()
 	sessionID := uuid.New()
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 		t.Fatal(err)
 	}
 	return sessionID
@@ -173,7 +173,7 @@ func TestAppendReplaysDuplicatesAndReadsPages(t *testing.T) {
 	db := testDB(t)
 	store := NewStore(db, false)
 	sessionID := opened(t, store)
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 		t.Fatal(err)
 	}
 	resumed := entryFrom("source", 2, true)
@@ -242,14 +242,50 @@ func TestASessionBindsToItsFirstWriter(t *testing.T) {
 	store := testStore(t)
 	sessionID := uuid.New()
 	for range 2 {
-		if _, err := store.BindWriter(t.Context(), sessionID, testWriter); err != nil {
+		if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
 	recreated := testWriter
 	recreated.UID = "test-recreated-uid"
-	_, err := store.BindWriter(t.Context(), sessionID, recreated)
+	_, err := store.BindWriter(t.Context(), sessionID, recreated, "")
 	assertError(t, err, ErrWriterMismatch)
+}
+
+func TestASessionBindsToItsFirstSandboxUID(t *testing.T) {
+	db := testDB(t)
+	store := NewStore(db, false)
+	sessionID := uuid.New()
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first"); err != nil {
+		t.Fatalf("same Sandbox reconnect: %v", err)
+	}
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-replacement"); !errors.Is(err, ErrSandboxMismatch) {
+		t.Fatalf("same-name replacement: %v, want ErrSandboxMismatch", err)
+	}
+	var got string
+	if err := db.QueryRowContext(t.Context(), `SELECT sandbox_uid FROM session_history WHERE id = $1`, sessionID).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "sandbox-uid-first" {
+		t.Fatalf("recorded Sandbox UID = %q, want the original UID", got)
+	}
+}
+
+func TestAReconnectedWriterFillsAnUnknownSandboxUIDOnce(t *testing.T) {
+	store := testStore(t)
+	sessionID := uuid.New()
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first"); err != nil {
+		t.Fatalf("fill unknown UID: %v", err)
+	}
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-replacement"); !errors.Is(err, ErrSandboxMismatch) {
+		t.Fatalf("replacement after fill: %v, want ErrSandboxMismatch", err)
+	}
 }
 
 func TestOpenedSessionsListInRecordingOrder(t *testing.T) {
@@ -322,12 +358,12 @@ func TestHistoryNotifiesAfterCommitAndNotAfterRollbackOrNoOp(t *testing.T) {
 		want    map[string]int
 	}{
 		{"binding a new Session", func() {
-			if _, err := store.BindWriter(t.Context(), sessionID, testWriter); err != nil {
+			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 				t.Fatal(err)
 			}
 		}, map[string]int{ChannelHistory: 1, ChannelSessions: 1}},
 		{"binding it again", func() {
-			if _, err := store.BindWriter(t.Context(), sessionID, testWriter); err != nil {
+			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 				t.Fatal(err)
 			}
 		}, map[string]int{}},

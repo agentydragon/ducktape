@@ -10,7 +10,18 @@ apart from the read API, and the network fence admits the egress proxy to it alo
 from collections.abc import Mapping
 
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, ImagePullPolicy, MemoryResources
+from cdk8s_plus_34 import (
+    ContainerResources,
+    Cpu,
+    CpuResources,
+    EnvValue,
+    ImagePullPolicy,
+    MemoryResources,
+    Role,
+    RoleBinding,
+    RolePolicyRule,
+    ServiceAccount,
+)
 from constructs import Construct
 
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, Settings
@@ -20,6 +31,7 @@ from cluster.cdk8s.agentplane import database, egress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -86,6 +98,18 @@ class HistoryService(Construct):
             service_account_name=NAME,
             namespace=env.namespace,
         )
+        Role(
+            self,
+            "service-account-reader-role",
+            metadata=ApiObjectMetadata(name=f"{NAME}-service-accounts", namespace=env.namespace),
+            rules=[RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"])],
+        )
+        RoleBinding(
+            self,
+            "service-account-reader-rolebinding",
+            metadata=ApiObjectMetadata(name=f"{NAME}-service-accounts", namespace=env.namespace),
+            role=Role.from_role_name(self, "service-account-reader-role-ref", f"{NAME}-service-accounts"),
+        ).add_subjects(ServiceAccount.from_service_account_name(self, "history-service-account", NAME, namespace_name=env.namespace))
         config = SettingsFile(
             self,
             "config",

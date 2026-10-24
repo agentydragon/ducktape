@@ -46,7 +46,7 @@ func TestABurstIsCommittedInBoundedBatches(t *testing.T) {
 			frames.queue <- received{err: io.EOF}
 			c := &pushCall{history: service.History, timing: testTiming, stream: acknowledgementSink{}, frames: frames, log: slog.Default()}
 			writer := storage.Writer{Namespace: testNamespace, Name: "test-sandbox-a", UID: "test-account-a-uid"}
-			if err := c.failure(c.run(context.Background(), writer)); err != nil {
+			if err := c.failure(c.run(context.Background(), writer, "")); err != nil {
 				t.Fatal(err)
 			}
 			var stored, transactions int

@@ -46,9 +46,10 @@ type Timing struct {
 // is bound to the ServiceAccount that first pushed it.
 type Service struct {
 	runneringresspb.UnimplementedRunnerIngressServer
-	Principals *auth.Resolver
-	History    *storage.Store
-	Timing     Timing
+	Principals  *auth.Resolver
+	SandboxUIDs SandboxUIDResolver
+	History     *storage.Store
+	Timing      Timing
 }
 
 type pushStream = grpc.BidiStreamingServer[runneringresspb.PushFrame, runneringresspb.Acknowledgement]
@@ -62,9 +63,17 @@ func (s *Service) Push(stream pushStream) error {
 	frames := readFrames(stream)
 	defer frames.stop()
 	c := &pushCall{history: s.History, timing: s.Timing, stream: stream, frames: frames, log: slog.Default()}
-	return c.failure(c.run(ctx, storage.Writer{
+	writer := storage.Writer{
 		Namespace: principal.Account.Namespace, Name: principal.Account.Name, UID: principal.ServiceAccountUID,
-	}))
+	}
+	var sandboxUID string
+	if s.SandboxUIDs != nil {
+		sandboxUID, err = s.SandboxUIDs.Resolve(ctx, writer)
+		if err != nil {
+			return c.failure(err)
+		}
+	}
+	return c.failure(c.run(ctx, writer, sandboxUID))
 }
 
 type pushCall struct {
@@ -75,7 +84,7 @@ type pushCall struct {
 	log     *slog.Logger
 }
 
-func (c *pushCall) run(ctx context.Context, writer storage.Writer) error {
+func (c *pushCall) run(ctx context.Context, writer storage.Writer, sandboxUID string) error {
 	first, timedOut, err := c.frames.next(c.timing.SilenceLimit)
 	switch {
 	case errors.Is(err, io.EOF):
@@ -98,7 +107,7 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer) error {
 		return status.Error(codes.InvalidArgument, "the Session ID is not a canonical UUID")
 	}
 	c.log = c.log.With("session_id", sessionID)
-	checkpoint, err := c.history.BindWriter(ctx, sessionID, writer)
+	checkpoint, err := c.history.BindWriter(ctx, sessionID, writer, sandboxUID)
 	if err != nil {
 		return err
 	}
@@ -195,6 +204,9 @@ func (c *pushCall) failure(err error) error {
 	case errors.Is(err, storage.ErrWriterMismatch):
 		c.log.Warn("push refused: the Session belongs to another writer", "error", err)
 		return status.Error(codes.PermissionDenied, "the Session belongs to another writer")
+	case errors.Is(err, storage.ErrSandboxMismatch):
+		c.log.Warn("push refused: the Session belongs to another Sandbox", "error", err)
+		return status.Error(codes.PermissionDenied, "the Session belongs to another Sandbox")
 	case errors.Is(err, storage.ErrConflict):
 		c.log.Warn("push refused", "error", err)
 		return status.Error(codes.FailedPrecondition, "the journal differs from committed history")

@@ -228,12 +228,40 @@ func TestSessionsAreFoundByTheNameOfTheSandboxThatWroteThem(t *testing.T) {
 	}
 }
 
+func TestSessionsExposeAndFilterBySandboxUID(t *testing.T) {
+	f := newFixture(t)
+	first, second := uuid.New(), uuid.New()
+	for index, sandboxUID := range []string{"sandbox-uid-first", "sandbox-uid-replacement"} {
+		sessionID := []uuid.UUID{first, second}[index]
+		writer := storage.Writer{
+			Namespace: "test-sandbox-namespace", Name: "same-name", UID: "writer-account-" + sandboxUID,
+		}
+		if _, err := f.history.BindWriter(t.Context(), sessionID, writer, sandboxUID); err != nil {
+			t.Fatal(err)
+		}
+		summary, err := f.reader.GetSessionSummary(t.Context(), &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := summary.GetSandbox().GetUid(); got != sandboxUID {
+			t.Errorf("summary UID = %q, want %q", got, sandboxUID)
+		}
+		found := findIDs(t, f, &historypb.FindSessionsRequest{
+			Sandbox: &historypb.FindSessionsRequest_SandboxUid{SandboxUid: sandboxUID},
+		})
+		if !slices.Equal(found, []string{sessionID.String()}) {
+			t.Errorf("FindSessions(%q) = %v, want only %s", sandboxUID, found, sessionID)
+		}
+	}
+}
+
 func TestFindingSessionsNeedsANonEmptyName(t *testing.T) {
 	f := newFixture(t)
 	for name, request := range map[string]*historypb.FindSessionsRequest{
 		"no match":       {},
 		"empty exact":    {Sandbox: &historypb.FindSessionsRequest_SandboxName{}},
 		"empty contains": {Sandbox: &historypb.FindSessionsRequest_SandboxNameContains{}},
+		"empty UID":      {Sandbox: &historypb.FindSessionsRequest_SandboxUid{}},
 	} {
 		if _, err := f.reader.FindSessions(t.Context(), request); !errors.Is(err, storage.ErrInvalidArgument) {
 			t.Errorf("%s: %v, want ErrInvalidArgument", name, err)

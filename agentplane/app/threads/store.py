@@ -53,6 +53,7 @@ class Listing(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     sandbox: str | None
+    sandbox_uid: str | None = None
     search: str | None
     include_archived: bool
 
@@ -98,6 +99,7 @@ class ThreadStore:
         limit: int,
         page_token: str | None = None,
         sandbox: str | None = None,
+        sandbox_uid: str | None = None,
         search: str | None = None,
         include_archived: bool = False,
     ) -> ThreadPage:
@@ -107,10 +109,12 @@ class ThreadStore:
         it was issued for."""
         if not 1 <= limit <= MAX_PAGE:
             raise ValueError(f"page size must be between 1 and {MAX_PAGE}: {limit=}")
-        listing = Listing(sandbox=sandbox, search=search, include_archived=include_archived)
+        listing = Listing(sandbox=sandbox, sandbox_uid=sandbox_uid, search=search, include_archived=include_archived)
         query = select(Thread).order_by(Thread.created_at.desc(), Thread.id.desc()).limit(limit + 1)
         if sandbox is not None:
             query = query.where(Thread.id.in_(await self._find(sandbox_name=sandbox)))
+        if sandbox_uid is not None:
+            query = query.where(Thread.id.in_(await self._find(sandbox_uid=sandbox_uid)))
         if search is not None:
             query = query.where(
                 or_(
@@ -137,13 +141,19 @@ class ThreadStore:
             else PageToken(listing=listing, created_at=last.created_at, id=last.id).encode(),
         )
 
-    async def list_threads(self, *, sandbox: str | None = None, include_archived: bool = False) -> list[ThreadView]:
+    async def list_threads(
+        self, *, sandbox: str | None = None, sandbox_uid: str | None = None, include_archived: bool = False
+    ) -> list[ThreadView]:
         """Every Thread `list_page` would list, page by page."""
         threads: list[ThreadView] = []
         page_token = None
         while True:
             page = await self.list_page(
-                limit=MAX_PAGE, page_token=page_token, sandbox=sandbox, include_archived=include_archived
+                limit=MAX_PAGE,
+                page_token=page_token,
+                sandbox=sandbox,
+                sandbox_uid=sandbox_uid,
+                include_archived=include_archived,
             )
             threads.extend(page.threads)
             if page.next_page_token is None:
@@ -159,7 +169,7 @@ class ThreadStore:
             raise ThreadNotFoundError(thread.id)
         if summary.sandbox is None:
             raise HistorySandboxMissingError(thread.id)
-        return _view(thread, summary, summary.sandbox)
+        return _view(thread, summary, summary.sandbox, summary.sandbox_uid)
 
     async def archived_count(self) -> int:
         async with self._sessions() as session:
@@ -335,7 +345,7 @@ async def _set_thread(session: AsyncSession, thread_id: UUID, **values: object) 
     return thread
 
 
-def _view(thread: Thread, summary: FoldSummary, sandbox: str) -> ThreadView:
+def _view(thread: Thread, summary: FoldSummary, sandbox: str, sandbox_uid: str | None) -> ThreadView:
     last_turn_status = None if summary.last_turn_status is None else event_pb2.TurnStatus.Name(summary.last_turn_status)
     attachment = summary.feed.attached if summary.feed is not None else None
     end = summary.feed.end if summary.feed is not None else None
@@ -344,6 +354,7 @@ def _view(thread: Thread, summary: FoldSummary, sandbox: str) -> ThreadView:
     return ThreadView(
         id=thread.id,
         sandbox=sandbox,
+        sandbox_uid=sandbox_uid,
         harness=None if spec is None else Harness(runner_pb2.Harness.Name(spec.harness)),
         model=None if spec is None else spec.model,
         cwd=None if spec is None else spec.cwd,

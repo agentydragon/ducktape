@@ -642,6 +642,9 @@ async def thread_form(services: Services) -> ThreadForm:
 async def list_threads(
     store: Store,
     sandbox: Annotated[str | None, Query(description="Only threads of this sandbox.")] = None,
+    sandbox_uid: Annotated[
+        UUID | None, Query(description="Only threads of this Sandbox incarnation.")
+    ] = None,
     include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
     search: Annotated[
         str | None,
@@ -656,7 +659,12 @@ async def list_threads(
 ) -> ThreadPage:
     """Persisted threads, newest first; a thread outlives its sandbox."""
     return await store.list_page(
-        limit=limit, page_token=page_token, sandbox=sandbox, search=search, include_archived=include_archived
+        limit=limit,
+        page_token=page_token,
+        sandbox=sandbox,
+        sandbox_uid=None if sandbox_uid is None else str(sandbox_uid),
+        search=search,
+        include_archived=include_archived,
     )
 
 
@@ -717,23 +725,24 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
     thread = await store.get_thread(thread_id)
     if thread is None:
         raise ThreadNotFoundError(thread_id)
+    sandbox = None
     try:
         sandbox = sandbox_view(await inventory.get(thread.sandbox))
     except SandboxNotFoundError:
         # A deleted Sandbox has no running harness to keep visible.
         pass
     else:
-        if sandbox.pod is not None:
-            if not sandbox_is_ready(sandbox):
-                raise HTTPException(
-                    status.HTTP_409_CONFLICT,
-                    "cannot verify the runner while a Pod exists; wait for its status to become ready or for it to be removed",
-                )
-            snapshot = await bridge.runner_status(thread.sandbox)
-            if any(session.session_id == str(thread.id) and session.busy for session in snapshot.sessions):
-                raise HTTPException(
-                    status.HTTP_409_CONFLICT, "finish or interrupt active work before archiving this thread"
-                )
+        if thread.sandbox_uid is None or str(sandbox.uid) != str(thread.sandbox_uid):
+            sandbox = None
+    if sandbox is not None and sandbox.pod is not None:
+        if not sandbox_is_ready(sandbox):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "cannot verify the runner while a Pod exists; wait for its status to become ready or for it to be removed",
+            )
+        snapshot = await bridge.runner_status(thread.sandbox)
+        if any(session.session_id == str(thread.id) and session.busy for session in snapshot.sessions):
+            raise HTTPException(status.HTTP_409_CONFLICT, "finish or interrupt active work before archiving this thread")
     await store.archive(thread_id)
 
 
@@ -795,6 +804,8 @@ async def _submission_target(
     thread = await store.get_thread(thread_id)
     if thread is None:
         raise ThreadNotFoundError(thread_id)
+    if thread.sandbox_uid is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "the Thread's Sandbox identity is not recorded")
     await bridge.command_ready(thread_id)
     return thread
 
@@ -816,7 +827,11 @@ async def submit_input(
         response = await bridge.dispatcher.unary(
             bridge.dispatcher.stub.SubmitInput,
             session_dispatcher_pb2.SubmitInputRequest(
-                command_id=body.command_id, session_id=str(thread_id), sandbox=target.sandbox, text=body.text
+                command_id=body.command_id,
+                session_id=str(thread_id),
+                sandbox=target.sandbox,
+                sandbox_uid=str(target.sandbox_uid),
+                text=body.text,
             ),
         )
     except TimeoutError as error:
@@ -850,7 +865,11 @@ async def change_model(
         response = await bridge.dispatcher.unary(
             bridge.dispatcher.stub.ChangeModel,
             session_dispatcher_pb2.ChangeModelRequest(
-                command_id=body.command_id, session_id=str(thread_id), sandbox=target.sandbox, model=body.model
+                command_id=body.command_id,
+                session_id=str(thread_id),
+                sandbox=target.sandbox,
+                sandbox_uid=str(target.sandbox_uid),
+                model=body.model,
             ),
         )
     except TimeoutError as error:
@@ -877,7 +896,11 @@ async def change_reasoning_effort(
         response = await bridge.dispatcher.unary(
             bridge.dispatcher.stub.ChangeReasoningEffort,
             session_dispatcher_pb2.ChangeReasoningEffortRequest(
-                command_id=body.command_id, session_id=str(thread_id), sandbox=target.sandbox, effort=body.effort
+                command_id=body.command_id,
+                session_id=str(thread_id),
+                sandbox=target.sandbox,
+                sandbox_uid=str(target.sandbox_uid),
+                effort=body.effort,
             ),
         )
     except TimeoutError as error:
@@ -902,7 +925,11 @@ async def interrupt_turn(
         response = await bridge.dispatcher.unary(
             bridge.dispatcher.stub.InterruptTurn,
             session_dispatcher_pb2.InterruptTurnRequest(
-                command_id=body.command_id, session_id=str(thread_id), sandbox=target.sandbox, turn_id=body.turn_id
+                command_id=body.command_id,
+                session_id=str(thread_id),
+                sandbox=target.sandbox,
+                sandbox_uid=str(target.sandbox_uid),
+                turn_id=body.turn_id,
             ),
         )
     except TimeoutError as error:

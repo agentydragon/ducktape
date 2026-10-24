@@ -62,16 +62,20 @@ func (r *Reader) BatchGetSessionSummaries(ctx context.Context, request *historyp
 // FindSessions is every Session written by a Sandbox with the exact name, or whose name contains the text.
 func (r *Reader) FindSessions(ctx context.Context, request *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error) {
 	var match, name string
+	var argument any
 	switch sandbox := request.GetSandbox().(type) {
 	case *historypb.FindSessionsRequest_SandboxName:
-		match, name = "sandbox_name = $1", sandbox.SandboxName
+		match, name, argument = "sandbox_name = $1", sandbox.SandboxName, sandbox.SandboxName
 	case *historypb.FindSessionsRequest_SandboxNameContains:
 		match, name = `sandbox_name ILIKE '%' || $1 || '%'`, likeEscaper.Replace(sandbox.SandboxNameContains)
+		argument = name
+	case *historypb.FindSessionsRequest_SandboxUid:
+		match, name, argument = "sandbox_uid = $1", sandbox.SandboxUid, sandbox.SandboxUid
 	}
 	if name == "" {
-		return nil, invalid("a non-empty Sandbox name match is required")
+		return nil, invalid("a non-empty Sandbox name or UID match is required")
 	}
-	rows, err := r.DB.QueryContext(ctx, "SELECT id, sandbox_namespace, sandbox_name FROM session_history WHERE "+match+" ORDER BY id", name)
+	rows, err := r.DB.QueryContext(ctx, "SELECT id, sandbox_namespace, sandbox_name, sandbox_uid FROM session_history WHERE "+match+" ORDER BY id", argument)
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +84,12 @@ func (r *Reader) FindSessions(ctx context.Context, request *historypb.FindSessio
 	for rows.Next() {
 		var sessionID uuid.UUID
 		sandbox := &historypb.SandboxRef{}
-		if err := rows.Scan(&sessionID, &sandbox.Namespace, &sandbox.Name); err != nil {
+		var uid sql.NullString
+		if err := rows.Scan(&sessionID, &sandbox.Namespace, &sandbox.Name, &uid); err != nil {
 			return nil, err
+		}
+		if uid.Valid {
+			sandbox.Uid = &uid.String
 		}
 		response.Sessions = append(response.Sessions, &historypb.SessionSandbox{SessionId: sessionID.String(), Sandbox: sandbox})
 	}
@@ -94,7 +102,7 @@ func (r *Reader) summaries(ctx context.Context, sessionIDs []uuid.UUID) ([]*hist
 	for index, sessionID := range sessionIDs {
 		ids[index] = sessionID.String()
 	}
-	rows, err := r.DB.QueryContext(ctx, `SELECT h.id, h.last_cursor, h.sandbox_namespace, h.sandbox_name,
+	rows, err := r.DB.QueryContext(ctx, `SELECT h.id, h.last_cursor, h.sandbox_namespace, h.sandbox_name, h.sandbox_uid,
 			c.projection_epoch, c.through_cursor, s.first_event_at, s.last_event_at, s.last_model_activity_at,
 			s.idle_since, s.last_turn_status, s.attached, s."end"
 		FROM session_history h
@@ -111,12 +119,13 @@ func (r *Reader) summaries(ctx context.Context, sessionIDs []uuid.UUID) ([]*hist
 			sessionID                                           uuid.UUID
 			committed                                           uint64
 			namespace, name, epoch                              sql.Null[string]
+			sandboxUID                                          sql.Null[string]
 			folded                                              sql.Null[uint64]
 			firstEvent, lastEvent, lastModelActivity, idleSince sql.Null[time.Time]
 			turnStatus                                          sql.Null[eventpb.TurnStatus]
 			attached, end                                       []byte
 		)
-		if err := rows.Scan(&sessionID, &committed, &namespace, &name, &epoch, &folded, &firstEvent, &lastEvent,
+		if err := rows.Scan(&sessionID, &committed, &namespace, &name, &sandboxUID, &epoch, &folded, &firstEvent, &lastEvent,
 			&lastModelActivity, &idleSince, &turnStatus, &attached, &end); err != nil {
 			return nil, err
 		}
@@ -127,6 +136,9 @@ func (r *Reader) summaries(ctx context.Context, sessionIDs []uuid.UUID) ([]*hist
 		}
 		if namespace.Valid && name.Valid {
 			summary.Sandbox = &historypb.SandboxRef{Namespace: namespace.V, Name: name.V}
+			if sandboxUID.Valid {
+				summary.Sandbox.Uid = &sandboxUID.V
+			}
 		}
 		if epoch.Valid {
 			summary.ProjectionEpoch = &epoch.V

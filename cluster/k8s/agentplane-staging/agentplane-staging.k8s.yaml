@@ -2314,6 +2314,34 @@ subjects:
     name: history-service
     namespace: agentplane-staging
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: history-service-service-accounts
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: history-service-service-accounts
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: history-service-service-accounts
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: history-service
+    namespace: agentplane-staging
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -35,10 +35,12 @@ class SeededEventLogStore(EventLogStore):
         history: History | None,
         history_reader: HistoryServiceClient,
         summaries: Summaries,
+        sandbox_namespaces: dict[str, str] | None = None,
     ) -> None:
         self.engine = engine
         self.history = history
         self.reader = history_reader
+        self.sandbox_namespaces = {} if sandbox_namespaces is None else sandbox_namespaces
         super().__init__(engine, history_reader=history_reader, summaries=summaries)
 
     @override
@@ -53,7 +55,9 @@ class SeededEventLogStore(EventLogStore):
         """Open a fixture Session in History; a non-UUID `session_id` is a stable test alias."""
         public_id = fixture_session_id(sandbox, session_id)
         if self.history is not None:
-            await self.history.open(public_id, sandbox_name=sandbox)
+            await self.history.open(
+                public_id, sandbox_name=sandbox, sandbox_namespace=self.sandbox_namespaces.get(sandbox)
+            )
         return public_id
 
     async def seed(self, sandbox: str, session_id: str) -> UUID:

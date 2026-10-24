@@ -40,9 +40,12 @@ class KubernetesApiServer:
         )
         return response.status.token
 
-    async def workload_token(self, account: ServiceAccountRef, audiences: list[str]) -> str:
-        """A token for `account` bound to a Pod of its name; the namespace, ServiceAccount and Pod are created on first use."""
+    async def workload_token(
+        self, account: ServiceAccountRef, audiences: list[str], *, pod_name: str | None = None
+    ) -> str:
+        """A token for `account` bound to a Pod; the namespace, ServiceAccount and Pod are created on first use."""
         core = k8s_client.CoreV1Api(self.api)
+        pod_name = account.name if pod_name is None else pod_name
         await _created_or_present(
             core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=account.namespace)))
         )
@@ -55,7 +58,7 @@ class KubernetesApiServer:
             core.create_namespaced_pod(
                 account.namespace,
                 k8s_client.V1Pod(
-                    metadata=k8s_client.V1ObjectMeta(name=account.name),
+                    metadata=k8s_client.V1ObjectMeta(name=pod_name),
                     spec=k8s_client.V1PodSpec(
                         service_account_name=account.name,
                         containers=[k8s_client.V1Container(name="workload", image="registry.test/unused")],
@@ -63,7 +66,7 @@ class KubernetesApiServer:
                 ),
             )
         )
-        return await self.pod_token(account.namespace, account.name, audiences)
+        return await self.pod_token(account.namespace, pod_name, audiences)
 
 
 async def _created_or_present(creation: Awaitable[object]) -> None:

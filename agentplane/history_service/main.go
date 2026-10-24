@@ -133,16 +133,16 @@ func run(ctx context.Context, c config) error {
 	defer reader.Close()
 	// A separate listener, so the network fence can admit the egress proxy to the ingress and nothing else.
 	defer ingressListener.Close()
-	return serve(ctx, c, kube.AuthenticationV1().TokenReviews(), reader, ingressListener)
+	return serve(ctx, c, kube, reader, ingressListener)
 }
 
 // serve answers the read API on listener and the runner ingress on ingressListener until ctx ends.
-func serve(ctx context.Context, c config, reviews auth.TokenReviews, listener, ingressListener net.Listener) error {
-	readerAuth, err := auth.NewResolver(reviews, c.TokenAudience, readerNamespaces(c.ReaderAccounts))
+func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, ingressListener net.Listener) error {
+	readerAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.TokenAudience, readerNamespaces(c.ReaderAccounts))
 	if err != nil {
 		return err
 	}
-	writerAuth, err := auth.NewResolver(reviews, c.Ingress.TokenAudience, c.Ingress.WriterNamespaces)
+	writerAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.Ingress.TokenAudience, c.Ingress.WriterNamespaces)
 	if err != nil {
 		return err
 	}
@@ -185,8 +185,9 @@ func serve(ctx context.Context, c config, reviews auth.TokenReviews, listener, i
 	healthpb.RegisterHealthServer(server, healthServer)
 	ingressServer := grpc.NewServer(observability.GRPCServerOption())
 	runneringresspb.RegisterRunnerIngressServer(ingressServer, &ingress.Service{
-		Principals: writerAuth, History: storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
-		Timing: ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
+		Principals: writerAuth, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
+		History: storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
+		Timing:  ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
 	})
 	changes, unsubscribe, err := hub.Subscribe(storage.ChannelHistory)
 	if err != nil {

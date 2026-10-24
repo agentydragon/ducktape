@@ -339,7 +339,11 @@ async def review(
             reviewer,
             operator_actions=None if operator_connection == "disabled" else FederatedOperatorActions(federation, oidc),
             event_logs=SeededEventLogStore(
-                replica_engine, history=history, history_reader=history_client, summaries=replica_summaries
+                replica_engine,
+                history=history,
+                history_reader=history_client,
+                summaries=replica_summaries,
+                sandbox_namespaces=event_logs.sandbox_namespaces,
             ),
             content=ContentStore(replica_engine, history_reader=history_client),
             # Never started: nothing served here listens; the replica shares only the operator sessions.

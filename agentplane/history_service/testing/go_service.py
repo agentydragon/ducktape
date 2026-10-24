@@ -94,10 +94,10 @@ class GoHistoryService:
     process: GoProcess
     _writer_tokens: dict[ServiceAccountRef, str] = field(default_factory=dict, init=False)
 
-    async def writer_token(self, writer: ServiceAccountRef) -> str:
+    async def writer_token(self, writer: ServiceAccountRef, *, pod_name: str | None = None) -> str:
         """A token the ingress accepts as `writer`, issued once per writer: a push waits on nothing else of the API."""
         if writer not in self._writer_tokens:
-            self._writer_tokens[writer] = await self.api.workload_token(writer, [WRITER_AUDIENCE])
+            self._writer_tokens[writer] = await self.api.workload_token(writer, [WRITER_AUDIENCE], pod_name=pod_name)
         return self._writer_tokens[writer]
 
     @asynccontextmanager

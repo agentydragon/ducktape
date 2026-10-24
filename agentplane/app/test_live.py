@@ -8,6 +8,7 @@ import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -237,7 +238,9 @@ async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
     History Service cannot say which Sessions ran in it."""
     (token := tmp_path / "token").write_text("test-token")
     async with HistoryServiceClient(refused_address, token_file=token, request_timeout_s=0.5) as unreachable:
-        frame = await threads_frame(ThreadStore(engine, Summaries(unreachable)), "runner-1", include_archived=False)
+        frame = await threads_frame(
+            ThreadStore(engine, Summaries(unreachable)), str(uuid4()), include_archived=False
+        )
     assert frame == ThreadsUnavailable(code="UNAVAILABLE")
 
 

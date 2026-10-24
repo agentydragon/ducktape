@@ -36,7 +36,6 @@ from agentplane.app.testing.runner_gateway import (
     app_token_file,
     dispatcher_database_url,
     gateway_service,
-    history_writer_namespaces,
     runner,
     sandbox,
     sandbox_control,
@@ -62,7 +61,7 @@ from agentplane.history_service.testing.fixtures import (
     service_database_template,
     service_history_db_url,
 )
-from agentplane.history_service.testing.go_service import GoHistoryService
+from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.kubernetes_watch import Freshness
 from agentplane.notification_service import notifications_operator_pb2_grpc
@@ -80,6 +79,7 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.testing.runner_peer import Endpoint, runner_peer
 from agentplane.sandboxes.inventory import SandboxInventory
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
@@ -116,6 +116,12 @@ def register_attached_sessions() -> bool:
 
 
 @pytest.fixture
+def history_writer_namespaces(sandbox: SandboxCluster, namespace: SandboxNamespace) -> tuple[str, ...]:
+    """Allow real runners and scripted writers for this test's Sandbox fixtures."""
+    return (sandbox.namespace, namespace.name, WRITER.namespace)
+
+
+@pytest.fixture
 async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
     async with managed_async_engine(connect(db_url)) as engine:
         yield engine
@@ -149,12 +155,15 @@ def event_logs(
     history_client: HistoryServiceClient,
     summaries: Summaries,
     register_attached_sessions: bool,
+    namespace: SandboxNamespace,
+    sandbox: SandboxCluster,
 ) -> SeededEventLogStore:
     return SeededEventLogStore(
         engine,
         history=None if register_attached_sessions else history,
         history_reader=history_client,
         summaries=summaries,
+        sandbox_namespaces={sandbox.name: sandbox.namespace, "live": namespace.name},
     )
 
 
@@ -191,7 +200,13 @@ async def replica(
         summaries = Summaries(history_client)
         yield Replica(
             ThreadStore(engine, summaries),
-            SeededEventLogStore(engine, history=event_logs.history, history_reader=history_client, summaries=summaries),
+            SeededEventLogStore(
+                engine,
+                history=event_logs.history,
+                history_reader=history_client,
+                summaries=summaries,
+                sandbox_namespaces=event_logs.sandbox_namespaces,
+            ),
             OperatorSessionStore(engine),
         )
 

@@ -121,7 +121,7 @@ func bearing(t *testing.T, token string) context.Context {
 func (s testServer) record(t *testing.T) (uuid.UUID, uint64) {
 	t.Helper()
 	sessionID := uuid.New()
-	if _, err := s.history.BindWriter(t.Context(), sessionID, testWriter); err != nil {
+	if _, err := s.history.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 		t.Fatal(err)
 	}
 	var position uint64

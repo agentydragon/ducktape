@@ -16,6 +16,10 @@ class ThreadView(BaseModel):
 
     id: UUID
     sandbox: str
+    sandbox_uid: UUID | None = Field(
+        default=None,
+        description="The immutable Kubernetes Sandbox identity recorded by History; None for legacy or unknown history.",
+    )
     harness: Harness | None = Field(
         description="The runner protocol Harness enum member, from the last attached runner's spec; None "
         "until the Thread's fold summary has a runner attachment."

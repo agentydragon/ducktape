@@ -134,14 +134,14 @@ async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session
 
 
 async def _submit_input(
-    bridge: RunnerBridge, thread_id: UUID, command_id: str, text: str
+    bridge: RunnerBridge, thread_id: UUID, sandbox_uid: str, command_id: str, text: str
 ) -> session_dispatcher_pb2.Dispatch:
     response = cast(
         session_dispatcher_pb2.SubmitInputResponse,
         await bridge.dispatcher.unary(
             bridge.dispatcher.stub.SubmitInput,
             session_dispatcher_pb2.SubmitInputRequest(
-                command_id=command_id, session_id=str(thread_id), sandbox=SANDBOX, text=text
+                command_id=command_id, session_id=str(thread_id), sandbox=SANDBOX, sandbox_uid=sandbox_uid, text=text
             ),
         ),
     )
@@ -772,7 +772,12 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
 
 
 async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
-    bridge: RunnerBridge, event_logs: SeededEventLogStore, content: ContentStore, history: History, tmp_path: Path
+    sandbox: SandboxCluster,
+    bridge: RunnerBridge,
+    event_logs: SeededEventLogStore,
+    content: ContentStore,
+    history: History,
+    tmp_path: Path,
 ) -> None:
     thread = await event_logs.seed(SANDBOX, SESSION)
     await history.open(thread)
@@ -806,6 +811,7 @@ async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
                 command_id=command.command_id,
                 session_id=str(thread),
                 sandbox=SANDBOX,
+                sandbox_uid=sandbox.uid,
                 turn_id=command.interrupt_turn.turn_id,
             ),
         )
@@ -833,6 +839,7 @@ class Replicas:
     # What the survivor streams a thread from: its own pool and its own listener.
     survivor_event_logs: SeededEventLogStore
     survivor_changes: ChangeSignal
+    sandbox_uid: str
 
 
 @pytest.fixture
@@ -848,10 +855,15 @@ async def replicas(
     history: History,
     history_client: HistoryServiceClient,
     session_dispatcher: SessionDispatcherClient,
+    sandbox: SandboxCluster,
 ) -> AsyncIterator[Replicas]:
     replica_engine = connect(db_url)
     survivor_event_logs = SeededEventLogStore(
-        replica_engine, history=event_logs.history, history_reader=history_client, summaries=Summaries(history_client)
+        replica_engine,
+        history=event_logs.history,
+        history_reader=history_client,
+        summaries=Summaries(history_client),
+        sandbox_namespaces=event_logs.sandbox_namespaces,
     )
     owner = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, dispatcher=session_dispatcher)
     try:
@@ -876,7 +888,12 @@ async def replicas(
                 )
                 try:
                     yield Replicas(
-                        owner, owner_openings, survivor, survivor_event_logs, replica_updates.changes[Channel.THREADS]
+                        owner,
+                        owner_openings,
+                        survivor,
+                        survivor_event_logs,
+                        replica_updates.changes[Channel.THREADS],
+                        sandbox.uid,
                     )
                 finally:
                     owner_openings.cancel()
@@ -912,12 +929,12 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
     ) as frames:
         lines = frame_lines(frames)
         assert (await next_message(lines)).event == "attached"
-        await _submit_input(replicas.survivor, thread, "input-1", "FIRST_REPLICA_TURN")
+        await _submit_input(replicas.survivor, thread, replicas.sandbox_uid, "input-1", "FIRST_REPLICA_TURN")
         await model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
         async with asyncio.timeout(10):
             first = await read_until(lines, "turnCompleted")
 
-        await _submit_input(replicas.survivor, thread, "input-2", "AFTER_OWNER_EXIT")
+        await _submit_input(replicas.survivor, thread, replicas.sandbox_uid, "input-2", "AFTER_OWNER_EXIT")
         request = await model.request()
         replicas.owner_openings.cancel()
         await model.reply(request, Text("AFTER_OWNER_EXIT"))
@@ -966,6 +983,7 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
 
 
 async def test_open_and_inputs_reach_the_runner_while_history_lags(
+    sandbox: SandboxCluster,
     runner: RunningRunner,
     local_runners: RunnerDirectory,
     event_logs: SeededEventLogStore,
@@ -988,7 +1006,9 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
         opened_cursor = runner_session.last_cursor
         assert opened_cursor == 0
 
-        seed = await admitted(session_dispatcher, await _submit_input(bridge, thread_id, "seed-before-archive", "SEED"))
+        seed = await admitted(
+            session_dispatcher, await _submit_input(bridge, thread_id, sandbox.uid, "seed-before-archive", "SEED")
+        )
         await model.reply(await model.request(), Text("SEED_REPLY"))
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
@@ -1007,7 +1027,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
                 (summary,) = await local_runners.client(SANDBOX).list_sessions()
                 assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
         receipt = await admitted(
-            session_dispatcher, await _submit_input(bridge, thread_id, "after-archive-lag", "CONTINUE")
+            session_dispatcher, await _submit_input(bridge, thread_id, sandbox.uid, "after-archive-lag", "CONTINUE")
         )
         assert receipt.admission.cursor > opened_cursor
         await model.reply(await model.request(), Text("CONTINUED"))

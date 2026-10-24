@@ -10,11 +10,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from types import TracebackType
 from typing import Self
-from uuid import UUID
+from uuid import UUID, uuid4
 
+from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
+from agentplane import sandbox_resource
 from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity
@@ -40,12 +42,49 @@ class History:
         # stored feed state, and the service stores it only once the committed entries cover its cursor.
         self._attached: dict[UUID, runner_pb2.Attached] = {}
 
-    async def open(self, session_id: UUID, *, sandbox_name: str | None = None) -> None:
+    async def open(
+        self, session_id: UUID, *, sandbox_name: str | None = None, sandbox_namespace: str | None = None
+    ) -> None:
         """Bind the Session to the test writer unless a writer already pushed it."""
         if await self._writer(session_id) is not None:
             return
         writer = WRITER if sandbox_name is None else ServiceAccountRef(namespace=WRITER.namespace, name=sandbox_name)
+        if sandbox_name is not None and sandbox_namespace is not None:
+            writer = await self._associate_writer_with_sandbox(writer, sandbox_name, sandbox_namespace)
         await self.service.push(session_id, [], writer=writer)
+
+    async def _associate_writer_with_sandbox(
+        self, writer: ServiceAccountRef, sandbox_name: str, sandbox_namespace: str
+    ) -> ServiceAccountRef:
+        """Give scripted writers the live Sandbox identity when a fixture Sandbox exists."""
+        custom = k8s_client.CustomObjectsApi(self.service.api.api)
+        try:
+            sandbox = await custom.get_namespaced_custom_object(
+                sandbox_resource.GROUP,
+                sandbox_resource.VERSION,
+                sandbox_namespace,
+                sandbox_resource.SANDBOXES_PLURAL,
+                sandbox_name,
+            )
+        except k8s_client.ApiException as error:
+            if error.status != 404:
+                raise
+            return writer
+        writer = ServiceAccountRef(namespace=sandbox_namespace, name=sandbox_name)
+        await self.service.writer_token(writer, pod_name=f"history-writer-{uuid4().hex[:12]}")
+        core = k8s_client.CoreV1Api(self.service.api.api)
+        account = await core.read_namespaced_service_account(writer.name, writer.namespace)
+        account.metadata.owner_references = [
+            k8s_client.V1OwnerReference(
+                api_version=sandbox_resource.SANDBOX_API_VERSION,
+                kind=sandbox_resource.SANDBOX_KIND,
+                name=sandbox_name,
+                uid=sandbox["metadata"]["uid"],
+                controller=True,
+            )
+        ]
+        await core.replace_namespaced_service_account(writer.name, writer.namespace, account)
+        return writer
 
     async def record(
         self,

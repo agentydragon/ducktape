@@ -101,6 +101,8 @@ message SubmitInputRequest {
   string session_id = 2;
   string sandbox = 3;
   string text = 4;
+  // The expected Sandbox incarnation; requests cannot cross a same-name replacement.
+  string sandbox_uid = 5;
 }
 
 message SubmitInputResponse {
@@ -112,6 +114,7 @@ message ChangeModelRequest {
   string session_id = 2;
   string sandbox = 3;
   string model = 4;
+  string sandbox_uid = 5;
 }
 
 message ChangeModelResponse {
@@ -123,6 +126,7 @@ message ChangeReasoningEffortRequest {
   string session_id = 2;
   string sandbox = 3;
   string effort = 4;
+  string sandbox_uid = 5;
 }
 
 message ChangeReasoningEffortResponse {
@@ -134,6 +138,7 @@ message InterruptTurnRequest {
   string session_id = 2;
   string sandbox = 3;
   string turn_id = 4;
+  string sandbox_uid = 5;
 }
 
 message InterruptTurnResponse {

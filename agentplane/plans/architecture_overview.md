@@ -411,13 +411,12 @@ Held until one is chosen:
   `sandbox_service`, which outlives the Sandbox; four fold tables replicate through Electric to the
   browser. Operator: agent traces and big objects should not go into the control-plane etcd
   (2026-10-18 22:39).
-- **Which Sandbox wrote a Session.** History records the namespace and name its writer
-  ServiceAccount implies, and no UID ([History README](../history_service/README.md#which-sandbox-wrote-a-session)).
-  Proposed: a nullable `session_history.sandbox_uid`, checked on every push, and optionally keys by it
-  (`HISTORY_SESSION_KEY_DESIGN`). Operator: wants the per-push check if the UID is recorded (2026-10-17
-  04:36); "i'll want to think about it" (04:45).
+- **Which Sandbox wrote a Session.** History records the namespace, name, and controller-owned Sandbox UID
+  from the runner ServiceAccount; it checks that UID on every push and keeps the globally unique Session ID
+  key ([History README](../history_service/README.md#which-sandbox-wrote-a-session)).
 - **Thread** (the app's link and metadata for a Session). The app database, keyed by Session ID with
-  no Sandbox column. Proposed: add `sandbox_uid` only if History re-keys.
+  no Sandbox column. The app carries the recorded History UID in Thread views, filters Sandbox pages by
+  UID, and passes it to the Dispatcher for live actions.
 - **Commands and Session openings.** The Dispatcher database (`dispatch`, `session_opening`,
   `wake_attempt`, `sandbox_ownership`), every row carrying the Sandbox UID and ended when the Sandbox
   is gone. Proposed: `DISPATCHER_PERSISTENCE_MODEL_DESIGN` compares the durable queue with direct

@@ -403,7 +403,7 @@ func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
 		WakeCallers: map[auth.Account]struct{}{caller: {}}, Sandboxes: oneSandbox{},
 	}
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
-	request := &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Sandbox: "sandbox-api", Text: "hello"}
+	request := &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Text: "hello"}
 	first, err := service.SubmitInput(ctx, request)
 	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
 		t.Fatalf("first receipt: %+v %v", first, err)
@@ -412,13 +412,19 @@ func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
 	if err != nil || again.GetDispatch().GetCreatedAt().AsTime() != first.GetDispatch().GetCreatedAt().AsTime() {
 		t.Fatalf("retry: %+v %v", again, err)
 	}
-	_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Sandbox: "sandbox-api", Text: "different"})
+	_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Text: "different"})
 	if status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("conflict status: %v", err)
 	}
-	_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "api-b", SessionId: "api-session", Sandbox: "deleted"})
+	_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "api-b", SessionId: "api-session", Sandbox: "deleted", SandboxUid: sandboxUID})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("missing Sandbox status: %v", err)
+	}
+	_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
+		CommandId: "api-replacement", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: "old-sandbox-uid", Text: "must not cross",
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("replacement Sandbox status: %v", err)
 	}
 }
 
@@ -480,7 +486,7 @@ func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
 		Auth: resolver, Callers: callers, WakeCallers: callers, Sandboxes: blockedSandbox{},
 	}
 	_, err := blocked.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-		CommandId: "interrupt-empty-turn", SessionId: "api-session", Sandbox: "sandbox-api",
+		CommandId: "interrupt-empty-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID,
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("empty turn_id status = %v, want InvalidArgument", err)
@@ -492,7 +498,7 @@ func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
 		Auth: resolver, Callers: callers, WakeCallers: callers, Sandboxes: oneSandbox{}, Runner: runner,
 	}
 	_, err = service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-		CommandId: "interrupt-stale-turn", SessionId: "api-session", Sandbox: "sandbox-api", TurnId: "turn-stale",
+		CommandId: "interrupt-stale-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "turn-stale",
 	})
 	if status.Code(err) != codes.FailedPrecondition || status.Convert(err).Message() != "runner: turn is no longer current" {
 		t.Fatalf("runner rejection = %v, want propagated FailedPrecondition", err)

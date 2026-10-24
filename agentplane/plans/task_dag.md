@@ -303,10 +303,10 @@ flowchart TD
     THREAD_READ_POLICY_DESIGN[Held decision: remaining history read contract]
     HISTORY_SANDBOX_RECORD[Blocked: History's Sandbox record and history tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
-    HISTORY_SESSION_KEY_DESIGN[Decision: record the Sandbox UID in History, and key Sessions by it]
-    HISTORY_SANDBOX_UID[Blocked: History records and checks the Sandbox UID]
-    APP_THREAD_SANDBOX_UID[Blocked: the app stores each Thread's Sandbox UID]
-    HISTORY_SESSION_REKEY[Blocked: key History by Sandbox UID and Session ID]
+    HISTORY_SESSION_KEY_DESIGN[Decision: record the Sandbox UID and keep the global Session ID key]
+    HISTORY_SANDBOX_UID[Active: History records and checks the Sandbox UID]
+    APP_THREAD_SANDBOX_UID[Active: the app carries the recorded UID into filters and live actions]
+    HISTORY_SESSION_REKEY[Deferred: reconsider the History key only if global Session IDs change]
     THREAD_CREATE_POLICY[Decision: opening a session in an existing Sandbox]
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
@@ -316,11 +316,9 @@ flowchart TD
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN --> HISTORY_SANDBOX_UID
     HISTORY_SESSION_KEY_DESIGN -. read API shape .-> THREAD_READ_POLICY
-    HISTORY_SESSION_KEY_DESIGN -. only if re-keyed .-> APP_THREAD_SANDBOX_UID
+    HISTORY_SANDBOX_UID --> APP_THREAD_SANDBOX_UID
     HISTORY_SANDBOX_UID --> HISTORY_SANDBOX_RECORD
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
-    HISTORY_SANDBOX_UID --> APP_THREAD_SANDBOX_UID
-    APP_THREAD_SANDBOX_UID --> HISTORY_SESSION_REKEY
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
@@ -378,54 +376,31 @@ deterministic service tests plus a bounded deployed auth check. Cover a listing-
 from transcript/evidence reads and follows. Recheck stream authorization/freshness and stop Event
 emission on observed grant loss or stale required policy state.
 
-### `HISTORY_SESSION_KEY_DESIGN` — record the Sandbox UID in History, and key Sessions by it
+### `HISTORY_SESSION_KEY_DESIGN` — record the Sandbox UID and keep the global Session ID key
 
-**Decision; the operator is considering it (2026-10-17 UTC).** History records only the namespace and
-name of the Sandbox that wrote a Session, inferred from the writer ServiceAccount's name, and no UID
-([README](../history_service/README.md#which-sandbox-wrote-a-session)). Scoped reads and UID-pinned
-addressing need the UID. The Dispatcher (`Dispatch.sandbox_uid`), the Runner Gateway's connection index and
-Notifications (`DestinationRef.uid`) already identify a Sandbox by it, which makes it the canonical key.
-
-Recording works as follows. The controller owns each Sandbox's ServiceAccount, so its controller
-ownerReference carries the Sandbox UID. At bind History reads the writer ServiceAccount's ownerReference,
-after a namespaced Role granting `get` on `serviceaccounts` lands. A nullable `session_history.sandbox_uid`
-and a `SandboxRef.uid` hold it. A live Sandbox's rows fill when its runner reconnects. Rows of Sandboxes
-deleted before this stay NULL, which the read policy treats as an unknown association (operator-only). Every
-push resolves the pusher's Sandbox UID, cached by ServiceAccount UID (never reused), and is refused with
-`PERMISSION_DENIED` when it differs from the recorded one.
-
-Alternatives for the Session key:
-
-- **Keep the Session ID as the key.** The UID is a recorded, checked column. The Session ID stays unique
-  everywhere, and nothing else changes.
-- **Key by `(sandbox_uid, session_id)`** (the operator's proposal, for consistency with the Dispatcher
-  and runner address). A push can then never reach another Sandbox's rows, the first-writer binding
-  only has to refuse a ServiceAccount recreated in place, and a scoped read is a lookup inside one Sandbox's keys.
-  It touches 11 of the 12 History tables (`thread_entity` alone has five indexes), the four Electric-synced
-  tables and the app's shape predicates, 7 of the 9 RPCs and their callers (the app and Notifications), and
-  the app's `Thread` row. It reverses the 2026-10-10 decision to read by public Session ID, and
-  `HARNESS_IDENTITY_DESIGN`'s recommendation that public IDs stay globally unique becomes unique per
-  Sandbox UID. Rows of deleted Sandboxes cannot take a NOT NULL key, so they are dropped in a separate drop
-  PR or stay outside the key.
-
-**Recommendation:** record and check the UID first, since both alternatives need it. Decide the re-key
-once recorded values exist, because it is the largest change and nothing else depends on it.
-**Questions for review:** key by `(sandbox_uid, session_id)` or keep the Session ID as the key? If
-re-keyed, drop the rows whose Sandbox is already deleted?
+**Decision (operator, 2026-10-24):** History records the Sandbox UID while keeping the globally unique
+Session UUID as the History and app key. The UID is an immutable association and a check on every
+writer reconnect; it does not re-key Session rows. The Dispatcher (`Dispatch.sandbox_uid`), Runner
+Gateway connection index and Notifications (`DestinationRef.uid`) already identify a Sandbox by UID.
+History obtains it from the controller ownerReference on the writer ServiceAccount, with namespaced
+`get serviceaccounts` permission. A nullable `session_history.sandbox_uid` and optional `SandboxRef.uid`
+hold the association. Existing rows can fill a NULL UID when the same writer reconnects; History
+refuses a different UID. The app carries the UID from History summaries into exact Sandbox filtering
+and UID-fenced live actions without adding it to the Thread table.
 
 ### `HISTORY_SANDBOX_UID` — History records and checks the Sandbox UID
 
-**Blocked on `HISTORY_SESSION_KEY_DESIGN`; it lands in the Go History Service, and is the first History
-change to dispatch under either alternative.** In order:
-the namespaced `get serviceaccounts` Role for the History Service lands first, then the code. Add the
-nullable `sandbox_uid` and `SandboxRef.uid`; resolve and cache the pusher's Sandbox UID at bind, fill
-a NULL value from a matching writer and compare a recorded one, refusing a mismatch. A ServiceAccount no
-Sandbox owns records no UID. If the ServiceAccount read fails, the push is `UNAVAILABLE` and the
-runner retries from its journal. Test a first bind, a reconnect that fills a NULL, a same-name replacement
-refused, a failed read, and `FindSessions` and summaries reporting the UID. Update the
-[History README](../history_service/README.md#which-sandbox-wrote-a-session), which says UIDs are not
-recorded. A ServiceAccount recreated in place under the same Sandbox keeps failing as a different writer;
-letting the Sandbox UID take over as the pin is a separate decision.
+**Active; depends on the chosen History key above.** Add the nullable `sandbox_uid` and `SandboxRef.uid`;
+resolve and cache the pusher's Sandbox UID at bind, fill a NULL value from a matching writer and compare
+a recorded one, refusing a mismatch. A ServiceAccount with no Sandbox owner records no UID. If the
+ServiceAccount read fails, the push is `UNAVAILABLE` and the runner retries from its journal. Test a first
+bind, a reconnect that fills a NULL, a same-name replacement refused, a failed read, and `FindSessions`
+and summaries reporting the UID. A ServiceAccount recreated in place under the same Sandbox keeps failing
+as a different writer; letting the Sandbox UID take over as the pin is a separate decision.
+
+**TODO:** consider whether the Sandbox Controller can expose a cleaner authoritative Sandbox UID
+association to History than resolving the writer ServiceAccount's ownerReference. Keep the ownerReference
+as the current implementation until that design is reviewed.
 
 ### `HISTORY_SANDBOX_RECORD` — History's Sandbox record and history tags
 
@@ -441,21 +416,16 @@ restarted watch catching up.
 
 ### `APP_THREAD_SANDBOX_UID` — the app stores each Thread's Sandbox UID
 
-**Blocked on `HISTORY_SANDBOX_UID`; needed only if `HISTORY_SESSION_KEY_DESIGN` re-keys.** The app's `Thread`
-row is keyed by the Session ID alone and holds no Sandbox. Add `sandbox_uid`, set it when the app opens the
-Thread in a Sandbox it chose, and fill existing Threads from the History summary. Threads whose Sandbox was
-deleted before recording stay without one. The Thread key and URLs stay the Session ID, since the app
-mints those IDs.
+**Active; depends on `HISTORY_SANDBOX_UID`.** Keep the app's `Thread` row keyed by the Session ID and
+carry `sandbox_uid` from History summaries in Thread views. Sandbox-page filters and live actions use
+that UID; Dispatcher checks it against the current Sandbox before enqueueing or interrupting. Legacy
+Threads without a recorded UID remain visible in name searches but cannot be routed to a live Sandbox.
 
-### `HISTORY_SESSION_REKEY` — key History by Sandbox UID and Session ID
+### `HISTORY_SESSION_REKEY` — reconsider the History key only if global Session IDs change
 
-**Blocked on `APP_THREAD_SANDBOX_UID` and the review above.** One atomic change, with no compatibility
-fields and no staged rollout (deployed state is disposable): `sandbox_uid` joins the key, foreign keys
-and indexes of every History table that names a Session; the Electric-synced rows carry it and the app's
-fixed predicates filter on it; each RPC that names a Session takes the Sandbox UID; `session_opened`
-announces the pair; the app and Notifications pass the UID they hold. The ingress looks the pusher's
-Sandbox UID up as part of the key. Electric shape handles reset, so verify a browser reconnects. Rows of
-deleted Sandboxes follow the review's answer.
+**Deferred.** Keep the globally unique Session UUID key selected in `HISTORY_SESSION_KEY_DESIGN`.
+Reconsider re-keying only if that global identity contract changes; UID recording and routing do not
+depend on it.
 
 ### `THREAD_CREATE_POLICY` — authorize session creation separately
 

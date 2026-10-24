@@ -36,6 +36,8 @@ var (
 	ErrNotFound = errors.New("session history not found")
 	// ErrWriterMismatch means the Session is bound to another writer.
 	ErrWriterMismatch = errors.New("session is bound to another writer")
+	// ErrSandboxMismatch means the Session is pinned to another Sandbox incarnation.
+	ErrSandboxMismatch = errors.New("session is bound to another sandbox")
 	// ErrInvalidArgument means the request names a page the store cannot serve.
 	ErrInvalidArgument = errors.New("invalid session history request")
 )
@@ -116,15 +118,16 @@ type historyRow struct {
 	lastCursor uint64
 	feedState  []byte
 	writer     *Writer
+	sandboxUID *string
 }
 
 // lockRow reads and locks the Session's history row.
 func lockRow(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) (*historyRow, error) {
 	var row historyRow
 	var namespace, name, uid *string
-	err := tx.QueryRowContext(ctx, `SELECT source_id, last_cursor, feed_state, writer_namespace, writer_name, writer_uid
+	err := tx.QueryRowContext(ctx, `SELECT source_id, last_cursor, feed_state, writer_namespace, writer_name, writer_uid, sandbox_uid
 		FROM session_history WHERE id = $1 FOR UPDATE`, sessionID).
-		Scan(&row.sourceID, &row.lastCursor, &row.feedState, &namespace, &name, &uid)
+		Scan(&row.sourceID, &row.lastCursor, &row.feedState, &namespace, &name, &uid, &row.sandboxUID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, sessionID)
 	}
@@ -152,10 +155,15 @@ func (row *historyRow) checkpoint() (Checkpoint, error) {
 
 // BindWriter binds the Session to writer if it has no writer yet, creating its row; any other writer
 // is refused. Of two concurrent first writers, the row lock lets one bind and refuses the other.
-func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writer) (Checkpoint, error) {
+func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writer, sandboxUID string) (Checkpoint, error) {
 	var checkpoint Checkpoint
 	err := transaction(ctx, s.db, nil, func(tx *sql.Tx) error {
 		created := false
+		changed := false
+		var sandboxUIDValue any
+		if sandboxUID != "" {
+			sandboxUIDValue = sandboxUID
+		}
 		var exists bool
 		if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM session_history WHERE id = $1)", sessionID).Scan(&exists); err != nil {
 			return err
@@ -166,9 +174,9 @@ func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 				return err
 			}
 			result, err := tx.ExecContext(ctx, `INSERT INTO session_history
-				(id, writer_namespace, writer_name, writer_uid, sandbox_namespace, sandbox_name, source_id, last_cursor)
-				VALUES ($1, $2, $3, $4, $2, $3, NULL, 0) ON CONFLICT DO NOTHING`,
-				sessionID, writer.Namespace, writer.Name, writer.UID)
+				(id, writer_namespace, writer_name, writer_uid, sandbox_namespace, sandbox_name, sandbox_uid, source_id, last_cursor)
+				VALUES ($1, $2, $3, $4, $2, $3, $5, NULL, 0) ON CONFLICT DO NOTHING`,
+				sessionID, writer.Namespace, writer.Name, writer.UID, sandboxUIDValue)
 			if err != nil {
 				return err
 			}
@@ -185,12 +193,26 @@ func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 		switch {
 		case row.writer == nil:
 			if _, err := tx.ExecContext(ctx, `UPDATE session_history SET writer_namespace = $2, writer_name = $3, writer_uid = $4,
-				sandbox_namespace = COALESCE(sandbox_namespace, $2), sandbox_name = COALESCE(sandbox_name, $3)
-				WHERE id = $1`, sessionID, writer.Namespace, writer.Name, writer.UID); err != nil {
+				sandbox_namespace = COALESCE(sandbox_namespace, $2), sandbox_name = COALESCE(sandbox_name, $3), sandbox_uid = $5
+				WHERE id = $1`, sessionID, writer.Namespace, writer.Name, writer.UID, sandboxUIDValue); err != nil {
 				return err
 			}
+			row.sandboxUID = optionalString(sandboxUID)
+			changed = true
 		case *row.writer != writer:
 			return fmt.Errorf("%w: %s", ErrWriterMismatch, sessionID)
+		}
+		if row.writer != nil && *row.writer == writer {
+			switch {
+			case row.sandboxUID == nil && sandboxUID != "":
+				if _, err := tx.ExecContext(ctx, `UPDATE session_history SET sandbox_uid = $2 WHERE id = $1`, sessionID, sandboxUID); err != nil {
+					return err
+				}
+				row.sandboxUID = optionalString(sandboxUID)
+				changed = true
+			case row.sandboxUID != nil && *row.sandboxUID != sandboxUID:
+				return fmt.Errorf("%w: %s", ErrSandboxMismatch, sessionID)
+			}
 		}
 		if created {
 			if err := notify(ctx, tx, ChannelHistory); err != nil {
@@ -199,11 +221,22 @@ func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 			if err := notify(ctx, tx, ChannelSessions); err != nil {
 				return err
 			}
+		} else if changed {
+			if err := notify(ctx, tx, ChannelHistory); err != nil {
+				return err
+			}
 		}
 		checkpoint, err = row.checkpoint()
 		return err
 	})
 	return checkpoint, err
+}
+
+func optionalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 // OpenedSessions returns up to limit Sessions recorded after afterPosition, in recording order.

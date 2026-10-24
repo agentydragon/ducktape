@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
+from sqlalchemy import text
 
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
@@ -72,6 +73,29 @@ async def test_thread_identity_comes_from_history(
     assert view.sandbox == "history-owned"
     assert [item.id for item in await store.list_threads(sandbox="history-owned")] == [thread]
     assert [item.id for item in (await store.list_page(limit=20, search="HISTORY-OWNED")).threads] == [thread]
+
+
+async def test_sandbox_uid_filter_separates_same_name_replacements(
+    store: ThreadStore, event_logs: SeededEventLogStore, history: History
+) -> None:
+    first = await seed_thread(event_logs, history, sandbox="same-name", session="first-incarnation", cursor=1)
+    replacement = await seed_thread(
+        event_logs, history, sandbox="same-name", session="replacement-incarnation", cursor=1
+    )
+    first_uid, replacement_uid = str(uuid4()), str(uuid4())
+    async with history.engine.begin() as connection:
+        await connection.execute(
+            text("UPDATE session_history SET sandbox_uid = :uid WHERE id = :id"),
+            [{"uid": first_uid, "id": first}, {"uid": replacement_uid, "id": replacement}],
+        )
+    first_view = await store.get_thread(first)
+    replacement_view = await store.get_thread(replacement)
+    assert first_view is not None
+    assert str(first_view.sandbox_uid) == first_uid
+    assert replacement_view is not None
+    assert str(replacement_view.sandbox_uid) == replacement_uid
+    assert [item.id for item in await store.list_threads(sandbox_uid=first_uid)] == [first]
+    assert [item.id for item in await store.list_threads(sandbox_uid=replacement_uid)] == [replacement]
 
 
 async def test_pending_history_identity_is_hidden_without_losing_pagination_or_editing_metadata(

@@ -115,7 +115,21 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
     uid = created["metadata"]["uid"]
     # The Sandbox Controller runs a Sandbox's Pods as the ServiceAccount of its name.
     await core.create_namespaced_service_account(
-        namespace, k8s_client.V1ServiceAccount(metadata=k8s_client.V1ObjectMeta(name=name))
+        namespace,
+        k8s_client.V1ServiceAccount(
+            metadata=k8s_client.V1ObjectMeta(
+                name=name,
+                owner_references=[
+                    k8s_client.V1OwnerReference(
+                        api_version=sandbox_resource.SANDBOX_API_VERSION,
+                        kind=sandbox_resource.SANDBOX_KIND,
+                        name=name,
+                        uid=uid,
+                        controller=True,
+                    )
+                ],
+            )
+        ),
     )
     pod = await core.create_namespaced_pod(
         namespace,

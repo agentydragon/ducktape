@@ -4,7 +4,10 @@ package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 
 go_library(
     name = "ingress",
-    srcs = ["ingress.go"],
+    srcs = [
+        "ingress.go",
+        "sandbox_uid.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/ingress",
     deps = [
         "//agentplane/history_service:history_service_go_proto",
@@ -12,8 +15,11 @@ go_library(
         "//agentplane/history_service/storage",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
+        "//agentplane/sandboxes/api",
         "//agentplane/workload_auth/go/auth",
         "@com_github_google_uuid//:uuid",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_client_go//kubernetes",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
@@ -28,6 +34,7 @@ go_test(
         "bounds_test.go",
         "ingress_test.go",
         "integration_testmain_test.go",
+        "sandbox_uid_test.go",
     ],
     embed = [":ingress"],
     tags = ["requires_docker"],
@@ -43,6 +50,9 @@ go_test(
         "//agentplane/workload_auth/go/auth",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_client_go//kubernetes/fake",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",

@@ -201,7 +201,7 @@ func (s *Service) sandbox(ctx context.Context, name string) (SandboxSnapshot, er
 	return current, nil
 }
 
-func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox string, command *commandpb.Command) (dispatch *dispatcherpb.Dispatch, resultErr error) {
+func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox, sandboxUID string, command *commandpb.Command) (dispatch *dispatcherpb.Dispatch, resultErr error) {
 	ctx, span := observability.Start(
 		ctx, "Dispatcher Enqueue",
 		trace.WithAttributes(attribute.String("session.id", sessionID), attribute.String("sandbox.name", sandbox)),
@@ -211,12 +211,15 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox str
 	if err != nil {
 		return nil, err
 	}
-	if err := required(commandID, sessionID, sandbox); err != nil {
+	if err := required(commandID, sessionID, sandbox, sandboxUID); err != nil {
 		return nil, err
 	}
 	current, err := s.sandbox(ctx, sandbox)
 	if err != nil {
 		return nil, err
+	}
+	if current.UID != sandboxUID {
+		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
 	}
 	row, err := s.Store.Enqueue(ctx, sessionID, sandbox, current.UID, command, wake)
 	if err != nil {
@@ -226,7 +229,7 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox str
 }
 
 func (s *Service) SubmitInput(ctx context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
-	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetSandbox(),
+	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(),
 		&commandpb.Command{CommandId: request.GetCommandId(), Operation: &commandpb.Command_SubmitInput{
 			SubmitInput: &commandpb.SubmitInput{Text: request.GetText()},
 		}})
@@ -237,7 +240,7 @@ func (s *Service) SubmitInput(ctx context.Context, request *dispatcherpb.SubmitI
 }
 
 func (s *Service) ChangeModel(ctx context.Context, request *dispatcherpb.ChangeModelRequest) (*dispatcherpb.ChangeModelResponse, error) {
-	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetSandbox(),
+	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(),
 		&commandpb.Command{CommandId: request.GetCommandId(), Operation: &commandpb.Command_ChangeModel{
 			ChangeModel: &commandpb.ChangeModel{Model: request.GetModel()},
 		}})
@@ -248,7 +251,7 @@ func (s *Service) ChangeModel(ctx context.Context, request *dispatcherpb.ChangeM
 }
 
 func (s *Service) ChangeReasoningEffort(ctx context.Context, request *dispatcherpb.ChangeReasoningEffortRequest) (*dispatcherpb.ChangeReasoningEffortResponse, error) {
-	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetSandbox(),
+	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(),
 		&commandpb.Command{CommandId: request.GetCommandId(), Operation: &commandpb.Command_ChangeReasoningEffort{
 			ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: request.GetEffort()},
 		}})
@@ -390,12 +393,15 @@ func (s *Service) InterruptTurn(ctx context.Context, request *dispatcherpb.Inter
 	if _, err := s.caller(ctx); err != nil {
 		return nil, err
 	}
-	if err := required(request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetTurnId()); err != nil {
+	if err := required(request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(), request.GetTurnId()); err != nil {
 		return nil, err
 	}
 	current, err := s.sandbox(ctx, request.GetSandbox())
 	if err != nil {
 		return nil, err
+	}
+	if current.UID != request.GetSandboxUid() {
+		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
 	}
 	if current.Blocker != "" {
 		return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP, Reason: &current.Blocker}, nil

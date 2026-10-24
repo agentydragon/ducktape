@@ -332,10 +332,12 @@ async def action_policy_frame(
 
 
 async def threads_frame(
-    store: ThreadStore, sandbox: str, *, include_archived: bool
+    store: ThreadStore, sandbox_uid: str | None, *, include_archived: bool
 ) -> list[ThreadView] | ThreadsUnavailable:
+    if sandbox_uid is None:
+        return []
     try:
-        return await store.list_threads(sandbox=sandbox, include_archived=include_archived)
+        return await store.list_threads(sandbox_uid=sandbox_uid, include_archived=include_archived)
     except ServiceError as error:
         return ThreadsUnavailable(code=error.code.name)
 
@@ -510,7 +512,9 @@ async def live_sandbox(
             sandbox=sandbox,
             bindings=[] if sandbox is None else index.bindings_for(sandbox.service_account),
             action_policy=None if sandbox is None else await policy.for_subject(sandbox.service_account),
-            threads=await threads_frame(store, name, include_archived=include_archived),
+            threads=await threads_frame(
+                store, str(sandbox.uid) if sandbox is not None else None, include_archived=include_archived
+            ),
             updates_connected=updates.listener.connected,
             watch=_health(index),
         )

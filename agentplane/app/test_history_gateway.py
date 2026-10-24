@@ -82,6 +82,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
                         command_id=first.command_id,
                         session_id=str(thread),
                         sandbox=SANDBOX,
+                        sandbox_uid=sandbox.uid,
                         text=first.submit_input.text,
                     ),
                 )
@@ -128,6 +129,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
                         command_id=second.command_id,
                         session_id=str(thread),
                         sandbox=SANDBOX,
+                        sandbox_uid=sandbox.uid,
                         text=second.submit_input.text,
                     ),
                 )
@@ -236,7 +238,11 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
             await session_dispatcher.unary(
                 session_dispatcher.stub.SubmitInput,
                 session_dispatcher_pb2.SubmitInputRequest(
-                    session_id=session_id, command_id="wake-on-input", sandbox=SANDBOX, text="again"
+                    session_id=session_id,
+                    command_id="wake-on-input",
+                    sandbox=SANDBOX,
+                    sandbox_uid=sandbox.uid,
+                    text="again",
                 ),
             )
         ).dispatch,
