@@ -143,7 +143,9 @@ CHI/Flux holds and the client Service's peer-1-only routing remain until native
 data catch-up acceptance. Anki's Flux reconciliation observed
 `64b7c6ea` and is Ready.
 
-The two Bound claims total 2200Gi against 1855.015625GiB of thin-data capacity.
+The initial two Bound claims totaled 2200Gi. Adding two 2Gi Valkey replicas
+during the `102453` evacuation brought the total to 2204Gi against
+1855.015625GiB of thin-data capacity.
 [#11786](https://github.com/agentydragon/ducktape/issues/11786) tracks this live
 overcommit and its placement-based exit; low current allocation does not close it.
 
@@ -224,7 +226,7 @@ are Ready on `103656`; the old source PVCs/PVs remain Bound with `Retain`. Their
 Flux Kustomizations have resumed and observed the merged configuration; both
 remain Ready on their Piraeus claims.
 
-## 102453 Postgres evacuation — 2026-10-24
+## 102453 evacuation — 2026-10-24
 
 All ten primaries were switched serially to their caught-up Piraeus SSD peers
 before cordoning `ovh-ns102453` at `02:57 UTC`. CNPG can automatically switch
@@ -238,12 +240,34 @@ volumes. No CNPG Pods remain on the source, no per-cluster reconciliation holds
 remain, and all 19 cluster-wide CNPG clusters are Ready. Source PV metadata and
 files remain retained.
 
-The node stays cordoned. This Postgres handoff does not complete its evacuation:
-ClickHouse data catch-up, Seaweed copy repair, the remaining Valkey/monitoring
-members and authored/historical data still need their own acceptance before a
+The node stays cordoned. ClickHouse data catch-up, Seaweed copy repair, the
+remaining monitoring members and authored/historical data still need acceptance before a
 physical reset. Private per-cluster proofs are in
 `/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/`, including
 `root-final-independent-acceptance.json`.
+
+OCI-cache and Langfuse Valkey were then evacuated serially: coordinated native
+failover to each existing Piraeus member on `103656`, followed by rebuilding
+ordinal 1 on a retained 2Gi `piraeus-hdd-local` claim on `103711`. Independent
+acceptance at `04:03`/`04:06 UTC` verified `2/2`, replay through an observed master
+offset, matching replication IDs, healthy AOF, correct role-specific Service
+endpoints and normal Flux/operator ownership with no holds or temporary selector.
+Both original ordinal-0 Pod UIDs survived; old source PVs/files remain retained.
+No Valkey Pod remains on `102453`. The shared immutable claim templates still
+select local-path; [#4717](https://github.com/agentydragon/ducktape/issues/4717)
+tracks their default/ownership handoff before retirement.
+OCI's initial native promotion preceded its Service-label correction by about
+three minutes. Langfuse's promotion and routing changes were batched together;
+future switches must use that sequence. Private proofs are under
+`valkey-evacuation/root-{oci,langfuse}-final-accepted.json`.
+
+The user-approved inactive Sandbox `agentplane-staging/public-coder-ducktape-2`
+was removed through its normal teardown. Both owned workspace/state PVCs and PVs
+are gone; a direct Talos filesystem listing confirmed both backing directories
+absent at `03:45 UTC`. Active `public-coder-ducktape-1` kept its Pod UID and
+remained Ready. Other parked Coder state, recordings and historical archives
+remain outside this deletion scope. Private proof:
+`inactive-coder-delete-accepted.json` under the artifact root above.
 
 ## Evidence map
 

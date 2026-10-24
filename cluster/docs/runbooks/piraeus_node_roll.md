@@ -268,10 +268,10 @@ pool use and headroom are monitored. Logical capacity is not a physical
 reservation, and this policy does not promise that all PVCs can be filled at
 once. Treat any such overcommit as temporary capacity debt to resolve through
 workload placement and balancing; do not assume extra disks or indefinite
-overcommit. On 2026-10-24, `ovh-ns103711` has two Bound `piraeus-hdd-local`
-claims: 1700Gi SeaweedFS and 500Gi ClickHouse, totaling 2200Gi against a measured
-1855.015625GiB thin-data pool. The 344.984375GiB excess (18.60%), before reserve
-and additional volume overhead, is tracked in
+overcommit. On 2026-10-24, `ovh-ns103711` has four Bound `piraeus-hdd-local`
+claims: 1700Gi SeaweedFS, 500Gi ClickHouse and two 2Gi Valkey replicas, totaling
+2204Gi against a measured 1855.015625GiB thin-data pool. The 348.984375GiB excess
+(18.81%), before reserve and additional volume overhead, is tracked in
 [#11786](https://github.com/agentydragon/ducktape/issues/11786).
 
 Enforce the planned per-PVC sizes. Monitor actual thin-data and thin-metadata
@@ -562,6 +562,16 @@ operator is paused. After reconciliation resumes, accept the actual primary,
 replica link/offsets, AOF state and Service; the operator may select ordinal zero
 again. A copied Flux hold on the Pod template triggers a rollout on resume or
 cleanup. Include that rollout in acceptance and remove copied holds too.
+
+While the operator is paused, native failover does not update `redis-role` Pod
+labels. Batch native role convergence, UID/resourceVersion-guarded role-label
+updates and Service acceptance in one execution; do not pause for review between
+promotion and routing correction. Change the demoted member's label to `slave`
+before labelling the promoted member `master`, then verify both role-specific
+EndpointSlices. Pin the master Service to the populated member before starting
+an empty replacement. After seeding, verify both native roles and labels before
+removing that pin and resuming the operator, so a primary change by the operator
+cannot strand the Service on a fixed Pod name.
 
 #### Remaining services
 
