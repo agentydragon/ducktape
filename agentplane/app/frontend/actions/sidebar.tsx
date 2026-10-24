@@ -94,7 +94,9 @@ function PendingActionList({
                 onClick={() => setExpandedId(expanded ? null : request.id)}
               >
                 {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
-                <div className={`agentplane-actions-sidebar-request-label${expanded ? " is-expanded" : ""}`}>
+                <div
+                  className={`agentplane-actions-sidebar-request-label${expanded ? " is-expanded" : ""}${decision === null ? "" : " offers-card-decision"}`}
+                >
                   <div className="agentplane-actions-sidebar-name">
                     {actionLabel === undefined ? `${request.action.group} / ${request.action.name}` : actionLabel}
                   </div>

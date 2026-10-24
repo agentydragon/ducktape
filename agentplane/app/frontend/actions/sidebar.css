@@ -153,7 +153,9 @@
   font-size: inherit;
 }
 
-.agentplane-actions-sidebar-request-label.is-expanded .agentplane-actions-sidebar-name {
+/* Card decision buttons promise the card shows the whole call, so their label is never cut off. */
+.agentplane-actions-sidebar-request-label.is-expanded .agentplane-actions-sidebar-name,
+.agentplane-actions-sidebar-request-label.offers-card-decision .agentplane-actions-sidebar-name {
   display: block;
   overflow: visible;
   -webkit-line-clamp: unset;
