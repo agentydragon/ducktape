@@ -17,6 +17,11 @@
     ./rugged-opencode.nix
   ];
 
+  # Try moving the wide status-indicator group into GNOME Shell's center box.
+  programs.gnome-shell.extensions = [
+    { package = ducktapePackages.gnome-shell-center-status-area; }
+  ];
+
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/rugged-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/rugged-github.sops.key;
 

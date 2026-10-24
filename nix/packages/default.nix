@@ -295,6 +295,8 @@ let
     networkMonitor = ducktape-network-monitor;
   };
 
+  gnome-shell-center-status-area = pkgs.callPackage ./gnome-shell-center-status-area.nix { };
+
   mkBinaryArtifact =
     {
       pname,
@@ -344,6 +346,7 @@ rec {
   inherit ducktape-claude-api;
   inherit aiquota;
   inherit plaid-spend-desktop;
+  inherit gnome-shell-center-status-area;
 
   bbr = mkWheel {
     pname = "bbr";

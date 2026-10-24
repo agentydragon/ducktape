@@ -1,0 +1,6 @@
+{
+  "uuid": "center-status-area@allegedly.works",
+  "name": "Centered Status Area",
+  "description": "Move GNOME Shell status indicators into the center panel box.",
+  "shell-version": ["50"]
+}
