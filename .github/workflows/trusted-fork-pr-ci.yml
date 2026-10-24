@@ -67,6 +67,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      statuses: write
     with:
       # PRs authored by the agent identity or repository owner already own the only
       # injected capability. All other authors wait for a fork-ci-review review.

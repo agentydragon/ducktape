@@ -36,6 +36,10 @@ bb download <digest>/<size> [--type=Action|Command]
 # Show invocation details (shows child invocation IDs for workflows)
 bbapi invocation <invocation-id>
 
+# Follow BuildBuddy's live event log while an invocation is running
+bbapi invocation watch <invocation-id>
+bbapi invocation watch <invocation-id> --fail-on-test-failure
+
 # List recent invocations (auto-detects repo from git remote)
 bbapi invocation list [--repo URL] [--count N]
 
@@ -141,6 +145,23 @@ bb view <invocation-id>
 bbapi target log <invocation-id> <target-substring>
 #    Example: bbapi target log 870a5be1-c296-4792-8c8a-77def20b2dcc test_handlers
 ```
+
+### Watching a running GitHub Actions Bazel job
+
+The `Bazel CI` workflow derives its test invocation ID from the Actions run ID
+and attempt before starting Bazel. Its `BuildBuddy / Bazel tests (live)` commit
+status links to that invocation while the native `Test & Build` job is still
+running. Open that status and stream the same log locally with:
+
+```bash
+bbapi invocation watch <invocation-id>
+```
+
+To stop as soon as BuildBuddy indexes the first non-passing `TestResult`, use
+`--fail-on-test-failure`. The command returns nonzero with the failing target
+label; the normal workflow continues collecting its remaining test results.
+The status is informational and settles to the final invocation result; the
+native `Test & Build` job remains authoritative.
 
 ### Workflow vs Child Invocations
 

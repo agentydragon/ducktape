@@ -198,6 +198,12 @@ py_library(
 )
 
 py_library(
+    name = "buildbuddy_test_status",
+    srcs = ["buildbuddy_test_status.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
     name = "install_bb",
     srcs = ["install_bb.py"],
     visibility = ["//:__subpackages__"],
@@ -251,6 +257,12 @@ py_binary(
     name = "emit_bb_remote_linkage_bin",
     main_module = "devinfra.ci.emit_bb_remote_linkage",
     deps = [":emit_bb_remote_linkage"],
+)
+
+py_binary(
+    name = "buildbuddy_test_status_bin",
+    main_module = "devinfra.ci.buildbuddy_test_status",
+    deps = [":buildbuddy_test_status"],
 )
 
 py_test(

@@ -89,6 +89,7 @@ func invocationCmd() *cobra.Command {
 	}
 	cmd.AddCommand(invocationListCmd())
 	cmd.AddCommand(invocationStatSubCmd())
+	cmd.AddCommand(invocationWatchCmd())
 	return cmd
 }
 
