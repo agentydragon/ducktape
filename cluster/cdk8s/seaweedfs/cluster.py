@@ -248,7 +248,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # cluster/docs/lessons_learned/2026_10_19_seaweedfs_master_persistence.md.
                 persistence=SeaweedSpecMasterPersistence(
                     enabled=True,
-                    storage_class_name="local-path-ovh-ssd",
+                    storage_class_name="piraeus-ssd-local",
                     mount_path="/data",
                     resources=SeaweedSpecMasterPersistenceResources(
                         requests={"storage": SeaweedSpecMasterPersistenceResourcesRequests.from_string("4Gi")}
@@ -350,20 +350,6 @@ def seaweed(scope: Construct) -> Seaweed:
                         "storage.allegedly.works/piraeus-ready": "true",
                     },
                     # Keep this server separate from every other Seaweed volume server on its node.
-                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
-                ),
-                "hdd-piraeus-103711": _volume_topology(
-                    rack="hil-ovh-h109b04",
-                    storage="1700Gi",
-                    storage_class="piraeus-hdd-local",
-                    disk="hdd",
-                    replicas=1,
-                    max_volume_counts=2000,
-                    additional_node_selector={
-                        **node_scheduling.HIL_OVH_NODE_SELECTOR,
-                        _HOSTNAME: "ovh-ns103711",
-                        "storage.allegedly.works/piraeus-ready": "true",
-                    },
                     anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
                 # The usual 3-server OVH NVMe group serves Forgejo git via the
