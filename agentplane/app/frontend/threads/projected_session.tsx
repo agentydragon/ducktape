@@ -1317,6 +1317,9 @@ function ProjectedSessionBody({
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Label style={{ overflowWrap: "anywhere" }}>Thread ID: {threadId}</Menu.Label>
+                {/* Always here: the topbar drops the same label when the thread's name leaves it no room. */}
+                <Menu.Label style={{ overflowWrap: "anywhere" }}>Sandbox: {thread.sandbox}</Menu.Label>
+                <Menu.Label>Harness: {harnessLabel(thread.harness)}</Menu.Label>
                 <Menu.Divider />
                 <Menu.Item hiddenFrom="sm" onClick={() => setNotificationsOpen(true)}>
                   Notifications
@@ -1509,14 +1512,20 @@ export function ProjectedSession({
       <TopbarTitle>
         <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
           {thread && <ThreadStatusIndicator kind={topbarStatus.kind} label={topbarStatus.label} />}
-          <Box style={{ flex: 1, minWidth: 0 }}>
-            <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
+          <Box className="agentplane-thread-heading">
+            <ThreadTitle
+              className="agentplane-thread-heading-name"
+              threadId={threadId}
+              thread={thread}
+              onRenamed={setThread}
+              onError={setError}
+            />
+            {thread && (
+              <Text size="xs" c="dimmed" className="agentplane-thread-heading-sandbox">
+                {thread.sandbox} · {harnessLabel(thread.harness)}
+              </Text>
+            )}
           </Box>
-          {thread && (
-            <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-              {thread.sandbox} · {harnessLabel(thread.harness)}
-            </Text>
-          )}
         </Group>
       </TopbarTitle>
       <Stack style={{ flex: 1, minHeight: 0 }}>

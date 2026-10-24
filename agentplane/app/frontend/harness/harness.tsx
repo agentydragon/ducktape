@@ -3238,6 +3238,11 @@ const visualHarness = {
       },
     ];
   },
+  nameThread(threadId: string, name: string): void {
+    const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === threadId);
+    if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
+    thread.name = name;
+  },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);
   },

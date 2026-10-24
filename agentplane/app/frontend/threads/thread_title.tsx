@@ -4,16 +4,20 @@ import IconSparkles from "@tabler/icons-react/dist/esm/icons/IconSparkles.mjs";
 
 import { api, autoTitleThread, displayableError, renameThread, type ThreadView } from "../client";
 import { InlineName } from "../inline_name";
+import "./thread_title.css";
 
 /** The thread's title. The placeholder is the thread id; a blank name clears it back to that. */
 export function ThreadTitle({
   threadId,
   thread,
+  className,
   onRenamed,
   onError,
 }: {
   threadId: string;
   thread: ThreadView | null;
+  /** The root element's, for the caller to place the title. */
+  className?: string;
   onRenamed: (thread: ThreadView) => void;
   onError: (message: string) => void;
 }): JSX.Element {
@@ -58,8 +62,9 @@ export function ThreadTitle({
   }
 
   return (
-    <Group gap="xs" wrap="nowrap">
+    <Group className={className} gap="xs" wrap="nowrap">
       <InlineName
+        className="agentplane-thread-title-name"
         label="Thread name"
         name={thread?.name ?? null}
         placeholder={threadId}

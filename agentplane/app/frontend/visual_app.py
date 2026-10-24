@@ -81,6 +81,9 @@ class AgentplaneFixture:
     async def as_vm_sandbox(self, name: str) -> None:
         await self.page.evaluate("name => window.agentplaneVisual.asVmSandbox(name)", name)
 
+    async def name_thread(self, thread_id: str, name: str) -> None:
+        await self.page.evaluate("([id, name]) => window.agentplaneVisual.nameThread(id, name)", [thread_id, name])
+
     async def mount_thread(self, thread_id: str) -> None:
         await self.mount_app(f"/threads/{thread_id}")
 

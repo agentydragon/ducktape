@@ -578,6 +578,15 @@ it("shows the thread id in the More menu, not inline once a name is set", async 
   expect(document.body.textContent).toContain(THREAD.id);
 });
 
+// The topbar drops its Sandbox label when the name leaves no room, so the menu must carry it.
+it("lists the thread's Sandbox and harness in the More menu", async () => {
+  const container = await render();
+  await act(async () => button(container, "More").click());
+  const menu = document.querySelector('[role="menu"]');
+  expect(menu?.textContent).toContain(THREAD.sandbox);
+  expect(menu?.textContent).toContain("Claude");
+});
+
 it.each([
   [{ feed_status: "failed" }, "Runner feed failed", "failed"],
   [{ feed_status: "ended" }, "Runner feed ended", "inactive"],
