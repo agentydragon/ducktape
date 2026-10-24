@@ -29,7 +29,7 @@ code-mode fixture) have no group. `REFACTOR_COHERENCE_AUDIT` sweeps what remains
 ```mermaid
 flowchart LR
     subgraph ACTION_TRACK[MCP edge extraction]
-        ACTION_MCP_EDGE_SPLIT[Active: testing and staging handoff]
+        ACTION_MCP_EDGE_SPLIT[Active: staging handoff]
     end
     subgraph MESSAGING_TRACK[Agent messaging]
         NOTIFICATION_SERVICE_SPLIT[Unscheduled: inbox model and service rename]
@@ -1804,7 +1804,7 @@ flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
-    ACTION_MCP_EDGE_SPLIT[Active: testing and staging handoff]
+    ACTION_MCP_EDGE_SPLIT[Active: staging handoff]
 ```
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
@@ -1819,13 +1819,13 @@ check on `thread_observations` (404 for a Session no Thread links) is kept or dr
 
 **Active (Codex, 2026-10-23; merged preparation and live state checked).** The Go port,
 Python retirement and legacy schema cleanup are complete. Edge runtime, scoped TokenRequest
-permissions, transfer tooling, deployments and Flux image automation are merged. Both edge
-Deployments are configured for one testing replica (#11727 merged), zero in staging; testing's
-schema is initialized. Testing activation is awaiting reconciliation; callers have not moved.
+permissions, transfer tooling, deployments and Flux image automation are merged. The edge
+Deployment is configured with zero replicas in staging; the operator dropped the testing
+rehearsal (2026-10-24), so staging is the first cluster the edge runs on. Callers have not moved.
 The app's endpoint split is being prepared separately.
 
-Remaining outcomes: testing's Connection caller handoff, staging's preserved-state and public
-MCP/OAuth handoff, then deletion of integrated runtime and source tables. Detailed sequence and
+Remaining outcomes: staging's preserved-state and public MCP/OAuth handoff, then deletion of
+integrated runtime and source tables. Detailed sequence and
 constraints: [MCP edge extraction](mcp_edge_extraction.md#remaining-work).
 The current token audience is `agentplane-egress`; a dedicated audience is a separate change.
 Actions retains its upstream CIMD endpoint and the app retains upstream OAuth callbacks.
