@@ -203,6 +203,16 @@ py_library(
     visibility = ["//:__subpackages__"],
 )
 
+py_test(
+    name = "test_buildbuddy_test_status",
+    srcs = ["test_buildbuddy_test_status.py"],
+    deps = [
+        ":buildbuddy_test_status",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "install_bb",
     srcs = ["install_bb.py"],
