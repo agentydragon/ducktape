@@ -872,7 +872,7 @@ async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_brows
 async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thread_browser: ThreadBrowser) -> None:
     page = thread_browser.page
     await thread_browser.start_replay()
-    sidebar = page.get_by_role("navigation", name="Threads", exact=True)
+    sidebar = page.locator("nav.agentplane-sidebar")
     await expect(sidebar.get_by_text("Browser thread", exact=True)).to_be_visible()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     await thread_browser.store.rename(thread.id, "Test rename from another replica")
