@@ -6,6 +6,5 @@ client and Sandbox status model stay in the parent frontend package; Thread stat
 and its indicator are owned by `../threads/`. `BindingsTable` stays in the parent
 package because Settings also uses it to display caller grants.
 
-The Bazel targets live in `BUILD.bazel`. The local icon declarations are a
-package-local copy because the TypeScript Bazel rule requires target sources to
-come from their own package; keep it in sync with the parent declaration file.
+The Bazel targets live in `BUILD.bazel`. Shared Tabler icon types come from
+`//agentplane/app/frontend:tabler_icon_types`.

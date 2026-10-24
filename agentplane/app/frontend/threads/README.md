@@ -13,13 +13,11 @@ status, title, and chronological debug belong to this feature. The shared sideba
 shell, API client, Sandbox status model, and generic rendering components stay in
 the parent frontend package.
 
-The Bazel targets live in `BUILD.bazel`. The ambient CSS and per-icon TypeScript
-declarations are local copies of the parent package declarations: each TypeScript
-target compiles its own sources, and the Bazel rule cannot list a source from another
-package. Keep those declarations in sync when changing them. The feature
-extractions do not change the thread sync or scrolling contracts; see `../SPEC.md` for reader-facing scroll
-guarantees, `scrolling_verification.md` for engineering checks, and
-`../../../docs/thread_view_sync.md` for sync design.
+The Bazel targets live in `BUILD.bazel`. The CSS declaration stays package-local;
+shared Tabler icon types come from `//agentplane/app/frontend:tabler_icon_types`.
+The feature extractions do not change the thread sync or scrolling contracts; see
+`../SPEC.md` for reader-facing scroll guarantees, `scrolling_verification.md` for
+engineering checks, and `../../../docs/thread_view_sync.md` for sync design.
 
 ## Disclosure layout ownership
 

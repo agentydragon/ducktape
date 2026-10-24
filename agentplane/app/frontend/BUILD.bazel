@@ -21,6 +21,12 @@ package(default_visibility = ["//agentplane/app:__subpackages__"])
 
 TSCONFIG = ":tsconfig"
 
+# Shared ambient declarations for Tabler's untyped per-icon module subpaths.
+js_library(
+    name = "tabler_icon_types",
+    types = ["tabler_icons.d.ts"],
+)
+
 ts_config(
     name = "tsconfig",
     src = "tsconfig.json",
@@ -53,16 +59,13 @@ ts_library(
     name = "status_mark",
     srcs = [
         "status_mark.ts",
-        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
-        # imports. A declaration file is type-only, so it joins this target's program without
-        # being emitted.
-        "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
         ":custom_mark_icons",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
+        "//agentplane/app/frontend:tabler_icon_types",
     ],
 )
 
@@ -656,10 +659,6 @@ ts_library(
         "sidebar.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
-        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
-        # imports. A declaration file is type-only, so it joins this target's program without
-        # being emitted.
-        "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -670,6 +669,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend:tabler_icon_types",
         "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/threads:scroll_debug_tools",
         "//agentplane/app/frontend/threads:thread_list",
@@ -853,9 +853,6 @@ ts_library(
         "app.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
-        # The ambient declaration for the @tabler/icons-react subpath app.tsx imports; see the note
-        # in the file itself.
-        "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -873,6 +870,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend:tabler_icon_types",
         "//agentplane/app/frontend/actions:detail",
         "//agentplane/app/frontend/actions:history",
         "//agentplane/app/frontend/actions:requests",
