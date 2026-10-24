@@ -112,7 +112,7 @@ type journalBatch struct {
 	sequence     uint64
 }
 
-// OpenJournal opens the existing runner journal schema without rewriting retained EventEntry rows.
+// OpenJournal applies pending schema migrations before recovering retained EventEntry rows.
 func OpenJournal(ctx context.Context, path, sourceID string) (*Journal, error) {
 	if sourceID == "" {
 		return nil, errors.New("journal source ID is required")
@@ -123,6 +123,22 @@ func OpenJournal(ctx context.Context, path, sourceID string) (*Journal, error) {
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
+	for _, pragma := range []string{
+		"PRAGMA journal_mode=DELETE",
+		"PRAGMA synchronous=EXTRA",
+		"PRAGMA foreign_keys=ON",
+		"PRAGMA temp_store=FILE",
+		"PRAGMA temp.cache_size=-2048",
+	} {
+		if _, err := db.ExecContext(ctx, pragma); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("configure journal SQLite connection: %w", err)
+		}
+	}
+	if err := migrateJournalSchema(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate runner journal schema: %w", err)
+	}
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		_ = db.Close()
@@ -133,20 +149,9 @@ func OpenJournal(ctx context.Context, path, sourceID string) (*Journal, error) {
 		_ = db.Close()
 		return nil, openErr
 	}
-	for _, pragma := range []string{
-		"PRAGMA journal_mode=DELETE",
-		"PRAGMA synchronous=EXTRA",
-		"PRAGMA foreign_keys=ON",
-		"PRAGMA temp_store=FILE",
-		"PRAGMA temp.cache_size=-2048",
-	} {
-		if _, err := conn.ExecContext(ctx, pragma); err != nil {
-			return closeOnError(fmt.Errorf("configure journal SQLite connection: %w", err))
-		}
-	}
-	for _, statement := range journalSchema {
+	for _, statement := range journalTemporarySchema {
 		if _, err := conn.ExecContext(ctx, statement); err != nil {
-			return closeOnError(fmt.Errorf("create runner journal schema: %w", err))
+			return closeOnError(fmt.Errorf("create runner journal temporary schema: %w", err))
 		}
 	}
 	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
@@ -155,9 +160,6 @@ func OpenJournal(ctx context.Context, path, sourceID string) (*Journal, error) {
 	rollback := func(openErr error) (*Journal, error) {
 		_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
 		return closeOnError(openErr)
-	}
-	if err := migrateCommandJournalData(ctx, conn); err != nil {
-		return rollback(fmt.Errorf("migrate command journal data: %w", err))
 	}
 	var lastCursor sql.NullInt64
 	if err := conn.QueryRowContext(ctx, "SELECT MAX(cursor) FROM event_entry").Scan(&lastCursor); err != nil {
@@ -237,44 +239,7 @@ func OpenJournal(ctx context.Context, path, sourceID string) (*Journal, error) {
 	return journal, nil
 }
 
-var journalSchema = []string{
-	`CREATE TABLE IF NOT EXISTS event_entry (
-		cursor INTEGER NOT NULL PRIMARY KEY,
-		payload BLOB NOT NULL
-	)`,
-	`CREATE TABLE IF NOT EXISTS command (
-		command_id VARCHAR NOT NULL PRIMARY KEY,
-		payload BLOB NOT NULL,
-		admitted_cursor INTEGER NOT NULL REFERENCES event_entry(cursor),
-		dispatch_planned BOOLEAN NOT NULL,
-		native_correlation JSON NOT NULL,
-		terminal_cursor INTEGER REFERENCES event_entry(cursor)
-	)`,
-	`CREATE INDEX IF NOT EXISTS pending_command_admission ON command (terminal_cursor, admitted_cursor)`,
-	`CREATE TABLE IF NOT EXISTS turn_boundary (
-		turn_id VARCHAR NOT NULL PRIMARY KEY,
-		start_cursor INTEGER NOT NULL,
-		end_cursor INTEGER,
-		status INTEGER
-	)`,
-	`CREATE INDEX IF NOT EXISTS ix_turn_boundary_start_cursor ON turn_boundary (start_cursor)`,
-	`CREATE TABLE IF NOT EXISTS checkpoint (
-		id INTEGER NOT NULL PRIMARY KEY,
-		source_id VARCHAR NOT NULL,
-		through_cursor INTEGER NOT NULL,
-		harness_running BOOLEAN NOT NULL,
-		active_turn_id VARCHAR NOT NULL
-	)`,
-	`CREATE TABLE IF NOT EXISTS seal (
-		id INTEGER NOT NULL PRIMARY KEY,
-		cursor INTEGER NOT NULL,
-		incarnation_uid VARCHAR NOT NULL
-	)`,
-	`CREATE TABLE IF NOT EXISTS debug_checkpoint (
-		name VARCHAR NOT NULL,
-		command_id VARCHAR NOT NULL,
-		PRIMARY KEY (name, command_id)
-	)`,
+var journalTemporarySchema = []string{
 	`CREATE TEMP TABLE IF NOT EXISTS adapter_item (
 		adapter_id VARCHAR NOT NULL,
 		item_id VARCHAR NOT NULL,
@@ -822,54 +787,6 @@ func encodeCommandJournalData(data commandJournalData) (string, error) {
 	data.Version = commandJournalDataVersion
 	encoded, err := json.Marshal(data)
 	return string(encoded), err
-}
-
-// migrateCommandJournalData wraps legacy flat correlation maps in a versioned journal record.
-// The original map is retained as read-only adapter compatibility data.
-func migrateCommandJournalData(ctx context.Context, conn *sql.Conn) error {
-	rows, err := conn.QueryContext(ctx, "SELECT command_id, native_correlation FROM command")
-	if err != nil {
-		return err
-	}
-	type update struct {
-		commandID string
-		encoded   string
-	}
-	var updates []update
-	for rows.Next() {
-		var commandID string
-		var raw string
-		if err := rows.Scan(&commandID, &raw); err != nil {
-			_ = rows.Close()
-			return err
-		}
-		data, legacy, err := decodeCommandJournalData(raw)
-		if err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("command %q: %w", commandID, err)
-		}
-		if legacy {
-			encoded, err := encodeCommandJournalData(data)
-			if err != nil {
-				_ = rows.Close()
-				return err
-			}
-			updates = append(updates, update{commandID: commandID, encoded: encoded})
-		}
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return err
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-	for _, item := range updates {
-		if _, err := conn.ExecContext(ctx, "UPDATE command SET native_correlation = ? WHERE command_id = ?", item.encoded, item.commandID); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (j *Journal) Append(ctx context.Context, event *eventpb.Event, options AppendOptions) (*eventlogpb.EventEntry, error) {

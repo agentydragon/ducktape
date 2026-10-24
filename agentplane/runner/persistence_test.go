@@ -22,14 +22,16 @@ import (
 func TestOpenJournalReopensPythonSchemaAndKeepsStoredBytes(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "journal.sqlite")
-	db, err := sql.Open("sqlite", path)
+	journal, err := OpenJournal(ctx, path, "stable-source")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, statement := range journalSchema[:8] {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatalf("create legacy schema: %v", err)
-		}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
 	}
 	legacyEntry := &eventlogpb.EventEntry{
 		Cursor: 1,
@@ -43,7 +45,10 @@ func TestOpenJournalReopensPythonSchemaAndKeepsStoredBytes(t *testing.T) {
 	if _, err := db.Exec("INSERT INTO event_entry (cursor, payload) VALUES (1, ?)", legacyBytes); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("INSERT INTO checkpoint VALUES (1, 'stable-source', 1, 1, '')"); err != nil {
+	if _, err := db.Exec("UPDATE checkpoint SET through_cursor = 1, harness_running = 1 WHERE id = 1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("DROP TABLE " + journalMigrationTableName); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -284,6 +289,17 @@ func TestJournalMigratesLegacyNativeCorrelationMap(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("DROP TABLE " + journalMigrationTableName); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
 
