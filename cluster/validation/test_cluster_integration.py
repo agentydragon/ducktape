@@ -485,19 +485,9 @@ def test_agent_permission_superset_and_finance_parity(
     )
     assert not uncovered(public, haku)
     assert not uncovered(public, finance)
-    plaid_diagnostics = {
-        Permission("plaid-mcp", api_group, resource, verb)
-        for api_group, resources in (
-            ("", ("pods", "services", "endpoints", "events", "persistentvolumeclaims")),
-            ("discovery.k8s.io", ("endpointslices",)),
-            ("apps", ("deployments", "statefulsets")),
-            ("batch", ("jobs", "cronjobs")),
-            ("postgresql.cnpg.io", ("clusters",)),
-        )
-        for resource in resources
-        for verb in ("get", "list")
-    }
-    assert uncovered(finance, public) == plaid_diagnostics | {
+    # The shared cluster-diagnostics grant covers Plaid object reads too;
+    # finance adds only its secrets.
+    assert uncovered(finance, public) == {
         Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials"),
         Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy"),
     }
@@ -613,3 +603,4 @@ def test_agent_permission_denials(
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
