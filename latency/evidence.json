@@ -31524,7 +31524,7 @@
       }
     ]
   },
-  "report_sha256": "c6daec08c159ca2357c1c36e91cc9394f4b28ac66aa847561578f5c425ec65e0",
+  "report_sha256": "7b8bb5d823eacd3d58ccaf65c3ec1650179884d357e5a24e1fb0a957d743bc70",
   "recommendation_revision": {
     "reviewed_at_utc": "2026-10-23T14:31:05.920408+00:00",
     "coverage_source_devel_commit": "80f60cb731e2c8c51e4b890aea87612ce12d1556",
@@ -33045,30 +33045,6 @@
     "nix_pilot_exact_check_join_all_green": 19,
     "visual_review_required_before_publication": true
   },
-  "validation": {
-    "checks": [
-      "JSON parses; original population fields preserved",
-      "23 pilot heads,19 all-green and17 Bazel-last independently recounted; runtime/queue percentiles match captured jobs",
-      "cProfile/importtime and execution-clock analysis checked against raw profiles, test XML and VM logs",
-      "report_sha256 matches final rendered HTML",
-      "Desktop and mobile browser cases passed, continuity control toggled, document overflow checked; screenshots inspected"
-    ],
-    "html_sha256": "c6daec08c159ca2357c1c36e91cc9394f4b28ac66aa847561578f5c425ec65e0",
-    "browser_visual_review": {
-      "invocation": "2da58d07-7684-4cce-943c-f616963a9f66",
-      "url": "https://app.buildbuddy.io/invocation/2da58d07-7684-4cce-943c-f616963a9f66",
-      "test": "//devinfra/ci/reports:reconciled_report_review",
-      "pytest_cases": 2,
-      "viewports": ["1280x900", "390x844"],
-      "screenshots_inspected": [
-        "desktop-overview",
-        "desktop-startup-profile",
-        "mobile-startup-profile",
-        "mobile-runner-keys"
-      ]
-    },
-    "limits": "Core population percentiles were not recomputed; later Nix pilot, runner experiments and startup profiling remain distinct cohorts. Instrumented startup timings do not establish population savings."
-  },
   "startup_profiling": {
     "observed_at_utc": "2026-10-24T02:29:47Z",
     "source_devel_commit": "d8b8579e4a07b818f977b4d61df62820ad642982",
@@ -33295,6 +33271,128 @@
       "last_file_commit": "530433c0ee2f4861d586216a99fe3584078026bd",
       "sha256": "9741164b363eacde13764950c31fcb2898b60de05ae9648132b91e9d0ae157c3",
       "download_url": "https://raw.githubusercontent.com/buildbuddy-io/buildbuddy/530433c0ee2f4861d586216a99fe3584078026bd/enterprise/server/remote_execution/containers/firecracker/firecracker.go"
+    },
+    "workspace_preparation_followup": {
+      "kind": "Source analysis and debugging plan; no additional performance experiment",
+      "repository_platform_inspected_at": "42752754d9dd702540ba39045a04d41140d78aa8",
+      "upstream_sources": [
+        {
+          "repository": "buildbuddy-io/buildbuddy",
+          "file": "enterprise/server/remote_execution/containers/firecracker/firecracker.go",
+          "last_file_commit": "530433c0ee2f4861d586216a99fe3584078026bd",
+          "sha256": "9741164b363eacde13764950c31fcb2898b60de05ae9648132b91e9d0ae157c3",
+          "download_url": "https://raw.githubusercontent.com/buildbuddy-io/buildbuddy/530433c0ee2f4861d586216a99fe3584078026bd/enterprise/server/remote_execution/containers/firecracker/firecracker.go"
+        },
+        {
+          "repository": "buildbuddy-io/buildbuddy",
+          "file": "enterprise/server/util/ext4/ext4.go",
+          "last_file_commit": "de58d0a91b4616869c503a8a6bfbdfd41b619af7",
+          "sha256": "de43abfa7499c7b116080a899f07530604ba67ea8d18ab739adf25511adbbe58"
+        }
+      ],
+      "workspace_image": "Fresh ext4 action-input disk, mounted at /workspace. Rebuilt on the ordinary non-VFS path even when the VM snapshot/containerd image store is warm; normal snapshot saving omits the workspace disk.",
+      "before_attachment": [
+        "Create/restore VM; root disks, networking and cgroups; guest boot may overlap workspace creation",
+        "Unlink old workspace image",
+        "Walk input tree and lstat entries to estimate filesystem size",
+        "Populate ext4 image with mke2fs -d input-directory",
+        "Wait for/connect to guest vmexec, then PATCH workspace drive; mounting follows"
+      ],
+      "historical_readiness_s": {
+        "vmexec_dial": 0.056302,
+        "dockerd_wait": 6.202349,
+        "caveat": "Not additive to the 91.067902s preparation interval; no per-operation host construction duration exposed."
+      },
+      "hypothesis": "Input tree traversal/ext4 construction is a stronger suspect than a long guest connection wait; no definitive host-side cause proved.",
+      "controls": [
+        {
+          "name": "debug_disable_firecracker_workspace_sync",
+          "scope": "executor process",
+          "effect": "Skip workspace image synchronization and output synchronization; use existing guest workspace",
+          "available_in_current_hosted_access": false,
+          "tested": false,
+          "prerequisite": "BuildBuddy operator or controlled executor with suitable workspace; ordinary saved snapshot lacks the disk"
+        },
+        {
+          "name": "test.init-dockerd",
+          "value": "false",
+          "scope": "test execution property",
+          "effect": "Do not initialize Docker daemon for action; inherited platform currently requests it",
+          "available_in_current_hosted_access": true,
+          "tested": false,
+          "caveat": "k3s uses own containerd; no compatibility or saving established by a no-Docker run"
+        },
+        {
+          "name": "executor.firecracker_vmexec_ready_signal",
+          "value": "false",
+          "scope": "executor process",
+          "effect": "Use connection polling, still requires ready guest",
+          "available_in_current_hosted_access": false,
+          "tested": false
+        }
+      ],
+      "next_probe": {
+        "status": "Not run",
+        "command": "/bin/true",
+        "comparison": "Existing slow test input-root digest versus tiny input root",
+        "hold_fixed": [
+          "executor",
+          "root image",
+          "resources",
+          "command",
+          "recycling configuration",
+          "snapshot starting state"
+        ],
+        "measure": "Existing execution timestamps and VM workspace attachment; bypass result caching",
+        "escalation": "If reproduced, obtain createWorkspaceImage/DiskSizeBytes/DirectoryToImage and readiness host spans from BuildBuddy",
+        "expected_saving": "Not measured"
+      },
+      "prior_cases": "https://github.com/agentydragon/ducktape/blob/9f044bfa7fc43b1120364ecb230d240ce4124a3a/devinfra/debug/buildbuddy_firecracker_workspace_attach_stalls_2026_07.md",
+      "limits": "Inspected upstream revisions are not verified hosted deployment revision; no flags changed, no new action timings collected, no population summaries recomputed."
     }
+  },
+  "prior_snapshot_validation": {
+    "checks": [
+      "JSON parses; original population fields preserved",
+      "23 pilot heads,19 all-green and17 Bazel-last independently recounted; runtime/queue percentiles match captured jobs",
+      "cProfile/importtime and execution-clock analysis checked against raw profiles, test XML and VM logs",
+      "report_sha256 matches final rendered HTML",
+      "Desktop and mobile browser cases passed, continuity control toggled, document overflow checked; screenshots inspected"
+    ],
+    "html_sha256": "c6daec08c159ca2357c1c36e91cc9394f4b28ac66aa847561578f5c425ec65e0",
+    "browser_visual_review": {
+      "invocation": "2da58d07-7684-4cce-943c-f616963a9f66",
+      "url": "https://app.buildbuddy.io/invocation/2da58d07-7684-4cce-943c-f616963a9f66",
+      "test": "//devinfra/ci/reports:reconciled_report_review",
+      "pytest_cases": 2,
+      "viewports": ["1280x900", "390x844"],
+      "screenshots_inspected": [
+        "desktop-overview",
+        "desktop-startup-profile",
+        "mobile-startup-profile",
+        "mobile-runner-keys"
+      ]
+    },
+    "limits": "Core population percentiles were not recomputed; later Nix pilot, runner experiments and startup profiling remain distinct cohorts. Instrumented startup timings do not establish population savings."
+  },
+  "validation": {
+    "html_sha256": "7b8bb5d823eacd3d58ccaf65c3ec1650179884d357e5a24e1fb0a957d743bc70",
+    "checks": [
+      "JSON parsed and HTML fragment IDs checked",
+      "All prior timings, observation windows and population fields retained",
+      "Upstream Firecracker and ext4 implementations pinned and read; platform Docker inheritance checked at42752754d9",
+      "Desktop and mobile browser cases passed; document overflow and continuity control checked; screenshots inspected"
+    ],
+    "browser_review": {
+      "invocation": "631ba917-a26f-424c-945b-2d7b88f59939",
+      "target": "//devinfra/ci/reports:workspace_notes_review",
+      "cases": 2,
+      "screenshots_inspected": [
+        "desktop-workspace-preparation",
+        "mobile-workspace-debug-controls",
+        "desktop-workspace-next-probe"
+      ]
+    },
+    "limits": "Source-analysis update only. No new performance experiment, no flags changed, no root cause or saving established."
   }
 }
