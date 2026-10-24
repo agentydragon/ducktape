@@ -48,6 +48,9 @@ enum AbstractValue {
     /// A class's static or prototype surface can expose its deferred methods.
     /// Merely creating the class does not execute those methods.
     ClassMembers(u32),
+    /// A constructed local class instance retains its class methods and the
+    /// callback values stored by its proven constructor.
+    Instance(u32, Captured<Values>),
     CallbackFactory,
     /// A fresh opaque return value retaining callbacks without publishing them.
     DeferredCallbacks(Captured<Values>),
@@ -70,6 +73,7 @@ enum ValueExpr {
     NonCallable,
     Member(Box<Self>, Option<String>),
     Call(Box<Self>, Vec<Self>),
+    New(Box<Self>, Vec<Self>),
     Alternatives(Vec<Self>),
     Unknown,
 }
@@ -141,6 +145,25 @@ impl ValueExpr {
                     Callee::Import(_) | Callee::Super(_) => Self::Unknown,
                 }
             }
+            Expr::New(new_expr)
+                if new_expr
+                    .args
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter()
+                    .all(|arg| arg.spread.is_none()) =>
+            {
+                Self::New(
+                    Box::new(Self::from_expr(&new_expr.callee)),
+                    new_expr
+                        .args
+                        .as_deref()
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|arg| Self::from_expr(&arg.expr))
+                        .collect(),
+                )
+            }
             Expr::Cond(cond) => Self::Alternatives(vec![
                 Self::from_expr(&cond.cons),
                 Self::from_expr(&cond.alt),
@@ -172,7 +195,7 @@ impl ValueExpr {
                 result.insert(id.clone());
             }
             Self::Member(object, _) => object.bindings(result),
-            Self::Call(callee, args) => {
+            Self::Call(callee, args) | Self::New(callee, args) => {
                 callee.bindings(result);
                 for arg in args {
                     arg.bindings(result);
@@ -311,6 +334,149 @@ struct Callable {
     generator: bool,
 }
 
+#[derive(Debug, Clone)]
+struct LocalConstructor {
+    key: Option<u32>,
+    /// Parameter property reads must come from fresh plain data objects.
+    property_reads: BTreeSet<usize>,
+    /// Unqualified reads must resolve to local bindings, not host getters.
+    binding_reads: BTreeSet<Id>,
+}
+
+fn safe_constructor_value(
+    expression: &Expr,
+    params: &[Option<Id>],
+    property_reads: &mut BTreeSet<usize>,
+    binding_reads: &mut BTreeSet<Id>,
+) -> bool {
+    match expression.unwrap_parens() {
+        Expr::Ident(id) => {
+            if !params
+                .iter()
+                .any(|param| param.as_ref() == Some(&id.to_id()))
+            {
+                binding_reads.insert(id.to_id());
+            }
+            true
+        }
+        Expr::Lit(_) => true,
+        Expr::Member(member) if matches!(&member.prop, MemberProp::Ident(_)) => {
+            let Expr::Ident(id) = member.obj.unwrap_parens() else {
+                return false;
+            };
+            let Some(index) = params
+                .iter()
+                .position(|param| param.as_ref() == Some(&id.to_id()))
+            else {
+                return false;
+            };
+            property_reads.insert(index);
+            true
+        }
+        Expr::Bin(bin) if matches!(bin.op, BinaryOp::NullishCoalescing | BinaryOp::EqEqEq) => {
+            safe_constructor_value(&bin.left, params, property_reads, binding_reads)
+                && safe_constructor_value(&bin.right, params, property_reads, binding_reads)
+        }
+        _ => false,
+    }
+}
+
+fn safe_constructor_assignment(
+    expression: &Expr,
+    params: &[Option<Id>],
+    property_reads: &mut BTreeSet<usize>,
+    binding_reads: &mut BTreeSet<Id>,
+) -> bool {
+    match expression.unwrap_parens() {
+        Expr::Seq(seq) => seq
+            .exprs
+            .iter()
+            .all(|expr| safe_constructor_assignment(expr, params, property_reads, binding_reads)),
+        Expr::Assign(assign) if assign.op == AssignOp::Assign => {
+            let AssignTarget::Simple(SimpleAssignTarget::Member(target)) = &assign.left else {
+                return false;
+            };
+            matches!(target.obj.unwrap_parens(), Expr::This(_))
+                && matches!(&target.prop, MemberProp::Ident(property) if property.sym.as_ref() != "__proto__")
+                && safe_constructor_value(&assign.right, params, property_reads, binding_reads)
+        }
+        _ => false,
+    }
+}
+
+fn local_constructor(class: &Class) -> Option<LocalConstructor> {
+    if class.super_class.is_some() || !class.decorators.is_empty() {
+        return None;
+    }
+    let mut constructor = None;
+    for member in &class.body {
+        match member {
+            ClassMember::Constructor(ctor) if constructor.is_none() => constructor = Some(ctor),
+            ClassMember::Method(method)
+                if method.kind != MethodKind::Setter
+                    && !matches!(method.key, PropName::Computed(_))
+                    && method.function.decorators.is_empty() => {}
+            ClassMember::PrivateMethod(method) if method.function.decorators.is_empty() => {}
+            ClassMember::ClassProp(prop)
+                if !prop.is_static
+                    && prop.decorators.is_empty()
+                    && !matches!(prop.key, PropName::Computed(_))
+                    && prop.value.as_deref().is_none_or(|value| {
+                        matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
+                    }) => {}
+            ClassMember::PrivateProp(prop)
+                if !prop.is_static
+                    && prop.decorators.is_empty()
+                    && prop.value.as_deref().is_none_or(|value| {
+                        matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
+                    }) => {}
+            ClassMember::Empty(_) => {}
+            _ => return None,
+        }
+    }
+    let Some(ctor) = constructor else {
+        return Some(LocalConstructor {
+            key: None,
+            property_reads: BTreeSet::new(),
+            binding_reads: BTreeSet::new(),
+        });
+    };
+    let params: Vec<_> = ctor
+        .params
+        .iter()
+        .map(|param| match param {
+            ParamOrTsParamProp::Param(param) if param.decorators.is_empty() => match &param.pat {
+                Pat::Ident(binding) => Some(binding.id.to_id()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    if params.iter().any(Option::is_none) {
+        return None;
+    }
+    let mut property_reads = BTreeSet::new();
+    let mut binding_reads = BTreeSet::new();
+    for statement in &ctor.body.as_ref()?.stmts {
+        let Stmt::Expr(expr) = statement else {
+            return None;
+        };
+        if !safe_constructor_assignment(
+            &expr.expr,
+            &params,
+            &mut property_reads,
+            &mut binding_reads,
+        ) {
+            return None;
+        }
+    }
+    Some(LocalConstructor {
+        key: Some(ctor.span.lo.0),
+        property_reads,
+        binding_reads,
+    })
+}
+
 impl Default for Callable {
     fn default() -> Self {
         Self {
@@ -375,6 +541,12 @@ struct ExecutionIndex {
     conditional_depth: u32,
     literal_depth: u32,
     callables: BTreeMap<u32, Callable>,
+    local_constructors: BTreeMap<u32, LocalConstructor>,
+    class_bindings: BTreeMap<u32, Id>,
+    class_ids: BTreeSet<Id>,
+    other_class_uses: BTreeSet<Id>,
+    safe_class_target: Option<Id>,
+    plain_data_objects: BTreeSet<u32>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<StatementOrdinal>>,
     top_calls: Vec<Vec<Call>>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
@@ -409,6 +581,12 @@ impl Default for ExecutionIndex {
             conditional_depth: 0,
             literal_depth: 0,
             callables: BTreeMap::new(),
+            local_constructors: BTreeMap::new(),
+            class_bindings: BTreeMap::new(),
+            class_ids: BTreeSet::new(),
+            other_class_uses: BTreeSet::new(),
+            safe_class_target: None,
+            plain_data_objects: BTreeSet::new(),
             setter_owners: BTreeMap::new(),
             top_calls: Vec::new(),
             top_property_writes: Vec::new(),
@@ -453,6 +631,26 @@ impl ExecutionIndex {
             no_sync_callback_members: hints.no_sync_callback_members.clone(),
             ..Self::default()
         };
+        for item in body {
+            let declaration = match item.as_module_item() {
+                ModuleItem::Stmt(Stmt::Decl(Decl::Class(declaration))) => Some(declaration),
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                    if let Decl::Class(declaration) = &export.decl {
+                        Some(declaration)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            if let Some(declaration) = declaration {
+                let id = declaration.ident.to_id();
+                index
+                    .class_bindings
+                    .insert(declaration.class.span.lo.0, id.clone());
+                index.class_ids.insert(id);
+            }
+        }
         for (ordinal, item) in body.iter().enumerate() {
             index.owner = StatementOrdinal(ordinal);
             index.past_await = false;
@@ -692,6 +890,18 @@ impl ExecutionIndex {
 }
 
 impl Visit for ExecutionIndex {
+    fn visit_named_export(&mut self, _export: &NamedExport) {
+        // Linkage is captured by collect_export_roots. Specifiers do not run
+        // at module initialization or expose a class in a closed module.
+    }
+
+    fn visit_class(&mut self, class: &Class) {
+        if let Some(constructor) = local_constructor(class) {
+            self.local_constructors.insert(class.span.lo.0, constructor);
+        }
+        class.visit_children_with(self);
+    }
+
     fn visit_with_stmt(&mut self, statement: &WithStmt) {
         self.dynamic_scope_owners.insert(self.owner);
         statement.visit_children_with(self);
@@ -727,7 +937,18 @@ impl Visit for ExecutionIndex {
                 // Keep inspecting the deferred body for nested accessors;
                 // property-write promotion still needs their owner. Its
                 // calls must stay out of the class owner's top-call list.
-                self.with_callable(ctor.span.lo.0, Vec::new(), |index| {
+                let params = ctor
+                    .params
+                    .iter()
+                    .map(|param| match param {
+                        ParamOrTsParamProp::Param(param) => Parameter::from_pattern(&param.pat),
+                        ParamOrTsParamProp::TsParamProp(_) => Parameter {
+                            binding: None,
+                            default: None,
+                        },
+                    })
+                    .collect();
+                self.with_callable(ctor.span.lo.0, params, |index| {
                     ctor.visit_children_with(index);
                 });
             }
@@ -765,6 +986,19 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
+        if object.props.iter().all(|property| match property {
+            PropOrSpread::Spread(_) => false,
+            PropOrSpread::Prop(property) => match property.as_ref() {
+                Prop::KeyValue(pair) => {
+                    static_property_name(&pair.key).is_some()
+                        && static_property_name(&pair.key).as_deref() != Some("__proto__")
+                }
+                Prop::Shorthand(id) => id.sym.as_ref() != "__proto__",
+                _ => false,
+            },
+        }) {
+            self.plain_data_objects.insert(object.span.lo.0);
+        }
         self.literal_depth += 1;
         object.visit_children_with(self);
         self.literal_depth -= 1;
@@ -792,7 +1026,7 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_class_decl(&mut self, declaration: &ClassDecl) {
-        declaration.visit_children_with(self);
+        declaration.class.visit_with(self);
         if self.current.is_none() {
             self.top_definite_initializers[self.owner.0].insert(declaration.ident.to_id());
             self.top_assignments[self.owner.0].push((
@@ -843,7 +1077,17 @@ impl Visit for ExecutionIndex {
         ) {
             self.conditional_depth += 1;
         }
+        let previous_target = self.safe_class_target.take();
+        self.safe_class_target = if expression.op == BinaryOp::InstanceOf {
+            match expression.right.unwrap_parens() {
+                Expr::Ident(id) => Some(id.to_id()),
+                _ => None,
+            }
+        } else {
+            None
+        };
         expression.right.visit_with(self);
+        self.safe_class_target = previous_target;
         if matches!(
             expression.op,
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
@@ -932,6 +1176,10 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_ident(&mut self, ident: &Ident) {
+        let id = ident.to_id();
+        if self.class_ids.contains(&id) && self.safe_class_target.as_ref() != Some(&id) {
+            self.other_class_uses.insert(id);
+        }
         if !self.past_await
             && let Some(key) = self.current
         {
@@ -1134,7 +1382,14 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_new_expr(&mut self, new_expr: &NewExpr) {
-        new_expr.visit_children_with(self);
+        let previous_target = self.safe_class_target.take();
+        self.safe_class_target = match new_expr.callee.unwrap_parens() {
+            Expr::Ident(id) => Some(id.to_id()),
+            _ => None,
+        };
+        new_expr.callee.visit_with(self);
+        self.safe_class_target = previous_target;
+        new_expr.args.visit_with(self);
         if new_expr
             .args
             .as_deref()
@@ -1261,6 +1516,8 @@ struct Executor<'a> {
     var_bindings: BTreeSet<Id>,
     global_escaped_callbacks: Values,
     prefix_object_properties: BTreeMap<u32, BTreeMap<Option<String>, Values>>,
+    tainted_objects: BTreeSet<u32>,
+    tainted_classes: BTreeSet<u32>,
     exported_runtime_values: Values,
     export_reentry_enabled: bool,
     fresh_mutation_callables: BTreeSet<u32>,
@@ -1649,6 +1906,12 @@ impl Executor<'_> {
                 | AbstractValue::ClassMembers(key) => {
                     callbacks.insert(AbstractValue::ClassMembers(*key));
                 }
+                AbstractValue::Instance(key, captured) => {
+                    callbacks.insert(AbstractValue::ClassMembers(*key));
+                    if callbacks.insert(value.clone()) {
+                        pending.extend(captured.values.iter().cloned());
+                    }
+                }
                 AbstractValue::DeferredCallbacks(captured) => {
                     if callbacks.insert(value.clone()) {
                         pending.extend(captured.values.iter().cloned());
@@ -1696,6 +1959,7 @@ impl Executor<'_> {
             for receiver in receivers {
                 match receiver {
                     AbstractValue::GlobalObject => {
+                        self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
                         let before = self.global_escaped_callbacks.len();
                         self.global_escaped_callbacks.extend(callbacks);
@@ -1704,6 +1968,7 @@ impl Executor<'_> {
                         }
                     }
                     AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                        self.tainted_objects.insert(object);
                         let properties = self.prefix_object_properties.entry(object).or_default();
                         let values_for_property = properties.entry(property.clone()).or_default();
                         let before = values_for_property.len();
@@ -1712,7 +1977,18 @@ impl Executor<'_> {
                             self.prefix_revision = self.prefix_revision.wrapping_add(1);
                         }
                     }
+                    AbstractValue::Instance(key, captured) => {
+                        self.tainted_classes.insert(key);
+                        self.taint_objects(&captured.values);
+                        self.taint_objects(&values);
+                        let callbacks = self.callback_values(&values);
+                        if !callbacks.is_subset(&self.global_escaped_callbacks) {
+                            self.global_escaped_callbacks.extend(callbacks);
+                            self.prefix_revision = self.prefix_revision.wrapping_add(1);
+                        }
+                    }
                     AbstractValue::Unknown | AbstractValue::DeferredCallbacks(_) => {
+                        self.taint_objects(&values);
                         // A write through an untracked object may publish the
                         // callback through that object before it is passed to
                         // opaque code. Retain it as an escaped callback root.
@@ -1739,6 +2015,7 @@ impl Executor<'_> {
     ) {
         for write in writes {
             let receivers = self.evaluate(&write.receiver, env, captures);
+            self.taint_objects(&receivers);
             let callbacks = self.callback_values(&receivers);
             if !callbacks
                 .iter()
@@ -1779,17 +2056,117 @@ impl Executor<'_> {
         CapturedContext { identity, values }
     }
 
-    fn deferred_callbacks(&mut self, values: Values) -> AbstractValue {
+    fn intern_callback_set(&mut self, values: Values) -> Captured<Values> {
         if let Some((values, &identity)) = self.callback_sets.get_key_value(&values) {
-            return AbstractValue::DeferredCallbacks(Captured {
+            return Captured {
                 identity,
                 values: Arc::clone(values),
-            });
+            };
         }
         let identity = self.callback_sets.len();
         let values = Arc::new(values);
         self.callback_sets.insert(Arc::clone(&values), identity);
-        AbstractValue::DeferredCallbacks(Captured { identity, values })
+        Captured { identity, values }
+    }
+
+    fn deferred_callbacks(&mut self, values: Values) -> AbstractValue {
+        AbstractValue::DeferredCallbacks(self.intern_callback_set(values))
+    }
+
+    fn taint_objects(&mut self, values: &Values) {
+        let mut pending: Vec<_> = values.iter().cloned().collect();
+        let mut visited = BTreeSet::new();
+        while let Some(value) = pending.pop() {
+            if !visited.insert(value.clone()) {
+                continue;
+            }
+            match value {
+                AbstractValue::Origin(ValueOrigin::Object(object))
+                    if self.tainted_objects.insert(object) =>
+                {
+                    if let Some(properties) = self.prefix_object_properties.get(&object) {
+                        pending.extend(
+                            properties
+                                .values()
+                                .flat_map(|values| values.iter().cloned()),
+                        );
+                    }
+                }
+                AbstractValue::Instance(_, captured)
+                | AbstractValue::DeferredCallbacks(captured) => {
+                    pending.extend(captured.values.iter().cloned());
+                }
+                AbstractValue::Closure(_, captured) => {
+                    pending.extend(
+                        captured
+                            .values
+                            .values()
+                            .flat_map(|values| values.iter().cloned()),
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn construct_local_class(
+        &mut self,
+        key: u32,
+        args: &[Values],
+    ) -> Option<(Outcome, AbstractValue)> {
+        let constructor = self.index.local_constructors.get(&key)?.clone();
+        let binding = self.index.class_bindings.get(&key)?;
+        // A class used only as a direct `new` target cannot have its prototype
+        // changed by another local expression or passed to host code. An
+        // instance that escaped earlier could still expose its constructor.
+        if self.index.other_class_uses.contains(binding)
+            || (self.export_reentry_enabled && self.index.exported_bindings.contains(binding))
+            || self.tainted_classes.contains(&key)
+            || self
+                .global_escaped_callbacks
+                .contains(&AbstractValue::ClassMembers(key))
+        {
+            return None;
+        }
+        if constructor
+            .binding_reads
+            .iter()
+            .any(|id| !self.flow.is_declared(id))
+        {
+            return None;
+        }
+        if self.export_reentry_enabled {
+            let exported: Values = self
+                .index
+                .exported_bindings
+                .iter()
+                .flat_map(|id| self.prefix_values.get(id).into_iter().flatten().cloned())
+                .collect();
+            self.taint_objects(&exported);
+        }
+        for index in &constructor.property_reads {
+            let values = args.get(*index)?;
+            if values.is_empty()
+                || !values.iter().all(|value| {
+                    matches!(value,
+                    AbstractValue::Origin(ValueOrigin::Object(object))
+                        if self.index.plain_data_objects.contains(object)
+                            && !self.tainted_objects.contains(object))
+                })
+            {
+                return None;
+            }
+        }
+        let outcome = constructor.key.map_or_else(
+            || Outcome {
+                complete: true,
+                ..Outcome::default()
+            },
+            |constructor_key| self.invoke(constructor_key, args.to_vec(), None),
+        );
+        let values: Values = args.iter().flatten().cloned().collect();
+        let instance = AbstractValue::Instance(key, self.intern_callback_set(values));
+        Some((outcome, instance))
     }
 
     /// The foreign wrapper's body is opaque once invoked. Include the full
@@ -1971,6 +2348,7 @@ impl Executor<'_> {
         // during a later prefix event.
         let before = self.global_escaped_callbacks.len();
         let values = args.iter().flatten().cloned().collect();
+        self.taint_objects(&values);
         self.global_escaped_callbacks
             .extend(self.callback_values(&values));
         if self.global_escaped_callbacks.len() != before {
@@ -2260,6 +2638,12 @@ impl Executor<'_> {
                         | AbstractValue::ClassMembers(key) => {
                             values.insert(AbstractValue::ClassMembers(key));
                         }
+                        AbstractValue::Instance(key, captured) => {
+                            if matches!(property.as_deref(), Some("constructor" | "__proto__")) {
+                                self.tainted_classes.insert(key);
+                            }
+                            values.insert(AbstractValue::Instance(key, captured));
+                        }
                         AbstractValue::Origin(ValueOrigin::Object(object_id)) => {
                             if let Some(properties) = self.prefix_object_properties.get(&object_id)
                             {
@@ -2375,6 +2759,38 @@ impl Executor<'_> {
                     returns.insert(AbstractValue::Unavailable);
                 }
                 returns
+            }
+            ValueExpr::New(callee, args) => {
+                let targets = self.evaluate(callee, env, captures);
+                let evaluated_args: Vec<_> = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg, env, captures))
+                    .collect();
+                let mut results = Values::new();
+                for target in targets {
+                    match target {
+                        AbstractValue::Origin(ValueOrigin::Class(key)) => {
+                            if let Some((_, instance)) =
+                                self.construct_local_class(key, &evaluated_args)
+                            {
+                                results.insert(instance);
+                            } else {
+                                results.insert(AbstractValue::Unknown);
+                            }
+                        }
+                        AbstractValue::Unavailable => {
+                            results.insert(AbstractValue::Unavailable);
+                        }
+                        _ => {
+                            results.insert(AbstractValue::Unknown);
+                        }
+                    }
+                }
+                if results.is_empty() {
+                    unknown()
+                } else {
+                    results
+                }
             }
             ValueExpr::Alternatives(options) => options
                 .iter()
@@ -2584,6 +3000,15 @@ impl Executor<'_> {
                     self.promote_class_members(key, outcome);
                     self.invoke_possible_callbacks(&args, false, outcome);
                 }
+                AbstractValue::Instance(key, captured) => {
+                    outcome.complete = false;
+                    outcome.unknown_call = true;
+                    self.note_unknown_call(call);
+                    self.promote_class_members(key, outcome);
+                    let mut possible_args = args.clone();
+                    possible_args.push((*captured.values).clone());
+                    self.invoke_possible_callbacks(&possible_args, false, outcome);
+                }
                 AbstractValue::Unavailable
                 | AbstractValue::Undefined
                 | AbstractValue::NonCallable => {}
@@ -2603,6 +3028,8 @@ impl Executor<'_> {
                     // those bodies because merely creating a closure does
                     // not execute it.
                     self.note_unknown_call(call);
+                    let possible_objects = args.iter().flatten().cloned().collect();
+                    self.taint_objects(&possible_objects);
                     let mut possible_accessors = self.reachability.owners.clone();
                     possible_accessors.extend(outcome.executed_owners.iter().copied());
                     if self.reachability.incomplete {
@@ -2614,6 +3041,35 @@ impl Executor<'_> {
                     }
                     outcome.complete = false;
                     outcome.unknown_call = true;
+                }
+                AbstractValue::Origin(ValueOrigin::Class(key)) if call.is_new => {
+                    if let Some((nested, _)) = (!call.has_spread)
+                        .then(|| self.construct_local_class(key, &args))
+                        .flatten()
+                    {
+                        self.apply_rebind_effects(&nested.effects.rebinds);
+                        outcome.effects.reads.extend(nested.effects.reads);
+                        outcome.effects.rebinds.extend(nested.effects.rebinds);
+                        outcome
+                            .effects
+                            .uninitialized_reads
+                            .extend(nested.effects.uninitialized_reads);
+                        outcome.executed_owners.extend(nested.executed_owners);
+                        outcome.unknown_call |= nested.unknown_call;
+                        outcome.complete &= nested.complete;
+                    } else {
+                        outcome.complete = false;
+                        outcome.unknown_call = true;
+                        self.note_unknown_call(call);
+                        // Unsupported constructors still execute their
+                        // instance fields and body at `new`, even without a
+                        // callback argument to seed the opaque fallback.
+                        self.promote_class_members(key, outcome);
+                        if !invoked_unknown_callbacks {
+                            self.invoke_possible_callbacks(&args, false, outcome);
+                            invoked_unknown_callbacks = true;
+                        }
+                    }
                 }
                 AbstractValue::Origin(ValueOrigin::Function(key)) if !call.is_new => {
                     let nested = self.invoke(key, args.clone(), None);
@@ -2803,6 +3259,8 @@ pub(crate) fn annotate_synchronous_calls(
         var_bindings,
         global_escaped_callbacks: Values::new(),
         prefix_object_properties: BTreeMap::new(),
+        tainted_objects: BTreeSet::new(),
+        tainted_classes: BTreeSet::new(),
         exported_runtime_values: index
             .exported_hoisted_functions
             .iter()

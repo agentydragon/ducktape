@@ -6,6 +6,300 @@ use debundle_e2e_support::*;
 use std::fmt::Write as _;
 
 #[test]
+fn local_constructor_stores_callback_until_called() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class Command {
+  constructor(config) { this.config = config; }
+  execute() { return this.config.execute(); }
+}
+function factory(config) { return new Command(config); }
+const command = factory({ execute: () => later });
+const later = 7;
+console.log(command.execute());
+export { Command, factory, command, later };
+"#,
+            vec![
+                logical_module(
+                    "command",
+                    &[
+                        Member::new("Command"),
+                        Member::new("factory"),
+                        Member::new("command"),
+                    ],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}
+
+#[test]
+fn local_constructor_reads_plain_config_data_without_invoking_callback() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class Command {
+  constructor(config) { this.execute = config.execute; }
+}
+function factory(config) { return new Command(config); }
+const command = factory({ execute: () => later });
+const later = 7;
+console.log(command.execute());
+export { Command, factory, command, later };
+"#,
+            vec![
+                logical_module(
+                    "command",
+                    &[
+                        Member::new("Command"),
+                        Member::new("factory"),
+                        Member::new("command"),
+                    ],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}
+
+#[test]
+fn local_constructor_sequence_and_lazy_fields_keep_callbacks_deferred() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class Command {
+  constructor(config, checker, attrs) {
+    (this.config = config, this.checker = checker, this.attrs = attrs,
+     this.weight = config.weight ?? 0, this.focus = config.focus === true,
+     this.children = config.children);
+  }
+  weight;
+  focus;
+  children;
+  search = (context) => this.execute(context);
+  get expands() { return this.children; }
+  execute(context) { return this.config.execute(context); }
+}
+function factory(config, checker, attrs) { return new Command(config, checker, attrs); }
+function isCommand(value) { return value instanceof Command; }
+const command = factory({ execute: () => later }, () => later, {});
+const later = 7;
+console.log(isCommand(command), command.search());
+export { Command, factory, isCommand, command, later };
+"#,
+            vec![
+                logical_module(
+                    "command",
+                    &[
+                        Member::new("Command"),
+                        Member::new("factory"),
+                        Member::new("isCommand"),
+                        Member::new("command"),
+                    ],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "true 7\n");
+}
+
+#[test]
+fn constructor_that_invokes_callback_still_constrains_order() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"class Command {
+  constructor(config) { config.execute(); }
+}
+function factory(config) { return new Command(config); }
+const command = factory({ execute: () => later });
+const later = 7;
+export { Command, factory, command, later };
+"#,
+            vec![
+                logical_module("command", &[Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["command", "value"],
+        &[],
+    );
+}
+
+#[test]
+fn constructor_setter_remains_opaque() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"class Command {
+  set config(value) { value.execute(); }
+  constructor(config) { this.config = config; }
+}
+function factory(config) { return new Command(config); }
+const command = factory({ execute: () => later });
+const later = 7;
+export { Command, factory, command, later };
+"#,
+            vec![
+                logical_module("command", &[Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["command", "value"],
+        &[],
+    );
+}
+
+#[test]
+fn constructor_config_getter_still_constrains_order() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"class Command {
+  constructor(config) { this.weight = config.weight ?? 0; }
+}
+const command = new Command({ get weight() { return later; } });
+const later = 7;
+export { Command, command, later };
+"#,
+            vec![
+                logical_module("command", &[Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["command", "value"],
+        &[],
+    );
+}
+
+#[test]
+fn derived_constructor_remains_opaque() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"class Base {}
+class Command extends Base {
+  constructor(config) { super(); this.config = config; }
+}
+function factory(config) { return new Command(config); }
+const command = factory({ execute: () => later });
+const later = 7;
+export { Base, Command, factory, command, later };
+"#,
+            vec![
+                logical_module("command", &[Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["command", "value"],
+        &[],
+    );
+}
+
+#[test]
+fn instance_field_initializer_runs_when_constructed() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const later = 7;
+function execute() { return later; }
+class Command { result = execute(); }
+const command = new Command();
+console.log(command.result);
+export { Command, execute, command, later };
+"#,
+        vec![
+            logical_module("command", &[Member::new("command")]),
+            logical_module("value", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "7\n");
+}
+
+#[test]
+fn instance_field_call_before_later_binding_constrains_order() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"class Command { result = execute(); }
+function execute() { return later; }
+const command = new Command();
+const later = 7;
+export { Command, execute, command, later };
+"#,
+            vec![
+                logical_module("command", &[Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["command", "value"],
+        &[],
+    );
+}
+
+#[test]
+fn instance_field_that_stores_callback_remains_lazy() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class Command { execute = () => later; }
+const command = new Command();
+const later = 7;
+console.log(command.execute());
+export { Command, command, later };
+"#,
+            vec![
+                logical_module("command", &[Member::new("Command"), Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+}
+
+#[test]
+fn constructor_that_returns_another_object_remains_opaque() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"class Command {
+  constructor(config) { return { execute: config.execute }; }
+}
+function factory(config) { return new Command(config); }
+const command = factory({ execute: () => later });
+const later = 7;
+export { Command, factory, command, later };
+"#,
+            vec![
+                logical_module("command", &[Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["command", "value"],
+        &[],
+    );
+}
+
+#[test]
+fn published_instance_can_expose_stored_callback() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"class Command { constructor(config) { this.config = config; } }
+function factory(config) { return new Command(config); }
+const command = factory({ execute: () => later });
+globalThis.saved = command;
+console.log("ready");
+const later = 7;
+export { Command, factory, command, later };
+"#,
+            vec![
+                logical_module("command", &[Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["anon_residual_sentinel", "value"],
+        &[],
+    );
+}
+
+#[test]
 fn returned_closure_is_not_invoked_by_factory() {
     let fixture = run_fixture(
         FixtureOpts::new(
