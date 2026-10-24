@@ -179,14 +179,14 @@ describe("GitHub create_pull_request", () => {
     ]);
   });
 
-  it("shows the description in the opened card and the full card", async () => {
+  it("shows the description's first lines on the compact card and all of it when opened", async () => {
     const withBody = { ...args, body: "Test description." };
     for (const view of [renderPaneOpened, renderDetailsArguments]) {
       const container = await mount(view(CREATE_PULL_REQUEST, withBody));
       expect(container.querySelector("[data-operation-heading]")?.textContent).toBe("Description");
       expect(container.textContent).toContain("Test description.");
     }
-    expect((await mount(renderPaneCollapsed(CREATE_PULL_REQUEST, withBody))).textContent).not.toContain(
+    expect((await mount(renderPaneCollapsed(CREATE_PULL_REQUEST, withBody))).textContent).toContain(
       "Test description."
     );
   });

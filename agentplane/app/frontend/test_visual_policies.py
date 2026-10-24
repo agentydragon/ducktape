@@ -504,13 +504,8 @@ async def test_compact_action_summaries(
         ).to_be_visible()
         await view.capture(f"{capture_name}-collapsed", target=section)
     if group == "github" and name == "create_pull_request":
-        await expect(collapsed_summary.get_by_text("Draft pull request.", exact=True)).to_be_visible()
-        await expect(
-            collapsed_summary.get_by_text("Do not allow maintainers to edit the branch.", exact=True)
-        ).to_be_visible()
-        await expect(
-            collapsed_summary.get_by_text("Request review from reviewer1, reviewer2.", exact=True)
-        ).to_be_visible()
+        for chip in ("draft", "maintainers cannot edit", "review from reviewer1, reviewer2"):
+            await expect(collapsed_summary.get_by_text(chip, exact=True)).to_be_visible()
         await view.capture(f"{capture_name}-collapsed", target=section)
     await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
     await expect(section.get_by_text(visible)).to_be_visible()

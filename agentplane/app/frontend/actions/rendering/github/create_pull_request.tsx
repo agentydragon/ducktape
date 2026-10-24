@@ -37,6 +37,20 @@ function HeadAndOptions({ args }: { args: CreatePullRequestArguments }): JSX.Ele
   );
 }
 
+// The description's first lines say why the card withholds its decision buttons.
+function CreatePullRequestCollapsed({ args }: { args: CreatePullRequestArguments }): JSX.Element {
+  return (
+    <Stack gap={2}>
+      <HeadAndOptions args={args} />
+      {args.body && (
+        <Text size="sm" lineClamp={2} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          {args.body}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
 function CreatePullRequest({ args }: { args: CreatePullRequestArguments }): JSX.Element {
   return (
     <Stack gap="xs">
@@ -59,7 +73,10 @@ export const createPullRequestLabel: ArgumentsPreview = definePreview(
   zCreatePullRequestArguments,
   CreatePullRequestLabel
 );
-export const createPullRequestCollapsed: ArgumentsPreview = definePreview(zCreatePullRequestArguments, HeadAndOptions);
+export const createPullRequestCollapsed: ArgumentsPreview = definePreview(
+  zCreatePullRequestArguments,
+  CreatePullRequestCollapsed
+);
 export const createPullRequestPane: ArgumentsPreview = definePreview(zCreatePullRequestArguments, CreatePullRequest);
 
 export const createPullRequestPresentation: ActionPresentation = {
