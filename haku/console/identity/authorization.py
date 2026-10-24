@@ -12,7 +12,6 @@ import logging
 import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable, Collection
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from typing import TypeVar
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
@@ -31,7 +30,6 @@ from haku.console.database_schema import (
     IdentityAnchor,
     OidcIdentity,
     Operator,
-    StaticCredential,
 )
 from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind, EnrollmentPhase
 from haku.console.identity.enrollment import (
@@ -55,7 +53,7 @@ from haku.console.identity.enrollment import (
     ReconnectableAgent,
     ReconnectAgentDecision,
 )
-from haku.console.identity.naming import InvalidAgentNameError, NormalizedAgentName, normalize_agent_name
+from haku.console.identity.naming import InvalidAgentNameError, normalize_agent_name
 from haku.console.identity.operator_identity import InactiveOperatorError
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 
@@ -89,36 +87,12 @@ class AgentGrantAuthorityUnavailableError(Exception):
     """Haku cannot currently make an authoritative Agent decision."""
 
 
-@dataclass(frozen=True, slots=True)
-class StaticAgentDefinition:
-    """Controller-owned identity and credential evidence for one static Agent slot."""
-
-    agent_id: UUID
-    display_name: str
-    operator_id: UUID
-    secret_reference: str
-    token_fingerprint: bytes
-    access_profile_id: str
-
-
-class StaticAgentDefinitionError(ValueError):
-    """Static Agent configuration contradicts durable authority state."""
-
-
 def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
 def _new_browser_secret() -> str:
     return secrets.token_urlsafe(_BROWSER_SECRET_BYTES)
-
-
-def fingerprint_static_token(token: str) -> bytes:
-    """Hash a configured bearer without retaining the raw credential."""
-
-    if not token:
-        raise ValueError("static Agent token must not be empty")
-    return hashlib.sha256(token.encode("utf-8")).digest()
 
 
 def _digest(*parts: str) -> bytes:
@@ -380,244 +354,6 @@ class PostgresAgentAuthority:
                         self._expire_unactivated_binding(binding, agent, now)
                 processed += len(issued_interactions)
         return processed
-
-    async def reconcile_static_agents(self, definitions: Collection[StaticAgentDefinition]) -> None:
-        """Make this complete desired static-Agent set current atomically."""
-
-        return await self._database_call(lambda: self._reconcile_static_agents(definitions))
-
-    async def _reconcile_static_agents(self, definitions: Collection[StaticAgentDefinition]) -> None:
-        prepared = await self._prepare_static_definitions(definitions)
-        now = await self._now()
-        async with self._sessions.begin() as session:
-            await self._lock_key(session, "static-agent-reconcile")
-            for definition, name in sorted(prepared, key=lambda item: item[0].agent_id.int):
-                await self._require_access_profile_id(definition.access_profile_id)
-                await self._lock_key(session, "static-agent", str(definition.agent_id))
-                await self._operator_identities.require_active_in_transaction(session, definition.operator_id)
-                agent = await session.get(Agent, definition.agent_id, with_for_update=True)
-                if agent is None:
-                    await self._lock_key(session, "agent-name", name.reservation_key)
-                    await self._require_name_available(session, name.reservation_key, agent_id=None)
-                    reservation_id = uuid4()
-                    agent = Agent(
-                        agent_id=definition.agent_id,
-                        owner_operator_id=definition.operator_id,
-                        current_name_reservation_id=reservation_id,
-                        status=AgentStatus.ACTIVE,
-                        created_at=now,
-                        updated_at=now,
-                        activated_at=now,
-                        last_seen_at=None,
-                        access_profile_id=definition.access_profile_id,
-                    )
-                    session.add(agent)
-                    await session.flush()
-                    session.add(
-                        AgentNameReservation(
-                            reservation_id=reservation_id,
-                            display_name=name.display_name,
-                            display_name_key=name.reservation_key,
-                            originating_interaction_id=None,
-                            pending_interaction_id=None,
-                            agent_id=agent.agent_id,
-                            created_at=now,
-                            activated_at=now,
-                        )
-                    )
-                    await session.flush()
-                else:
-                    if agent.owner_operator_id != definition.operator_id or agent.status not in {
-                        AgentStatus.ACTIVE,
-                        AgentStatus.DISABLED,
-                    }:
-                        raise StaticAgentDefinitionError(
-                            f"static Agent slot {definition.agent_id} conflicts with durable Agent ownership or status"
-                        )
-                    await self._reconcile_static_name(session, agent, name, now)
-                    if agent.access_profile_id != definition.access_profile_id:
-                        agent.access_profile_id = definition.access_profile_id
-                        agent.updated_at = now
-
-                active_row = (
-                    await session.execute(
-                        select(CredentialBinding, StaticCredential)
-                        .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
-                        .where(
-                            CredentialBinding.agent_id == agent.agent_id,
-                            CredentialBinding.status == CredentialBindingStatus.ACTIVE,
-                        )
-                        .with_for_update()
-                    )
-                ).one_or_none()
-                if active_row is not None:
-                    active_binding, active_credential = active_row
-                    if active_binding.kind is not CredentialKind.STATIC:
-                        raise StaticAgentDefinitionError(
-                            f"static Agent slot {definition.agent_id} is already owned by a non-static binding"
-                        )
-                    if hmac.compare_digest(active_credential.credential_fingerprint, definition.token_fingerprint):
-                        # A deployment may rename the configuration slot that supplies an unchanged
-                        # credential. The source label is metadata, not credential identity.
-                        continue
-                    active_binding.status = CredentialBindingStatus.REVOKED
-                    active_binding.ended_at = now
-                    active_binding.end_reason = "static_credential_rotated"
-                    active_binding.updated_at = now
-                    predecessor_id = active_binding.binding_id
-                else:
-                    predecessor_id = None
-
-                fingerprint_owner = await session.scalar(
-                    select(StaticCredential.binding_id).where(
-                        StaticCredential.credential_fingerprint == definition.token_fingerprint
-                    )
-                )
-                if fingerprint_owner is not None:
-                    raise StaticAgentDefinitionError("static Agent token fingerprint was already used")
-                latest = await session.scalar(
-                    select(CredentialBinding)
-                    .where(CredentialBinding.agent_id == agent.agent_id)
-                    .order_by(CredentialBinding.generation.desc())
-                    .limit(1)
-                    .with_for_update()
-                )
-                if latest is not None:
-                    if latest.kind is not CredentialKind.STATIC:
-                        raise StaticAgentDefinitionError("static Agent slot has non-static credential history")
-                    if latest.status not in {
-                        CredentialBindingStatus.REVOKED,
-                        CredentialBindingStatus.EXPIRED,
-                        CredentialBindingStatus.FAILED,
-                    }:
-                        raise StaticAgentDefinitionError("static Agent has a nonterminal non-active binding")
-                    if predecessor_id is None:
-                        predecessor_id = latest.binding_id
-                    generation = latest.generation + 1
-                else:
-                    generation = 1
-                binding_id = uuid4()
-                session.add(
-                    CredentialBinding(
-                        binding_id=binding_id,
-                        agent_id=agent.agent_id,
-                        kind=CredentialKind.STATIC,
-                        status=CredentialBindingStatus.ACTIVE,
-                        generation=generation,
-                        supersedes_binding_id=predecessor_id,
-                        created_at=now,
-                        updated_at=now,
-                        issued_at=now,
-                        activated_at=now,
-                        ended_at=None,
-                        end_reason=None,
-                    )
-                )
-                await session.flush()
-                session.add(
-                    StaticCredential(
-                        binding_id=binding_id,
-                        secret_reference=definition.secret_reference,
-                        credential_fingerprint=definition.token_fingerprint,
-                        created_at=now,
-                    )
-                )
-                if agent.status is AgentStatus.DISABLED:
-                    agent.status = AgentStatus.ACTIVE
-                    agent.updated_at = now
-
-            desired_agent_ids = tuple(definition.agent_id for definition, _name in prepared)
-            removed = (
-                await session.execute(
-                    select(Agent, CredentialBinding)
-                    .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
-                    .where(
-                        CredentialBinding.kind == CredentialKind.STATIC,
-                        CredentialBinding.status == CredentialBindingStatus.ACTIVE,
-                        Agent.agent_id.not_in(desired_agent_ids),
-                    )
-                    .order_by(Agent.agent_id)
-                    .with_for_update()
-                )
-            ).all()
-            for agent, binding in removed:
-                binding.status = CredentialBindingStatus.REVOKED
-                binding.ended_at = now
-                binding.end_reason = "static_configuration_removed"
-                binding.updated_at = now
-                agent.status = AgentStatus.DISABLED
-                agent.updated_at = now
-
-    @staticmethod
-    async def _prepare_static_definitions(
-        definitions: Collection[StaticAgentDefinition],
-    ) -> list[tuple[StaticAgentDefinition, NormalizedAgentName]]:
-        prepared: list[tuple[StaticAgentDefinition, NormalizedAgentName]] = []
-        agent_ids: set[UUID] = set()
-        name_keys: set[str] = set()
-        fingerprints: set[bytes] = set()
-        for definition in definitions:
-            if (
-                definition.agent_id in agent_ids
-                or not definition.secret_reference.strip()
-                or not isinstance(definition.token_fingerprint, bytes)
-                or not definition.token_fingerprint
-                or not definition.access_profile_id
-            ):
-                raise StaticAgentDefinitionError("static Agent definitions require unique ids and nonempty evidence")
-            try:
-                name = normalize_agent_name(definition.display_name)
-            except InvalidAgentNameError as error:
-                raise StaticAgentDefinitionError(str(error)) from error
-            if name.reservation_key in name_keys or definition.token_fingerprint in fingerprints:
-                raise StaticAgentDefinitionError("static Agent names and token fingerprints must be globally unique")
-            agent_ids.add(definition.agent_id)
-            name_keys.add(name.reservation_key)
-            fingerprints.add(definition.token_fingerprint)
-            prepared.append((definition, name))
-        return prepared
-
-    @staticmethod
-    async def _require_name_available(session: AsyncSession, name_key: str, agent_id: UUID | None) -> None:
-        reservation = await session.scalar(
-            select(AgentNameReservation).where(AgentNameReservation.display_name_key == name_key)
-        )
-        if reservation is not None and reservation.agent_id != agent_id:
-            raise StaticAgentDefinitionError("static Agent display name is already reserved")
-
-    async def _reconcile_static_name(
-        self, session: AsyncSession, agent: Agent, name: NormalizedAgentName, now: datetime.datetime
-    ) -> None:
-        current = await session.get(AgentNameReservation, agent.current_name_reservation_id)
-        if current is None:
-            raise StaticAgentDefinitionError("static Agent current display name is missing")
-        if current.display_name_key == name.reservation_key:
-            return
-        await self._lock_key(session, "agent-name", name.reservation_key)
-        existing = await session.scalar(
-            select(AgentNameReservation).where(AgentNameReservation.display_name_key == name.reservation_key)
-        )
-        if existing is not None:
-            if existing.agent_id != agent.agent_id:
-                raise StaticAgentDefinitionError("static Agent display name is already reserved")
-            agent.current_name_reservation_id = existing.reservation_id
-            agent.updated_at = now
-            return
-        reservation_id = uuid4()
-        session.add(
-            AgentNameReservation(
-                reservation_id=reservation_id,
-                display_name=name.display_name,
-                display_name_key=name.reservation_key,
-                originating_interaction_id=None,
-                pending_interaction_id=None,
-                agent_id=agent.agent_id,
-                created_at=now,
-                activated_at=now,
-            )
-        )
-        agent.current_name_reservation_id = reservation_id
-        agent.updated_at = now
 
     async def open_interaction(
         self,

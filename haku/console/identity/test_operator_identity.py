@@ -73,7 +73,7 @@ async def test_concurrent_first_contact_creates_one_operator_and_anchor(
         assert (await session.execute(select(func.count()).select_from(OidcIdentity))).scalar_one() == 2
 
 
-async def test_disabled_operator_invalidates_session_static_and_resolution_paths(
+async def test_disabled_operator_invalidates_session_and_identity_resolution(
     migrated_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     store = _store(migrated_sessions)
@@ -90,7 +90,7 @@ async def test_disabled_operator_invalidates_session_static_and_resolution_paths
     )
     assert not await store.is_active(identity.operator_id)
     with pytest.raises(InactiveOperatorError):
-        await store.resolve_configured_external_user_key("disabled-user")
+        await store.resolve_verified_identity(VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject="disabled-user"))
 
 
 async def test_existing_authority_fails_closed_when_current_trust_changes(
@@ -108,8 +108,8 @@ async def test_existing_authority_fails_closed_when_current_trust_changes(
         )
         is None
     )
-    # Static/DCR ownership is anchored to the deployment trust domain, not a particular OIDC
-    # adapter, so removing the browser issuer revokes the browser session without orphaning it.
+    # Existing ownership remains in the trust domain even after the browser issuer is removed,
+    # while the browser session itself is invalidated by the narrowed issuer allowlist.
     assert await changed_issuer_store.is_active(identity.operator_id)
 
     changed_domain_store = PostgresOperatorIdentityStore(

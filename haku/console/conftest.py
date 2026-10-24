@@ -23,21 +23,17 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, cast
-from uuid import UUID
 
 import itsdangerous
 import pytest
 import yaml
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig
 from haku.console.database_migrate import apply_migrations
-from haku.console.database_schema import Agent, CredentialBinding, StaticCredential
-from haku.console.identity.authorization import fingerprint_static_token
 from haku.console.identity.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY, OperatorActor
 from haku.console.identity.operator_identity import (
     OperatorIdentityTrust,
@@ -60,22 +56,8 @@ from util.testing.sqlalchemy_engines import managed_async_engine
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg
 
-# A default static agent so each app fixture has an identity for internal authorization paths
-# without every test spelling one out. Tests that exercise Agent authority pass their own
-# `config_file` naming the identities and bearer credentials they need.
-_DEFAULT_AGENT_TOKEN = "default-agent-token"
-# The one access profile `make_client`'s default config defines and assigns its seeded static
-# agent; tests asserting profile identity import this rather than re-minting the literal.
+# The one access profile `make_client`'s default config defines.
 DEFAULT_ACCESS_PROFILE_ID = "no_auto_approval"
-_DEFAULT_STATIC_AGENTS = {
-    "default": {
-        "agent_id": "00000000-0000-4000-8000-000000000001",
-        "display_name": "Console Test Agent",
-        "token": _DEFAULT_AGENT_TOKEN,
-        "operator_subject": "default-op",
-        "access_profile_id": DEFAULT_ACCESS_PROFILE_ID,
-    }
-}
 
 # App-owned operator auth for tests. A dummy `operator_oidc` (no live IdP needed) activates
 # SessionMiddleware + the router guards exactly as production does; tests inject the operator session
@@ -177,17 +159,6 @@ async def _resolve_operator_identity(app: Any, external_user_key: str) -> Resolv
     )
 
 
-async def operator_id(sessions: async_sessionmaker[AsyncSession], external_user_key: str) -> UUID:
-    """Resolve a controller-fed external user key using the caller's async sessionmaker."""
-    store = PostgresOperatorIdentityStore(
-        sessions,
-        OperatorIdentityTrust(
-            trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
-        ),
-    )
-    return await store.resolve_configured_external_user_key(external_user_key)
-
-
 async def resolve_operator_identity(
     sessions: async_sessionmaker[AsyncSession], *, issuer: str, subject: str
 ) -> ResolvedOperatorIdentity:
@@ -197,18 +168,6 @@ async def resolve_operator_identity(
         OperatorIdentityTrust(trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({issuer})),
     )
     return await store.resolve_verified_identity(VerifiedExternalIdentity(issuer=issuer, subject=subject))
-
-
-async def default_agent_binding(sessions: async_sessionmaker[AsyncSession]) -> tuple[UUID, UUID]:
-    """The ``(agent_id, binding_id)`` of the default static agent ``make_client`` seeds."""
-    async with sessions() as session:
-        result = await session.execute(
-            select(CredentialBinding.agent_id, CredentialBinding.binding_id)
-            .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
-            .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
-            .where(StaticCredential.credential_fingerprint == fingerprint_static_token(_DEFAULT_AGENT_TOKEN))
-        )
-        return cast(tuple[UUID, UUID], result.one())
 
 
 @pytest.fixture(scope="session")
@@ -281,7 +240,6 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
     default_config = write_config(
         tmp_path / "console_default.yaml",
         {
-            "static_agents": _DEFAULT_STATIC_AGENTS,
             "access_profiles": [{"id": DEFAULT_ACCESS_PROFILE_ID}],
             "default_access_profile_id": DEFAULT_ACCESS_PROFILE_ID,
         },
@@ -298,9 +256,9 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         **settings_overrides: Any,
     ) -> Iterator[TestClient]:
         # Every app uses production-shaped OIDC settings. `operator=True` presents an authenticated
-        # signed session; false leaves the client anonymous for auth-boundary/static-agent tests.
-        # config_file defaults to the config naming the default static agent; a test overrides it
-        # by passing its own. haku_ui_url + database_url come from console_settings.
+        # signed session; false leaves the client anonymous for authorization-boundary tests.
+        # config_file defaults to the profile-only config; a test can override it. haku_ui_url +
+        # database_url come from console_settings.
         settings = console_settings(
             migrated_db_url,
             config_file=config_file if config_file is not None else default_config,

@@ -26,88 +26,6 @@ spec:
       mergePolicy: Merge
       type: kubernetes.io/dockerconfigjson
 ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: forgejo-secret-reader
-  namespace: haku-console
-automountServiceAccountToken: false
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: haku-console-agent-api-reader
-  namespace: forgejo
-rules:
-  - apiGroups:
-      - ""
-    resourceNames:
-      - haku-console-agent-api
-    resources:
-      - secrets
-    verbs:
-      - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: haku-console-agent-api-reader
-  namespace: forgejo
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: haku-console-agent-api-reader
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: forgejo-secret-reader
-    namespace: haku-console
----
-apiVersion: external-secrets.io/v1
-kind: ClusterSecretStore
-metadata:
-  name: kubernetes-haku-console-agent-api-secret-store
-spec:
-  conditions:
-    - namespaces:
-        - haku-console
-  provider:
-    kubernetes:
-      auth:
-        serviceAccount:
-          name: forgejo-secret-reader
-      remoteNamespace: forgejo
-      server:
-        caProvider:
-          key: ca.crt
-          name: kube-root-ca.crt
-          namespace: default
-          type: ConfigMap
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: haku-console-agent-api
-  namespace: haku-console
-spec:
-  dataFrom:
-    - extract:
-        key: haku-console-agent-api
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-haku-console-agent-api-secret-store
-  target:
-    creationPolicy: Owner
-    name: haku-console-agent-api
-    template:
-      metadata:
-        annotations:
-          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-sandbox,haku-egress-proxy
-          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-sandbox,haku-egress-proxy
----
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -416,16 +334,9 @@ data:
       - id: manual_review
         type: never
     access_profiles:
-      - id: haku
-        auto_approval_policy: manual_review
       - id: manual-review
         auto_approval_policy: manual_review
     default_access_profile_id: manual-review
-    static_agents:
-      haku:
-        agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
-        display_name: Haku
-        access_profile_id: haku
     mcp:
       servers: {}
 immutable: false
@@ -435,7 +346,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: config
-    secret.reloader.stakater.com/reload: haku-console-agent-api,haku-console-oidc,haku-routine-launch-token
+    secret.reloader.stakater.com/reload: haku-console-oidc,haku-routine-launch-token
   labels:
     app.kubernetes.io/name: haku-console
   name: haku-console
@@ -488,18 +399,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: haku-console-db-app
-            - name: HAKU_CONSOLE__STATIC_AGENTS__HAKU__TOKEN
-              valueFrom:
-                secretKeyRef:
-                  key: token
-                  name: haku-console-agent-api
-                  optional: false
-            - name: HAKU_CONSOLE__STATIC_AGENTS__HAKU__OPERATOR_SUBJECT
-              valueFrom:
-                secretKeyRef:
-                  key: operator_subject
-                  name: haku-console-oidc
-                  optional: false
             - name: HAKU_CONSOLE__OPERATOR_OIDC__ISSUER
               value: https://auth.allegedly.works/application/o/haku-console/
             - name: HAKU_CONSOLE__OPERATOR_OIDC__CLIENT_ID

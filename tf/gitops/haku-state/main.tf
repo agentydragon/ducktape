@@ -129,27 +129,6 @@ resource "kubernetes_secret" "haku_forgejo_git_source" {
   }
 }
 
-resource "random_password" "haku_console_agent_api" {
-  length  = 48
-  special = false
-}
-
-# Shared static-Agent bearer for the haku-ui backend / Haku worker -> haku-console MCP server.
-# It does NOT approve calls; approval stays in trusted console chrome. Copied into
-# haku-console beside Haku Console (cluster/cdk8s/haku/charts.py), and Reflector mirrors
-# that copy into haku-sandbox and the spike's destination-scoped substitution proxy
-# namespace.
-resource "kubernetes_secret" "haku_console_agent_api_source" {
-  metadata {
-    name      = "haku-console-agent-api"
-    namespace = "forgejo"
-  }
-
-  data = {
-    token = random_password.haku_console_agent_api.result
-  }
-}
-
 # Source credential for forgejo-token-rotation, copied into agents-infra
 # (cluster/cdk8s/forgejo/token_rotation.py). The rotator uses Basic auth only to
 # mint full-account API tokens, then writes the distributed `tea` configs as SOPS

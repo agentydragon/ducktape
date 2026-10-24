@@ -73,6 +73,9 @@ AGENT_ID=$(ant beta:agents create < haku.agent.yaml --transform id -r)
 
 ## 3. Vault + the haku-console credential
 
+**Retired integration:** Haku Console no longer exposes `/mcp` or issues a static Agent bearer.
+Do not use the credential or commands in this historical draft.
+
 One vault holds MCP creds; haku-console's aggregated `/mcp` is gated by the static
 bearer Haku already has reflected into `haku-sandbox` (`haku-console-agent-api`).
 The token is piped via stdin (never on argv).

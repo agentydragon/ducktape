@@ -65,8 +65,3 @@ class OperatorIdentityTrust:
         if not identity.subject.strip():
             raise OperatorIdentityInvariantError("verified OIDC subject must not be empty")
         return IdentityAnchorKey(trust_domain=self.trust_domain, stable_external_user_key=identity.subject)
-
-    def configured_anchor_key(self, stable_external_user_key: str) -> IdentityAnchorKey:
-        if not stable_external_user_key.strip():
-            raise OperatorIdentityInvariantError("configured stable external user key must not be empty")
-        return IdentityAnchorKey(trust_domain=self.trust_domain, stable_external_user_key=stable_external_user_key)

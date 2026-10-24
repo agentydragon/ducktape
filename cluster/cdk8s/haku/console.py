@@ -9,7 +9,7 @@ logs or patch it) and outside the haku-egress-proxy fence, so it gets ordinary e
 hold secrets Haku may not read (haku/PLAN.md, "The agent-authored console").
 
 The API and static shell are separate Deployments so a frontend-only image update never
-restarts operator authentication, MCP streams, or background workers. Both images carry the
+restarts operator authentication or background maintenance. Both images carry the
 `unset` placeholder tag image-pins/ overrides (cluster/docs/cdk8s.md); the API's own tag also
 reaches the Settings panel through the hand-written `image-metadata.yaml` ConfigMap, which
 carries the Flux marker a generated file cannot.
@@ -220,18 +220,6 @@ class Console(Construct):
                     EnvValue.from_value(f"{_STATIC_METADATA_DIR}/{_IMAGE_TAG_KEY}"),
                 ),
                 *database_env(self).items(),
-                # The static Agents' bearers; the durable Agent UUIDs and display names are in
-                # the config file.
-                self._from_secret(
-                    SecretRef(namespace=NAMESPACE, name="haku-console-agent-api").key("token"),
-                    "static_agents",
-                    "haku",
-                    "token",
-                ),
-                # The Operator each static Agent acts as: the controller-fed Authentik user id,
-                # resolved through the identity trust domain to a canonical Operator UUID and never
-                # live request authority.
-                self._from_secret(oidc.key("operator_subject"), "static_agents", "haku", "operator_subject"),
                 # Operator browser login: the console authenticates the operator itself
                 # (authorization-code -> signed session cookie) with the provider tf/gitops/
                 # agent-machine-access mints under application slug haku-console. Required.

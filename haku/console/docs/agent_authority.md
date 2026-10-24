@@ -1,11 +1,12 @@
 # Canonical Agent authority
 
-The Console owns canonical Operator and Agent identity for the browser-managed Agent catalog. The
+The Console owns canonical Operator and Agent identity for its browser-managed Agent catalog. The
 browser login remains at `/auth/*`; `/api/agent-enrollment/agents` lists Agents for the authenticated
-Operator and permits profile changes only for eligible Agents. Static Agent identities and their
-profile assignments come from deployment configuration.
+Operator and permits profile changes only for eligible Agents. Static Agent configuration and
+startup reconciliation are retired. Revision `0138` disables existing static Agents and revokes
+their active bindings while retaining their rows as history.
 
-Alembic revision `0081` is the forward-only database baseline. The live identity graph is:
+Alembic revision `0081` is the forward-only database baseline. The retained identity graph is:
 
 ```text
 Operator -> IdentityAnchor -> OidcIdentity
@@ -24,10 +25,11 @@ Agent -> CredentialBinding -> AuthorizationGrant | StaticCredential
   name is presentation owned by the canonical Agent; it is never a credential or identity key.
 - A `CredentialBinding` owns credential kind, generation, predecessor, and lifecycle. An OAuth
   `AuthorizationGrant` owns client software, authorizing identity, scopes, and token-family evidence.
-  Static rotation and OAuth reconnect create successor bindings instead of mutating Agent identity.
-- An Agent stores a nullable `access_profile_id`. The deploy catalog validates profile IDs and
-  static Agent references; a profile is an identity label only and does not enable tool execution,
-  auto-approval, or a Console-held server.
+  OAuth reconnect creates successor bindings instead of mutating Agent identity. Static credential
+  rows remain only as immutable history; no runtime path creates or rotates them.
+- An Agent stores a nullable `access_profile_id`. The deploy catalog validates profile IDs; a
+  profile is an identity label only and does not enable tool execution, auto-approval, or a
+  Console-held server.
 
 ## Retained tool-call and grant data
 

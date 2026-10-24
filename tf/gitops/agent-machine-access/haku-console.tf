@@ -83,11 +83,5 @@ resource "kubernetes_secret" "haku_console_oidc_source" {
     operator_client_id      = authentik_provider_oauth2.haku_console_operator.client_id
     operator_client_secret  = authentik_provider_oauth2.haku_console_operator.client_secret
     operator_session_secret = random_password.haku_console_operator_session.result
-    # Controller-fed stable external user key for the shared Authentik user-id trust domain (both
-    # providers run sub_mode=user_id). Haku resolves this to a canonical Operator UUID; the key is
-    # used only during startup/migration and never carried as live request authority.
-    # Externally stable label: this is only a startup seed for canonical Operator resolution,
-    # never a live authorization key.
-    operator_subject = tostring(data.authentik_user.agentydragon.pk)
   }
 }

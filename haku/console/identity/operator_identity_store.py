@@ -75,16 +75,6 @@ class PostgresOperatorIdentityStore:
             session.add(oidc_identity)
             return ResolvedOperatorIdentity(operator_id=operator.operator_id, identity_id=oidc_identity.identity_id)
 
-    async def resolve_configured_external_user_key(self, stable_external_user_key: str) -> UUID:
-        """Resolve a controller-fed Authentik user id without fabricating an OIDC identity row."""
-        anchor_key = self.trust.configured_anchor_key(stable_external_user_key)
-        now = _now()
-        async with self._session_factory.begin() as session:
-            await self._lock_anchor(session, anchor_key)
-            anchor, operator = await self._get_or_create_anchor(session, anchor_key, now)
-            anchor.updated_at = now
-            return operator.operator_id
-
     async def resolve_active_session(self, *, operator_id: UUID, identity_id: UUID) -> ResolvedOperatorIdentity | None:
         """Revalidate a signed browser session against current identity and Operator state."""
         async with self._session_factory() as session:

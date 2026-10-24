@@ -33,8 +33,7 @@ from haku.console import capabilities
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.identity import agent_routes, operator_auth, operator_login_flow
-from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.identity.config import LoadedStaticAgent, load_static_agents
+from haku.console.identity.authorization import PostgresAgentAuthority
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.models import ConfigResponse
@@ -98,14 +97,8 @@ def _operator_identity_trust(settings: Settings) -> OperatorIdentityTrust:
     )
 
 
-def create_app(
-    settings: Settings,
-    *,
-    loaded_static_agents: list[LoadedStaticAgent] | None = None,
-    static_agent_definitions: tuple[StaticAgentDefinition, ...] | None = None,
-) -> FastAPI:
-    # Deploy-time Console config file (non-secret): Agent profiles and static identities.
-    console_config = settings
+def create_app(settings: Settings) -> FastAPI:
+    # Deploy-time Console config file (non-secret): Agent access profiles.
     # Postgres is required for operator identity and login-flow state. Construction is lazy (no
     # connect); migrations run once at startup (app.main / the test fixture), not here.
     # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
@@ -121,47 +114,15 @@ def create_app(
     agent_authority = PostgresAgentAuthority(
         db_sessions,
         operator_identity_store=operator_identity_store,
-        access_profiles=tuple(profile.id for profile in console_config.access_profiles),
-        default_access_profile_id=console_config.default_access_profile_id,
+        access_profiles=tuple(profile.id for profile in settings.access_profiles),
+        default_access_profile_id=settings.default_access_profile_id,
     )
-    # Tests/new databases may let create_app read env-backed static credentials here. Schema
-    # generation may inject already-canonical definitions because it deliberately has no database;
-    # this is the same authority input reconciled at startup, not a request-time identity shortcut.
-    if loaded_static_agents is not None and static_agent_definitions is not None:
-        raise ValueError("loaded_static_agents and static_agent_definitions are mutually exclusive")
-    if static_agent_definitions is None:
-        loaded_static_agents = (
-            loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
-        )
-
-    async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
-        assert loaded_static_agents is not None
-
-        async def resolve_agent(agent: LoadedStaticAgent) -> StaticAgentDefinition:
-            return StaticAgentDefinition(
-                agent_id=agent.agent_id,
-                display_name=agent.display_name,
-                operator_id=await operator_identity_store.resolve_configured_external_user_key(
-                    agent.operator_external_user_key
-                ),
-                secret_reference=agent.secret_reference,
-                token_fingerprint=fingerprint_static_token(agent.token.get_secret_value()),
-                access_profile_id=agent.access_profile_id,
-            )
-
-        return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as stack:
             # Register before startup work so partial startup still disposes the pool.
             stack.push_async_callback(db_engine.dispose)
-            static_definitions = (
-                static_agent_definitions
-                if static_agent_definitions is not None
-                else await _resolve_static_agent_definitions()
-            )
-            await agent_authority.reconcile_static_agents(static_definitions)
             await stack.enter_async_context(agent_authority.expiry_maintenance())
             yield
 
@@ -279,11 +240,10 @@ async def _serve(app: FastAPI) -> None:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     settings = Settings()
-    loaded_static_agents = load_static_agents(settings)
     # DDL belongs to the image-coupled release Job. Before binding a port, prove this image can
     # read the already-migrated schema so an incompatible rollout never becomes Ready.
     verify_schema(settings.database_url.get_secret_value())
-    app = create_app(settings, loaded_static_agents=loaded_static_agents)
+    app = create_app(settings)
     asyncio.run(_serve(app))
 
 

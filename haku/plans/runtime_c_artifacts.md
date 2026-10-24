@@ -23,6 +23,10 @@ in-cluster loop can reach in-cluster MCP servers directly). The model goes
 through LiteLLM, so the provider is a config knob and only LiteLLM holds provider
 keys.
 
+The haku-console `/mcp` connector shown in this sketch and the later
+`HAKU_CONSOLE_TOKEN` example are retired; the Console no longer serves that endpoint or
+issues its static Agent credential.
+
 ## 1. The agent (`haku_agent.py`)
 
 ```python

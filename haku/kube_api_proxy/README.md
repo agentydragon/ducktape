@@ -1,9 +1,10 @@
 # Haku Kubernetes API proxy
 
-> **Current status:** Console's `/api/internal/kubernetes/authorize` endpoint was retired with the
-> grants subsystem. The deployed proxy fails closed: authorization requests to Console fail, so it
-> forwards no Kubernetes requests. The implementation details below describe the previous
-> authorization contract; they do not mean Agent Kubernetes access is enabled.
+> **Current status:** Console's `/api/internal/kubernetes/authorize` endpoint and its static Agent
+> bearer were retired with the grants subsystem and static-Agent reconciliation. The deployed proxy
+> fails closed: authorization requests to Console fail, so it forwards no Kubernetes requests. The
+> implementation details below describe the previous contract; they do not mean Agent Kubernetes
+> access is enabled.
 
 This is the first, deliberately narrow implementation of the inline authorization
 proxy tracked by [#4428](https://github.com/agentydragon/ducktape/issues/4428).
@@ -99,7 +100,7 @@ sent, so the caller observes a truncated response rather than a status code:
 itself ends a watch, and an ordinary Kubernetes client re-lists and receives the
 new denial.
 
-## Console authorization contract
+## Previous Console authorization contract
 
 Example request:
 
@@ -203,17 +204,16 @@ the resolved Agent's deploy-managed access profile to select a subject, and
 fails closed when that profile has no configured subject or the bearer cannot
 be revalidated.
 
-## Deployment status and TODOs
+## Previous deployment status and TODOs
 
-The capability-neutral production cutover deploys this proxy at
+The proxy remains deployed at
 `haku-kubeapi.allegedly.works`. Public Coder reaches it only through its mandatory
-Agentplane egress, which substitutes the Agent's Haku bearer for that exact hostname.
+Agentplane egress, which previously substituted the Agent's Haku bearer for that exact hostname.
 The Agent has no Kubernetes credential and its NetworkPolicy has no direct
 kube-apiserver path. The proxy uses a rotating projected ServiceAccount token with a deliberately
-reviewed `cluster-admin` static ceiling. That ceiling creates no standing Agent authority: Console
-still authorizes every request through the fixed SAR subject or an active exact Agent-owned grant.
-For this personal cluster, the inline Haku decision is intentionally the effective temporary-access
-policy boundary so useful grants do not each require another GitOps RBAC expansion.
+reviewed `cluster-admin` static ceiling. That ceiling created no standing Agent authority while the
+previous Console authorization path was active; the current deployment fails closed as described
+above.
 
 Flux orders the cutover so the fixed SAR subject, Console configuration, proxy
 Deployment/route, and cross-namespace execution bindings exist before the Agent

@@ -40,6 +40,13 @@ access_profiles:
     auto_approval_policy: manual
     in_process_server_ids: [gmail]
 default_access_profile_id: manual
+static_agents:
+  haku:
+    agent_id: 00000000-0000-0000-0000-000000000002
+    display_name: Haku
+    token: retired-token
+    operator_subject: retired-operator
+    access_profile_id: manual
 auto_approval_policies:
   - id: manual
     type: never
@@ -54,6 +61,7 @@ mcp:
     assert settings.access_profiles[0].id == "manual"
     assert not hasattr(settings, "auto_approval_policies")
     assert not hasattr(settings, "mcp")
+    assert not hasattr(settings, "static_agents")
 
 
 def test_profile_catalog_rejects_duplicates_and_missing_default() -> None:
@@ -77,24 +85,6 @@ def test_settings_rejects_unrecognized_yaml_fields(tmp_path) -> None:
     )
     with pytest.raises(ValidationError):
         _settings_from_yaml(config_file)
-
-
-def test_static_agent_must_reference_a_configured_profile() -> None:
-    with pytest.raises(ValidationError):
-        ConsoleConfigFile.model_validate(
-            {
-                **_CONFIG,
-                "static_agents": {
-                    "test": {
-                        "agent_id": "00000000-0000-0000-0000-000000000002",
-                        "display_name": "Test Agent",
-                        "token": "test-agent-token",
-                        "operator_subject": "test-agent-operator",
-                        "access_profile_id": "missing",
-                    }
-                },
-            }
-        )
 
 
 if __name__ == "__main__":

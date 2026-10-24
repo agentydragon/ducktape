@@ -91,7 +91,7 @@ async def update_agent_access_profile(
         raise HTTPException(status_code=404, detail="Agent not found") from error
     except AgentAccessProfileManagedByDeploymentError as error:
         raise HTTPException(
-            status_code=409, detail="Static Agent access profiles are managed by deployment configuration"
+            status_code=409, detail="Retired static Agent access profiles are immutable"
         ) from error
     except AccessProfileUnavailableError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

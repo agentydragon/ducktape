@@ -34,13 +34,7 @@ from haku.console.identity.agent import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.identity.authorization import (
-    AgentGrantAuthorityUnavailableError,
-    PostgresAgentAuthority,
-    StaticAgentDefinition,
-    _digest,
-    fingerprint_static_token,
-)
+from haku.console.identity.authorization import AgentGrantAuthorityUnavailableError, PostgresAgentAuthority, _digest
 from haku.console.identity.enrollment import (
     AgentAccessProfileManagedByDeploymentError,
     CreateAgentDecision,
@@ -146,19 +140,6 @@ def db_url(migrated_db_url: str) -> str:
 
 
 HarnessFactory = Callable[..., Awaitable[Harness]]
-
-
-async def _active_static_binding_id(harness: Harness, agent_id: UUID) -> UUID:
-    async with harness.sessions() as session:
-        binding_id = await session.scalar(
-            select(CredentialBinding.binding_id).where(
-                CredentialBinding.agent_id == agent_id,
-                CredentialBinding.kind == CredentialKind.STATIC,
-                CredentialBinding.status == CredentialBindingStatus.ACTIVE,
-            )
-        )
-    assert binding_id is not None
-    return binding_id
 
 
 @pytest.fixture
@@ -448,38 +429,77 @@ async def _seed_expiring_grant(harness: Harness, *, phase: EnrollmentPhase) -> U
     return grant_id
 
 
-async def test_list_agents_returns_owned_active_and_disabled_agents_with_latest_binding(
-    harness: Harness, harness_factory: HarnessFactory
-) -> None:
-    active_definition = StaticAgentDefinition(
-        agent_id=uuid4(),
-        display_name="Listed Agent",
-        operator_id=harness.browser.operator_id,
-        secret_reference="env:LISTED_AGENT_TOKEN",
-        token_fingerprint=fingerprint_static_token("listed-agent-token"),
-        access_profile_id="no_auto_approval",
+async def _seed_retired_static_agent(harness: Harness, *, display_name: str, access_profile_id: str) -> UUID:
+    """Persist a disabled static Agent as retained history, as the retirement migration does."""
+    now = harness.clock.now
+    agent_id = uuid4()
+    reservation_id = uuid4()
+    binding_id = uuid4()
+    async with harness.sessions.begin() as session:
+        session.add(
+            Agent(
+                agent_id=agent_id,
+                owner_operator_id=harness.browser.operator_id,
+                current_name_reservation_id=reservation_id,
+                status=AgentStatus.DISABLED,
+                created_at=now,
+                updated_at=now,
+                activated_at=now,
+                last_seen_at=None,
+                access_profile_id=access_profile_id,
+            )
+        )
+        session.add(
+            AgentNameReservation(
+                reservation_id=reservation_id,
+                display_name=display_name,
+                display_name_key=display_name.casefold(),
+                originating_interaction_id=None,
+                pending_interaction_id=None,
+                agent_id=agent_id,
+                created_at=now,
+                activated_at=now,
+            )
+        )
+        session.add(
+            CredentialBinding(
+                binding_id=binding_id,
+                agent_id=agent_id,
+                kind=CredentialKind.STATIC,
+                status=CredentialBindingStatus.REVOKED,
+                generation=1,
+                supersedes_binding_id=None,
+                created_at=now,
+                updated_at=now,
+                issued_at=now,
+                activated_at=now,
+                ended_at=now,
+                end_reason="static_agents_retired",
+            )
+        )
+        session.add(
+            StaticCredential(
+                binding_id=binding_id,
+                secret_reference="retired-test-fixture",
+                credential_fingerprint=b"retired-test-fingerprint",
+                created_at=now,
+            )
+        )
+    return agent_id
+
+
+async def test_list_agents_returns_owned_disabled_static_history(harness: Harness, harness_factory: HarnessFactory) -> None:
+    agent_id = await _seed_retired_static_agent(
+        harness, display_name="Retired Agent", access_profile_id="no_auto_approval"
     )
-    removed_definition = StaticAgentDefinition(
-        agent_id=uuid4(),
-        display_name="Removed Agent",
-        operator_id=harness.browser.operator_id,
-        secret_reference="env:REMOVED_AGENT_TOKEN",
-        token_fingerprint=fingerprint_static_token("removed-agent-token"),
-        access_profile_id="no_auto_approval",
-    )
-    await harness.authority.reconcile_static_agents((active_definition, removed_definition))
-    await harness.authority.reconcile_static_agents((active_definition,))
 
     agents = await harness.authority.list_agents(operator_id=harness.browser.operator_id)
-    [active, disabled] = agents
-    assert active.agent_id == active_definition.agent_id
-    assert active.display_name == "Listed Agent"
-    assert active.status is AgentStatus.ACTIVE
-    assert active.credential_kind is CredentialKind.STATIC
-    assert active.credential_status is CredentialBindingStatus.ACTIVE
-    assert disabled.agent_id == removed_definition.agent_id
-    assert disabled.status is AgentStatus.DISABLED
-    assert disabled.credential_status is CredentialBindingStatus.REVOKED
+    [agent] = agents
+    assert agent.agent_id == agent_id
+    assert agent.display_name == "Retired Agent"
+    assert agent.status is AgentStatus.DISABLED
+    assert agent.credential_kind is CredentialKind.STATIC
+    assert agent.credential_status is CredentialBindingStatus.REVOKED
 
     other = await harness_factory(subject="other-operator")
     assert await other.authority.list_agents(operator_id=other.browser.operator_id) == ()
@@ -620,163 +640,16 @@ async def test_expiry_sweep_terminates_issued_response_loss(db_url: str, harness
         assert state.agent.status is AgentStatus.ABANDONED
 
 
-async def test_static_reconcile_is_idempotent_and_rotates(db_url: str, harness: Harness) -> None:
-    definition = StaticAgentDefinition(
-        agent_id=uuid4(),
-        display_name="Configured Agent",
-        operator_id=harness.browser.operator_id,
-        secret_reference="env:CONFIGURED_AGENT_TOKEN",
-        token_fingerprint=fingerprint_static_token("first-token"),
-        access_profile_id="no_auto_approval",
-    )
-    await asyncio.gather(
-        harness.authority.reconcile_static_agents([definition]), harness.authority.reconcile_static_agents([definition])
-    )
-
-    with _orm_session(db_url) as session:
-        agent = session.get(Agent, definition.agent_id)
-        assert agent is not None
-        assert agent.last_seen_at is None
-        bindings = (
-            session.execute(select(CredentialBinding).where(CredentialBinding.agent_id == definition.agent_id))
-            .scalars()
-            .all()
-        )
-        assert len(bindings) == 1
-        initial_binding_id = bindings[0].binding_id
-
-    rotated_definition = StaticAgentDefinition(
-        agent_id=definition.agent_id,
-        display_name=definition.display_name,
-        operator_id=definition.operator_id,
-        secret_reference=definition.secret_reference,
-        token_fingerprint=fingerprint_static_token("second-token"),
-        access_profile_id=definition.access_profile_id,
-    )
-    await harness.authority.reconcile_static_agents([rotated_definition])
-
-    with _orm_session(db_url) as session:
-        bindings = (
-            session.execute(
-                select(CredentialBinding)
-                .where(CredentialBinding.agent_id == definition.agent_id)
-                .order_by(CredentialBinding.generation)
-            )
-            .scalars()
-            .all()
-        )
-        binding_rows = [
-            (binding.binding_id, binding.generation, binding.supersedes_binding_id, binding.status)
-            for binding in bindings
-        ]
-        stored_fingerprints = session.execute(select(StaticCredential.credential_fingerprint)).scalars().all()
-    rotated_binding_id = next(binding_id for binding_id, *_ in binding_rows if binding_id != initial_binding_id)
-    assert binding_rows == [
-        (initial_binding_id, 1, None, CredentialBindingStatus.REVOKED),
-        (rotated_binding_id, 2, initial_binding_id, CredentialBindingStatus.ACTIVE),
-    ]
-    assert b"first-token" not in stored_fingerprints
-    assert b"second-token" not in stored_fingerprints
-
-
-async def test_static_reconcile_ignores_secret_reference_rename(harness: Harness) -> None:
-    definition = StaticAgentDefinition(
-        agent_id=uuid4(),
-        display_name="Renamed Secret Reference Agent",
-        operator_id=harness.browser.operator_id,
-        secret_reference="env:LEGACY_AGENT_TOKEN",
-        token_fingerprint=fingerprint_static_token("unchanged-token"),
-        access_profile_id="no_auto_approval",
-    )
-    await harness.authority.reconcile_static_agents([definition])
-    initial_binding_id = await _active_static_binding_id(harness, definition.agent_id)
-
-    renamed_reference = StaticAgentDefinition(
-        agent_id=definition.agent_id,
-        display_name=definition.display_name,
-        operator_id=definition.operator_id,
-        secret_reference="pydantic:renamed_agent",
-        token_fingerprint=definition.token_fingerprint,
-        access_profile_id=definition.access_profile_id,
-    )
-    await harness.authority.reconcile_static_agents([renamed_reference])
-    assert await _active_static_binding_id(harness, definition.agent_id) == initial_binding_id
-    async with harness.sessions() as session:
-        credential = await session.get(StaticCredential, initial_binding_id)
-        assert credential is not None
-        assert credential.secret_reference == definition.secret_reference
-
-
-async def test_static_agent_access_profile_is_deployment_managed(harness_factory: HarnessFactory) -> None:
+async def test_retained_static_agent_access_profile_remains_immutable(harness_factory: HarnessFactory) -> None:
     harness = await harness_factory(access_profiles=("no_auto_approval", "haku_v1"))
-    definition = StaticAgentDefinition(
-        agent_id=uuid4(),
-        display_name="Deployment Profile Agent",
-        operator_id=harness.browser.operator_id,
-        secret_reference="env:DEPLOYMENT_POLICY_AGENT_TOKEN",
-        token_fingerprint=fingerprint_static_token("deployment-policy-token"),
-        access_profile_id="haku_v1",
+    agent_id = await _seed_retired_static_agent(
+        harness, display_name="Retained Profile Agent", access_profile_id="haku_v1"
     )
-    await harness.authority.reconcile_static_agents([definition])
-    async with harness.sessions() as session:
-        agent = await session.get(Agent, definition.agent_id)
-        assert agent is not None
-        assert agent.access_profile_id == "haku_v1"
 
     with pytest.raises(AgentAccessProfileManagedByDeploymentError):
         await harness.authority.set_access_profile(
-            operator_id=harness.browser.operator_id, agent_id=definition.agent_id, access_profile_id="no_auto_approval"
+            operator_id=harness.browser.operator_id, agent_id=agent_id, access_profile_id="no_auto_approval"
         )
-
-
-async def test_static_reconcile_revokes_removed_definition_and_restores_stable_slot(
-    db_url: str, harness: Harness
-) -> None:
-    definition = StaticAgentDefinition(
-        agent_id=uuid4(),
-        display_name="Removable Configured Agent",
-        operator_id=harness.browser.operator_id,
-        secret_reference="env:REMOVABLE_AGENT_TOKEN",
-        token_fingerprint=fingerprint_static_token("first-removable-token"),
-        access_profile_id="no_auto_approval",
-    )
-    await harness.authority.reconcile_static_agents([definition])
-    initial_binding_id = await _active_static_binding_id(harness, definition.agent_id)
-
-    await harness.authority.reconcile_static_agents([])
-
-    restored_definition = StaticAgentDefinition(
-        agent_id=definition.agent_id,
-        display_name=definition.display_name,
-        operator_id=definition.operator_id,
-        secret_reference=definition.secret_reference,
-        token_fingerprint=fingerprint_static_token("rotated-after-removal"),
-        access_profile_id=definition.access_profile_id,
-    )
-    await harness.authority.reconcile_static_agents([restored_definition])
-    restored_binding_id = await _active_static_binding_id(harness, definition.agent_id)
-    with _orm_session(db_url) as session:
-        bindings = (
-            session.execute(
-                select(CredentialBinding)
-                .where(CredentialBinding.agent_id == definition.agent_id)
-                .order_by(CredentialBinding.generation)
-            )
-            .scalars()
-            .all()
-        )
-        agent = session.get(Agent, definition.agent_id)
-        assert agent is not None
-        binding_rows = [
-            (binding.binding_id, binding.generation, binding.supersedes_binding_id, binding.status, binding.end_reason)
-            for binding in bindings
-        ]
-        agent_status = agent.status
-    assert binding_rows == [
-        (initial_binding_id, 1, None, CredentialBindingStatus.REVOKED, "static_configuration_removed"),
-        (restored_binding_id, 2, initial_binding_id, CredentialBindingStatus.ACTIVE, None),
-    ]
-    assert agent_status is AgentStatus.ACTIVE
 
 
 async def test_database_outage_maps_to_authority_unavailable() -> None:

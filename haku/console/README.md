@@ -39,10 +39,11 @@ constructs remain for other workspaces.
 ### Canonical Agent authority
 
 Contract: <docs/agent_authority.md>. `Operator`, `Agent`, credential bindings, names, profiles,
-and credential grants are durable local identities. Settings lists Agents and lets Operators
-change eligible Agent profile assignments; static Agent profiles are deployment-owned. Access
-profiles remain deployment-owned identity labels; they no longer enable tool execution or approval
-policy.
+and credential grants are durable local identities. Settings lists retained Agents and lets
+Operators change eligible profile assignments. Static Agent configuration and reconciliation are
+retired; existing static credential rows remain as history, with active bindings revoked by
+migration. Access profiles remain deployment-owned identity labels; they do not enable tool
+execution or approval policy.
 
 ## Free-form UI
 

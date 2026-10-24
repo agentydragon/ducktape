@@ -4,7 +4,7 @@ authorization-code login against a hermetic mock OIDC provider (``util.testing.m
 app, no hand-minted session: the operator credential is obtained by actually walking
 ``/auth/login`` → provider → ``/auth/callback``.
 
-The browser API requires an operator session. Static Agent bearers do not authenticate to browser routes.
+The browser API requires an operator session. Bearer tokens do not authenticate to browser routes.
 OIDC configuration is mandatory; there is no unauthenticated development mode.
 """
 
@@ -14,12 +14,10 @@ import asyncio
 import datetime
 import logging
 import time
-from pathlib import Path
 
 import httpx
 import pytest
 import pytest_bazel
-import yaml
 from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import func, select
@@ -101,31 +99,8 @@ class _MismatchingStateOAuth:
         return _MismatchingStateClient()
 
 
-def _static_agent_config(tmp_path: Path) -> Path:
-    config = tmp_path / "console.yaml"
-    config.write_text(
-        yaml.safe_dump(
-            {
-                "static_agents": {
-                    "haku": {
-                        "agent_id": "10000000-0000-4000-8000-000000000001",
-                        "display_name": "Haku",
-                        "token": AGENT_TOKEN,
-                        "operator_subject": _OPERATOR_SUBJECT,
-                        "access_profile_id": "default",
-                    }
-                },
-                "access_profiles": [{"id": "default"}],
-                "default_access_profile_id": "default",
-            }
-        ),
-        encoding="utf-8",
-    )
-    return config
-
-
-async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path: Path) -> None:
-    """The browser API requires an Operator session; a static Agent bearer is not browser auth."""
+async def test_credential_matrix_through_real_app(migrated_db_url: str) -> None:
+    """The browser API requires an Operator session; a bearer is not browser auth."""
     private_key, public_key = generate_rsa_keypair()
     with bind_http_server() as idp_endpoint, bind_http_server() as console_endpoint:
         idp_url, console_url = idp_endpoint.origin, console_endpoint.origin
@@ -139,7 +114,6 @@ async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path
         settings = console_settings(
             migrated_db_url,
             haku_ui_url="about:blank",
-            config_file=_static_agent_config(tmp_path),
             public_base_url=console_url,
             operator_oidc=OperatorOidcConfig(
                 issuer=idp_url, client_id="console", client_secret=SecretStr("secret"), session_secret=SecretStr("sess")
@@ -166,7 +140,7 @@ async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path
                 assert (await operator.get("/api/tool-calls")).status_code == 404
 
 
-async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_path: Path) -> None:
+async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str) -> None:
     """Every open tab loses its session at the same moment (one absolute deadline), so they bounce
     to /auth/login together. Neither attempt may strand the other: with authlib's session-backed
     state each new authorization request evicts the last, and the loser's callback dies on
@@ -184,7 +158,6 @@ async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_pat
         settings = console_settings(
             migrated_db_url,
             haku_ui_url="about:blank",
-            config_file=_static_agent_config(tmp_path),
             public_base_url=console_url,
             operator_oidc=OperatorOidcConfig(
                 issuer=idp_url, client_id="console", client_secret=SecretStr("secret"), session_secret=SecretStr("sess")

@@ -3,9 +3,7 @@
 Driven by ``//haku/console/frontend:schema`` (``js_openapi_schema``) to generate
 ``api/schema.d.ts``. Only route/model definitions are needed; placeholder ``Settings``
 suffice and ``app.openapi()`` runs no startup work (the Postgres stores are constructed
-lazily, and no connection or migration happens outside ``app.main``). Static-Agent definitions
-remain part of the app configuration for identity reconciliation, so this schema-only app supplies
-a canonical placeholder definition without connecting to Postgres.
+lazily, and no connection or migration happens outside ``app.main``).
 """
 
 from __future__ import annotations
@@ -14,13 +12,11 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
-from uuid import UUID
 
 from pydantic import SecretStr
 
 from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig
-from haku.console.identity.authorization import StaticAgentDefinition, fingerprint_static_token
 from haku.console.settings import Settings
 
 _SCHEMA_CONSOLE_CONFIG = """\
@@ -54,19 +50,7 @@ def console_openapi_document() -> dict[str, Any]:
     with TemporaryDirectory(prefix="haku-console-schema-") as directory:
         config_file = Path(directory) / "console.yaml"
         config_file.write_text(_SCHEMA_CONSOLE_CONFIG, encoding="utf-8")
-        document: dict[str, Any] = create_app(
-            _placeholder_settings(config_file=config_file),
-            static_agent_definitions=(
-                StaticAgentDefinition(
-                    agent_id=UUID("00000000-0000-4000-8000-000000000001"),
-                    display_name="Schema Agent",
-                    operator_id=UUID("00000000-0000-0000-0000-000000000001"),
-                    secret_reference="schema-placeholder",
-                    token_fingerprint=fingerprint_static_token("placeholder-token"),
-                    access_profile_id="schema",
-                ),
-            ),
-        ).openapi()
+        document: dict[str, Any] = create_app(_placeholder_settings(config_file=config_file)).openapi()
     return document
 
 
