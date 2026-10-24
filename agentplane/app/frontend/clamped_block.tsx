@@ -68,11 +68,25 @@ export function ClampedBlock({
       <div
         data-clamped={clipped}
         style={{
+          position: "relative",
           overflow: "hidden",
           ...(clipped && { maxHeight: `${maxHeightRem}rem` }),
         }}
       >
         <div ref={setContent}>{children}</div>
+        {clipped && (
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              insetInline: 0,
+              bottom: 0,
+              height: "2.5rem",
+              pointerEvents: "none",
+              background: "linear-gradient(to bottom, transparent, var(--mantine-color-body) 85%)",
+            }}
+          />
+        )}
       </div>
       {clipped && (
         <UnstyledButton
