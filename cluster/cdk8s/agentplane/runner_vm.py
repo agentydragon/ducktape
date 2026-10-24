@@ -34,6 +34,7 @@ from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
 from agentplane.sandboxes.guest_config import CA_BUNDLE, Endpoint, GuestConfig
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
@@ -114,7 +115,7 @@ class RunnerVmTemplate(Construct):
             resources=VirtualMachineSpecTemplateSpecDomainResources(
                 requests={"memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("1536Mi")}
             ),
-            node_selector={"kubevirt.io/schedulable": "true"},
+            node_selector={"kubevirt.io/schedulable": "true", **node_scheduling.PIRAEUS_HDD_NODE_SELECTOR},
             ports=[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(port=_UNUSED_GUEST_PORT)],
             disks={
                 "agentplane-config": VirtualMachineSpecTemplateSpecVolumes(

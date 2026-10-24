@@ -25,6 +25,14 @@ REGION_LABEL = "topology.kubernetes.io/region"
 ROAMING_REGION = "roaming"
 # A dict typed read-only: jsii serializes only `dict` instances as maps.
 HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
+# LINSTOR's strict-local HDD class can provision only on prepared OVH HDD satellites. Keep
+# its consumers off unprepared HDD nodes, SSD control planes, and nodes outside the OVH region.
+PIRAEUS_HDD_NODE_SELECTOR: Mapping[str, str] = {
+    **HIL_OVH_NODE_SELECTOR,
+    REGION_LABEL: "hil",
+    "storage.allegedly.works/tier": "hdd",
+    "storage.allegedly.works/piraeus-ready": "true",
+}
 # Control-plane nodes also carry this key as a label, which node affinities and selectors match.
 CONTROL_PLANE_TAINT_KEY = "node-role.kubernetes.io/control-plane"
 CONTROL_PLANE_TOLERATION = k8s.Toleration(key=CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule")

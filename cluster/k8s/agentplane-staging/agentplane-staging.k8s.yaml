@@ -4245,6 +4245,9 @@ spec:
       imagePullSecrets:
         - name: forgejo-images-creds
       nodeSelector:
+        storage.allegedly.works/piraeus-ready: "true"
+        storage.allegedly.works/tier: hdd
+        topology.kubernetes.io/region: hil
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
         fsGroup: 1000
@@ -4300,7 +4303,7 @@ spec:
     layout:
       type: DirectoryTree
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
@@ -4309,7 +4312,7 @@ spec:
   workspaceVolume:
     name: workspace
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
@@ -4708,6 +4711,10 @@ spec:
             pod: {}
         nodeSelector:
           kubevirt.io/schedulable: "true"
+          topology.kubernetes.io/zone: hil-ovh
+          topology.kubernetes.io/region: hil
+          storage.allegedly.works/tier: hdd
+          storage.allegedly.works/piraeus-ready: "true"
         volumes:
           - containerDisk:
               image: git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset
@@ -4728,7 +4735,7 @@ spec:
     layout:
       type: DirectoryTree
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
@@ -4737,7 +4744,7 @@ spec:
   workspaceVolume:
     name: workspace
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
@@ -7080,6 +7087,9 @@ spec:
       imagePullSecrets:
         - name: forgejo-images-creds
       nodeSelector:
+        storage.allegedly.works/piraeus-ready: "true"
+        storage.allegedly.works/tier: hdd
+        topology.kubernetes.io/region: hil
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
         fsGroup: 1000
@@ -7139,7 +7149,7 @@ spec:
     layout:
       type: DirectoryTree
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
@@ -7148,7 +7158,7 @@ spec:
   workspaceVolume:
     name: workspace
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
