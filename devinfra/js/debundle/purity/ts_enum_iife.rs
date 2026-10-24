@@ -94,7 +94,7 @@ pub(crate) fn is_ts_enum_iife_call_for_binding(call: &CallExpr, binding: &str) -
     }
     match callee {
         Expr::Arrow(arrow) => {
-            if arrow.params.len() != 1 {
+            if arrow.is_async || arrow.is_generator || arrow.params.len() != 1 {
                 return false;
             }
             let Pat::Ident(param_ident) = &arrow.params[0] else {
@@ -111,7 +111,10 @@ pub(crate) fn is_ts_enum_iife_call_for_binding(call: &CallExpr, binding: &str) -
             }
         }
         Expr::Fn(function) => {
-            if function.function.params.len() != 1 {
+            if function.function.is_async
+                || function.function.is_generator
+                || function.function.params.len() != 1
+            {
                 return false;
             }
             let Pat::Ident(param_ident) = &function.function.params[0].pat else {
@@ -256,7 +259,10 @@ fn is_ts_enum_iife_property_write(expr: &Expr, param: &str) -> bool {
                 // key. Both the inner and outer writes are sound
                 // data-property writes; recurse to verify the inner
                 // matches the same shape this function admits.
-                || is_ts_enum_iife_property_write(key, param)
+                || (is_ts_enum_iife_property_write(key, param)
+                    && !matches!(key, Expr::Assign(inner)
+                        if matches!(inner.right.as_ref(), Expr::Lit(Lit::Str(value))
+                            if value.value.to_string_lossy() == "__proto__")))
         }
         MemberProp::PrivateName(_) => false,
     };

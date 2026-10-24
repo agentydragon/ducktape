@@ -713,6 +713,24 @@ separate argument environments. The pass memoizes call contexts and caps its
 work; recursive or unknown targets, unsupported syntax, and mutable captures
 fall back conservatively.
 
+The summary also records reads at the callback's source prefix. For each
+callback-read binding, the graph builds a source-order timeline of callback
+readers and known writers, including lexical and `var` initialization, eager
+rebinds, synchronous-call rebinds, and trusted local mutations. Direct
+`Sequenced` edges preserve writer order and place each callback or ordinary
+eager reader against its nearest preceding and following writer. This keeps
+earlier values before their readers and every later writer after those reads
+without a read-by-writer cross product or unnecessary reader-to-reader order.
+For a read known to occur before initialization,
+the graph additionally keeps a direct `EagerUse(caller → declaration)` and,
+when that declaration is later in source order, a reverse
+`Sequenced(declaration → caller)` edge. Their constraining cycle keeps the
+callback and declaration together; the declaration then runs in original
+source order. This constraint uses the synchronous callsite's own summary,
+rather than the ordinary promoted-read role that the lenient projection may
+drop when the known callee lives in another module. Unknown writes still use
+the conservative S-chain fallback.
+
 The `Object.assign` fast path requires static data-property source keys that
 cannot be `__proto__`, and an unrebound local function target whose descriptor
 and prototype have not been changed or exposed to another callable. Static
@@ -760,6 +778,18 @@ actual top-level caller as their promotion owner, and memoized invocations
 include that caller and the reachability revision. A static data-property
 write to a proved fresh local function retains the same A11 fast path. This
 keeps unrelated returned closures deferred when no setter can be reached.
+
+A closed inline mutation IIFE can also prove its receiver fresh at that call,
+independently of whether the returned object escapes later. The shared enum-IIFE
+recognizer requires a synchronous ordinary callable, one identifier parameter,
+primitive property writes with safe keys, and return of that same parameter.
+An empty object argument is fresh directly. A self short-circuit argument also
+requires the sole declaration/writer of a `var` binding and no dynamic lexical
+scope in the chunk. Only generic accessor promotion for that body's writes is
+omitted; argument reads, assignments, returned values, and callback effects at
+other calls remain. Async/generator bodies, prototype keys (including keys
+produced by nested assignments), other writers, and custom receivers retain the
+conservative path.
 
 For statements without a complete call-site result, `promote_at_init_calls`
 uses its SCC closure: it builds the call graph among chunk-declared, resolvable

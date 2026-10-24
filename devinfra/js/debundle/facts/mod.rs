@@ -46,6 +46,7 @@ pub(crate) use crate::{SourceLocation, StatementOrdinal};
 mod analyze;
 mod at_init_fallback;
 mod collector;
+mod fresh_receiver;
 mod global_object;
 mod item_views;
 mod lazy_boundary;

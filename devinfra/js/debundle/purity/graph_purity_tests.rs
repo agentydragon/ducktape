@@ -432,6 +432,23 @@ fn plain_data_ts_enum_iife_function_expression_body_is_tracked() {
 }
 
 #[test]
+fn plain_data_ts_enum_iife_must_return_an_object_synchronously() {
+    for src in [
+        "var X = (async (p) => (p.A = 1, p))({});",
+        "var X = (async function (p) { p.A = 1; return p; })({});",
+        "var X = (function* (p) { p.A = 1; return p; })({});",
+    ] {
+        assert!(!is_plain_data(src, "X"), "{src}");
+    }
+}
+
+#[test]
+fn plain_data_ts_enum_iife_reverse_mapping_must_not_write_proto() {
+    let src = r#"var X = ((p) => (p[(p.A = "__proto__")] = "A", p))({});"#;
+    assert!(!is_plain_data(src, "X"));
+}
+
+#[test]
 fn plain_data_ts_enum_iife_self_binding_short_circuit_must_match_decl() {
     // `Other || {}` could pass an arbitrary existing object into
     // the IIFE. The enum-init rule is only for the binding being

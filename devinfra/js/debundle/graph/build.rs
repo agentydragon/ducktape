@@ -14,7 +14,7 @@ use crate::{StatementFacts, StatementKind, StatementOrdinal};
 // to be the canonical path for external callers.
 pub use spec::OwnerGraphOptions;
 
-use super::edge::{EdgeReason, OwnerEdge, OwnerEdgeId};
+use super::edge::{EdgeReason, EdgeRole, OwnerEdge, OwnerEdgeId};
 use super::owner_graph::{OwnerGraph, OwnerId, OwnerNode};
 
 /// Multiple declarations of one binding are supported only when every site
@@ -483,6 +483,151 @@ fn promote_at_init_calls(
         stmt_by_owner.insert(OwnerId(stmt.ordinal.0), stmt);
     }
 
+    // Index statement owners that can change a chunk binding's value or
+    // observable object state when they execute. A callback read must see the
+    // source-prefix value, so the callback-read and writer owners form one
+    // source-order timeline. This also covers mutations of an already
+    // initialized object: an ordinary promoted read dependency on its
+    // declaration alone would not stop a later mutation from moving before
+    // the callback. Unknown effects still take the existing strict S-chain
+    // fallback; this index only records effects with a known binding target.
+    let mut writers_by_binding = BTreeMap::<Id, BTreeSet<OwnerId>>::new();
+    let mut callback_readers_by_binding = BTreeMap::<Id, BTreeSet<OwnerId>>::new();
+    let mut eager_readers_by_binding = BTreeMap::<Id, BTreeSet<OwnerId>>::new();
+    for stmt in facts {
+        let owner = OwnerId(stmt.ordinal.0);
+        for binding in &stmt.reads.eager {
+            eager_readers_by_binding
+                .entry(binding.clone())
+                .or_default()
+                .insert(owner);
+        }
+        // Lexical declarations become observable at their statement. Function
+        // declarations are initialized during module instantiation and are
+        // therefore not execution-time writes.
+        let is_hoisted_function = stmt.kind == StatementKind::FnDecl
+            || (stmt.kind == StatementKind::Export && stmt.declares_direct_function);
+        // Imports describe module linkage; evaluating the import declaration
+        // does not write the imported binding in this chunk. Keep this guard
+        // explicit even though `collect_declared_names` currently gives
+        // imports no local declarations.
+        if stmt.kind != StatementKind::Import && !is_hoisted_function {
+            for binding in stmt.declared.difference(&stmt.var_declared) {
+                writers_by_binding
+                    .entry(binding.clone())
+                    .or_default()
+                    .insert(owner);
+            }
+        }
+        for binding in stmt
+            .var_initializers
+            .iter()
+            .chain(&stmt.rebinds.eager)
+            .chain(&stmt.local_effects)
+        {
+            writers_by_binding
+                .entry(binding.clone())
+                .or_default()
+                .insert(owner);
+        }
+        // A summary's rebinds execute at this statement's callsite, not at
+        // the lexical owner containing the callback body.
+        if let Some(synchronous) = &stmt.synchronous_calls {
+            for (binding, _) in &synchronous.reads {
+                callback_readers_by_binding
+                    .entry(binding.clone())
+                    .or_default()
+                    .insert(owner);
+            }
+            // Keep the graph sound even if an availability-specific read is
+            // not duplicated in the general read set.
+            for binding in &synchronous.uninitialized_reads {
+                callback_readers_by_binding
+                    .entry(binding.clone())
+                    .or_default()
+                    .insert(owner);
+            }
+            for (binding, _) in &synchronous.rebinds {
+                writers_by_binding
+                    .entry(binding.clone())
+                    .or_default()
+                    .insert(owner);
+            }
+        }
+    }
+
+    // A pair may be observed by several callback callsites or be both a
+    // future declaration and a future writer. Emit each temporal ordering
+    // constraint only once within this pass.
+    let mut temporal_sequence_pairs = BTreeSet::<(OwnerId, OwnerId)>::new();
+    let mut direct_eager_bindings: BTreeSet<(OwnerId, OwnerId, Id)> = raw_edges
+        .iter()
+        .filter_map(|(from, to, reason)| {
+            (reason.kind == super::DepKind::EagerUse && reason.role == EdgeRole::Direct)
+                .then(|| {
+                    reason
+                        .binding
+                        .as_ref()
+                        .map(|binding| (*from, *to, binding.clone()))
+                })
+                .flatten()
+        })
+        .collect();
+
+    // Preserve each callback-observed binding's writer order and place each
+    // reader against only its nearest preceding/following writer. Do not add
+    // reader-to-reader edges: independent observations of an unchanged cell
+    // need no relative order and can otherwise form false cycles. Ordinary
+    // eager readers of these same bindings join the same constraints so a
+    // callback's new ordering does not expose a sibling top-level read.
+    for (binding, callback_readers) in &callback_readers_by_binding {
+        let Some(writers) = writers_by_binding.get(binding) else {
+            continue;
+        };
+        let writer_events: Vec<_> = writers.iter().copied().collect();
+        for pair in writer_events.windows(2) {
+            let earlier = pair[0];
+            let later = pair[1];
+            if temporal_sequence_pairs.insert((later, earlier)) {
+                raw_edges.push((
+                    later,
+                    earlier,
+                    EdgeReason::sequenced(StatementOrdinal(later.0)),
+                ));
+            }
+        }
+
+        let mut readers: BTreeSet<OwnerId> = callback_readers.iter().copied().collect();
+        if let Some(eager_readers) = eager_readers_by_binding.get(binding) {
+            readers.extend(eager_readers.iter().copied());
+        }
+        for reader in readers {
+            if let Some(&previous_writer) = writers.range(..reader).next_back()
+                && temporal_sequence_pairs.insert((reader, previous_writer))
+            {
+                raw_edges.push((
+                    reader,
+                    previous_writer,
+                    EdgeReason::sequenced(StatementOrdinal(reader.0)),
+                ));
+            }
+            if let Some(&next_writer) = writers
+                .range((
+                    std::ops::Bound::Excluded(reader),
+                    std::ops::Bound::Unbounded,
+                ))
+                .next()
+                && temporal_sequence_pairs.insert((next_writer, reader))
+            {
+                raw_edges.push((
+                    next_writer,
+                    reader,
+                    EdgeReason::sequenced(StatementOrdinal(next_writer.0)),
+                ));
+            }
+        }
+    }
+
     // Bindings rebound anywhere in the chunk: their value at call
     // time may not be the function lexically defined at their owner,
     // so calls to them are not precisely resolvable.
@@ -690,8 +835,43 @@ fn promote_at_init_calls(
         if let Some(synchronous) = &stmt.synchronous_calls {
             let caller = OwnerId(stmt.ordinal.0);
             let mut emitted = BTreeSet::new();
-            for (target_binding, callee_ordinal) in
-                synchronous.reads.iter().chain(&synchronous.rebinds)
+
+            // A read known to observe a binding before its source
+            // initialization is not a safely-droppable call promotion: moving
+            // the declaration ahead of this callback would erase a TDZ or
+            // change the initial `undefined` value. Keep a direct dependency
+            // on the declaration, and when that declaration is later in the
+            // source, pair it with reverse source order. EagerUse alone would
+            // merely ask the later provider to run first; the pair makes the
+            // two owners atomic so the emitted module retains original order.
+            for target_binding in &synchronous.uninitialized_reads {
+                let Some(&target_owner) = binding_owner.get(target_binding) else {
+                    continue;
+                };
+                if caller == target_owner {
+                    continue;
+                }
+                if direct_eager_bindings.insert((caller, target_owner, target_binding.clone())) {
+                    raw_edges.push((
+                        caller,
+                        target_owner,
+                        EdgeReason::eager_use(stmt.ordinal, target_binding.clone()),
+                    ));
+                }
+                if caller < target_owner && temporal_sequence_pairs.insert((target_owner, caller)) {
+                    raw_edges.push((
+                        target_owner,
+                        caller,
+                        EdgeReason::sequenced(StatementOrdinal(target_owner.0)),
+                    ));
+                }
+            }
+
+            for (target_binding, callee_ordinal) in synchronous
+                .reads
+                .iter()
+                .filter(|(binding, _)| !synchronous.uninitialized_reads.contains(binding))
+                .chain(&synchronous.rebinds)
             {
                 if target_is_hoisted(target_binding) {
                     continue;
