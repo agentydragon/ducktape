@@ -26,8 +26,6 @@ unobserved. [Confirmation checklist and query window](acceptance_monitoring.md).
   queries, coverage requirements, historical gaps, and notification limitations.
 - [Notification delivery](notification_delivery.md): the source-specific ntfy
   TCP failure and the boundary between rule evaluation and actual receipt.
-- [Central capture storage](central_capture_storage.md): unsupported CSI volume
-  statistics, the native collection storage-budget signal, and its limits.
 - [Earlier investigation](earlier_investigation.md): prior measurements and
   hypotheses; its header identifies superseded conclusions.
 - [Wyrm2 restart pod delta](wyrm2_pod_delta_2026_09_04.md): supporting historical

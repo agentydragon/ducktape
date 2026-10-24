@@ -92,8 +92,8 @@ image; Forgejo image automation tracks subsequent devel releases. Verify the
 reconciled revision, actual image digest, Pod startup, individual Gateway listener
 and TLSRoute conditions, and the authenticated route before migrating a client.
 
-Capture storage uses the replicated `seaweedfs-ovh` class and an initial 100-GiB
-claim. The app must run one writer with a Recreate rollout strategy. The PVC is
+Capture storage uses the replicated `piraeus-ssd-2-autodiskful` class and an
+initial 20-GiB claim, which is ReadWriteOnce, so the app must run one writer with a Recreate rollout strategy. The PVC is
 excluded from Flux pruning: removing the app must not delete investigation
 evidence. There is no automatic capture rotation or deletion; inspect storage use
 and arrange explicit retention before unattended long-term operation.
@@ -106,12 +106,9 @@ the Service endpoint. Do not configure a liveness probe merely to clear a captur
 failure latch. Investigate storage and incomplete captures before any controlled
 restart. Established connections are not terminated by a readiness change; the
 exact-route mitigation and metrics remain active. The rule set separately detects
-capture-write errors, failed scrapes, missing targets, a high collection physical storage budget and
-missing budget inputs. The budget compares deduplicated SeaweedFS normal-volume
-bytes (including replicas) with the PVC storage request; it does not measure free
-space or guarantee writes. Partial volume-server telemetry loss can undercount
-it. See the [storage metric investigation](../../../devinfra/github_proxy/debug/github_graphql_exhaustion/central_capture_storage.md)
-for accounting and coverage limits. Validate retained metrics and notification
+capture-write errors, failed scrapes and missing targets. Free space on the claim
+is covered by the cluster-wide `KubePersistentVolumeFillingUp` alerts, which read
+kubelet volume statistics. Validate retained metrics and notification
 delivery during rollout, not just rule installation.
 
 Reloader watches the mounted configuration and Secrets. Certificate renewal or

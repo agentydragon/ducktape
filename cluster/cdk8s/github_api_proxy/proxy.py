@@ -58,7 +58,6 @@ from cluster.cdk8s.providers.gateway_api.gateway import Gateway
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
 _APP_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/app"
@@ -68,7 +67,7 @@ _IMAGE = "git.allegedly.works/ducktape-ci/github-api-proxy:unset"
 _HOSTNAME = "github-proxy.allegedly.works"
 _SERVER_TLS_SECRET = "github-api-proxy-server-tls"
 _INTERCEPTION_CA = "github-api-proxy-interception-ca"
-_CAPTURE_CLAIM = "github-api-proxy-capture"
+_CAPTURE_CLAIM = "github-api-proxy-captures"
 _PROXY = Port(name="proxy", number=8080)
 # Scraped from the Pods by the PodMonitor; the Service does not carry it.
 _METRICS = Port(name="metrics", number=9090)
@@ -114,39 +113,6 @@ _RULES = [
         description=(
             "No proxy scrape result has been retained for five minutes. Check Pod discovery, the PodMonitor, Alloy "
             "collection and remote write. Missing telemetry cannot establish a healthy proxy or quiet quota.\n"
-        ),
-    ),
-    Rule.record(
-        "github_api_proxy:capture_collection_physical_storage_budget:ratio",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/github_api_proxy/capture-storage-budget.promql")
-        ).read_text(),
-    ),
-    Rule.alert(
-        "GitHubProxyCaptureCollectionStorageBudgetHigh",
-        "github_api_proxy:capture_collection_physical_storage_budget:ratio > 0.85",
-        for_="5m",
-        labels={"severity": "warning"},
-        summary="Central GitHub proxy collection exceeds 85% of its physical storage budget",
-        description=(
-            "Reported normal-volume bytes, including replicas, exceed 85% of the PVC storage request. This is an "
-            "operational budget, not free space or guaranteed write capacity. Captures append without automatic "
-            "deletion. Check volume-server telemetry and arrange explicit retention or expansion; preserve "
-            "investigation evidence.\n"
-        ),
-    ),
-    Rule.alert(
-        "GitHubProxyCaptureStorageBudgetInputsMissing",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/github_api_proxy/capture-storage-budget-inputs-missing.promql")
-        ).read_text(),
-        for_="5m",
-        labels={"severity": "warning"},
-        summary="Central GitHub proxy collection storage budget cannot be observed",
-        description=(
-            "The collection byte metric, PVC-to-collection mapping or positive PVC storage request is missing. Check "
-            "SeaweedFS volume-server scrapes and kube-state-metrics. Absence is not zero usage. Partial volume-server "
-            "loss can still undercount a present budget ratio.\n"
         ),
     ),
 ]
@@ -225,9 +191,9 @@ def _capture_claim(scope: Construct) -> None:
             },
         ),
         spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteMany"],
-            storage_class_name="seaweedfs-ovh",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="piraeus-ssd-2-autodiskful",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("20Gi")}),
         ),
     )
 
@@ -275,10 +241,8 @@ def _deployment(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
-                    # No explicit zone nodeSelector: github-api-proxy-capture's seaweedfs-ovh
-                    # StorageClass already pins scheduling to topology.kubernetes.io/zone=hil-ovh
-                    # via WaitForFirstConsumer + allowedTopologies
-                    # (seaweedfs_csi/driver.py).
+                    # No explicit zone nodeSelector: the capture claim's Piraeus PV carries
+                    # topology.kubernetes.io/zone=hil-ovh node affinity (piraeus-ssd-2-autodiskful).
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     automount_service_account_token=False,
                     termination_grace_period_seconds=60,

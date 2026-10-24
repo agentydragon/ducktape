@@ -134,6 +134,19 @@ spec:
     name: barman-cloud.cloudnative-pg.io
   schedule: 0 8 4 * * *
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: matrix-synapse-media
+  namespace: matrix
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -180,10 +193,8 @@ spec:
       repository: matrixdotorg/synapse
       tag: v1.160.0
     persistence:
-      accessMode: ReadWriteMany
       enabled: true
-      size: 20Gi
-      storageClass: seaweedfs-ovh
+      existingClaim: matrix-synapse-media
     postgresql:
       enabled: false
     publicServerName: matrix.allegedly.works
@@ -219,6 +230,8 @@ spec:
     synapse:
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      strategy:
+        type: Recreate
     workers:
       default:
         enabled: false

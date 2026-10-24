@@ -42,6 +42,7 @@ HOSTNAME = "matrix.allegedly.works"
 ELEMENT_HOSTNAME = "chat.allegedly.works"
 _NAME = "matrix"
 DATABASE = cnpg.PostgresRef.generated(name="matrix-db", namespace=NAMESPACE)
+_MEDIA_CLAIM = "matrix-synapse-media"
 _HELM_REPOSITORY = "ananace-charts"
 # The chart's main Service: its selector is the chart name, the release and the component.
 SYNAPSE_HTTP = ServiceRef(
@@ -106,8 +107,8 @@ def _database(scope: Construct) -> None:
         image_name=None,
         # OVH-HA profile (docs/cnpg_conventions.md R2/R3), replacing the Proxmox-single
         # shape this had before the namespace was parked: Synapse's media store is on
-        # SeaweedFS now, whose CSI node plugin only runs on the OVH nodes, so the app
-        # moved there and R5 requires the database to follow it.
+        # an OVH-only Piraeus class, so the app runs there and R5 requires the database
+        # to follow it.
         profile=cnpg.OVH_PIRAEUS_SSD,
         size="10Gi",
         resize_in_use_volumes=False,
@@ -115,6 +116,19 @@ def _database(scope: Construct) -> None:
         wal_archive=True,
     )
     cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
+
+
+def _media_claim(scope: Construct) -> None:
+    k8s.KubePersistentVolumeClaim(
+        scope,
+        "media",
+        metadata=k8s.ObjectMeta(name=_MEDIA_CLAIM, namespace=NAMESPACE),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="piraeus-ssd-2-autodiskful",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("5Gi")}),
+        ),
+    )
 
 
 def _synapse(scope: Construct) -> None:
@@ -159,26 +173,20 @@ def _synapse(scope: Construct) -> None:
             # Public server name - the hostname where Synapse is publicly accessible.
             # The chart derives public_baseurl as https://<publicServerName>.
             "publicServerName": HOSTNAME,
-            # Media store on distributed storage — the AGENTS.md default for app data
-            # volumes, and RWX, so Synapse is not pinned to whichever node owns a local
-            # directory. Supersedes the old idea of synapse-s3-storage-provider against
-            # SeaweedFS S3: that module never replaces the local media path (it is a
-            # backup/retrieval layer needing a custom image and an eviction cron), while
-            # the CSI class gives Synapse the filesystem it insists on directly.
-            "persistence": {
-                "enabled": True,
-                "storageClass": "seaweedfs-ovh",
-                "size": "20Gi",
-                "accessMode": "ReadWriteMany",
-            },
+            # Media store on a replicated block claim declared beside the chart
+            # (`_media_claim`). synapse-s3-storage-provider is no substitute: it never
+            # replaces the local media path (it is a backup/retrieval layer needing a
+            # custom image and an eviction cron).
+            "persistence": {"enabled": True, "existingClaim": _MEDIA_CLAIM},
             "synapse": {
-                # Same zone as matrix-db (cnpg_conventions.md R5) and the only nodes where
-                # the SeaweedFS CSI node plugin runs, which the media store above needs.
+                # The media claim is ReadWriteOnce, so the old pod must release it first.
+                "strategy": {"type": "Recreate"},
+                # Same zone as matrix-db (cnpg_conventions.md R5) and the media claim.
                 # This is `synapse.nodeSelector`, not the chart's top-level one — the chart
                 # has no top-level key of that name, so a selector placed there is silently
                 # ignored (which is why the previous `region: proxmox` never pinned
                 # anything, and Synapse only landed on wyrm2 by chance).
-                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR
+                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             },
             # macaroonSecretKey and registrationSharedSecret injected via valuesFrom;
             # extraConfig with oidc_providers is injected via valuesFrom from the
@@ -335,6 +343,7 @@ def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _namespace(chart)
     _database(chart)
+    _media_claim(chart)
     _synapse(chart)
     _synapse_routes(chart)
     _element(chart)
