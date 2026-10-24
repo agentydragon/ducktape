@@ -4,6 +4,7 @@ go_library(
     name = "harness",
     srcs = [
         "adapter.go",
+        "native_request.go",
         "recovery.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/harness",
@@ -12,6 +13,7 @@ go_library(
         "//agentplane/runner:__subpackages__",
     ],
     deps = [
+        "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
     ],

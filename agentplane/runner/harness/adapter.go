@@ -74,23 +74,6 @@ func (e *NativeResponsePendingError) Is(target error) bool {
 	return target == ErrNativeResponsePending
 }
 
-type PendingCommandInfo struct {
-	CommandID                  string
-	AdmittedCursor             uint64
-	SubmitText                 string
-	ChangeModelValue           string
-	ChangeReasoningEffortValue string
-	DispatchPlanned            bool
-	NativeCorrelation          *NativeCorrelation
-}
-
-// NativeCorrelation is the adapter payload needed to match a native response to a
-// dispatched command. Payload is encoded according to the adapter's own schema.
-type NativeCorrelation struct {
-	Adapter string          `json:"adapter"`
-	Payload json.RawMessage `json:"payload"`
-}
-
 // UserMessageConfirmation records native evidence that an input reached a model request.
 type UserMessageConfirmation struct {
 	HarnessMessageID string
@@ -103,7 +86,8 @@ type UserMessageConfirmation struct {
 type AdapterJournal interface {
 	ObservedItems(context.Context, string) (map[string]ObservedItem, error)
 	TurnEvents(context.Context, string) ([]*eventlogpb.EventEntry, error)
-	PendingCommandInfo(context.Context) ([]PendingCommandInfo, error)
+	PendingCommandRecords(context.Context) ([]CommandRecord, error)
+	PendingNativeRequests(context.Context) ([]NativeRequest, error)
 	Since(context.Context, uint64, int) ([]*eventlogpb.EventEntry, error)
 	LastCursor() uint64
 	RememberAdapterItem(context.Context, string, string) (bool, error)
@@ -116,7 +100,7 @@ type AdapterJournal interface {
 type AdapterHost interface {
 	Session() SessionSnapshot
 	Journal() AdapterJournal
-	RecordNativeCorrelation(context.Context, string, NativeCorrelation) error
+	RecordNativeRequest(context.Context, string, NativeRequestKind, []string) error
 	SendNative(context.Context, json.RawMessage) error
 	// RequestNativeHandshake sequences startup protocol exchanges; command methods should send and
 	// let OnFrame advance their durable state instead of waiting for a response.

@@ -100,9 +100,10 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   triggers shared background startup; concurrent commands do not wait for it, and the runner
   recovers undispatched admitted commands after a process restart without relying on gateway redelivery.
   A command with a durable dispatch marker is not sent again automatically: its native effect may
-  already have occurred. Each adapter persists and restores a typed correlation payload using
-  its own schema, then replays a matching response already present in the Event log. Goose migrates
-  stored correlation data before recovery; adapters read only their current schema.
+  already have occurred. Native requests retain their kind and foreign-key links to the commands they carry.
+  Recovery reads values from those original commands and replays matching responses already present
+  in the Event log. Goose migrates stored request relationships before recovery. Terminal receipt
+  facts remain in the Event referenced by the command’s terminal cursor.
   A process-lost active turn also triggers native reconciliation even if its input was already
   confirmed. Completed idle sessions remain dormant. Interrupts neither start a harness nor prevent
   recovery required by other work; an admitted interrupt whose target ended is settled as a no-op.

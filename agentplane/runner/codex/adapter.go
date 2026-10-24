@@ -1,7 +1,6 @@
 package codex
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -68,68 +67,6 @@ func New(host harness.AdapterHost, store string) harness.Adapter {
 		host: host, store: store, threadID: threadID, adapterID: uuid.NewString(),
 		turnStarts: make(map[string]codexTurnStart), processingResponses: make(map[string]bool),
 	}
-}
-
-type codexNativeCorrelation struct {
-	TurnStart *codexTurnStartCorrelation `json:"turn_start,omitempty"`
-}
-
-type codexTurnStartCorrelation struct {
-	RequestID    string                  `json:"request_id"`
-	ModelChange  *codexChangeCorrelation `json:"model_change,omitempty"`
-	EffortChange *codexChangeCorrelation `json:"effort_change,omitempty"`
-}
-
-type codexChangeCorrelation struct {
-	CommandID string `json:"command_id"`
-	Value     string `json:"value"`
-}
-
-func encodeCodexNativeCorrelation(value codexNativeCorrelation) (harness.NativeCorrelation, error) {
-	if err := value.validate(); err != nil {
-		return harness.NativeCorrelation{}, err
-	}
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return harness.NativeCorrelation{}, err
-	}
-	return harness.NativeCorrelation{Adapter: "codex", Payload: payload}, nil
-}
-
-func decodeCodexNativeCorrelation(correlation *harness.NativeCorrelation) (codexNativeCorrelation, error) {
-	if correlation == nil {
-		return codexNativeCorrelation{}, nil
-	}
-	if correlation.Adapter != "codex" {
-		return codexNativeCorrelation{}, fmt.Errorf("Codex command has %q native correlation", correlation.Adapter)
-	}
-
-	var value codexNativeCorrelation
-	decoder := json.NewDecoder(bytes.NewReader(correlation.Payload))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&value); err != nil {
-		return codexNativeCorrelation{}, fmt.Errorf("decode Codex native correlation: %w", err)
-	}
-	if err := value.validate(); err != nil {
-		return codexNativeCorrelation{}, err
-	}
-	return value, nil
-}
-
-func (value codexNativeCorrelation) validate() error {
-	if value.TurnStart == nil {
-		return nil
-	}
-	if value.TurnStart.RequestID == "" {
-		return errors.New("Codex turn-start correlation requires a request ID")
-	}
-	if change := value.TurnStart.ModelChange; change != nil && (change.CommandID == "" || change.Value == "") {
-		return errors.New("Codex model correlation requires command ID and value")
-	}
-	if change := value.TurnStart.EffortChange; change != nil && (change.CommandID == "" || change.Value == "") {
-		return errors.New("Codex effort correlation requires command ID and value")
-	}
-	return nil
 }
 
 func (a *codexAdapter) BlocksCommandDispatch() bool {
@@ -253,7 +190,11 @@ func (a *codexAdapter) Reconcile(ctx context.Context, turnID string, _ bool) (*e
 }
 
 func (a *codexAdapter) Recover(ctx context.Context) error {
-	pending, err := a.host.Journal().PendingCommandInfo(ctx)
+	pending, err := a.host.Journal().PendingCommandRecords(ctx)
+	if err != nil {
+		return err
+	}
+	requests, err := a.host.Journal().PendingNativeRequests(ctx)
 	if err != nil {
 		return err
 	}
@@ -261,48 +202,52 @@ func (a *codexAdapter) Recover(ctx context.Context) error {
 	inFlightChanges := map[string]bool{}
 	var replayFrom uint64
 	a.mu.Lock()
-	for _, command := range pending {
-		if !command.DispatchPlanned {
-			continue
-		}
-		correlation, err := decodeCodexNativeCorrelation(command.NativeCorrelation)
-		if err != nil {
+	for _, request := range requests {
+		if request.Kind != harness.CodexTurnStart {
 			a.mu.Unlock()
-			return fmt.Errorf("restore Codex correlation for command %q: %w", command.CommandID, err)
+			return fmt.Errorf("unexpected Codex request kind %q", request.Kind)
 		}
-		if correlation.TurnStart == nil || correlation.TurnStart.RequestID == "" || command.SubmitText == "" {
-			continue
+		start := codexTurnStart{}
+		for _, record := range request.Commands {
+			command := record.Command
+			if input := command.GetSubmitInput(); input != nil {
+				start.commandID, start.text = command.GetCommandId(), input.GetText()
+				before := uint64(0)
+				if record.AdmittedCursor > 0 {
+					before = record.AdmittedCursor - 1
+				}
+				if len(requestIDs) == 0 || before < replayFrom {
+					replayFrom = before
+				}
+			}
+			inFlightChanges[command.GetCommandId()] = true
+			if record.TerminalCursor != nil {
+				continue
+			}
+			if model := command.GetChangeModel(); model != nil {
+				start.modelChange = &codexPendingChange{commandID: command.GetCommandId(), value: model.GetModel()}
+			}
+			if effort := command.GetChangeReasoningEffort(); effort != nil {
+				start.effortChange = &codexPendingChange{commandID: command.GetCommandId(), value: effort.GetEffort()}
+			}
 		}
-		turnStart := correlation.TurnStart
-		requestID := turnStart.RequestID
-		start := codexTurnStart{commandID: command.CommandID, text: command.SubmitText}
-		if change := turnStart.ModelChange; change != nil && change.CommandID != "" {
-			start.modelChange = &codexPendingChange{commandID: change.CommandID, value: change.Value}
-			inFlightChanges[change.CommandID] = true
+		if start.commandID == "" || start.text == "" {
+			a.mu.Unlock()
+			return fmt.Errorf("Codex turn/start request %q requires an input command", request.ID)
 		}
-		if change := turnStart.EffortChange; change != nil && change.CommandID != "" {
-			start.effortChange = &codexPendingChange{commandID: change.CommandID, value: change.Value}
-			inFlightChanges[change.CommandID] = true
-		}
-		a.turnStarts[requestID] = start
-		requestIDs[requestID] = true
-		before := uint64(0)
-		if command.AdmittedCursor > 0 {
-			before = command.AdmittedCursor - 1
-		}
-		if replayFrom == 0 || before < replayFrom {
-			replayFrom = before
-		}
+		a.turnStarts[request.ID] = start
+		requestIDs[request.ID] = true
 	}
-	for _, command := range pending {
-		if !command.DispatchPlanned {
+	for _, record := range pending {
+		if !record.DispatchPlanned || inFlightChanges[record.Command.GetCommandId()] {
 			continue
 		}
-		if command.ChangeModelValue != "" && !inFlightChanges[command.CommandID] {
-			a.pendingModelChanges = append(a.pendingModelChanges, codexPendingChange{commandID: command.CommandID, value: command.ChangeModelValue})
+		command := record.Command
+		if model := command.GetChangeModel(); model != nil {
+			a.pendingModelChanges = append(a.pendingModelChanges, codexPendingChange{commandID: command.GetCommandId(), value: model.GetModel()})
 		}
-		if command.ChangeReasoningEffortValue != "" && !inFlightChanges[command.CommandID] {
-			a.pendingEffortChanges = append(a.pendingEffortChanges, codexPendingChange{commandID: command.CommandID, value: command.ChangeReasoningEffortValue})
+		if effort := command.GetChangeReasoningEffort(); effort != nil {
+			a.pendingEffortChanges = append(a.pendingEffortChanges, codexPendingChange{commandID: command.GetCommandId(), value: effort.GetEffort()})
 		}
 	}
 	a.mu.Unlock()
@@ -372,18 +317,14 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 		return err
 	}
 	start := codexTurnStart{commandID: commandID, text: text, modelChange: modelChange, effortChange: effortChange}
-	turnStart := &codexTurnStartCorrelation{RequestID: requestID}
+	commandIDs := []string{commandID}
 	if modelChange != nil {
-		turnStart.ModelChange = &codexChangeCorrelation{CommandID: modelChange.commandID, Value: modelChange.value}
+		commandIDs = append(commandIDs, modelChange.commandID)
 	}
 	if effortChange != nil {
-		turnStart.EffortChange = &codexChangeCorrelation{CommandID: effortChange.commandID, Value: effortChange.value}
+		commandIDs = append(commandIDs, effortChange.commandID)
 	}
-	correlation, err := encodeCodexNativeCorrelation(codexNativeCorrelation{TurnStart: turnStart})
-	if err != nil {
-		return err
-	}
-	if err := a.host.RecordNativeCorrelation(ctx, commandID, correlation); err != nil {
+	if err := a.host.RecordNativeRequest(ctx, requestID, harness.CodexTurnStart, commandIDs); err != nil {
 		return err
 	}
 	a.mu.Lock()

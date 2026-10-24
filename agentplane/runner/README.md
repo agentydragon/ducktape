@@ -26,9 +26,9 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   each frame in the Sessions that `codex/router.go` assigns it to.
 - `transport.go`: the outbound control tunnel and independent per-Session ingress
   pushes, including heartbeat, replay, acknowledgement and backpressure.
-- `journal.go`, `journal_migrations/` and `store.go`: the Goose-managed SQLite
-  schema, verbatim protobuf Event blobs, typed command records with adapter-owned
-  correlation payloads, session metadata, ingress acknowledgements and ownership lock.
+- `journal.go`, `native_requests.go`, `journal_migrations/` and `store.go`: the Goose-managed SQLite
+  schema, verbatim protobuf Event blobs, native request records with foreign-key links
+  to their originating commands, session metadata, ingress acknowledgements and ownership lock.
   Transactions use `database/sql` with the cgo-free SQLite driver. Outcomes and all
   coalesced command receipts commit together; publication and startup handshake replies follow commit.
 - `process.go`, `supervisor.go` and `cgroups.go`: native pipes and process

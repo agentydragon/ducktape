@@ -268,3 +268,29 @@ func TestStdoutRetainsFinalFrameWithoutNewline(t *testing.T) {
 		t.Fatalf("final native frame was lost or changed: %v", entries)
 	}
 }
+
+func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
+	ctx := context.Background()
+	journal := openTestJournal(t)
+	r := newLifecycleRunner(t, Config{StateDir: t.TempDir()})
+	record, err := NewSessionRecord(&runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: t.TempDir(), Model: "test-model"}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newSession(r, "session-1", &record, journal)
+	command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
+	if _, _, err := journal.Admit(ctx, command, ""); err != nil {
+		t.Fatal(err)
+	}
+	confirmation := harness.UserMessageConfirmation{HarnessMessageID: "message-1", Text: "hello", OriginCommandIDs: []string{"input-1"}, TurnID: "turn-1"}
+	if err := s.ConfirmUserMessage(ctx, confirmation, nil); err != nil {
+		t.Fatal(err)
+	}
+	before := journal.LastCursor()
+	if err := s.ConfirmUserMessage(ctx, confirmation, nil); err != nil {
+		t.Fatal(err)
+	}
+	if journal.LastCursor() != before {
+		t.Fatal("replay published another terminal event")
+	}
+}
