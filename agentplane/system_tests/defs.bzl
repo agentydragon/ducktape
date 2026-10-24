@@ -75,6 +75,8 @@ def system_test(name, srcs, deps, k3s = None, vm_sandboxes = None, real_model = 
             layouts = [],
             data = K3S_VM_DATA,
             env = K3S_VM_ENV,
+            # VM layers stay on disk; sharing pod runners would discard their tmpfs image store.
+            exec_properties = {"test.runner-recycling-key": "k3s-vm"},
             tags = ["manual"] if vm_sandboxes == "manual" else [],
             **common
         )

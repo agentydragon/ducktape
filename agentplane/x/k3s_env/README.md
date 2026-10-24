@@ -20,6 +20,8 @@ with VM Sandboxes ([measurements](#image-layers-in-memory-2026-10-21)).
 The RBE platform recycles a runner after a passing action, on the same executor. A stack removes its
 Pods when it ends; the next stack on that runner keeps containerd's image store, resets the rest of the
 node, and streams only the blobs containerd lacks ([measurements](#recycled-runners-2026-10-23)).
+VM system tests use a separate `test.runner-recycling-key` so their disk-backed layers and pod tests'
+tmpfs layers keep separate image stores.
 
 Each stack records its setup in `k3s-timeline.jsonl` among the test's undeclared outputs: when each
 step finished and how long each image took to import, written as it happens, so a hung run shows how far
