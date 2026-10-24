@@ -1376,6 +1376,17 @@ impl Executor<'_> {
                             self.prefix_revision = self.prefix_revision.wrapping_add(1);
                         }
                     }
+                    AbstractValue::Unknown => {
+                        // A write through an untracked object may publish the
+                        // callback through that object before it is passed to
+                        // opaque code. Retain it as an escaped callback root.
+                        let callbacks = self.callback_values(&values);
+                        let before = self.global_escaped_callbacks.len();
+                        self.global_escaped_callbacks.extend(callbacks);
+                        if self.global_escaped_callbacks.len() != before {
+                            self.prefix_revision = self.prefix_revision.wrapping_add(1);
+                        }
+                    }
                     _ => {}
                 }
             }
