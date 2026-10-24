@@ -201,13 +201,15 @@ jobs:
           STATUS_SHA: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.sha || steps.source.outputs.sha || github.sha }}
           TEST_INVOCATION_ID: ${{ steps.invocation-ids.outputs.test }}
           REMOTE_OUTCOME: ${{ steps.bb-remote.outcome }}
+          REMOTE_LOG: ${{ steps.bb-remote.outputs.log_path }}
           LIVE_TEST_STATE_FILE: ${{ runner.temp }}/buildbuddy-test-${{ github.run_id }}-${{ github.run_attempt }}.json
           LIVE_TEST_PID_FILE: ${{ runner.temp }}/buildbuddy-test-${{ github.run_id }}-${{ github.run_attempt }}.pid
         run: |
           python3 devinfra/ci/buildbuddy_test_status.py finish \
             --invocation-id "$TEST_INVOCATION_ID" --sha "$STATUS_SHA" \
             --state-file "$LIVE_TEST_STATE_FILE" --pid-file "$LIVE_TEST_PID_FILE" \
-            --remote-outcome "${REMOTE_OUTCOME:-cancelled}"
+            --remote-outcome "${REMOTE_OUTCOME:-cancelled}" \
+            ${REMOTE_LOG:+--remote-log "$REMOTE_LOG"}
 
       - name: Upload BuildBuddy linkage
         if: always() && steps.source.outcome == 'success'

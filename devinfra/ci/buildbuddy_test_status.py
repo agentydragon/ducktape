@@ -19,6 +19,9 @@ from typing import Any, cast
 DEFAULT_BUILDBUDDY_URL = "https://app.buildbuddy.io"
 DEFAULT_GITHUB_API_URL = "https://api.github.com"
 STATUS_CONTEXT = "BuildBuddy / Bazel tests (live)"
+# Printed by devinfra/ci/bazel_ci.py (_announce_bazel_command) right before it starts the
+# test invocation; keep the two in sync.
+TEST_COMMAND_MARKER = "CI_BAZEL_COMMAND role=test"
 STOP = Event()
 
 
@@ -233,18 +236,41 @@ def _stop_watcher(pid_file: Path) -> None:
             os.kill(pid, signal.SIGKILL)
 
 
+def _test_started(remote_log: Path | None) -> bool:
+    return remote_log is not None and TEST_COMMAND_MARKER in remote_log.read_text(errors="replace")
+
+
 def _finish(args: argparse.Namespace) -> None:
     _stop_watcher(args.pid_file)
     api_key, token, repo = _credentials()
     previous = _read_state(args.state_file)
+    if not _test_started(args.remote_log):
+        # No test invocation exists to look up, and GetInvocation for an unknown id can
+        # fail with HTTP 500 rather than return an empty result.
+        if args.remote_outcome == "success":
+            state, description = "success", "No Bazel test invocation was needed"
+        else:
+            state = "error"
+            description = f"Bazel CI ended ({args.remote_outcome}) before starting tests; see Test & Build job"
+        _publish_status(
+            repo=repo,
+            sha=args.sha,
+            token=token,
+            invocation_id=args.invocation_id,
+            state=state,
+            description=description,
+            state_path=args.state_file,
+            github_api_url=args.github_api_url,
+            buildbuddy_url=args.buildbuddy_url,
+        )
+        return
+
     invocation = None
-    api_failed = False
     deadline = time.monotonic() + (20 if args.remote_outcome == "success" else 0)
     while True:
         try:
             invocation = _invocation(api_key, args.invocation_id, args.buildbuddy_url)
         except APIError as error:
-            api_failed = True
             print(f"::warning::Could not read final BuildBuddy invocation state: {error}", file=sys.stderr, flush=True)
             break
         if invocation is None or invocation.get("invocationStatus") != "PARTIAL_INVOCATION_STATUS":
@@ -263,8 +289,6 @@ def _finish(args: argparse.Namespace) -> None:
         state, description = "error", "BuildBuddy test invocation disconnected"
     elif previous and previous.get("state") == "failure":
         state, description = "failure", previous.get("description", "Bazel test invocation failed")
-    elif invocation is None and not api_failed and args.remote_outcome == "success":
-        state, description = "success", "No Bazel test invocation was needed"
     else:
         state, description = "error", "Bazel test result unavailable; see Test & Build job"
 
@@ -299,6 +323,8 @@ def main() -> None:
         if command == "finish":
             sub.add_argument("--pid-file", type=Path, required=True)
             sub.add_argument("--remote-outcome", required=True, choices=["success", "failure", "cancelled", "skipped"])
+            # The `bb remote` step's log; absent when that step never ran.
+            sub.add_argument("--remote-log", type=Path)
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, lambda _signum, _frame: STOP.set())
     if args.command == "pending":
