@@ -28,7 +28,7 @@ CLUSTER_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/cluster"
 _CANARY_LABEL = "storage.allegedly.works/drbd-canary"
 _CANARY_SELECTOR = {_CANARY_LABEL: "true"}
 _PIRAEUS_READY_LABEL = "storage.allegedly.works/piraeus-ready"
-# Controller Pods can run on any prepared OVH worker before a canary is evacuated.
+# Controller Pods can run on any prepared OVH node before a canary is evacuated.
 _CONTROLLER_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "topology.kubernetes.io/region": "hil"}
 _CLUSTER_NODE_AFFINITY = {
     "nodeSelectorTerms": [

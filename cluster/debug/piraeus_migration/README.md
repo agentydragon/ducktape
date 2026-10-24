@@ -313,6 +313,17 @@ remained Ready. Other parked Coder state, recordings and historical archives
 remain outside this deletion scope. Private proof:
 `inactive-coder-delete-accepted.json` under the artifact root above.
 
+After [the Piraeus controller placement change (#11811)](https://github.com/agentydragon/ducktape/pull/11811)
+reconciled, acceptance at `07:20:42 UTC` found all four controller Pods Ready
+with zero restarts: affinity on `ovh-ns1001419`, LINSTOR on `ovh-ns104952`, CSI
+on `ovh-ns104963`, and the operator on `ovh-ns103711`. All seven leader leases
+transferred; seven native LINSTOR nodes stayed `Online`, all 73 native resources
+were `UpToDate`, and all 73 Piraeus PV UIDs and CSI-spec hashes were unchanged.
+`LinstorCluster` generation 3, both HelmReleases, and both Flux Kustomizations
+were current and Ready. `ovh-ns102453` remains cordoned. Private proof:
+`last-hdd-102453/controller-relocation/all-controllers-relocated-accepted.json`
+under `/tmp/piraeus-hdd-roll-20261023/`.
+
 ## Evidence map
 
 | Folder                                    | Contents                                                                                 |

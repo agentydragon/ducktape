@@ -302,7 +302,7 @@ Filesystem restores and the later Block restores.
   uses the verified data-disk by-id path. It requests 4 GiB metadata plus its LVM
   spare and 64 KiB chunks; actual geometry still needs first-node acceptance.
 - Existing FILE_THIN workers remain on their canary pool. Controller Deployments
-  can run on any prepared `hil` worker labeled `piraeus-ready=true`, independently
+  can run on any prepared `hil` node labeled `piraeus-ready=true`, independently
   of its pool configuration.
 - An explicit empty local-path `nodePathMap` entry denies new local-path claims
   on the target instead of silently placing them on the system disk.
