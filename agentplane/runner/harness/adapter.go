@@ -55,9 +55,8 @@ type NativeReceipt struct {
 
 var ErrNativeResponsePending = errors.New("native response is pending")
 
-// NativeResponsePendingError means the native request may have reached the harness, but
-// its response was not observed before the caller stopped waiting. The command may still
-// take effect; callers must leave it pending.
+// NativeResponsePendingError means a native write may have reached the harness, but its
+// outcome is uncertain. The command may still take effect; callers must leave it pending.
 type NativeResponsePendingError struct{ Cause error }
 
 func (e *NativeResponsePendingError) Error() string {
@@ -110,7 +109,9 @@ type AdapterHost interface {
 	Journal() AdapterJournal
 	RecordNativeCorrelation(context.Context, string, map[string]string) error
 	SendNative(context.Context, json.RawMessage) error
-	RequestNative(context.Context, json.RawMessage, func(json.RawMessage) bool) (NativeReceipt, error)
+	// RequestNativeHandshake sequences startup protocol exchanges; command methods should send and
+	// let OnFrame advance their durable state instead of waiting for a response.
+	RequestNativeHandshake(context.Context, json.RawMessage, func(json.RawMessage) bool) (NativeReceipt, error)
 	Emit(context.Context, *eventpb.Event, []uint64) error
 	ConfirmUserMessage(context.Context, UserMessageConfirmation, []uint64) error
 	ModelChanged(context.Context, string, string, []uint64) error
@@ -125,6 +126,9 @@ type Adapter interface {
 	Environment() (map[string]string, error)
 	Handshake(context.Context) (string, error)
 	Reconcile(context.Context, string, bool) (*eventpb.ConversationReconciled, error)
+	// BlocksCommandDispatch reports whether a native response must advance this adapter's
+	// current command before the Session dispatches later queued commands.
+	BlocksCommandDispatch() bool
 	Submit(context.Context, string, string) error
 	Interrupt(context.Context, string) error
 	ChangeModel(context.Context, string, string) error

@@ -95,7 +95,6 @@ type adapterTestHost struct {
 	noops         []string
 	failures      []string
 	correlations  map[string]map[string]string
-	requestError  error
 }
 
 type adapterTestConfirmation struct {
@@ -130,10 +129,7 @@ func (h *adapterTestHost) SendNative(_ context.Context, frame json.RawMessage) e
 	return nil
 }
 
-func (h *adapterTestHost) RequestNative(context.Context, json.RawMessage, func(json.RawMessage) bool) (harness.NativeReceipt, error) {
-	if h.requestError != nil {
-		return harness.NativeReceipt{}, h.requestError
-	}
+func (h *adapterTestHost) RequestNativeHandshake(context.Context, json.RawMessage, func(json.RawMessage) bool) (harness.NativeReceipt, error) {
 	return harness.NativeReceipt{}, errors.New("unexpected native request in adapter test")
 }
 
@@ -178,7 +174,7 @@ type adapterHandshakeHost struct {
 	requests []json.RawMessage
 }
 
-func (h *adapterHandshakeHost) RequestNative(_ context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
+func (h *adapterHandshakeHost) RequestNativeHandshake(_ context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
 	h.requests = append(h.requests, append(json.RawMessage(nil), frame...))
 	var request struct {
 		ID     string `json:"id"`
@@ -221,17 +217,16 @@ func codexTurnStartResponse(t *testing.T, requestID, turnID string) json.RawMess
 func TestCodexLateTurnStartResponseConfirmsPendingCommand(t *testing.T) {
 	ctx := context.Background()
 	host := newAdapterTestHost()
-	host.requestError = &harness.NativeResponsePendingError{Cause: context.DeadlineExceeded}
 	adapter := codex.New(host, harness.LaunchConfig{Binary: "/bin/false"})
-	if err := adapter.Submit(ctx, "input-1", "hello"); !errors.Is(err, harness.ErrNativeResponsePending) {
+	if err := adapter.Submit(ctx, "input-1", "hello"); err != nil {
 		t.Fatalf("Submit error = %v", err)
 	}
 	requestID := host.correlations["input-1"]["codex.turn_start.request_id"]
 	if requestID == "" {
-		t.Fatal("Codex did not record native request correlation before waiting")
+		t.Fatal("Codex did not record native request correlation before sending")
 	}
-	if len(host.failures) != 0 || len(host.confirmations) != 0 {
-		t.Fatalf("pending request settled early: failures=%v confirmations=%v", host.failures, host.confirmations)
+	if len(host.nativeWrites) != 1 || len(host.failures) != 0 || len(host.confirmations) != 0 {
+		t.Fatalf("dispatch did not return with one pending native request: writes=%d failures=%v confirmations=%v", len(host.nativeWrites), host.failures, host.confirmations)
 	}
 	if err := adapter.OnFrame(ctx, codexTurnStartResponse(t, requestID, "turn-late"), 17); err != nil {
 		t.Fatal(err)
@@ -278,14 +273,23 @@ func TestCodexRecoveryReplaysJournaledLateTurnStartResponse(t *testing.T) {
 func TestClaudeLateControlResponseSettlesPendingModelChange(t *testing.T) {
 	ctx := context.Background()
 	host := newAdapterTestHost()
-	host.requestError = &harness.NativeResponsePendingError{Cause: context.DeadlineExceeded}
 	adapter := claude.New(host, harness.LaunchConfig{Binary: "/bin/false"})
-	if err := adapter.ChangeModel(ctx, "model-1", "claude-model"); !errors.Is(err, harness.ErrNativeResponsePending) {
+	if err := adapter.ChangeModel(ctx, "model-1", "claude-model"); err != nil {
 		t.Fatalf("ChangeModel error = %v", err)
 	}
 	requestID := host.correlations["model-1"]["claude.model.request_id"]
 	if requestID == "" {
 		t.Fatal("Claude did not record native request correlation")
+	}
+	if len(host.nativeWrites) != 1 || host.session.Model != "test-model" {
+		t.Fatalf("model command did not remain pending after dispatch: writes=%d model=%q", len(host.nativeWrites), host.session.Model)
+	}
+	var request struct {
+		Type      string `json:"type"`
+		RequestID string `json:"request_id"`
+	}
+	if err := json.Unmarshal(host.nativeWrites[0], &request); err != nil || request.Type != "control_request" || request.RequestID != requestID {
+		t.Fatalf("Claude model request correlation = %+v, err=%v", request, err)
 	}
 	frame, err := json.Marshal(map[string]any{
 		"type":     "control_response",

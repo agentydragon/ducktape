@@ -105,7 +105,7 @@ func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
 	defer cancel()
 	done := make(chan nativeResult, 1)
 	go func() {
-		receipt, err := s.RequestNative(ctx, json.RawMessage(`{"request":"echo"}`), func(raw json.RawMessage) bool { return string(raw) == `{"request":"echo"}` })
+		receipt, err := s.RequestNativeHandshake(ctx, json.RawMessage(`{"request":"echo"}`), func(raw json.RawMessage) bool { return string(raw) == `{"request":"echo"}` })
 		done <- nativeResult{receipt: receipt, err: err}
 	}()
 	select {
@@ -142,7 +142,7 @@ func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
 	}
 }
 
-func TestDispatchKeepsNativeTimeoutPendingAndDoesNotResend(t *testing.T) {
+func TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend(t *testing.T) {
 	s, _ := frameTestSession(t, []string{"/bin/cat"})
 	ctx := context.Background()
 	command := &commandpb.Command{
@@ -206,7 +206,7 @@ func TestRecoveryKeepsDispatchedInterruptPending(t *testing.T) {
 	}
 }
 
-func TestNativeWaitCancellationLeavesLateResponseAvailableToAdapter(t *testing.T) {
+func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T) {
 	release := filepath.Join(t.TempDir(), "release")
 	script := `while IFS= read -r line; do while [ ! -e "$1" ]; do sleep 0.01; done; printf '%s\n' "$line"; done`
 	s, p := frameTestSession(t, []string{"/bin/sh", "-c", script, "--", release})
@@ -223,7 +223,7 @@ func TestNativeWaitCancellationLeavesLateResponseAvailableToAdapter(t *testing.T
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := s.RequestNative(ctx, json.RawMessage(`{"request":"echo"}`), func(raw json.RawMessage) bool {
+		_, err := s.RequestNativeHandshake(ctx, json.RawMessage(`{"request":"echo"}`), func(raw json.RawMessage) bool {
 			return string(raw) == `{"request":"echo"}`
 		})
 		done <- err

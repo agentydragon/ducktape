@@ -140,6 +140,12 @@ func (a *codexAdapter) Environment() (map[string]string, error) {
 	return environment, nil
 }
 
+func (a *codexAdapter) BlocksCommandDispatch() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.turnStarts) != 0
+}
+
 func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 	initializeID, err := a.nextID()
 	if err != nil {
@@ -395,14 +401,13 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 	a.mu.Lock()
 	a.turnStarts[requestID] = start
 	a.mu.Unlock()
-	response, sourceSequence, err := a.request(ctx, requestID, map[string]any{
+	if err := a.send(ctx, map[string]any{
 		"method": "turn/start", "id": requestID,
 		"params": protocol.TurnStartParams{
 			ThreadID: threadID, Input: []protocol.UserInput{{Type: "text", Text: &text}},
 			Model: &model, Effort: &effort,
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		if !errors.Is(err, harness.ErrNativeResponsePending) {
 			a.mu.Lock()
 			delete(a.turnStarts, requestID)
@@ -410,9 +415,8 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 		}
 		return err
 	}
-	// The native reader also dispatches this receipt to OnFrame. The pending request is removed
-	// atomically there, so calling it here closes the gap if the response waiter won the race.
-	return a.onResponse(ctx, response, requestID, []uint64{sourceSequence})
+	// The command remains pending until OnFrame observes the journaled turn/start response.
+	return nil
 }
 
 func (a *codexAdapter) Interrupt(ctx context.Context, turnID string) error {
@@ -423,7 +427,7 @@ func (a *codexAdapter) Interrupt(ctx context.Context, turnID string) error {
 	if err != nil {
 		return err
 	}
-	_, _, err = a.request(ctx, requestID, map[string]any{
+	err = a.send(ctx, map[string]any{
 		"method": "turn/interrupt", "id": requestID,
 		"params": protocol.TurnInterruptParams{ThreadID: threadID, TurnID: turnID},
 	})
@@ -801,7 +805,7 @@ func (a *codexAdapter) request(ctx context.Context, requestID string, request an
 	if err != nil {
 		return codexWireFrame{}, 0, err
 	}
-	receipt, err := a.host.RequestNative(ctx, frame, func(raw json.RawMessage) bool {
+	receipt, err := a.host.RequestNativeHandshake(ctx, frame, func(raw json.RawMessage) bool {
 		var response codexWireFrame
 		return json.Unmarshal(raw, &response) == nil && len(response.ID) > 0 && len(response.Method) == 0 && rawJSONIDEquals(response.ID, requestID)
 	})

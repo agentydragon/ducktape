@@ -566,6 +566,9 @@ func (s *Session) commandLoop() {
 			s.runner.fail(err)
 			return
 		}
+		s.mu.Lock()
+		adapter := s.adapter
+		s.mu.Unlock()
 		for _, command := range commands {
 			if command.GetInterruptTurn() != nil {
 				s.dispatchControl(command)
@@ -574,6 +577,9 @@ func (s *Session) commandLoop() {
 			if err := s.dispatch(s.runner.ctx, command); err != nil {
 				s.runner.fail(err)
 				return
+			}
+			if adapter != nil && adapter.BlocksCommandDispatch() {
+				break
 			}
 		}
 	}
@@ -725,7 +731,9 @@ func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
 	return nil
 }
 
-func (s *Session) RequestNative(ctx context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
+// RequestNativeHandshake sequences native startup exchanges. Runtime commands use send-and-observe
+// transitions instead, so their scheduler never waits here for a native response.
+func (s *Session) RequestNativeHandshake(ctx context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
 	waiter := &nativeWaiter{matches: match, result: make(chan nativeResult, 1)}
 	s.mu.Lock()
 	s.waiters = append(s.waiters, waiter)
@@ -743,15 +751,11 @@ func (s *Session) RequestNative(ctx context.Context, frame json.RawMessage, matc
 	if err := s.SendNative(ctx, frame); err != nil {
 		return harness.NativeReceipt{}, err
 	}
-	timer := time.NewTimer(60 * time.Second)
-	defer timer.Stop()
 	select {
 	case reply := <-waiter.result:
 		return reply.receipt, reply.err
 	case <-ctx.Done():
 		return harness.NativeReceipt{}, &harness.NativeResponsePendingError{Cause: ctx.Err()}
-	case <-timer.C:
-		return harness.NativeReceipt{}, &harness.NativeResponsePendingError{Cause: errors.New("native response wait reached 60s")}
 	}
 }
 
@@ -827,6 +831,7 @@ func (s *Session) readStdout(process *Process, adapter harness.Adapter) {
 				readErr = e
 				break
 			}
+			s.wake()
 			s.deliverReplies()
 			if len(pending) > harness.MaxFrameLineBytes {
 				readErr = errors.New("native frame exceeded the 64 MiB limit")
@@ -838,6 +843,7 @@ func (s *Session) readStdout(process *Process, adapter harness.Adapter) {
 				if e := s.journal.WithBatch(s.runner.ctx, func(ctx context.Context) error { return s.receive(ctx, bytes.TrimRight(pending, "\r"), adapter) }); e != nil {
 					readErr = e
 				} else {
+					s.wake()
 					s.deliverReplies()
 				}
 			}

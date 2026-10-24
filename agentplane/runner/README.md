@@ -27,7 +27,7 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `journal.go` and `store.go`: the existing SQLite schema, verbatim protobuf
   Event blobs, session metadata, ingress acknowledgements and ownership lock.
   Transactions use `database/sql` with the cgo-free SQLite driver. Outcomes and all
-  coalesced command receipts commit together; publication and waiter replies follow commit.
+  coalesced command receipts commit together; publication and startup handshake replies follow commit.
 - `process.go`, `supervisor.go` and `cgroups.go`: native pipes and process
   isolation. The runner executes itself in an internal supervisor mode, which retains
   the state-owner descriptor until native work is fenced. A private liveness pipe

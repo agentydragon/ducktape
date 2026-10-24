@@ -243,10 +243,11 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 - A runner that finds a session it had running reports `HarnessLost`, then `TurnCompleted` with
   `PROCESS_LOST` if a turn was active. It replays committed Events unchanged and automatically
   starts the harness in the background to reconcile remaining admitted commands. A dispatched command
-  with no terminal evidence remains pending; a timeout or missing response is not a failure or proof
-  that retry is safe. If its correlated native response was committed before the restart, recovery
-  translates that response and settles the command. A planned interruption without terminal evidence
-  also remains pending because the runner cannot know whether it reached the harness.
+  with no terminal evidence remains pending; a missing response is not a failure or proof that retry
+  is safe. Command dispatch returns after the native write; correlated response Events advance the
+  command state and release later response-dependent commands. If a response was committed before the
+  restart, recovery translates it and settles the command. A planned interruption without terminal
+  evidence also remains pending because the runner cannot know whether it reached the harness.
 - A runner that finds a session whose setup had started without a terminal event records
   `SetupInterrupted`. It never executes that script again. The inherited state-owner descriptor
   keeps a replacement runner out until a surviving setup child exits.
