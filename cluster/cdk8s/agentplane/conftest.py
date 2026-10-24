@@ -7,9 +7,7 @@ from typing import Any, cast
 import pytest
 from cdk8s import Testing
 
-from cluster.cdk8s.agentplane import runner_gateway_workload, staging, testing
-
-NAMESPACES = (staging.ENV.namespace, testing.ENV.namespace)
+from cluster.cdk8s.agentplane import runner_gateway_workload, staging
 
 
 @pytest.fixture(scope="session")
@@ -17,17 +15,3 @@ def staging_manifests() -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], Testing.synth(staging.chart(Testing.app()))) + cast(
         list[dict[str, Any]], Testing.synth(runner_gateway_workload.serving_chart(Testing.app(), env=staging.ENV))
     )
-
-@pytest.fixture(scope="session")
-def agentplane_manifests() -> dict[str, list[dict[str, Any]]]:
-    return {
-        staging.ENV.namespace: cast(list[dict[str, Any]], Testing.synth(staging.chart(Testing.app())))
-        + cast(
-            list[dict[str, Any]], Testing.synth(runner_gateway_workload.serving_chart(Testing.app(), env=staging.ENV))
-        ),
-        testing.ENV.namespace: cast(list[dict[str, Any]], Testing.synth(testing.chart(Testing.app())))
-        + cast(
-            list[dict[str, Any]], Testing.synth(runner_gateway_workload.serving_chart(Testing.app(), env=testing.ENV))
-        ),
-    }
-
