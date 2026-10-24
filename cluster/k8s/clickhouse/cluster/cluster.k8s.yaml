@@ -735,4 +735,3 @@ spec:
       app.kubernetes.io/name: clickhouse-keeper
   policyTypes:
     - Ingress
-

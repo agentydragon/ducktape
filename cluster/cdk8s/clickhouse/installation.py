@@ -682,4 +682,3 @@ def clickhouse(
             flux_kustomization_depends_on(external_secrets_operator),
         ],
     )
-
