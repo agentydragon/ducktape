@@ -31557,7 +31557,7 @@
       }
     ]
   },
-  "report_sha256": "ae820337899ab9de48e171cbfd58482fc647181e999bf65db50c15e076f2eedf",
+  "report_sha256": "772d82886057fdd5a8c8c95d97901dcc96111ae26bdb9fe5395eafa36d2e9fbc",
   "validation": {
     "browser": "Local Playwright 1.63.0 with pinned Chromium (/opt/pw-browsers), not the RBE deterministic_browser_context harness",
     "viewports": [
@@ -31719,5 +31719,128 @@
       }
     ],
     "limits": "Source and dependency graph verified at the coverage commit; live frontend routing was not audited and no post-change PR feedback population is measured."
+  },
+  "runner_key_experiments": {
+    "vm_key": {
+      "measured_at_utc": "2026-10-24T01:10:47.544880+00:00",
+      "pr": "https://github.com/agentydragon/ducktape/pull/11769",
+      "merged_commit": "f4f169e507b011d09457c04b51d6d95d419aae1a",
+      "experiment_source_commit": "7a45b95891280c3a1320dc2954e57860ef84f7b9",
+      "successful_actions": 8,
+      "paired_vm_repeat": [
+        {
+          "arm": "shared recycling key",
+          "invocation": "https://app.buildbuddy.io/invocation/21f72a28-fbdb-4658-888e-923a876eec25",
+          "snapshot_parent": "https://app.buildbuddy.io/invocation/404cd864-d0e6-48f1-a280-e1073f974c0f",
+          "snapshot_parent_role": "original pod seed",
+          "stored_blobs_before_test": 121,
+          "snapshotter_on_tmpfs": true,
+          "image_import_seconds": 198.0,
+          "remote_execution_seconds": 468.478,
+          "remote_queue_seconds": 0.062,
+          "passed": true
+        },
+        {
+          "arm": "split k3s VM recycling key",
+          "invocation": "https://app.buildbuddy.io/invocation/c8bc60d6-6f62-4b13-a842-b37da38dfc64",
+          "snapshot_parent": "https://app.buildbuddy.io/invocation/cda92b1d-8655-4281-99a4-85fb0709b228",
+          "snapshot_parent_role": "preceding VM action",
+          "stored_blobs_before_test": 167,
+          "snapshotter_on_tmpfs": false,
+          "image_import_seconds": 11.7,
+          "remote_execution_seconds": 318.957,
+          "remote_queue_seconds": 0.059,
+          "passed": true
+        }
+      ],
+      "pod_after_lineage_control": {
+        "shared_key_invocation": "https://app.buildbuddy.io/invocation/168cad9d-3fe6-48f7-a67e-a865089593b5",
+        "shared_key_snapshot_parent": "https://app.buildbuddy.io/invocation/404cd864-d0e6-48f1-a280-e1073f974c0f",
+        "shared_key_stored_blobs": 121,
+        "shared_key_snapshotter_on_tmpfs": true,
+        "split_key_invocation": "https://app.buildbuddy.io/invocation/45fc44c1-4d9a-458f-ae7c-3de21b10c965",
+        "split_key_snapshot_parent": "https://app.buildbuddy.io/invocation/44de25bd-8561-4d4e-a0b8-7ebe65ce3c24",
+        "split_key_stored_blobs": 121,
+        "split_key_snapshotter_on_tmpfs": true,
+        "interpretation": "The shared-key pod-after action restored the original pod seed. The experiment did not demonstrate destructive eviction of that immutable pod snapshot. The measured paired benefit is the split-key VM repeat restoring a VM-warmed snapshot."
+      },
+      "controls": [
+        "same source and wrapper; target held constant within each comparison pair, with the reported VM repeats using the VM target; same requested resources and executor",
+        "sequential actions",
+        "test result caching bypassed and actual remote executions verified",
+        "snapshot parents checked using execution metadata"
+      ],
+      "limits": "One controlled pair on one executor. It demonstrates the observed cache-state case, not its frequency, population-wide CI latency or end-to-end feedback saving.",
+      "targets": {
+        "pod_actions": "//agentplane/system_tests:test_thread_stream",
+        "vm_actions": "//agentplane/system_tests:test_vm_sandbox_vm"
+      }
+    },
+    "pod_key": {
+      "measured_at_utc": "2026-10-24T01:38:54.454237+00:00",
+      "pr_discussion": "https://github.com/agentydragon/ducktape/pull/11781",
+      "decision": "Keep the current pod configuration; the PR discussion records no demonstrated benefit for adding a pod recycling key.",
+      "source_commit": "f4f169e507b011d09457c04b51d6d95d419aae1a",
+      "target": "//agentplane/system_tests:test_thread_stream",
+      "successful_actions": 6,
+      "warm_order": ["current", "added pod key", "added pod key", "current"],
+      "action_verification": {
+        "same_input_root_digest": true,
+        "same_arguments_and_environment": true,
+        "only_platform_difference": "runner-recycling-key",
+        "same_executor": true,
+        "requested_resources": {
+          "compute_units": 4,
+          "memory_bytes": 10000000000,
+          "free_disk_bytes": 53687091200
+        }
+      },
+      "warm_snapshot_state": "Each warm action restored its arm's own 121-blob tmpfs seed snapshot.",
+      "arms": {
+        "current": {
+          "warm_count": 2,
+          "median_image_import_seconds": 7.5,
+          "median_remote_execution_seconds": 134.5583625,
+          "remote_execution_range_seconds": [116.925, 152.192],
+          "warm_invocations": [
+            "https://app.buildbuddy.io/invocation/656afd41-1dee-4e51-948c-de172e6f1fad",
+            "https://app.buildbuddy.io/invocation/9cfc182a-432b-4e32-bb47-0c7c44655c34"
+          ]
+        },
+        "added_pod_key": {
+          "warm_count": 2,
+          "median_image_import_seconds": 7.75,
+          "median_remote_execution_seconds": 130.407492,
+          "remote_execution_range_seconds": [120.68, 140.135],
+          "warm_invocations": [
+            "https://app.buildbuddy.io/invocation/5ee315bf-e431-4890-bfb6-38b8d7a6f33a",
+            "https://app.buildbuddy.io/invocation/59e370e7-0abe-482b-b0a1-63b7f072e9bf"
+          ]
+        }
+      },
+      "warm_remote_execution_chronology_seconds": [152.192, 140.135, 120.68, 116.925],
+      "platform_identity_audit": {
+        "ordinary_requests": {
+          "compute_units": 3,
+          "disk_gigabytes": 10
+        },
+        "k3s_requests": {
+          "compute_units": 4,
+          "disk_gigabytes": 50,
+          "networking": "bridge"
+        },
+        "resource_properties_participate_in_platform_identity": true,
+        "repository_use_of_k3s_resource_settings": "k3s tests only; no unrelated target references found",
+        "vm_variants_already_have_distinct_key": true
+      },
+      "limits": "One executor, two warm actions per arm. The executor pin added to both arms participates in platform identity, so this is a controlled namespace comparison rather than the unmodified production namespace. It does not test separate physical executor pools or estimate fleet-wide snapshot interference. The 4.15s median execution difference is smaller than within-arm ranges; chronological drift and two samples per arm do not establish a small effect."
+    },
+    "scope": "Bounded action-level experiments measured after the fixed CI population window; original population metrics are unchanged.",
+    "validation": {
+      "normal_commit_hooks": "all 26 current hook IDs retained; full hooks pass after formatter changes",
+      "browser_review_invocation": "https://app.buildbuddy.io/invocation/d4a1befa-c973-46e9-a73f-72e601d675b2",
+      "browser_cases": ["desktop 1280x900", "mobile 390x844"],
+      "formatted_html_review": "Same parsed tags, attributes and whitespace-normalized text as browser-reviewed candidate; screenshots reviewed."
+    }
   }
 }
