@@ -70,17 +70,7 @@ func New(host harness.AdapterHost, store string) harness.Adapter {
 	}
 }
 
-const (
-	codexStartRequestID       = "codex.turn_start.request_id"
-	codexStartModelCommandID  = "codex.turn_start.model_command_id"
-	codexStartModelValue      = "codex.turn_start.model_value"
-	codexStartEffortCommandID = "codex.turn_start.effort_command_id"
-	codexStartEffortValue     = "codex.turn_start.effort_value"
-)
-
-const codexNativeCorrelationVersion = 1
-
-type codexNativeCorrelationV1 struct {
+type codexNativeCorrelation struct {
 	TurnStart *codexTurnStartCorrelation `json:"turn_start,omitempty"`
 }
 
@@ -95,7 +85,7 @@ type codexChangeCorrelation struct {
 	Value     string `json:"value"`
 }
 
-func encodeCodexNativeCorrelation(value codexNativeCorrelationV1) (harness.NativeCorrelation, error) {
+func encodeCodexNativeCorrelation(value codexNativeCorrelation) (harness.NativeCorrelation, error) {
 	if err := value.validate(); err != nil {
 		return harness.NativeCorrelation{}, err
 	}
@@ -103,32 +93,30 @@ func encodeCodexNativeCorrelation(value codexNativeCorrelationV1) (harness.Nativ
 	if err != nil {
 		return harness.NativeCorrelation{}, err
 	}
-	return harness.NativeCorrelation{Adapter: "codex", SchemaVersion: codexNativeCorrelationVersion, Payload: payload}, nil
+	return harness.NativeCorrelation{Adapter: "codex", Payload: payload}, nil
 }
 
-func decodeCodexNativeCorrelation(correlation *harness.NativeCorrelation, legacy json.RawMessage) (codexNativeCorrelationV1, error) {
+func decodeCodexNativeCorrelation(correlation *harness.NativeCorrelation) (codexNativeCorrelation, error) {
 	if correlation == nil {
-		return decodeLegacyCodexNativeCorrelation(legacy)
+		return codexNativeCorrelation{}, nil
 	}
 	if correlation.Adapter != "codex" {
-		return codexNativeCorrelationV1{}, fmt.Errorf("Codex command has %q native correlation", correlation.Adapter)
+		return codexNativeCorrelation{}, fmt.Errorf("Codex command has %q native correlation", correlation.Adapter)
 	}
-	if correlation.SchemaVersion != codexNativeCorrelationVersion {
-		return codexNativeCorrelationV1{}, fmt.Errorf("unsupported Codex native correlation schema version %d", correlation.SchemaVersion)
-	}
-	var value codexNativeCorrelationV1
+
+	var value codexNativeCorrelation
 	decoder := json.NewDecoder(bytes.NewReader(correlation.Payload))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&value); err != nil {
-		return codexNativeCorrelationV1{}, fmt.Errorf("decode Codex native correlation: %w", err)
+		return codexNativeCorrelation{}, fmt.Errorf("decode Codex native correlation: %w", err)
 	}
 	if err := value.validate(); err != nil {
-		return codexNativeCorrelationV1{}, err
+		return codexNativeCorrelation{}, err
 	}
 	return value, nil
 }
 
-func (value codexNativeCorrelationV1) validate() error {
+func (value codexNativeCorrelation) validate() error {
 	if value.TurnStart == nil {
 		return nil
 	}
@@ -142,30 +130,6 @@ func (value codexNativeCorrelationV1) validate() error {
 		return errors.New("Codex effort correlation requires command ID and value")
 	}
 	return nil
-}
-
-func decodeLegacyCodexNativeCorrelation(raw json.RawMessage) (codexNativeCorrelationV1, error) {
-	legacy := map[string]string{}
-	if len(raw) != 0 {
-		if err := json.Unmarshal(raw, &legacy); err != nil {
-			return codexNativeCorrelationV1{}, fmt.Errorf("decode legacy Codex native correlation: %w", err)
-		}
-	}
-	requestID := legacy[codexStartRequestID]
-	if requestID == "" {
-		return codexNativeCorrelationV1{}, nil
-	}
-	value := codexNativeCorrelationV1{TurnStart: &codexTurnStartCorrelation{RequestID: requestID}}
-	if commandID := legacy[codexStartModelCommandID]; commandID != "" {
-		value.TurnStart.ModelChange = &codexChangeCorrelation{CommandID: commandID, Value: legacy[codexStartModelValue]}
-	}
-	if commandID := legacy[codexStartEffortCommandID]; commandID != "" {
-		value.TurnStart.EffortChange = &codexChangeCorrelation{CommandID: commandID, Value: legacy[codexStartEffortValue]}
-	}
-	if err := value.validate(); err != nil {
-		return codexNativeCorrelationV1{}, err
-	}
-	return value, nil
 }
 
 func (a *codexAdapter) BlocksCommandDispatch() bool {
@@ -301,7 +265,7 @@ func (a *codexAdapter) Recover(ctx context.Context) error {
 		if !command.DispatchPlanned {
 			continue
 		}
-		correlation, err := decodeCodexNativeCorrelation(command.NativeCorrelation, command.LegacyNativeCorrelation)
+		correlation, err := decodeCodexNativeCorrelation(command.NativeCorrelation)
 		if err != nil {
 			a.mu.Unlock()
 			return fmt.Errorf("restore Codex correlation for command %q: %w", command.CommandID, err)
@@ -415,7 +379,7 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 	if effortChange != nil {
 		turnStart.EffortChange = &codexChangeCorrelation{CommandID: effortChange.commandID, Value: effortChange.value}
 	}
-	correlation, err := encodeCodexNativeCorrelation(codexNativeCorrelationV1{TurnStart: turnStart})
+	correlation, err := encodeCodexNativeCorrelation(codexNativeCorrelation{TurnStart: turnStart})
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -8,7 +9,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -52,13 +52,12 @@ type SealState struct {
 
 // CommandRecord is the journal's durable admission and dispatch receipt for a command.
 type CommandRecord struct {
-	Command                 *commandpb.Command
-	AdmittedCursor          uint64
-	DispatchPlanned         bool
-	NativeCorrelation       *harness.NativeCorrelation
-	LegacyNativeCorrelation json.RawMessage
-	ReceiptMetadata         CommandReceiptMetadata
-	TerminalCursor          *uint64
+	Command           *commandpb.Command
+	AdmittedCursor    uint64
+	DispatchPlanned   bool
+	NativeCorrelation *harness.NativeCorrelation
+	ReceiptMetadata   CommandReceiptMetadata
+	TerminalCursor    *uint64
 }
 
 type AppendOptions struct {
@@ -73,16 +72,9 @@ type CommandReceiptMetadata struct {
 	TurnID           string `json:"turn_id,omitempty"`
 }
 
-const commandJournalDataVersion = 1
-
-// commandJournalData versions the command's adapter-specific correlation payload separately
-// from terminal receipt facts. LegacyNativeCorrelation is read-only compatibility for journals
-// written before adapter payloads had schemas.
 type commandJournalData struct {
-	Version                 int                        `json:"version"`
-	NativeCorrelation       *harness.NativeCorrelation `json:"native_correlation,omitempty"`
-	LegacyNativeCorrelation json.RawMessage            `json:"legacy_native_correlation,omitempty"`
-	ReceiptMetadata         CommandReceiptMetadata     `json:"receipt_metadata,omitempty"`
+	NativeCorrelation *harness.NativeCorrelation `json:"native_correlation,omitempty"`
+	ReceiptMetadata   CommandReceiptMetadata     `json:"receipt_metadata,omitempty"`
 }
 
 type Journal struct {
@@ -720,7 +712,7 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 			return nil, storageError("read command receipt", err)
 		}
 		if !terminal.Valid {
-			data, _, err := decodeCommandJournalData(rawCorrelation)
+			data, err := decodeCommandJournalData(rawCorrelation)
 			if err != nil {
 				return nil, storageError("decode command journal data", err)
 			}
@@ -747,44 +739,17 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 	return proto.Clone(entry).(*eventlogpb.EventEntry), nil
 }
 
-func decodeCommandJournalData(raw string) (commandJournalData, bool, error) {
-	data := commandJournalData{Version: commandJournalDataVersion}
-	if strings.TrimSpace(raw) == "" {
-		return data, false, nil
+func decodeCommandJournalData(raw string) (commandJournalData, error) {
+	var data commandJournalData
+	decoder := json.NewDecoder(bytes.NewBufferString(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&data); err != nil {
+		return commandJournalData{}, err
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
-		return commandJournalData{}, false, err
-	}
-	if version, ok := fields["version"]; ok {
-		if err := json.Unmarshal(version, &data.Version); err != nil {
-			return commandJournalData{}, false, fmt.Errorf("decode command journal data version: %w", err)
-		}
-		if data.Version != commandJournalDataVersion {
-			return commandJournalData{}, false, fmt.Errorf("unsupported command journal data version %d", data.Version)
-		}
-		if err := json.Unmarshal([]byte(raw), &data); err != nil {
-			return commandJournalData{}, false, err
-		}
-		return data, false, nil
-	}
-	var legacy map[string]string
-	if err := json.Unmarshal([]byte(raw), &legacy); err != nil {
-		return commandJournalData{}, false, fmt.Errorf("decode legacy command correlation: %w", err)
-	}
-	if len(legacy) == 0 {
-		return data, true, nil
-	}
-	data.LegacyNativeCorrelation = append(json.RawMessage(nil), []byte(raw)...)
-	data.ReceiptMetadata = CommandReceiptMetadata{
-		HarnessMessageID: legacy["harness_message_id"],
-		TurnID:           legacy["turn_id"],
-	}
-	return data, true, nil
+	return data, nil
 }
 
 func encodeCommandJournalData(data commandJournalData) (string, error) {
-	data.Version = commandJournalDataVersion
 	encoded, err := json.Marshal(data)
 	return string(encoded), err
 }
@@ -862,7 +827,7 @@ func (j *Journal) Admit(ctx context.Context, command *commandpb.Command, expecte
 		}
 		if _, err := j.conn.ExecContext(
 			ctx,
-			"INSERT INTO command (command_id, payload, admitted_cursor, dispatch_planned, native_correlation, terminal_cursor) VALUES (?, ?, ?, 0, '{\"version\":1}', NULL)",
+			"INSERT INTO command (command_id, payload, admitted_cursor, dispatch_planned, native_correlation, terminal_cursor) VALUES (?, ?, ?, 0, '{}', NULL)",
 			commandCopy.GetCommandId(), payload, entry.GetCursor(),
 		); err != nil {
 			return storageError("insert command admission", err)
@@ -904,8 +869,8 @@ func (j *Journal) DispatchPlanned(ctx context.Context, commandID string) (bool, 
 }
 
 func (j *Journal) RecordNativeCorrelation(ctx context.Context, commandID string, nativeCorrelation harness.NativeCorrelation) error {
-	if nativeCorrelation.Adapter == "" || nativeCorrelation.SchemaVersion == 0 || !json.Valid(nativeCorrelation.Payload) {
-		return errors.New("native correlation requires an adapter, schema version, and valid JSON payload")
+	if nativeCorrelation.Adapter == "" || !json.Valid(nativeCorrelation.Payload) {
+		return errors.New("native correlation requires an adapter and valid JSON payload")
 	}
 	var payloadObject map[string]json.RawMessage
 	if err := json.Unmarshal(nativeCorrelation.Payload, &payloadObject); err != nil || payloadObject == nil {
@@ -927,7 +892,7 @@ func (j *Journal) RecordNativeCorrelation(ctx context.Context, commandID string,
 		if terminal.Valid {
 			return nil
 		}
-		data, _, err := decodeCommandJournalData(rawCorrelation)
+		data, err := decodeCommandJournalData(rawCorrelation)
 		if err != nil {
 			return storageError("decode command journal data", err)
 		}
@@ -977,14 +942,14 @@ func (j *Journal) GetCommand(ctx context.Context, commandID string) (*CommandRec
 	if err := proto.Unmarshal(payload, command); err != nil {
 		return nil, err
 	}
-	data, _, err := decodeCommandJournalData(correlation)
+	data, err := decodeCommandJournalData(correlation)
 	if err != nil {
 		return nil, err
 	}
 	record := &CommandRecord{
 		Command: command, AdmittedCursor: uint64(admitted), DispatchPlanned: dispatch,
-		NativeCorrelation: data.NativeCorrelation, LegacyNativeCorrelation: data.LegacyNativeCorrelation,
-		ReceiptMetadata: data.ReceiptMetadata,
+		NativeCorrelation: data.NativeCorrelation,
+		ReceiptMetadata:   data.ReceiptMetadata,
 	}
 	if terminal.Valid {
 		value := uint64(terminal.Int64)
@@ -1053,14 +1018,13 @@ func (j *Journal) PendingCommandInfo(ctx context.Context) ([]harness.PendingComm
 		if err := proto.Unmarshal(payload, command); err != nil {
 			return nil, err
 		}
-		data, _, err := decodeCommandJournalData(rawCorrelation)
+		data, err := decodeCommandJournalData(rawCorrelation)
 		if err != nil {
 			return nil, err
 		}
 		info := harness.PendingCommandInfo{
 			CommandID: command.GetCommandId(), AdmittedCursor: uint64(admittedCursor),
 			DispatchPlanned: planned, NativeCorrelation: data.NativeCorrelation,
-			LegacyNativeCorrelation: data.LegacyNativeCorrelation,
 		}
 		if input := command.GetSubmitInput(); input != nil {
 			info.SubmitText = input.GetText()

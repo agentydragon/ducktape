@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -116,8 +117,8 @@ func TestOpenJournalReopensPythonSchemaAndKeepsStoredBytes(t *testing.T) {
 	if err := journal.conn.QueryRowContext(ctx, "SELECT MAX(version_id) FROM "+journalMigrationTableName).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 1 {
-		t.Fatalf("Goose migration version = %d, want 1", version)
+	if version != 2 {
+		t.Fatalf("Goose migration version = %d, want 2", version)
 	}
 }
 
@@ -289,7 +290,7 @@ func TestNativeRequestCorrelationSurvivesJournalReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := journal.RecordNativeCorrelation(ctx, command.CommandId, harness.NativeCorrelation{
-		Adapter: "codex", SchemaVersion: 1,
+		Adapter: "codex",
 		Payload: json.RawMessage(`{"turn_start":{"request_id":"agentplane-test-request"}}`),
 	}); err != nil {
 		t.Fatal(err)
@@ -313,58 +314,122 @@ func TestNativeRequestCorrelationSurvivesJournalReopen(t *testing.T) {
 }
 
 func TestJournalMigratesLegacyNativeCorrelationMap(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "journal.sqlite")
-	command := &commandpb.Command{
-		CommandId: "input-legacy",
-		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}},
-	}
-	journal, err := OpenJournal(ctx, path, "test-source")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := journal.Admit(ctx, command, ""); err != nil {
-		t.Fatal(err)
-	}
-	legacy := `{"codex.turn_start.request_id":"legacy-request","harness_message_id":"native-legacy","turn_id":"turn-legacy"}`
-	if _, err := journal.conn.ExecContext(ctx, "UPDATE command SET native_correlation = ? WHERE command_id = ?", legacy, command.CommandId); err != nil {
-		t.Fatal(err)
-	}
-	if err := journal.Close(); err != nil {
-		t.Fatal(err)
-	}
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("DROP TABLE " + journalMigrationTableName); err != nil {
-		_ = db.Close()
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	reopened, err := OpenJournal(ctx, path, "test-source")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reopened.Close()
-	record, err := reopened.GetCommand(ctx, command.CommandId)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var oldFields map[string]string
-	if record == nil || json.Unmarshal(record.LegacyNativeCorrelation, &oldFields) != nil || oldFields["codex.turn_start.request_id"] != "legacy-request" || record.ReceiptMetadata.HarnessMessageID != "native-legacy" || record.ReceiptMetadata.TurnID != "turn-legacy" {
-		t.Fatalf("migrated legacy command data = %+v, old fields = %+v", record, oldFields)
-	}
-	var stored string
-	if err := reopened.conn.QueryRowContext(ctx, "SELECT native_correlation FROM command WHERE command_id = ?", command.CommandId).Scan(&stored); err != nil {
-		t.Fatal(err)
-	}
-	var versioned commandJournalData
-	if err := json.Unmarshal([]byte(stored), &versioned); err != nil || versioned.Version != commandJournalDataVersion {
-		t.Fatalf("stored command data = %s, decode error = %v", stored, err)
+	for _, test := range []struct {
+		name   string
+		legacy string
+		want   string
+	}{
+		{name: "empty", legacy: `{}`, want: `{"receipt_metadata":{}}`},
+		{
+			name:   "receipt",
+			legacy: `{"harness_message_id":"message-1","turn_id":"turn-1"}`,
+			want:   `{"receipt_metadata":{"harness_message_id":"message-1","turn_id":"turn-1"}}`,
+		},
+		{
+			name:   "claude-submit",
+			legacy: `{"claude.submit.message_uuid":"message-1"}`,
+			want:   `{"receipt_metadata":{},"native_correlation":{"adapter":"claude","payload":{"submit":{"message_uuid":"message-1"}}}}`,
+		},
+		{
+			name:   "claude-model",
+			legacy: `{"claude.model.request_id":"request-1","claude.model.value":"test-model"}`,
+			want:   `{"receipt_metadata":{},"native_correlation":{"adapter":"claude","payload":{"model_change":{"request_id":"request-1","model":"test-model"}}}}`,
+		},
+		{
+			name:   "claude-effort",
+			legacy: `{"claude.effort.request_id":"request-1","claude.effort.value":"high"}`,
+			want:   `{"receipt_metadata":{},"native_correlation":{"adapter":"claude","payload":{"effort_change":{"request_id":"request-1","effort":"high"}}}}`,
+		},
+		{
+			name:   "codex-start",
+			legacy: `{"codex.turn_start.request_id":"request-1"}`,
+			want:   `{"receipt_metadata":{},"native_correlation":{"adapter":"codex","payload":{"turn_start":{"request_id":"request-1"}}}}`,
+		},
+		{
+			name:   "codex-start-with-changes-and-receipt",
+			legacy: `{"codex.turn_start.request_id":"request-1","codex.turn_start.model_command_id":"model-1","codex.turn_start.model_value":"test-model","codex.turn_start.effort_command_id":"effort-1","codex.turn_start.effort_value":"high","harness_message_id":"message-1","turn_id":"turn-1"}`,
+			want:   `{"receipt_metadata":{"harness_message_id":"message-1","turn_id":"turn-1"},"native_correlation":{"adapter":"codex","payload":{"turn_start":{"request_id":"request-1","model_change":{"command_id":"model-1","value":"test-model"},"effort_change":{"command_id":"effort-1","value":"high"}}}}}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			path := filepath.Join(t.TempDir(), "journal.sqlite")
+			command := &commandpb.Command{
+				CommandId: "input-legacy",
+				Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}},
+			}
+			commandBytes, err := proto.Marshal(command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry := &eventlogpb.EventEntry{
+				Cursor: 1,
+				Origin: &eventlogpb.EventOrigin{SourceId: "test-source", Sequence: 1},
+				Event:  &eventpb.Event{Observation: &eventpb.Event_CommandAdmitted{CommandAdmitted: &eventpb.CommandAdmitted{Command: command}}},
+			}
+			entryBytes, err := proto.Marshal(entry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			db, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			for _, statement := range legacyJournalSchema {
+				if _, err := db.ExecContext(ctx, statement); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := db.ExecContext(ctx, "INSERT INTO event_entry VALUES (1, ?)", entryBytes); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.ExecContext(ctx, "INSERT INTO checkpoint VALUES (1, 'test-source', 1, 0, '')"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.ExecContext(ctx, "INSERT INTO command VALUES (?, ?, 1, 1, ?, NULL)", command.CommandId, commandBytes, test.legacy); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				journal, err := OpenJournal(ctx, path, "test-source")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer journal.Close()
+				record, err := journal.GetCommand(ctx, command.CommandId)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var want commandJournalData
+				if err := json.Unmarshal([]byte(test.want), &want); err != nil {
+					t.Fatal(err)
+				}
+				if record == nil || !record.DispatchPlanned || !proto.Equal(record.Command, command) || record.ReceiptMetadata != want.ReceiptMetadata {
+					t.Fatalf("migrated command = %+v", record)
+				}
+				gotBytes, err := json.Marshal(record.NativeCorrelation)
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantBytes, err := json.Marshal(want.NativeCorrelation)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var gotCorrelation, wantCorrelation any
+				if err := json.Unmarshal(gotBytes, &gotCorrelation); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal(wantBytes, &wantCorrelation); err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(gotCorrelation, wantCorrelation) {
+					t.Fatalf("migrated correlation = %s, want %s", gotBytes, wantBytes)
+				}
+				if err := journal.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
 	}
 }
 

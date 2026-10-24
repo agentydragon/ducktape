@@ -64,17 +64,7 @@ type claudeAdapter struct {
 	adapterID       string
 }
 
-const (
-	claudeSubmitUUID         = "claude.submit.message_uuid"
-	claudeModelRequestID     = "claude.model.request_id"
-	claudeModelRequestValue  = "claude.model.value"
-	claudeEffortRequestID    = "claude.effort.request_id"
-	claudeEffortRequestValue = "claude.effort.value"
-)
-
-const claudeNativeCorrelationVersion = 1
-
-type claudeNativeCorrelationV1 struct {
+type claudeNativeCorrelation struct {
 	Submit       *claudeSubmitCorrelation `json:"submit,omitempty"`
 	ModelChange  *claudeModelCorrelation  `json:"model_change,omitempty"`
 	EffortChange *claudeEffortCorrelation `json:"effort_change,omitempty"`
@@ -94,7 +84,7 @@ type claudeEffortCorrelation struct {
 	Effort    string `json:"effort"`
 }
 
-func encodeClaudeNativeCorrelation(value claudeNativeCorrelationV1) (harness.NativeCorrelation, error) {
+func encodeClaudeNativeCorrelation(value claudeNativeCorrelation) (harness.NativeCorrelation, error) {
 	if err := value.validate(); err != nil {
 		return harness.NativeCorrelation{}, err
 	}
@@ -102,32 +92,30 @@ func encodeClaudeNativeCorrelation(value claudeNativeCorrelationV1) (harness.Nat
 	if err != nil {
 		return harness.NativeCorrelation{}, err
 	}
-	return harness.NativeCorrelation{Adapter: "claude", SchemaVersion: claudeNativeCorrelationVersion, Payload: payload}, nil
+	return harness.NativeCorrelation{Adapter: "claude", Payload: payload}, nil
 }
 
-func decodeClaudeNativeCorrelation(correlation *harness.NativeCorrelation, legacy json.RawMessage) (claudeNativeCorrelationV1, error) {
+func decodeClaudeNativeCorrelation(correlation *harness.NativeCorrelation) (claudeNativeCorrelation, error) {
 	if correlation == nil {
-		return decodeLegacyClaudeNativeCorrelation(legacy)
+		return claudeNativeCorrelation{}, nil
 	}
 	if correlation.Adapter != "claude" {
-		return claudeNativeCorrelationV1{}, fmt.Errorf("Claude command has %q native correlation", correlation.Adapter)
+		return claudeNativeCorrelation{}, fmt.Errorf("Claude command has %q native correlation", correlation.Adapter)
 	}
-	if correlation.SchemaVersion != claudeNativeCorrelationVersion {
-		return claudeNativeCorrelationV1{}, fmt.Errorf("unsupported Claude native correlation schema version %d", correlation.SchemaVersion)
-	}
-	var value claudeNativeCorrelationV1
+
+	var value claudeNativeCorrelation
 	decoder := json.NewDecoder(bytes.NewReader(correlation.Payload))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&value); err != nil {
-		return claudeNativeCorrelationV1{}, fmt.Errorf("decode Claude native correlation: %w", err)
+		return claudeNativeCorrelation{}, fmt.Errorf("decode Claude native correlation: %w", err)
 	}
 	if err := value.validate(); err != nil {
-		return claudeNativeCorrelationV1{}, err
+		return claudeNativeCorrelation{}, err
 	}
 	return value, nil
 }
 
-func (value claudeNativeCorrelationV1) validate() error {
+func (value claudeNativeCorrelation) validate() error {
 	kinds := 0
 	if value.Submit != nil {
 		kinds++
@@ -151,29 +139,6 @@ func (value claudeNativeCorrelationV1) validate() error {
 		return errors.New("Claude command correlation must describe one native request")
 	}
 	return nil
-}
-
-func decodeLegacyClaudeNativeCorrelation(raw json.RawMessage) (claudeNativeCorrelationV1, error) {
-	legacy := map[string]string{}
-	if len(raw) != 0 {
-		if err := json.Unmarshal(raw, &legacy); err != nil {
-			return claudeNativeCorrelationV1{}, fmt.Errorf("decode legacy Claude native correlation: %w", err)
-		}
-	}
-	var value claudeNativeCorrelationV1
-	if uuid := legacy[claudeSubmitUUID]; uuid != "" {
-		value.Submit = &claudeSubmitCorrelation{MessageUUID: uuid}
-	}
-	if requestID := legacy[claudeModelRequestID]; requestID != "" {
-		value.ModelChange = &claudeModelCorrelation{RequestID: requestID, Model: legacy[claudeModelRequestValue]}
-	}
-	if requestID := legacy[claudeEffortRequestID]; requestID != "" {
-		value.EffortChange = &claudeEffortCorrelation{RequestID: requestID, Effort: legacy[claudeEffortRequestValue]}
-	}
-	if err := value.validate(); err != nil {
-		return claudeNativeCorrelationV1{}, err
-	}
-	return value, nil
 }
 
 // New creates an adapter bound to one runner-owned Session.
@@ -288,7 +253,7 @@ func (a *claudeAdapter) Recover(ctx context.Context) error {
 		if !command.DispatchPlanned {
 			continue
 		}
-		correlation, err := decodeClaudeNativeCorrelation(command.NativeCorrelation, command.LegacyNativeCorrelation)
+		correlation, err := decodeClaudeNativeCorrelation(command.NativeCorrelation)
 		if err != nil {
 			a.mu.Unlock()
 			return fmt.Errorf("restore Claude correlation for command %q: %w", command.CommandID, err)
@@ -457,7 +422,7 @@ func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) erro
 		}
 	}
 	messageUUID := uuid.NewString()
-	correlation, err := encodeClaudeNativeCorrelation(claudeNativeCorrelationV1{
+	correlation, err := encodeClaudeNativeCorrelation(claudeNativeCorrelation{
 		Submit: &claudeSubmitCorrelation{MessageUUID: messageUUID},
 	})
 	if err != nil {
@@ -501,7 +466,7 @@ func (a *claudeAdapter) Interrupt(ctx context.Context, turnID string) error {
 
 func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string) error {
 	requestID := nativeRequestID()
-	correlation, err := encodeClaudeNativeCorrelation(claudeNativeCorrelationV1{
+	correlation, err := encodeClaudeNativeCorrelation(claudeNativeCorrelation{
 		ModelChange: &claudeModelCorrelation{RequestID: requestID, Model: model},
 	})
 	if err != nil {
@@ -527,7 +492,7 @@ func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string
 
 func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, effort string) error {
 	requestID := nativeRequestID()
-	correlation, err := encodeClaudeNativeCorrelation(claudeNativeCorrelationV1{
+	correlation, err := encodeClaudeNativeCorrelation(claudeNativeCorrelation{
 		EffortChange: &claudeEffortCorrelation{RequestID: requestID, Effort: effort},
 	})
 	if err != nil {
