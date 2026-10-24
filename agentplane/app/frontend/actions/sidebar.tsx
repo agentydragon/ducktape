@@ -1,7 +1,5 @@
 import { Badge, Button, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core";
-import IconArrowRight from "@tabler/icons-react/dist/esm/icons/IconArrowRight.mjs";
-import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
-import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
+import { IconArrowRight, IconChevronDown, IconChevronRight } from "../icons";
 import { type JSX, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 

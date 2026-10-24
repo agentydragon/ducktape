@@ -9,19 +9,14 @@ TSCONFIG = "//agentplane/app/frontend:tsconfig"
 # The lifecycle controls both sandbox views share: suspend/resume, and delete with its confirmation.
 ts_library(
     name = "lifecycle",
-    srcs = [
-        "lifecycle.tsx",
-        # The ambient declaration for the @tabler/icons-react subpaths lifecycle.tsx imports; see
-        # the note in the file itself.
-        "tabler_icons.d.ts",
-    ],
+    srcs = ["lifecycle.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:icons",
     ],
 )
 
@@ -85,13 +80,7 @@ ts_library(
 
 ts_library(
     name = "list",
-    srcs = [
-        "list.tsx",
-        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
-        # imports. A declaration file is type-only, so it joins this target's program without
-        # being emitted.
-        "tabler_icons.d.ts",
-    ],
+    srcs = ["list.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":idle_suspend",
@@ -99,12 +88,12 @@ ts_library(
         ":sandbox_name",
         ":wake_on_send",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:disclosure",
+        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:sandbox_status",
@@ -208,19 +197,14 @@ ts_library(
 
 ts_library(
     name = "sandbox_sessions",
-    srcs = [
-        "sandbox_sessions.tsx",
-        # The ambient declaration for the @tabler/icons-react subpaths this file imports; see the
-        # note in tabler_icons.d.ts.
-        "tabler_icons.d.ts",
-    ],
+    srcs = ["sandbox_sessions.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/threads:thread_status",
         "//agentplane/app/frontend/threads:thread_status_indicator",
@@ -229,13 +213,7 @@ ts_library(
 
 ts_library(
     name = "sandbox_page",
-    srcs = [
-        "sandbox_page.tsx",
-        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
-        # imports. A declaration file is type-only, so it joins this target's program without
-        # being emitted.
-        "tabler_icons.d.ts",
-    ],
+    srcs = ["sandbox_page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":egress",
@@ -246,11 +224,11 @@ ts_library(
         ":sandbox_sessions",
         ":sandbox_status_view",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:notification_status",

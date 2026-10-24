@@ -1,6 +1,6 @@
 import { ActionIcon, Button, Drawer, Group, Stack, Text } from "@mantine/core";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
-import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
+import { IconHistory } from "../icons";
 
 import {
   threadObservationEntry,

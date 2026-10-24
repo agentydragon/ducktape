@@ -1,6 +1,5 @@
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
-import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
+import { IconCheck, IconX } from "../icons";
 import { createContext, type JSX, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { displayableError } from "../client";

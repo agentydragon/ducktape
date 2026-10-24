@@ -4,15 +4,16 @@
  * color; mark_glyph.tsx and thread_favicon.ts only draw what these tables say.
  */
 import type { ComponentType } from "react";
-// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
-import IconAlertTriangle from "@tabler/icons-react/dist/esm/icons/IconAlertTriangle.mjs";
-import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
-import IconCircleCheck from "@tabler/icons-react/dist/esm/icons/IconCircleCheck.mjs";
-import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
-import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
-import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
-import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
-import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
+import {
+  IconAlertTriangle,
+  IconArchive,
+  IconCircleCheck,
+  IconCircleX,
+  IconClock,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconPower,
+} from "./icons";
 
 import { RunningChevrons, StatusDot } from "./custom_mark_icons";
 

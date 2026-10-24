@@ -49,19 +49,29 @@ ts_library(
     deps = [":client"],
 )
 
+# Shared Tabler imports and their ambient subpath types. Feature targets depend on this
+# facade rather than importing the untyped package subpaths themselves.
 ts_library(
-    name = "status_mark",
+    name = "icons",
     srcs = [
-        "status_mark.ts",
-        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
-        # imports. A declaration file is type-only, so it joins this target's program without
-        # being emitted.
+        "icons.tsx",
         "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":custom_mark_icons",
         "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "status_mark",
+    srcs = ["status_mark.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":custom_mark_icons",
+        ":icons",
         "//:node_modules/@types/react",
     ],
 )
@@ -656,17 +666,13 @@ ts_library(
         "sidebar.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
-        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
-        # imports. A declaration file is type-only, so it joins this target's program without
-        # being emitted.
-        "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":icons",
         ":resize_handle",
         ":sidebar_css",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
@@ -853,13 +859,11 @@ ts_library(
         "app.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
-        # The ambient declaration for the @tabler/icons-react subpath app.tsx imports; see the note
-        # in the file itself.
-        "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
         ":consent",
+        ":icons",
         ":live",
         ":settings",
         ":shell_css",
@@ -869,7 +873,6 @@ ts_library(
         ":tab_metadata",
         ":topbar",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",

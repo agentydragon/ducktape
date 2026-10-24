@@ -1,4 +1,4 @@
-import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
+import { IconCheck } from "../icons";
 import { type JSX, useState } from "react";
 
 /** Only durable evidence advances the lights; a lost reply is not a runner refusal. */

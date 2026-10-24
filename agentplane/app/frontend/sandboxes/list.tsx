@@ -15,8 +15,7 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
-import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
+import { IconDotsVertical } from "../icons";
 import { type JSX, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 

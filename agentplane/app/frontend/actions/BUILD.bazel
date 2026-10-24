@@ -81,20 +81,16 @@ ts_library(
 
 ts_library(
     name = "requests",
-    srcs = [
-        "requests.tsx",
-        # Ambient module declaration for the per-icon Tabler imports used by the decision buttons.
-        "tabler_icons.d.ts",
-    ],
+    srcs = ["requests.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":action_client",
         ":call",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:stream_status",
     ],
@@ -105,7 +101,6 @@ ts_library(
     srcs = [
         "css.d.ts",
         "sidebar.tsx",
-        "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -113,11 +108,11 @@ ts_library(
         ":requests",
         ":sidebar_css",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:resize_handle",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend/actions/rendering:index",
@@ -155,21 +150,17 @@ agentplane_vitest_test(
 
 ts_library(
     name = "detail",
-    srcs = [
-        "detail.tsx",
-        # Ambient declaration for the @tabler/icons-react per-icon subpath this page imports.
-        "tabler_icons.d.ts",
-    ],
+    srcs = ["detail.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":action_client",
         ":history",
         ":requests",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend:icons",
     ],
 )
 

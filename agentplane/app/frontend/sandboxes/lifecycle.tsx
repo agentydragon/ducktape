@@ -5,9 +5,7 @@ import type { JSX } from "react";
  * restated here so the UI offers the action when it will be accepted, not so it enforces anything.
  */
 import { ActionIcon, Button, Group, Modal, Stack, Text, Tooltip } from "@mantine/core";
-// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
-import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
-import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
+import { IconPlayerPause, IconPlayerPlay } from "../icons";
 
 import type { SandboxView } from "../client";
 

@@ -1,6 +1,5 @@
 import { ActionIcon, Stack, Text, Title } from "@mantine/core";
-// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
-import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
+import { IconMenu2 } from "./icons";
 import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 

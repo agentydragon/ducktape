@@ -1,6 +1,6 @@
 /** On-device scroll diagnostics available from the app's persistent navigation. */
 import { ActionIcon, Menu } from "@mantine/core";
-import IconBug from "@tabler/icons-react/dist/esm/icons/IconBug.mjs";
+import { IconBug } from "../icons";
 import { type JSX, useState } from "react";
 
 import { downloadScrollDiagnostics, scrollCapture } from "./scroll_diagnostics";

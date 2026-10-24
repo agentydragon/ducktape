@@ -1,5 +1,5 @@
 import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
-import IconArrowLeft from "@tabler/icons-react/dist/esm/icons/IconArrowLeft.mjs";
+import { IconArrowLeft } from "../icons";
 import { type JSX, useContext, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 

@@ -1,8 +1,7 @@
 /** The landing page: every Sandbox with its Threads, the same listing the sidebar navigates, wide
  * enough to say each Thread's harness, model and last activity. */
 import { Button, Title } from "@mantine/core";
-// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
-import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
+import { IconPlus } from "../icons";
 import type { JSX } from "react";
 import { Link } from "react-router";
 

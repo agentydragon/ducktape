@@ -9,18 +9,15 @@ TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
 ts_library(
     name = "chronological_debug",
-    srcs = [
-        "chronological_debug.tsx",
-        "tabler_icons.d.ts",
-    ],
+    srcs = ["chronological_debug.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:disclosure",
+        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:json_view",
     ],
 )
@@ -42,18 +39,15 @@ agentplane_vitest_test(
 
 ts_library(
     name = "scroll_debug_tools",
-    srcs = [
-        "scroll_debug_tools.tsx",
-        "tabler_icons.d.ts",
-    ],
+    srcs = ["scroll_debug_tools.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":scroll_diagnostics",
         ":thread_view_timing",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend:icons",
     ],
 )
 
@@ -170,7 +164,6 @@ ts_library(
         "projected_session.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
-        "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -190,7 +183,6 @@ ts_library(
         ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@tanstack/react-virtual",
         "//:node_modules/@types/react",
         "//:node_modules/date-fns",
@@ -198,6 +190,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:format_time",
+        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:notification_status",
         "//agentplane/app/frontend:sandbox_status",
@@ -354,15 +347,12 @@ agentplane_vitest_test(
 
 ts_library(
     name = "command_progress",
-    srcs = [
-        "command_progress.tsx",
-        "tabler_icons.d.ts",
-    ],
+    srcs = ["command_progress.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend:icons",
     ],
 )
 
@@ -400,7 +390,6 @@ ts_library(
     srcs = [
         # `declare module "*.css"` for the stylesheet import below.
         "css.d.ts",
-        "tabler_icons.d.ts",
         "thread_evidence.tsx",
     ],
     tsconfig = TSCONFIG,
@@ -410,10 +399,10 @@ ts_library(
         ":thread_evidence_css",
         ":thread_sync",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:json_view",
     ],
 )
@@ -508,17 +497,16 @@ ts_library(
     srcs = [
         # `declare module "*.css"` for the stylesheet import below.
         "css.d.ts",
-        "tabler_icons.d.ts",
         "thread_title.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
         ":thread_title_css",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:inline_name",
     ],
 )
@@ -627,10 +615,6 @@ ts_library(
         "thread_list.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
-        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
-        # imports. A declaration file is type-only, so it joins this target's program without
-        # being emitted.
-        "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -640,11 +624,11 @@ ts_library(
         ":thread_status",
         ":thread_status_indicator",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:sandbox_status",
@@ -674,19 +658,15 @@ agentplane_vitest_test(
 
 ts_library(
     name = "home",
-    srcs = [
-        "home.tsx",
-        # The ambient declaration for the @tabler/icons-react subpath this file imports.
-        "tabler_icons.d.ts",
-    ],
+    srcs = ["home.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":thread_list",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:topbar",
     ],
 )

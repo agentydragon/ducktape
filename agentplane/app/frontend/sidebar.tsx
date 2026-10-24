@@ -1,12 +1,6 @@
 /** The persistent left sidebar: the thread list, the Actions queue, and the footer's page links. */
 import { ActionIcon, Tooltip } from "@mantine/core";
-// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
-import IconBox from "@tabler/icons-react/dist/esm/icons/IconBox.mjs";
-import IconHeartbeat from "@tabler/icons-react/dist/esm/icons/IconHeartbeat.mjs";
-import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
-import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
-import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
-import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
+import { IconBox, IconHeartbeat, IconListCheck, IconPlus, IconSettings, IconX } from "./icons";
 import { type JSX, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 

@@ -1,10 +1,6 @@
 import { ActionIcon, Box, Button, Flex, Group, Menu, Paper, Select, Stack, Text, Textarea } from "@mantine/core";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
-import IconArrowDown from "@tabler/icons-react/dist/esm/icons/IconArrowDown.mjs";
-import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
-import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
-import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
+import { IconArrowDown, IconDotsVertical, IconHistory, IconPlayerStop, IconSend } from "../icons";
 import { intlFormatDistance } from "date-fns";
 import {
   type JSX,

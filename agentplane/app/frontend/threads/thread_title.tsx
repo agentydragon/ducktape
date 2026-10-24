@@ -1,6 +1,6 @@
 import { type JSX, useEffect, useEffectEvent, useState } from "react";
 import { ActionIcon, Group, Tooltip } from "@mantine/core";
-import IconSparkles from "@tabler/icons-react/dist/esm/icons/IconSparkles.mjs";
+import { IconSparkles } from "../icons";
 
 import { api, autoTitleThread, displayableError, renameThread, type ThreadView } from "../client";
 import { InlineName } from "../inline_name";

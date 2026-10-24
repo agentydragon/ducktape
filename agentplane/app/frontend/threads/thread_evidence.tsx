@@ -1,5 +1,5 @@
 import { ActionIcon, Button, Group, Stack, Text } from "@mantine/core";
-import IconZoomCode from "@tabler/icons-react/dist/esm/icons/IconZoomCode.mjs";
+import { IconZoomCode } from "../icons";
 import { type CSSProperties, type JSX, type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import {

@@ -1,6 +1,5 @@
 import { ActionIcon, Button, Group, Menu, Stack, Table, Text } from "@mantine/core";
-// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
-import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
+import { IconDotsVertical } from "../icons";
 import type { JSX } from "react";
 
 import { harnessLabel, type SandboxView, type ThreadView } from "../client";

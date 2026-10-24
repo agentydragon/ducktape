@@ -3,10 +3,7 @@
  * Sandbox no longer exists: the sidebar's navigation and the landing page's whole content.
  */
 import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
-// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
-import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
-import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mjs";
-import IconSearch from "@tabler/icons-react/dist/esm/icons/IconSearch.mjs";
+import { IconArchive, IconArchiveOff, IconSearch } from "../icons";
 import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";
 
