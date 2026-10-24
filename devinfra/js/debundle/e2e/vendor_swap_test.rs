@@ -538,6 +538,19 @@ fn partial_swap_rejects_split_brain_residual_reachability() {
         "expected split-brain diagnostic in stderr:\n{}",
         fixture.result.stderr,
     );
+    assert!(
+        fixture
+            .result
+            .stderr
+            .contains("swapped path: swapped export `object`"),
+        "{}",
+        fixture.result.stderr
+    );
+    assert!(
+        fixture.result.stderr.contains("dependency of item"),
+        "{}",
+        fixture.result.stderr
+    );
 }
 
 #[test]
