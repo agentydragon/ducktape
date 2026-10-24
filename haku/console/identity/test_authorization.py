@@ -488,7 +488,9 @@ async def _seed_retired_static_agent(harness: Harness, *, display_name: str, acc
     return agent_id
 
 
-async def test_list_agents_returns_owned_disabled_static_history(harness: Harness, harness_factory: HarnessFactory) -> None:
+async def test_list_agents_returns_owned_disabled_static_history(
+    harness: Harness, harness_factory: HarnessFactory
+) -> None:
     agent_id = await _seed_retired_static_agent(
         harness, display_name="Retired Agent", access_profile_id="no_auto_approval"
     )

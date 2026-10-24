@@ -29,9 +29,7 @@ def config() -> dict[str, Any]:
         # Retain retired policy fields until every API replica runs the identity-only config
         # model; older images require them during the ConfigMap/image rolling update.
         "auto_approval_policies": [{"id": "manual_review", "type": "never"}],
-        "access_profiles": [
-            {"id": "manual-review", "auto_approval_policy": "manual_review"},
-        ],
+        "access_profiles": [{"id": "manual-review", "auto_approval_policy": "manual_review"}],
         "default_access_profile_id": "manual-review",
         "mcp": {"servers": {}},
     }
