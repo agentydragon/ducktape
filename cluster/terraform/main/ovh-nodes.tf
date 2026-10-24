@@ -60,7 +60,7 @@ locals {
     }
     "ovh-ns102453" = {
       talos_storage_enabled = true
-      piraeus_ready_enabled = false
+      piraeus_ready_enabled = true
       system_disk_match     = "disk.wwid == 'naa.5000cca0bcd2d1b0'"
       system_volume_profile = "worker"
     }
