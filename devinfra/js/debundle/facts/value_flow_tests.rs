@@ -70,6 +70,37 @@ fn reverse_identity_alias_chain(depth: usize) -> String {
     source
 }
 
+fn invoke_return_set_fanout(target_count: usize, feedback: bool) -> String {
+    let mut source = String::from("function f0(callback) { poly(callback()); }\n");
+    for index in 1..target_count {
+        source.push_str(&format!("function f{index}(p{index}) {{}}\n"));
+    }
+    source.push_str(
+        "function target() { return leaf; }\n\
+         function leaf() { return extra; }\n\
+         function extra() {}\n",
+    );
+    source.push_str("const poly = f0");
+    for index in 1..target_count {
+        source.push_str(&format!(" || f{index}"));
+    }
+    source.push_str(";\n");
+    if feedback {
+        source.push_str("const result = f0(target);\n");
+    } else {
+        source.push_str("const result = f0(target || leaf || extra);\n");
+    }
+    source
+}
+
+fn argument_evaluations(source: &str) -> usize {
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let (actual, stats) = ChunkValueFlow::analyze_with_stats(&body);
+    assert_eq!(actual, ChunkValueFlow::analyze_reference(&body));
+    stats.argument_evaluations
+}
+
 #[test]
 fn worklist_matches_reference_across_reverse_calls_and_source_orders() {
     for source in [
@@ -338,6 +369,34 @@ fn reverse_return_call_chain_has_bounded_worklist_growth() {
         }
         previous_executions = Some(stats.event_executions);
     }
+}
+
+#[test]
+fn invoke_arguments_reuse_return_sets_until_a_read_binding_changes() {
+    let mut stable_evaluations = Vec::new();
+    let mut feedback_evaluations = Vec::new();
+    for target_count in [8, 64] {
+        let stable = invoke_return_set_fanout(target_count, false);
+        assert_matches_reference(&stable);
+        stable_evaluations.push(argument_evaluations(&stable));
+
+        let feedback = invoke_return_set_fanout(target_count, true);
+        assert_matches_reference(&feedback);
+        feedback_evaluations.push(argument_evaluations(&feedback));
+    }
+
+    assert!(
+        stable_evaluations[1] <= stable_evaluations[0] + 2,
+        "stable return-set argument evaluation grew with target fanout: {stable_evaluations:?}",
+    );
+    assert!(
+        feedback_evaluations[1] <= feedback_evaluations[0] + 2,
+        "feedback return-set argument evaluation grew with target fanout: {feedback_evaluations:?}",
+    );
+    assert!(
+        feedback_evaluations[0] > stable_evaluations[0],
+        "feedback must force reevaluation after its read parameter gains a return origin: stable={stable_evaluations:?}, feedback={feedback_evaluations:?}",
+    );
 }
 
 #[test]
