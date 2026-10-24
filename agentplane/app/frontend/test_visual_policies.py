@@ -40,18 +40,29 @@ async def test_actions_sidebar_queue(view: VisualPage, app: AgentplaneFixture) -
     await view.capture()
 
 
-@MOBILE_ONLY
+@DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
-async def test_actions_attention_strip_over_thread(view: VisualPage, app: AgentplaneFixture, expanded: bool) -> None:
-    await app.set_flag(Flag.PENDING_ACTIONS)
+async def test_actions_attention_strip_over_thread(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport, expanded: bool
+) -> None:
+    """A queue longer than the strip shows: the first two cards, and the rest behind "Show 1 more"."""
+    await app.set_flag(Flag.PENDING_ACTION_OVERFLOW)
     await app.mount_thread(IDLE_THREAD)
     page = view.page
+    if viewport == DESKTOP:
+        await page.get_by_role("button", name="Toggle navigation").click()
+    await expect(page.get_by_role("navigation")).to_be_visible(visible=False)
     strip = page.locator(".agentplane-actions-attention")
-    toggle = strip.get_by_role("button", name="waiting for review")
-    await expect(toggle).to_have_attribute("aria-expanded", "false")
+    await expect(strip.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
+    await expect(strip.get_by_text("echo the test repository handle back")).to_be_visible()
+    hidden = strip.get_by_text("restart the test backup service")
+    await expect(hidden).to_have_count(0)
     if expanded:
-        await toggle.click()
-        await expect(strip.get_by_text("restart the test backup service")).to_be_visible()
+        await strip.get_by_role("button", name="Show 1 more").click()
+        await expect(hidden).to_be_visible()
+        await expect(strip.get_by_role("button", name="Show fewer")).to_have_attribute("aria-expanded", "true")
+    # The clicks leave the pointer over whatever moved under it: a card or the top bar's buttons.
+    await page.mouse.move(0, 0)
     await expect(page.get_by_label("Message")).to_be_visible()
     await view.check(context="Actions strip over the open thread")
     await view.capture()

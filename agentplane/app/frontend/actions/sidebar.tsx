@@ -1,4 +1,4 @@
-import { Badge, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core";
+import { Badge, Button, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core";
 import IconArrowRight from "@tabler/icons-react/dist/esm/icons/IconArrowRight.mjs";
 import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
 import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
@@ -283,48 +283,49 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
   );
 }
 
-/** The pending queue for when the navigation sidebar is closed, as at phone width: a one-line strip
-    above the routed page that expands in place, in a bounded scroll area, so the open thread and
-    its composer stay usable beneath it. */
+/** Pending requests the attention strip shows before "Show N more". */
+const ATTENTION_STRIP_REQUESTS = 2;
+
+/** The pending queue for when the navigation sidebar is closed, as at phone width: the first
+    requests' compact cards above the routed page and the rest behind "Show N more", in a bounded
+    scroll area, so the open thread and its composer stay usable beneath it. */
 export function ActionsAttentionBar(): JSX.Element | null {
   const actions = useContext(ActionRequestsContext);
   const pending = usePendingRequests();
-  const [open, setOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const hidden = pending.length - ATTENTION_STRIP_REQUESTS;
 
   useEffect(() => {
-    if (pending.length === 0) setOpen(false);
-  }, [pending.length]);
+    if (hidden <= 0) setShowAll(false);
+  }, [hidden]);
 
   if (actions === null || pending.length === 0) return null;
 
   return (
     <section className="agentplane-actions-attention" aria-label="Actions awaiting review">
-      <UnstyledButton
-        className="agentplane-actions-sidebar-toggle"
-        onClick={() => setOpen((wasOpen) => !wasOpen)}
-        aria-expanded={open}
-        aria-controls={open ? "agentplane-actions-attention-content" : undefined}
-      >
-        <Group gap="xs" wrap="nowrap">
-          {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
-          <Badge color="yellow" size="sm" circle aria-hidden="true">
-            {pending.length}
-          </Badge>
-          <Text size="sm" fw={600}>
-            {pending.length === 1 ? "Action" : "Actions"} waiting for review
+      <div id="agentplane-actions-attention-content" className="agentplane-actions-attention-content">
+        {actions.error !== null && (
+          <Text size="xs" c="red" role="alert">
+            {actions.error}
           </Text>
-        </Group>
-      </UnstyledButton>
-      {open && (
-        <div id="agentplane-actions-attention-content" className="agentplane-actions-attention-content">
-          {actions.error !== null && (
-            <Text size="xs" c="red" role="alert">
-              {actions.error}
-            </Text>
-          )}
-          <PendingActionList pending={pending} />
+        )}
+        <div className="agentplane-actions-attention-cards">
+          <PendingActionList pending={showAll ? pending : pending.slice(0, ATTENTION_STRIP_REQUESTS)} />
         </div>
-      )}
+        {hidden > 0 && (
+          <Button
+            className="agentplane-actions-attention-expand"
+            variant="subtle"
+            size="compact-xs"
+            onClick={() => setShowAll((wasShown) => !wasShown)}
+            aria-expanded={showAll}
+            aria-controls="agentplane-actions-attention-content"
+            leftSection={showAll ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+          >
+            {showAll ? "Show fewer" : `Show ${hidden} more`}
+          </Button>
+        )}
+      </div>
     </section>
   );
 }

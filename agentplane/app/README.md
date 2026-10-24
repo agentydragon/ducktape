@@ -654,8 +654,9 @@ after an upstream stream ends, so the next request exchanges a fresh token. Logo
 expiry closes the response, and the browser cannot supply an upstream bearer or cookie.
 
 While the navigation sidebar is closed (phone width by default) and the route is not under
-`/actions`, a strip under the top bar shows "N Actions waiting for review" so a pending decision is
-visible over an open Thread. Tapping it expands the sidebar's queue rows (`ActionsAttentionBar`).
+`/actions`, a strip under the top bar shows the first two pending Actions as the sidebar's compact
+cards, decision buttons included, so a pending decision is visible over an open Thread. A longer
+queue adds "Show N more", which expands the rest in place (`ActionsAttentionBar`).
 
 The Settings modal's Notifications tab (`/#/notifications`, see [Settings](#settings)) registers the
 current browser, lists registered browsers, identifies this one, and forgets registrations. Forgetting the current browser also unsubscribes locally. The stable

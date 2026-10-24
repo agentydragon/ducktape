@@ -2369,6 +2369,7 @@ type Flag =
   | "syncScopeUnavailable"
   | "commandAdmissionTimedOut"
   | "pendingActions"
+  | "pendingActionOverflow"
   | "compactPodAction"
   | "gmailDraftHistory"
   | "pagedActionHistory"
@@ -2407,13 +2408,16 @@ function mcpLinkages(): McpLinkageView[] {
 }
 
 function pendingActions(): ActionRequestView[] {
+  const pending = ACTIONS.filter((request) => request.state === "decision_pending");
   return previewAction !== null
     ? [previewAction]
     : flags.has("compactPodAction")
       ? [COMPACT_POD_ACTION]
-      : flags.has("pendingActions")
-        ? ACTIONS.filter((request) => request.state === "decision_pending")
-        : [];
+      : flags.has("pendingActionOverflow")
+        ? [COMPACT_POD_ACTION, ...pending]
+        : flags.has("pendingActions")
+          ? pending
+          : [];
 }
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the

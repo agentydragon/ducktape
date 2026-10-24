@@ -206,7 +206,7 @@
   background: var(--mantine-color-body);
 }
 
-/* Bounded so the thread and its composer keep most of the screen while the queue is open. */
+/* Bounded so the thread and its composer keep most of the screen. */
 .agentplane-actions-attention-content {
   display: flex;
   flex-direction: column;
@@ -214,5 +214,17 @@
   max-height: min(45dvh, 30rem);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 8px 8px;
+  padding: 8px;
+}
+
+/* Side by side where the width allows; auto-fit stretches the shown cards across the empty tracks. */
+.agentplane-actions-attention-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  align-items: start;
+  gap: 6px;
+}
+
+.agentplane-actions-attention-expand {
+  align-self: flex-start;
 }
