@@ -3,11 +3,17 @@ common --experimental_isolated_extension_usages
 # Disable Aspect telemetry (aspect_tools_telemetry) so builds don't POST to telemetry.aspect.build
 common --repo_env=DO_NOT_TRACK=1
 
-# Suppress -Wmaybe-uninitialized from protobuf's own C decoder implementation.
-# The diagnostic originates in external/protobuf+/upb/wire/decode.c rather than
-# repository code, so keep the exception scoped to protobuf and both configs.
-build --per_file_copt=external/protobuf[+]/.*@-Wno-maybe-uninitialized
-build --host_per_file_copt=external/protobuf[+]/.*@-Wno-maybe-uninitialized
+# Suppress -Wmaybe-uninitialized from protobuf's upb C decoder. Keep this on
+# the one translation unit that emits it, in both target and host builds.
+build --per_file_copt=external/protobuf[+]/upb/wire/decode[.]c@-Wno-maybe-uninitialized
+build --host_per_file_copt=external/protobuf[+]/upb/wire/decode[.]c@-Wno-maybe-uninitialized
+
+# Protobuf's C++ sources still use Abseil's deprecated pointer-taking mutex
+# guards and string-resize helper, plus Protobuf's deprecated GetRepeatedEnum.
+# Cleanup: remove when Protobuf adopts the reference-taking guards, replacement
+# string helper, and GetRepeatedEnumValue().
+build --per_file_copt=external/protobuf[+]/src/google/protobuf/.*[.]cc@-Wno-deprecated-declarations
+build --host_per_file_copt=external/protobuf[+]/src/google/protobuf/.*[.]cc@-Wno-deprecated-declarations
 
 # Suppress noisy warnings from OR-Tools' own sources — upstream code rather
 # than something this repo can fix. Keep this scoped to OR-Tools so repo code
