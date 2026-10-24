@@ -1,0 +1,45 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "threadcommands",
+    srcs = ["threadcommands.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/go/threadcommands",
+    deps = [
+        "//agentplane/app/go/bridge",
+        "//agentplane/app/go/historydata",
+        "//agentplane/app/go/threads",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "unit_test",
+    srcs = ["threadcommands_test.go"],
+    embed = [":threadcommands"],
+    deps = [
+        "//agentplane/app/go/bridge",
+        "//agentplane/app/go/historydata",
+        "//agentplane/app/go/threads",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_danielgtaylor_huma_v2//adapters/humago",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

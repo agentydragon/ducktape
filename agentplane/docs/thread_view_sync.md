@@ -252,7 +252,7 @@ flowchart LR
     archive --> history[History Service fold]
     history --> pg[(History DB conversation state)]
     pg --> electric[Electric sync service]
-    electric --> proxy[Python app authorization proxy]
+    electric --> proxy[Go app authorization proxy]
     proxy --> client[Electric client and thread store in the browser]
     client --> react[React conversation view]
 ```

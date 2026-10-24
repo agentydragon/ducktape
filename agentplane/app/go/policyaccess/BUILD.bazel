@@ -1,0 +1,58 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "policyaccess",
+    srcs = [
+        "action_policy.go",
+        "errors.go",
+        "policyaccess.go",
+        "views.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/go/policyaccess",
+    deps = [
+        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/policies",
+        "//agentplane/app/go/auth",
+        "//agentplane/app/go/federation",
+        "//agentplane/app/go/sandboxes",
+        "//agentplane/egress/api/v1alpha1",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/sandboxes/api",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ],
+)
+
+go_test(
+    name = "unit_test",
+    srcs = [
+        "action_policy_test.go",
+        "policyaccess_test.go",
+    ],
+    embed = [":policyaccess"],
+    deps = [
+        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/app/go/auth",
+        "//agentplane/app/go/federation",
+        "//agentplane/app/go/sandboxes",
+        "//agentplane/egress/api/v1alpha1",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/sandboxes/api",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ],
+)
