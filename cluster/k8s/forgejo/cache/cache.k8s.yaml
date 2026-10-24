@@ -48,7 +48,7 @@ spec:
         resources:
           requests:
             storage: 2Gi
-        storageClassName: local-path-ovh
+        storageClassName: piraeus-ssd-local
   tolerations:
     - effect: NoSchedule
       key: node-role.kubernetes.io/control-plane

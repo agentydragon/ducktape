@@ -40,7 +40,7 @@ def chart(app: App) -> Chart:
         cpu_limit=Cpu.millis(500),
         memory_limit=Size.mebibytes(512),
         max_memory_percent_of_limit=80,
-        storage_class="local-path-ovh",
+        storage_class="piraeus-ssd-local",
         storage_size=Size.gibibytes(2),
         tolerations=[
             RedisReplicationSpecTolerations(
