@@ -107,11 +107,7 @@ def _finalize_probe() -> None:
 
 
 def _announce_bazel_command(role: str) -> None:
-    """Mark a Bazel command for profile analysis without exposing its invocation ID.
-
-    buildbuddy_test_status.py (TEST_COMMAND_MARKER) reads the test marker to tell whether a
-    test invocation was started.
-    """
+    """Mark a Bazel command for profile analysis without exposing its invocation ID."""
     print(f"CI_BAZEL_COMMAND role={role}", flush=True)
 
 
