@@ -50,12 +50,10 @@ string:
 
 - `cnpg.OVH_LOCAL_PATH`: `HIL_OVH`, `local-path-ovh`, no control-plane
   toleration. This preserves the existing behavior for the legacy HDD alias.
-- `cnpg.OVH_LOCAL_PATH_SSD`: `HIL_OVH`, `local-path-ovh-ssd`, with a
-  control-plane toleration.
 - `cnpg.OVH_PIRAEUS_SSD`: `HIL_OVH`, `piraeus-ssd-local`, with a
   control-plane toleration.
 
-The two SSD profiles allow scheduling onto the current OVH SSD pool nodes,
+The Piraeus SSD profile allows scheduling onto the current OVH SSD pool nodes,
 which are control planes. This is an explicit pairing, not a property inferred
 from a class name. **Gotcha:** a local PV pins a running instance to its node;
 before changing a profile's tolerance, check where its PV lives and rebuild the
@@ -77,10 +75,10 @@ all instances to one site avoids this.
 
 ### R3: CNPG storage class follows the pin
 
-OVH-HA uses `local-path-ovh-hdd` or, for fsync/latency-critical DBs, the
-`local-path-ovh-ssd` KS-GAME NVMe tier (`forgejo-db-ssd`,
-`seaweedfs-filer-db-ssd`) — both constrained to OVH nodes via
-`allowedTopologies`. (`local-path-ovh` is a deprecated alias re-pinned to the
+OVH-HA uses `local-path-ovh-hdd` or, for SSD-backed DBs, `piraeus-ssd-local`.
+The old `local-path-ovh-ssd` class remains for retained legacy PVs and
+SeaweedFS claim templates; new CNPG clusters use Piraeus.
+(`local-path-ovh` is a deprecated alias re-pinned to the
 same media as `-hdd`, kept only for already-bound PVCs — see the SC manifest;
 new clusters name the tiered classes explicitly.) The Piraeus pilot profile's
 new claim uses `piraeus-ssd-local`; this local, one-node class does not replace
@@ -130,8 +128,8 @@ grep -rl 'kind: Cluster' cluster/k8s --include='postgres-cluster*.yaml'
 ```
 
 Most active Cluster manifests describe 2-instance OVH-HA — most on the
-deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
-`seaweedfs-filer-db-ssd` on the `local-path-ovh-ssd` tier. Current exceptions:
+deprecated `local-path-ovh` alias, while SSD-backed databases use
+`piraeus-ssd-local`. Current exceptions:
 
 - `attic-db` (`nix-cache/`): 3 instances using the Piraeus pilot profile. Its
   two existing local-path PVCs remain unchanged; the new claim uses

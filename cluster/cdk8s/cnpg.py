@@ -63,7 +63,6 @@ class ClusterPlacement:
 # currently have local pools on control-plane nodes; the legacy local-path-ovh class keeps its
 # prior worker-only affinity behavior.
 OVH_LOCAL_PATH = ClusterPlacement(storage_class="local-path-ovh", affinity=_OVH_WORKER_AFFINITY)
-OVH_LOCAL_PATH_SSD = ClusterPlacement(storage_class="local-path-ovh-ssd", affinity=_OVH_CONTROL_PLANE_AFFINITY)
 OVH_PIRAEUS_SSD = ClusterPlacement(storage_class="piraeus-ssd-local", affinity=_OVH_CONTROL_PLANE_AFFINITY)
 # Single-instance only: one node, so no anti-affinity to satisfy.
 OPTIPLEX_PIRAEUS_SSD = ClusterPlacement(

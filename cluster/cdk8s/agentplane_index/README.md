@@ -47,7 +47,7 @@ during an update reports mixed revisions in its response.
 ## Database
 
 `agentplane-index-db` follows the OVH-HA CNPG profile: two instances on separate OVH nodes on
-`local-path-ovh-ssd`. Both workers connect as the `indexer` owner with the CNPG-generated
+`piraeus-ssd-local`. Both workers connect as the `indexer` owner with the CNPG-generated
 `agentplane-index-db-app` credential, but to separate databases, so they share no cached
 embeddings or tables. The shared owner is no access boundary between the indexes. Each worker
 gets a standard `postgresql://` URI assembled from the shared credential and its database

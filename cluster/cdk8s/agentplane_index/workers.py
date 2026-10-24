@@ -102,7 +102,7 @@ def _database(chart: Chart) -> None:
         chart,
         "database-cluster",
         ref=DATABASE,
-        profile=cnpg.OVH_LOCAL_PATH_SSD,
+        profile=cnpg.OVH_PIRAEUS_SSD,
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),
         wal_archive=False,
