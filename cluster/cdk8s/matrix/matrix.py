@@ -179,8 +179,10 @@ def _synapse(scope: Construct) -> None:
             # custom image and an eviction cron).
             "persistence": {"enabled": True, "existingClaim": _MEDIA_CLAIM},
             "synapse": {
-                # The media claim is ReadWriteOnce, so the old pod must release it first.
-                "strategy": {"type": "Recreate"},
+                # The media claim is ReadWriteOnce, so the old pod must release it first. Not
+                # `Recreate`: Helm's server-side apply keeps the live Deployment's defaulted
+                # `rollingUpdate` block, which the API server rejects alongside `Recreate`.
+                "strategy": {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 0, "maxUnavailable": 1}},
                 # Same zone as matrix-db (cnpg_conventions.md R5) and the media claim.
                 # This is `synapse.nodeSelector`, not the chart's top-level one — the chart
                 # has no top-level key of that name, so a selector placed there is silently
