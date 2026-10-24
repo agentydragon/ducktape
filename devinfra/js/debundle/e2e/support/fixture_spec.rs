@@ -29,6 +29,7 @@ pub struct Member {
     purity: Option<MemberPurity>,
     initializer_purity: Option<InitializerPurity>,
     effect: Option<MemberEffect>,
+    no_sync_callback_members: Vec<String>,
     pub comment: Option<String>,
 }
 
@@ -345,6 +346,14 @@ impl Member {
         self.effect = Some(effect);
         self
     }
+
+    /// Assert that these calls store callback arguments without invoking them
+    /// synchronously. See `spec::BindingAnnotation::no_sync_callback_members`.
+    pub fn with_no_sync_callback_members(mut self, members: &[&str]) -> Self {
+        self.no_sync_callback_members =
+            members.iter().map(|member| (*member).to_string()).collect();
+        self
+    }
 }
 
 /// Translate the harness `&'static str` spelling of a statement kind into the
@@ -500,6 +509,7 @@ fn fixture_annotations(
             || member.purity.is_some()
             || member.initializer_purity.is_some()
             || member.effect.is_some()
+            || !member.no_sync_callback_members.is_empty()
         {
             annotations.insert(
                 member.name.to_string(),
@@ -507,6 +517,7 @@ fn fixture_annotations(
                     purity: member.purity.unwrap_or_default(),
                     initializer_purity: member.initializer_purity.unwrap_or_default(),
                     effect: member.effect.unwrap_or_default(),
+                    no_sync_callback_members: member.no_sync_callback_members.clone(),
                     comment: member.comment.clone(),
                     ..Default::default()
                 },

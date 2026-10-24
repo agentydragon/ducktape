@@ -28,6 +28,13 @@ globalThis.runBeforeInitialization = function runBeforeInitialization(callback) 
 export const ready = true;
 "#;
 
+const REGISTRY: &str = r#"export const registry = {
+  registerProvider(provider) {
+    globalThis.savedProvider = provider;
+  },
+};
+"#;
+
 fn split_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module(
@@ -67,6 +74,19 @@ fn independent_later_modules() -> Vec<LogicalModuleEntry> {
             "values/later",
             &[Member::new("later"), Member::new("readLater")],
         ),
+    ]
+}
+
+fn registered_provider_modules(with_hint: bool) -> Vec<LogicalModuleEntry> {
+    let registry = if with_hint {
+        Member::new("registry").with_no_sync_callback_members(&["registerProvider"])
+    } else {
+        Member::new("registry")
+    };
+    vec![
+        logical_module("values/provider", &[Member::new("provider")]),
+        logical_module("values/later", &[Member::new("later")]),
+        logical_module("api/registry", &[registry]),
     ]
 }
 
@@ -203,6 +223,15 @@ fn expect_independent_value_conflict(source: &'static str) {
         &["values/value"],
         &["eager_rebind"],
     );
+}
+
+fn registered_provider_fixture(source: &'static str, with_hint: bool) -> Fixture {
+    let registry_chunks = [("static/registry", REGISTRY)];
+    run_fixture(
+        FixtureOpts::new(source, registered_provider_modules(with_hint))
+            .with_chunk_id("static/provider")
+            .with_extra_chunks(&registry_chunks),
+    )
 }
 
 fn expect_independent_later_colocated_runtime(source: &'static str, expected: &str) {
@@ -534,5 +563,43 @@ const later = 42;
 console.log(globalThis.earlyRead, globalThis.earlyValue, later);
 "#,
         "threw undefined 42\n",
+    );
+}
+
+#[test]
+fn no_sync_callback_member_hint_keeps_stored_provider_deferred() {
+    let source = r#"import { registry } from "./registry.js";
+const provider = { read() { return later; } };
+registry.registerProvider(provider);
+const later = 42;
+console.log("ready");
+"#;
+    let fixture = registered_provider_fixture(source, true);
+
+    assert_preserved_entry_output(&fixture, "ready\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "console.log(globalThis.savedProvider.read());\n",
+        "42\n",
+    );
+    assert_all_emitted_js_checks(&fixture);
+}
+
+#[test]
+fn unhinted_unknown_registration_still_preserves_callback_tdz() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            r#"import { registry } from "./registry.js";
+const provider = { read() { return later; } };
+registry.registerProvider(provider);
+const later = 42;
+console.log("ready");
+"#,
+            registered_provider_modules(false),
+        )
+        .with_chunk_id("static/provider")
+        .with_extra_chunks(&[("static/registry", REGISTRY)]),
+        &["values/later"],
+        &["sequenced"],
     );
 }
