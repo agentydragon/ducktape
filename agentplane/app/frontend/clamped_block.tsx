@@ -64,29 +64,28 @@ export function ClampedBlock({
   // Expansion is user state. CodeMirror briefly measures shorter while mounting inside the
   // sticky shell; retain its collapse control through that transient measurement.
   const body = (
-    <div
-      data-clamped={clipped}
-      style={{
-        position: "relative",
-        overflow: "hidden",
-        ...(clipped && { maxHeight: `${maxHeightRem}rem` }),
-      }}
-    >
-      <div ref={setContent}>{children}</div>
+    <>
+      <div
+        data-clamped={clipped}
+        style={{
+          overflow: "hidden",
+          ...(clipped && { maxHeight: `${maxHeightRem}rem` }),
+        }}
+      >
+        <div ref={setContent}>{children}</div>
+      </div>
       {clipped && (
         <UnstyledButton
           aria-expanded={false}
           onClick={() => setExpanded(true)}
           style={{
-            position: "absolute",
-            insetInline: 0,
-            bottom: 0,
-            height: "2.5rem",
             display: "flex",
-            alignItems: "flex-end",
+            width: "100%",
+            alignItems: "center",
             justifyContent: "center",
-            paddingBottom: 2,
-            background: "linear-gradient(to bottom, transparent, var(--mantine-color-body) 85%)",
+            marginTop: "var(--mantine-spacing-xs)",
+            padding: "var(--mantine-spacing-xs)",
+            borderTop: "1px solid var(--mantine-color-default-border)",
             color: "var(--mantine-color-dimmed)",
             fontSize: "var(--mantine-font-size-xs)",
           }}
@@ -94,7 +93,7 @@ export function ClampedBlock({
           {expandLabel ?? (lines !== undefined && lines > 1 ? `Show all ${lines} lines` : "Show all")}
         </UnstyledButton>
       )}
-    </div>
+    </>
   );
 
   return (
