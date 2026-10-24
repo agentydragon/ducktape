@@ -1645,7 +1645,7 @@
         </p>
         <p>
           <a
-            href="https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/remote_execution/containers/firecracker/firecracker.go"
+            href="https://github.com/buildbuddy-io/buildbuddy/blob/530433c0ee2f4861d586216a99fe3584078026bd/enterprise/server/remote_execution/containers/firecracker/firecracker.go"
             >Current upstream BuildBuddy code</a
           >
           creates an ext4 workspace image before attaching that drive and starting the test command. This narrows the
@@ -1654,6 +1654,128 @@
           is also unknown. No specific host operation or 91-second remedy is proven. The reported download-duration
           counter nearly spans the entire zero-download warm task too, so it is not an independent measure of blocking
           download time.
+        </p>
+        <h3 id="workspace-preparation">What the workspace image is, and what happens before attachment</h3>
+        <p>
+          The workspace image is a temporary ext4 virtual disk holding one Bazel action’s inputs. For this k3s scenario
+          that includes test code, Python dependencies, executables, rendered manifests and OCI image blobs. BuildBuddy
+          attaches the disk to the microVM and mounts it at <code>/workspace</code>, where the test reads its inputs. It
+          is separate from the VM’s root image and from containerd’s imported image store.
+        </p>
+        <p>
+          BuildBuddy normally creates a fresh workspace disk even when it restores a warm VM snapshot. Warm containerd
+          blobs can avoid image import/unpack without avoiding preparation of the action’s input disk. Normal snapshot
+          saving replaces the workspace drive with an empty placeholder; <code>preserve-workspace</code> is not a switch
+          that skips workspace-image construction.
+        </p>
+        <ol>
+          <li>
+            Create or restore the microVM, including root disks, networking and cgroups. Guest boot can overlap host
+            workspace construction.
+          </li>
+          <li>
+            Remove the previous workspace-image file and walk the action input tree, inspecting file sizes and types to
+            estimate filesystem space.
+          </li>
+          <li>
+            Run <code>mke2fs -d &lt;input-directory&gt;</code> to create and populate an ext4 image containing those
+            inputs.
+          </li>
+          <li>
+            Wait for/connect to the guest execution service, then send <code>PATCH /drives/workspacefs</code>. Mounting
+            the attached disk and launching the test follow.
+          </li>
+        </ol>
+        <p>
+          Implementation:
+          <a
+            href="https://github.com/buildbuddy-io/buildbuddy/blob/530433c0ee2f4861d586216a99fe3584078026bd/enterprise/server/remote_execution/containers/firecracker/firecracker.go"
+            >Firecracker preparation and attachment</a
+          >
+          and
+          <a
+            href="https://github.com/buildbuddy-io/buildbuddy/blob/de58d0a91b4616869c503a8a6bfbdfd41b619af7/enterprise/server/util/ext4/ext4.go"
+            >filesystem sizing and mke2fs</a
+          >. These are inspected upstream revisions; the hosted executor’s deployed revision remains unknown.
+        </p>
+        <p>
+          In the earlier slow action, guest connection took only 0.056 seconds and the separately reported
+          Docker-readiness wait was 6.202 seconds. Those clocks overlap preparation and must not be summed. The short
+          connection makes workspace-tree traversal/image construction a stronger suspect than a long connection wait,
+          but no per-operation host timing proves what consumed the 91.068 seconds.
+        </p>
+        <h3 id="workspace-debug-controls">Which preparation operations can be disabled for debugging?</h3>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Control</th>
+                <th>Effect</th>
+                <th>Availability and limits</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>debug_disable_firecracker_workspace_sync=true</code></td>
+                <td>
+                  Skips new workspace-image construction, attachment/mount synchronization and later output
+                  synchronization; expects an existing guest workspace.
+                </td>
+                <td>
+                  Executor-process flag, not a Bazel execution property. Requires BuildBuddy operator help or a
+                  controlled executor and specially prepared workspace state; the ordinary saved snapshot omits that
+                  disk. Untried here.
+                </td>
+              </tr>
+              <tr>
+                <td><code>"test.init-dockerd": "false"</code></td>
+                <td>Stops requesting Docker daemon initialization for that test action.</td>
+                <td>
+                  Available per target. The inspected repository platform enables Docker globally; k3s uses its own
+                  containerd, making this a candidate A/B probe. No disabled-Docker run or saving has been measured.
+                </td>
+              </tr>
+              <tr>
+                <td><code>executor.firecracker_vmexec_ready_signal=false</code></td>
+                <td>
+                  Replaces guest-readiness notification with connection polling; does not eliminate the requirement for
+                  a usable guest.
+                </td>
+                <td>
+                  Executor-process flag, not a per-target property. Untried here; the measured 56ms connection does not
+                  identify it as the old bottleneck.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Controls:
+          <a href="https://www.buildbuddy.io/docs/config-all-options/#buildbuddy-executor">executor configuration</a>
+          and
+          <a href="https://www.buildbuddy.io/docs/rbe-platforms/#docker-daemon-support">Docker execution properties</a>.
+          Repository wiring was rechecked at
+          <a href="https://github.com/agentydragon/ducktape/blob/42752754d9/BUILD.bazel">devel 42752754d9</a>. This
+          source inspection did not change production settings or rerun either control.
+        </p>
+        <h3 id="workspace-next-probe">Next bounded probe: vary input size while doing no test work</h3>
+        <p>
+          Run a remote <code>/bin/true</code> action with the slow test’s input-root digest, then compare with an
+          otherwise matched tiny-input action. Hold the worker, root image, resources, command, recycling configuration
+          and snapshot starting state fixed, bypass result caching, and collect existing execution timestamps plus the
+          VM workspace-attachment log. This tests whether the input tree reproduces the preparation cost without Python
+          or k3s startup. It has not been run and carries no saving estimate. If it reproduces, request BuildBuddy’s
+          host spans for <code>createWorkspaceImage</code>, <code>DiskSizeBytes</code>,
+          <code>DirectoryToImage</code> and guest readiness to locate the operation.
+        </p>
+        <p>
+          The
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/9f044bfa7fc43b1120364ecb230d240ce4124a3a/devinfra/debug/buildbuddy_firecracker_workspace_attach_stalls_2026_07.md"
+            >existing workspace-attachment investigation</a
+          >
+          records similar gaps in other workloads in July and October. It supports broader scope; it does not establish
+          that every case has the same cause.
         </p>
         <h3>Python compilation is a separate, smaller repeated cost</h3>
         <p>
