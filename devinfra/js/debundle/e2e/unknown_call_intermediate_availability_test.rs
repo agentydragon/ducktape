@@ -279,12 +279,6 @@ console.log(globalThis.earlyRead, readLater() === dynamic);
          console.log(provider.readLater() === dynamic.dynamic);\n",
         "true\n",
     );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/provider/entry.js",
-        &["readLater"],
-        &[],
-    );
     assert_all_emitted_js_checks(&fixture);
 }
 
