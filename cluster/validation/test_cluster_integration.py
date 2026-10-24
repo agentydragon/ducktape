@@ -603,4 +603,3 @@ def test_agent_permission_denials(
 
 if __name__ == "__main__":
     pytest_bazel.main()
-
