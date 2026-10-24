@@ -290,6 +290,12 @@ before a physical reset. Private per-cluster proofs are in
 `/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/`, including
 `root-final-independent-acceptance.json`.
 
+ClickHouse replica 1 is planned for a native rebuild on `ovh-ns103656` using
+the existing 500Gi `piraeus-hdd-local` `data-piraeus-hdd` claim template. The
+accepted replica 0 remains on `ovh-ns103711`; the existing Retain claim is
+preserved, and replica-1 rebuild and native table/query acceptance remain
+pending.
+
 OCI-cache and Langfuse Valkey were then evacuated serially: coordinated native
 failover to each existing Piraeus member on `103656`, followed by rebuilding
 ordinal 1 on a retained 2Gi `piraeus-hdd-local` claim on `103711`. Independent

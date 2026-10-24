@@ -84,6 +84,7 @@ _STORAGE_CLASS = "local-path-ovh-hdd-retain"
 _PIRAEUS_HDD_STORAGE_CLASS = "piraeus-hdd-local"
 _PIRAEUS_SSD_STORAGE_CLASS = "piraeus-ssd-local"
 _CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE = "clickhouse-piraeus-103711"
+_CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE = "clickhouse-piraeus-103656"
 _CLICKHOUSE_PIRAEUS_HDD_CLAIM = "data-piraeus-hdd"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
 _HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
@@ -371,7 +372,16 @@ def clickhouse_chart(app: App) -> Chart:
                                                     data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
                                                 )
                                             ),
-                                        )
+                                        ),
+                                        ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
+                                            name="1",
+                                            templates=(
+                                                ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
+                                                    pod_template=_CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
+                                                    data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
+                                                )
+                                            ),
+                                        ),
                                     ],
                                 )
                             ],
@@ -393,6 +403,10 @@ def clickhouse_chart(app: App) -> Chart:
                     _clickhouse_pod_template(
                         _CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE,
                         {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns103711"},
+                    ),
+                    _clickhouse_pod_template(
+                        _CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
+                        {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns103656"},
                     ),
                 ],
                 volume_claim_templates=[
