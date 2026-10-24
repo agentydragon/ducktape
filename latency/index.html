@@ -312,11 +312,21 @@
           measured.
         </p>
       </div>
+      <div class="callout">
+        <strong>Later bounded runner-key experiments refine the k3s snapshot result.</strong>
+        <p>
+          Outside the fixed population window, one paired VM repeat restored a VM-warmed snapshot and changed imports
+          from 198.0s to 11.7s and remote execution from 468.478s to 318.957s. The separate pod-key experiment found no
+          demonstrated benefit across two warm runs per arm. These action-level results do not change the report's PR
+          population percentiles or establish an end-to-end CI saving; see the
+          <a href="#runner-keys">runner-key experiment details</a>.
+        </p>
+      </div>
       <nav aria-label="Report navigation">
         <a href="#changes">What changed</a><a href="#feedback">PR feedback</a><a href="#nix">New artifact-gate cost</a
         ><a href="#cases">Critical paths</a><a href="#capacity">Queues & resource cost</a
-        ><a href="#ranking">Next interventions</a><a href="#continuity">Prior-work inventory</a
-        ><a href="#method">Clocks & evidence</a>
+        ><a href="#ranking">Next interventions</a><a href="#runner-keys">Runner-key experiments</a
+        ><a href="#continuity">Prior-work inventory</a><a href="#method">Clocks & evidence</a>
       </nav>
       <section id="changes">
         <h2>What landed since the last snapshot</h2>
@@ -1318,11 +1328,14 @@
                 </td>
               </tr>
               <tr>
-                <td>5. Prototype immutable image seeds / suitable VM workers</td>
-                <td>Historical cold-stack forecasts 30–100s / 40–140s; unmeasured</td>
+                <td>5. Prototype immutable seeds for remaining cold imports</td>
                 <td>
-                  Large; do not combine ranges. Fresh MCP/VM imports and recurring pause retry justify bounded trials.
-                  Keep fresh state, trusted digest keys and KubeVirt coverage; verify platform support first.
+                  Historical seed forecasts remain unmeasured. The landed VM key has one paired snapshot-lineage result
+                  below; it is not a seed or population estimate.
+                </td>
+                <td>
+                  Large; keep seed work separate from the landed key. Fresh per-run state, trusted digest keys and
+                  KubeVirt coverage remain required; no KVM or seed support was established.
                 </td>
               </tr>
             </tbody>
@@ -1338,6 +1351,94 @@
           Remaining fixture-scope, DCR component, type-only mypy, precise leaf-rule selection, grouped scenarios and
           probe/bytecode ideas retain their original bounds below. Their next validation is specific; no new savings
           assigned without a source change or experiment.
+        </p>
+      </section>
+      <section id="runner-keys">
+        <h2>Later runner-key experiments refine the snapshot result</h2>
+        <p>
+          These bounded action experiments were measured after the fixed population window above. That window remains
+          2026-10-22T05:30:00Z → 2026-10-23T13:40:00Z; none of the PR-head percentiles or runner totals below were
+          recomputed from these actions. Both experiments bypassed test-result caching. The VM-key sequence interleaved
+          pod actions using
+          <code>//agentplane/system_tests:test_thread_stream</code> with VM actions using
+          <code>//agentplane/system_tests:test_vm_sandbox_vm</code>; the reported paired repeats are VM actions. The
+          pod-key experiment used <code>//agentplane/system_tests:test_thread_stream</code> only. They support
+          action-level snapshot conclusions, not a fleet-wide effect or end-to-end feedback estimate.
+        </p>
+        <h3>The VM key restored a VM-warmed snapshot in one matched pair</h3>
+        <p>
+          The eight-action measurement used source commit
+          <code>7a45b95891280c3a1320dc2954e57860ef84f7b9</code>;
+          <a href="https://github.com/agentydragon/ducktape/pull/11769">PR #11769</a> landed the distinct k3s VM
+          recycling key as merge commit <code>f4f169e507b011d09457c04b51d6d95d419aae1a</code>. All eight tests passed.
+          The final same-executor VM repeat under the shared key restored the original pod-seed snapshot:
+          <a href="https://app.buildbuddy.io/invocation/21f72a28-fbdb-4658-888e-923a876eec25"
+            >198.0s of image imports</a
+          >
+          and 468.478s of remote execution. With the VM key split, the repeat restored the preceding VM action's
+          snapshot:
+          <a href="https://app.buildbuddy.io/invocation/c8bc60d6-6f62-4b13-a842-b37da38dfc64">11.7s of image imports</a>
+          and 318.957s of remote execution. Both actions used the same source, test, requested resources and executor;
+          both remote queues were under 0.1s.
+        </p>
+        <p>
+          The lineage check matters: the shared-key
+          <a href="https://app.buildbuddy.io/invocation/168cad9d-3fe6-48f7-a67e-a865089593b5">pod-after action</a> still
+          restored its original pod seed with 121 blobs on tmpfs. The experiment did not show that VM work evicted that
+          immutable pod snapshot. The observed benefit is that the split VM key let a VM repeat restore a VM-warmed
+          snapshot. This is one controlled pair on one executor; it establishes the result for that cache state, not its
+          frequency or a typical CI saving.
+        </p>
+        <h3>An added pod key showed no demonstrated benefit</h3>
+        <p>
+          The separate <a href="https://github.com/agentydragon/ducktape/pull/11781">PR #11781 discussion</a> records
+          the decision to keep the current pod configuration, and the PR is merged. Six actions passed on the merged
+          source commit above: one cold seed per arm, then two warm runs per arm on the same executor in current,
+          added-key, added-key, current order. The two warm runs in each arm restored that arm's 121-blob tmpfs seed.
+          Downloaded action records had identical input-root digest, arguments and environment; only the recycling key
+          differed.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Pod arm · warm n</th>
+                <th scope="col">Median image imports (s)</th>
+                <th scope="col">Median remote execution (s)</th>
+                <th scope="col">Observed warm execution range (s)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Current configuration · 2</td>
+                <td>7.50</td>
+                <td>134.56</td>
+                <td>116.93–152.19</td>
+              </tr>
+              <tr>
+                <td>Added pod key · 2</td>
+                <td>7.75</td>
+                <td>130.41</td>
+                <td>120.68–140.14</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The four warm actions' remote execution times declined in chronological order, including the final current-key
+          run. The 4.15s median difference is smaller than either arm's observed range, and two runs per arm cannot
+          establish a small performance effect. Keep the existing pod configuration. The source audit found ordinary
+          runner requests at 3 compute units and 10GB disk, while k3s requests 4 compute units and 50GB plus bridge
+          networking; those properties participate in platform identity. Repository references to the k3s resource
+          settings were confined to k3s tests. This comparison does not test separate physical executor pools or
+          estimate cross-job interference.
+        </p>
+        <p class="small">
+          Warm-run sources:
+          <a href="https://app.buildbuddy.io/invocation/656afd41-1dee-4e51-948c-de172e6f1fad">current 1</a>,
+          <a href="https://app.buildbuddy.io/invocation/9cfc182a-432b-4e32-bb47-0c7c44655c34">current 2</a>,
+          <a href="https://app.buildbuddy.io/invocation/5ee315bf-e431-4890-bfb6-38b8d7a6f33a">added-key 1</a> and
+          <a href="https://app.buildbuddy.io/invocation/59e370e7-0abe-482b-b0a1-63b7f072e9bf">added-key 2</a>.
         </p>
       </section>
       <section id="continuity">
@@ -1417,17 +1518,20 @@
                   <td>6 · Immutable unpacked image seeds</td>
                   <td>Retained, lower priority</td>
                   <td>
-                    Current MCP imports finish at 224.6s; app and runner imports each exceed 50s. Still a bounded
-                    platform spike, not a measured saving. Preserve fresh state and digest-keyed trusted seeds.
+                    Current MCP imports finish at 224.6s; app and runner imports each exceed 50s. The
+                    <a href="#runner-keys">VM-key result</a> is snapshot reuse, not a prebuilt image seed; a seed
+                    prototype remains separate and unmeasured. Preserve fresh state and digest-keyed trusted seeds.
                   </td>
                 </tr>
                 <tr>
                   <td>7 · Appropriate VM executor class</td>
-                  <td>Retained with new evidence</td>
+                  <td>Updated; executor sizing still open</td>
                   <td>
-                    Fresh VM first-green attempt has 738.3s fixture readiness and a stream-ended assertion; another
-                    successful run repeats a VM action after status-14 Firecracker pause failure. Separate I/O/TCG
-                    sizing from hosted worker reliability; no KVM or seed support newly established.
+                    PR #11769 landed the distinct k3s VM key. A later bounded pair restored a VM-warmed snapshot and
+                    reduced that action's imports from 198.0s to 11.7s and remote execution from 468.478s to 318.957s;
+                    this is one cache-lineage case, not a population estimate. The separate fresh VM first-green attempt
+                    still has 738.3s fixture readiness and a stream-ended assertion. Another successful run repeated a
+                    VM action after status-14 Firecracker pause failure. No KVM or seed support was established.
                   </td>
                 </tr>
                 <tr>
