@@ -184,7 +184,7 @@ def _volume_topology(
         # collection. Thin volumes make over-committing ~free; disk-full is bounded by
         # minFreeSpacePercent, not the slot cap.
         max_volume_counts=max_volume_counts,
-        node_selector={"storage.allegedly.works/tier": disk, **(additional_node_selector or {})},
+        node_selector=additional_node_selector or {},
         tolerations=[
             SeaweedSpecVolumeTopologyTolerations(
                 key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
