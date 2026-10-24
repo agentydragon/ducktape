@@ -40,6 +40,7 @@ a field a harness adds sends every such call to the JSON view while the tests st
   by their text and a light shade of grey instead, reserving actual color for when it's semantically meaningful
   (as the prominent-lifecycle `Alert color="red"` at ~line 376 and the failed-tool-call `Badge color="red"` at
   ~line 444 already do).
+- **Repeated recovery interruption badges on phones**: review whether multiple `Interrupted` badges in recovery history can be grouped or visually softened while preserving each item's distinct recovery meaning.
 
 ## Hidden characters in ordinary Action text
 
