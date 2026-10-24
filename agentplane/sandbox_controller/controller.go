@@ -40,6 +40,8 @@ const (
 	RenderedSpecAnnotation = "agentplane.allegedly.works/rendered-spec"
 
 	templateIndex = "spec.template"
+	// Indexes Events by the UID of the object they are about.
+	eventObjectUID = "involvedObject.uid"
 	// How long a failed or unfinished quiesce is left alone before the idempotent Quiesce call is
 	// repeated. Runner facts enqueue the Sandbox on progress; this deadline recovers a lost event or a
 	// stuck runner without polling.
@@ -604,7 +606,7 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 	case blocked != nil:
 		condition.Reason, condition.Message = blocked.reason, blocked.message
 	case w.pod != nil:
-		podCondition(&condition, sandbox, w.pod)
+		podCondition(&condition, sandbox, w.pod, func() *corev1.Event { return r.latestPodEvent(ctx, w.pod) })
 	case w.vmi != nil || (w.vm != nil && vmRunning(w.vm)):
 		vmCondition(&condition, sandbox, w)
 	case sandboxRunning(sandbox):
@@ -752,7 +754,8 @@ func podReady(pod *corev1.Pod) bool {
 	})
 }
 
-func podCondition(condition *metav1.Condition, sandbox *sandboxapi.Sandbox, pod *corev1.Pod) {
+// podCondition reads the Pod's latest Event only while it starts.
+func podCondition(condition *metav1.Condition, sandbox *sandboxapi.Sandbox, pod *corev1.Pod, latest func() *corev1.Event) {
 	switch {
 	case !pod.DeletionTimestamp.IsZero() || !sandboxRunning(sandbox):
 		condition.Reason, condition.Message = "Stopping", fmt.Sprintf("Pod %s is being deleted", pod.Name)
@@ -760,13 +763,61 @@ func podCondition(condition *metav1.Condition, sandbox *sandboxapi.Sandbox, pod 
 		if reason, message, scheduled := podSchedulingFailure(pod); scheduled {
 			condition.Reason, condition.Message = reason, message
 		} else {
-			condition.Reason, condition.Message = "Starting", fmt.Sprintf("Pod %s is not running yet", pod.Name)
+			condition.Reason, condition.Message = podStarting(pod, latest())
 		}
 	case pod.Status.Phase == corev1.PodRunning:
 		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "PodRunning", fmt.Sprintf("Pod %s is running", pod.Name)
 	default:
 		condition.Reason, condition.Message = "PodEnded", fmt.Sprintf("Pod %s ended (%s); a new one replaces it", pod.Name, pod.Status.Phase)
 	}
+}
+
+// podStarting words what a Pending Pod waits on, from its latest Event. An image pull gets its own
+// reason: a large image takes minutes, during which the Pod's status says only ContainerCreating.
+func podStarting(pod *corev1.Pod, latest *corev1.Event) (string, string) {
+	switch {
+	case latest == nil:
+		return "Starting", fmt.Sprintf("Pod %s is not running yet", pod.Name)
+	case latest.Reason == "Pulling":
+		return "PullingImage", fmt.Sprintf("Pod %s: %s, since %s", pod.Name, latest.Message, eventTime(latest).UTC().Format(time.RFC3339))
+	default:
+		return "Starting", fmt.Sprintf("Pod %s is not running yet; latest event %s: %s", pod.Name, latest.Reason, latest.Message)
+	}
+}
+
+// latestPodEvent is the newest Event recorded about the Pod, or nil where there is none or it cannot
+// be read: the Running condition then says only that the Pod is not running yet.
+func (r *Reconciler) latestPodEvent(ctx context.Context, pod *corev1.Pod) *corev1.Event {
+	var events corev1.EventList
+	if err := r.List(ctx, &events, client.InNamespace(pod.Namespace), client.MatchingFields{eventObjectUID: string(pod.UID)}); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "reading a starting Pod's Events; its Running condition omits them", "pod", pod.Name)
+		return nil
+	}
+	var latest *corev1.Event
+	for i := range events.Items {
+		if latest == nil || eventTime(&events.Items[i]).After(eventTime(latest)) {
+			latest = &events.Items[i]
+		}
+	}
+	return latest
+}
+
+// eventTime is when the Event last happened, whichever of the core and events.k8s.io fields its
+// recorder set.
+func eventTime(e *corev1.Event) time.Time {
+	switch {
+	case e.Series != nil:
+		return e.Series.LastObservedTime.Time
+	case !e.LastTimestamp.IsZero():
+		return e.LastTimestamp.Time
+	case !e.EventTime.IsZero():
+		return e.EventTime.Time
+	}
+	return e.CreationTimestamp.Time
+}
+
+func eventInvolvedUID(obj client.Object) []string {
+	return []string{string(obj.(*corev1.Event).InvolvedObject.UID)}
 }
 
 func podSchedulingFailure(pod *corev1.Pod) (string, string, bool) {
@@ -784,7 +835,7 @@ func podHasSchedulingFailure(pod *corev1.Pod) bool {
 }
 
 // SetupWithManager wires the watches: each Sandbox, the objects it owns, the Pods, VMIs and state
-// PVC carrying its label, and the templates it names.
+// PVC carrying its label, the Events about those Pods, and the templates it names.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &sandboxapi.Sandbox{}, templateIndex, func(obj client.Object) []string {
 		return []string{obj.(*sandboxapi.Sandbox).Spec.Template}
@@ -804,12 +855,25 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return out
 	})
-	bySandboxLabel := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
+	sandboxOfLabel := func(_ context.Context, obj client.Object) []reconcile.Request {
 		name, ok := obj.GetLabels()[sandboxapi.SandboxLabel]
 		if !ok {
 			return nil
 		}
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: obj.GetNamespace(), Name: name}}}
+	}
+	bySandboxLabel := handler.EnqueueRequestsFromMapFunc(sandboxOfLabel)
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &corev1.Event{}, eventObjectUID, eventInvolvedUID); err != nil {
+		return err
+	}
+	// A starting Pod's status does not change when its image pull begins; only an Event says so.
+	byPodEvent := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		involved := obj.(*corev1.Event).InvolvedObject
+		var pod corev1.Pod
+		if involved.Kind != "Pod" || r.Get(ctx, types.NamespacedName{Namespace: involved.Namespace, Name: involved.Name}, &pod) != nil {
+			return nil
+		}
+		return sandboxOfLabel(ctx, &pod)
 	})
 	setup := ctrl.NewControllerManagedBy(mgr).
 		For(&sandboxapi.Sandbox{}).
@@ -820,6 +884,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// A virt-launcher Pod is its VMI's, not the Sandbox's, so Pods map back by the label.
 		Watches(&corev1.Pod{}, bySandboxLabel).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).
+		Watches(&corev1.Event{}, byPodEvent).
 		Watches(&sandboxapi.SandboxTemplate{}, byTemplate)
 	// A connection's Lease is the Sandbox's by owner reference. Renewals only move the renew time,
 	// so only a different runner Pod, a new connection or a change in the facts the runner

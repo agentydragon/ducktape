@@ -11,6 +11,7 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
@@ -75,12 +76,14 @@ func run(c config) error {
 		return err
 	}
 	// The cache holds one namespace, and of its Pods, PVCs, ServiceAccounts, PolicyBindings and,
-	// where KubeVirt is installed, VMs and VMIs only those carrying the Sandbox label.
+	// where KubeVirt is installed, VMs and VMIs only those carrying the Sandbox label. Events carry no
+	// labels: it holds those about any Pod.
 	byObject := map[client.Object]cache.ByObject{
 		&corev1.Pod{}:                   {Label: ours},
 		&corev1.PersistentVolumeClaim{}: {Label: ours},
 		&corev1.ServiceAccount{}:        {Label: ours},
 		&policyapi.PolicyBinding{}:      {Label: ours},
+		&corev1.Event{}:                 {Field: fields.OneTermEqualSelector("involvedObject.kind", "Pod")},
 	}
 	if kubeVirt {
 		byObject[&kubevirtv1.VirtualMachine{}] = cache.ByObject{Label: ours}
