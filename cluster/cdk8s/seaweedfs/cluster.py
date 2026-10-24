@@ -631,7 +631,7 @@ def chart(app: App) -> Chart:
         (
             "repair-hdd-102453",
             "Copy-only replica repair for the 102453 HDD evacuation; verify every volume has two copies before evacuation.",
-            False,
+            True,
             "lock\n"
             "volumeServer.state -nodes=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -maintenanceOn\n"
             "volume.fix.replication -apply -doDelete=false -maxParallelization=2"
@@ -641,7 +641,7 @@ def chart(app: App) -> Chart:
         (
             "evacuate-hdd-102453",
             "Evacuate the 102453 SeaweedFS HDD volume server after all target volumes have two copies.",
-            True,
+            False,
             "lock\n"
             "volumeServer.state -nodes=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -maintenanceOn\n"
             "volumeServer.evacuate -node=seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 -apply\n"
