@@ -513,7 +513,6 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
     if account == "claude-ai":
         for kind, name, namespace in (
             ("ClusterRole", "cluster-diagnostics-reader", None),
-            ("ClusterRole", "agent-redisreplication-reader", None),
             ("Role", "claude-ai-coinbase-reader", "agentplane-staging"),
             ("Role", "claude-ai-sandbox-reader", "agentplane-staging"),
             ("Role", "agent-haku-console-metadata-reader", "haku-console"),

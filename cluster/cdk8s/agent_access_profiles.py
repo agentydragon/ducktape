@@ -104,9 +104,6 @@ def catalog() -> dict[str, KubernetesGrant]:
             kind="ClusterRoleBinding",
             role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-cluster-metadata-reader"),
         ),
-        "redisreplication-read": ClusterRoleBindingGrant(
-            kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="agent-redisreplication-reader")
-        ),
         "cluster-diagnostics": ClusterRoleBindingGrant(
             kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="cluster-diagnostics-reader")
         ),
@@ -167,11 +164,10 @@ SHARED_DIAGNOSTICS = (
     "ducktape-flux-read",
     "public-coder-volsync-status",
     "public-coder-agent-reader",
-    "redisreplication-read",
 )
 PUBLIC_INVENTORY = ("public-coder-node-read", "public-coder-cluster-metadata-read")
 HAKU_EXTRAS = ("cluster-diagnostics", "haku-sandbox-write")
-PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY)
+PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, "cluster-diagnostics")
 # Shared grant membership for PolicySets. Each deployment chart composes these Kubernetes rules with
 # its own rules before materializing the complete PolicySet, then separately materializes controller
 # RBAC from the resolved assignable grants.
@@ -263,7 +259,6 @@ STATIC_GRANTS = {
         "clickhouse-diagnostics",
         "public-coder-agent-reader",
         "public-coder-volsync-status",
-        "redisreplication-read",
     ),
     # Preserve redundant narrow inventory bindings; Coinbase access is explicitly approved.
     "haku": (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, *HAKU_EXTRAS, "coinbase-credentials"),

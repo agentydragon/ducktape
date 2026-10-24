@@ -317,7 +317,7 @@ def _kubernetes_grants(policy_sets: list[str]) -> set[str]:
 
 
 @pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
-def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
+def test_public_presets_select_cluster_diagnostics_and_only_their_extra_grants(
     preset: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
@@ -336,10 +336,10 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         preset == "finance-agent"
     )
     assert selected == _kubernetes_grants(config["sandbox_presets"]["public-coder"]["policy_sets"]) | credential_grants
-    assert "redisreplication-read" in selected
+    assert "cluster-diagnostics" in selected
     haku_policy_sets = config["sandbox_presets"]["haku"]["policy_sets"]
     haku = _kubernetes_grants(haku_policy_sets)
-    assert "redisreplication-read" in haku
+    assert "cluster-diagnostics" in haku
     assert agent_access_profiles.COINBASE_POLICY in haku_policy_sets
     assert agent_access_profiles.COINBASE_POLICY in _by_name(docs, "PolicyBinding", "claude-ai")["spec"]["policySets"]
     assert agent_access_profiles.COINBASE_POLICY in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
@@ -368,12 +368,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     assert not any(doc["kind"] == "PolicySet" and doc["metadata"]["name"] == PLAID_PGWEB_CREDENTIAL for doc in docs)
     assert (
         set(haku) - set(selected)
-        == {
-            "cluster-diagnostics",
-            "haku-sandbox-write",
-            "coinbase-credentials",
-            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
-        }
+        == {"haku-sandbox-write", "coinbase-credentials", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}
         - credential_grants
     )
     assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
@@ -388,8 +383,8 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         "public-coder-volsync-status",
         "public-coder-agent-reader",
     } <= set(selected)
-    # The selected cluster-wide ClusterRoles are narrow. In particular,
-    # never bind the namespaced log/metadata readers or Haku's broader reader there.
+    # Cluster-wide reads come from the explicitly selected inventory and diagnostics roles.
+    # Never bind namespaced log/metadata readers as cluster-scoped grants.
     assert {name: catalog[name] for name in selected if catalog[name]["kind"] == "ClusterRoleBinding"} == {
         "public-coder-node-read": {
             "kind": "ClusterRoleBinding",
@@ -399,9 +394,9 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
             "kind": "ClusterRoleBinding",
             "role_ref": {"kind": "ClusterRole", "name": "public-coder-agent-cluster-metadata-reader"},
         },
-        "redisreplication-read": {
+        "cluster-diagnostics": {
             "kind": "ClusterRoleBinding",
-            "role_ref": {"kind": "ClusterRole", "name": "agent-redisreplication-reader"},
+            "role_ref": {"kind": "ClusterRole", "name": "cluster-diagnostics-reader"},
         },
     }
     assert {

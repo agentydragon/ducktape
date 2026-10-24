@@ -224,6 +224,7 @@ def _add_cluster_roles(chart: Chart) -> None:
         ),
         _read("gateway.networking.k8s.io", "gateways", "httproutes", "tlsroutes", "grpcroutes"),
         _read("postgresql.cnpg.io", "clusters", "backups", "scheduledbackups"),
+        _read("redis.redis.opstreelabs.in", "redisreplications"),
         _read("infra.contrib.fluxcd.io", "terraforms"),
         _read("image.toolkit.fluxcd.io", "imagepolicies", "imagerepositories", "imageupdateautomations"),
         _read("notification.toolkit.fluxcd.io", "receivers", "alerts", "providers"),
@@ -236,9 +237,6 @@ def _add_cluster_roles(chart: Chart) -> None:
         # pods/log and configmaps are granted via namespaced RoleBindings to logs-configmaps-reader
         # in monitoring, kube-system, flux-system, grocy-sf, grocy-vallejo, airlock, authentik.
     )
-    # Operator-managed RedisReplication resources are cluster-inspection metadata. Keep this
-    # separate from the broader diagnostics role so profiles can select just this resource.
-    _cluster_role(chart, "agent-redisreplication-reader", _read("redis.redis.opstreelabs.in", "redisreplications"))
     # Pod logs explicitly classified as safe for durable agent access. Additive to
     # agent-readable-namespace-metadata; grants only the Kubernetes log subresource. A Namespace
     # classified LOGS in namespace_access receives both Flux-owned bindings.

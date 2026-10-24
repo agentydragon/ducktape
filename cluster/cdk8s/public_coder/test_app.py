@@ -106,20 +106,19 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
         assert all(rule["verbs"] == _READ for rule in role["rules"]), source
         assert not {"secrets", "pods/log", "pods/exec"} & _resources(role), source
 
-    # public-coder's cluster-scoped reads come from narrow ClusterRoles, never from the
-    # much broader cluster-diagnostics-reader Haku is bound to.
+    # The staging public-coder preset receives cluster diagnostics through its Agentplane grant.
     shared_objects = _synth(agent_shared_rbac.chart)
     haku_cluster_binding = _one(shared_objects, "ClusterRoleBinding", "agent-cluster-diagnostics-reader")
     assert _subjects(haku_cluster_binding) >= _HAKU_SUBJECTS
 
-    redis_objects = _synth(agent_rbac_base.chart)
-    redis_role = _one(redis_objects, "ClusterRole", "agent-redisreplication-reader")
-    assert redis_role["rules"] == [
-        {"apiGroups": ["redis.redis.opstreelabs.in"], "resources": ["redisreplications"], "verbs": _READ}
-    ]
-    redis_binding = _one(shared_objects, "ClusterRoleBinding", "agent-redisreplication-reader")
-    assert redis_binding["roleRef"]["name"] == redis_role["metadata"]["name"]
-    assert _subjects(redis_binding) == _HAKU_SUBJECTS | {("ServiceAccount", "claude-ai", "agentplane-staging")}
+    diagnostics_role = _one(_synth(agent_rbac_base.chart), "ClusterRole", "cluster-diagnostics-reader")
+    assert {
+        (api_group, resource, verb)
+        for rule in diagnostics_role["rules"]
+        for api_group in rule["apiGroups"]
+        for resource in rule["resources"]
+        for verb in rule["verbs"]
+    } >= {("redis.redis.opstreelabs.in", "redisreplications", verb) for verb in _READ}
 
 
 def test_app_egress_reaches_the_internet_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
